@@ -24,4 +24,16 @@ describe("Form", () => {
     const submit = screen.getByRole("button", { name: "Save" });
     expect(submit).toBeDisabled();
   });
+
+  it("renders options for select/radio fields", () => {
+    render(
+      <FlowletThemeProvider>
+        <Form submitLabel="Go" fields={[
+          { type: "select", name: "plan", label: "Plan", options: [{ value: "pro", label: "Pro Plan" }, { value: "free", label: "Free Plan" }] },
+        ]} />
+      </FlowletThemeProvider>,
+    );
+    expect(screen.getByText("Pro Plan")).toBeInTheDocument();
+    expect(screen.getByText("Free Plan")).toBeInTheDocument();
+  });
 });

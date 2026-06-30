@@ -22,12 +22,33 @@ function renderInput(f: FormField) {
       return <Input type="range" name={f.name} min={f.min} max={f.max} />;
     case "date":
       return <Input type="date" name={f.name} />;
-    // select, radio, toggle: fall back to Input for jsdom compatibility
     case "select":
+      return (
+        <select name={f.name} disabled>
+          {f.options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      );
     case "radio":
+      return (
+        <div role="radiogroup">
+          {f.options.map((o) => (
+            <label key={o.value}>
+              <input type="radio" name={f.name} value={o.value} disabled />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      );
     case "toggle":
-    default:
-      return <Input type="text" name={f.name} placeholder={f.placeholder} />;
+      return (
+        <div role="group">
+          {f.options.map((o) => (
+            <button key={o.value} type="button" value={o.value} disabled>{o.label}</button>
+          ))}
+        </div>
+      );
   }
 }
 
