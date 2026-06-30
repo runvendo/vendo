@@ -26,7 +26,10 @@ export function createStage(slot: HTMLElement): HTMLIFrameElement {
   return iframe;
 }
 
-export function initStage(iframe: HTMLIFrameElement, payload: InitPayload) {
-  const rpc = makeRpc(iframe.contentWindow!);
+export function initStage(iframe: HTMLIFrameElement, payload: InitPayload, onAction?: (req: any) => Promise<any>) {
+  const rpc = makeRpc(iframe.contentWindow!, async (method, params) => {
+    if (method === "tools/call") return onAction ? onAction(params) : { error: "no handler" };
+    throw new Error("unknown method " + method);
+  });
   return rpc.call("ui/initialize", payload);
 }

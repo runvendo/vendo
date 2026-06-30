@@ -33,12 +33,30 @@ export const STAGE_RUNTIME_SRC = String.raw`
       if (node.kind === "component") {
         var Impl = host[node.name];
         if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
-        return React.createElement(Impl, bindProps(node.props, params.state));
+        var boundProps = bindProps(node.props, params.state);
+        boundProps.__nodeId = node.id;
+        return React.createElement(Impl, boundProps);
       }
       return React.createElement("div", { "data-generated": true }, "[generated]");
     }
     createRoot(document.getElementById("stage-root")).render(toElement(params.tree));
   }
+
+  window.__flowletDispatch = function (descriptor, originNodeId) {
+    var id = "act-" + Math.random().toString(36).slice(2);
+    return new Promise(function (resolve) {
+      function handler(e) {
+        if (e.data && e.data.flowlet && e.data.id === id) {
+          window.removeEventListener("message", handler);
+          resolve(e.data.result);
+        }
+      }
+      window.addEventListener("message", handler);
+      parent.postMessage({ flowlet: true, id: id, method: "tools/call",
+        params: { name: descriptor.action, originNodeId: originNodeId,
+                  capability: (window.__flowletInit || {}).capability, payload: descriptor.payload } }, "*");
+    });
+  };
 
   window.addEventListener("message", function (e) {
     var m = e.data; if (!m || !m.flowlet) return;

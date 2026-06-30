@@ -19,6 +19,12 @@ async function payloadFor(kind: string): Promise<InitPayload> {
       tree: { id: "c1", kind: "component", source: "host", name: "Card", props: { title: "Hello", body: "World" } },
     };
   }
+  if (kind === "action") {
+    const bundleSource = await (await fetch("/host-bundle.js")).text();
+    return { theme: { "--brand-primary": "#00aa77", "--brand-surface": "#fff", "--brand-text": "#111" }, state: {}, bundleSource,
+      tree: { id: "c1", kind: "component", source: "host", name: "Card",
+        props: { title: "Confirm?", body: "x", action: { action: "confirm", label: "Confirm", payload: { amount: 10 } } } } };
+  }
   if (kind === "state") {
     const bundleSource = await (await fetch("/host-bundle.js")).text();
     return { theme: { "--brand-primary": "#00aa77", "--brand-surface": "#fff", "--brand-text": "#111" },
@@ -41,7 +47,10 @@ window.addEventListener("message", (e) => {
   if (e.data.type === "ready") {
     status.textContent = "ready";
     const iframe = document.getElementById("flowlet-stage") as HTMLIFrameElement;
-    payloadFor(params.get("case") || "").then((payload) => initStage(iframe, payload));
+    payloadFor(params.get("case") || "").then((payload) => initStage(iframe, payload, async (req) => {
+      ensure("action-log").textContent = `origin=${req.originNodeId} action=${req.name} result=ok`;
+      return { result: "ok" };
+    }));
   }
   if (e.data.type === "init-ack") ensure("init-ack").textContent = "initialized";
   if (e.data.type === "egress") {
