@@ -1,0 +1,77 @@
+.flowlet-root {
+  --flowlet-accent: light-dark(#16181d, #e9eaee);
+  --flowlet-accent-fg: light-dark(#ffffff, #141417);
+  --flowlet-fg: light-dark(#1b1d22, #e7e8ec);
+  --flowlet-fg-muted: light-dark(#8a8c92, #7c7e86);
+  --flowlet-bg: light-dark(#fcfcfb, #101013);
+  --flowlet-surface: light-dark(#ffffff, #17171b);
+  --flowlet-border: light-dark(#e9e9e5, #26262c);
+  --flowlet-radius: 13px;
+  --flowlet-shadow: 0 6px 20px light-dark(rgba(27,30,37,.07), rgba(0,0,0,.4));
+  --flowlet-font: inherit;
+  --flowlet-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--flowlet-fg);
+  background: var(--flowlet-bg);
+  font-family: var(--flowlet-font);
+}
+.fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fl-msglist { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.fl-turn-user { align-self: flex-end; background: var(--flowlet-accent); color: var(--flowlet-accent-fg);
+  padding: 8px 12px; border-radius: 14px 14px 4px 14px; max-width: 80%; }
+.fl-turn-assistant { align-self: flex-start; max-width: 92%; line-height: 1.55; }
+.fl-caret { display: inline-block; width: 7px; height: 1em; background: var(--flowlet-accent);
+  vertical-align: -2px; margin-left: 2px; }
+.fl-tool { align-self: flex-start; font-family: var(--flowlet-font-mono); font-size: 11px;
+  color: var(--flowlet-fg-muted); border: 1px solid var(--flowlet-border); border-radius: 7px; padding: 6px 9px; }
+.fl-approval { align-self: flex-start; border: 1px solid var(--flowlet-border);
+  border-radius: var(--flowlet-radius); padding: 12px; box-shadow: var(--flowlet-shadow);
+  background: var(--flowlet-surface); max-width: 88%; }
+.fl-approval-actions { display: flex; gap: 8px; margin-top: 10px; }
+.fl-btn { border: 1px solid var(--flowlet-border); border-radius: 8px; padding: 7px 13px;
+  font: 500 12px/1 var(--flowlet-font-mono); background: var(--flowlet-surface); color: var(--flowlet-fg); cursor: pointer; }
+.fl-btn-primary { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: var(--flowlet-accent); }
+.fl-uinode { align-self: flex-start; width: 100%; }
+.fl-composer { display: flex; align-items: center; gap: 10px; margin: 12px; padding: 10px 13px;
+  background: var(--flowlet-surface); border: 1px solid var(--flowlet-border);
+  border-radius: var(--flowlet-radius); box-shadow: var(--flowlet-shadow); }
+.fl-composer input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--flowlet-fg);
+  font-family: var(--flowlet-font-mono); font-size: 13px; }
+.fl-icon-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--flowlet-border);
+  background: var(--flowlet-surface); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.fl-send { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: var(--flowlet-accent); }
+.fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; flex: 1; padding: 28px; text-align: center; }
+.fl-greet { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.fl-chip { border: 1px solid var(--flowlet-border); background: var(--flowlet-surface);
+  border-radius: 999px; padding: 6px 12px; font-size: 12px; color: var(--flowlet-fg); cursor: pointer; }
+.fl-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; max-width: 460px; }
+.fl-flowcard { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
+  padding: 12px; text-align: left; background: var(--flowlet-surface); cursor: pointer; }
+.fl-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 12px; }
+.fl-rail-chip { display: flex; align-items: center; gap: 7px; border: 1px solid var(--flowlet-border);
+  border-radius: 999px; padding: 5px 11px; font-size: 12px; background: var(--flowlet-surface); }
+.fl-rail-dot { width: 6px; height: 6px; border-radius: 50%; background: #3fae6a; }
+.fl-rail-connect { border: 1px dashed var(--flowlet-fg-muted); border-radius: 999px;
+  padding: 6px 12px; font-size: 12px; background: transparent; color: var(--flowlet-fg); cursor: pointer; }
+.fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
+  background: var(--flowlet-surface); box-shadow: var(--flowlet-shadow); overflow: hidden; }
+.fl-picker-item { display: flex; align-items: center; gap: 9px; padding: 8px 11px; font-size: 13px; }
+.fl-connect { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
+  padding: 13px; background: var(--flowlet-surface); max-width: 430px; }
+.fl-overlay-scrim { position: fixed; inset: 0; background: rgba(27,29,34,.26); }
+.fl-overlay-panel { position: fixed; left: 50%; top: 12%; transform: translateX(-50%);
+  width: min(560px, 92vw); background: var(--flowlet-surface); border: 1px solid var(--flowlet-border);
+  border-radius: 16px; box-shadow: 0 24px 60px rgba(27,29,34,.35); overflow: hidden; }
+.fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);
+  border-radius: 999px; padding: 9px 13px; background: var(--flowlet-surface);
+  box-shadow: var(--flowlet-shadow); cursor: pointer; }
+.fl-tabbar { display: flex; align-items: center; gap: 4px; padding: 8px 11px 0;
+  border-bottom: 1px solid var(--flowlet-border); }
+.fl-tab { display: flex; align-items: center; gap: 7px; padding: 8px 12px; font-size: 12.5px;
+  color: var(--flowlet-fg-muted); border: 1px solid transparent; border-bottom: none;
+  border-radius: 9px 9px 0 0; cursor: pointer; }
+.fl-tab[aria-selected="true"] { color: var(--flowlet-fg); background: var(--flowlet-surface); border-color: var(--flowlet-border); }
+.fl-slot-empty { border: 1.5px dashed var(--flowlet-fg-muted); border-radius: var(--flowlet-radius);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 22px; cursor: pointer; background: var(--flowlet-surface); color: var(--flowlet-fg); }
