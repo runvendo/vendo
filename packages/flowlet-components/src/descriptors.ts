@@ -10,6 +10,7 @@ import { calloutDescriptor } from "./components/Callout/descriptor";
 import { tagsDescriptor } from "./components/Tags/descriptor";
 import { stepsDescriptor } from "./components/Steps/descriptor";
 import { listDescriptor } from "./components/List/descriptor";
+import { imageDescriptor } from "./components/Image/descriptor";
 
 export const descriptors: PrewiredDescriptor[] = [
   cardDescriptor,
@@ -22,6 +23,7 @@ export const descriptors: PrewiredDescriptor[] = [
   tagsDescriptor,
   stepsDescriptor,
   listDescriptor,
+  imageDescriptor,
 ];
 
 export const prewiredComponents: RegisteredComponent[] = descriptors.map((d) => d.toRegistered());
