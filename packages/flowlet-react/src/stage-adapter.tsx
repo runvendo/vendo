@@ -68,6 +68,10 @@ export function FlowletStage({
       ctrlRef.current = null;
       initedRef.current = false;
       rootIdRef.current = null;
+      // Drop the generated session/payload too, so a remount re-initializes
+      // instead of taking the data-delta path against an uninitialized stage.
+      sessionRef.current = null;
+      payloadRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
