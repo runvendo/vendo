@@ -27,6 +27,16 @@ import {
   Callout as _Callout,
   Steps as _Steps,
   StepsItem as _StepsItem,
+  ListBlock as _ListBlock,
+  ListItem as _ListItem,
+  Image as _Image,
+  ImageGallery as _ImageGallery,
+  MarkDownRenderer as _MarkDownRenderer,
+  CodeBlock as _CodeBlock,
+  Tabs as _Tabs,
+  TabsList as _TabsList,
+  TabsTrigger as _TabsTrigger,
+  TabsContent as _TabsContent,
 } from "@openuidev/react-ui";
 import type {
   CardProps,
@@ -43,6 +53,16 @@ import type {
   LabelProps,
   InputProps,
   TextAreaProps,
+  ListBlockProps,
+  ListItemProps,
+  ImageProps,
+  OpenUIGalleryProps,
+  MarkDownRendererProps,
+  CodeBlockProps,
+  TabsProps,
+  TabsListProps,
+  TabsTriggerProps,
+  TabsContentProps,
 } from "@openuidev/react-ui";
 import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 
@@ -108,3 +128,25 @@ export const Callout = ui<{
 // Steps
 export const Steps = ui<{ children: ReactNode }>(_Steps);
 export const StepsItem = ui<{ title: ReactNode; details: ReactNode; number?: number }>(_StepsItem);
+
+// List
+export const ListBlock = ui<ListBlockProps>(_ListBlock);
+export const ListItem = ui<ListItemProps>(_ListItem);
+
+// Image
+export const Image = ui<ImageProps>(_Image);
+
+// ImageGallery
+export const ImageGallery = ui<OpenUIGalleryProps>(_ImageGallery);
+
+// MarkDownRenderer
+export const MarkDownRenderer = ui<MarkDownRendererProps>(_MarkDownRenderer);
+
+// CodeBlock
+export const CodeBlock = ui<CodeBlockProps>(_CodeBlock);
+
+// Tabs
+export const Tabs = ui<TabsProps & { children?: ReactNode }>(_Tabs);
+export const TabsList = ui<TabsListProps & { children?: ReactNode }>(_TabsList);
+export const TabsTrigger = ui<TabsTriggerProps>(_TabsTrigger);
+export const TabsContent = ui<TabsContentProps & { children?: ReactNode }>(_TabsContent);
