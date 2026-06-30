@@ -16,10 +16,12 @@ function setup() {
 }
 
 describe("FlowletOverlay", () => {
-  it("opens from the launcher and closes on Escape", async () => {
+  it("is invisible until summoned with Cmd/Ctrl+K, then closes on Escape", async () => {
     setup();
+    // No persistent launcher — invisible until summoned.
+    expect(screen.queryByText("Ask Maple")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByText("Ask Maple"));
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     await waitFor(() => screen.getByRole("dialog"));
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
