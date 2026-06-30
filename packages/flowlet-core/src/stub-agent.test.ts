@@ -40,13 +40,19 @@ describe("stub agent (native ai SDK HITL)", () => {
     expect(start?.messageMetadata?.schemaVersion).toBe(1);
   });
 
-  it("cancels via AbortSignal without emitting a ui node", async () => {
+  it("cancels via an aborted AbortSignal: stream aborts instead of running the turn", async () => {
     const agent = createStubAgent();
     const controller = new AbortController();
     controller.abort();
-    const parts = await collect(
-      agent.run({ messages: userTurn, tools: {}, signal: controller.signal }),
-    );
-    expect(parts.map((p) => p.type)).not.toContain("data-ui");
+    const types = (
+      await collect(agent.run({ messages: userTurn, tools: {}, signal: controller.signal }))
+    ).map((p) => p.type);
+
+    // An aborted signal makes streamText short-circuit: it emits `abort` and never
+    // produces the normal turn-1 output (no streamed text, no approval request).
+    expect(types).toContain("abort");
+    expect(types).not.toContain("text-delta");
+    expect(types).not.toContain("tool-approval-request");
+    expect(types).not.toContain("data-ui");
   });
 });

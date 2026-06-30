@@ -10,7 +10,10 @@ export interface FlowletMetadata {
   schemaVersion: number;
 }
 
-/** Sandbox action, carried as a data-action client part (semantic shape; transport is F3). */
+/**
+ * Sandbox action — the semantic chokepoint shape only. How actions actually travel
+ * (the transport, e.g. a client part) is owned by F3, not defined here.
+ */
 export interface ActionRequest {
   requestId: string;
   originNodeId: string;
