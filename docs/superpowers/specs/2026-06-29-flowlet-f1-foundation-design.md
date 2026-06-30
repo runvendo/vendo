@@ -2,8 +2,21 @@
 
 - **Issue:** ENG-174 (F1 · Flowlet foundation + contracts)
 - **Date:** 2026-06-29
-- **Status:** Revised after a 5-reviewer critique (3 Claude + 2 Codex); pending final spec review
+- **Status:** Implemented on `ai` v6, all green. See §0 for build-time revisions; the code is authoritative for exact contract shapes.
 - **Blocks:** F2 (agent core + Composio), F3 (generative UI engine)
+
+## 0. Implementation status & revisions (post-build)
+
+**F1 is implemented and green** (`pnpm typecheck && build && test` all pass across `flowlet-core`, `flowlet-react`, `examples/basic`). Sections §1–§14 are the original design narrative; during the build several decisions evolved toward **deeper reuse of the `ai` SDK**. Where the text below differs from the shipped code, **the code and this section are authoritative.** Key deltas:
+
+- **Runs on `ai` v6, pinned exact.** `ai@6.0.28` + `@ai-sdk/react@3.0.30` (+ `@ai-sdk/provider@3.0.2` for the typed mock model), no `^`. Rationale: v6 ships the native human-in-the-loop approval API; this build environment's npm date-gate blocks *late* v6 patches, so we pinned the newest pre-gate v6 that carries the API. (An interim v5 build existed and is superseded.)
+- **Approvals are the `ai` SDK's NATIVE HITL — no custom approval contract.** Supersedes §5.4's `data-approval` and all of §5.5. Tools use `needsApproval`; the agent emits a `tool-approval-request` part; the client answers with `useChat`'s `addToolApprovalResponse`; `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses` auto-resubmits and the approved tool executes. `ApprovalRequest`/`ApprovalResponse`/`ClientPart`/`onClientPart`/`respondToApproval` were all deleted. The return channel is the SDK's — F2 inherits it for free.
+- **The tool interface IS the `ai` SDK tool type — `FlowletTool` was dropped.** Supersedes §5.2. `flowlet-core` re-exports `tool` / `Tool` / `ToolSet` from `ai`. MCP ingestion is via `@ai-sdk/mcp`'s `createMCPClient` (F2's wiring), not a custom adapter. Permission policy remains F2's.
+- **Schema glue removed.** `BoundarySchema` / `toJsonSchema` / `isJsonSchemaConvertible` deleted — the SDK converts Zod→JSON Schema for tools. `FlowletSchema = StandardSchemaV1` is kept only for component `propsSchema` (§5.8).
+- **Run identity via `UIMessage` metadata.** The custom `data-run` part was dropped; `runId`/`threadId`/`schemaVersion` ride the SDK message metadata (`FlowletMetadata`), delivered on the stream `start` chunk. **`data-ui` is now the only custom data part.**
+- **The stub agent runs on `streamText` + `MockLanguageModelV3`** (from `ai/test`) + a `needsApproval` demo tool — no real LLM, but it exercises the *real* SDK approval loop end-to-end.
+- **Unchanged from the design:** the `UINode` model (§5.3), the descriptors-only registry (§5.8), the action-chokepoint *types* (§5.6 — still unrouted; F3 owns the transport), and the fully-sandboxed / one-stage-per-surface / host-provisioning-spike decisions (§3.4–§3.9, all F3 concerns).
+- **Linear board applied** (§14): ENG-174/176/177 revised, ENG-177 → F3a, and F3b/F4/F5 created.
 
 ## 1. What Flowlet is
 
@@ -225,9 +238,9 @@ Tracked separately so nothing is lost while the board stays focused on F1–F3:
 - Host-component provisioning model — the subject of the F3a spike (decision #9).
 - Whether the example app should also demonstrate a `generated` node against the stub, or only `component` nodes.
 
-## 14. Proposed Linear board (pending, not yet applied)
+## 14. Linear board (applied)
 
-- Revise ENG-174 / ENG-176 / ENG-177 bodies to match this design.
-- Repurpose ENG-177 → **F3a · Sandbox runtime + bridge** (opens with the host-component provisioning spike, decision #9); create **F3b · Gen-UI renderer + declarative format**.
-- Create **F4 · Pre-wired component library** and **F5 · Product surface / shell**.
-- F6 / F7 captured here in §12 rather than ticketed now.
+- ENG-174 (F1) / ENG-176 (F2) bodies revised to match this design.
+- ENG-177 repurposed → **F3a · Sandbox runtime + bridge** (opens with the host-component provisioning spike, decision #9).
+- Created **F3b · Gen-UI renderer + declarative format** (ENG-180), **F4 · Pre-wired component library** (ENG-181), **F5 · Product surface / shell** (ENG-182).
+- F6 / F7 captured in §12 rather than ticketed.
