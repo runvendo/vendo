@@ -5,9 +5,9 @@ import { STAGE_RUNTIME_SRC } from "./runtime";
 
 // ── CSP ──────────────────────────────────────────────────────────────────────
 
-const CSP = [
+const CSP_BASE = [
   "default-src 'none'",
-  "script-src 'unsafe-inline' blob:",
+  // script-src is built per-call with a nonce (see buildSrcdoc)
   "style-src 'unsafe-inline'",
   "img-src data:",
   "font-src data:",
@@ -35,13 +35,19 @@ const CSP = [
  * unchanged (the bundle ships its own React and sets window.__React).
  */
 export function buildSrcdoc(reactRuntimeSrc?: string): string {
+  const nonce = crypto.randomUUID().replace(/-/g, "");
+  // 'strict-dynamic' lets the nonced scripts propagate trust to any scripts
+  // they dynamically load (e.g. import() from blob: URLs created at runtime).
+  // blob: is kept for older browsers that don't support strict-dynamic fully.
+  const csp = `script-src 'nonce-${nonce}' 'strict-dynamic' blob:; ${CSP_BASE}`;
+
   let reactSetupScript = "";
   if (reactRuntimeSrc) {
     // Embed the shim source as a JSON string literal safe for inline HTML.
     // Escape < so "</script>" cannot appear inside the <script> body.
     const safeJson = JSON.stringify(reactRuntimeSrc).replace(/</g, "\\u003c");
     reactSetupScript =
-      `<script>` +
+      `<script nonce="${nonce}">` +
       `(function(){` +
       `var _s=${safeJson};` +
       `var _u=URL.createObjectURL(new Blob([_s],{type:"text/javascript"}));` +
@@ -60,10 +66,10 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
   }
   return (
     `<!doctype html><html lang="en"><head>` +
-    `<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
+    `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<title>Flowlet Stage</title>` +
     `</head><body>${reactSetupScript}` +
-    `<script type="module">${STAGE_RUNTIME_SRC}<\/script>` +
+    `<script type="module" nonce="${nonce}">${STAGE_RUNTIME_SRC}<\/script>` +
     `</body></html>`
   );
 }
@@ -101,6 +107,7 @@ export function createStage(
   iframe.srcdoc = buildSrcdoc(opts?.reactSource);
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
+
   // Wrap contentWindow.postMessage to supply the required targetOrigin ("*").
   // The MessageEndpoint interface only takes one argument, but the browser's
   // Window.postMessage requires targetOrigin — without it Chrome throws.
@@ -110,10 +117,37 @@ export function createStage(
     removeEventListener: () => {},
   };
 
+  // Source-filtered listen: only forward messages from this iframe's contentWindow.
+  // NOTE: srcdoc iframes are opaque-origin so e.origin === "null" — do NOT use origin;
+  // e.source identity is the reliable guard.
+  const registeredHandlers = new Map<
+    (e: { data: unknown }) => void,
+    (e: MessageEvent) => void
+  >();
+  const listenEndpoint: MessageEndpoint = {
+    postMessage: () => {},
+    addEventListener(_type, handler) {
+      const wrapped = (e: MessageEvent) => {
+        if (e.source !== iframe.contentWindow) return;
+        if (!e.data || (e.data as Record<string, unknown>).flowlet !== true) return;
+        handler({ data: e.data });
+      };
+      registeredHandlers.set(handler, wrapped);
+      window.addEventListener("message", wrapped);
+    },
+    removeEventListener(_type, handler) {
+      const wrapped = registeredHandlers.get(handler);
+      if (wrapped) {
+        window.removeEventListener("message", wrapped);
+        registeredHandlers.delete(handler);
+      }
+    },
+  };
+
   return {
     iframe,
     endpoints: {
-      listen: window as unknown as MessageEndpoint,
+      listen: listenEndpoint,
       post: postEndpoint,
     },
   };
@@ -154,14 +188,16 @@ export interface StageController {
 
 type NodeLike = { id: string; children?: NodeLike[] } & Record<string, unknown>;
 
-let _tokenSeq = 0;
 function mintToken(): string {
-  return `tok-${++_tokenSeq}-${Math.random().toString(36).slice(2)}`;
+  return `cap-${crypto.randomUUID()}`;
 }
 
-let _actionSeq = 0;
 function mintActionId(): string {
-  return `action-${++_actionSeq}-${Math.random().toString(36).slice(2)}`;
+  return `act-${crypto.randomUUID()}`;
+}
+
+function mintRequestId(): string {
+  return `req-${crypto.randomUUID()}`;
 }
 
 /**
@@ -188,6 +224,7 @@ export function connectStage(
   { onAction }: { onAction: OnAction },
 ): StageController {
   const capabilityMap = new Map<string, string>();
+  const pendingActionIds = new Set<string>();
 
   // ready: resolves when the runtime posts { flowlet:true, type:"ready" }.
   // This is NOT an RPC call — it's a one-way notification, so we handle it
@@ -219,7 +256,7 @@ export function connectStage(
 
       // Map to F1 ActionRequest
       const req: ActionRequest = {
-        requestId: mintToken(),
+        requestId: mintRequestId(),
         originNodeId: p.originNodeId,
         action: p.name,
         payload: p.payload,
@@ -231,6 +268,7 @@ export function connectStage(
       // Approval-pending: defer resolution; runtime waits for ui/action-result
       if ("pending" in outcome && outcome.pending === true) {
         const actionId = mintActionId();
+        pendingActionIds.add(actionId);
         return { status: "pending", actionId };
       }
 
@@ -249,10 +287,19 @@ export function connectStage(
     },
 
     update(update) {
-      return rpc.call("ui/update", update);
+      let payload = update;
+      if (update.node) {
+        const augmentedNode = attachCapabilities(update.node as unknown as NodeLike, capabilityMap);
+        payload = { ...update, node: augmentedNode as unknown as UINode };
+      }
+      return rpc.call("ui/update", payload);
     },
 
     resolveAction(actionId, result) {
+      if (!pendingActionIds.has(actionId)) {
+        throw new Error(`resolveAction: unknown actionId "${actionId}"`);
+      }
+      pendingActionIds.delete(actionId);
       // Post the notification directly (not via RPC — no response expected).
       // The runtime's message listener catches method === "ui/action-result".
       endpoints.post.postMessage({

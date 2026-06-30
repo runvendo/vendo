@@ -130,10 +130,11 @@ export const STAGE_RUNTIME_SRC = String.raw`
 
   // ── Approval-pending dispatch ─────────────────────────────────────────────────
   window.__flowletDispatch = function(descriptor, originNodeId) {
-    var id = "act-" + Math.random().toString(36).slice(2);
+    var id = "act-" + crypto.randomUUID();
     return new Promise(function(resolve) {
       // One-time listener for the direct reply from the host.
       function handler(e) {
+        if (e.source !== parent) return;
         if (e.data && e.data.flowlet && e.data.id === id) {
           window.removeEventListener("message", handler);
           var result = e.data.result;
@@ -165,6 +166,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   window.addEventListener("message", function(e) {
     var m = e.data;
     if (!m || !m.flowlet) return;
+    if (e.source !== parent) return;
 
     // ── ui/initialize ──────────────────────────────────────────────────────────
     if (m.method === "ui/initialize") {
@@ -197,6 +199,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
 
       // Apply node patch (find-and-replace by id, including root).
       if (p.node && p.nodeId) {
+        buildCapabilityMap(p.node, currentCapabilityMap);
         currentParams = Object.assign({}, currentParams, {
           tree: replaceNode(currentParams.tree, p.nodeId, p.node)
         });
@@ -218,21 +221,6 @@ export const STAGE_RUNTIME_SRC = String.raw`
       return;
     }
   });
-
-  // ── Egress probe ──────────────────────────────────────────────────────────────
-  async function probeEgress() {
-    var fetchResult = "allowed";
-    try { await fetch("https://example.com/ping"); } catch(e) { fetchResult = "blocked"; }
-    var imgResult = await new Promise(function(res) {
-      var img = new Image();
-      img.onload = function() { res("allowed"); };
-      img.onerror = function() { res("blocked"); };
-      img.src = "https://example.com/x.png";
-      setTimeout(function() { res("blocked"); }, 1000);
-    });
-    parent.postMessage({ flowlet: true, type: "egress", fetchResult: fetchResult, imgResult: imgResult }, "*");
-  }
-  probeEgress();
 
   // ── Auto-size via ResizeObserver ───────────────────────────────────────────────
   var lastH = 0;

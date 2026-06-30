@@ -41,4 +41,24 @@ describe("FlowletStage", () => {
     rerender(<FlowletStage node={node2} bundleSource="/*bundle*/" />);
     await waitFor(() => expect(update).toHaveBeenCalled());
   });
+
+  it("calls controller.update when theme prop changes", async () => {
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    update.mockClear();
+    initialize.mockClear();
+    const { rerender } = render(<FlowletStage node={node} theme={{ "--x": "red" }} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={node} theme={{ "--x": "blue" }} />);
+    await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ theme: { "--x": "blue" } })));
+  });
+
+  it("calls controller.update when state prop changes", async () => {
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    update.mockClear();
+    initialize.mockClear();
+    const { rerender } = render(<FlowletStage node={node} state={{ count: 0 }} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={node} state={{ count: 1 }} />);
+    await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ state: { count: 1 } })));
+  });
 });

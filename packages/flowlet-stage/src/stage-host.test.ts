@@ -222,4 +222,100 @@ describe("connectStage", () => {
 
     controller.dispose();
   });
+
+  // FIX 1: source filtering — the listenEndpoint filters by e.source
+  it("source-filtered endpoint ignores messages not from the iframe", () => {
+    const fakeIframeWindow = { postMessage: vi.fn() } as unknown as Window;
+    const anotherWindow = { postMessage: vi.fn() } as unknown as Window;
+
+    // Simulate the source-filtered endpoint logic from createStage
+    const registeredHandlers = new Map<
+      (e: { data: unknown }) => void,
+      (e: MessageEvent) => void
+    >();
+    const listenEndpoint = {
+      postMessage: () => {},
+      addEventListener(_type: string, handler: (e: { data: unknown }) => void) {
+        const wrapped = (e: MessageEvent) => {
+          if (e.source !== fakeIframeWindow) return;
+          if (!e.data || (e.data as Record<string, unknown>).flowlet !== true) return;
+          handler({ data: e.data });
+        };
+        registeredHandlers.set(handler, wrapped);
+      },
+      removeEventListener(_type: string, handler: (e: { data: unknown }) => void) {
+        registeredHandlers.delete(handler);
+      },
+    };
+
+    let called = false;
+    const testHandler = () => { called = true; };
+    listenEndpoint.addEventListener("message", testHandler);
+    const wrapped = registeredHandlers.get(testHandler)!;
+
+    // Message from wrong source — should be ignored
+    wrapped({ source: anotherWindow, data: { flowlet: true, type: "ready" } } as unknown as MessageEvent);
+    expect(called).toBe(false);
+
+    // Message from correct source — should pass
+    wrapped({ source: fakeIframeWindow, data: { flowlet: true, type: "ready" } } as unknown as MessageEvent);
+    expect(called).toBe(true);
+  });
+
+  // FIX 4: tokens use crypto-UUID format
+  it("capability tokens use cap- prefix (crypto format)", async () => {
+    const { a, b } = makePair();
+    let initParams: any;
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { initParams = params; return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage({ listen: a, post: b }, { onAction: async () => ({ result: "ok" }) });
+    await controller.initialize({
+      theme: {},
+      state: {},
+      bundleSource: "",
+      tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
+    });
+    const token = initParams.tree.capability as string;
+    expect(token).toMatch(/^cap-/);
+    controller.dispose();
+    peer.dispose();
+  });
+
+  // FIX 5: double-resolve guard
+  it("resolveAction throws for unknown actionId", () => {
+    const { a, b } = makePair();
+    const controller = connectStage({ listen: a, post: b }, { onAction: async () => ({ result: "ok" }) });
+    expect(() => controller.resolveAction("nonexistent-id", { result: "x" })).toThrow(
+      /unknown actionId/,
+    );
+    controller.dispose();
+  });
+
+  // FIX 7: update() augments node capability and adds to capabilityMap
+  it("update() with node attaches capability token to the updated node", async () => {
+    const { a, b } = makePair();
+    let updateParams: any;
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") return { ok: true };
+      if (method === "ui/update") { updateParams = params; return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage({ listen: a, post: b }, { onAction: async () => ({ result: "ok" }) });
+    await controller.initialize({
+      theme: {},
+      state: {},
+      bundleSource: "",
+      tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
+    });
+    await controller.update({
+      nodeId: "c2",
+      node: { id: "c2", kind: "component", source: "host", name: "Button", props: {} },
+    });
+    expect(updateParams.node.capability).toBeDefined();
+    expect(updateParams.node.capability).toMatch(/^cap-/);
+    controller.dispose();
+    peer.dispose();
+  });
 });

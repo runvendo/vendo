@@ -22,6 +22,9 @@ export function FlowletStage({
   const slotRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<StageController | null>(null);
   const initedRef = useRef(false);
+  // Keep a stable ref to onAction so the mount effect doesn't go stale.
+  const onActionRef = useRef<OnAction | undefined>(onAction);
+  useEffect(() => { onActionRef.current = onAction; }, [onAction]);
 
   // Mount the stage once into the slot.
   useEffect(() => {
@@ -31,7 +34,7 @@ export function FlowletStage({
       reactSource ? { reactSource } : undefined,
     );
     ctrlRef.current = connectStage(endpoints, {
-      onAction: onAction ?? (async () => ({ result: null as unknown })),
+      onAction: (req) => (onActionRef.current ?? (async () => ({ result: null as unknown })))(req),
     });
     return () => {
       ctrlRef.current?.dispose();
@@ -55,10 +58,22 @@ export function FlowletStage({
         c.update({ nodeId: node.id, node });
       }
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [node]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Propagate theme changes after init.
+  useEffect(() => {
+    const c = ctrlRef.current;
+    if (!c || !initedRef.current) return;
+    c.update({ theme });
+  }, [theme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Propagate state changes after init.
+  useEffect(() => {
+    const c = ctrlRef.current;
+    if (!c || !initedRef.current) return;
+    c.update({ state });
+  }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={slotRef} data-flowlet-stage />;
 }

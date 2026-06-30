@@ -39,9 +39,11 @@ export function makeRpc(
   };
   listen.addEventListener("message", handler);
 
+  const nonce = Math.random().toString(36).slice(2, 8);
+
   return {
     call(method, params, opts) {
-      const id = `rpc-${seq++}`;
+      const id = `rpc-${nonce}-${seq++}`;
       const timeoutMs = opts?.timeoutMs ?? defaultTimeout;
       return new Promise<unknown>((resolve, reject) => {
         const signal = opts?.signal;

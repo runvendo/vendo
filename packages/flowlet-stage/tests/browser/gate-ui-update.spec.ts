@@ -27,3 +27,35 @@ test("gate ui/update: controller.update() replaces a node by id and new content 
   await expect(frame.getByRole("heading", { name: "After" })).toBeVisible();
   await expect(frame.getByRole("heading", { name: "Before" })).not.toBeVisible();
 });
+
+test("gate ui/update: action on updated node round-trips through chokepoint", async ({ page }) => {
+  await page.goto("/fixtures/host.html?case=action");
+  const frame = page.frameLocator("#flowlet-stage");
+
+  // Wait for initial render and verify action works before update.
+  await frame.getByTestId("card-btn").click();
+  await expect(page.locator("#action-log")).toHaveText("origin=c1 action=confirm result=ok");
+
+  // Drive a ui/update to replace the c1 node — new capability should be minted.
+  await page.evaluate(async () => {
+    await (window as any).__controller.update({
+      nodeId: "c1",
+      node: {
+        id: "c1",
+        kind: "component",
+        source: "host",
+        name: "Card",
+        props: {
+          title: "Updated",
+          body: "replaced",
+          action: { action: "confirm", label: "Confirm", payload: { amount: 99 } },
+        },
+      },
+    });
+  });
+
+  // Clear log and click again — must still work with fresh capability.
+  await page.evaluate(() => { document.getElementById("action-log")!.textContent = ""; });
+  await frame.getByTestId("card-btn").click();
+  await expect(page.locator("#action-log")).toHaveText("origin=c1 action=confirm result=ok");
+});
