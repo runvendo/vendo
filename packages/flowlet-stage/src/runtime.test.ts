@@ -31,6 +31,13 @@ describe("stage runtime source", () => {
     // makeEB must NOT be called directly inside render()/rerender() anymore.
     expect(STAGE_RUNTIME_SRC).not.toContain("var EB = makeEB(");
   });
+  it("resets the cached error boundary when its child changes so ui-delta recovers", () => {
+    // Without a reset, a node that throws once stays "render error" forever even
+    // after a valid ui/update. componentDidUpdate clears err when children change.
+    expect(STAGE_RUNTIME_SRC).toContain("componentDidUpdate");
+    expect(STAGE_RUNTIME_SRC).toContain("this.setState({ err: false })");
+    expect(STAGE_RUNTIME_SRC).toContain("prevProps.children !== this.props.children");
+  });
 });
 
 describe("$state prop binding (bindProps)", () => {

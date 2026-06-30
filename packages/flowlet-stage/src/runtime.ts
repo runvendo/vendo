@@ -61,6 +61,15 @@ export const STAGE_RUNTIME_SRC = String.raw`
     return class EB extends R.Component {
       constructor(p) { super(p); this.state = { err: false }; }
       static getDerivedStateFromError() { return { err: true }; }
+      componentDidUpdate(prevProps) {
+        // A node keyed to this boundary that threw once stays in the error state
+        // forever otherwise. When the child element changes (e.g. a ui/update or
+        // ui-delta supplies new, valid props) clear the error so the next render
+        // retries the new child.
+        if (prevProps.children !== this.props.children && this.state.err) {
+          this.setState({ err: false });
+        }
+      }
       render() {
         return this.state.err
           ? R.createElement("div", { "data-error-boundary": true }, "render error")
