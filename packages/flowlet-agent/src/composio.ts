@@ -96,10 +96,18 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
         Object.assign(merged, byTool);
       }
       if (allowlist.toolkits && allowlist.toolkits.length > 0) {
-        const byToolkit = await client.tools.get(userId, {
-          toolkits: allowlist.toolkits,
-        });
-        Object.assign(merged, byToolkit);
+        // Fetch per-toolkit and tolerate failures: a toolkit the user hasn't
+        // connected (or a bad slug) must NOT wipe out the toolkits they have.
+        const perToolkit = await Promise.all(
+          allowlist.toolkits.map(async (toolkit) => {
+            try {
+              return await client.tools.get(userId, { toolkits: [toolkit] });
+            } catch {
+              return {} as ToolSet;
+            }
+          }),
+        );
+        for (const set of perToolkit) Object.assign(merged, set);
       }
       return merged;
     },

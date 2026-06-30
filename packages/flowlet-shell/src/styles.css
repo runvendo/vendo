@@ -151,9 +151,15 @@
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
-  box-shadow: var(--flowlet-shadow); overflow: hidden; padding: 6px; max-width: 520px; }
-.fl-picker-search { width: 100%; box-sizing: border-box; border: 0; outline: 0; background: transparent;
-  font-family: var(--flowlet-font); font-size: 13px; color: var(--flowlet-fg); padding: 9px 11px 11px; }
+  box-shadow: var(--flowlet-shadow); overflow: hidden; padding: 10px; max-width: 540px; align-self: flex-start; width: 100%; }
+.fl-picker-head { display: flex; align-items: center; padding: 2px 4px 8px; }
+.fl-picker-title { font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; }
+.fl-picker-close { margin-left: auto; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+  border: 0; background: transparent; color: var(--flowlet-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
+.fl-picker-close:hover { background: var(--flowlet-accent-soft); color: var(--flowlet-fg); }
+.fl-picker-search { width: 100%; box-sizing: border-box; border: 1px solid var(--flowlet-border); border-radius: 10px;
+  outline: 0; background: var(--flowlet-surface); font-family: var(--flowlet-font); font-size: 13px;
+  color: var(--flowlet-fg); padding: 9px 11px; margin-bottom: 4px; }
 .fl-picker-search::placeholder { color: var(--flowlet-fg-muted); }
 .fl-picker-group { font: 600 10px/1 var(--flowlet-font-mono); letter-spacing: .12em; text-transform: uppercase;
   color: var(--flowlet-fg-muted); margin: 8px 8px 7px; }

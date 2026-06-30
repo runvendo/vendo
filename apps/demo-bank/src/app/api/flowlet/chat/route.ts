@@ -1,21 +1,35 @@
 /**
  * POST /api/flowlet/chat — streams the Flowlet agent over HTTP.
  *
- * The client talks to this via an ai-SDK HTTP transport. The server-only agent
- * (Composio Node internals) is built lazily once and reused — the engine reuses
- * its Composio client across runs, so a singleton is correct.
+ * The agent's available tools MUST track the demo connection store. We can't use
+ * a single singleton: each agent instance has its OWN internal Composio ingestion
+ * cache (engine.ts memoizes by userId for the agent's lifetime), so an agent
+ * built before a toolkit was connected never picks the new toolkit up.
+ *
+ * Instead we cache agents in a Map keyed by the sorted connected-toolkit list.
+ * When the user connects e.g. gmail, the key changes, so a FRESH agent is built
+ * that ingests gmail — and that's what makes a just-connected tool actually work.
  */
 import { createDemoAgent } from "@/flowlet/agent";
 import { handleChat } from "@/flowlet/chat-handler";
 import { demoTools } from "@/flowlet/tools";
+import { connectedToolkits } from "@/flowlet/connections-store";
 import type { FlowletAgent } from "@flowlet/core";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-let agent: FlowletAgent | undefined;
+const agents = new Map<string, FlowletAgent>();
+
 function getAgent(): FlowletAgent {
-  return (agent ??= createDemoAgent({ extraTools: demoTools() }));
+  const toolkits = connectedToolkits();
+  const key = toolkits.slice().sort().join(",");
+  let agent = agents.get(key);
+  if (!agent) {
+    agent = createDemoAgent({ extraTools: demoTools(), toolkits });
+    agents.set(key, agent);
+  }
+  return agent;
 }
 
 export async function POST(req: Request): Promise<Response> {

@@ -96,6 +96,17 @@ function buildInstructions(): string {
     "  rule is active, in plain language.",
     "- More broadly, for non-financial or open-ended requests, compose the components into",
     "  the most useful bespoke interface you can for what was asked.",
+    "",
+    "CONNECTING TOOLS — important: external tools (Gmail, Slack, Notion, etc.) are only",
+    "available once the user has CONNECTED them. If a request needs a tool that is not yet",
+    "connected (you'll notice the tool simply isn't in your toolset), do NOT refuse or say",
+    "you can't. Instead render a Connect card so the user can enable it on screen: call",
+    "render_ui with source:'prewired', name:'Connect', and props as a JSON OBJECT",
+    "{ toolkit: \"<id>\", reason: \"<short why>\" } — e.g. { toolkit: \"gmail\", reason:",
+    "\"read the receipt for that charge\" }. Use the toolkit id (gmail, slack, notion,",
+    "github, googlecalendar, linear, googledrive, discord, googlesheets, stripe, jira,",
+    "asana, hubspot, airtable). You may briefly say you're requesting access. Once the user",
+    "connects it, they can re-ask and you'll have the tool.",
   ].join("\n");
 }
 
@@ -106,6 +117,12 @@ export interface CreateDemoAgentOptions {
   composioClient?: ComposioClient;
   /** Per-beat in-process tools (transaction reads, rule-setting). */
   extraTools?: ToolSet;
+  /**
+   * Composio toolkits to ingest. Driven by the demo connection store: the caller
+   * passes the currently-connected toolkit ids. Defaults to [] (no external
+   * tools) so an agent only gains a toolkit once the user connects it.
+   */
+  toolkits?: string[];
 }
 
 export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent {
@@ -115,9 +132,11 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     policy: allowAllPolicy,
     instructions: buildInstructions(),
     composio: {
-      config: {
-        toolkits: ["gmail", "slack", "notion", "github", "googlecalendar", "linear", "googledrive"],
-      },
+      // Only ingest toolkits the user has actually CONNECTED (the caller passes
+      // the demo connection store's connected set). Requesting unconnected
+      // toolkits makes Composio's fetch fail and the agent ends up with NO tools
+      // at all, so an empty list is the correct fail-closed default.
+      config: { toolkits: opts.toolkits ?? [] },
       client: opts.composioClient,
     },
     tools: opts.extraTools,

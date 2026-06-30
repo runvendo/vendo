@@ -19,6 +19,7 @@ import type { UINode } from "@flowlet/core";
 import { stripEmojiDeep } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
 import { prewiredImpls, prewiredComponents } from "@flowlet/components";
+import { DemoConnectCard } from "./DemoConnectCard";
 
 const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
 
@@ -54,6 +55,18 @@ function coerceProps(props: unknown): Record<string, unknown> {
 
 export function renderNode(node: UINode): ReactNode {
   if (node.kind === "component") {
+    // The agent renders a Connect card (name "Connect") when it needs a toolkit
+    // the user hasn't connected. It's a demo-host component, not a prewired impl.
+    if (node.name === "Connect") {
+      const props = coerceProps(node.props);
+      const toolkit = typeof props.toolkit === "string" ? props.toolkit : "";
+      const reason = typeof props.reason === "string" ? props.reason : undefined;
+      return (
+        <Reveal>
+          <DemoConnectCard toolkit={toolkit} reason={reason} />
+        </Reveal>
+      );
+    }
     const Impl = impls[node.name];
     if (!Impl) return <div data-testid="unimpl-node">{node.name} (no impl)</div>;
     return (

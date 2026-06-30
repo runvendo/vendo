@@ -6,9 +6,11 @@ export interface FlowletOverlayProps extends FlowletThreadProps {
   launcherLabel?: string;
   /** Open with this keyboard shortcut key (with meta/ctrl). Default "k". */
   shortcutKey?: string;
+  /** Hide the launcher button — the overlay is opened purely via the shortcut. */
+  hideLauncher?: boolean;
 }
 
-export function FlowletOverlay({ launcherLabel = "Ask", shortcutKey = "k", ...thread }: FlowletOverlayProps) {
+export function FlowletOverlay({ launcherLabel = "Ask", shortcutKey = "k", hideLauncher = false, ...thread }: FlowletOverlayProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -30,6 +32,7 @@ export function FlowletOverlay({ launcherLabel = "Ask", shortcutKey = "k", ...th
   };
 
   if (!open) {
+    if (hideLauncher) return null;
     return (
       <button type="button" className="fl-launcher" onClick={() => setOpen(true)}>{launcherLabel}</button>
     );

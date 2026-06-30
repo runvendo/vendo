@@ -1,44 +1,44 @@
 /**
- * GET /api/flowlet/integrations — live Composio connection status for the demo
- * user, so the dock's Integrations rail shows real "Connected" state for Gmail
- * and Slack rather than a hardcoded seed.
+ * /api/flowlet/integrations — the demo connection store is the source of truth.
+ *
+ *  - GET  returns the catalog with live `connected` flags.
+ *  - POST { id, action: "connect" | "disconnect" } mutates the store (which also
+ *    drives which toolkits the chat agent ingests) and returns the updated list.
+ *
+ * No live Composio `active()` check anymore: in the demo, "connecting" flips the
+ * store flag on screen rather than running a real OAuth round-trip.
  */
-import { ok } from "@/server/http"
+import {
+  listIntegrations,
+  connect,
+  disconnect,
+} from "@/flowlet/connections-store"
+import { ok, badRequest } from "@/server/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const USER_ID = "flowlet-demo"
-const API = "https://backend.composio.dev/api/v3"
-
 export async function GET() {
-  const apiKey = process.env.COMPOSIO_API_KEY
-  // The toolkits Flowlet can use. gmail + slack are the demo's live integrations;
-  // the rest are surfaced as available-to-connect so the rail shows real breadth.
-  const catalog = [
-    { id: "gmail", name: "Gmail" },
-    { id: "slack", name: "Slack" },
-    { id: "notion", name: "Notion" },
-    { id: "github", name: "GitHub" },
-    { id: "googlecalendar", name: "Google Calendar" },
-    { id: "linear", name: "Linear" },
-    { id: "googledrive", name: "Google Drive" },
-  ]
-  const base = catalog.map((c) => ({ ...c, connected: false }))
-  if (!apiKey) return ok({ integrations: base })
+  return ok({ integrations: listIntegrations() })
+}
 
+export async function POST(req: Request) {
+  let body: { id?: unknown; action?: unknown }
   try {
-    const res = await fetch(`${API}/connected_accounts?user_ids=${USER_ID}`, {
-      headers: { "x-api-key": apiKey },
-    })
-    const json = (await res.json()) as { items?: { toolkit?: { slug?: string }; status?: string }[] }
-    const items = json.items ?? []
-    const active = (slug: string) =>
-      items.some((c) => (c.toolkit?.slug ?? "").toLowerCase() === slug && c.status === "ACTIVE")
-    return ok({
-      integrations: catalog.map((c) => ({ ...c, connected: active(c.id) })),
-    })
+    body = (await req.json()) as { id?: unknown; action?: unknown }
   } catch {
-    return ok({ integrations: base })
+    return badRequest("invalid JSON body")
   }
+
+  const id = typeof body.id === "string" ? body.id : ""
+  const action = body.action
+  if (!id) return badRequest("missing integration id")
+  if (action !== "connect" && action !== "disconnect") {
+    return badRequest("action must be 'connect' or 'disconnect'")
+  }
+
+  if (action === "connect") connect(id)
+  else disconnect(id)
+
+  return ok({ integrations: listIntegrations() })
 }

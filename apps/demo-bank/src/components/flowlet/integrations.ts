@@ -1,25 +1,55 @@
 "use client";
 
 /**
- * Integrations source backed by live Composio status (via /api/flowlet/integrations).
- * Seeds optimistically as connected so the rail shows correctly on first paint,
- * then reconciles with the real status. connect/disconnect are no-ops in the demo
- * (the OAuth flow is a one-time setup, not an on-stage action).
+ * Integrations source backed by the demo connection store (via
+ * /api/flowlet/integrations). The store is the single source of truth, so
+ * connect/disconnect are REAL on-stage actions: they POST to the store and the
+ * agent gains/loses that toolkit on its next turn.
+ *
+ * Seeded optimistically as ALL DISCONNECTED so the rail paints correctly before
+ * the first list() reconciles with the server.
  */
 import type { FlowletIntegrations, Integration } from "@flowlet/shell";
 
+const CATALOG: { id: string; name: string }[] = [
+  { id: "gmail", name: "Gmail" },
+  { id: "slack", name: "Slack" },
+  { id: "notion", name: "Notion" },
+  { id: "github", name: "GitHub" },
+  { id: "googlecalendar", name: "Google Calendar" },
+  { id: "linear", name: "Linear" },
+  { id: "googledrive", name: "Google Drive" },
+  { id: "discord", name: "Discord" },
+  { id: "googlesheets", name: "Google Sheets" },
+  { id: "stripe", name: "Stripe" },
+  { id: "jira", name: "Jira" },
+  { id: "asana", name: "Asana" },
+  { id: "hubspot", name: "HubSpot" },
+  { id: "airtable", name: "Airtable" },
+];
+
 export function createComposioIntegrations(): FlowletIntegrations {
-  let cache: Integration[] = [
-    { id: "gmail", name: "Gmail", connected: true },
-    { id: "slack", name: "Slack", connected: true },
-    { id: "notion", name: "Notion", connected: false },
-    { id: "github", name: "GitHub", connected: false },
-    { id: "googlecalendar", name: "Google Calendar", connected: false },
-    { id: "linear", name: "Linear", connected: false },
-    { id: "googledrive", name: "Google Drive", connected: false },
-  ];
+  let cache: Integration[] = CATALOG.map((c) => ({ ...c, connected: false }));
   const find = (id: string): Integration =>
     cache.find((i) => i.id === id) ?? { id, name: id, connected: false };
+
+  async function mutate(id: string, action: "connect" | "disconnect"): Promise<Integration> {
+    try {
+      const res = await fetch("/api/flowlet/integrations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, action }),
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { data?: { integrations?: Integration[] } };
+        if (json.data?.integrations) cache = json.data.integrations;
+      }
+    } catch {
+      /* keep last-known cache; fall through to optimistic value below */
+    }
+    return find(id);
+  }
 
   return {
     async list() {
@@ -34,11 +64,11 @@ export function createComposioIntegrations(): FlowletIntegrations {
       }
       return cache;
     },
-    async connect(id) {
-      return find(id);
+    connect(id) {
+      return mutate(id, "connect");
     },
-    async disconnect(id) {
-      return find(id);
+    disconnect(id) {
+      return mutate(id, "disconnect");
     },
   };
 }

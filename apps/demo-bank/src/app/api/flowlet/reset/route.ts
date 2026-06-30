@@ -9,6 +9,7 @@
 import { __reseed } from "@/server/store"
 import { clearRules } from "@/flowlet/rules-store"
 import { resetPoller } from "@/flowlet/poller"
+import { resetConnections } from "@/flowlet/connections-store"
 import { ok } from "@/server/http"
 
 export const runtime = "nodejs"
@@ -18,5 +19,6 @@ export async function POST() {
   __reseed(new Date())
   clearRules()
   resetPoller()
+  resetConnections()
   return ok({ reset: true })
 }

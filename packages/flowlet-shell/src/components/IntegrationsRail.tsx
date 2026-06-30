@@ -11,7 +11,7 @@ export function IntegrationsRail({ integrations, onConnectClick }: IntegrationsR
   return (
     <div className="fl-rail" aria-label="Connected tools">
       {connected.map((i) => (
-        <span key={i.id} className="fl-rail-chip">
+        <span key={i.id} className="fl-rail-chip is-connected">
           <BrandIcon id={i.id} size={14} className="fl-rail-icon" />
           {i.name}
         </span>
