@@ -55,9 +55,12 @@ export default function TransactionDetailPage() {
 
   const [category, setCategory] = React.useState<Category | null>(null)
 
+  // Sync the editable category only when the transaction loads/changes,
+  // not on every SWR revalidation (which would clobber a local edit).
   React.useEffect(() => {
     if (t) setCategory(t.category)
-  }, [t])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t?.id])
 
   if (isLoading || (!t && !error)) {
     return (

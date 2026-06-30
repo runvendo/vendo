@@ -103,6 +103,7 @@ export default function CardsPage() {
           <CardVisual card={visualCard} revealed={revealed} />
         </div>
         <CardControls
+          key={selected.id}
           card={selected}
           frozen={frozen}
           onFrozenChange={setFrozen}
