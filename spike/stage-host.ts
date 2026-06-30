@@ -1,4 +1,6 @@
 import { STAGE_RUNTIME_SRC } from "./stage-runtime";
+import { makeRpc } from "./bridge";
+import type { InitPayload } from "./types";
 
 // CSP that JAILS egress: no network connections, scripts only inline+blob, images only data:.
 const CSP = [
@@ -22,4 +24,9 @@ export function createStage(slot: HTMLElement): HTMLIFrameElement {
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
   return iframe;
+}
+
+export function initStage(iframe: HTMLIFrameElement, payload: InitPayload) {
+  const rpc = makeRpc(iframe.contentWindow!);
+  return rpc.call("ui/initialize", payload);
 }
