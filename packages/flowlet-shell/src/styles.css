@@ -229,11 +229,59 @@
 .fl-tab { display: flex; align-items: center; gap: 7px; padding: 9px 13px; font-size: 12.5px; font-weight: 500;
   color: var(--flowlet-fg-muted); border: 1px solid transparent; border-bottom: none; border-radius: 10px 10px 0 0; cursor: pointer; }
 .fl-tab[aria-selected="true"] { color: var(--flowlet-fg); background: var(--flowlet-surface); border-color: var(--flowlet-border); }
-.fl-slot-empty { border: 1.5px dashed var(--flowlet-border-strong); border-radius: var(--flowlet-radius);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
-  padding: 24px; cursor: pointer; background: var(--flowlet-glass-strong); color: var(--flowlet-fg-muted);
-  width: 100%; transition: border-color .12s, color .12s; }
-.fl-slot-empty:hover { border-color: var(--flowlet-accent); color: var(--flowlet-fg); }
+/* Tall enough that the right column's cards align row-for-row with the left
+ * column (matches the Total Balance card height). */
+.fl-slot { position: relative; width: 100%; min-height: var(--fl-slot-min-h, 370px);
+  display: flex; flex-direction: column; }
+
+/* ---- ghost (empty) state: faint skeleton behind a CTA ---- */
+.fl-slot-ghost { position: relative; width: 100%; flex: 1; display: flex; flex-direction: column;
+  cursor: pointer; overflow: hidden;
+  border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius); padding: 14px;
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  color: var(--flowlet-fg-muted); text-align: left; transition: border-color .14s, box-shadow .14s; }
+.fl-slot-ghost:hover { border-color: var(--flowlet-border-strong); box-shadow: var(--flowlet-shadow); }
+.fl-slot-skel { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 118px;
+  opacity: .5; filter: blur(.3px); -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
+  mask-image: linear-gradient(180deg, #000 30%, transparent); }
+.fl-skel-line { height: 9px; border-radius: 5px;
+  background: color-mix(in srgb, var(--flowlet-fg) 9%, transparent); }
+.fl-skel-bars { display: flex; align-items: flex-end; gap: 6px; height: 52px; margin-top: auto; }
+.fl-skel-bars span { flex: 1; border-radius: 3px;
+  background: color-mix(in srgb, var(--flowlet-fg) 12%, transparent); }
+.fl-slot-cta { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--flowlet-fg);
+  background: color-mix(in srgb, var(--flowlet-bg) 30%, transparent); transition: background .14s; }
+.fl-slot-ghost:hover .fl-slot-cta { background: color-mix(in srgb, var(--flowlet-bg) 16%, transparent); }
+.fl-slot-cta svg { margin-bottom: 2px; opacity: .85; }
+.fl-slot-cta small { font-weight: 400; font-size: 11.5px; color: var(--flowlet-fg-muted); }
+
+/* ---- filled state + overflow menu ---- */
+.fl-slot-filled { position: relative; flex: 1; }
+.fl-slot-filled > .fl-uinode { height: 100%; }
+.fl-slot-menu-wrap { position: absolute; top: 8px; right: 8px; }
+.fl-slot-menu-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--flowlet-fg-muted);
+  cursor: pointer; opacity: 0; transition: opacity .14s, background .14s, color .14s; }
+.fl-slot-filled:hover .fl-slot-menu-btn, .fl-slot-menu-btn[aria-expanded="true"] { opacity: 1; }
+.fl-slot-menu-btn:hover, .fl-slot-menu-btn[aria-expanded="true"] {
+  background: var(--flowlet-glass-strong); border-color: var(--flowlet-border); color: var(--flowlet-fg); }
+.fl-slot-menu { position: absolute; top: 34px; right: 0; z-index: 5; min-width: 132px; padding: 5px;
+  display: flex; flex-direction: column; border: 1px solid var(--flowlet-border-strong); border-radius: 12px;
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); }
+.fl-slot-menu button { text-align: left; font-size: 12.5px; padding: 7px 9px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--flowlet-fg); cursor: pointer; }
+.fl-slot-menu button:hover { background: var(--flowlet-accent-soft); }
+.fl-slot-menu button.is-danger { color: #d9534f; }
+
+/* ---- pin-to-card footer (slot overlay only) ---- */
+.fl-pinbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px 0; }
+.fl-pin-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+  padding: 8px 13px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+  background: var(--flowlet-accent); color: var(--flowlet-accent-fg); transition: opacity .14s; }
+.fl-pin-btn:disabled { cursor: default; opacity: .4; }
+.fl-pinbar-hint { font-size: 11.5px; color: var(--flowlet-fg-muted); }
 
 /* ---------- error ---------- */
 .fl-error { margin: 8px 14px; padding: 10px 13px; border-radius: 12px;
