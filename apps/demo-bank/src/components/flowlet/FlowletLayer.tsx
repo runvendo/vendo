@@ -10,22 +10,28 @@ import { useEffect, useState } from "react";
 import { FlowletRoot } from "./FlowletRoot";
 import { FlowletDock } from "./FlowletDock";
 import { FlowletPoller, type FireEvent } from "./FlowletPoller";
+import { resetDemo } from "./reset";
 
 export function FlowletLayer() {
   const [fire, setFire] = useState<FireEvent | null>(null);
 
-  // Backstage fallback: Cmd/Ctrl+Shift+Backslash injects a late-night order via
-  // the same write the order page uses, so the poller trips identically if the
-  // order page misbehaves on stage.
+  // Stage shortcuts:
+  //  - Cmd/Ctrl+Shift+Backslash: backstage inject of a late-night order (same
+  //    write the order page uses) so the poller trips identically as a fallback.
+  //  - Cmd/Ctrl+Shift+Period: reset the demo to a clean state.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "Backslash") {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (e.code === "Backslash") {
         e.preventDefault();
         void fetch("/api/orders", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: "{}",
         });
+      } else if (e.code === "Period") {
+        e.preventDefault();
+        void resetDemo();
       }
     };
     document.addEventListener("keydown", onKey);

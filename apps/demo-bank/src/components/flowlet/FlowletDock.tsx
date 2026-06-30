@@ -8,6 +8,7 @@
  */
 import { FlowletThread } from "@flowlet/shell";
 import type { FireEvent } from "./FlowletPoller";
+import { resetDemo } from "./reset";
 
 const SUGGESTIONS = [
   "What did I spend money on when I should've been asleep?",
@@ -79,6 +80,26 @@ export function FlowletDock({
     >
       {fire ? <FireBanner fire={fire} onDismiss={onDismissFire} /> : null}
       <FlowletThread greeting="Ask Maple anything" suggestions={SUGGESTIONS} />
+      <button
+        onClick={() => void resetDemo()}
+        title="Reset demo to a clean state"
+        aria-label="Reset demo"
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 10,
+          zIndex: 2,
+          background: "transparent",
+          border: 0,
+          cursor: "pointer",
+          fontSize: 13,
+          lineHeight: 1,
+          color: "#b9bac0",
+          padding: 4,
+        }}
+      >
+        ↺
+      </button>
     </div>
   );
 }
