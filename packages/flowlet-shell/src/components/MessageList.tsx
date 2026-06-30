@@ -21,11 +21,20 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
   // "jump to latest" affordance can show/hide.
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  // True while WE are running a smooth scroll-to-bottom. onScroll can't tell our
+  // own animation's intermediate ticks from a user scroll, so without this the
+  // "jump to latest" click would unpin itself mid-animation (every tick is still
+  // >80px from bottom). We ignore those ticks until the animation lands.
+  const programmatic = useRef(false);
 
   const onScroll = () => {
     const el = listRef.current;
     if (!el) return;
     const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (programmatic.current) {
+      if (!pinned) return; // mid-animation tick — keep the pin until we arrive
+      programmatic.current = false; // landed at the bottom
+    }
     stick.current = pinned;
     setAtBottom(pinned);
   };
@@ -33,6 +42,7 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
   const scrollToBottom = (smooth: boolean) => {
     const el = listRef.current;
     if (!el) return;
+    if (smooth) programmatic.current = true;
     if (typeof el.scrollTo === "function") el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
     else el.scrollTop = el.scrollHeight; // jsdom / no smooth-scroll support
   };
