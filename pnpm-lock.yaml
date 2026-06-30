@@ -161,12 +161,36 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
     devDependencies:
+      '@ai-sdk/react':
+        specifier: 3.0.30
+        version: 3.0.30(react@18.3.1)(zod@3.25.76)
+      '@flowlet/react':
+        specifier: workspace:*
+        version: link:../flowlet-react
+      '@testing-library/react':
+        specifier: ^16.0.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ^18.3.0
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      jsdom:
+        specifier: ^25.0.0
+        version: 25.0.1
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@29.1.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/flowlet-core:
     dependencies:
