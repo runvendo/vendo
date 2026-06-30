@@ -15,7 +15,16 @@ export function FlowletCard() {
     <section aria-label="Custom view" className="space-y-2">
       <FlowletRoot threadId="maple-slot">
         <FlowletThemeProvider>
-          <FlowletSlot flowletId="home-dashboard" emptyLabel="Design a view" />
+          <FlowletSlot
+            flowletId="home-dashboard"
+            emptyLabel="Design a view"
+            greeting="What do you want to see here?"
+            suggestions={[
+              "My spending by category this month",
+              "A chart of my net worth over time",
+              "My recent transactions as a table",
+            ]}
+          />
         </FlowletThemeProvider>
       </FlowletRoot>
     </section>

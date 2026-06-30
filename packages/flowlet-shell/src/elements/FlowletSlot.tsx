@@ -10,6 +10,10 @@ export interface FlowletSlotProps {
   /** Seed the slot with a node (e.g. SSR/fixture). localStorage wins otherwise. */
   savedNode?: UINode;
   emptyLabel?: string;
+  /** Design-overlay greeting + suggestions — same shape as the Cmd+K overlay so
+   *  the design experience matches it (plus the pin-to-card footer). */
+  greeting?: string;
+  suggestions?: string[];
 }
 
 const storageKey = (id: string) => `flowlet-slot:${id}`;
@@ -20,7 +24,13 @@ const storageKey = (id: string) => `flowlet-slot:${id}`;
  * thread becomes the card's resting state (persisted to localStorage), with an
  * overflow menu to edit (reopen the chat) or remove (back to blank).
  */
-export function FlowletSlot({ flowletId, savedNode, emptyLabel = "Design a view" }: FlowletSlotProps) {
+export function FlowletSlot({
+  flowletId,
+  savedNode,
+  emptyLabel = "Design a view",
+  greeting = "What can Vendo build here?",
+  suggestions = [],
+}: FlowletSlotProps) {
   const [pinned, setPinned] = useState<UINode | null>(savedNode ?? null);
   const [designing, setDesigning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -136,7 +146,7 @@ export function FlowletSlot({ flowletId, savedNode, emptyLabel = "Design a view"
             ref={panelRef}
             onKeyDown={(e) => { if (e.key === "Escape") setDesigning(false); }}
           >
-            <FlowletThread greeting="What can Vendo build here?" onPin={pin} />
+            <FlowletThread greeting={greeting} suggestions={suggestions} onPin={pin} />
           </div>
         </>
       )}
