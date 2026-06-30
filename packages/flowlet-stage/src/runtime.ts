@@ -15,7 +15,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
 
   // ── Module-level state ───────────────────────────────────────────────────────
   var currentParams = null;   // { theme, state, tree, bundleSource }
-  var __pendingActions = {};  // actionId → resolve fn (approval-pending dispatch)
+  var __pendingActions = {};  // actionId → { resolve, reject } (approval-pending dispatch)
   var currentCapabilityMap = {}; // nodeId → capability token (built from tree on ui/initialize)
 
   // ── Theme injection ──────────────────────────────────────────────────────────
@@ -34,7 +34,13 @@ export const STAGE_RUNTIME_SRC = String.raw`
   async function loadBundle(src) {
     if (!src) return {};
     var url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
-    await import(/* @vite-ignore */ url); // sets window.__React/__createRoot/__FLOWLET_HOST__
+    try {
+      await import(/* @vite-ignore */ url); // sets window.__React/__createRoot/__FLOWLET_HOST__
+    } finally {
+      // The module is cached by the loader once evaluated; the blob URL is only
+      // needed during fetch, so release it to avoid leaking object URLs.
+      URL.revokeObjectURL(url);
+    }
     return window.__FLOWLET_HOST__ || {};
   }
 
@@ -71,12 +77,14 @@ export const STAGE_RUNTIME_SRC = String.raw`
   }
 
   // Recursive find-and-replace: swap the node whose id === targetId with newNode.
-  function replaceNode(node, targetId, newNode) {
+  // ctx.found is flipped to true when a replacement actually happens, so callers
+  // can distinguish a real replace from a no-op (unknown nodeId).
+  function replaceNode(node, targetId, newNode, ctx) {
     if (!node) return node;
-    if (node.id === targetId) return newNode;
+    if (node.id === targetId) { if (ctx) ctx.found = true; return newNode; }
     if (!node.children || !node.children.length) return node;
     return Object.assign({}, node, {
-      children: node.children.map(function(c) { return replaceNode(c, targetId, newNode); })
+      children: node.children.map(function(c) { return replaceNode(c, targetId, newNode, ctx); })
     });
   }
 
@@ -131,7 +139,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // ── Approval-pending dispatch ─────────────────────────────────────────────────
   window.__flowletDispatch = function(descriptor, originNodeId) {
     var id = "act-" + crypto.randomUUID();
-    return new Promise(function(resolve) {
+    return new Promise(function(resolve, reject) {
       // One-time listener for the direct reply from the host.
       function handler(e) {
         if (e.source !== parent) return;
@@ -140,7 +148,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
           var result = e.data.result;
           if (result && result.status === "pending") {
             // Two-phase: wait for ui/action-result with this actionId.
-            __pendingActions[result.actionId] = resolve;
+            __pendingActions[result.actionId] = { resolve: resolve, reject: reject };
           } else {
             // Non-pending: resolve immediately.
             resolve(result);
@@ -198,11 +206,24 @@ export const STAGE_RUNTIME_SRC = String.raw`
       }
 
       // Apply node patch (find-and-replace by id, including root).
-      if (p.node && p.nodeId) {
-        buildCapabilityMap(p.node, currentCapabilityMap);
-        currentParams = Object.assign({}, currentParams, {
-          tree: replaceNode(currentParams.tree, p.nodeId, p.node)
-        });
+      // node + nodeId travel as one unit (params.replace); a partial patch errors.
+      if (p.replace) {
+        if (!p.replace.nodeId || !p.replace.node) {
+          parent.postMessage({ flowlet: true, id: m.id, error: { code: "bridge", message: "ui/update: replace requires both nodeId and node" } }, "*");
+          return;
+        }
+        var ctx = { found: false };
+        var newTree = replaceNode(currentParams.tree, p.replace.nodeId, p.replace.node, ctx);
+        if (!ctx.found) {
+          // Loud error rather than a silent { ok: true } for a no-op replacement.
+          parent.postMessage({ flowlet: true, id: m.id, error: { code: "bridge", message: "ui/update: unknown nodeId " + p.replace.nodeId } }, "*");
+          return;
+        }
+        currentParams = Object.assign({}, currentParams, { tree: newTree });
+        // Rebuild the capability map from scratch so removed descendants lose
+        // their tokens (never additive — old subtree ids must not stay valid).
+        currentCapabilityMap = {};
+        buildCapabilityMap(currentParams.tree, currentCapabilityMap);
       }
 
       rerender();
@@ -213,11 +234,27 @@ export const STAGE_RUNTIME_SRC = String.raw`
     // ── ui/action-result (approval-pending resolution) ─────────────────────────
     if (m.method === "ui/action-result") {
       var ap = m.params || {};
-      var resolve = __pendingActions[ap.actionId];
-      if (resolve) {
+      var entry = __pendingActions[ap.actionId];
+      if (entry) {
         delete __pendingActions[ap.actionId];
-        resolve(ap.result);
+        // Settle for both success and error results so the parked promise never leaks.
+        if (ap.error) {
+          entry.reject(Object.assign(new Error(ap.error.message || "action cancelled"), { code: ap.error.code || "abort" }));
+        } else {
+          entry.resolve(ap.result);
+        }
       }
+      return;
+    }
+
+    // ── ui/teardown (host is disposing) ────────────────────────────────────────
+    if (m.method === "ui/teardown") {
+      // Reject every outstanding approval so awaiting components don't hang forever.
+      Object.keys(__pendingActions).forEach(function(k) {
+        var e2 = __pendingActions[k];
+        if (e2 && e2.reject) e2.reject(Object.assign(new Error("stage torn down"), { code: "abort" }));
+      });
+      __pendingActions = {};
       return;
     }
   });

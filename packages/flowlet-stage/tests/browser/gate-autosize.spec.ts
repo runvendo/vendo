@@ -18,15 +18,17 @@ test(
     // Drive a ui/update that replaces the card with much taller content.
     await page.evaluate(async () => {
       await (window as any).__controller.update({
-        nodeId: "c1",
-        node: {
-          id: "c1",
-          kind: "component",
-          source: "host",
-          name: "Card",
-          props: {
-            title: "Tall",
-            body: Array(30).fill("Lorem ipsum dolor sit amet consectetur adipiscing elit.").join(" "),
+        replace: {
+          nodeId: "c1",
+          node: {
+            id: "c1",
+            kind: "component",
+            source: "host",
+            name: "Card",
+            props: {
+              title: "Tall",
+              body: Array(30).fill("Lorem ipsum dolor sit amet consectetur adipiscing elit.").join(" "),
+            },
           },
         },
       });

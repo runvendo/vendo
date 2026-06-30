@@ -167,13 +167,17 @@ describe("connectStage", () => {
       resolveActionResult = res;
     });
 
-    // Peer onRequest captures ui/initialize params AND handles the ui/action-result notification
-    // that arrives as a raw flowlet message (bridge sees it as a request with id=undefined
-    // and calls onRequest; the response is ignored by the host).
+    // Peer onRequest captures ui/initialize params. The ui/action-result is now
+    // an id-less notification (FIX 6), so it no longer reaches onRequest — the
+    // real runtime catches it on its own window listener. Mirror that here with a
+    // raw listener on b (the runtime-side endpoint).
     const peer = makeRpc(b, a, async (method, params) => {
       if (method === "ui/initialize") { initParams = params; return { ok: true }; }
-      if (method === "ui/action-result") { resolveActionResult(params); return {}; }
       return {};
+    });
+    b.addEventListener("message", (e) => {
+      const msg = e.data as { method?: string; params?: unknown };
+      if (msg?.method === "ui/action-result") resolveActionResult(msg.params);
     });
     const controller = connectStage({ listen: a, post: b }, { onAction });
 
@@ -310,12 +314,155 @@ describe("connectStage", () => {
       tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
     });
     await controller.update({
-      nodeId: "c2",
-      node: { id: "c2", kind: "component", source: "host", name: "Button", props: {} },
+      replace: {
+        nodeId: "root",
+        node: { id: "root", kind: "component", source: "host", name: "Button", props: {} },
+      },
     });
-    expect(updateParams.node.capability).toBeDefined();
-    expect(updateParams.node.capability).toMatch(/^cap-/);
+    expect(updateParams.replace.node.capability).toBeDefined();
+    expect(updateParams.replace.node.capability).toMatch(/^cap-/);
     controller.dispose();
     peer.dispose();
+  });
+
+  // FIX 1: re-initialize clears stale tokens minted for a previous tree.
+  it("re-initialize rejects a token minted for a node that only existed in the prior tree", async () => {
+    const { a, b } = makePair();
+    const initParamsList: any[] = [];
+    const onAction = vi.fn().mockResolvedValue({ result: "ok" });
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { initParamsList.push(params); return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage({ listen: a, post: b }, { onAction });
+
+    await controller.initialize({
+      theme: {}, state: {}, bundleSource: "",
+      tree: {
+        id: "rootA", kind: "component", source: "host", name: "Card", props: {},
+        children: [{ id: "onlyA", kind: "component", source: "host", name: "Button", props: {} }],
+      },
+    });
+    const onlyAToken = initParamsList[0].tree.children[0].capability as string;
+
+    // The treeA child token works while treeA is live.
+    await expect(
+      peer.call("tools/call", { name: "x", originNodeId: "onlyA", capability: onlyAToken, payload: {} }),
+    ).resolves.toEqual({ result: "ok" });
+
+    // Re-initialize with a tree that has no "onlyA" node.
+    await controller.initialize({
+      theme: {}, state: {}, bundleSource: "",
+      tree: { id: "rootB", kind: "component", source: "host", name: "Card", props: {} },
+    });
+
+    onAction.mockClear();
+    await expect(
+      peer.call("tools/call", { name: "x", originNodeId: "onlyA", capability: onlyAToken, payload: {} }),
+    ).rejects.toMatchObject({ code: "bridge" });
+    expect(onAction).not.toHaveBeenCalled();
+
+    controller.dispose();
+    peer.dispose();
+  });
+
+  // FIX 1: ui/update replacing a subtree drops tokens for removed descendants.
+  it("update rebuild rejects a token for a child removed by the replacement", async () => {
+    const { a, b } = makePair();
+    let initParams: any;
+    const onAction = vi.fn().mockResolvedValue({ result: "ok" });
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { initParams = params; return { ok: true }; }
+      if (method === "ui/update") return { ok: true };
+      return {};
+    });
+    const controller = connectStage({ listen: a, post: b }, { onAction });
+
+    await controller.initialize({
+      theme: {}, state: {}, bundleSource: "",
+      tree: {
+        id: "root", kind: "component", source: "host", name: "Card", props: {},
+        children: [{ id: "child", kind: "component", source: "host", name: "Button", props: {} }],
+      },
+    });
+    const childToken = initParams.tree.children[0].capability as string;
+
+    // The child token works before the replacement.
+    await expect(
+      peer.call("tools/call", { name: "x", originNodeId: "child", capability: childToken, payload: {} }),
+    ).resolves.toEqual({ result: "ok" });
+
+    // Replace the root with a childless node — "child" is gone.
+    await controller.update({
+      replace: { nodeId: "root", node: { id: "root", kind: "component", source: "host", name: "Card", props: {} } },
+    });
+
+    onAction.mockClear();
+    await expect(
+      peer.call("tools/call", { name: "x", originNodeId: "child", capability: childToken, payload: {} }),
+    ).rejects.toMatchObject({ code: "bridge" });
+    expect(onAction).not.toHaveBeenCalled();
+
+    controller.dispose();
+    peer.dispose();
+  });
+
+  // FIX 2: cancelAction posts an error ui/action-result; dispose posts ui/teardown.
+  it("cancelAction posts an error action-result and dispose posts ui/teardown", async () => {
+    const { a, b } = makePair();
+    const posted: any[] = [];
+    // Raw listener on the runtime-side endpoint to capture host→runtime notifications.
+    b.addEventListener("message", (e) => posted.push(e.data));
+
+    let initParams: any;
+    const onAction = vi.fn().mockResolvedValue({ pending: true } as const);
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { initParams = params; return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage({ listen: a, post: b }, { onAction });
+
+    await controller.initialize({
+      theme: {}, state: {}, bundleSource: "",
+      tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
+    });
+    const rootToken = initParams.tree.capability as string;
+
+    const pending = (await peer.call("tools/call", {
+      name: "confirm", originNodeId: "root", capability: rootToken, payload: {},
+    })) as { status: string; actionId: string };
+    expect(pending.status).toBe("pending");
+
+    controller.cancelAction(pending.actionId, "user cancelled");
+    await new Promise((r) => setTimeout(r, 0));
+
+    const cancelMsg = posted.find((m) => m?.method === "ui/action-result");
+    expect(cancelMsg).toMatchObject({
+      params: { actionId: pending.actionId, error: { code: "abort", message: "user cancelled" } },
+    });
+
+    controller.dispose();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted.some((m) => m?.method === "ui/teardown")).toBe(true);
+
+    peer.dispose();
+  });
+
+  // FIX 7: ready rejects with a sandbox error if no ready message arrives in time.
+  it("ready rejects with a sandbox error when the runtime never signals ready", async () => {
+    vi.useFakeTimers();
+    try {
+      const { a, b } = makePair();
+      const controller = connectStage(
+        { listen: a, post: b },
+        { onAction: async () => ({ result: "ok" }), readyTimeoutMs: 10_000 },
+      );
+      const assertion = expect(controller.ready).rejects.toMatchObject({ code: "sandbox" });
+      vi.advanceTimersByTime(10_001);
+      await assertion;
+      controller.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

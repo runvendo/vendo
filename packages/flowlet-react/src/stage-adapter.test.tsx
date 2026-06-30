@@ -61,4 +61,38 @@ describe("FlowletStage", () => {
     rerender(<FlowletStage node={node} state={{ count: 1 }} />);
     await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ state: { count: 1 } })));
   });
+
+  // FIX 3: a node with a NEW root id must RE-initialize, not update (which would no-op).
+  it("re-initializes when the root node id changes", async () => {
+    const nodeA = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    const nodeB = { id: "c2", kind: "component", source: "host", name: "Card", props: {} } as const;
+    // Stable theme/state refs so the theme/state effects don't fire on rerender
+    // and the only update() would come from the node path.
+    const theme = {};
+    const state = {};
+    update.mockClear();
+    initialize.mockClear();
+    const { rerender } = render(<FlowletStage node={nodeA} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={nodeB} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+    expect(initialize.mock.calls[1][0]).toMatchObject({ tree: nodeB });
+    // It must NOT have routed the new-root change through update({ replace }).
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ replace: expect.anything() }));
+  });
+
+  // FIX 3: a mount-only prop change warns instead of silently no-op'ing.
+  it("warns when bundleSource changes after init", async () => {
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    update.mockClear();
+    initialize.mockClear();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rerender } = render(<FlowletStage node={node} bundleSource="/*a*/" />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={node} bundleSource="/*b*/" />);
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("bundleSource changed after init")),
+    );
+    warn.mockRestore();
+  });
 });

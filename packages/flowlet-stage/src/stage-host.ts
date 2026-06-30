@@ -61,6 +61,10 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
       `"react/jsx-runtime":_u` +
       `}});` +
       `document.head.appendChild(_im);` +
+      // Eagerly import the shim so its module is registered+evaluated, then revoke
+      // the blob URL. Later bare "react" imports resolve via the import map to the
+      // already-cached module, so revocation does not break them.
+      `import(_u).then(function(){URL.revokeObjectURL(_u);}).catch(function(){});` +
       `})();` +
       `<\/script>`;
   }
@@ -167,8 +171,11 @@ export interface StageInitPayload {
 export interface StageUpdatePayload {
   theme?: Record<string, string>;
   state?: Record<string, unknown>;
-  node?: UINode;
-  nodeId?: string;
+  /**
+   * Node patch. `nodeId` and `node` travel as one unit — you cannot pass one
+   * without the other (the runtime rejects a partial patch).
+   */
+  replace?: { nodeId: string; node: UINode };
 }
 
 /** Callback the host app provides to handle every validated action. */
@@ -176,11 +183,21 @@ export type OnAction = (req: ActionRequest) => Promise<ActionResult | { pending:
 
 /** Controller returned by `connectStage`. */
 export interface StageController {
-  /** Resolves when the runtime posts its `{ flowlet:true, type:"ready" }` notification. */
+  /**
+   * Resolves when the runtime posts its `{ flowlet:true, type:"ready" }`
+   * notification, or rejects with a `sandbox` error if it never arrives within
+   * the ready timeout.
+   */
   ready: Promise<void>;
   initialize(payload: StageInitPayload): Promise<unknown>;
   update(update: StageUpdatePayload): Promise<unknown>;
+  /** Resolve a parked approval-pending action with a successful result. */
   resolveAction(actionId: string, result: ActionResult): void;
+  /**
+   * Cancel a parked approval-pending action: settles the runtime-side promise
+   * with an error so it never leaks, and drops the id from the pending set.
+   */
+  cancelAction(actionId: string, reason?: string): void;
   dispose(): void;
 }
 
@@ -213,6 +230,26 @@ function attachCapabilities(node: NodeLike, map: Map<string, string>): NodeLike 
   return { ...node, capability: token, ...(children !== undefined ? { children } : {}) };
 }
 
+/**
+ * Walks an already-augmented tree and (re)builds the id → token map by reading
+ * each node's existing `capability`. Mirrors the runtime's buildCapabilityMap so
+ * only live node ids retain tokens. Does NOT mint new tokens.
+ */
+function collectCapabilities(node: NodeLike | null, map: Map<string, string>): void {
+  if (!node) return;
+  const cap = (node as Record<string, unknown>).capability;
+  if (node.id && typeof cap === "string") map.set(node.id, cap);
+  if (Array.isArray(node.children)) node.children.forEach((c) => collectCapabilities(c, map));
+}
+
+/** Recursive find-and-replace by id (host mirror of the runtime helper). */
+function replaceNode(node: NodeLike | null, targetId: string, newNode: NodeLike): NodeLike | null {
+  if (!node) return node;
+  if (node.id === targetId) return newNode;
+  if (!Array.isArray(node.children) || node.children.length === 0) return node;
+  return { ...node, children: node.children.map((c) => replaceNode(c, targetId, newNode) as NodeLike) };
+}
+
 // ── connectStage ──────────────────────────────────────────────────────────────
 
 /**
@@ -221,19 +258,33 @@ function attachCapabilities(node: NodeLike, map: Map<string, string>): NodeLike 
  */
 export function connectStage(
   endpoints: StageEndpoints,
-  { onAction }: { onAction: OnAction },
+  { onAction, readyTimeoutMs = 10_000 }: { onAction: OnAction; readyTimeoutMs?: number },
 ): StageController {
   const capabilityMap = new Map<string, string>();
   const pendingActionIds = new Set<string>();
+  // Host-side copy of the (capability-augmented) current tree. Used to rebuild
+  // the capability map from scratch on every initialize/update so stale tokens
+  // for removed/replaced node ids never linger.
+  let currentTree: NodeLike | null = null;
 
-  // ready: resolves when the runtime posts { flowlet:true, type:"ready" }.
-  // This is NOT an RPC call — it's a one-way notification, so we handle it
-  // with a dedicated listener on the host-listen endpoint.
+  // ready: resolves when the runtime posts { flowlet:true, type:"ready" }, or
+  // rejects with a sandbox error if it never arrives. This is NOT an RPC call —
+  // it's a one-way notification, so we handle it with a dedicated listener.
   let resolveReady!: () => void;
-  const ready = new Promise<void>((res) => { resolveReady = res; });
+  let rejectReady!: (e: Error) => void;
+  let readySettled = false;
+  const ready = new Promise<void>((res, rej) => { resolveReady = res; rejectReady = rej; });
+  const readyTimer = setTimeout(() => {
+    if (readySettled) return;
+    readySettled = true;
+    rejectReady(Object.assign(new Error("stage did not become ready in time"), { code: "sandbox" }));
+  }, readyTimeoutMs);
   const readyHandler = (e: { data: unknown }) => {
     const d = e.data as Record<string, unknown>;
     if (d?.flowlet === true && d?.type === "ready") {
+      if (readySettled) return;
+      readySettled = true;
+      clearTimeout(readyTimer);
       resolveReady();
     }
   };
@@ -282,15 +333,27 @@ export function connectStage(
     ready,
 
     initialize(payload) {
+      // Fresh tree → clear the map, then mint tokens for exactly this tree.
+      capabilityMap.clear();
       const augmentedTree = attachCapabilities(payload.tree as unknown as NodeLike, capabilityMap);
+      currentTree = augmentedTree;
       return rpc.call("ui/initialize", { ...payload, tree: augmentedTree });
     },
 
     update(update) {
-      let payload = update;
-      if (update.node) {
-        const augmentedNode = attachCapabilities(update.node as unknown as NodeLike, capabilityMap);
-        payload = { ...update, node: augmentedNode as unknown as UINode };
+      const payload: { theme?: Record<string, string>; state?: Record<string, unknown>; replace?: { nodeId: string; node: UINode } } = {};
+      if (update.theme) payload.theme = update.theme;
+      if (update.state) payload.state = update.state;
+      if (update.replace) {
+        const { nodeId, node } = update.replace;
+        // Mint fresh tokens for the replacement subtree, splice it into our tree
+        // copy, then rebuild the whole map from the resulting tree so that only
+        // live node ids retain tokens (replaced descendants are dropped).
+        const augmentedNode = attachCapabilities(node as unknown as NodeLike, new Map());
+        currentTree = replaceNode(currentTree, nodeId, augmentedNode);
+        capabilityMap.clear();
+        collectCapabilities(currentTree, capabilityMap);
+        payload.replace = { nodeId, node: augmentedNode as unknown as UINode };
       }
       return rpc.call("ui/update", payload);
     },
@@ -309,8 +372,29 @@ export function connectStage(
       });
     },
 
+    cancelAction(actionId, reason) {
+      // Tolerant: a cancel that races a resolve is a harmless no-op.
+      if (!pendingActionIds.has(actionId)) return;
+      pendingActionIds.delete(actionId);
+      // Deliver an error result so the runtime-side promise settles (rejects)
+      // instead of leaking forever.
+      endpoints.post.postMessage({
+        flowlet: true,
+        method: "ui/action-result",
+        params: { actionId, error: { code: "abort", message: reason ?? "action cancelled" } },
+      });
+    },
+
     dispose() {
+      clearTimeout(readyTimer);
       endpoints.listen.removeEventListener("message", readyHandler);
+      pendingActionIds.clear();
+      // Best-effort teardown so the runtime rejects any outstanding approvals.
+      try {
+        endpoints.post.postMessage({ flowlet: true, method: "ui/teardown" });
+      } catch {
+        // ignore — endpoint may already be gone
+      }
       rpc.dispose();
     },
   };

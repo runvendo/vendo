@@ -18,23 +18,36 @@ export function makeRpc(
   const handler = async (e: { data: unknown }) => {
     const msg = e.data as Partial<RpcRequest & RpcResponse> | undefined;
     if (!msg || (msg as Record<string, unknown>).flowlet !== true) return;
-    if ("method" in msg && msg.method != null && onRequest) {
-      const id = msg.id!;
-      try {
-        const result = await onRequest(msg.method, (msg as RpcRequest).params);
-        post.postMessage({ flowlet: true, id, result } satisfies RpcResponse);
-      } catch (err) {
-        const error: RpcError = { code: "bridge", message: err instanceof Error ? err.message : String(err) };
-        post.postMessage({ flowlet: true, id, error } satisfies RpcResponse);
-      }
-    } else if ("id" in msg && msg.id != null && pending.has(msg.id)) {
-      const p = pending.get(msg.id)!;
-      pending.delete(msg.id);
+
+    // A RESPONSE is recognised by a response shape that matches a pending call —
+    // not merely "no method". This wins over the request path so a message that
+    // carries both `method` and a pending `id` resolves the call (no misrouting).
+    const isResponse =
+      typeof msg.id === "string" &&
+      ("result" in msg || "error" in msg) &&
+      pending.has(msg.id);
+    // A REQUEST requires BOTH a method and an id (so we can reply). An id-less
+    // notification is NOT a request and must not invoke onRequest.
+    const isRequest = typeof msg.method === "string" && typeof msg.id === "string";
+
+    if (isResponse) {
+      const id = msg.id as string;
+      const p = pending.get(id)!;
+      pending.delete(id);
       p.cleanup();
       const resp = msg as RpcResponse;
       resp.error
         ? p.reject(Object.assign(new Error(resp.error.message), { code: resp.error.code }))
         : p.resolve(resp.result);
+    } else if (isRequest && onRequest) {
+      const id = msg.id as string;
+      try {
+        const result = await onRequest(msg.method as string, (msg as RpcRequest).params);
+        post.postMessage({ flowlet: true, id, result } satisfies RpcResponse);
+      } catch (err) {
+        const error: RpcError = { code: "bridge", message: err instanceof Error ? err.message : String(err) };
+        post.postMessage({ flowlet: true, id, error } satisfies RpcResponse);
+      }
     }
   };
   listen.addEventListener("message", handler);

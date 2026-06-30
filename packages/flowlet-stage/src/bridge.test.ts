@@ -123,4 +123,41 @@ describe("makeRpc", () => {
     host.dispose();
     peer.dispose();
   });
+
+  // FIX 6: discrimination — an id-less {method} message is a notification, not a request.
+  it("(f) does NOT invoke onRequest for a message with a method but no id", async () => {
+    const { a, b } = makePair();
+    const onRequest = vi.fn(async () => "ok");
+    const peer = makeRpc(b, a, onRequest);
+
+    // Inject an id-less method message onto b (where the peer listens).
+    b.postMessage({ flowlet: true, method: "ui/action-result", params: { actionId: "x" } });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onRequest).not.toHaveBeenCalled();
+    peer.dispose();
+  });
+
+  // FIX 6: a message carrying method + id + result that matches a pending id
+  // resolves the pending call rather than being re-dispatched to onRequest.
+  it("(g) a method+id+result message matching a pending id resolves the call, not re-dispatch", async () => {
+    const { a, b } = makePair();
+    const hostOnRequest = vi.fn(async () => "should-not-run");
+    const host = makeRpc(a, b, hostOnRequest);
+
+    // Peer listens on b for the request and replies with a response that ALSO
+    // carries a `method` field — the response path must still win.
+    b.addEventListener("message", (e) => {
+      const m = e.data as { flowlet?: boolean; method?: string; id?: string };
+      if (m?.method === "probe" && m.id) {
+        a.postMessage({ flowlet: true, id: m.id, method: "sneaky", result: "RESOLVED" });
+      }
+    });
+
+    const result = await host.call("probe");
+    expect(result).toBe("RESOLVED");
+    expect(hostOnRequest).not.toHaveBeenCalled();
+
+    host.dispose();
+  });
 });
