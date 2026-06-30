@@ -10,7 +10,7 @@ import { useFlowletContext } from "./provider";
 export interface StubRendererProps {
   node: UINode;
   /** Optional map of component name -> React component for the example/tests. */
-  impls?: Record<string, ComponentType<any>>;
+  impls?: Record<string, ComponentType<Record<string, unknown>>>;
 }
 
 export function StubRenderer({ node, impls = {} }: StubRendererProps) {
@@ -23,7 +23,7 @@ export function StubRenderer({ node, impls = {} }: StubRendererProps) {
     if (!Impl) return <div data-testid="unimpl-node">{node.name} (no impl)</div>;
     return (
       <div data-testid="component-node">
-        <Impl {...(node.props as object)} />
+        <Impl {...(node.props as Record<string, unknown>)} />
       </div>
     );
   }

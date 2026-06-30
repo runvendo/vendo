@@ -1,4 +1,4 @@
-import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
+import type { ChatTransport, UIMessageChunk } from "ai";
 import type { ClientPart, FlowletUIMessage, StubAgent } from "@flowlet/core";
 
 export interface LocalTransport {
@@ -15,7 +15,7 @@ export function createLocalTransport(agent: StubAgent): LocalTransport {
   const transport: ChatTransport<FlowletUIMessage> = {
     async sendMessages(options): Promise<ReadableStream<UIMessageChunk>> {
       return agent.run({
-        messages: options.messages as unknown as UIMessage[],
+        messages: options.messages,
         tools: [],
         signal: options.abortSignal ?? new AbortController().signal,
       });

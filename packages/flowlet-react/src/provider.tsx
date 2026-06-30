@@ -16,10 +16,9 @@ export interface FlowletProviderProps {
 }
 
 export function FlowletProvider({ agent, components, children }: FlowletProviderProps) {
-  const value = useMemo<FlowletContextValue>(
-    () => ({ registry: createRegistry(components), local: createLocalTransport(agent) }),
-    [agent, components],
-  );
+  const registry = useMemo(() => createRegistry(components), [components]);
+  const local = useMemo(() => createLocalTransport(agent), [agent]);
+  const value = useMemo<FlowletContextValue>(() => ({ registry, local }), [registry, local]);
   return <FlowletContext.Provider value={value}>{children}</FlowletContext.Provider>;
 }
 

@@ -1,9 +1,9 @@
-import type { UIMessageChunk } from "ai";
+import type { UIMessage, UIMessageChunk } from "ai";
 import type { FlowletTool } from "./tool";
 import type { ClientPart } from "./protocol";
 
 export interface RunInput {
-  messages: { role: string; parts: unknown[] }[]; // ai SDK UIMessage[] at the call site
+  messages: UIMessage[]; // ai SDK UIMessage[] at the call site
   tools: FlowletTool[];
   system?: string;
   principal?: unknown;       // opaque in F1

@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { createStubAgent } from "@flowlet/core";
+import { createStubAgent, type FlowletUIMessage } from "@flowlet/core";
 import { z } from "zod";
 import { FlowletProvider } from "./provider";
 import { useFlowletChat } from "./use-flowlet-chat";
 import { StubRenderer } from "./stub-renderer";
+
+type FlowletPart = FlowletUIMessage["parts"][number];
 
 function DemoCard({ title }: { title: string }) {
   return <div data-testid="demo-card">{title}</div>;
@@ -14,9 +16,13 @@ function DemoCard({ title }: { title: string }) {
 function Harness() {
   const chat = useFlowletChat();
   const [answered, setAnswered] = useState(false);
-  const parts = chat.messages.flatMap((m: any) => m.parts);
-  const approval = parts.find((p: any) => p.type === "data-approval");
-  const uiNode = parts.find((p: any) => p.type === "data-ui");
+  const parts = chat.messages.flatMap((m: FlowletUIMessage) => m.parts);
+  const approval = parts.find(
+    (p): p is Extract<FlowletPart, { type: "data-approval" }> => p.type === "data-approval",
+  );
+  const uiNode = parts.find(
+    (p): p is Extract<FlowletPart, { type: "data-ui" }> => p.type === "data-ui",
+  );
 
   return (
     <div>

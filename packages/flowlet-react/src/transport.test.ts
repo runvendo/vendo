@@ -13,7 +13,7 @@ describe("local transport", () => {
       messageId: undefined,
       messages: [],
       abortSignal: new AbortController().signal,
-    } as any);
+    });
 
     const reader = stream.getReader();
     const seen: string[] = [];
