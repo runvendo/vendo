@@ -14,6 +14,7 @@ import { imageDescriptor } from "./components/Image/descriptor";
 import { imageGalleryDescriptor } from "./components/ImageGallery/descriptor";
 import { markdownDescriptor } from "./components/Markdown/descriptor";
 import { codeBlockDescriptor } from "./components/CodeBlock/descriptor";
+import { tabsDescriptor } from "./components/Tabs/descriptor";
 
 export const descriptors: PrewiredDescriptor[] = [
   cardDescriptor,
@@ -30,6 +31,7 @@ export const descriptors: PrewiredDescriptor[] = [
   imageGalleryDescriptor,
   markdownDescriptor,
   codeBlockDescriptor,
+  tabsDescriptor,
 ];
 
 export const prewiredComponents: RegisteredComponent[] = descriptors.map((d) => d.toRegistered());
