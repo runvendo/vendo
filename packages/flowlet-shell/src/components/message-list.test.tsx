@@ -25,7 +25,7 @@ describe("MessageList", () => {
     expect(screen.getByText("Something exploded")).toBeTruthy();
   });
 
-  it("renders text, tool, approval, and ui items, and is a log", () => {
+  it("renders text, approval, and ui items, hides tool chips, and is a log", () => {
     const onApprove = vi.fn();
     renderList([
       { kind: "text", key: "a", role: "assistant", text: "hello" },
@@ -35,7 +35,8 @@ describe("MessageList", () => {
     ], onApprove);
     expect(screen.getByRole("log")).toBeTruthy();
     expect(screen.getByText("hello")).toBeTruthy();
-    expect(screen.getByTestId("tool-call")).toBeTruthy();
+    // Tool calls are intentionally hidden in the thread (skeleton carries the wait).
+    expect(screen.queryByTestId("tool-call")).toBeNull();
     expect(screen.getByTestId("ui-node")).toBeTruthy();
     fireEvent.click(screen.getByText("Approve"));
     expect(onApprove).toHaveBeenCalledWith("a1");

@@ -21,17 +21,22 @@ import { prewiredComponents } from "@flowlet/components";
 import { renderNode } from "./render-node";
 import { createComposioIntegrations } from "./integrations";
 
-/** Flowlet themed to Maple's brand so the layer feels native, not bolted-on. */
+/**
+ * Flowlet inherits the host app's brand — it has no color of its own. These are
+ * Maple's brand tokens; drop Flowlet into a different app and you pass that app's
+ * tokens here instead. Maple's accent is graphite (codex-clean), so Flowlet reads
+ * as native, not bolted-on.
+ */
 const mapleTheme: FlowletTheme = {
-  accent: "#1E7F53",
+  accent: "#1B1C22",
   accentFg: "#FFFFFF",
-  fg: "#111111",
-  fgMuted: "#908C85",
-  bg: "#FBFBFA",
+  fg: "#14151A",
+  fgMuted: "#8A8B92",
+  bg: "#F4F3F0",
   surface: "#FFFFFF",
   border: "#ECEBE8",
-  radius: "14px",
-  shadow: "0 18px 50px rgba(27,30,37,.14)",
+  radius: "16px",
+  shadow: "0 1px 2px rgba(20,21,26,.04), 0 12px 40px rgba(20,21,26,.10)",
   font: "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
 };
 

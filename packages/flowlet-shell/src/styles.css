@@ -1,30 +1,45 @@
 .flowlet-root {
   color-scheme: light dark;
-  --flowlet-accent: light-dark(#16181d, #e9eaee);
+  /* Accent is inherited from the host brand (graphite in Maple). */
+  --flowlet-accent: light-dark(#1b1c22, #e9eaee);
   --flowlet-accent-fg: light-dark(#ffffff, #141417);
-  --flowlet-fg: light-dark(#1b1d22, #e7e8ec);
-  --flowlet-fg-muted: light-dark(#8a8c92, #7c7e86);
-  --flowlet-bg: light-dark(#fcfcfb, #101013);
+  --flowlet-accent-soft: light-dark(rgba(27,28,34,.06), rgba(233,234,238,.12));
+  --flowlet-fg: light-dark(#14151a, #e7e8ec);
+  --flowlet-fg-muted: light-dark(#8a8b92, #7c7e86);
+  --flowlet-bg: light-dark(#f4f3f0, #101013);
   --flowlet-surface: light-dark(#ffffff, #17171b);
-  --flowlet-border: light-dark(#e9e9e5, #26262c);
-  --flowlet-radius: 13px;
-  --flowlet-shadow: 0 6px 20px light-dark(rgba(27,30,37,.07), rgba(0,0,0,.4));
+  --flowlet-border: light-dark(rgba(20,21,26,.09), #26262c);
+  --flowlet-border-strong: light-dark(rgba(20,21,26,.14), #34343c);
+  --flowlet-radius: 16px;
+  --flowlet-shadow: 0 1px 2px light-dark(rgba(20,21,26,.04), rgba(0,0,0,.5)),
+    0 12px 40px light-dark(rgba(20,21,26,.10), rgba(0,0,0,.45));
   --flowlet-font: inherit;
   --flowlet-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Frosted-glass surfaces — translucent over the host UI. */
+  --flowlet-glass: color-mix(in srgb, var(--flowlet-surface) 64%, transparent);
+  --flowlet-glass-strong: color-mix(in srgb, var(--flowlet-surface) 80%, transparent);
+  --flowlet-blur: saturate(1.4) blur(22px);
+  --flowlet-ok: #2e9e6b;
   color: var(--flowlet-fg);
-  background: var(--flowlet-bg);
   font-family: var(--flowlet-font);
+  letter-spacing: -.011em;
   height: 100%;
   min-height: 0;
 }
+
+/* ---------- thread shell ---------- */
 .fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.fl-msglist { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.fl-msglist { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px 16px; }
+
 .fl-turn-user { align-self: flex-end; background: var(--flowlet-accent); color: var(--flowlet-accent-fg);
-  padding: 8px 12px; border-radius: 14px 14px 4px 14px; max-width: 80%; }
-.fl-turn-assistant { align-self: flex-start; max-width: 92%; line-height: 1.55; }
-.fl-caret { display: inline-block; width: 7px; height: 1em; background: var(--flowlet-accent);
-  vertical-align: -2px; margin-left: 2px; }
-/* Markdown rendering for assistant/user text — tight spacing for chat bubbles. */
+  padding: 9px 13px; border-radius: 15px 15px 5px 15px; max-width: 82%; font-size: 13.5px; line-height: 1.5;
+  box-shadow: var(--flowlet-shadow); }
+.fl-turn-assistant { align-self: flex-start; max-width: 92%; line-height: 1.6; font-size: 13.5px; }
+.fl-caret { display: inline-block; width: 7px; height: 1.05em; background: var(--flowlet-accent);
+  vertical-align: -2px; margin-left: 2px; border-radius: 1px; animation: fl-blink 1s steps(1) infinite; }
+@keyframes fl-blink { 50% { opacity: 0; } }
+
+/* ---------- markdown ---------- */
 .fl-md > :first-child { margin-top: 0; }
 .fl-md > :last-child { margin-bottom: 0; }
 .fl-md p { margin: 0 0 8px; }
@@ -35,73 +50,186 @@
 .fl-md h1 { font-size: 1.15em; } .fl-md h2 { font-size: 1.08em; } .fl-md h3 { font-size: 1em; }
 .fl-md a { color: var(--flowlet-accent); text-decoration: underline; text-underline-offset: 2px; }
 .fl-md strong { font-weight: 650; }
-.fl-md code { font-family: var(--flowlet-font-mono); font-size: .9em; background: var(--flowlet-bg);
+.fl-md code { font-family: var(--flowlet-font-mono); font-size: .9em; background: var(--flowlet-accent-soft);
   border: 1px solid var(--flowlet-border); border-radius: 5px; padding: 1px 5px; }
-.fl-md pre { background: var(--flowlet-bg); border: 1px solid var(--flowlet-border); border-radius: 9px;
-  padding: 10px 12px; overflow-x: auto; margin: 0 0 8px; }
+.fl-md pre { background: var(--flowlet-accent-soft); border: 1px solid var(--flowlet-border); border-radius: 11px;
+  padding: 11px 13px; overflow-x: auto; margin: 0 0 8px; }
 .fl-md pre code { background: none; border: 0; padding: 0; font-size: .85em; }
 .fl-md blockquote { margin: 0 0 8px; padding-left: 10px;
-  border-left: 2px solid var(--flowlet-border); color: var(--flowlet-fg-muted); }
+  border-left: 2px solid var(--flowlet-border-strong); color: var(--flowlet-fg-muted); }
 .fl-md table { border-collapse: collapse; font-size: .92em; margin: 0 0 8px; }
 .fl-md th, .fl-md td { border: 1px solid var(--flowlet-border); padding: 4px 8px; text-align: left; }
 .fl-md hr { border: 0; border-top: 1px solid var(--flowlet-border); margin: 10px 0; }
 .fl-turn-user .fl-md a, .fl-turn-user .fl-md code { color: inherit; border-color: rgba(255,255,255,.4); }
-.fl-tool { align-self: flex-start; font-family: var(--flowlet-font-mono); font-size: 11px;
-  color: var(--flowlet-fg-muted); border: 1px solid var(--flowlet-border); border-radius: 7px; padding: 6px 9px; }
+
+/* ---------- generating: quiet status + skeleton (tool chips are hidden) ---------- */
+.fl-generating { align-self: flex-start; display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--flowlet-fg-muted); }
+.fl-generating .fl-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--flowlet-accent);
+  animation: fl-pulse 1.2s ease infinite; }
+@keyframes fl-pulse { 0%,100% { opacity: .28; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
+.fl-skeleton { align-self: flex-start; width: 100%; border-radius: var(--flowlet-radius);
+  border: 1px solid var(--flowlet-border); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  padding: 15px 16px; box-shadow: var(--flowlet-shadow); }
+.fl-skeleton-bar { background: linear-gradient(90deg,
+    color-mix(in srgb, var(--flowlet-fg) 5%, transparent) 25%,
+    color-mix(in srgb, var(--flowlet-fg) 10%, transparent) 37%,
+    color-mix(in srgb, var(--flowlet-fg) 5%, transparent) 63%);
+  background-size: 400% 100%; animation: fl-shimmer 1.5s ease infinite; border-radius: 6px; }
+@keyframes fl-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+/* ---------- tool chip (kept quiet; most are hidden in the thread) ---------- */
+.fl-tool { align-self: flex-start; display: flex; align-items: center; gap: 8px;
+  font: 500 12px/1 var(--flowlet-font-mono); color: var(--flowlet-fg-muted);
+  border: 1px solid var(--flowlet-border); border-radius: 10px; padding: 7px 11px;
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
+.fl-tool-name { color: var(--flowlet-fg); }
+.fl-tool-spin { width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid var(--flowlet-border-strong); border-top-color: var(--flowlet-fg-muted);
+  animation: fl-spin .8s linear infinite; }
+.fl-tool-check { width: 14px; height: 14px; border-radius: 50%; background: var(--flowlet-accent);
+  color: var(--flowlet-accent-fg); display: grid; place-items: center; font-size: 9px; }
+.fl-tool-err { color: #b0473a; }
+@keyframes fl-spin { to { transform: rotate(360deg); } }
+
+/* ---------- approval / buttons ---------- */
 .fl-approval { align-self: flex-start; border: 1px solid var(--flowlet-border);
-  border-radius: var(--flowlet-radius); padding: 12px; box-shadow: var(--flowlet-shadow);
-  background: var(--flowlet-surface); max-width: 88%; }
+  border-radius: var(--flowlet-radius); padding: 14px; box-shadow: var(--flowlet-shadow);
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); max-width: 88%; }
 .fl-approval-actions { display: flex; gap: 8px; margin-top: 10px; }
-.fl-btn { border: 1px solid var(--flowlet-border); border-radius: 8px; padding: 7px 13px;
-  font: 500 12px/1 var(--flowlet-font-mono); background: var(--flowlet-surface); color: var(--flowlet-fg); cursor: pointer; }
+.fl-btn { border: 1px solid var(--flowlet-border-strong); border-radius: 10px; padding: 8px 14px;
+  font: 500 12.5px/1 var(--flowlet-font); background: var(--flowlet-surface); color: var(--flowlet-fg); cursor: pointer;
+  transition: background .12s, border-color .12s; }
+.fl-btn:hover { background: var(--flowlet-accent-soft); }
 .fl-btn-primary { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: var(--flowlet-accent); }
+.fl-btn-primary:hover { opacity: .92; background: var(--flowlet-accent); }
 .fl-uinode { align-self: flex-start; width: 100%; }
-.fl-composer { display: flex; align-items: center; gap: 10px; margin: 12px; padding: 10px 13px;
-  background: var(--flowlet-surface); border: 1px solid var(--flowlet-border);
-  border-radius: var(--flowlet-radius); box-shadow: var(--flowlet-shadow); }
+
+/* ---------- composer ---------- */
+.fl-composer { display: flex; align-items: center; gap: 10px; margin: 12px 14px 14px; padding: 11px 13px;
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  border: 1px solid var(--flowlet-border-strong); border-radius: 13px; box-shadow: var(--flowlet-shadow); }
 .fl-composer input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--flowlet-fg);
-  font-family: var(--flowlet-font-mono); font-size: 13px; }
-.fl-icon-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--flowlet-border);
-  background: var(--flowlet-surface); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  font-family: var(--flowlet-font); font-size: 13.5px; }
+.fl-composer input::placeholder { color: var(--flowlet-fg-muted); }
+.fl-icon-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--flowlet-border);
+  background: var(--flowlet-surface); display: flex; align-items: center; justify-content: center; cursor: pointer;
+  color: var(--flowlet-fg-muted); transition: background .12s; }
+.fl-icon-btn:hover { background: var(--flowlet-accent-soft); }
 .fl-send { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: var(--flowlet-accent); }
+.fl-send:hover { opacity: .92; background: var(--flowlet-accent); }
+
+/* ---------- landing ---------- */
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 14px; flex: 1; padding: 28px; text-align: center; }
-.fl-greet { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+  gap: 16px; flex: 1; padding: 30px; text-align: center; }
+.fl-greet { font-size: 23px; font-weight: 600; letter-spacing: -.022em; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.fl-chip { border: 1px solid var(--flowlet-border); background: var(--flowlet-surface);
-  border-radius: 999px; padding: 6px 12px; font-size: 12px; color: var(--flowlet-fg); cursor: pointer; }
+.fl-chip { border: 1px solid var(--flowlet-border); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--flowlet-fg); cursor: pointer; transition: border-color .12s; }
+.fl-chip:hover { border-color: var(--flowlet-border-strong); }
 .fl-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; max-width: 460px; }
 .fl-flowcard { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
-  padding: 12px; text-align: left; background: var(--flowlet-surface); cursor: pointer; }
-.fl-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 12px; }
+  padding: 13px; text-align: left; background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); cursor: pointer; }
+
+/* ---------- connection rail ---------- */
+.fl-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 14px 6px; }
 .fl-rail-chip { display: flex; align-items: center; gap: 7px; border: 1px solid var(--flowlet-border);
-  border-radius: 999px; padding: 5px 11px; font-size: 12px; background: var(--flowlet-surface); }
-.fl-rail-dot { width: 6px; height: 6px; border-radius: 50%; background: #3fae6a; }
+  border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 500; background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
+.fl-rail-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--flowlet-ok); }
 .fl-rail-icon { display: block; flex-shrink: 0; }
-.fl-rail-connect { border: 1px dashed var(--flowlet-fg-muted); border-radius: 999px;
-  padding: 6px 12px; font-size: 12px; background: transparent; color: var(--flowlet-fg); cursor: pointer; }
+.fl-rail-connect { border: 1px dashed var(--flowlet-border-strong); border-radius: 999px;
+  padding: 6px 12px; font-size: 12px; background: transparent; color: var(--flowlet-fg-muted); cursor: pointer; transition: color .12s; }
+.fl-rail-connect:hover { color: var(--flowlet-fg); }
+
+/* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
-  background: var(--flowlet-surface); box-shadow: var(--flowlet-shadow); overflow: hidden; }
-.fl-picker-item { display: flex; align-items: center; gap: 9px; padding: 8px 11px; font-size: 13px; }
-.fl-connect { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
-  padding: 13px; background: var(--flowlet-surface); max-width: 430px; }
-.fl-overlay-scrim { position: fixed; inset: 0; background: rgba(27,29,34,.26); z-index: 1000; }
-.fl-overlay-panel { position: fixed; left: 50%; top: 12%; transform: translateX(-50%); z-index: 1001;
-  width: min(560px, 92vw); background: var(--flowlet-surface); border: 1px solid var(--flowlet-border);
-  border-radius: 16px; box-shadow: 0 24px 60px rgba(27,29,34,.35); overflow: hidden; }
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); overflow: hidden; padding: 6px; max-width: 520px; }
+.fl-picker-search { width: 100%; box-sizing: border-box; border: 0; outline: 0; background: transparent;
+  font-family: var(--flowlet-font); font-size: 13px; color: var(--flowlet-fg); padding: 9px 11px 11px; }
+.fl-picker-search::placeholder { color: var(--flowlet-fg-muted); }
+.fl-picker-group { font: 600 10px/1 var(--flowlet-font-mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--flowlet-fg-muted); margin: 8px 8px 7px; }
+.fl-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 4px 4px; }
+.fl-picker-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 11px;
+  border: 1px solid var(--flowlet-border); background: var(--flowlet-surface); transition: transform .12s, border-color .12s, box-shadow .12s; }
+.fl-picker-item:hover { transform: translateY(-1px); border-color: var(--flowlet-border-strong); box-shadow: var(--flowlet-shadow); }
+.fl-picker-ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0;
+  background: var(--flowlet-surface); border: 1px solid var(--flowlet-border); font-size: 11px; font-weight: 700; }
+.fl-picker-nm { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-picker-status { margin-left: auto; flex-shrink: 0; }
+.fl-picker-on { width: 7px; height: 7px; border-radius: 50%; background: var(--flowlet-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--flowlet-ok) 16%, transparent); }
+.fl-picker-add { width: 19px; height: 19px; border-radius: 50%; border: 1px solid var(--flowlet-border-strong);
+  display: grid; place-items: center; font-size: 13px; line-height: 1; color: var(--flowlet-fg-muted); background: transparent; cursor: pointer; }
+.fl-picker-item:hover .fl-picker-add { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: var(--flowlet-accent); }
+
+/* ---------- in-conversation connect prompt ---------- */
+.fl-connect { border: 1px solid var(--flowlet-border-strong); border-radius: var(--flowlet-radius);
+  padding: 15px 16px; background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); max-width: 100%; align-self: flex-start; width: 100%; }
+.fl-connect-head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13.5px; }
+.fl-connect-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--flowlet-surface);
+  border: 1px solid var(--flowlet-border); display: grid; place-items: center; }
+
+/* ---------- automation card ---------- */
+.fl-automation { align-self: flex-start; width: 100%; border-radius: var(--flowlet-radius); overflow: hidden;
+  border: 1px solid var(--flowlet-border); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); box-shadow: var(--flowlet-shadow); }
+.fl-auto-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.fl-auto-ic { width: 34px; height: 34px; border-radius: 10px; background: var(--flowlet-accent);
+  color: var(--flowlet-accent-fg); display: grid; place-items: center; flex-shrink: 0; }
+.fl-auto-title { font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
+.fl-auto-sub { font-size: 11.5px; color: var(--flowlet-fg-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+.fl-auto-live { width: 6px; height: 6px; border-radius: 50%; background: var(--flowlet-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--flowlet-ok) 16%, transparent); }
+.fl-auto-toggle { margin-left: auto; width: 40px; height: 23px; border-radius: 999px; background: var(--flowlet-accent);
+  position: relative; flex-shrink: 0; border: 0; cursor: pointer; }
+.fl-auto-toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.22); }
+.fl-auto-flow { display: flex; align-items: center; padding: 14px 16px 16px; border-top: 1px solid var(--flowlet-border); }
+.fl-auto-node { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px;
+  background: var(--flowlet-bg); border: 1px solid var(--flowlet-border); }
+.fl-auto-node-ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+  background: var(--flowlet-surface); border: 1px solid var(--flowlet-border); }
+.fl-auto-node-t { font-size: 12.5px; font-weight: 600; line-height: 1.2; }
+.fl-auto-node-s { font-size: 11px; color: var(--flowlet-fg-muted); margin-top: 1px; }
+.fl-auto-arrow { flex: 1; min-width: 20px; height: 0; border-top: 1.5px dashed var(--flowlet-border-strong);
+  margin: 0 8px; position: relative; }
+.fl-auto-arrow::after { content: ""; position: absolute; right: -1px; top: -4px; width: 7px; height: 7px;
+  border-top: 1.5px solid var(--flowlet-border-strong); border-right: 1.5px solid var(--flowlet-border-strong); transform: rotate(45deg); }
+
+/* ---------- overlay (clipping fixed: bounded height, scrolls) ---------- */
+.fl-overlay-scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--flowlet-fg) 22%, transparent);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 2147483000; }
+.fl-overlay-panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2147483001;
+  width: min(620px, 94vw); height: min(680px, 86vh); display: flex; flex-direction: column;
+  background: var(--flowlet-glass); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  border: 1px solid var(--flowlet-border-strong); border-radius: 20px; overflow: hidden;
+  box-shadow: 0 30px 80px color-mix(in srgb, var(--flowlet-fg) 28%, transparent); }
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);
-  border-radius: 999px; padding: 9px 13px; background: var(--flowlet-surface);
+  border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--flowlet-fg);
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
   box-shadow: var(--flowlet-shadow); cursor: pointer; }
+
+/* ---------- page + tabs + slot ---------- */
 .fl-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .fl-page > [hidden] { display: none; }
-.fl-tabbar { display: flex; align-items: center; gap: 4px; padding: 8px 11px 0;
-  border-bottom: 1px solid var(--flowlet-border); }
-.fl-tab { display: flex; align-items: center; gap: 7px; padding: 8px 12px; font-size: 12.5px;
-  color: var(--flowlet-fg-muted); border: 1px solid transparent; border-bottom: none;
-  border-radius: 9px 9px 0 0; cursor: pointer; }
+.fl-tabbar { display: flex; align-items: center; gap: 4px; padding: 8px 11px 0; border-bottom: 1px solid var(--flowlet-border); }
+.fl-tab { display: flex; align-items: center; gap: 7px; padding: 9px 13px; font-size: 12.5px; font-weight: 500;
+  color: var(--flowlet-fg-muted); border: 1px solid transparent; border-bottom: none; border-radius: 10px 10px 0 0; cursor: pointer; }
 .fl-tab[aria-selected="true"] { color: var(--flowlet-fg); background: var(--flowlet-surface); border-color: var(--flowlet-border); }
-.fl-slot-empty { border: 1.5px dashed var(--flowlet-fg-muted); border-radius: var(--flowlet-radius);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  padding: 22px; cursor: pointer; background: var(--flowlet-surface); color: var(--flowlet-fg); }
-.fl-error { margin: 8px 12px; padding: 9px 12px; border-radius: var(--flowlet-radius);
+.fl-slot-empty { border: 1.5px dashed var(--flowlet-border-strong); border-radius: var(--flowlet-radius);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+  padding: 24px; cursor: pointer; background: var(--flowlet-glass-strong); color: var(--flowlet-fg-muted);
+  width: 100%; transition: border-color .12s, color .12s; }
+.fl-slot-empty:hover { border-color: var(--flowlet-accent); color: var(--flowlet-fg); }
+
+/* ---------- error ---------- */
+.fl-error { margin: 8px 14px; padding: 10px 13px; border-radius: 12px;
   border: 1px solid #f0caca; background: #fff5f5; color: #9b1c1c; font-size: 12.5px; }
