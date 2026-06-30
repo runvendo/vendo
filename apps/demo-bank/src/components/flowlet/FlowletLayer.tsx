@@ -9,13 +9,11 @@
  * No persistent launcher: Flowlet is invisible until summoned with Cmd/Ctrl+K.
  * When a rule fires, a self-standing toast surfaces it bottom-right.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { FlowletOverlay } from "@flowlet/shell";
 import { FlowletRoot } from "./FlowletRoot";
 import { FlowletPoller, type FireEvent } from "./FlowletPoller";
 import { FlowletToast } from "./FlowletToast";
-import { FlowletSaver, type SavedView } from "./FlowletSaver";
-import { SavedViews } from "./SavedViews";
 import { resetDemo } from "./reset";
 
 const SUGGESTIONS = [
@@ -25,12 +23,7 @@ const SUGGESTIONS = [
 
 export function FlowletLayer() {
   const [fire, setFire] = useState<FireEvent | null>(null);
-  const [saved, setSaved] = useState<SavedView[]>([]);
   const [overlayOpen, setOverlayOpen] = useState(false);
-
-  const addSaved = useCallback((v: SavedView) => {
-    setSaved((prev) => (prev.some((s) => s.id === v.id) ? prev : [...prev, v]));
-  }, []);
 
   // Stage shortcuts:
   //  - Cmd/Ctrl+Shift+Backslash: backstage inject of a late-night order (same
@@ -58,8 +51,6 @@ export function FlowletLayer() {
   return (
     <FlowletRoot>
       <FlowletPoller onFire={setFire} />
-      <FlowletSaver onSave={addSaved} />
-      <SavedViews views={saved} />
       <FlowletToast
         fire={fire}
         onDismiss={() => setFire(null)}

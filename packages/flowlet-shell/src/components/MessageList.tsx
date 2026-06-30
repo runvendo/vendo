@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import type { ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
@@ -14,9 +14,17 @@ export interface MessageListProps {
 
 export function MessageList({ items, status, onApprove, onDecline }: MessageListProps) {
   const lastTextKey = [...items].reverse().find((i) => i.kind === "text")?.key;
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Keep the latest content in view as messages, streaming text, skeletons, and
+  // rendered views arrive.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [items, status]);
 
   return (
-    <div className="fl-msglist" role="log" aria-live="polite">
+    <div className="fl-msglist" role="log" aria-live="polite" ref={listRef}>
       {items.map((item) => {
         switch (item.kind) {
           case "text":
@@ -51,6 +59,11 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
             return <div key={item.key} className="fl-error" role="alert">{item.message}</div>;
         }
       })}
+      {status === "submitted" && (
+        <div className="fl-typing" aria-label="Working">
+          <span /><span /><span />
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,12 @@ function safeUrl(url: string): string {
  * growing `text` re-parses each tick, and the caret trails the content.
  */
 export function StreamingText({ text, streaming = false }: StreamingTextProps) {
+  const clean = stripEmoji(text);
+  // Empty text would render an empty markdown <p> — a stray blank line under the
+  // turn. Render nothing (or just the caret while still streaming).
+  if (clean.trim() === "") {
+    return streaming ? <span className="fl-caret" aria-hidden="true" /> : null;
+  }
   return (
     <div className="fl-md">
       <ReactMarkdown
@@ -36,7 +42,7 @@ export function StreamingText({ text, streaming = false }: StreamingTextProps) {
           ),
         }}
       >
-        {stripEmoji(text)}
+        {clean}
       </ReactMarkdown>
       {streaming && <span className="fl-caret" aria-hidden="true" />}
     </div>

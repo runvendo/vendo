@@ -136,7 +136,7 @@ export function FlowletSlot({ flowletId, savedNode, emptyLabel = "Design a view"
             ref={panelRef}
             onKeyDown={(e) => { if (e.key === "Escape") setDesigning(false); }}
           >
-            <FlowletThread greeting="What should this flowlet show?" onPin={pin} />
+            <FlowletThread greeting="What can Vendo build here?" onPin={pin} />
           </div>
         </>
       )}
