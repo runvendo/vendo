@@ -144,8 +144,8 @@ const samples = [
       items: [
         { text: "Active", variant: "success" },
         { text: "KYC Verified", variant: "info" },
-        { text: "Premium", variant: "default" },
-        { text: "Auto-pay On", variant: "default" },
+        { text: "Premium", variant: "neutral" },
+        { text: "Auto-pay On", variant: "neutral" },
       ],
     },
   },

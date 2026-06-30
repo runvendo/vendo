@@ -3,7 +3,12 @@ import { prewired } from "../../descriptor";
 
 export const tagsSchema = z.object({
   items: z
-    .array(z.object({ text: z.string(), variant: z.string().optional() }))
+    .array(
+      z.object({
+        text: z.string(),
+        variant: z.enum(["neutral", "info", "success", "warning", "danger"]).optional(),
+      }),
+    )
     .min(1),
 });
 

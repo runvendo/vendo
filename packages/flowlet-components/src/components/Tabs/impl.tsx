@@ -3,16 +3,16 @@ import { createPrewiredImpl } from "../../impl-helpers/create-impl";
 import { tabsSchema } from "./descriptor";
 
 export const Tabs = createPrewiredImpl(tabsSchema, (p) => {
-  const firstValue = p.tabs[0]?.label ?? "";
+  const firstValue = "0";
   return (
     <UITabs defaultValue={firstValue}>
       <TabsList>
-        {p.tabs.map((tab) => (
-          <TabsTrigger key={tab.label} value={tab.label} text={<span>{tab.label}</span>} />
+        {p.tabs.map((tab, i) => (
+          <TabsTrigger key={i} value={String(i)} text={<span>{tab.label}</span>} />
         ))}
       </TabsList>
-      {p.tabs.map((tab) => (
-        <TabsContent key={tab.label} value={tab.label}>
+      {p.tabs.map((tab, i) => (
+        <TabsContent key={i} value={String(i)}>
           {tab.content}
         </TabsContent>
       ))}

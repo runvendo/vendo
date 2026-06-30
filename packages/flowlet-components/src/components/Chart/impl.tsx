@@ -3,8 +3,14 @@ import { createPrewiredImpl } from "../../impl-helpers/create-impl";
 import { chartSchema } from "./descriptor";
 
 export const Chart = createPrewiredImpl(chartSchema, (p) => {
+  const slim = p.data.map((row) => {
+    const out: Record<string, unknown> = { [p.categoryKey]: row[p.categoryKey] };
+    for (const s of p.series) out[s] = row[s];
+    return out;
+  });
+
   const commonProps = {
-    data: p.data as Record<string, string | number>[],
+    data: slim as Record<string, string | number>[],
     categoryKey: p.categoryKey,
     width: 400,
     height: 300,

@@ -7,6 +7,6 @@ export const tabsSchema = z.object({
 
 export const tabsDescriptor = prewired(
   "Tabs",
-  "A tabbed panel; each tab has a label and text/markdown content. Use to organize alternative views in one surface.",
+  "A tabbed panel; each tab has a label and text content. Use to organize alternative views in one surface.",
   tabsSchema,
 );

@@ -11,14 +11,22 @@ describe("Chart", () => {
     expect(chartDescriptor.propsSchema.safeParse({ ...ok, kind: "pie3d" }).success).toBe(false);
   });
 
-  it("renders without throwing for each kind", () => {
+  it("renders an SVG (or at least a DOM element) for each kind", () => {
     const data = [{ month: "Jan", sales: 10 }, { month: "Feb", sales: 20 }];
     for (const kind of ["bar", "line", "area", "pie"] as const) {
-      const { unmount } = render(
+      const { container, unmount } = render(
         <FlowletThemeProvider>
           <Chart kind={kind} categoryKey="month" series={["sales"]} data={data} />
         </FlowletThemeProvider>,
       );
+      // Recharts renders an <svg> in real browsers; under jsdom the ResponsiveContainer
+      // may not size itself, so we accept either an <svg> OR any mounted child.
+      const svg = container.querySelector("svg");
+      if (svg) {
+        expect(svg).not.toBeNull();
+      } else {
+        expect(container.firstChild).not.toBeNull();
+      }
       unmount();
     }
   });

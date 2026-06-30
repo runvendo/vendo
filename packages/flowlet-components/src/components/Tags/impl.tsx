@@ -5,7 +5,7 @@ import { tagsSchema } from "./descriptor";
 export const Tags = createPrewiredImpl(tagsSchema, (p) => (
   <TagBlock>
     {p.items.map((t, i) => (
-      <Tag key={i} text={<span>{t.text}</span>} />
+      <Tag key={i} text={<span>{t.text}</span>} variant={t.variant} />
     ))}
   </TagBlock>
 ));
