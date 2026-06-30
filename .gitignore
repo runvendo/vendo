@@ -1,1 +1,9 @@
 .superpowers/
+
+# dependencies (hoisted by npm workspaces)
+node_modules/
+
+# build / debug output
+.next/
+*.log
+

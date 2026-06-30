@@ -1,0 +1,5 @@
+{
+  "name": "flowlet-monorepo",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"]
+}
