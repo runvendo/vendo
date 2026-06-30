@@ -27,7 +27,8 @@ Collapse the current two-surface, two-launcher mess into a single invisible surf
 - When closed, return `null` instead of the `.fl-launcher` button.
 - Keep the Cmd+K toggle, scrim, and centered graphite-glass panel unchanged.
 - Add an optional **controlled-open** interface (`open` + `onOpenChange`). When provided, the parent owns open state; when omitted, it falls back to today's internal state. Cmd+K works in both modes. This lets the toast open the overlay.
-- Backward-compatible and theme-neutral. This is the only change to shared shell code.
+- **Open animation — "stretch."** The panel grows from a thin centered sliver to full size with a rubber-band overshoot: `scaleX(.06) scaleY(.7)` → `scale(1)`, ~0.5s on `cubic-bezier(.22,1.2,.36,1)`, `transform-origin: center`. Because the panel mounts fresh on open (closed = `null`), this is a `@keyframes` animation on `.fl-overlay-panel` (runs on mount), not a CSS `transition`. The scrim cross-fades in (~0.2s). Close is immediate — panel unmounts, scrim fades out. `prefers-reduced-motion`: skip the stretch, plain fade.
+- Backward-compatible and theme-neutral. This is the only change to shared shell code (overlay element + its `.fl-overlay-*` CSS).
 
 ### 2. `FlowletToast` (apps/demo-bank) — new
 - Standalone, self-positioned `fixed` bottom-right.
@@ -56,6 +57,7 @@ Shared theme, chat thread, components, connection selector, and the agent/poller
 ## Testing
 
 - Cmd+K toggles the overlay open/closed; nothing renders on the page when closed.
+- Opening plays the "stretch" animation; `prefers-reduced-motion` falls back to a fade.
 - A fire event shows the toast bottom-right; it auto-dismisses ~5s; clicking it opens the overlay.
 - `/flowlet` page still responds to Cmd+K and shows the toast.
 - Visual check (render + screenshot) confirms the toast matches the graphite-glass theme.
