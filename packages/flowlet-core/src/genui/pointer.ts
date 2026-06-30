@@ -5,6 +5,11 @@
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** Maximum number of reference tokens a pointer may have. A pointer over this
+ *  many segments is treated as a miss/no-op (never resolved or patched) to bound
+ *  work and recursion on untrusted input. */
+const MAX_POINTER_TOKENS = 256;
+
 /** Unescape a single reference token per RFC 6901: `~1`→`/` then `~0`→`~`. */
 const unescapeToken = (token: string): string =>
   token.replace(/~1/g, "/").replace(/~0/g, "~");
@@ -22,8 +27,11 @@ export function resolvePointer(data: unknown, pointer: string): unknown {
   if (pointer === "") return data;
   if (pointer[0] !== "/") return undefined;
 
+  const tokens = tokenize(pointer);
+  if (tokens.length > MAX_POINTER_TOKENS) return undefined;
+
   let current: unknown = data;
-  for (const token of tokenize(pointer)) {
+  for (const token of tokens) {
     if (Array.isArray(current)) {
       const index = Number(token);
       if (!Number.isInteger(index) || index < 0 || index >= current.length) {
@@ -103,5 +111,9 @@ export function applyPointerPatch<T extends Record<string, unknown>>(
   }
   if (pointer[0] !== "/") return data;
 
-  return patchNode(data, tokenize(pointer), value, isDelete) as Record<string, unknown>;
+  const tokens = tokenize(pointer);
+  // An over-long pointer is a no-op: bound recursion on untrusted input.
+  if (tokens.length > MAX_POINTER_TOKENS) return data;
+
+  return patchNode(data, tokens, value, isDelete) as Record<string, unknown>;
 }

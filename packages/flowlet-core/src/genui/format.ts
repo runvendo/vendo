@@ -31,6 +31,10 @@ export interface GeneratedPayload {
   data?: Record<string, unknown>;
 }
 
+/** Hard cap on node count. A payload over this many nodes is rejected as a
+ *  provision error — defends against untrusted deep/large graphs (DoS). */
+export const MAX_GENUI_NODES = 5000;
+
 /** Error codes are kept as a local literal union to avoid coupling core to stage. */
 export type GenUIErrorCode = "version" | "provision";
 
@@ -62,6 +66,9 @@ export function validateGeneratedPayload(input: unknown): GenUIValidation {
   }
   if (!Array.isArray(nodes)) {
     return fail("provision", "nodes must be an array");
+  }
+  if (nodes.length > MAX_GENUI_NODES) {
+    return fail("provision", `too many nodes (max ${MAX_GENUI_NODES})`);
   }
   if (input.data !== undefined && !isPlainObject(input.data)) {
     return fail("provision", "data must be a plain object");

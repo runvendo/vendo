@@ -1,11 +1,16 @@
 /** Flowlet GenUI v1 resolver — the host-side transform from a validated, FLAT,
  *  id-addressed `GeneratedPayload` graph into the NESTED `UINode` component tree
- *  the sandbox runtime renders. Pure data + types; never throws on a validated
- *  (or even mildly malformed) payload. */
+ *  the sandbox runtime renders. Pure data + types; depth-bounded so it never
+ *  throws (even on an adversarial deep chain it stops recursing at MAX_DEPTH and
+ *  emits a contained Skeleton placeholder instead of overflowing the stack). */
 
 import type { ComponentNode, UINode } from "../ui";
 import { isPropBinding, type GeneratedPayload, type GenNode } from "./format";
 import { resolvePointer } from "./pointer";
+
+/** Maximum nesting depth resolved before a Skeleton placeholder caps the branch.
+ *  Bounds recursion regardless of node count, preventing a stack overflow. */
+const MAX_DEPTH = 256;
 
 /** A streaming/forward-reference placeholder for an unresolved or cyclic node. */
 const skeleton = (id: string): ComponentNode => ({
@@ -35,9 +40,11 @@ export function resolveGeneratedPayload(payload: GeneratedPayload): UINode {
   const byId = new Map<string, GenNode>(payload.nodes.map((n) => [n.id, n]));
   const data = payload.data ?? {};
 
-  const resolveNode = (id: string, ancestry: ReadonlySet<string>): ComponentNode => {
+  const resolveNode = (id: string, ancestry: ReadonlySet<string>, depth: number): ComponentNode => {
     const node = byId.get(id);
-    if (node === undefined || ancestry.has(id)) return skeleton(id);
+    // Beyond MAX_DEPTH, stop recursing and cap the branch with a placeholder so
+    // an adversarial deep chain can never overflow the stack.
+    if (node === undefined || ancestry.has(id) || depth > MAX_DEPTH) return skeleton(id);
 
     const resolved: ComponentNode = {
       id: node.id,
@@ -49,13 +56,13 @@ export function resolveGeneratedPayload(payload: GeneratedPayload): UINode {
 
     if (node.children !== undefined && node.children.length > 0) {
       const path = new Set(ancestry).add(id);
-      resolved.children = node.children.map((childId) => resolveNode(childId, path));
+      resolved.children = node.children.map((childId) => resolveNode(childId, path, depth + 1));
     }
 
     return resolved;
   };
 
-  return resolveNode(payload.root, new Set());
+  return resolveNode(payload.root, new Set(), 0);
 }
 
 /** Collect the JSON Pointers referenced by this node's top-level `$path` props,

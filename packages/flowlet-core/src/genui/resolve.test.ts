@@ -172,6 +172,31 @@ describe("resolveGeneratedPayload", () => {
   });
 });
 
+describe("resolveGeneratedPayload — depth bound (DoS)", () => {
+  it("resolves a deep linear chain without throwing (depth-capped with a Skeleton)", () => {
+    // A 1000-node linear chain would overflow an unbounded recursive resolver.
+    const N = 1000;
+    const nodes: GenNode[] = Array.from({ length: N }, (_, i) => ({
+      id: `n${i}`,
+      component: "Stack",
+      children: i < N - 1 ? [`n${i + 1}`] : [],
+    }));
+    let tree!: ReturnType<typeof resolveGeneratedPayload>;
+    expect(() => {
+      tree = resolveGeneratedPayload(payload("n0", nodes));
+    }).not.toThrow();
+    // Walk to the deepest resolved node; beyond MAX_DEPTH it is a Skeleton.
+    let depth = 0;
+    let cur = asComponent(tree);
+    while (cur.children && cur.children.length > 0) {
+      cur = cur.children[0] as ComponentNode;
+      depth++;
+    }
+    expect(cur.name).toBe("Skeleton");
+    expect(depth).toBeLessThan(N); // capped before exhausting the chain
+  });
+});
+
 describe("collectBindings", () => {
   it("returns the $paths of a node's top-level bindings in prop order", () => {
     const node: GenNode = {

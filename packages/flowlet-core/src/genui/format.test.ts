@@ -195,6 +195,37 @@ describe("validateGeneratedPayload", () => {
   });
 });
 
+describe("validateGeneratedPayload — size bound (DoS)", () => {
+  it("rejects a payload with more than 5000 nodes as a provision error", () => {
+    const nodes = Array.from({ length: 5001 }, (_, i) => ({
+      id: `n${i}`,
+      component: "Text",
+    }));
+    const result = validateGeneratedPayload({
+      formatVersion: FLOWLET_GENUI_VERSION,
+      root: "n0",
+      nodes,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.code).toBe("provision");
+    expect(result.error.message).toContain("too many nodes");
+  });
+
+  it("accepts a payload at the 5000-node cap", () => {
+    const nodes = Array.from({ length: 5000 }, (_, i) => ({
+      id: `n${i}`,
+      component: "Text",
+    }));
+    const result = validateGeneratedPayload({
+      formatVersion: FLOWLET_GENUI_VERSION,
+      root: "n0",
+      nodes,
+    });
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe("isPropBinding", () => {
   it("is true for a { $path } object with a string path", () => {
     expect(isPropBinding({ $path: "/a" })).toBe(true);

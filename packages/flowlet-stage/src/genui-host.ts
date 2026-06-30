@@ -58,7 +58,17 @@ export function createGenUISession(payload: unknown): CreateGenUISessionResult {
   // Original node order, for deterministic output ordering.
   const order = new Map(base.nodes.map((n, i) => [n.id, i]));
 
-  const tree = resolveGeneratedPayload({ ...base, data });
+  // Defense-in-depth: the resolver is depth-bounded, but never let a throw on
+  // untrusted input escape session creation — surface it as a provision error.
+  let tree: UINode;
+  try {
+    tree = resolveGeneratedPayload({ ...base, data });
+  } catch (err) {
+    return {
+      ok: false,
+      error: { code: "provision", message: err instanceof Error ? err.message : String(err) },
+    };
+  }
 
   const session: GenUISession = {
     tree,
@@ -78,12 +88,17 @@ export function createGenUISession(payload: unknown): CreateGenUISessionResult {
         }
       }
 
-      return [...affected]
-        .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
-        .map((nodeId) => ({
-          nodeId,
-          node: resolveGeneratedPayload({ ...base, root: nodeId, data }),
-        }));
+      try {
+        return [...affected]
+          .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
+          .map((nodeId) => ({
+            nodeId,
+            node: resolveGeneratedPayload({ ...base, root: nodeId, data }),
+          }));
+      } catch {
+        // Defense-in-depth: never let a resolve throw escape a data patch.
+        return [];
+      }
     },
 
     getData() {

@@ -46,6 +46,12 @@ describe("resolvePointer", () => {
   it("returns undefined for a pointer that does not start with /", () => {
     expect(resolvePointer(data, "a/b")).toBeUndefined();
   });
+
+  it("treats an over-long pointer (huge segment count) as a miss without throwing", () => {
+    const huge = "/" + Array.from({ length: 50000 }, (_, i) => `k${i}`).join("/");
+    expect(() => resolvePointer(data, huge)).not.toThrow();
+    expect(resolvePointer(data, huge)).toBeUndefined();
+  });
 });
 
 describe("applyPointerPatch", () => {
@@ -115,5 +121,12 @@ describe("applyPointerPatch", () => {
     const original = {} as Record<string, unknown>;
     const next = applyPointerPatch(original, "/a~1b", 1);
     expect(next).toEqual({ "a/b": 1 });
+  });
+
+  it("returns the data unchanged for an over-long pointer without throwing", () => {
+    const original = { a: 1 } as Record<string, unknown>;
+    const huge = "/" + Array.from({ length: 50000 }, (_, i) => `k${i}`).join("/");
+    expect(() => applyPointerPatch(original, huge, 9)).not.toThrow();
+    expect(applyPointerPatch(original, huge, 9)).toBe(original);
   });
 });
