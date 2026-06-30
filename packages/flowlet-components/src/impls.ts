@@ -6,6 +6,7 @@ import { Form } from "./components/Form/impl";
 import { Accordion } from "./components/Accordion/impl";
 import { Carousel } from "./components/Carousel/impl";
 import { Callout } from "./components/Callout/impl";
+import { Tags } from "./components/Tags/impl";
 
 export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>>> = {
   Card,
@@ -15,4 +16,5 @@ export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>
   Accordion,
   Carousel,
   Callout,
+  Tags,
 };
