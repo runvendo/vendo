@@ -11,6 +11,8 @@ import { categoryColor, categoryLabel } from "@/components/charts/colors"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { BrandLogo } from "@/components/ui/brand-logo"
+import { domainForName } from "@/lib/logos"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/toast"
 import {
@@ -106,12 +108,15 @@ export default function TransactionDetailPage() {
 
       {/* Hero */}
       <div className="flex items-start gap-4">
-        <div
-          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-base font-semibold text-white"
-          style={{ backgroundColor: categoryColor(cat) }}
-        >
-          {(t.logo ?? t.merchant.slice(0, 2)).toUpperCase()}
-        </div>
+        <BrandLogo domain={domainForName(t.merchant)} alt={t.merchant} size={56} rounded="rounded-2xl"
+          fallback={
+            <div
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-base font-semibold text-white"
+              style={{ backgroundColor: categoryColor(cat) }}
+            >
+              {(t.logo ?? t.merchant.slice(0, 2)).toUpperCase()}
+            </div>
+          } />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h1 className="truncate text-xl font-semibold text-ink">{t.merchant}</h1>

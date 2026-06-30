@@ -2,24 +2,10 @@
 import { Snowflake } from "lucide-react"
 import type { Card } from "@/server/types"
 import { cn } from "@/lib/cn"
+import { BrandLogo } from "@/components/ui/brand-logo"
+import { networkDomain } from "@/lib/logos"
 
 const CARDHOLDER = "YOUSEF HELAL"
-
-function NetworkMark({ network }: { network: Card["network"] }) {
-  if (network === "mastercard") {
-    return (
-      <div className="flex items-center" aria-label="Mastercard">
-        <span className="block h-6 w-6 rounded-full bg-[#eb001b]" />
-        <span className="-ml-2.5 block h-6 w-6 rounded-full bg-[#f79e1b] mix-blend-screen" />
-      </div>
-    )
-  }
-  return (
-    <span className="text-[17px] font-bold italic tracking-tight text-white" aria-label="Visa">
-      VISA
-    </span>
-  )
-}
 
 export function CardVisual({ card, revealed }: { card: Card; revealed?: boolean }) {
   const isAmber = card.design === "amber"
@@ -67,7 +53,8 @@ export function CardVisual({ card, revealed }: { card: Card; revealed?: boolean 
               Exp <span className="tabular-nums">{exp}</span>
             </div>
           </div>
-          <NetworkMark network={card.network} />
+          <BrandLogo domain={networkDomain(card.network)} alt={card.network} size={36} rounded="rounded-md"
+            fallback={<span className="text-white font-bold italic tracking-wide">{card.network === "mastercard" ? "Mastercard" : "VISA"}</span>} />
         </div>
       </div>
 

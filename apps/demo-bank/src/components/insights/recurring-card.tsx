@@ -5,6 +5,8 @@ import { formatDate } from "@/lib/format"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { categoryColor } from "@/components/charts/colors"
+import { BrandLogo } from "@/components/ui/brand-logo"
+import { domainForName } from "@/lib/logos"
 
 export function RecurringCard() {
   const { data, isLoading } = useRecurring()
@@ -41,10 +43,13 @@ export function RecurringCard() {
           data.map((r) => (
             <div key={r.id} className="flex items-center justify-between gap-3 py-2">
               <div className="flex items-center gap-2.5 min-w-0">
-                <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: categoryColor(r.category) }}
-                />
+                <BrandLogo domain={domainForName(r.merchant)} alt={r.merchant} size={28}
+                  fallback={
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: categoryColor(r.category) }}
+                    />
+                  } />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-ink">{r.merchant}</div>
                   <div className="text-xs text-muted capitalize">

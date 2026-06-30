@@ -8,14 +8,18 @@ import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/toast"
 import { useProfile } from "@/lib/hooks"
+import { BrandLogo } from "@/components/ui/brand-logo"
+import { domainForName } from "@/lib/logos"
 
 function SettingRow({
   icon: Icon,
+  leading,
   label,
   description,
   children,
 }: {
   icon?: React.ComponentType<{ className?: string; strokeWidth?: number }>
+  leading?: React.ReactNode
   label: string
   description?: string
   children: React.ReactNode
@@ -23,11 +27,13 @@ function SettingRow({
   return (
     <div className="flex items-center justify-between gap-4 py-3.5">
       <div className="flex min-w-0 items-start gap-3">
-        {Icon && (
-          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-border bg-hover text-ink-soft">
-            <Icon className="h-4 w-4" strokeWidth={1.75} />
-          </span>
-        )}
+        {leading
+          ? leading
+          : Icon && (
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-border bg-hover text-ink-soft">
+                <Icon className="h-4 w-4" strokeWidth={1.75} />
+              </span>
+            )}
         <div className="min-w-0">
           <div className="text-sm font-medium text-ink">{label}</div>
           {description && <div className="mt-0.5 text-xs text-muted">{description}</div>}
@@ -187,7 +193,24 @@ function LinkedAccountsCard() {
       </CardHeader>
       <CardContent className="divide-y divide-border py-0">
         {LINKED.map((l) => (
-          <SettingRow key={l.name} icon={Globe} label={l.name} description={l.detail}>
+          <SettingRow
+            key={l.name}
+            label={l.name}
+            description={l.detail}
+            leading={
+              <BrandLogo
+                domain={domainForName(l.name)}
+                alt={l.name}
+                size={32}
+                className="mt-0.5"
+                fallback={
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-border bg-hover text-ink-soft">
+                    <Globe className="h-4 w-4" strokeWidth={1.75} />
+                  </span>
+                }
+              />
+            }
+          >
             <button
               className="text-sm font-medium text-ink-soft transition-colors hover:text-ink"
               onClick={() => toast({ title: "Demo only", description: "Linked accounts are presentational." })}

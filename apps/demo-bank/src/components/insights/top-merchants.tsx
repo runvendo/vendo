@@ -4,6 +4,8 @@ import { useTransactions } from "@/lib/hooks"
 import { formatUSD } from "@/lib/money"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { BrandLogo } from "@/components/ui/brand-logo"
+import { domainForName } from "@/lib/logos"
 
 interface MerchantTotal {
   merchant: string
@@ -50,6 +52,12 @@ export function TopMerchants() {
               <span className="w-4 shrink-0 text-right text-[13px] tabular-nums text-muted">
                 {i + 1}
               </span>
+              <BrandLogo domain={domainForName(m.merchant)} alt={m.merchant} size={28}
+                fallback={
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-border bg-hover text-[10px] font-semibold text-ink-soft">
+                    {m.merchant.slice(0, 2).toUpperCase()}
+                  </span>
+                } />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="truncate text-sm font-medium text-ink">{m.merchant}</span>
