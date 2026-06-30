@@ -34,9 +34,18 @@ export interface WrapToolArgs {
   /** Identity on whose behalf the agent acts. */
   principal: FlowletPrincipal;
   /**
-   * Optional per-run cache so an expensive judge is not evaluated twice in the
-   * SAME turn (e.g. once in `needsApproval`, once in `execute`). It is an
-   * optimisation only — never relied upon across turns.
+   * Optional per-run cache so an expensive judge is not evaluated twice for the
+   * same call (once in `needsApproval`, once in the approval-turn `execute`).
+   * The cache MAY span the approval gap between those two turns, so it is NOT a
+   * "same-turn" optimisation — it is a per-run one.
+   *
+   * Contract: create it fresh per `run()` and discard it between independent
+   * runs/conversations. That is what preserves the fail-closed guarantee: a new
+   * run starts with a cold cache, so the approval-turn `execute` re-evaluates
+   * the policy from scratch rather than trusting a stale decision.
+   *
+   * Caveat: it is keyed by tool `name`, so it must be scoped to a single
+   * run/registry — two different tools sharing a name and this cache collide.
    */
   decisionCache?: Map<string, ApprovalDecision>;
   /** Policy version string mixed into the cache key. Defaults to `"v1"`. */
@@ -71,7 +80,10 @@ export function wrapTool(args: WrapToolArgs): Tool {
   /**
    * Evaluate the policy for this input. With a `decisionCache`, an identical
    * (principal, tool, args, version) lookup is served from cache so the policy
-   * runs at most once per turn for the same call.
+   * runs at most once per run for the same call — this may span the approval
+   * gap (the `needsApproval` turn and the later `execute` turn). The fail-closed
+   * guarantee comes from the cache being created fresh per `run()`: a new run
+   * has a cold cache, so `execute` re-evaluates the policy from scratch.
    */
   async function evaluate(input: unknown): Promise<ApprovalDecision> {
     const ctx: PolicyContext = { toolName: name, input, descriptor, principal };
@@ -93,11 +105,17 @@ export function wrapTool(args: WrapToolArgs): Tool {
     // enforced in `execute`, not by asking the user).
     needsApproval: async (input: unknown): Promise<boolean> =>
       (await evaluate(input)) === "approve",
-    // Authoritative, fail-closed gate. Re-evaluates the policy in this turn
-    // (a cold cache evaluates fresh); a `deny` short-circuits the original.
+    // Authoritative, fail-closed gate. Re-evaluates the policy (a cold cache
+    // evaluates fresh); a `deny` short-circuits the original execute.
     execute: async (input: unknown, options: ToolExecutionOptions) => {
       const decision = await evaluate(input);
       if (decision === "deny") {
+        // Return the structured deny payload as the tool result so the model
+        // sees the refusal. Verified against ai@6.0.28: the live run path
+        // (executeTool → executeToolCall) does NOT validate an execute return
+        // against the tool's `outputSchema` (only the opt-in validateUIMessages
+        // utility does), so this object is safe even for a tool whose
+        // `outputSchema` is non-object (e.g. `z.string()`).
         return policyDenied(name, "denied by approval policy");
       }
       return boundExecute(input, options);

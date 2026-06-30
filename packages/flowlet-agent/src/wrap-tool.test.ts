@@ -225,4 +225,76 @@ describe("wrapTool", () => {
     expect(seen).toBe(passed);
     expect(seen?.abortSignal).toBe(ac.signal);
   });
+
+  it("warm cache cannot let a denied call through (deny + decisionCache)", async () => {
+    // needsApproval runs first and populates the cache with "deny"; the
+    // approval-gap `execute` reads that same cached "deny" and must still block.
+    const spy = vi.fn(async () => "should-not-run");
+    const cache = new Map<string, ApprovalDecision>();
+    const w = wrapTool({
+      name: "t",
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+      descriptor: descriptorFor(true),
+      policy: fixedPolicy("deny"),
+      principal,
+      decisionCache: cache,
+    });
+
+    expect(await callNeedsApproval(w, { v: 1 })).toBe(false); // populates cache
+    const res = await callExecute(w, { v: 1 }, opts);
+    expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("shared cache does not leak one input's allow onto another input's deny", async () => {
+    // Policy: allow for { v: 1 }, deny for everything else.
+    const spy = vi.fn(async () => "should-not-run");
+    const policy: ApprovalPolicy = {
+      evaluate: (ctx) => ((ctx.input as { v: number }).v === 1 ? "allow" : "deny"),
+    };
+    const cache = new Map<string, ApprovalDecision>();
+    const w = wrapTool({
+      name: "t",
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+      descriptor: descriptorFor(true),
+      policy,
+      principal,
+      decisionCache: cache,
+    });
+
+    // Cache "allow" for input A.
+    expect(await callNeedsApproval(w, { v: 1 })).toBe(false);
+    // Different input B must still be denied (no cross-key leak).
+    const res = await callExecute(w, { v: 2 }, opts);
+    expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("deny path reports cleanly under a non-object outputSchema (no crash)", async () => {
+    // The tool declares a string outputSchema; the deny payload is an object.
+    // ai@6.0.28 does NOT validate an execute return against outputSchema in the
+    // live run path (only the opt-in validateUIMessages utility does), so the
+    // object return is reported as a normal tool result without crashing.
+    const spy = vi.fn(async () => "real-output");
+    const w = wrapTool({
+      name: "t",
+      tool: tool({
+        inputSchema: z.object({ v: z.number() }),
+        outputSchema: z.string(),
+        execute: spy,
+      }),
+      descriptor: descriptorFor(true),
+      policy: fixedPolicy("deny"),
+      principal,
+    });
+
+    let res: unknown;
+    await expect(
+      (async () => {
+        res = await callExecute(w, { v: 1 }, opts);
+      })(),
+    ).resolves.not.toThrow();
+    expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
+    expect(spy).not.toHaveBeenCalled();
+  });
 });
