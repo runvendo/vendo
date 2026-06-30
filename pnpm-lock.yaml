@@ -102,12 +102,21 @@ importers:
 
   examples/basic:
     dependencies:
+      '@ai-sdk/provider':
+        specifier: 3.0.2
+        version: 3.0.2
+      '@flowlet/agent':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-agent
       '@flowlet/core':
         specifier: workspace:*
         version: link:../../packages/flowlet-core
       '@flowlet/react':
         specifier: workspace:*
         version: link:../../packages/flowlet-react
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
       react:
         specifier: ^18.3.0
         version: 18.3.1
