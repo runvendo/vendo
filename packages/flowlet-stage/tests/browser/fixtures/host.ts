@@ -1,5 +1,6 @@
-import { createStage, connectStage } from "@flowlet/stage";
+import { createStage, connectStage, createGenUISession } from "@flowlet/stage";
 import type { StageInitPayload } from "@flowlet/stage";
+import type { GeneratedPayload } from "@flowlet/core";
 
 // ── DOM scaffolding ───────────────────────────────────────────────────────────
 
@@ -200,6 +201,127 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         props: { title: "SharedReact", body: "bundle1" },
       },
     };
+  }
+
+  // ── Generated-UI (GenUI v1) cases ───────────────────────────────────────────
+  // These resolve a flat GeneratedPayload HOST-SIDE via createGenUISession and
+  // render the resulting component tree in the same sandbox. The live session +
+  // a JSON-Pointer patch helper are exposed for the ui-delta gate.
+
+  const VERSION = "flowlet-genui/v1";
+
+  async function gen(payload: GeneratedPayload): Promise<StageInitPayload> {
+    const result = createGenUISession(payload);
+    if (!result.ok) {
+      throw new Error(`createGenUISession failed: ${result.error.code}: ${result.error.message}`);
+    }
+    const session = result.session;
+    (window as any).__session = session;
+    (window as any).__patchData = (path: string, value: unknown) => {
+      session.applyDataPatch(path, value).forEach((r) => controller.update({ replace: r }));
+    };
+    return { theme, state: {}, bundleSource: await bundle(), tree: session.tree };
+  }
+
+  if (kind === "gen-basic") {
+    // A generated tree of prewired primitives (Stack/Text) plus a host
+    // component resolved by name (Card) — proves both render in one stage.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["t1", "c1"] },
+        { id: "t1", component: "Text", source: "prewired", props: { text: "hello" } },
+        {
+          id: "c1",
+          component: "Card",
+          source: "host",
+          props: { title: "Card title", body: "from genui" },
+        },
+      ],
+    });
+  }
+
+  if (kind === "gen-unknown") {
+    // A generated tree that references an UNKNOWN host component name. The
+    // runtime renders a contained [data-error] node for the unknown name while
+    // the present sibling Text still renders — per-node isolation.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["t1", "nope"] },
+        { id: "t1", component: "Text", source: "prewired", props: { text: "sibling lives" } },
+        { id: "nope", component: "NopeNotReal", source: "host" },
+      ],
+    });
+  }
+
+  if (kind === "gen-delta") {
+    // A Card whose title binds to /acct/name — used to drive a prop-level data
+    // delta and prove the host element is reconciled in place (no remount).
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["c1"] },
+        {
+          id: "c1",
+          component: "Card",
+          source: "host",
+          props: { title: { $path: "/acct/name" }, body: "balance" },
+        },
+      ],
+      data: { acct: { name: "Before" } },
+    });
+  }
+
+  if (kind === "gen-skeleton") {
+    // "missing" is referenced as a child but absent from nodes (forward
+    // reference) → the resolver emits a Skeleton with that id. A present
+    // sibling Text renders normally. __supplyMissing swaps the skeleton for
+    // real content via a structural node replace, proving a live swap works.
+    (window as any).__supplyMissing = () =>
+      controller.update({
+        replace: {
+          nodeId: "missing",
+          node: {
+            id: "missing",
+            kind: "component",
+            source: "prewired",
+            name: "Text",
+            props: { text: "now here" },
+          },
+        },
+      });
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["present", "missing"] },
+        { id: "present", component: "Text", source: "prewired", props: { text: "present text" } },
+      ],
+    });
+  }
+
+  if (kind === "e2e") {
+    // A live-LLM-generated payload injected by the e2e spec via addInitScript
+    // BEFORE navigation. We resolve it host-side; on success the stage renders
+    // the real component tree (Card resolves from the host bundle), on failure
+    // we surface the validation message on #e2e-error for the spec to assert.
+    const payload = (window as any).__e2ePayload as GeneratedPayload;
+    const result = createGenUISession(payload);
+    if (!result.ok) {
+      ensure("e2e-error").textContent = `${result.error.code}: ${result.error.message}`;
+      return {
+        theme: {},
+        state: {},
+        bundleSource: "",
+        tree: { id: "root", kind: "generated", payload: null },
+      };
+    }
+    (window as any).__session = result.session;
+    return { theme, state: {}, bundleSource: await bundle(), tree: result.session.tree };
   }
 
   // Default: empty stage (used by load + bridge gate)

@@ -11,6 +11,42 @@ describe("stage runtime source", () => {
       "ResizeObserver", "$state", "getDerivedStateFromError", "__React",
     ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
   });
+  it("defines the built-in prewired primitives", () => {
+    for (const marker of [
+      "PRIMITIVES", "Stack", "Row", "Grid", "Text", "Skeleton",
+      "data-skeleton", "data-primitive",
+    ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
+  });
+  it("resolves prewired names against primitives first, falling back to host", () => {
+    expect(STAGE_RUNTIME_SRC).toContain('node.source === "prewired"');
+    // Fallback to the host bundle (e.g. __row/__badge) must be preserved.
+    expect(STAGE_RUNTIME_SRC).toContain("host[node.name]");
+  });
+  it("caches the error-boundary class so ui/update reconciles instead of remounting", () => {
+    // The class is built once via getEB() and reused, mirroring cachedHost. A
+    // fresh makeEB() per render would be a new React component type and force a
+    // full remount on every ui/update, destroying DOM identity.
+    expect(STAGE_RUNTIME_SRC).toContain("function getEB()");
+    expect(STAGE_RUNTIME_SRC).toContain("cachedEB || (cachedEB = makeEB(window.__React))");
+    // makeEB must NOT be called directly inside render()/rerender() anymore.
+    expect(STAGE_RUNTIME_SRC).not.toContain("var EB = makeEB(");
+  });
+  it("allowlists the Text primitive's as-tag to safe text elements", () => {
+    // props.as is LLM-controlled; only text tags are permitted, else fall back to span.
+    expect(STAGE_RUNTIME_SRC).toContain("TEXT_TAGS");
+    expect(STAGE_RUNTIME_SRC).toContain(
+      "span:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, strong:1, em:1, small:1, label:1, div:1",
+    );
+    // The raw, unguarded passthrough must be gone.
+    expect(STAGE_RUNTIME_SRC).not.toContain('R.createElement(props.as || "span"');
+  });
+  it("resets the cached error boundary when its child changes so ui-delta recovers", () => {
+    // Without a reset, a node that throws once stays "render error" forever even
+    // after a valid ui/update. componentDidUpdate clears err when children change.
+    expect(STAGE_RUNTIME_SRC).toContain("componentDidUpdate");
+    expect(STAGE_RUNTIME_SRC).toContain("this.setState({ err: false })");
+    expect(STAGE_RUNTIME_SRC).toContain("prevProps.children !== this.props.children");
+  });
 });
 
 describe("$state prop binding (bindProps)", () => {

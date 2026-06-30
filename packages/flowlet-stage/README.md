@@ -62,6 +62,22 @@ interface StageCapabilities {
 }
 ```
 
+## Host-side GenUI resolution + ui-delta
+
+`createGenUISession(payload)` validates a Flowlet GenUI v1 payload and resolves its flat,
+id-addressed graph into the nested `UINode` tree the sandbox renders. On `{ ok: true }` it
+returns a `session`:
+
+- `session.tree`: the resolved tree, passed as `StageInitPayload.tree` to `controller.initialize`.
+- `session.applyDataPatch(path, value?)`: applies a JSON-Pointer patch to the live data
+  model and returns the minimal node replacements a prop-level update needs:
+  `Array<{ nodeId, node }>`. Omit `value` to delete the pointer; pass it (even `undefined`)
+  to set. Each replacement is driven into the sandbox via `controller.update({ replace: { nodeId, node } })`.
+
+Because structure is unchanged on a data patch, only bound nodes are replaced (no remount).
+The `FlowletStage` React adapter wires this automatically: a data-only payload change takes
+the `applyDataPatch` path, while a structural change re-initializes.
+
 ## Host build step
 
 Host component bundles must be built with `flowletHostPreset` from `@flowlet/stage/build`:
