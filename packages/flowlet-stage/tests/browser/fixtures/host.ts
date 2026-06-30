@@ -289,6 +289,26 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     });
   }
 
+  if (kind === "e2e") {
+    // A live-LLM-generated payload injected by the e2e spec via addInitScript
+    // BEFORE navigation. We resolve it host-side; on success the stage renders
+    // the real component tree (Card resolves from the host bundle), on failure
+    // we surface the validation message on #e2e-error for the spec to assert.
+    const payload = (window as any).__e2ePayload as GeneratedPayload;
+    const result = createGenUISession(payload);
+    if (!result.ok) {
+      ensure("e2e-error").textContent = `${result.error.code}: ${result.error.message}`;
+      return {
+        theme: {},
+        state: {},
+        bundleSource: "",
+        tree: { id: "root", kind: "generated", payload: null },
+      };
+    }
+    (window as any).__session = result.session;
+    return { theme, state: {}, bundleSource: await bundle(), tree: result.session.tree };
+  }
+
   // Default: empty stage (used by load + bridge gate)
   return {
     theme: {},
