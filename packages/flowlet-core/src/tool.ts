@@ -1,4 +1,4 @@
-import type { FlowletSchema } from "./schema";
+import type { BoundarySchema } from "./schema";
 import { toJsonSchema } from "./schema";
 
 /** Reuse MCP's standard annotation vocabulary as the broad permission signal. */
@@ -17,8 +17,8 @@ export interface ToolContext {
 export interface FlowletTool<I = unknown, O = unknown> {
   name: string;
   description: string;
-  inputSchema: FlowletSchema<I>;
-  outputSchema?: FlowletSchema<O>;
+  inputSchema: BoundarySchema<I>;
+  outputSchema?: BoundarySchema<O>;
   annotations?: ToolAnnotations;
   /** Open slot for any custom gating metadata; policy lives in F2. */
   permission?: unknown;
@@ -56,8 +56,8 @@ export function fromMcpTool(
   return {
     name: def.name,
     description: def.description ?? "",
-    // The MCP def already carries JSON Schema; pass it through as the boundary schema.
-    inputSchema: def.inputSchema as FlowletSchema<unknown>,
+    // The MCP def already carries JSON Schema; wrap it as the JSON-Schema boundary arm.
+    inputSchema: { jsonSchema: def.inputSchema },
     annotations: def.annotations,
     execute,
   };

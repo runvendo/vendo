@@ -12,4 +12,15 @@ describe("schema boundary", () => {
     expect(json.type).toBe("object");
     expect((json.properties as Record<string, unknown>).city).toBeDefined();
   });
+
+  it("accepts a pre-converted { jsonSchema } boundary object and returns it as-is", () => {
+    const jsonSchema = { type: "object" };
+    expect(isJsonSchemaConvertible({ jsonSchema })).toBe(true);
+    expect(toJsonSchema({ jsonSchema })).toBe(jsonSchema);
+  });
+
+  it("rejects a plain, non-convertible object", () => {
+    expect(isJsonSchemaConvertible({ type: "object" })).toBe(false);
+    expect(() => toJsonSchema({ type: "object" })).toThrow(/JSON-Schema-convertible/);
+  });
 });

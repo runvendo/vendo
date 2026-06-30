@@ -32,7 +32,9 @@ export interface ActionRequest {
   originNodeId: string;
   action: string;
   payload?: unknown;
-  capability?: unknown;   // spec §5.6 (origin node + capability + error)
+  /** Opaque capability token authorizing this action; set by the sandbox when the
+   *  origin node was granted one. Absent for unprivileged actions. */
+  capability?: unknown;
 }
 
 export type ActionResult =

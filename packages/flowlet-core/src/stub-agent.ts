@@ -1,12 +1,12 @@
 import { createUIMessageStream, type UIMessageChunk } from "ai";
 import type { FlowletAgent, RunInput } from "./agent";
-import type { ApprovalResponse } from "./protocol";
+import type { ApprovalResponse, FlowletUIMessage } from "./protocol";
 import { SCHEMA_VERSION } from "./protocol";
 import type { UINode } from "./ui";
 
 /**
  * Scripted development fixture (no LLM). Emits: start -> run info -> text ->
- * approval (pauses) -> [awaits approval-response via onClientPart] -> ui -> finish.
+ * approval (pauses) -> [awaits `respondToApproval`, or aborts] -> ui -> finish.
  * The in-memory approval resolver is F1's stand-in for the real networked return channel.
  */
 export interface StubAgent extends FlowletAgent {
@@ -22,17 +22,7 @@ export function createStubAgent(): StubAgent {
   }
 
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
-    // Bridge the public onClientPart return channel into the pending-approval map.
-    const originalOnClientPart = input.onClientPart;
-    input.onClientPart = (part) => {
-      originalOnClientPart?.(part);
-      if (part.type === "data-approval-response") {
-        pending.get(part.data.approvalId)?.(part.data);
-        pending.delete(part.data.approvalId);
-      }
-    };
-
-    return createUIMessageStream<any>({
+    return createUIMessageStream<FlowletUIMessage>({
       execute: async ({ writer }) => {
         writer.write({ type: "start" });
         writer.write({
@@ -49,7 +39,7 @@ export function createStubAgent(): StubAgent {
         const approvalId = "approval-1";
         const approved = await new Promise<ApprovalResponse | "aborted">((resolve) => {
           // Cancellation: if the run is aborted while awaiting approval, settle the
-          // pending promise and stop further writes (spec §9).
+          // pending promise as aborted so the run short-circuits without further writes.
           const onAbort = () => {
             pending.delete(approvalId);
             resolve("aborted");

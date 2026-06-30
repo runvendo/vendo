@@ -3,7 +3,7 @@ import { SCHEMA_VERSION, type ApprovalRequest } from "./protocol";
 
 describe("protocol", () => {
   it("exposes a schema version", () => {
-    expect(typeof SCHEMA_VERSION).toBe("number");
+    expect(SCHEMA_VERSION).toBe(1);
   });
 
   it("types an approval request with a correlation id", () => {
