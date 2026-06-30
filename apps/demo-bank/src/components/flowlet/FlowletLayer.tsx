@@ -25,7 +25,7 @@ const SUGGESTIONS = [
 export function FlowletLayer() {
   const [fire, setFire] = useState<FireEvent | null>(null);
   const [saved, setSaved] = useState<SavedView[]>([]);
-  const [dockOpen, setDockOpen] = useState(true);
+  const [dockOpen, setDockOpen] = useState(false);
   const pathname = usePathname();
   // On the dedicated Flowlet tab, that page IS the surface — hide the floating dock.
   const showDock = pathname !== "/flowlet";

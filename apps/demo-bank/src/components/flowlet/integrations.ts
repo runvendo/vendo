@@ -12,6 +12,11 @@ export function createComposioIntegrations(): FlowletIntegrations {
   let cache: Integration[] = [
     { id: "gmail", name: "Gmail", connected: true },
     { id: "slack", name: "Slack", connected: true },
+    { id: "notion", name: "Notion", connected: false },
+    { id: "github", name: "GitHub", connected: false },
+    { id: "googlecalendar", name: "Google Calendar", connected: false },
+    { id: "linear", name: "Linear", connected: false },
+    { id: "googledrive", name: "Google Drive", connected: false },
   ];
   const find = (id: string): Integration =>
     cache.find((i) => i.id === id) ?? { id, name: id, connected: false };

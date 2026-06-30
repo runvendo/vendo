@@ -24,7 +24,14 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
               </div>
             );
           case "tool":
-            return <ToolCall key={item.key} toolName={item.toolName} state={item.state} />;
+            return (
+              <ToolCall
+                key={item.key}
+                toolName={item.toolName}
+                state={item.state}
+                errorText={item.errorText}
+              />
+            );
           case "approval":
             return (
               <ApprovalCard

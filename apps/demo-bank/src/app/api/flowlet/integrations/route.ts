@@ -13,10 +13,18 @@ const API = "https://backend.composio.dev/api/v3"
 
 export async function GET() {
   const apiKey = process.env.COMPOSIO_API_KEY
-  const base = [
-    { id: "gmail", name: "Gmail", connected: false },
-    { id: "slack", name: "Slack", connected: false },
+  // The toolkits Flowlet can use. gmail + slack are the demo's live integrations;
+  // the rest are surfaced as available-to-connect so the rail shows real breadth.
+  const catalog = [
+    { id: "gmail", name: "Gmail" },
+    { id: "slack", name: "Slack" },
+    { id: "notion", name: "Notion" },
+    { id: "github", name: "GitHub" },
+    { id: "googlecalendar", name: "Google Calendar" },
+    { id: "linear", name: "Linear" },
+    { id: "googledrive", name: "Google Drive" },
   ]
+  const base = catalog.map((c) => ({ ...c, connected: false }))
   if (!apiKey) return ok({ integrations: base })
 
   try {
@@ -28,10 +36,7 @@ export async function GET() {
     const active = (slug: string) =>
       items.some((c) => (c.toolkit?.slug ?? "").toLowerCase() === slug && c.status === "ACTIVE")
     return ok({
-      integrations: [
-        { id: "gmail", name: "Gmail", connected: active("gmail") },
-        { id: "slack", name: "Slack", connected: active("slack") },
-      ],
+      integrations: catalog.map((c) => ({ ...c, connected: active(c.id) })),
     })
   } catch {
     return ok({ integrations: base })

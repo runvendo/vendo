@@ -10,6 +10,8 @@ import { useFlowletContext } from "./provider";
  */
 export function useFlowletChat() {
   const { registry, chat } = useFlowletContext();
-  const helpers = useChat<FlowletUIMessage>({ chat });
+  // `experimental_throttle` coalesces per-token state updates onto a 50ms cadence
+  // so streaming text re-renders smoothly instead of thrashing on every delta.
+  const helpers = useChat<FlowletUIMessage>({ chat, experimental_throttle: 50 });
   return { ...helpers, registry };
 }

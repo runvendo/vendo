@@ -88,6 +88,17 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
     ? config.composio.client ?? createComposioClient(config.composio.config)
     : undefined;
 
+  // Cache the ingested Composio toolset PER PRINCIPAL across runs. The Composio
+  // schema fetch (Gmail/Slack OAuth + tool listing) is a multi-second network
+  // round-trip; without this it re-ran on EVERY turn before `streamText`,
+  // stalling the first token (and re-ran again on each tool-loop re-invocation
+  // after an approval). A user's allowlisted toolset is stable for the agent's
+  // lifetime, so we memoize by userId. We cache the PROMISE so concurrent runs
+  // for the same user share one in-flight fetch, and we evict on rejection so a
+  // transient failure never permanently disables that user's tools.
+  type Ingested = { toolset: ToolSet; descriptors: Record<string, ToolDescriptor> };
+  const composioCache = new Map<string, Promise<Ingested>>();
+
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     const ordinal = ++runCounter;
     const runId = `run-${ordinal}`;
@@ -109,18 +120,39 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         const renderTool = createRenderTool(writer);
 
         // 3. Composio ingestion (fail-closed inside ingestComposioTools).
+        //    Memoized per principal so the schema round-trip blocks only the
+        //    FIRST turn for a given user; every subsequent turn resolves the
+        //    cached toolset instantly and the first token streams without stall.
         let composioTools: ToolSet = {};
         let composioDescriptors: Record<string, ToolDescriptor> = {};
         if (config.composio && composioClient) {
-          const ingested = await ingestComposioTools({
-            principal,
-            config: config.composio.config,
-            client: composioClient,
-          });
+          const composioConfig = config.composio.config;
+          const client = composioClient;
+          let ingestion = composioCache.get(principal.userId);
+          if (!ingestion) {
+            ingestion = ingestComposioTools({
+              principal,
+              config: composioConfig,
+              client,
+            })
+              .then(
+                (ingested): Ingested => ({
+                  toolset: ingested.toolset,
+                  descriptors: Object.fromEntries(
+                    ingested.descriptors.map((d) => [d.name, d]),
+                  ),
+                }),
+              )
+              .catch((err) => {
+                // Don't cache a failure: a later turn should retry the fetch.
+                composioCache.delete(principal.userId);
+                throw err;
+              });
+            composioCache.set(principal.userId, ingestion);
+          }
+          const ingested = await ingestion;
           composioTools = ingested.toolset;
-          composioDescriptors = Object.fromEntries(
-            ingested.descriptors.map((d) => [d.name, d]),
-          );
+          composioDescriptors = ingested.descriptors;
         }
 
         // 4. Sources in precedence order: caller > engine > composio.
