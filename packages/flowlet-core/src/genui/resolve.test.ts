@@ -195,6 +195,26 @@ describe("resolveGeneratedPayload — depth bound (DoS)", () => {
     expect(cur.name).toBe("Skeleton");
     expect(depth).toBeLessThan(N); // capped before exhausting the chain
   });
+
+  it("bounds a diamond-DAG payload (each child id listed twice) instead of exploding (2^depth)", () => {
+    // n0..n26 where each nk.children = [n(k+1), n(k+1)]. Without an op budget this
+    // expands into ~2^27 independent subtrees and OOM-crashes V8, despite being
+    // only 27 nodes (under the node + depth caps). The total-op budget caps it.
+    const N = 27;
+    const nodes: GenNode[] = Array.from({ length: N }, (_, i) => ({
+      id: `n${i}`,
+      component: "Stack",
+      children: i < N - 1 ? [`n${i + 1}`, `n${i + 1}`] : [],
+    }));
+    const start = Date.now();
+    let tree!: ReturnType<typeof resolveGeneratedPayload>;
+    expect(() => {
+      tree = resolveGeneratedPayload(payload("n0", nodes));
+    }).not.toThrow();
+    // It must RETURN quickly (bounded work), not hang/OOM.
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(isComponentNode(tree)).toBe(true);
+  });
 });
 
 describe("collectBindings", () => {

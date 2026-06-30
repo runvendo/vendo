@@ -12,6 +12,14 @@ import { resolvePointer } from "./pointer";
  *  Bounds recursion regardless of node count, preventing a stack overflow. */
 const MAX_DEPTH = 256;
 
+/** Maximum total `resolveNode` invocations per resolve. A "diamond DAG" payload —
+ *  a node listing the same child id twice, chained — expands exponentially (2^depth)
+ *  into independent subtrees, which is well within the depth/node caps yet OOMs V8.
+ *  This budget bounds total work so such a payload degrades to placeholders instead
+ *  of exploding. Generous vs the 5000-node input cap, so legitimate trees (even with
+ *  modest sharing) are unaffected. */
+const MAX_RESOLVE_OPS = 20000;
+
 /** A streaming/forward-reference placeholder for an unresolved or cyclic node. */
 const skeleton = (id: string): ComponentNode => ({
   id,
@@ -39,12 +47,19 @@ function resolveProps(
 export function resolveGeneratedPayload(payload: GeneratedPayload): UINode {
   const byId = new Map<string, GenNode>(payload.nodes.map((n) => [n.id, n]));
   const data = payload.data ?? {};
+  // Total-work budget shared across the whole resolve (a fresh counter per call,
+  // so applyDataPatch's re-rooted resolves each get their own budget).
+  let ops = 0;
 
   const resolveNode = (id: string, ancestry: ReadonlySet<string>, depth: number): ComponentNode => {
+    ops++;
     const node = byId.get(id);
-    // Beyond MAX_DEPTH, stop recursing and cap the branch with a placeholder so
-    // an adversarial deep chain can never overflow the stack.
-    if (node === undefined || ancestry.has(id) || depth > MAX_DEPTH) return skeleton(id);
+    // Beyond MAX_DEPTH (stack-overflow guard) or the total-op budget (diamond-DAG
+    // exponential-expansion guard), stop recursing and cap the branch with a
+    // placeholder. A cyclic/dangling/unknown id is also capped here.
+    if (node === undefined || ancestry.has(id) || depth > MAX_DEPTH || ops > MAX_RESOLVE_OPS) {
+      return skeleton(id);
+    }
 
     const resolved: ComponentNode = {
       id: node.id,
