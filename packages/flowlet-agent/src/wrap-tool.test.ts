@@ -215,7 +215,7 @@ describe("wrapTool", () => {
     expect(toModelOutput).not.toHaveBeenCalled();
   });
 
-  it("onExecuted: fires after a successful (allow) execute with the same PolicyContext", async () => {
+  it("onExecuted: fires after a successful allow execute with the context AND the 'allow' decision", async () => {
     const onExecuted = vi.fn();
     const policy: ApprovalPolicy = { evaluate: () => "allow", onExecuted };
     const w = wrapTool({
@@ -230,6 +230,26 @@ describe("wrapTool", () => {
     expect(onExecuted).toHaveBeenCalledOnce();
     expect(onExecuted).toHaveBeenCalledWith(
       expect.objectContaining({ toolName: "t", input: { v: 7 }, principal }),
+      "allow",
+    );
+  });
+
+  it("onExecuted: fires after a successful approve execute with the 'approve' decision", async () => {
+    const onExecuted = vi.fn();
+    const policy: ApprovalPolicy = { evaluate: () => "approve", onExecuted };
+    const w = wrapTool({
+      name: "t",
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: async () => "ok" }),
+      descriptor: descriptorFor(true),
+      policy,
+      principal,
+    });
+
+    expect(await callExecute(w, { v: 9 }, opts)).toBe("ok");
+    expect(onExecuted).toHaveBeenCalledOnce();
+    expect(onExecuted).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: "t", input: { v: 9 }, principal }),
+      "approve",
     );
   });
 
@@ -323,25 +343,31 @@ describe("wrapTool", () => {
     expect(await store.get(key)).toBeUndefined();
   });
 
-  it("decisionCache: same input evaluates the policy once; a different input re-evaluates", async () => {
-    const evalSpy = vi.fn((): ApprovalDecision => "allow");
-    const policy: ApprovalPolicy = { evaluate: evalSpy };
-    const cache = new Map<string, ApprovalDecision>();
+  it("execute re-evaluates the composed policy: a policy that flips allow→deny between needsApproval and execute is enforced (deny), original NEVER runs", async () => {
+    // BLOCKER 1 regression: the SDK calls needsApproval (preflight) then, in a
+    // later turn, execute. A mutable policy whose state changed between the two
+    // (returns "allow" first, "deny" second) MUST be re-evaluated at execute
+    // time and the now-denied call blocked — no stale cached "allow".
+    let call = 0;
+    const policy: ApprovalPolicy = {
+      evaluate: () => (++call === 1 ? "allow" : "deny"),
+    };
+    const spy = vi.fn(async () => "should-not-run");
     const w = wrapTool({
       name: "t",
-      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: async () => "ok" }),
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
       descriptor: descriptorFor(true),
       policy,
       principal,
-      decisionCache: cache,
     });
 
-    await callNeedsApproval(w, { v: 1 });
-    await callExecute(w, { v: 1 }, opts);
-    expect(evalSpy).toHaveBeenCalledTimes(1); // cache hit on the second call
-
-    await callNeedsApproval(w, { v: 2 });
-    expect(evalSpy).toHaveBeenCalledTimes(2); // different input → fresh eval
+    // Preflight (call #1): allow → no approval needed.
+    expect(await callNeedsApproval(w, { v: 1 })).toBe(false);
+    // Execute (call #2): policy now denies → must block, original never runs.
+    const res = await callExecute(w, { v: 1 }, opts);
+    expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
+    expect(spy).not.toHaveBeenCalled();
+    expect(call).toBe(2); // policy evaluated fresh on BOTH callbacks
   });
 
   it("throws FlowletError('policy', ...) when wrapping a no-execute tool", () => {
@@ -392,48 +418,27 @@ describe("wrapTool", () => {
     expect(seen?.abortSignal).toBe(ac.signal);
   });
 
-  it("warm cache cannot let a denied call through (deny + decisionCache)", async () => {
-    // needsApproval runs first and populates the cache with "deny"; the
-    // approval-gap `execute` reads that same cached "deny" and must still block.
-    const spy = vi.fn(async () => "should-not-run");
-    const cache = new Map<string, ApprovalDecision>();
-    const w = wrapTool({
-      name: "t",
-      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
-      descriptor: descriptorFor(true),
-      policy: fixedPolicy("deny"),
-      principal,
-      decisionCache: cache,
-    });
-
-    expect(await callNeedsApproval(w, { v: 1 })).toBe(false); // populates cache
-    const res = await callExecute(w, { v: 1 }, opts);
-    expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it("shared cache does not leak one input's allow onto another input's deny", async () => {
+  it("execute evaluates per-input: an allow input runs while a deny input is blocked (no cross-input leak)", async () => {
     // Policy: allow for { v: 1 }, deny for everything else.
-    const spy = vi.fn(async () => "should-not-run");
+    const spy = vi.fn(async () => "ran");
     const policy: ApprovalPolicy = {
       evaluate: (ctx) => ((ctx.input as { v: number }).v === 1 ? "allow" : "deny"),
     };
-    const cache = new Map<string, ApprovalDecision>();
     const w = wrapTool({
       name: "t",
       tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
       descriptor: descriptorFor(true),
       policy,
       principal,
-      decisionCache: cache,
     });
 
-    // Cache "allow" for input A.
-    expect(await callNeedsApproval(w, { v: 1 })).toBe(false);
-    // Different input B must still be denied (no cross-key leak).
+    // Allow input runs.
+    expect(await callExecute(w, { v: 1 }, opts)).toBe("ran");
+    expect(spy).toHaveBeenCalledOnce();
+    // Different input is denied independently (each execute evaluates fresh).
     const res = await callExecute(w, { v: 2 }, opts);
     expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
-    expect(spy).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledOnce(); // deny input never ran the original
   });
 
   it("deny path reports cleanly under a non-object outputSchema (no crash)", async () => {

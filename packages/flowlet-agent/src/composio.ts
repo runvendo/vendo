@@ -78,7 +78,9 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
       import("@composio/vercel"),
     ]);
     composio = new (Composio as unknown as ComposioCtor)({
-      apiKey: config.apiKey,
+      // Fall back to the standard env var when no explicit key was given. Read
+      // lazily here (at first fetch), never at module load.
+      apiKey: config.apiKey ?? process.env.COMPOSIO_API_KEY,
       provider: new VercelProvider(),
     });
     return composio;

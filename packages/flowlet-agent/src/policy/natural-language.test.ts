@@ -8,7 +8,7 @@
  * for the rationale comment.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import type { PolicyContext } from "./types";
@@ -39,6 +39,26 @@ function mockThrowing(): MockLanguageModelV3 {
       throw new Error("judge model failure");
     },
   });
+}
+
+/**
+ * Build a mock backed by a spy whose return text can change between calls.
+ * `spy` tracks how many times the judge model was actually invoked.
+ */
+function spyMock(impl: () => string): {
+  model: MockLanguageModelV3;
+  spy: ReturnType<typeof vi.fn>;
+} {
+  const spy = vi.fn(impl);
+  const model = new MockLanguageModelV3({
+    doGenerate: async (): Promise<LanguageModelV3GenerateResult> => ({
+      content: [{ type: "text", text: spy() }],
+      finishReason: { unified: "stop", raw: undefined },
+      usage: ZERO_USAGE,
+      warnings: [],
+    }),
+  });
+  return { model, spy };
 }
 
 /** Minimal valid PolicyContext for these tests. */
@@ -79,5 +99,44 @@ describe("naturalLanguagePolicy", () => {
   it('returns "deny" (fail-closed) when the judge model throws', async () => {
     const policy = naturalLanguagePolicy(rules, mockThrowing());
     expect(await policy.evaluate(fakeCtx)).toBe("deny");
+  });
+
+  it("memoises a successful decision: two identical (toolName, input) evaluations call the model once", async () => {
+    const { model, spy } = spyMock(() => "approve");
+    const policy = naturalLanguagePolicy(rules, model);
+
+    expect(await policy.evaluate(fakeCtx)).toBe("approve");
+    expect(await policy.evaluate(fakeCtx)).toBe("approve"); // served from memo
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("a different (toolName, input) is a cache miss and calls the model again", async () => {
+    const { model, spy } = spyMock(() => "allow");
+    const policy = naturalLanguagePolicy(rules, model);
+
+    await policy.evaluate(fakeCtx);
+    await policy.evaluate({
+      ...fakeCtx,
+      input: { to: "bob@example.com", subject: "Different" },
+    });
+
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("a transient judge failure is NOT memoised: a later identical call returns the real decision", async () => {
+    let calls = 0;
+    const { model, spy } = spyMock(() => {
+      calls++;
+      if (calls === 1) throw new Error("transient judge failure");
+      return "allow";
+    });
+    const policy = naturalLanguagePolicy(rules, model);
+
+    // First call: judge throws → fail-closed "deny", and NOT cached.
+    expect(await policy.evaluate(fakeCtx)).toBe("deny");
+    // Second identical call: re-invokes the judge (deny was not memoised) and
+    // now returns the real decision.
+    expect(await policy.evaluate(fakeCtx)).toBe("allow");
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });

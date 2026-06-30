@@ -47,8 +47,19 @@ export function naturalLanguagePolicy(
   rules: string[],
   judgeModel: LanguageModel,
 ): ApprovalPolicy {
+  // Memoise the judge's result so the (now always re-evaluating) deterministic
+  // layers do not provoke a duplicate LLM call for an identical input. The
+  // `rules` are fixed per policy instance, so the key is just the call shape.
+  // Only SUCCESSFUL decisions are stored — a transient judge failure must not
+  // be cached as a permanent "deny".
+  const memo = new Map<string, ApprovalDecision>();
+
   return {
     async evaluate(ctx: PolicyContext): Promise<ApprovalDecision> {
+      const key = JSON.stringify([ctx.toolName, ctx.input]);
+      const cached = memo.get(key);
+      if (cached !== undefined) return cached;
+
       try {
         const { text } = await generateText({
           model: judgeModel,
@@ -57,14 +68,16 @@ export function naturalLanguagePolicy(
 
         const decision = text.trim().toLowerCase();
 
-        if (VALID_DECISIONS.has(decision)) {
-          return decision as ApprovalDecision;
-        }
+        const result: ApprovalDecision = VALID_DECISIONS.has(decision)
+          ? (decision as ApprovalDecision)
+          : "deny"; // Unrecognised token — fail-closed.
 
-        // Unrecognised token — fail-closed.
-        return "deny";
+        // Store only a successful evaluation (the model responded).
+        memo.set(key, result);
+        return result;
       } catch {
-        // Any model error — fail-closed (a broken judge must never allow).
+        // Any model error — fail-closed (a broken judge must never allow), and
+        // do NOT cache: a transient failure must not poison future calls.
         return "deny";
       }
     },

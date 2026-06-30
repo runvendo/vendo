@@ -34,7 +34,7 @@ import {
   type ComposioClient,
   type ComposioConfig,
 } from "./composio";
-import type { ApprovalPolicy, ApprovalDecision } from "./policy";
+import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 import type { ToolDescriptor } from "./descriptor";
 
@@ -59,7 +59,10 @@ export interface FlowletAgentConfig {
   tools?: ToolSet;
   /** Optional Composio ingestion. `client` is injectable for tests. */
   composio?: { config: ComposioConfig; client?: ComposioClient };
-  /** Policy version mixed into decision-cache keys. */
+  /**
+   * Policy version string. Forwarded to policy layers that key on it (e.g. the
+   * ask-once `rememberDecisions` store). Not used by the engine itself.
+   */
   policyVersion?: string;
   /** Max model->tool steps before the loop stops. Defaults to 8. */
   maxSteps?: number;
@@ -67,9 +70,11 @@ export interface FlowletAgentConfig {
 
 /**
  * Build a Flowlet agent. The returned `run(input)` is turn-based: the ai SDK
- * re-invokes it after a tool approval, so each call builds a FRESH toolset and
- * a FRESH per-run decision cache — that cold cache on the approval turn is what
- * preserves the fail-closed guarantee.
+ * re-invokes it after a tool approval, so each call builds a FRESH toolset. The
+ * fail-closed guarantee comes from `wrapTool.execute` ALWAYS re-evaluating the
+ * composed policy (the deterministic layers re-run on every callback), not from
+ * a cold per-run cache — so a policy whose state changed during the approval
+ * gap is enforced at execute time.
  */
 export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   // Stable, deterministic run identity without Math.random/Date.now.
@@ -100,13 +105,10 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ? candidate
             : { userId: "" };
 
-        // 2. Fresh per-run decision cache (never shared across runs).
-        const decisionCache = new Map<string, ApprovalDecision>();
-
-        // 3. The render tool, bound to this run's stream writer.
+        // 2. The render tool, bound to this run's stream writer.
         const renderTool = createRenderTool(writer);
 
-        // 4. Composio ingestion (fail-closed inside ingestComposioTools).
+        // 3. Composio ingestion (fail-closed inside ingestComposioTools).
         let composioTools: ToolSet = {};
         let composioDescriptors: Record<string, ToolDescriptor> = {};
         if (config.composio && composioClient) {
@@ -121,7 +123,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           );
         }
 
-        // 5. Sources in precedence order: caller > engine > composio.
+        // 4. Sources in precedence order: caller > engine > composio.
         const sources: ToolSourceInput[] = [
           // Defensive: a non-TS caller may omit `tools` entirely.
           { source: "caller", tools: input.tools ?? {} },
@@ -132,13 +134,11 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
         ];
 
-        // 6. Merge + uniformly policy-wrap every tool.
+        // 5. Merge + uniformly policy-wrap every tool.
         const tools = buildToolset({
           sources,
           policy: config.policy,
           principal,
-          decisionCache,
-          policyVersion: config.policyVersion,
           // Surface dropped tools rather than discarding them silently.
           onCollision: (name, kept, dropped) =>
             console.warn(
@@ -151,7 +151,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ),
         });
 
-        // 7. Drive the model->tool loop.
+        // 6. Drive the model->tool loop.
         const result = streamText({
           model: config.model,
           system: input.system ?? config.instructions ?? DEFAULT_INSTRUCTIONS,
@@ -161,7 +161,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           stopWhen: stepCountIs(config.maxSteps ?? 8),
         });
 
-        // 8. Merge the ai SDK UIMessage stream; attach run identity as metadata
+        // 7. Merge the ai SDK UIMessage stream; attach run identity as metadata
         //    on the `start` chunk (replacing the old custom data-run part).
         writer.merge(
           result.toUIMessageStream({

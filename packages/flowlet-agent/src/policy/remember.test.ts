@@ -95,7 +95,7 @@ describe("rememberDecisions", () => {
     expect(await store.get(key)).toBeUndefined();
   });
 
-  it("suppress-after-execute: a second identical evaluate returns 'allow' once onExecuted ran", async () => {
+  it("suppress-after-approve-execute: a second identical evaluate returns 'allow' once an approve onExecuted ran", async () => {
     const store = createInMemoryDecisionStore();
     const inner = stubPolicy("approve");
     const policy = rememberDecisions(inner, store);
@@ -106,13 +106,47 @@ describe("rememberDecisions", () => {
     const key = canonicalKey(c, "v1");
     expect(await store.get(key)).toBeUndefined();
 
-    // The tool actually executed (user approved + execute ran) → record now.
-    await policy.onExecuted!(c);
+    // The tool actually executed under an approve decision → record now.
+    await policy.onExecuted!(c, "approve");
     expect(await store.get(key)).toBe("approve");
 
     // Subsequent identical call is suppressed (approve downgraded to allow).
     const second = await policy.evaluate(c);
     expect(second).toBe("allow");
+  });
+
+  it("allow-execute records NOTHING: a later identical evaluate whose inner now requires approve STILL prompts", async () => {
+    const store = createInMemoryDecisionStore();
+    const inner = stubPolicy("approve");
+    const policy = rememberDecisions(inner, store);
+    const c = ctx();
+
+    // The call was auto-allowed and executed — onExecuted carries "allow".
+    // An allow execute must NOT be remembered (the user never approved it).
+    await policy.onExecuted!(c, "allow");
+    const key = canonicalKey(c, "v1");
+    expect(await store.get(key)).toBeUndefined();
+
+    // A later identical evaluate whose inner requires approval still prompts —
+    // the prior allow must not suppress an approval the user never gave.
+    expect(await policy.evaluate(c)).toBe("approve");
+  });
+
+  it("approve recorded then inner now denies: evaluate returns 'deny'", async () => {
+    const store = createInMemoryDecisionStore();
+    const c = ctx();
+    const key = canonicalKey(c, "v1");
+
+    // Record via a successful approve execute.
+    const approvePolicy = rememberDecisions(stubPolicy("approve"), store);
+    await approvePolicy.onExecuted!(c, "approve");
+    expect(await store.get(key)).toBe("approve");
+
+    // Inner now denies — the current deny wins (fail-closed).
+    const denyInner = stubPolicy("deny");
+    const denyPolicy = rememberDecisions(denyInner, store);
+    expect(await denyPolicy.evaluate(c)).toBe("deny");
+    expect(denyInner.callCount).toBe(1);
   });
 
   it("denied-then-recur re-prompts: with no onExecuted (call was denied), a later identical evaluate still returns 'approve'", async () => {
@@ -135,9 +169,9 @@ describe("rememberDecisions", () => {
     const c = ctx();
     const key = canonicalKey(c, "v1");
 
-    // Record the key via a successful prior execute.
+    // Record the key via a successful prior approve execute.
     const approvePolicy = rememberDecisions(stubPolicy("approve"), store);
-    await approvePolicy.onExecuted!(c);
+    await approvePolicy.onExecuted!(c, "approve");
     expect(await store.get(key)).toBe("approve");
 
     // Now the inner policy denies (e.g. role revoked). Suppression must NOT
@@ -155,10 +189,10 @@ describe("rememberDecisions", () => {
     const policy = rememberDecisions(inner, store);
     const c = ctx();
 
-    await policy.onExecuted!(c);
+    await policy.onExecuted!(c, "approve");
 
     expect(onExecuted).toHaveBeenCalledOnce();
-    expect(onExecuted).toHaveBeenCalledWith(c);
+    expect(onExecuted).toHaveBeenCalledWith(c, "approve");
   });
 
   it("a different key (different input) still consults inner policy", async () => {
@@ -222,7 +256,7 @@ describe("rememberDecisions", () => {
     const policy = rememberDecisions(inner, store);
     const c = ctx();
 
-    await policy.onExecuted!(c);
+    await policy.onExecuted!(c, "approve");
     const key = canonicalKey(c, "v1");
     expect(await store.get(key)).toBe("approve");
   });
@@ -234,7 +268,7 @@ describe("rememberDecisions", () => {
     const policyV2 = rememberDecisions(inner, store, "v2");
     const c = ctx();
 
-    await policyV1.onExecuted!(c); // records under v1 key
+    await policyV1.onExecuted!(c, "approve"); // records under v1 key
     await policyV2.evaluate(c); // different key — should still consult inner
 
     expect(inner.callCount).toBe(1);

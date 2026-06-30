@@ -35,10 +35,17 @@ export interface ApprovalPolicy {
    * executes — i.e. the call was `allow`, or it was `approve`, the user
    * approved it, and the real `execute` ran to completion.
    *
+   * `decision` is the FRESH execute-time decision that was actually enforced
+   * (`"allow"` or `"approve"`). It lets a layer distinguish an auto-allowed
+   * call from a human-approved one (e.g. ask-once memoisation records only
+   * `"approve"`, never `"allow"`).
+   *
    * It is NEVER called for a `deny` (the tool did not run), nor if the real
    * `execute` throws or aborts. Layers use it to record that a call genuinely
-   * happened (e.g. ask-once memoisation), so nothing is recorded merely because
-   * a prompt was shown.
+   * happened, so nothing is recorded merely because a prompt was shown.
    */
-  onExecuted?(ctx: PolicyContext): void | Promise<void>;
+  onExecuted?(
+    ctx: PolicyContext,
+    decision: ApprovalDecision,
+  ): void | Promise<void>;
 }

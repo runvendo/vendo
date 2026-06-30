@@ -58,14 +58,17 @@ export function createInMemoryDecisionStore(): DecisionStore {
  * Produce a stable, collision-resistant cache key from a policy context and
  * a policy version string.
  *
- * Components joined with `"\x00"` (NUL), which cannot appear in valid JSON
- * or typical user/tool-name strings, to minimise accidental collisions.
+ * The components are encoded as a single JSON array. Unlike a delimiter-joined
+ * string (e.g. NUL-separated), a JSON array cannot be ambiguously split, so two
+ * distinct component tuples can never serialise to the same key.
  */
 export function canonicalKey(ctx: PolicyContext, policyVersion: string): string {
-  const serialisedInput = JSON.stringify(ctx.input);
-  return [ctx.principal.userId, ctx.toolName, serialisedInput, policyVersion].join(
-    "\x00",
-  );
+  return JSON.stringify([
+    ctx.principal.userId,
+    ctx.toolName,
+    ctx.input,
+    policyVersion,
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -82,9 +85,12 @@ export function canonicalKey(ctx: PolicyContext, policyVersion: string): string 
  *   downgrading `approve`→`allow`, but let a now-applicable `deny` still win).
  *   If the key is absent, delegate straight to `inner`. `evaluate` records
  *   NOTHING.
- * - `onExecuted`: record the key (the call genuinely ran), then propagate to
- *   `inner.onExecuted`. This is the ONLY place a key is recorded, so a denied
- *   call — whose `execute` the SDK skips — is never memoised.
+ * - `onExecuted`: record the key ONLY when the enforced decision was
+ *   `"approve"` (a human-approved call), then propagate to `inner.onExecuted`.
+ *   An auto-`"allow"`ed call is NOT recorded — otherwise a later evaluation that
+ *   now requires `"approve"` would be silently downgraded to `"allow"`, skipping
+ *   an approval the user never gave. A denied call — whose `execute` the SDK
+ *   skips — never reaches `onExecuted`, so it is never memoised either.
  */
 export function rememberDecisions(
   inner: ApprovalPolicy,
@@ -106,10 +112,17 @@ export function rememberDecisions(
 
       return inner.evaluate(ctx);
     },
-    async onExecuted(ctx: PolicyContext): Promise<void> {
-      // Recorded only after a real, successful execute — never at ask time.
-      await store.set(canonicalKey(ctx, policyVersion), "approve");
-      await inner.onExecuted?.(ctx);
+    async onExecuted(
+      ctx: PolicyContext,
+      decision: ApprovalDecision,
+    ): Promise<void> {
+      // Record only a human-approved execute — never an auto-allowed one, and
+      // never at ask time. Remembering an allow would let it suppress a future
+      // approval the user never granted.
+      if (decision === "approve") {
+        await store.set(canonicalKey(ctx, policyVersion), "approve");
+      }
+      await inner.onExecuted?.(ctx, decision);
     },
   };
 }

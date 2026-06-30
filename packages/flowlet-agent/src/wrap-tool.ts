@@ -16,7 +16,6 @@
 
 import type { Tool, ToolExecutionOptions } from "ai";
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy";
-import { canonicalKey } from "./policy";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError, policyDenied } from "./errors";
@@ -33,23 +32,6 @@ export interface WrapToolArgs {
   policy: ApprovalPolicy;
   /** Identity on whose behalf the agent acts. */
   principal: FlowletPrincipal;
-  /**
-   * Optional per-run cache so an expensive judge is not evaluated twice for the
-   * same call (once in `needsApproval`, once in the approval-turn `execute`).
-   * The cache MAY span the approval gap between those two turns, so it is NOT a
-   * "same-turn" optimisation — it is a per-run one.
-   *
-   * Contract: create it fresh per `run()` and discard it between independent
-   * runs/conversations. That is what preserves the fail-closed guarantee: a new
-   * run starts with a cold cache, so the approval-turn `execute` re-evaluates
-   * the policy from scratch rather than trusting a stale decision.
-   *
-   * Caveat: it is keyed by tool `name`, so it must be scoped to a single
-   * run/registry — two different tools sharing a name and this cache collide.
-   */
-  decisionCache?: Map<string, ApprovalDecision>;
-  /** Policy version string mixed into the cache key. Defaults to `"v1"`. */
-  policyVersion?: string;
 }
 
 /**
@@ -63,8 +45,7 @@ export interface WrapToolArgs {
  * is the fail-closed choice.
  */
 export function wrapTool(args: WrapToolArgs): Tool {
-  const { name, tool, descriptor, policy, principal, decisionCache } = args;
-  const policyVersion = args.policyVersion ?? "v1";
+  const { name, tool, descriptor, policy, principal } = args;
 
   // Fail-closed: without an `execute` to short-circuit, a `deny` cannot be
   // enforced. Refuse to wrap rather than silently let denied calls through.
@@ -77,29 +58,21 @@ export function wrapTool(args: WrapToolArgs): Tool {
   }
   const boundExecute = originalExecute.bind(tool);
 
-  /**
-   * Evaluate the policy for this input. With a `decisionCache`, an identical
-   * (principal, tool, args, version) lookup is served from cache so the policy
-   * runs at most once per run for the same call — this may span the approval
-   * gap (the `needsApproval` turn and the later `execute` turn). The fail-closed
-   * guarantee comes from the cache being created fresh per `run()`: a new run
-   * has a cold cache, so `execute` re-evaluates the policy from scratch.
-   */
   function buildCtx(input: unknown): PolicyContext {
     return { toolName: name, input, descriptor, principal };
   }
 
+  /**
+   * Evaluate the composed policy for this input — ALWAYS fresh, never cached.
+   * Both `needsApproval` (preflight) and `execute` (the later approval turn)
+   * call this, so each re-runs the full composed policy. That is the fail-closed
+   * guarantee: a policy whose state changed between the two callbacks (role
+   * revoked, threshold lowered) is re-evaluated at execute time and enforced.
+   * The expensive NL judge memoises its own result internally, so re-evaluation
+   * is cheap without weakening freshness of the deterministic layers.
+   */
   async function evaluate(input: unknown): Promise<ApprovalDecision> {
-    const ctx = buildCtx(input);
-    if (decisionCache) {
-      const key = canonicalKey(ctx, policyVersion);
-      const cached = decisionCache.get(key);
-      if (cached !== undefined) return cached;
-      const decision = await policy.evaluate(ctx);
-      decisionCache.set(key, decision);
-      return decision;
-    }
-    return policy.evaluate(ctx);
+    return policy.evaluate(buildCtx(input));
   }
 
   // Preserve any caller-supplied output transform so we can delegate normal
@@ -113,8 +86,8 @@ export function wrapTool(args: WrapToolArgs): Tool {
     // enforced in `execute`, not by asking the user).
     needsApproval: async (input: unknown): Promise<boolean> =>
       (await evaluate(input)) === "approve",
-    // Authoritative, fail-closed gate. Re-evaluates the policy (a cold cache
-    // evaluates fresh); a `deny` short-circuits the original execute.
+    // Authoritative, fail-closed gate. ALWAYS re-evaluates the composed policy
+    // fresh; a `deny` short-circuits the original execute.
     execute: async (input: unknown, options: ToolExecutionOptions) => {
       const decision = await evaluate(input);
       if (decision === "deny") {
@@ -128,10 +101,12 @@ export function wrapTool(args: WrapToolArgs): Tool {
         return policyDenied(name, "denied by approval policy");
       }
       const result = await boundExecute(input, options);
-      // Signal a genuine, successful execute. Only reached for non-deny
+      // Signal a genuine, successful execute, threading the FRESH execute-time
+      // decision (`"allow"` or `"approve"`) so layers can distinguish an
+      // auto-allowed call from a human-approved one. Only reached for non-deny
       // decisions and only after `boundExecute` resolves (a throw propagates
       // before this line, so a failed call is never recorded as executed).
-      await policy.onExecuted?.(buildCtx(input));
+      await policy.onExecuted?.(buildCtx(input), decision);
       return result;
     },
     // Guard the model-output transform against the deny payload. When `execute`

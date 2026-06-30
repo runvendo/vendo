@@ -16,7 +16,7 @@ import type { ToolSet } from "ai";
 import type { ToolSource, ToolDescriptor } from "./descriptor";
 import { buildDescriptor } from "./descriptor";
 import { wrapTool } from "./wrap-tool";
-import type { ApprovalPolicy, ApprovalDecision } from "./policy";
+import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 
 /** A single source of tools provided to `buildToolset`. */
@@ -39,8 +39,6 @@ export interface ToolSourceInput {
  * @param sources - Tool sources in precedence order (index 0 = highest).
  * @param policy - The composed guardrail policy applied to every tool.
  * @param principal - Identity on whose behalf the agent acts.
- * @param decisionCache - Optional per-run cache shared across all wrapped tools.
- * @param policyVersion - Mixed into the cache key; defaults to `"v1"`.
  * @param onCollision - Called when a name is already claimed by an earlier source.
  * @param onSkip - Called when a tool cannot be wrapped (e.g. missing `execute`).
  */
@@ -48,12 +46,10 @@ export function buildToolset(args: {
   sources: ToolSourceInput[];
   policy: ApprovalPolicy;
   principal: FlowletPrincipal;
-  decisionCache?: Map<string, ApprovalDecision>;
-  policyVersion?: string;
   onCollision?: (name: string, kept: ToolSource, dropped: ToolSource) => void;
   onSkip?: (name: string, source: ToolSource, reason: string) => void;
 }): ToolSet {
-  const { sources, policy, principal, decisionCache, policyVersion, onCollision, onSkip } = args;
+  const { sources, policy, principal, onCollision, onSkip } = args;
 
   const result: ToolSet = {};
   // Track which source has already claimed each tool name.
@@ -81,8 +77,6 @@ export function buildToolset(args: {
           descriptor,
           policy,
           principal,
-          decisionCache,
-          policyVersion,
         });
         result[name] = wrapped;
         claimed.set(name, source);

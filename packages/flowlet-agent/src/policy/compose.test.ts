@@ -59,7 +59,7 @@ describe("composePolicy", () => {
     expect(await policy.evaluate(fakeCtx)).toBe("allow");
   });
 
-  it("onExecuted awaits every layer that defines it and skips those that don't", async () => {
+  it("onExecuted forwards the enforced decision to every layer that defines it and skips those that don't", async () => {
     const a = vi.fn();
     const b = vi.fn();
     const layerWithExec1: ApprovalPolicy = { evaluate: () => "allow", onExecuted: a };
@@ -67,11 +67,11 @@ describe("composePolicy", () => {
     const layerWithExec2: ApprovalPolicy = { evaluate: () => "allow", onExecuted: b };
 
     const policy = composePolicy(layerWithExec1, layerNoExec, layerWithExec2);
-    await policy.onExecuted!(fakeCtx);
+    await policy.onExecuted!(fakeCtx, "approve");
 
     expect(a).toHaveBeenCalledOnce();
-    expect(a).toHaveBeenCalledWith(fakeCtx);
+    expect(a).toHaveBeenCalledWith(fakeCtx, "approve");
     expect(b).toHaveBeenCalledOnce();
-    expect(b).toHaveBeenCalledWith(fakeCtx);
+    expect(b).toHaveBeenCalledWith(fakeCtx, "approve");
   });
 });
