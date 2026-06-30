@@ -17,6 +17,14 @@ show "Connected".
 Secrets come from Infisical (`dev`): `ANTHROPIC_API_KEY`, `COMPOSIO_API_KEY`.
 No keys are committed. Model: `claude-sonnet-4-6` (override with `FLOWLET_DEMO_MODEL`).
 
+Dock controls (top-right): **↺** reset and **×** close. Closing the dock leaves an
+"Ask Maple" relauncher pill bottom-right. Cmd/Ctrl+K opens the same thread as an
+overlay from anywhere.
+
+The agent's real Composio identity is attached only for **local** requests. To run
+the demo on a reachable deployment, set `FLOWLET_DEMO_PUBLIC=1` (otherwise the chat
+route returns 403 so a stray preview URL can't drive the agent).
+
 ## Before you walk on stage — reset
 
 Click the **↺** in the dock's top-right, or press **Cmd/Ctrl+Shift+.** (period).
