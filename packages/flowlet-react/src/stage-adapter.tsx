@@ -99,8 +99,23 @@ export function FlowletStage({
           if (!sameStructure) {
             const result = createGenUISession(node.payload);
             if (!result.ok) {
-              // Surface the validation error; leave any rendered tree untouched.
+              // Surface the validation error AND render a visible top-level error
+              // node (spec §6) instead of silently leaving a stale/blank tree.
               console.error("[flowlet] invalid generated payload", result.error);
+              const errorTree: UINode = {
+                id: node.id,
+                kind: "component",
+                source: "prewired",
+                name: "Text",
+                props: { text: "Failed to render generated UI: " + result.error.message },
+              };
+              c.initialize({ theme, state, bundleSource, tree: errorTree });
+              initedRef.current = true;
+              rootIdRef.current = node.id;
+              // Drop any prior session so the next valid payload re-initializes
+              // rather than taking the (stale) data-delta path.
+              sessionRef.current = null;
+              payloadRef.current = null;
               return;
             }
             sessionRef.current = result.session;

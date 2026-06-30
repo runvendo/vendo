@@ -183,7 +183,7 @@ describe("FlowletStage", () => {
     expect(initialize.mock.calls[1][0].tree).toMatchObject({ name: "Banner" });
   });
 
-  it("logs and does not initialize on an invalid generated payload", async () => {
+  it("logs and renders a visible error node on an invalid generated payload", async () => {
     update.mockClear();
     initialize.mockClear();
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -199,7 +199,16 @@ describe("FlowletStage", () => {
         expect.anything(),
       ),
     );
-    expect(initialize).not.toHaveBeenCalled();
+    // Per spec §6: a visible top-level error tree is initialized (not skipped).
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    expect(initialize.mock.calls[0][0].tree).toMatchObject({
+      id: "g1",
+      kind: "component",
+      name: "Text",
+    });
+    expect(initialize.mock.calls[0][0].tree.props.text).toContain(
+      "Failed to render generated UI",
+    );
     err.mockRestore();
   });
 });
