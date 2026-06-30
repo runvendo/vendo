@@ -45,7 +45,8 @@ export function FlowletRoot({ children }: { children: ReactNode }) {
   const integrations = useMemo(() => createComposioIntegrations(), []);
 
   return (
-    <FlowletProvider transport={transport} components={prewiredComponents}>
+    <FlowletProvider transport={transport} components={prewiredComponents} threadId="maple-demo">
+
       <FlowletShellProvider renderNode={renderNode} integrations={integrations} theme={mapleTheme}>
         {children}
       </FlowletShellProvider>

@@ -7,10 +7,16 @@
  * above the untouched bank UI — the "we dropped in one layer" thesis, literally.
  */
 import { useEffect, useState } from "react";
+import { FlowletOverlay } from "@flowlet/shell";
 import { FlowletRoot } from "./FlowletRoot";
 import { FlowletDock } from "./FlowletDock";
 import { FlowletPoller, type FireEvent } from "./FlowletPoller";
 import { resetDemo } from "./reset";
+
+const SUGGESTIONS = [
+  "What did I spend money on when I should've been asleep?",
+  "What was that $87 DoorDash charge?",
+];
 
 export function FlowletLayer() {
   const [fire, setFire] = useState<FireEvent | null>(null);
@@ -42,6 +48,13 @@ export function FlowletLayer() {
     <FlowletRoot>
       <FlowletPoller onFire={setFire} />
       <FlowletDock fire={fire} onDismissFire={() => setFire(null)} />
+      {/* Secondary surface: same agent + thread, reachable anywhere via Cmd/Ctrl+K. */}
+      <FlowletOverlay
+        shortcutKey="k"
+        launcherLabel="Ask Maple"
+        greeting="Ask Maple anything"
+        suggestions={SUGGESTIONS}
+      />
     </FlowletRoot>
   );
 }
