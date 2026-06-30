@@ -1,5 +1,5 @@
 {
-  "name": "@flowlet/react",
+  "name": "@flowlet/agent",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -15,17 +15,19 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "peerDependencies": {
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0"
-  },
   "dependencies": {
-    "@ai-sdk/react": "3.0.30",
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/mcp": "1.0.6",
+    "@ai-sdk/provider": "3.0.2",
+    "@composio/core": "0.4.0",
+    "@composio/vercel": "0.4.0",
     "@flowlet/core": "workspace:*",
-    "@flowlet/stage": "workspace:*",
-    "ai": "6.0.28"
+    "ai": "6.0.28",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@ai-sdk/react": "3.0.30",
+    "@flowlet/react": "workspace:*",
     "@testing-library/react": "^16.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
@@ -33,7 +35,6 @@
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "zod": "^3.24.0"
+    "vitest": "^2.1.0"
   }
 }

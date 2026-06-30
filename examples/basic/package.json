@@ -4,8 +4,11 @@
   "type": "module",
   "scripts": { "dev": "vite", "build": "vite build", "typecheck": "tsc --noEmit" },
   "dependencies": {
+    "@ai-sdk/provider": "3.0.2",
+    "@flowlet/agent": "workspace:*",
     "@flowlet/core": "workspace:*",
     "@flowlet/react": "workspace:*",
+    "ai": "6.0.28",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "zod": "^3.24.0"
