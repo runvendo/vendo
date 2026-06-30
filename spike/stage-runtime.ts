@@ -29,17 +29,33 @@ export const STAGE_RUNTIME_SRC = String.raw`
       }
       return out;
     }
+    function makeEB(R) {
+      return class EB extends R.Component {
+        constructor(p) { super(p); this.state = { err: false }; }
+        static getDerivedStateFromError() { return { err: true }; }
+        render() {
+          return this.state.err
+            ? R.createElement("div", { "data-error-boundary": true }, "render error")
+            : this.props.children;
+        }
+      };
+    }
+    var EB = makeEB(window.__React);
     function toElement(node) {
       if (node.kind === "component") {
         var Impl = host[node.name];
         if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
         var boundProps = bindProps(node.props, params.state);
         boundProps.__nodeId = node.id;
-        return React.createElement(Impl, boundProps);
+        var kids = (node.children || []).map(function(c) { return wrap(c); });
+        return kids.length ? React.createElement(Impl, boundProps, kids) : React.createElement(Impl, boundProps);
       }
       return React.createElement("div", { "data-generated": true }, "[generated]");
     }
-    createRoot(document.getElementById("stage-root")).render(toElement(params.tree));
+    function wrap(node) {
+      return React.createElement(EB, { key: node.id }, toElement(node));
+    }
+    createRoot(document.getElementById("stage-root")).render(wrap(params.tree));
   }
 
   window.__flowletDispatch = function (descriptor, originNodeId) {
