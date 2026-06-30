@@ -38,3 +38,20 @@ export function toolkitConnectionStatus(
 ): Promise<"active" | "pending" | "failed"> {
   return getClient().connectionStatus(connectedAccountId);
 }
+
+/**
+ * Is the toolkit ALREADY authorized for the demo user? Uses the same fetch the
+ * agent uses to ingest tools — if any tools come back, the connection is live.
+ * This is the fast, reliable path: Gmail/Slack are pre-authorized in Composio,
+ * so "connecting" them on screen is a real verification, not a flaky OAuth.
+ */
+export async function isToolkitConnected(toolkit: string): Promise<boolean> {
+  try {
+    const tools = await getClient().fetchTools(DEMO_PRINCIPAL.userId, {
+      toolkits: [toolkit],
+    });
+    return Object.keys(tools).length > 0;
+  } catch {
+    return false;
+  }
+}

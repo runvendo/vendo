@@ -21,6 +21,7 @@ import {
 import {
   authorizeToolkit,
   toolkitConnectionStatus,
+  isToolkitConnected,
 } from "@/flowlet/composio-server"
 import { ok, badRequest } from "@/server/http"
 
@@ -56,6 +57,23 @@ export async function POST(req: Request) {
   const id = typeof body.id === "string" ? body.id : ""
   const action = body.action
   if (!id) return badRequest("missing integration id")
+
+  if (action === "connect") {
+    try {
+      // Fast path: already authorized in Composio -> mark connected immediately.
+      if (await isToolkitConnected(id)) {
+        connect(id)
+        return ok({ connected: true })
+      }
+      // Otherwise begin the real OAuth and hand the client the URL to open.
+      const { redirectUrl, connectedAccountId } = await authorizeToolkit(id)
+      return ok({ connected: false, redirectUrl, connectedAccountId })
+    } catch (err) {
+      return badRequest(
+        `connect failed: ${err instanceof Error ? err.message : "unknown error"}`,
+      )
+    }
+  }
 
   if (action === "authorize") {
     try {

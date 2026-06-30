@@ -32,27 +32,34 @@ const NAMES: Record<string, string> = {
   airtable: "Airtable",
 };
 
-type Status = "idle" | "connecting" | "connected" | "error";
+type Status = "idle" | "connecting" | "connected" | "needs-auth" | "error";
 
 export function DemoConnectCard({ toolkit, reason }: { toolkit: string; reason?: string }) {
   const [status, setStatus] = useState<Status>("idle");
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
   const name = NAMES[toolkit] ?? toolkit;
   const integration: Integration = { id: toolkit, name, connected: status === "connected" };
+
+  function announceConnected() {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("flowlet:integrations-changed", { detail: { id: toolkit } }),
+      );
+    }
+  }
 
   async function connect() {
     setStatus("connecting");
     try {
-      const result = await runConnectFlow(toolkit);
-      if (result !== "active") {
+      const outcome = await runConnectFlow(toolkit);
+      if (outcome.result === "active") {
+        setStatus("connected");
+        announceConnected();
+      } else if (outcome.result === "needs-auth") {
+        setAuthUrl(outcome.redirectUrl);
+        setStatus("needs-auth");
+      } else {
         setStatus("error");
-        return;
-      }
-      setStatus("connected");
-      // Let the integrations rail (and anything else) reconcile.
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("flowlet:integrations-changed", { detail: { id: toolkit } }),
-        );
       }
     } catch {
       setStatus("error");
@@ -94,6 +101,25 @@ export function DemoConnectCard({ toolkit, reason }: { toolkit: string; reason?:
           Finish in the popup window, then we will pick it up automatically.
         </div>
         <style>{"@keyframes fl-spin { to { transform: rotate(360deg) } }"}</style>
+      </div>
+    );
+  }
+
+  if (status === "needs-auth" && authUrl) {
+    return (
+      <div className="fl-connect" role="group" aria-label={`Authorize ${name}`}>
+        <div style={{ fontWeight: 600 }}>Authorize {name}</div>
+        <div style={{ fontSize: 12, margin: "6px 0 11px", opacity: 0.85 }}>
+          Open the secure {name} window, approve access, then continue.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <a className="fl-btn fl-btn-primary" href={authUrl} target="_blank" rel="noopener noreferrer">
+            Open {name}
+          </a>
+          <button type="button" className="fl-btn" onClick={connect}>
+            I&rsquo;ve authorized
+          </button>
+        </div>
       </div>
     );
   }

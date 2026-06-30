@@ -24,6 +24,14 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
 
   const refresh = () => { void integrations.list().then(setTools); };
   useEffect(refresh, [integrations]);
+  // Re-list when a connection changes (e.g. the user connects a tool on screen),
+  // so the rail and selector reflect it without a reload.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onChange = () => refresh();
+    window.addEventListener("flowlet:integrations-changed", onChange);
+    return () => window.removeEventListener("flowlet:integrations-changed", onChange);
+  }, [integrations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = (text: string) => { void chat.sendMessage({ text }); };
   const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
