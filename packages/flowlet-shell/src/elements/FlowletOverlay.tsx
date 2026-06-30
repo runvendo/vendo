@@ -6,22 +6,38 @@ export interface FlowletOverlayProps extends FlowletThreadProps {
   launcherLabel?: string;
   /** Open with this keyboard shortcut key (with meta/ctrl). Default "k". */
   shortcutKey?: string;
+  /** Controlled open state. When provided, the parent owns open/close. */
+  open?: boolean;
+  /** Controlled open change handler. Pair with `open`. */
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function FlowletOverlay({ launcherLabel = "Ask", shortcutKey = "k", ...thread }: FlowletOverlayProps) {
-  const [open, setOpen] = useState(false);
+export function FlowletOverlay({
+  launcherLabel = "Ask",
+  shortcutKey = "k",
+  open: openProp,
+  onOpenChange,
+  ...thread
+}: FlowletOverlayProps) {
+  const [openState, setOpenState] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setOpenState(next);
+    onOpenChange?.(next);
+  };
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === shortcutKey) {
         e.preventDefault();
-        setOpen((v) => !v);
+        setOpen(!open);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [shortcutKey]);
+  }, [shortcutKey, open, controlled]);
 
   useFocusTrap(open, panelRef);
 
@@ -29,11 +45,8 @@ export function FlowletOverlay({ launcherLabel = "Ask", shortcutKey = "k", ...th
     if (e.key === "Escape") setOpen(false);
   };
 
-  if (!open) {
-    return (
-      <button type="button" className="fl-launcher" onClick={() => setOpen(true)}>{launcherLabel}</button>
-    );
-  }
+  // Invisible until summoned (Cmd/Ctrl+K) — no persistent launcher.
+  if (!open) return null;
 
   return (
     <>
