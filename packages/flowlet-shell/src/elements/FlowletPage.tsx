@@ -48,17 +48,19 @@ export function FlowletPage(props: FlowletPageProps) {
             {tab.title}
           </button>
         ))}
-        <button type="button" className="fl-tab" aria-label="New tab" onClick={addTab}>＋</button>
+        <button type="button" className="fl-tab fl-tab-new" aria-label="New tab" onClick={addTab}>＋</button>
       </div>
-      {tabs.map((tab) => (
-        <div key={tab.id} hidden={tab.id !== activeId} style={{ flex: 1, minHeight: 0 }}>
-          <FlowletProvider agent={agent} components={components}>
-            <FlowletShellProvider store={store} integrations={integrations} impls={impls} theme={theme}>
-              <FlowletThread greeting={greeting} suggestions={suggestions} />
-            </FlowletShellProvider>
-          </FlowletProvider>
-        </div>
-      ))}
+      <div className="fl-page-body">
+        {tabs.map((tab) => (
+          <div key={tab.id} className="fl-page-pane" hidden={tab.id !== activeId}>
+            <FlowletProvider agent={agent} components={components}>
+              <FlowletShellProvider store={store} integrations={integrations} impls={impls} theme={theme}>
+                <FlowletThread greeting={greeting} suggestions={suggestions} />
+              </FlowletShellProvider>
+            </FlowletProvider>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

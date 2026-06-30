@@ -223,12 +223,25 @@
   box-shadow: var(--flowlet-shadow); cursor: pointer; }
 
 /* ---------- page + tabs + slot ---------- */
+/* The Page surface is ingrained: the chat IS the page (no card-in-card). Tabs are
+   a quiet underline row, the body fills the height, only the message list scrolls. */
 .fl-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .fl-page > [hidden] { display: none; }
-.fl-tabbar { display: flex; align-items: center; gap: 4px; padding: 8px 11px 0; border-bottom: 1px solid var(--flowlet-border); }
-.fl-tab { display: flex; align-items: center; gap: 7px; padding: 9px 13px; font-size: 12.5px; font-weight: 500;
-  color: var(--flowlet-fg-muted); border: 1px solid transparent; border-bottom: none; border-radius: 10px 10px 0 0; cursor: pointer; }
-.fl-tab[aria-selected="true"] { color: var(--flowlet-fg); background: var(--flowlet-surface); border-color: var(--flowlet-border); }
+.fl-tabbar { display: flex; align-items: center; gap: 2px; padding: 0 0 0 2px;
+  border-bottom: 1px solid var(--flowlet-border); flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
+.fl-tabbar::-webkit-scrollbar { display: none; }
+.fl-tab { display: flex; align-items: center; gap: 7px; padding: 10px 13px; font-size: 12.5px; font-weight: 500;
+  color: var(--flowlet-fg-muted); border: 0; border-bottom: 2px solid transparent; background: transparent;
+  cursor: pointer; white-space: nowrap; margin-bottom: -1px; transition: color .12s; }
+.fl-tab:hover { color: var(--flowlet-fg); }
+.fl-tab[aria-selected="true"] { color: var(--flowlet-fg); border-bottom-color: var(--flowlet-accent); }
+.fl-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--flowlet-ok); flex-shrink: 0; }
+.fl-tab-new { color: var(--flowlet-fg-muted); font-size: 16px; line-height: 1; padding: 8px 11px; }
+/* Body region below the tabs — the only thing that scrolls is the inner message list. */
+.fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fl-page-pane[hidden] { display: none; }
+.fl-saved-pane { flex: 1; min-height: 0; overflow: auto; padding: 22px 2px; }
 .fl-slot-empty { border: 1.5px dashed var(--flowlet-border-strong); border-radius: var(--flowlet-radius);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
   padding: 24px; cursor: pointer; background: var(--flowlet-glass-strong); color: var(--flowlet-fg-muted);
