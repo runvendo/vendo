@@ -1,0 +1,32 @@
+{
+  "name": "@flowlet/agent",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/mcp": "1.0.6",
+    "@ai-sdk/provider": "3.0.2",
+    "@composio/core": "0.4.0",
+    "@composio/vercel": "0.4.0",
+    "@flowlet/core": "workspace:*",
+    "ai": "6.0.28",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
