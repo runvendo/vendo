@@ -16,7 +16,7 @@ export function createLocalTransport(agent: FlowletAgent): LocalTransport {
     async sendMessages(options): Promise<ReadableStream<UIMessageChunk>> {
       return agent.run({
         messages: options.messages,
-        tools: [],
+        tools: {},
         signal: options.abortSignal ?? new AbortController().signal,
       });
     },

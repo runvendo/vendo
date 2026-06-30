@@ -21,7 +21,7 @@ describe("stub agent (native ai SDK HITL)", () => {
   it("turn 1 streams text + a tool-approval-request, and no ui node yet", async () => {
     const agent = createStubAgent();
     const parts = await collect(
-      agent.run({ messages: userTurn, tools: [], signal: new AbortController().signal }),
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
     );
     const types = parts.map((p) => p.type);
 
@@ -38,7 +38,7 @@ describe("stub agent (native ai SDK HITL)", () => {
     const controller = new AbortController();
     controller.abort();
     const parts = await collect(
-      agent.run({ messages: userTurn, tools: [], signal: controller.signal }),
+      agent.run({ messages: userTurn, tools: {}, signal: controller.signal }),
     );
     expect(parts.map((p) => p.type)).not.toContain("data-ui");
   });

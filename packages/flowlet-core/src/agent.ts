@@ -1,5 +1,4 @@
-import type { UIMessage, UIMessageChunk } from "ai";
-import type { FlowletTool } from "./tool";
+import type { ToolSet, UIMessage, UIMessageChunk } from "ai";
 
 /**
  * Per-turn run input. The flow is turn-based: `run` is invoked with the current
@@ -8,7 +7,7 @@ import type { FlowletTool } from "./tool";
  */
 export interface RunInput {
   messages: UIMessage[]; // ai SDK UIMessage[] at the call site
-  tools: FlowletTool[];
+  tools: ToolSet;        // ai SDK tool set (Record<string, Tool>)
   system?: string;
   principal?: unknown;       // opaque in F1
   signal: AbortSignal;
