@@ -1,7 +1,7 @@
 "use client"
 import type { Account } from "@/server/types"
-import { formatUSD } from "@/lib/money"
 import { Badge } from "@/components/ui/badge"
+import { CountUp } from "@/components/ui/count-up"
 import { AreaTrend } from "@/components/charts/area-trend"
 import { KIND_ICON, KIND_LABEL } from "./account-meta"
 
@@ -28,9 +28,10 @@ export function AccountHeader({ account }: { account: Account }) {
             </div>
           </div>
         </div>
-        <div className="text-4xl font-semibold tracking-tight tabular-nums text-ink">
-          {formatUSD(account.balance)}
-        </div>
+        <CountUp
+          valueCents={account.balance}
+          className="text-4xl font-semibold tracking-tight tabular-nums text-ink"
+        />
       </div>
 
       <AreaTrend data={series} height={180} />

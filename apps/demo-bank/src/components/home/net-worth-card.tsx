@@ -1,8 +1,8 @@
 "use client"
 import { useState } from "react"
 import { useProfile, useAccounts } from "@/lib/hooks"
-import { formatUSD } from "@/lib/money"
 import { Card, CardContent } from "@/components/ui/card"
+import { CountUp } from "@/components/ui/count-up"
 import { Badge } from "@/components/ui/badge"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -47,9 +47,10 @@ export function NetWorthCard() {
             {loading || !profile ? (
               <Skeleton className="mt-2 h-10 w-56" />
             ) : (
-              <div className="mt-1 text-4xl font-semibold tracking-tight tabular-nums text-ink">
-                {formatUSD(profile.netWorth)}
-              </div>
+              <CountUp
+                valueCents={profile.netWorth}
+                className="mt-1 block text-4xl font-semibold tracking-tight tabular-nums text-ink"
+              />
             )}
             <div className="mt-2">
               <Badge tone="positive">▲ 2.3% this month</Badge>
