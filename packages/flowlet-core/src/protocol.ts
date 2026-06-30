@@ -32,7 +32,15 @@ export interface ActionRequest {
   originNodeId: string;
   action: string;
   payload?: unknown;
+  capability?: unknown;   // spec §5.6 (origin node + capability + error)
 }
+
+export type ActionResult =
+  | { result: unknown }
+  | { error: { code: string; message: string } };
+
+/** Semantic shape of the sandbox action chokepoint. Transport is owned by F3. */
+export type DispatchAction = (req: ActionRequest) => Promise<ActionResult>;
 
 /** Flowlet's typed data-* parts layered on the ai SDK UIMessage. */
 export type FlowletDataParts = {

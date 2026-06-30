@@ -59,4 +59,31 @@ describe("stub agent", () => {
     void stream; // unused first stream, only used to assert run() returns a stream
     expect(stream).toBeInstanceOf(ReadableStream);
   });
+
+  it("cancels via AbortSignal while awaiting approval and never emits a ui node", async () => {
+    const agent = createStubAgent();
+    const controller = new AbortController();
+    const stream = agent.run({
+      messages: [],
+      tools: [],
+      signal: controller.signal,
+      onClientPart: (p) => {},
+    });
+
+    const parts: any[] = [];
+    const reader = stream.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      if (value.type === "data-approval") {
+        // Abort instead of approving — the run should short-circuit.
+        controller.abort();
+      }
+    }
+
+    const types = parts.map((p) => p.type);
+    expect(types).toContain("data-approval");
+    expect(types).not.toContain("data-ui");
+  });
 });

@@ -47,14 +47,33 @@ export function createStubAgent(): StubAgent {
         writer.write({ type: "text-end", id: textId });
 
         const approvalId = "approval-1";
-        const approved = await new Promise<ApprovalResponse>((resolve) => {
-          pending.set(approvalId, resolve);
+        const approved = await new Promise<ApprovalResponse | "aborted">((resolve) => {
+          // Cancellation: if the run is aborted while awaiting approval, settle the
+          // pending promise and stop further writes (spec §9).
+          const onAbort = () => {
+            pending.delete(approvalId);
+            resolve("aborted");
+          };
+          if (input.signal.aborted) {
+            onAbort();
+            return;
+          }
+          input.signal.addEventListener("abort", onAbort, { once: true });
+          pending.set(approvalId, (r) => {
+            input.signal.removeEventListener("abort", onAbort);
+            resolve(r);
+          });
           writer.write({
             type: "data-approval",
             id: approvalId,
             data: { approvalId, toolCallId: "tool-1", prompt: "Render the demo card?", input: {} },
           });
         });
+
+        if (approved === "aborted") {
+          writer.write({ type: "finish" });
+          return;
+        }
 
         if (approved.approved) {
           const node: UINode = {
