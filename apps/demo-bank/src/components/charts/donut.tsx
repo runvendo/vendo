@@ -55,6 +55,7 @@ export function Donut({ data, className, size = 200 }: DonutProps) {
             paddingAngle={2}
             startAngle={90}
             endAngle={-270}
+            animationDuration={700}
             stroke="none"
           >
             {data.map((slice) => (

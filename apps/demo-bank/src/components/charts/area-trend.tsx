@@ -55,6 +55,7 @@ export function AreaTrend({ data, className, height = 220 }: AreaTrendProps) {
             stroke="var(--color-ink)"
             strokeWidth={1.8}
             fill="url(#area-trend-fill)"
+            animationDuration={700}
             dot={false}
             activeDot={{ r: 3, fill: "var(--color-ink)", stroke: "var(--color-surface)", strokeWidth: 2 }}
           />

@@ -88,7 +88,7 @@ function HeaderSkeleton() {
 }
 
 function AccountTransactions({ id }: { id: string }) {
-  const { data, isLoading } = useTransactions(`?accountId=${id}&limit=25`)
+  const { data, isLoading } = useTransactions(`?accountId=${id}&limit=8`)
   const rows = data?.data ?? []
 
   return (

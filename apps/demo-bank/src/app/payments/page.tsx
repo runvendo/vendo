@@ -11,11 +11,12 @@ export default function PaymentsPage() {
         <p className="text-sm text-muted">Move money, pay bills, manage payees.</p>
       </div>
 
-      <MoveMoneyTabs />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <PayeesList />
-        <ScheduledList />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)] lg:items-start">
+        <MoveMoneyTabs />
+        <div className="space-y-6">
+          <PayeesList />
+          <ScheduledList />
+        </div>
       </div>
     </div>
   )

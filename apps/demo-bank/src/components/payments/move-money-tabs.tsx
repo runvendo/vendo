@@ -264,16 +264,16 @@ export function MoveMoneyTabs() {
         <TabsTrigger value="transfer">Transfer</TabsTrigger>
         <TabsTrigger value="bills">Pay bills</TabsTrigger>
       </TabsList>
-      <TabsContent value="send" className="max-w-xl">
+      <TabsContent value="send">
         <SendForm />
       </TabsContent>
-      <TabsContent value="request" className="max-w-xl">
+      <TabsContent value="request">
         <RequestForm />
       </TabsContent>
-      <TabsContent value="transfer" className="max-w-xl">
+      <TabsContent value="transfer">
         <TransferForm />
       </TabsContent>
-      <TabsContent value="bills" className="max-w-xl">
+      <TabsContent value="bills">
         <PayBillsForm />
       </TabsContent>
     </Tabs>

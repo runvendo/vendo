@@ -65,8 +65,8 @@ export function CashflowBars({ data, className, height = 200 }: CashflowBarsProp
             content={<CashflowTooltip />}
             cursor={{ fill: "var(--color-hover)" }}
           />
-          <Bar dataKey="in" fill="var(--color-pos)" radius={[3, 3, 0, 0]} maxBarSize={18} />
-          <Bar dataKey="out" fill="var(--color-muted)" radius={[3, 3, 0, 0]} maxBarSize={18} />
+          <Bar dataKey="in" fill="var(--color-pos)" radius={[3, 3, 0, 0]} maxBarSize={18} animationDuration={700} />
+          <Bar dataKey="out" fill="var(--color-muted)" radius={[3, 3, 0, 0]} maxBarSize={18} animationDuration={700} />
         </BarChart>
       </ResponsiveContainer>
     </div>
