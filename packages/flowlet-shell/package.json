@@ -9,7 +9,7 @@
     "./styles.css": "./src/styles.css"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp src/styles.css dist/styles.css",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

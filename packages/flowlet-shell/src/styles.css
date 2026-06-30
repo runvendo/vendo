@@ -13,6 +13,8 @@
   color: var(--flowlet-fg);
   background: var(--flowlet-bg);
   font-family: var(--flowlet-font);
+  height: 100%;
+  min-height: 0;
 }
 .fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .fl-msglist { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; }
@@ -66,6 +68,8 @@
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);
   border-radius: 999px; padding: 9px 13px; background: var(--flowlet-surface);
   box-shadow: var(--flowlet-shadow); cursor: pointer; }
+.fl-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fl-page > [hidden] { display: none; }
 .fl-tabbar { display: flex; align-items: center; gap: 4px; padding: 8px 11px 0;
   border-bottom: 1px solid var(--flowlet-border); }
 .fl-tab { display: flex; align-items: center; gap: 7px; padding: 8px 12px; font-size: 12.5px;
