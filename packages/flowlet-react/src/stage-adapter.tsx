@@ -1,6 +1,22 @@
 import { useEffect, useRef } from "react";
-import { createStage, connectStage, type StageController, type OnAction } from "@flowlet/stage";
-import type { UINode } from "@flowlet/core";
+import {
+  createStage,
+  connectStage,
+  createGenUISession,
+  type StageController,
+  type OnAction,
+  type GenUISession,
+} from "@flowlet/stage";
+import {
+  isGeneratedNode,
+  collectBindings,
+  resolvePointer,
+  type UINode,
+  type GeneratedPayload,
+} from "@flowlet/core";
+
+/** Stable structural fingerprint of a payload's node graph (data excluded). */
+const nodesKey = (payload: GeneratedPayload): string => JSON.stringify(payload.nodes);
 
 export interface FlowletStageProps {
   node: UINode | null;
@@ -24,6 +40,9 @@ export function FlowletStage({
   const initedRef = useRef(false);
   // Id of the root node we initialized with — a different id means a new tree.
   const rootIdRef = useRef<string | null>(null);
+  // Live GenUI session + the payload it was built from, for generated nodes.
+  const sessionRef = useRef<GenUISession | null>(null);
+  const payloadRef = useRef<GeneratedPayload | null>(null);
   // Keep a stable ref to onAction so the mount effect doesn't go stale.
   const onActionRef = useRef<OnAction | undefined>(onAction);
   useEffect(() => { onActionRef.current = onAction; }, [onAction]);
@@ -60,6 +79,55 @@ export function FlowletStage({
     c.ready
       .then(() => {
         if (cancelled) return;
+
+        if (isGeneratedNode(node)) {
+          // Generated nodes are resolved host-side via a GenUISession; structure
+          // changes re-initialize, while pure data changes stream prop-level deltas.
+          const payload = node.payload as GeneratedPayload;
+          const session = sessionRef.current;
+          const prev = payloadRef.current;
+          const sameStructure =
+            session !== null &&
+            prev !== null &&
+            prev.root === payload.root &&
+            nodesKey(prev) === nodesKey(payload);
+
+          if (!sameStructure) {
+            const result = createGenUISession(node.payload);
+            if (!result.ok) {
+              // Surface the validation error; leave any rendered tree untouched.
+              console.error("[flowlet] invalid generated payload", result.error);
+              return;
+            }
+            sessionRef.current = result.session;
+            payloadRef.current = payload;
+            // First init OR a new structure both re-initialize with the resolved
+            // tree (mirrors the non-generated re-init path).
+            c.initialize({ theme, state, bundleSource, tree: result.session.tree });
+            initedRef.current = true;
+            rootIdRef.current = node.id;
+            return;
+          }
+
+          // Same structure, possibly changed data → drive a prop-level ui-delta.
+          const data = payload.data ?? {};
+          const pointers = new Set(payload.nodes.flatMap(collectBindings));
+          const replacements = new Map<string, UINode>();
+          for (const pointer of pointers) {
+            for (const { nodeId, node: replacement } of session!.applyDataPatch(
+              pointer,
+              resolvePointer(data, pointer),
+            )) {
+              replacements.set(nodeId, replacement); // last write wins
+            }
+          }
+          for (const [nodeId, replacement] of replacements) {
+            c.update({ replace: { nodeId, node: replacement } });
+          }
+          payloadRef.current = payload;
+          return;
+        }
+
         if (!initedRef.current) {
           c.initialize({ theme, state, bundleSource, tree: node });
           initedRef.current = true;

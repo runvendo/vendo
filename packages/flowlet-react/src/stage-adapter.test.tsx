@@ -1,24 +1,46 @@
 import { render, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import type { UINode } from "@flowlet/core";
 
 const initialize = vi.fn();
 const update = vi.fn();
-vi.mock("@flowlet/stage", () => ({
-  createStage: (slot: HTMLElement) => {
-    const iframe = document.createElement("iframe");
-    slot.appendChild(iframe);
-    return { iframe, endpoints: {} };
-  },
-  connectStage: () => ({
-    initialize,
-    update,
-    resolveAction: vi.fn(),
-    dispose: vi.fn(),
-    ready: Promise.resolve(),
-  }),
-}));
+// Keep the real @flowlet/stage exports (notably `createGenUISession`) and only
+// stub the DOM-bound stage mount/controller so generated-node resolution runs
+// against the real host session.
+vi.mock("@flowlet/stage", async (importActual) => {
+  const actual = await importActual<typeof import("@flowlet/stage")>();
+  return {
+    ...actual,
+    createStage: (slot: HTMLElement) => {
+      const iframe = document.createElement("iframe");
+      slot.appendChild(iframe);
+      return { iframe, endpoints: {} };
+    },
+    connectStage: () => ({
+      initialize,
+      update,
+      resolveAction: vi.fn(),
+      dispose: vi.fn(),
+      ready: Promise.resolve(),
+    }),
+  };
+});
 
 import { FlowletStage } from "./stage-adapter";
+
+const genPayload = (data: Record<string, unknown>) => ({
+  formatVersion: "flowlet-genui/v1",
+  root: "n1",
+  nodes: [
+    { id: "n1", component: "Card", source: "host", props: { title: { $path: "/title" } } },
+  ],
+  data,
+});
+const makeGenNode = (data: Record<string, unknown>): UINode => ({
+  id: "g1",
+  kind: "generated",
+  payload: genPayload(data),
+});
 
 describe("FlowletStage", () => {
   it("initializes the stage with the first node, then updates on node change", async () => {
@@ -94,5 +116,90 @@ describe("FlowletStage", () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("bundleSource changed after init")),
     );
     warn.mockRestore();
+  });
+
+  // ---- Generated nodes (ENG-180) ----
+
+  it("initializes a generated node with the session's resolved tree", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    render(<FlowletStage node={makeGenNode({ title: "Hello" })} bundleSource="/*b*/" />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    const arg = initialize.mock.calls[0][0];
+    // The resolved component tree, not the raw generated payload.
+    expect(arg.tree).toMatchObject({
+      id: "n1",
+      kind: "component",
+      name: "Card",
+      props: { title: "Hello" },
+    });
+    expect(arg.tree).not.toHaveProperty("payload");
+  });
+
+  it("drives a prop-level update (not re-init) when only generated data changes", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const theme = {};
+    const state = {};
+    const { rerender } = render(
+      <FlowletStage node={makeGenNode({ title: "Hello" })} theme={theme} state={state} />,
+    );
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={makeGenNode({ title: "World" })} theme={theme} state={state} />);
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ replace: expect.anything() })),
+    );
+    // A data-only change must NOT remount via initialize.
+    expect(initialize).toHaveBeenCalledTimes(1);
+    const replaceCall = update.mock.calls.find((c) => c[0].replace);
+    expect(replaceCall?.[0].replace).toMatchObject({
+      nodeId: "n1",
+      node: { props: { title: "World" } },
+    });
+  });
+
+  it("re-initializes when the generated nodes change structurally", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const theme = {};
+    const state = {};
+    const nodeA = makeGenNode({ title: "Hello" });
+    const nodeB: UINode = {
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "n1",
+        nodes: [
+          { id: "n1", component: "Banner", source: "host", props: { title: { $path: "/title" } } },
+        ],
+        data: { title: "Hello" },
+      },
+    };
+    const { rerender } = render(<FlowletStage node={nodeA} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={nodeB} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+    expect(initialize.mock.calls[1][0].tree).toMatchObject({ name: "Banner" });
+  });
+
+  it("logs and does not initialize on an invalid generated payload", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const node: UINode = {
+      id: "g1",
+      kind: "generated",
+      payload: { formatVersion: "bogus/v9", root: "n1", nodes: [] },
+    };
+    render(<FlowletStage node={node} />);
+    await waitFor(() =>
+      expect(err).toHaveBeenCalledWith(
+        expect.stringContaining("invalid generated payload"),
+        expect.anything(),
+      ),
+    );
+    expect(initialize).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 });
