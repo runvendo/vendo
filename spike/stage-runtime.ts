@@ -20,11 +20,20 @@ export const STAGE_RUNTIME_SRC = String.raw`
     injectTheme(params.theme || {});
     var host = await loadBundle(params.bundleSource);
     var React = window.__React, createRoot = window.__createRoot;
+    function bindProps(props, state) {
+      var out = {};
+      var keys = Object.keys(props || {});
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i], v = props[k];
+        out[k] = (v && typeof v === "object" && "$state" in v) ? (state || {})[v.$state] : v;
+      }
+      return out;
+    }
     function toElement(node) {
       if (node.kind === "component") {
         var Impl = host[node.name];
         if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
-        return React.createElement(Impl, node.props || {});
+        return React.createElement(Impl, bindProps(node.props, params.state));
       }
       return React.createElement("div", { "data-generated": true }, "[generated]");
     }

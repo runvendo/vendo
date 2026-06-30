@@ -19,6 +19,13 @@ async function payloadFor(kind: string): Promise<InitPayload> {
       tree: { id: "c1", kind: "component", source: "host", name: "Card", props: { title: "Hello", body: "World" } },
     };
   }
+  if (kind === "state") {
+    const bundleSource = await (await fetch("/host-bundle.js")).text();
+    return { theme: { "--brand-primary": "#00aa77", "--brand-surface": "#fff", "--brand-text": "#111" },
+      state: { accountName: "Checking ****1234" }, bundleSource,
+      tree: { id: "c1", kind: "component", source: "host", name: "Card",
+        props: { title: "Acct", body: "x", accountName: { $state: "accountName" } } } };
+  }
   return { theme: {}, state: {}, bundleSource: "", tree: { id: "root", kind: "generated", payload: null } };
 }
 
