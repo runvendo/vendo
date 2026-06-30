@@ -1,15 +1,17 @@
 import type { UIMessage, UIMessageChunk } from "ai";
 import type { FlowletTool } from "./tool";
-import type { ClientPart } from "./protocol";
 
+/**
+ * Per-turn run input. The flow is turn-based: `run` is invoked with the current
+ * messages, and the ai SDK re-invokes it after a tool approval (the SDK owns the
+ * human-in-the-loop return channel, so there is no custom client-part callback).
+ */
 export interface RunInput {
   messages: UIMessage[]; // ai SDK UIMessage[] at the call site
   tools: FlowletTool[];
   system?: string;
   principal?: unknown;       // opaque in F1
   signal: AbortSignal;
-  /** In-band return channel: approval responses + sandbox actions reach the run here. */
-  onClientPart?: (part: ClientPart) => void;
 }
 
 export interface FlowletAgent {

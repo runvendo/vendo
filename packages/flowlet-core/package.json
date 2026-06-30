@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/provider": "3.0.2",
     "@standard-schema/spec": "^1.1.0",
     "ai": "6.0.28",
     "zod": "^3.24.0",

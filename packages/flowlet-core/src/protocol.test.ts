@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { SCHEMA_VERSION, type ApprovalRequest } from "./protocol";
+import { SCHEMA_VERSION, type ActionRequest } from "./protocol";
 
 describe("protocol", () => {
   it("exposes a schema version", () => {
     expect(SCHEMA_VERSION).toBe(1);
   });
 
-  it("types an approval request with a correlation id", () => {
-    const req: ApprovalRequest = { approvalId: "a1", toolCallId: "t1", prompt: "ok?", input: {} };
-    expect(req.approvalId).toBe("a1");
+  it("types a sandbox action request with a correlation id", () => {
+    const req: ActionRequest = { requestId: "r1", originNodeId: "n1", action: "click" };
+    expect(req.requestId).toBe("r1");
   });
 });

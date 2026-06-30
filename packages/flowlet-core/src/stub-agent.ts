@@ -1,85 +1,115 @@
-import { createUIMessageStream, type UIMessageChunk } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  stepCountIs,
+  streamText,
+  tool,
+  type UIMessageChunk,
+} from "ai";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { z } from "zod";
 import type { FlowletAgent, RunInput } from "./agent";
-import type { ApprovalResponse, FlowletUIMessage } from "./protocol";
 import { SCHEMA_VERSION } from "./protocol";
+import type { FlowletUIMessage } from "./protocol";
 import type { UINode } from "./ui";
 
-/**
- * Scripted development fixture (no LLM). Emits: start -> run info -> text ->
- * approval (pauses) -> [awaits `respondToApproval`, or aborts] -> ui -> finish.
- * The in-memory approval resolver is F1's stand-in for the real networked return channel.
- */
-export interface StubAgent extends FlowletAgent {
-  respondToApproval(approvalId: string, response: Omit<ApprovalResponse, "approvalId">): void;
+const TOOL_NAME = "renderDemoCard";
+const DEMO_TITLE = "Hello from Flowlet";
+
+/** Minimal, type-correct usage scaffolding for the mock model's `finish` part. */
+const ZERO_USAGE = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+} as const;
+
+function textChunks(id: string, text: string): LanguageModelV3StreamPart[] {
+  return [
+    { type: "text-start", id },
+    { type: "text-delta", id, delta: text },
+    { type: "text-end", id },
+  ];
 }
 
-export function createStubAgent(): StubAgent {
-  const pending = new Map<string, (r: ApprovalResponse) => void>();
+/** True once the conversation already contains an assistant tool call (post turn 1). */
+function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolean {
+  return prompt.some(
+    (m) =>
+      m.role === "assistant" &&
+      Array.isArray(m.content) &&
+      m.content.some((c) => (c as { type?: string }).type === "tool-call"),
+  );
+}
 
-  function respondToApproval(approvalId: string, response: Omit<ApprovalResponse, "approvalId">) {
-    pending.get(approvalId)?.({ approvalId, ...response });
-    pending.delete(approvalId);
-  }
+/**
+ * Scripted development fixture (no LLM). Drives the ai SDK's native human-in-the-loop
+ * tool approval: turn 1 streams text + a `needsApproval` tool call (the SDK pauses at
+ * `approval-requested`); after the client approves, the SDK re-invokes `run` with the
+ * approval in the messages, the tool executes, and the tool emits a `data-ui` DemoCard
+ * node. The mock model emits the tool call only on the first turn (it sees no prior
+ * tool call), then text-only, so the loop terminates.
+ */
+export function createStubAgent(): FlowletAgent {
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      const chunks: LanguageModelV3StreamPart[] = promptHasToolCall(prompt)
+        ? [
+            ...textChunks("t-done", "Here is your demo card."),
+            { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+          ]
+        : [
+            ...textChunks("t1", "Let me render a demo card."),
+            {
+              type: "tool-call",
+              toolCallId: "call-1",
+              toolName: TOOL_NAME,
+              input: JSON.stringify({ title: DEMO_TITLE }),
+            },
+            { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
+          ];
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  });
 
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     return createUIMessageStream<FlowletUIMessage>({
       execute: async ({ writer }) => {
-        writer.write({ type: "start" });
         writer.write({
           type: "data-run",
           transient: true,
           data: { runId: "run-1", threadId: "thread-1", schemaVersion: SCHEMA_VERSION },
         });
 
-        const textId = "t1";
-        writer.write({ type: "text-start", id: textId });
-        writer.write({ type: "text-delta", id: textId, delta: "Here is a demo card." });
-        writer.write({ type: "text-end", id: textId });
-
-        const approvalId = "approval-1";
-        const approved = await new Promise<ApprovalResponse | "aborted">((resolve) => {
-          // Cancellation: if the run is aborted while awaiting approval, settle the
-          // pending promise as aborted so the run short-circuits without further writes.
-          const onAbort = () => {
-            pending.delete(approvalId);
-            resolve("aborted");
-          };
-          if (input.signal.aborted) {
-            onAbort();
-            return;
-          }
-          input.signal.addEventListener("abort", onAbort, { once: true });
-          pending.set(approvalId, (r) => {
-            input.signal.removeEventListener("abort", onAbort);
-            resolve(r);
-          });
-          writer.write({
-            type: "data-approval",
-            id: approvalId,
-            data: { approvalId, toolCallId: "tool-1", prompt: "Render the demo card?", input: {} },
-          });
+        const renderDemoCard = tool({
+          description: "Render a demo card in the UI.",
+          inputSchema: z.object({ title: z.string() }),
+          needsApproval: true,
+          // Runs only after the client approves. Emits our custom data-ui UINode.
+          execute: async ({ title }) => {
+            const node: UINode = {
+              id: "ui-1",
+              kind: "component",
+              source: "prewired",
+              name: "DemoCard",
+              props: { title },
+            };
+            writer.write({ type: "data-ui", id: node.id, data: node });
+            return "rendered";
+          },
         });
 
-        if (approved === "aborted") {
-          writer.write({ type: "finish" });
-          return;
-        }
+        const result = streamText({
+          model,
+          tools: { [TOOL_NAME]: renderDemoCard },
+          messages: await convertToModelMessages(input.messages),
+          abortSignal: input.signal,
+          stopWhen: stepCountIs(5),
+        });
 
-        if (approved.approved) {
-          const node: UINode = {
-            id: "ui-1",
-            kind: "component",
-            source: "prewired",
-            name: "DemoCard",
-            props: { title: "Hello from Flowlet" },
-          };
-          writer.write({ type: "data-ui", id: node.id, data: node });
-        }
-
-        writer.write({ type: "finish" });
+        writer.merge(result.toUIMessageStream());
       },
     });
   }
 
-  return { run, respondToApproval };
+  return { run };
 }
