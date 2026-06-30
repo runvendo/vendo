@@ -1,4 +1,5 @@
 .flowlet-root {
+  color-scheme: light dark;
   --flowlet-accent: light-dark(#16181d, #e9eaee);
   --flowlet-accent-fg: light-dark(#ffffff, #141417);
   --flowlet-fg: light-dark(#1b1d22, #e7e8ec);

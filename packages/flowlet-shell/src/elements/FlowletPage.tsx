@@ -4,7 +4,7 @@ import { FlowletProvider } from "@flowlet/react";
 import { FlowletShellProvider } from "../context";
 import type { FlowletStore } from "../seams/store";
 import type { FlowletIntegrations } from "../seams/integrations";
-import type { FlowletTheme } from "../theme";
+import { themeToStyle, type FlowletTheme } from "../theme";
 import { FlowletThread } from "../FlowletThread";
 
 export interface FlowletPageProps {
@@ -35,7 +35,7 @@ export function FlowletPage(props: FlowletPageProps) {
   };
 
   return (
-    <div className="fl-page">
+    <div className="flowlet-root fl-page" style={themeToStyle(theme)}>
       <div className="fl-tabbar" role="tablist">
         {tabs.map((tab) => (
           <button
