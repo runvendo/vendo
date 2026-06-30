@@ -17,6 +17,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   var currentParams = null;   // { theme, state, tree, bundleSource }
   var __pendingActions = {};  // actionId → { resolve, reject } (approval-pending dispatch)
   var currentCapabilityMap = {}; // nodeId → capability token (built from tree on ui/initialize)
+  var cachedEB = null; // ErrorBoundary class, built once (see getEB) and reused across renders
 
   // ── Theme injection ──────────────────────────────────────────────────────────
   function injectTheme(theme) {
@@ -66,6 +67,14 @@ export const STAGE_RUNTIME_SRC = String.raw`
           : this.props.children;
       }
     };
+  }
+
+  // Build the ErrorBoundary class once and reuse it across renders. A fresh class
+  // per render is a NEW React component type, so React would remount the whole
+  // tree on every ui/update (destroying DOM identity); caching keeps element
+  // identity stable so prop-level updates reconcile in place. Mirrors cachedHost.
+  function getEB() {
+    return cachedEB || (cachedEB = makeEB(window.__React));
   }
 
   // ── Tree helpers ─────────────────────────────────────────────────────────────
@@ -166,7 +175,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // Re-render the current tree into the persistent root.
   function rerender() {
     if (!currentParams || !window.__flowletRoot) return;
-    var EB = makeEB(window.__React);
+    var EB = getEB();
     window.__flowletRoot.render(buildElement(cachedHost || {}, currentParams, EB));
   }
 
@@ -177,7 +186,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
     cachedHost = await loadBundle(params.bundleSource);
 
     var React = window.__React, createRoot = window.__createRoot;
-    var EB = makeEB(React);
+    var EB = getEB();
 
     // Create the root once and persist it.
     if (!window.__flowletRoot) {

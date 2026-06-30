@@ -22,6 +22,15 @@ describe("stage runtime source", () => {
     // Fallback to the host bundle (e.g. __row/__badge) must be preserved.
     expect(STAGE_RUNTIME_SRC).toContain("host[node.name]");
   });
+  it("caches the error-boundary class so ui/update reconciles instead of remounting", () => {
+    // The class is built once via getEB() and reused, mirroring cachedHost. A
+    // fresh makeEB() per render would be a new React component type and force a
+    // full remount on every ui/update, destroying DOM identity.
+    expect(STAGE_RUNTIME_SRC).toContain("function getEB()");
+    expect(STAGE_RUNTIME_SRC).toContain("cachedEB || (cachedEB = makeEB(window.__React))");
+    // makeEB must NOT be called directly inside render()/rerender() anymore.
+    expect(STAGE_RUNTIME_SRC).not.toContain("var EB = makeEB(");
+  });
 });
 
 describe("$state prop binding (bindProps)", () => {
