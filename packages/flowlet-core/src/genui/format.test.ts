@@ -122,6 +122,43 @@ describe("validateGeneratedPayload", () => {
     if (!result.ok) expect(result.error.code).toBe("provision");
   });
 
+  it("rejects an empty node id with provision", () => {
+    const result = validateGeneratedPayload({
+      formatVersion: FLOWLET_GENUI_VERSION,
+      root: "n1",
+      nodes: [{ id: "", component: "Text" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("provision");
+  });
+
+  it("rejects a non-object node element with provision", () => {
+    for (const bad of [null, 42]) {
+      const result = validateGeneratedPayload({
+        formatVersion: FLOWLET_GENUI_VERSION,
+        root: "n1",
+        nodes: [bad],
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("provision");
+    }
+  });
+
+  it("rejects a non-object data with provision", () => {
+    for (const bad of ["oops", 42, []]) {
+      const result = validateGeneratedPayload({ ...(minimal() as object), data: bad });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("provision");
+    }
+  });
+
+  it("accepts an absent data and a plain-object data", () => {
+    expect(validateGeneratedPayload(minimal()).ok).toBe(true);
+    expect(
+      validateGeneratedPayload({ ...(minimal() as object), data: { title: "Hi" } }).ok,
+    ).toBe(true);
+  });
+
   it("rejects duplicate node ids with provision", () => {
     const result = validateGeneratedPayload({
       formatVersion: FLOWLET_GENUI_VERSION,

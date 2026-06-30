@@ -63,14 +63,17 @@ export function validateGeneratedPayload(input: unknown): GenUIValidation {
   if (!Array.isArray(nodes)) {
     return fail("provision", "nodes must be an array");
   }
+  if (input.data !== undefined && !isPlainObject(input.data)) {
+    return fail("provision", "data must be a plain object");
+  }
 
   const ids = new Set<string>();
   for (const node of nodes) {
     if (!isPlainObject(node)) {
       return fail("provision", "each node must be an object");
     }
-    if (typeof node.id !== "string") {
-      return fail("provision", "each node must have a string id");
+    if (typeof node.id !== "string" || node.id.length === 0) {
+      return fail("provision", "each node must have a non-empty string id");
     }
     if (typeof node.component !== "string") {
       return fail("provision", `node "${node.id}" must have a string component`);
