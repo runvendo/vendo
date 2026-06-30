@@ -14,8 +14,9 @@ export const STAGE_RUNTIME_SRC = String.raw`
   document.body.appendChild(root);
 
   // ── Module-level state ───────────────────────────────────────────────────────
-  var currentParams = null;   // { theme, state, tree, bundleSource, capability }
+  var currentParams = null;   // { theme, state, tree, bundleSource }
   var __pendingActions = {};  // actionId → resolve fn (approval-pending dispatch)
+  var currentCapabilityMap = {}; // nodeId → capability token (built from tree on ui/initialize)
 
   // ── Theme injection ──────────────────────────────────────────────────────────
   function injectTheme(theme) {
@@ -62,6 +63,13 @@ export const STAGE_RUNTIME_SRC = String.raw`
   }
 
   // ── Tree helpers ─────────────────────────────────────────────────────────────
+  // Build a flat nodeId → capability map by walking the tree recursively.
+  function buildCapabilityMap(node, map) {
+    if (!node) return;
+    if (node.id && node.capability) map[node.id] = node.capability;
+    (node.children || []).forEach(function(c) { buildCapabilityMap(c, map); });
+  }
+
   // Recursive find-and-replace: swap the node whose id === targetId with newNode.
   function replaceNode(node, targetId, newNode) {
     if (!node) return node;
@@ -146,7 +154,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
         params: {
           name: descriptor.action,
           originNodeId: originNodeId,
-          capability: (currentParams || {}).capability,
+          capability: currentCapabilityMap[originNodeId],
           payload: descriptor.payload
         }
       }, "*");
@@ -160,6 +168,8 @@ export const STAGE_RUNTIME_SRC = String.raw`
 
     // ── ui/initialize ──────────────────────────────────────────────────────────
     if (m.method === "ui/initialize") {
+      currentCapabilityMap = {};
+      buildCapabilityMap((m.params || {}).tree, currentCapabilityMap);
       parent.postMessage({ flowlet: true, id: m.id, result: { ok: true } }, "*");
       parent.postMessage({ flowlet: true, type: "init-ack" }, "*");
       render(m.params).catch(function(err) { console.error("[flowlet] render error", err); });

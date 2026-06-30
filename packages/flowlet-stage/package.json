@@ -12,14 +12,23 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:bundle": "vite build -c tests/browser/vite.bundle.config.ts",
     "test": "vitest run",
+    "test:browser": "playwright test -c tests/browser/playwright.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@flowlet/core": "workspace:*"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@playwright/test": "^1.48.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "axe-core": "^4.12.1",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
     "typescript": "^5.6.0",
+    "vite": "^5.4.0",
     "vitest": "^2.1.0"
   }
 }

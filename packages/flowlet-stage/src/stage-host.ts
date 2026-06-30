@@ -50,11 +50,20 @@ export function createStage(slot: HTMLElement): {
   iframe.srcdoc = buildSrcdoc();
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
+  // Wrap contentWindow.postMessage to supply the required targetOrigin ("*").
+  // The MessageEndpoint interface only takes one argument, but the browser's
+  // Window.postMessage requires targetOrigin — without it Chrome throws.
+  const postEndpoint: MessageEndpoint = {
+    postMessage: (msg) => iframe.contentWindow!.postMessage(msg, "*"),
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+
   return {
     iframe,
     endpoints: {
       listen: window as unknown as MessageEndpoint,
-      post: iframe.contentWindow as unknown as MessageEndpoint,
+      post: postEndpoint,
     },
   };
 }
