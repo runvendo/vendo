@@ -187,10 +187,31 @@
 
 ---
 
+## Task 9: Real-LLM e2e test (Claude emits → validate → render)
+
+**Files:** Create `packages/flowlet-stage/tests/browser/gate-e2e-llm.spec.ts`; add an `@anthropic-ai/sdk` devDependency + a `test:e2e` script to `packages/flowlet-stage/package.json`; a minimal component-menu prompt helper (inline in the spec or `tests/browser/llm-prompt.ts`).
+
+**Goal:** Prove the format is genuinely LLM-emittable end to end — a real Claude call produces a Flowlet GenUI v1 payload that validates and renders in the sandboxed stage.
+
+**Approach:**
+- The Playwright spec runs in Node: in `beforeAll`, read `process.env.ANTHROPIC_API_KEY` (injected via `infisical run --projectId b366cac7-1716-47a0-9617-f335500f6dee -- pnpm --filter @flowlet/stage test:e2e`). **Skip the whole spec if the key is absent** so normal CI without secrets still passes.
+- Call the Anthropic SDK (model `claude-sonnet-4-6`) with a constrained system prompt enumerating the available catalog (the prewired primitives `Stack`/`Row`/`Text` + one host component, e.g. `Card`, with its prop names) and the Flowlet GenUI v1 grammar (flat `nodes`, `root`, `$path` bindings, `formatVersion`). Ask it to lay out a small UI for a concrete request. Parse the JSON payload; validate with `validateGeneratedPayload` (retry once on a validation failure, feeding the error back).
+- Resolve the validated payload host-side and render it in the real sandboxed stage (reuse the Task 7 fixture path), then assert the generated UI is visible and passes an axe check.
+- Never log the API key. The secret is read from env only.
+
+**Tests:** the e2e gate (skipped without a key) — a real Claude-generated payload validates, renders, and is accessible.
+
+**Acceptance:** `infisical run --projectId b366cac7-1716-47a0-9617-f335500f6dee -- pnpm --filter @flowlet/stage test:e2e` renders Claude-generated UI green locally; the spec is skipped (not failed) when no key is present.
+
+**Commit:** `test(stage): real-LLM e2e — Claude emits Flowlet GenUI v1, renders in stage (ENG-180)`
+
+---
+
 ## Final verification (after all tasks)
 
 - [ ] Whole-workspace `typecheck`, `build`, `test` green (root scripts).
 - [ ] `@flowlet/stage` `test:browser` green (all F3a + new F3b gates).
+- [ ] Real-LLM e2e (T9) renders Claude-generated UI green via `infisical run` locally; skips cleanly without a key.
 - [ ] Spec §2–§8 each map to a shipped task (coverage check below).
 - [ ] No weakening of the F3a CSP/egress model; sandbox→host still data-only.
 - [ ] Dispatch a final whole-implementation code review (subagent-driven step 7), then finish via finishing-a-development-branch.
