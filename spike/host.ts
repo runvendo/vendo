@@ -40,6 +40,15 @@ async function payloadFor(kind: string): Promise<InitPayload> {
         { id: "good", kind: "component", source: "host", name: "Card", props: { title: "OK", body: "survived" } },
       ] } };
   }
+  if (kind === "mixed") {
+    const bundleSource = await (await fetch("/host-bundle.js")).text();
+    return { theme: { "--brand-primary": "#00aa77", "--brand-surface": "#fff", "--brand-text": "#111" }, state: {}, bundleSource,
+      tree: { id: "root", kind: "component", source: "prewired", name: "__row", props: {}, children: [
+        { id: "b1", kind: "component", source: "prewired", name: "__badge", props: { label: "New" } },
+        { id: "c1", kind: "component", source: "host", name: "Card", props: { title: "Hello", body: "World" } },
+        { id: "g1", kind: "generated", payload: { note: "placeholder" } },
+      ] } };
+  }
   return { theme: {}, state: {}, bundleSource: "", tree: { id: "root", kind: "generated", payload: null } };
 }
 

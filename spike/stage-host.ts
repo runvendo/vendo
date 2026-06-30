@@ -13,12 +13,14 @@ const CSP = [
 ].join("; ");
 
 export function createStage(slot: HTMLElement): HTMLIFrameElement {
-  const srcdoc = `<!doctype html><html><head>
+  const srcdoc = `<!doctype html><html lang="en"><head>
     <meta http-equiv="Content-Security-Policy" content="${CSP}">
+    <title>Flowlet Stage</title>
   </head><body><script type="module">${STAGE_RUNTIME_SRC}<\/script></body></html>`;
 
   const iframe = document.createElement("iframe");
   iframe.id = "flowlet-stage";
+  iframe.title = "Flowlet stage";
   iframe.setAttribute("sandbox", "allow-scripts"); // NO allow-same-origin -> opaque origin
   iframe.srcdoc = srcdoc;
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
