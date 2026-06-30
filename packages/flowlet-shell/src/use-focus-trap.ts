@@ -26,11 +26,13 @@ export function useFocusTrap(
     const focusables = Array.from(
       container.querySelectorAll<HTMLElement>(FOCUSABLE),
     );
+    // preventScroll: the overlay panel is position:fixed; focusing a child would
+    // otherwise make the browser scroll the page to "reveal" it.
     const firstFocusable = focusables[0];
     if (firstFocusable) {
-      firstFocusable.focus();
+      firstFocusable.focus({ preventScroll: true });
     } else {
-      container.focus();
+      container.focus({ preventScroll: true });
     }
 
     // Tab / Shift+Tab wrapping handler (capture phase so it runs before React).
@@ -50,13 +52,13 @@ export function useFocusTrap(
         // Shift+Tab on first element → jump to last.
         if (document.activeElement === first) {
           e.preventDefault();
-          last.focus();
+          last.focus({ preventScroll: true });
         }
       } else {
         // Tab on last element → jump to first.
         if (document.activeElement === last) {
           e.preventDefault();
-          first.focus();
+          first.focus({ preventScroll: true });
         }
       }
     };
@@ -67,7 +69,7 @@ export function useFocusTrap(
       document.removeEventListener("keydown", onKeyDown, true);
       // Restore focus only if the element is still in the DOM.
       if (previouslyFocused?.isConnected) {
-        previouslyFocused.focus();
+        previouslyFocused.focus({ preventScroll: true });
       }
     };
   }, [active, containerRef]);
