@@ -6,3 +6,4 @@ export * from "./agent";
 export * from "./registry";
 export * from "./stub-agent";
 export * from "./genui";
+export * from "./text";

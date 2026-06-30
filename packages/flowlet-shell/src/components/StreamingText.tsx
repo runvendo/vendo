@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { stripEmoji } from "@flowlet/core";
 
 export interface StreamingTextProps {
   text: string;
@@ -35,7 +36,7 @@ export function StreamingText({ text, streaming = false }: StreamingTextProps) {
           ),
         }}
       >
-        {text}
+        {stripEmoji(text)}
       </ReactMarkdown>
       {streaming && <span className="fl-caret" aria-hidden="true" />}
     </div>

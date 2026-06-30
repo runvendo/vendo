@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef } from "react";
 import { useFlowletChat } from "@flowlet/react";
-import type { UINode } from "@flowlet/core";
+import { stripEmoji, type UINode } from "@flowlet/core";
 
 export interface SavedView {
   id: string;
@@ -30,8 +30,8 @@ function asObject(props: unknown): Record<string, unknown> {
 function labelFor(node: Extract<UINode, { kind: "component" }>): string {
   const p = asObject(node.props);
   if (node.name === "TimeOfDayClock") return "Time-of-day spending";
-  if (node.name === "Callout") return typeof p.title === "string" ? p.title : "Rule";
-  if (typeof p.title === "string") return p.title;
+  if (node.name === "Callout") return typeof p.title === "string" ? stripEmoji(p.title) : "Rule";
+  if (typeof p.title === "string") return stripEmoji(p.title);
   return node.name;
 }
 

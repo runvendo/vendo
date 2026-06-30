@@ -16,6 +16,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { motion } from "framer-motion";
 import type { UINode } from "@flowlet/core";
+import { stripEmojiDeep } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
 import { prewiredImpls, prewiredComponents } from "@flowlet/components";
 
@@ -35,16 +36,20 @@ function Reveal({ children }: { children: ReactNode }) {
 }
 
 function coerceProps(props: unknown): Record<string, unknown> {
+  let obj: Record<string, unknown> = {};
   if (typeof props === "string") {
     try {
       const parsed = JSON.parse(props);
-      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+      if (parsed && typeof parsed === "object") obj = parsed as Record<string, unknown>;
     } catch {
-      return {};
+      obj = {};
     }
+  } else if (props && typeof props === "object") {
+    obj = props as Record<string, unknown>;
   }
-  if (props && typeof props === "object") return props as Record<string, unknown>;
-  return {};
+  // Defense in depth: the model is told not to emit emoji, but strip any that
+  // slip through so the rendered UI stays emoji-free regardless.
+  return stripEmojiDeep(obj);
 }
 
 export function renderNode(node: UINode): ReactNode {
