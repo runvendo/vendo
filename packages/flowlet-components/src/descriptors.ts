@@ -6,6 +6,7 @@ import { chartDescriptor } from "./components/Chart/descriptor";
 import { formDescriptor } from "./components/Form/descriptor";
 import { accordionDescriptor } from "./components/Accordion/descriptor";
 import { carouselDescriptor } from "./components/Carousel/descriptor";
+import { calloutDescriptor } from "./components/Callout/descriptor";
 
 export const descriptors: PrewiredDescriptor[] = [
   cardDescriptor,
@@ -14,6 +15,7 @@ export const descriptors: PrewiredDescriptor[] = [
   formDescriptor,
   accordionDescriptor,
   carouselDescriptor,
+  calloutDescriptor,
 ];
 
 export const prewiredComponents: RegisteredComponent[] = descriptors.map((d) => d.toRegistered());
