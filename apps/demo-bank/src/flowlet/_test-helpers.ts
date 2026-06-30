@@ -49,4 +49,6 @@ export function mockRenderModel() {
 /** Composio client stub that exposes no tools — keeps tests fully offline. */
 export const stubComposioClient: ComposioClient = {
   fetchTools: async () => ({}),
+  authorize: async () => ({ redirectUrl: null, connectedAccountId: "ca_stub" }),
+  connectionStatus: async () => "active",
 };

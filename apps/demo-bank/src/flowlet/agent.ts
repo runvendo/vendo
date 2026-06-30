@@ -107,6 +107,18 @@ function buildInstructions(): string {
     "github, googlecalendar, linear, googledrive, discord, googlesheets, stripe, jira,",
     "asana, hubspot, airtable). You may briefly say you're requesting access. Once the user",
     "connects it, they can re-ask and you'll have the tool.",
+    "",
+    "RUNNABLE APPS — when a request is for something interactive that the prewired",
+    "components above cannot express (a game, a calculator, an animation, a drawing",
+    "tool, a custom widget — e.g. 'build me the dinosaur game'), do NOT print code as",
+    "text and do NOT refuse. Instead GENERATE a single self-contained HTML document",
+    "(everything inline: <style> and <script>, no external files, no network) that",
+    "fully implements it, and render it by calling render_ui with source:'prewired',",
+    "name:'App', and props as a JSON OBJECT { html: \"<!doctype html>...the entire",
+    "document...\", height: <pixels, e.g. 360>, title: \"<short title>\" }. It mounts in a",
+    "sandboxed iframe and runs live, so the user can actually use it. Make it complete",
+    "and genuinely playable/usable, not a stub. A short sentence of intro is fine; the",
+    "working app is the answer.",
   ].join("\n");
 }
 

@@ -20,8 +20,23 @@ import { stripEmojiDeep } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
 import { prewiredImpls, prewiredComponents } from "@flowlet/components";
 import { DemoConnectCard } from "./DemoConnectCard";
+import { HtmlApp } from "./HtmlApp";
 
 const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
+
+/** Parse props WITHOUT emoji/whitespace stripping — for code payloads (the App
+ *  html) where collapsing whitespace would corrupt the source. */
+function rawProps(props: unknown): Record<string, unknown> {
+  if (typeof props === "string") {
+    try {
+      const p = JSON.parse(props);
+      return p && typeof p === "object" ? (p as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return props && typeof props === "object" ? (props as Record<string, unknown>) : {};
+}
 
 /** Tasteful entrance so each generated view "arrives" rather than popping in. */
 function Reveal({ children }: { children: ReactNode }) {
@@ -64,6 +79,21 @@ export function renderNode(node: UINode): ReactNode {
       return (
         <Reveal>
           <DemoConnectCard toolkit={toolkit} reason={reason} />
+        </Reveal>
+      );
+    }
+    // Runnable app: the agent generates a self-contained HTML document for
+    // anything the prewired components can't express (a game, a calculator, a
+    // custom interactive tool), and we mount it as a live sandboxed app.
+    if (node.name === "App") {
+      const props = rawProps(node.props);
+      return (
+        <Reveal>
+          <HtmlApp
+            html={typeof props.html === "string" ? props.html : ""}
+            height={typeof props.height === "number" ? props.height : undefined}
+            title={typeof props.title === "string" ? props.title : undefined}
+          />
         </Reveal>
       );
     }

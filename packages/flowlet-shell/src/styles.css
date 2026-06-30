@@ -151,8 +151,9 @@
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
-  box-shadow: var(--flowlet-shadow); overflow: hidden; padding: 10px; max-width: 540px; align-self: flex-start; width: 100%; }
-.fl-picker-head { display: flex; align-items: center; padding: 2px 4px 8px; }
+  box-shadow: var(--flowlet-shadow); overflow: auto; padding: 18px 18px 20px; max-width: 560px;
+  max-height: min(560px, 70vh); align-self: flex-start; width: 100%; }
+.fl-picker-head { display: flex; align-items: center; padding: 0 2px 12px; }
 .fl-picker-title { font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; }
 .fl-picker-close { margin-left: auto; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
   border: 0; background: transparent; color: var(--flowlet-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
@@ -162,9 +163,9 @@
   color: var(--flowlet-fg); padding: 9px 11px; margin-bottom: 4px; }
 .fl-picker-search::placeholder { color: var(--flowlet-fg-muted); }
 .fl-picker-group { font: 600 10px/1 var(--flowlet-font-mono); letter-spacing: .12em; text-transform: uppercase;
-  color: var(--flowlet-fg-muted); margin: 8px 8px 7px; }
-.fl-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 4px 4px; }
-.fl-picker-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 11px;
+  color: var(--flowlet-fg-muted); margin: 16px 2px 9px; }
+.fl-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0; }
+.fl-picker-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 11px;
   border: 1px solid var(--flowlet-border); background: var(--flowlet-surface); transition: transform .12s, border-color .12s, box-shadow .12s; }
 .fl-picker-item:hover { transform: translateY(-1px); border-color: var(--flowlet-border-strong); box-shadow: var(--flowlet-shadow); }
 .fl-picker-item.is-connected { background: color-mix(in srgb, var(--flowlet-ok) 9%, var(--flowlet-surface));

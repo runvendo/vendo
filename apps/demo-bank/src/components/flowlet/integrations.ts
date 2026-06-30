@@ -2,14 +2,20 @@
 
 /**
  * Integrations source backed by the demo connection store (via
- * /api/flowlet/integrations). The store is the single source of truth, so
- * connect/disconnect are REAL on-stage actions: they POST to the store and the
- * agent gains/loses that toolkit on its next turn.
+ * /api/flowlet/integrations). The store is the single source of truth for what
+ * the agent ingests, but a toolkit only becomes connected once Composio reports
+ * it ACTIVE:
+ *
+ *  - connect(id) runs the REAL Composio flow (authorize → OAuth popup → poll).
+ *    The status route flips the store on once ACTIVE, so the agent gains the
+ *    toolkit on its next turn.
+ *  - disconnect(id) flips the store off (it does NOT delete the Composio account).
  *
  * Seeded optimistically as ALL DISCONNECTED so the rail paints correctly before
  * the first list() reconciles with the server.
  */
 import type { FlowletIntegrations, Integration } from "@flowlet/shell";
+import { runConnectFlow } from "./connect-flow";
 
 const CATALOG: { id: string; name: string }[] = [
   { id: "gmail", name: "Gmail" },
@@ -33,28 +39,42 @@ export function createComposioIntegrations(): FlowletIntegrations {
   const find = (id: string): Integration =>
     cache.find((i) => i.id === id) ?? { id, name: id, connected: false };
 
-  async function mutate(id: string, action: "connect" | "disconnect"): Promise<Integration> {
+  async function refresh(): Promise<void> {
     try {
-      const res = await fetch("/api/flowlet/integrations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, action }),
-        cache: "no-store",
-      });
+      const res = await fetch("/api/flowlet/integrations", { cache: "no-store" });
       if (res.ok) {
         const json = (await res.json()) as { data?: { integrations?: Integration[] } };
         if (json.data?.integrations) cache = json.data.integrations;
       }
     } catch {
-      /* keep last-known cache; fall through to optimistic value below */
+      /* keep last-known cache */
     }
-    return find(id);
   }
 
   return {
     async list() {
+      await refresh();
+      return cache;
+    },
+    async connect(id) {
+      // REAL flow: authorize → OAuth popup → poll. The status route marks the
+      // store connected once Composio reports ACTIVE; then re-list to reflect it.
       try {
-        const res = await fetch("/api/flowlet/integrations", { cache: "no-store" });
+        await runConnectFlow(id);
+      } catch {
+        /* fall through to a refresh so the rail reflects server truth */
+      }
+      await refresh();
+      return find(id);
+    },
+    async disconnect(id) {
+      try {
+        const res = await fetch("/api/flowlet/integrations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, action: "disconnect" }),
+          cache: "no-store",
+        });
         if (res.ok) {
           const json = (await res.json()) as { data?: { integrations?: Integration[] } };
           if (json.data?.integrations) cache = json.data.integrations;
@@ -62,13 +82,7 @@ export function createComposioIntegrations(): FlowletIntegrations {
       } catch {
         /* keep last-known cache */
       }
-      return cache;
-    },
-    connect(id) {
-      return mutate(id, "connect");
-    },
-    disconnect(id) {
-      return mutate(id, "disconnect");
+      return find(id);
     },
   };
 }

@@ -18,7 +18,11 @@ vi.mock("./composio", async (importActual) => {
   return {
     ...actual,
     createComposioClient: vi.fn(
-      (): ComposioClient => ({ fetchTools: vi.fn(async () => ({})) }),
+      (): ComposioClient => ({
+        fetchTools: vi.fn(async () => ({})),
+        authorize: vi.fn(async () => ({ redirectUrl: null, connectedAccountId: "ca_fake" })),
+        connectionStatus: vi.fn(async () => "active" as const),
+      }),
     ),
   };
 });
@@ -138,7 +142,11 @@ describe("createFlowletAgent", () => {
 
   it("scopes Composio ingestion to the run principal's userId", async () => {
     const fetchTools = vi.fn(async (): Promise<ToolSet> => ({}));
-    const client: ComposioClient = { fetchTools };
+    const client: ComposioClient = {
+      fetchTools,
+      authorize: vi.fn(async () => ({ redirectUrl: null, connectedAccountId: "ca_fake" })),
+      connectionStatus: vi.fn(async () => "active" as const),
+    };
 
     const agent = createFlowletAgent({
       model: mockModel(),

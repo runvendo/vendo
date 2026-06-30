@@ -3,8 +3,9 @@
 /**
  * In-thread Connect card. The agent renders this (via render_ui name "Connect")
  * when a request needs a toolkit the user hasn't connected yet. Clicking Connect
- * POSTs to the demo connection store, which both flips the rail state and makes a
- * fresh chat agent ingest the toolkit on the next turn.
+ * runs the REAL Composio OAuth flow: authorize → open the provider consent in a
+ * popup → poll until the connection is ACTIVE, at which point the demo store is
+ * marked connected so a fresh chat agent ingests the toolkit on the next turn.
  *
  * Reuses the shell's ConnectCard (brand logo + button) for the idle look, then
  * shows connecting -> connected status. On success it dispatches a window event
@@ -12,6 +13,7 @@
  */
 import { useState } from "react";
 import { ConnectCard, type Integration } from "@flowlet/shell";
+import { runConnectFlow } from "./connect-flow";
 
 const NAMES: Record<string, string> = {
   gmail: "Gmail",
@@ -40,13 +42,11 @@ export function DemoConnectCard({ toolkit, reason }: { toolkit: string; reason?:
   async function connect() {
     setStatus("connecting");
     try {
-      const res = await fetch("/api/flowlet/integrations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: toolkit, action: "connect" }),
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`connect failed: ${res.status}`);
+      const result = await runConnectFlow(toolkit);
+      if (result !== "active") {
+        setStatus("error");
+        return;
+      }
       setStatus("connected");
       // Let the integrations rail (and anything else) reconcile.
       if (typeof window !== "undefined") {
@@ -76,8 +76,24 @@ export function DemoConnectCard({ toolkit, reason }: { toolkit: string; reason?:
     return (
       <div className="fl-connect" role="status" aria-label={`Connecting ${name}`}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <span
+            aria-hidden
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              border: "2px solid currentColor",
+              borderTopColor: "transparent",
+              display: "inline-block",
+              animation: "fl-spin 0.7s linear infinite",
+            }}
+          />
           Connecting {name}…
         </div>
+        <div style={{ fontSize: 12, marginTop: 6, opacity: 0.8 }}>
+          Finish in the popup window, then we will pick it up automatically.
+        </div>
+        <style>{"@keyframes fl-spin { to { transform: rotate(360deg) } }"}</style>
       </div>
     );
   }

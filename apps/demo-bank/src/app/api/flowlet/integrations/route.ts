@@ -1,24 +1,47 @@
 /**
- * /api/flowlet/integrations — the demo connection store is the source of truth.
+ * /api/flowlet/integrations — REAL Composio connect flow + the demo store gate.
  *
- *  - GET  returns the catalog with live `connected` flags.
- *  - POST { id, action: "connect" | "disconnect" } mutates the store (which also
- *    drives which toolkits the chat agent ingests) and returns the updated list.
+ *  - GET (no query) returns the catalog with live `connected` flags.
+ *  - GET ?status&id=<toolkit>&account=<connectedAccountId> polls Composio for the
+ *    connection's status. When ACTIVE it ALSO marks the toolkit connected in the
+ *    demo store (the agent's ingestion gate), so the agent gains it next turn.
+ *  - POST { id, action: "authorize" } begins/resumes the toolkit's OAuth and
+ *    returns { redirectUrl, connectedAccountId } for the client popup + poll.
+ *  - POST { id, action: "disconnect" } flips the demo store off (store only —
+ *    it does NOT delete the real Composio account).
  *
- * No live Composio `active()` check anymore: in the demo, "connecting" flips the
- * store flag on screen rather than running a real OAuth round-trip.
+ * The store is the single source of truth for what the agent ingests, but a
+ * toolkit only becomes "connected" once Composio reports it ACTIVE.
  */
 import {
   listIntegrations,
-  connect,
   disconnect,
+  connect,
 } from "@/flowlet/connections-store"
+import {
+  authorizeToolkit,
+  toolkitConnectionStatus,
+} from "@/flowlet/composio-server"
 import { ok, badRequest } from "@/server/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-export async function GET() {
+export async function GET(req: Request) {
+  const url = new URL(req.url)
+  if (url.searchParams.has("status")) {
+    const id = url.searchParams.get("id") ?? ""
+    const account = url.searchParams.get("account") ?? ""
+    if (!id || !account) return badRequest("status requires id and account")
+    try {
+      const status = await toolkitConnectionStatus(account)
+      // The store is the agent gate: only mark connected once Composio is ACTIVE.
+      if (status === "active") connect(id)
+      return ok({ status })
+    } catch {
+      return ok({ status: "failed" as const })
+    }
+  }
   return ok({ integrations: listIntegrations() })
 }
 
@@ -33,12 +56,22 @@ export async function POST(req: Request) {
   const id = typeof body.id === "string" ? body.id : ""
   const action = body.action
   if (!id) return badRequest("missing integration id")
-  if (action !== "connect" && action !== "disconnect") {
-    return badRequest("action must be 'connect' or 'disconnect'")
+
+  if (action === "authorize") {
+    try {
+      const { redirectUrl, connectedAccountId } = await authorizeToolkit(id)
+      return ok({ redirectUrl, connectedAccountId })
+    } catch (err) {
+      return badRequest(
+        `authorize failed: ${err instanceof Error ? err.message : "unknown error"}`,
+      )
+    }
   }
 
-  if (action === "connect") connect(id)
-  else disconnect(id)
+  if (action === "disconnect") {
+    disconnect(id)
+    return ok({ integrations: listIntegrations() })
+  }
 
-  return ok({ integrations: listIntegrations() })
+  return badRequest("action must be 'authorize' or 'disconnect'")
 }

@@ -38,6 +38,40 @@ export interface ComposioClient {
     userId: string,
     allowlist: { toolkits?: string[]; tools?: string[] },
   ): Promise<ToolSet>;
+
+  /**
+   * Kick off (or resume) a per-user OAuth connection for a toolkit. Returns the
+   * real provider OAuth `redirectUrl` to open in a popup, plus the
+   * `connectedAccountId` to poll. When the user is already authorized the SDK may
+   * return a `null` redirectUrl and an already-ACTIVE account (fast path).
+   */
+  authorize(
+    userId: string,
+    toolkit: string,
+  ): Promise<{ redirectUrl: string | null; connectedAccountId: string }>;
+
+  /**
+   * Normalized status of a connected account: `"active"` once the OAuth flow has
+   * completed, `"pending"` while it is still in flight, `"failed"` for any
+   * terminal non-active state (failed/expired/inactive).
+   */
+  connectionStatus(
+    connectedAccountId: string,
+  ): Promise<"active" | "pending" | "failed">;
+}
+
+/**
+ * Normalize a raw Composio `ConnectedAccountStatus`
+ * (INITIALIZING | INITIATED | ACTIVE | FAILED | EXPIRED | INACTIVE) down to the
+ * three states the Flowlet connect flow cares about.
+ */
+function normalizeConnectionStatus(
+  raw: string | undefined,
+): "active" | "pending" | "failed" {
+  const status = (raw ?? "").toUpperCase();
+  if (status === "ACTIVE") return "active";
+  if (status === "INITIALIZING" || status === "INITIATED") return "pending";
+  return "failed";
 }
 
 /**
@@ -65,6 +99,15 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
   }) => {
     tools: {
       get(userId: string, filters: unknown): Promise<ToolSet>;
+    };
+    toolkits: {
+      authorize(
+        userId: string,
+        toolkitSlug: string,
+      ): Promise<{ id: string; redirectUrl?: string | null }>;
+    };
+    connectedAccounts: {
+      get(connectedAccountId: string): Promise<{ status?: string }>;
     };
   };
 
@@ -110,6 +153,21 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
         for (const set of perToolkit) Object.assign(merged, set);
       }
       return merged;
+    },
+
+    async authorize(userId, toolkit) {
+      const client = await getComposio();
+      const request = await client.toolkits.authorize(userId, toolkit);
+      return {
+        redirectUrl: request.redirectUrl ?? null,
+        connectedAccountId: request.id,
+      };
+    },
+
+    async connectionStatus(connectedAccountId) {
+      const client = await getComposio();
+      const account = await client.connectedAccounts.get(connectedAccountId);
+      return normalizeConnectionStatus(account.status);
     },
   };
 }
