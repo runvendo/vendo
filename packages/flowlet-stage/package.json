@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./build": {
+      "types": "./dist/build/preset.d.ts",
+      "default": "./dist/build/preset.js"
     }
   },
   "scripts": {
@@ -22,6 +26,14 @@
   },
   "dependencies": {
     "@flowlet/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@vitejs/plugin-react": ">=4.0.0",
+    "vite": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@vitejs/plugin-react": { "optional": true },
+    "vite": { "optional": true }
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
