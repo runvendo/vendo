@@ -89,19 +89,21 @@ Theme and state cross the bridge as **data only**. (Bundle code crosses host→s
 
 F3a's key *output* for parallel F3b work. v1 tried to freeze a `RenderTree` that walks the node tree — but render, lifecycle (mount/update/unmount), reconciliation, and per-node error boundaries are **F3b's** design, deferred in F1, and can't be frozen without F3b's answers. So F3a freezes only the **stage capabilities** F3b consumes; **F3b mounts its renderer inside the stage F3a provides** and owns the rest.
 
-Illustrative shape (provisional until F3b's first integration confirms it — *not* declared final):
+Shape (**validated by the spike** — see §12; `subscribe` stays provisional as the spike did a single render, no streaming updates):
 
 ```ts
-// F3a provides these capabilities; F3b's renderer consumes them.
+// F3a provides these capabilities; F3b's renderer consumes them. Names track what the
+// spike runtime actually used (resolve via the loaded bundle map, $state-bound props,
+// __nodeId provenance, descriptor dispatch).
 interface StageCapabilities {
   resolveComponent(name: string, source: "prewired" | "host"): ComponentImpl | undefined; // undefined → F3b renders an error placeholder
-  theme: ThemeTokens;                          // CSS-var-backed brand tokens
-  getState(): Readonly<StateProjection>;       // scoped, read-only
-  subscribe(cb: () => void): () => void;        // theme/state/node-tree change notifications
-  dispatch(action: ActionRequest): Promise<ActionResult>; // F1 shape; may resolve `pending` (§4)
+  theme: ThemeTokens;                          // CSS-var-backed brand tokens (injected as :root{--…})
+  getState(): Readonly<StateProjection>;       // scoped, read-only; bound into props via { $state: "key" }
+  subscribe(cb: () => void): () => void;        // PROVISIONAL — not exercised in the spike; F3b's ui/update story
+  dispatch(action: ActionRequest): Promise<ActionResult>; // descriptor → tools/call w/ originNodeId+capability; may resolve `pending` (§4)
 }
-// Referenced types (ComponentImpl = a host/prewired component impl; ThemeTokens / StateProjection
-// = the serialized shapes from §5) are defined concretely alongside the interface, not left dangling.
+// ComponentImpl = a host/prewired component impl resolved from the loaded bundle (window.__FLOWLET_HOST__
+// in the spike); ThemeTokens = CSS-var map; StateProjection = the scoped, structured-clone-safe slice (§5).
 ```
 
 **Render, node lifecycle, incremental/streaming updates, and per-node error boundaries are explicitly F3b-owned.** F3a ships a minimal stub mount honoring `StageCapabilities` — the real-boundary replacement for F1's `StubRenderer` — sufficient to run the spike's mixed-tree and throwing-node criteria.
@@ -144,3 +146,16 @@ End-state, but **not carved until spike gates 1–4 pass** (carving/publishing a
 - Capability *minting policy* (severity/scope/expiry rules) — F2 owns; F3a only carries + validates the token, §4.
 - Streaming/partial-node updates and per-node error-boundary impl — F3b, §7.
 - The F1 stub agent only emits one `prewired` node; the spike fabricates a realistic mixed `data-ui` sequence — revalidate against F2's real stream when it lands.
+
+## 12. Spike findings (all 8 gates PASSED — full detail in `spike/FINDINGS.md`)
+
+The throwaway spike (`spike/`, 10 Playwright tests green) validated the model end-to-end. Outcome: **proceed to Phase 2.** Highlights and the decisions they force:
+
+- **Gate results:** load-under-CSP ✓, **egress blocked ✓** (`connect-src 'none'` + `img-src data:`), bundle-as-data ✓, themed render ✓, scoped `$state` ✓, action chokepoint with provenance ✓, per-node error isolation ✓, auto-size ✓, **internal a11y GO** (axe inside the sandbox, zero wcag2a/2aa violations after adding `<html lang>`/`<title>`), mixed tree ✓.
+- **a11y GO ⇒ F1 decision #4 holds** at the internal level. Cross-boundary a11y (host chrome ↔ stage) was *not* tested and stays the known-hard case.
+- **React into the sandbox (refinement to §6):** the CSP (`script-src 'unsafe-inline' blob:`) **blocks** the import-map/`node_modules` externalization path, so the spike bundles React *into* the host bundle and exposes one `window.__React` (avoids "two Reacts"). **Cost ~200 KB/bundle.** Phase 2 must design a shared-React delivery (a Flowlet React `blob:` ESM both runtime and bundle import) — this is the real meaning of "externalize React."
+- **Build-step contract gains a hard requirement:** define `process.env.NODE_ENV` at build time (no `process` in the sandbox) or the bundle throws on load.
+- **Bridge confirmed:** `ui/initialize` (host→sandbox) + `tools/call` (sandbox→host chokepoint) over correlated JSON-RPC postMessage; `originNodeId`/`capability` are an explicit extension to `tools/call` (not literal conformance), exactly as §4 predicted.
+- **Two things the spike did NOT exercise — Phase 2 design+build items, not validated:** (a) **approval-pending dispatch** (the spike resolves synchronously; the gated `pending` → agent-stream reconcile model from §4 is unbuilt), and (b) **`ui/update` / streaming / replace-node-by-id** (single render only; the `subscribe` capability stays provisional).
+- **Weak test to harden in Phase 2 CI:** the auto-size gate passes trivially (browser default iframe height already clears the threshold) — Phase 2 must assert height tracks a content change.
+- **Capability is carried but not secured:** the spike passes a `capability` through `tools/call` but does not mint/bind/validate it — the host-side transport-security model (§4) is a Phase-2 build item.
