@@ -11,6 +11,7 @@ statusEl.textContent = "booting";
 document.body.appendChild(statusEl);
 
 const params = new URLSearchParams(location.search);
+const caseParam = params.get("case") ?? "";
 
 function ensure(id: string): HTMLElement {
   let el = document.getElementById(id);
@@ -23,8 +24,18 @@ function ensure(id: string): HTMLElement {
 }
 
 // ── Create + connect stage ────────────────────────────────────────────────────
+//
+// For the "shared-react" case we pre-fetch the React shim and pass it to
+// createStage() so it can be embedded in the srcdoc before the module runtime
+// executes.  For all other cases reactSource is undefined and the existing
+// self-contained bundle path is used unchanged.
 
-const { iframe, endpoints } = createStage(slot);
+const reactSource =
+  caseParam === "shared-react"
+    ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
+    : undefined;
+
+const { iframe, endpoints } = createStage(slot, { reactSource });
 
 const controller = connectStage(endpoints, {
   onAction: async (req) => {
@@ -42,6 +53,10 @@ const controller = connectStage(endpoints, {
 async function payloadFor(kind: string): Promise<StageInitPayload> {
   async function bundle(): Promise<string> {
     return fetch("/host-bundle.js").then((r) => r.text());
+  }
+
+  async function bundleExt(): Promise<string> {
+    return fetch("/host-bundle-ext.js").then((r) => r.text());
   }
 
   const theme = {
@@ -167,6 +182,22 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         source: "host",
         name: "Card",
         props: { title: "Before", body: "initial content" },
+      },
+    };
+  }
+
+  if (kind === "shared-react") {
+    // Use the externalized bundle; React comes from the import map shim.
+    return {
+      theme,
+      state: {},
+      bundleSource: await bundleExt(),
+      tree: {
+        id: "c1",
+        kind: "component",
+        source: "host",
+        name: "Card",
+        props: { title: "SharedReact", body: "bundle1" },
       },
     };
   }

@@ -13,6 +13,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:bundle": "vite build -c tests/browser/vite.bundle.config.ts",
+    "build:react-shim": "vite build -c tests/browser/vite.react-shim.config.ts",
+    "build:bundle-ext": "vite build -c tests/browser/vite.bundle-ext.config.ts",
+    "build:all-bundles": "pnpm run build:bundle && pnpm run build:react-shim && pnpm run build:bundle-ext",
     "test": "vitest run",
     "test:browser": "playwright test -c tests/browser/playwright.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -16,12 +16,56 @@ const CSP = [
 
 // ── buildSrcdoc ───────────────────────────────────────────────────────────────
 
-/** Pure: returns the srcdoc HTML for the sandboxed iframe. */
-export function buildSrcdoc(): string {
-  return `<!doctype html><html lang="en"><head>
-    <meta http-equiv="Content-Security-Policy" content="${CSP}">
-    <title>Flowlet Stage</title>
-  </head><body><script type="module">${STAGE_RUNTIME_SRC}<\/script></body></html>`;
+/**
+ * Pure: returns the srcdoc HTML for the sandboxed iframe.
+ *
+ * When `reactRuntimeSrc` is provided the srcdoc includes a synchronous
+ * (non-module) bootstrap script that runs *before* the deferred module
+ * runtime.  It:
+ *   1. Creates a blob: URL from the React shim source.
+ *   2. Records it as `window.__FLOWLET_REACT_URL` for the runtime.
+ *   3. Injects `<script type="importmap">` mapping "react", "react-dom",
+ *      "react-dom/client", and "react/jsx-runtime" to that blob URL.
+ *
+ * Because non-module scripts execute synchronously during parsing and module
+ * scripts are deferred until after parsing, the import map is guaranteed to be
+ * in place before the module runtime executes its first `import()`.
+ *
+ * Without `reactRuntimeSrc` the original self-contained bundle path is used
+ * unchanged (the bundle ships its own React and sets window.__React).
+ */
+export function buildSrcdoc(reactRuntimeSrc?: string): string {
+  let reactSetupScript = "";
+  if (reactRuntimeSrc) {
+    // Embed the shim source as a JSON string literal safe for inline HTML.
+    // Escape < so "</script>" cannot appear inside the <script> body.
+    const safeJson = JSON.stringify(reactRuntimeSrc).replace(/</g, "\\u003c");
+    reactSetupScript =
+      `<script>` +
+      `(function(){` +
+      `var _s=${safeJson};` +
+      `var _u=URL.createObjectURL(new Blob([_s],{type:"text/javascript"}));` +
+      `window.__FLOWLET_REACT_URL=_u;` +
+      `var _im=document.createElement('script');` +
+      `_im.type='importmap';` +
+      `_im.textContent=JSON.stringify({imports:{` +
+      `"react":_u,` +
+      `"react-dom":_u,` +
+      `"react-dom/client":_u,` +
+      `"react/jsx-runtime":_u` +
+      `}});` +
+      `document.head.appendChild(_im);` +
+      `})();` +
+      `<\/script>`;
+  }
+  return (
+    `<!doctype html><html lang="en"><head>` +
+    `<meta http-equiv="Content-Security-Policy" content="${CSP}">` +
+    `<title>Flowlet Stage</title>` +
+    `</head><body>${reactSetupScript}` +
+    `<script type="module">${STAGE_RUNTIME_SRC}<\/script>` +
+    `</body></html>`
+  );
 }
 
 // ── Endpoint pair ─────────────────────────────────────────────────────────────
@@ -38,8 +82,15 @@ export interface StageEndpoints {
 /**
  * Creates and mounts a sandboxed iframe.
  * Returns the iframe and the endpoint pair needed by `connectStage`.
+ *
+ * `opts.reactSource` — if provided, the React shim source is embedded in the
+ * srcdoc and an import map is set up so externalized host bundles share one
+ * React instance. When omitted the self-contained bundle path is used.
  */
-export function createStage(slot: HTMLElement): {
+export function createStage(
+  slot: HTMLElement,
+  opts?: { reactSource?: string },
+): {
   iframe: HTMLIFrameElement;
   endpoints: StageEndpoints;
 } {
@@ -47,7 +98,7 @@ export function createStage(slot: HTMLElement): {
   iframe.id = "flowlet-stage";
   iframe.title = "Flowlet stage";
   iframe.setAttribute("sandbox", "allow-scripts"); // no allow-same-origin → opaque origin
-  iframe.srcdoc = buildSrcdoc();
+  iframe.srcdoc = buildSrcdoc(opts?.reactSource);
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
   // Wrap contentWindow.postMessage to supply the required targetOrigin ("*").
