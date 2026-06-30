@@ -42,8 +42,8 @@ function buildSnitch(t: Transaction, tx: TxLike): string {
   const amount = `$${tx.amountDollars.toFixed(2)}`
   const time = pacificTimeLabel(t.timestamp)
   return (
-    `🚨 Late-night delivery alert: Yousef just ordered *${t.merchant}* (${amount}) at ${time}. ` +
-    `He literally set up this alert to snitch on himself. Stage an intervention. 🌮🌙`
+    `Late-night delivery alert: Yousef just ordered *${t.merchant}* (${amount}) at ${time}. ` +
+    `He set up this alert to snitch on himself. Someone stage an intervention.`
   )
 }
 

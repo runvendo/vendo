@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { CheckCircle2 } from "lucide-react"
 
 const ITEMS = [
   { name: "Crunchwrap Supreme", qty: 2, price: 12.98 },
@@ -66,8 +67,8 @@ export default function OrderPage() {
 
       {state === "placed" ? (
         <div className="rounded-2xl border border-border bg-surface p-5 text-center shadow-sm">
-          <div className="text-2xl">🌮</div>
-          <div className="mt-1 font-semibold text-ink">Order placed</div>
+          <CheckCircle2 className="mx-auto h-7 w-7 text-emerald-600" aria-hidden />
+          <div className="mt-1.5 font-semibold text-ink">Order placed</div>
           <p className="mt-1 text-sm text-muted">
             Charged to Maple Debit ·· 4471. Your dasher is on the way.
           </p>

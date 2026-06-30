@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { MessageSquareText } from "lucide-react";
 import { FlowletOverlay } from "@flowlet/shell";
 import { FlowletRoot } from "./FlowletRoot";
 import { FlowletDock } from "./FlowletDock";
@@ -24,6 +25,7 @@ const SUGGESTIONS = [
 export function FlowletLayer() {
   const [fire, setFire] = useState<FireEvent | null>(null);
   const [saved, setSaved] = useState<SavedView[]>([]);
+  const [dockOpen, setDockOpen] = useState(true);
   const pathname = usePathname();
   // On the dedicated Flowlet tab, that page IS the surface — hide the floating dock.
   const showDock = pathname !== "/flowlet";
@@ -59,7 +61,41 @@ export function FlowletLayer() {
     <FlowletRoot>
       <FlowletPoller onFire={setFire} />
       <FlowletSaver onSave={addSaved} />
-      {showDock ? <FlowletDock fire={fire} onDismissFire={() => setFire(null)} /> : null}
+      {showDock && dockOpen ? (
+        <FlowletDock
+          fire={fire}
+          onDismissFire={() => setFire(null)}
+          onClose={() => setDockOpen(false)}
+        />
+      ) : null}
+      {showDock && !dockOpen ? (
+        <button
+          type="button"
+          onClick={() => setDockOpen(true)}
+          aria-label="Open Maple assistant"
+          style={{
+            position: "fixed",
+            right: 24,
+            bottom: 24,
+            zIndex: 50,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "11px 16px",
+            borderRadius: 999,
+            border: "1px solid #e9e9e5",
+            background: "#fff",
+            color: "#1b1e25",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            boxShadow: "0 12px 32px rgba(27,30,37,.16)",
+          }}
+        >
+          <MessageSquareText size={16} aria-hidden />
+          Ask Maple
+        </button>
+      ) : null}
       {showDock ? <SavedViews views={saved} /> : null}
       {/* Secondary surface: same agent + thread, reachable anywhere via Cmd/Ctrl+K. */}
       <FlowletOverlay

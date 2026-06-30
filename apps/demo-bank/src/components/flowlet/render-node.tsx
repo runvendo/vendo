@@ -8,13 +8,16 @@
  * JSON *string* instead of an object — parse it so the component gets real
  * props rather than a char-indexed spread.
  *
- * Generated (non-component) nodes are the F3b sandbox's job; until ENG-180
- * lands they show a placeholder.
+ * Prewired components are trusted and render in-process. Generated (untrusted)
+ * UI renders through the F3b sandbox (FlowletStage) now that ENG-180 has landed.
+ * The scripted demo uses prewired components; the sandbox is the safety net for
+ * any genuinely generated node.
  */
 import type { ComponentType, ReactNode } from "react";
 import { motion } from "framer-motion";
 import type { UINode } from "@flowlet/core";
-import { prewiredImpls } from "@flowlet/components";
+import { FlowletStage } from "@flowlet/react";
+import { prewiredImpls, prewiredComponents } from "@flowlet/components";
 
 const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
 
@@ -54,5 +57,9 @@ export function renderNode(node: UINode): ReactNode {
       </Reveal>
     );
   }
-  return <div data-testid="generated-placeholder">[generated UI — rendered in the F3b sandbox]</div>;
+  return (
+    <Reveal>
+      <FlowletStage node={node} components={prewiredComponents} />
+    </Reveal>
+  );
 }

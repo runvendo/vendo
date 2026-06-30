@@ -9,8 +9,8 @@
  * inside one FlowletRoot so they share a single agent session/thread.
  *
  * renderNode uses the shell's in-process impls renderer: our prewired components
- * are trusted, so they render directly. The sandboxed FlowletStage is reserved
- * for untrusted *generated* UI (the F3b path, wired when ENG-180 lands).
+ * are trusted, so they render directly. The sandboxed FlowletStage handles
+ * untrusted *generated* UI (the F3b path, now wired in via ENG-180).
  */
 import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";

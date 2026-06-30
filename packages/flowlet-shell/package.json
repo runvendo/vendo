@@ -19,7 +19,9 @@
     "@ai-sdk/react": "3.0.30",
     "@flowlet/core": "workspace:*",
     "@flowlet/react": "workspace:*",
-    "ai": "6.0.28"
+    "ai": "6.0.28",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",

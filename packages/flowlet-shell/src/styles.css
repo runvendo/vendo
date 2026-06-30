@@ -24,6 +24,28 @@
 .fl-turn-assistant { align-self: flex-start; max-width: 92%; line-height: 1.55; }
 .fl-caret { display: inline-block; width: 7px; height: 1em; background: var(--flowlet-accent);
   vertical-align: -2px; margin-left: 2px; }
+/* Markdown rendering for assistant/user text — tight spacing for chat bubbles. */
+.fl-md > :first-child { margin-top: 0; }
+.fl-md > :last-child { margin-bottom: 0; }
+.fl-md p { margin: 0 0 8px; }
+.fl-md ul, .fl-md ol { margin: 0 0 8px; padding-left: 20px; }
+.fl-md li { margin: 2px 0; }
+.fl-md li > p { margin: 0; }
+.fl-md h1, .fl-md h2, .fl-md h3, .fl-md h4 { margin: 10px 0 6px; font-weight: 650; line-height: 1.3; }
+.fl-md h1 { font-size: 1.15em; } .fl-md h2 { font-size: 1.08em; } .fl-md h3 { font-size: 1em; }
+.fl-md a { color: var(--flowlet-accent); text-decoration: underline; text-underline-offset: 2px; }
+.fl-md strong { font-weight: 650; }
+.fl-md code { font-family: var(--flowlet-font-mono); font-size: .9em; background: var(--flowlet-bg);
+  border: 1px solid var(--flowlet-border); border-radius: 5px; padding: 1px 5px; }
+.fl-md pre { background: var(--flowlet-bg); border: 1px solid var(--flowlet-border); border-radius: 9px;
+  padding: 10px 12px; overflow-x: auto; margin: 0 0 8px; }
+.fl-md pre code { background: none; border: 0; padding: 0; font-size: .85em; }
+.fl-md blockquote { margin: 0 0 8px; padding-left: 10px;
+  border-left: 2px solid var(--flowlet-border); color: var(--flowlet-fg-muted); }
+.fl-md table { border-collapse: collapse; font-size: .92em; margin: 0 0 8px; }
+.fl-md th, .fl-md td { border: 1px solid var(--flowlet-border); padding: 4px 8px; text-align: left; }
+.fl-md hr { border: 0; border-top: 1px solid var(--flowlet-border); margin: 10px 0; }
+.fl-turn-user .fl-md a, .fl-turn-user .fl-md code { color: inherit; border-color: rgba(255,255,255,.4); }
 .fl-tool { align-self: flex-start; font-family: var(--flowlet-font-mono); font-size: 11px;
   color: var(--flowlet-fg-muted); border: 1px solid var(--flowlet-border); border-radius: 7px; padding: 6px 9px; }
 .fl-approval { align-self: flex-start; border: 1px solid var(--flowlet-border);
@@ -55,6 +77,7 @@
 .fl-rail-chip { display: flex; align-items: center; gap: 7px; border: 1px solid var(--flowlet-border);
   border-radius: 999px; padding: 5px 11px; font-size: 12px; background: var(--flowlet-surface); }
 .fl-rail-dot { width: 6px; height: 6px; border-radius: 50%; background: #3fae6a; }
+.fl-rail-icon { display: block; flex-shrink: 0; }
 .fl-rail-connect { border: 1px dashed var(--flowlet-fg-muted); border-radius: 999px;
   padding: 6px 12px; font-size: 12px; background: transparent; color: var(--flowlet-fg); cursor: pointer; }
 .fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Integration } from "../seams/integrations";
+import { BrandIcon } from "./BrandIcon";
 
 export interface IntegrationsPickerProps {
   integrations: Integration[];
@@ -22,6 +23,7 @@ export function IntegrationsPicker({ integrations, onConnect, onDisconnect, onCl
       />
       {shown.map((i) => (
         <div key={i.id} className="fl-picker-item">
+          <BrandIcon id={i.id} size={15} className="fl-rail-icon" />
           <span>{i.name}</span>
           {i.connected ? (
             <button type="button" className="fl-btn" style={{ marginLeft: "auto" }} onClick={() => onDisconnect(i.id)}>Disconnect</button>

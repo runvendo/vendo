@@ -6,7 +6,9 @@
  * on-stage surface. It renders the shared shell thread, so generated views show
  * up here as cards. When a rule fires, a confirmation banner drops in on top.
  */
+import type { CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Bell, RotateCcw, X } from "lucide-react";
 import { FlowletThread } from "@flowlet/shell";
 import type { FireEvent } from "./FlowletPoller";
 import { resetDemo } from "./reset";
@@ -35,7 +37,7 @@ function FireBanner({ fire, onDismiss }: { fire: FireEvent; onDismiss?: () => vo
         alignItems: "flex-start",
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: "20px" }}>🔔</span>
+      <Bell size={17} style={{ marginTop: 1, flexShrink: 0 }} aria-hidden />
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13, fontWeight: 700 }}>
           Rule fired → posted to #{fire.channel}
@@ -58,12 +60,28 @@ function FireBanner({ fire, onDismiss }: { fire: FireEvent; onDismiss?: () => vo
   );
 }
 
+const headerBtn: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 26,
+  height: 26,
+  borderRadius: 7,
+  background: "transparent",
+  border: 0,
+  cursor: "pointer",
+  color: "#9a9ba2",
+  padding: 0,
+};
+
 export function FlowletDock({
   fire,
   onDismissFire,
+  onClose,
 }: {
   fire?: FireEvent | null;
   onDismissFire?: () => void;
+  onClose?: () => void;
 }) {
   return (
     <div
@@ -87,26 +105,21 @@ export function FlowletDock({
         {fire ? <FireBanner key="fire" fire={fire} onDismiss={onDismissFire} /> : null}
       </AnimatePresence>
       <FlowletThread greeting="Ask Maple anything" suggestions={SUGGESTIONS} />
-      <button
-        onClick={() => void resetDemo()}
-        title="Reset demo to a clean state"
-        aria-label="Reset demo"
-        style={{
-          position: "absolute",
-          top: 8,
-          right: 10,
-          zIndex: 2,
-          background: "transparent",
-          border: 0,
-          cursor: "pointer",
-          fontSize: 13,
-          lineHeight: 1,
-          color: "#b9bac0",
-          padding: 4,
-        }}
-      >
-        ↺
-      </button>
+      <div style={{ position: "absolute", top: 8, right: 8, zIndex: 2, display: "flex", gap: 2 }}>
+        <button
+          onClick={() => void resetDemo()}
+          title="Reset demo to a clean state"
+          aria-label="Reset demo"
+          style={headerBtn}
+        >
+          <RotateCcw size={15} aria-hidden />
+        </button>
+        {onClose ? (
+          <button onClick={onClose} title="Close" aria-label="Close Flowlet" style={headerBtn}>
+            <X size={16} aria-hidden />
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

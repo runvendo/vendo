@@ -1,4 +1,5 @@
 import type { Integration } from "../seams/integrations";
+import { BrandIcon } from "./BrandIcon";
 
 export interface IntegrationsRailProps {
   integrations: Integration[];
@@ -10,7 +11,10 @@ export function IntegrationsRail({ integrations, onConnectClick }: IntegrationsR
   return (
     <div className="fl-rail" aria-label="Connected tools">
       {connected.map((i) => (
-        <span key={i.id} className="fl-rail-chip"><span className="fl-rail-dot" />{i.name}</span>
+        <span key={i.id} className="fl-rail-chip">
+          <BrandIcon id={i.id} size={14} className="fl-rail-icon" />
+          {i.name}
+        </span>
       ))}
       <button type="button" className="fl-rail-connect" onClick={onConnectClick}>+ Connect tools</button>
     </div>
