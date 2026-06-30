@@ -206,4 +206,20 @@ describe("connectStage", () => {
     controller.dispose();
     peer.dispose();
   });
+
+  it("ready resolves when a flowlet ready notification is delivered via the endpoint", async () => {
+    const { a, b } = makePair();
+    const controller = connectStage(
+      { listen: a, post: b },
+      { onAction: async () => ({ result: "ok" }) },
+    );
+
+    // Post a ready notification to the host-listen endpoint (a).
+    // a.postMessage(m) fires a's own handlers — exactly where the host listens.
+    a.postMessage({ flowlet: true, type: "ready" });
+
+    await expect(controller.ready).resolves.toBeUndefined();
+
+    controller.dispose();
+  });
 });

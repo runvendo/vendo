@@ -142,6 +142,8 @@ export type OnAction = (req: ActionRequest) => Promise<ActionResult | { pending:
 
 /** Controller returned by `connectStage`. */
 export interface StageController {
+  /** Resolves when the runtime posts its `{ flowlet:true, type:"ready" }` notification. */
+  ready: Promise<void>;
   initialize(payload: StageInitPayload): Promise<unknown>;
   update(update: StageUpdatePayload): Promise<unknown>;
   resolveAction(actionId: string, result: ActionResult): void;
@@ -187,6 +189,19 @@ export function connectStage(
 ): StageController {
   const capabilityMap = new Map<string, string>();
 
+  // ready: resolves when the runtime posts { flowlet:true, type:"ready" }.
+  // This is NOT an RPC call — it's a one-way notification, so we handle it
+  // with a dedicated listener on the host-listen endpoint.
+  let resolveReady!: () => void;
+  const ready = new Promise<void>((res) => { resolveReady = res; });
+  const readyHandler = (e: { data: unknown }) => {
+    const d = e.data as Record<string, unknown>;
+    if (d?.flowlet === true && d?.type === "ready") {
+      resolveReady();
+    }
+  };
+  endpoints.listen.addEventListener("message", readyHandler);
+
   const rpc = makeRpc(endpoints.listen, endpoints.post, async (method, params) => {
     if (method === "tools/call") {
       const p = params as {
@@ -226,6 +241,8 @@ export function connectStage(
   });
 
   return {
+    ready,
+
     initialize(payload) {
       const augmentedTree = attachCapabilities(payload.tree as unknown as NodeLike, capabilityMap);
       return rpc.call("ui/initialize", { ...payload, tree: augmentedTree });
@@ -246,6 +263,7 @@ export function connectStage(
     },
 
     dispose() {
+      endpoints.listen.removeEventListener("message", readyHandler);
       rpc.dispose();
     },
   };

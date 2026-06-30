@@ -1,17 +1,11 @@
-import type { ComponentType } from "react";
 import { z } from "zod";
 import { createStubAgent, type FlowletUIMessage } from "@flowlet/core";
-import { FlowletProvider, useFlowletChat, StubRenderer } from "@flowlet/react";
-import { DemoCard } from "./components";
+import { FlowletProvider, useFlowletChat, FlowletStage } from "@flowlet/react";
 
 const agent = createStubAgent();
 const components = [
   { name: "DemoCard", description: "a demo card", propsSchema: z.object({ title: z.string() }), source: "prewired" as const },
 ];
-
-const impls: Record<string, ComponentType<Record<string, unknown>>> = {
-  DemoCard: DemoCard as ComponentType<Record<string, unknown>>,
-};
 
 type FlowletPart = FlowletUIMessage["parts"][number];
 
@@ -41,7 +35,7 @@ function Chat() {
           Approve rendering the demo card
         </button>
       )}
-      {uiNode && <StubRenderer node={uiNode.data} impls={impls} />}
+      {uiNode && <FlowletStage node={uiNode.data} />}
     </div>
   );
 }

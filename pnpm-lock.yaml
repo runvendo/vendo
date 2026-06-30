@@ -164,6 +164,9 @@ importers:
       '@flowlet/core':
         specifier: workspace:*
         version: link:../flowlet-core
+      '@flowlet/stage':
+        specifier: workspace:*
+        version: link:../flowlet-stage
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
