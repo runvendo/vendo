@@ -1,8 +1,6 @@
-import type { ComponentType } from "react";
 import { z } from "zod";
 import { createStubAgent, type FlowletUIMessage } from "@flowlet/core";
-import { FlowletProvider, useFlowletChat, StubRenderer } from "@flowlet/react";
-import { DemoCard } from "./components";
+import { FlowletProvider, useFlowletChat, FlowletStage } from "@flowlet/react";
 import { createExampleAgent } from "./realAgent";
 
 // ---------------------------------------------------------------------------
@@ -20,10 +18,6 @@ const components = [
     source: "prewired" as const,
   },
 ];
-
-const impls: Record<string, ComponentType<Record<string, unknown>>> = {
-  DemoCard: DemoCard as ComponentType<Record<string, unknown>>,
-};
 
 type FlowletPart = FlowletUIMessage["parts"][number];
 
@@ -63,7 +57,7 @@ function Chat() {
           Approve rendering the demo card
         </button>
       )}
-      {uiNode && <StubRenderer node={uiNode.data} impls={impls} />}
+      {uiNode && <FlowletStage node={uiNode.data} />}
     </div>
   );
 }
@@ -87,7 +81,7 @@ function RealChat() {
     <div style={{ fontFamily: "system-ui", maxWidth: 480, margin: "40px auto" }}>
       <button onClick={() => chat.sendMessage({ text: "show me a card" })}>Send</button>
       {text && <p>{text}</p>}
-      {uiNode && <StubRenderer node={uiNode.data} impls={impls} />}
+      {uiNode && <FlowletStage node={uiNode.data} />}
     </div>
   );
 }
