@@ -6,6 +6,7 @@ import type { Flowlet } from "./seams/store";
 import type { Integration } from "./seams/integrations";
 import { Landing } from "./components/Landing";
 import { MessageList } from "./components/MessageList";
+import { ThreadErrorBoundary } from "./components/ThreadErrorBoundary";
 import { Composer } from "./components/Composer";
 import { IntegrationsRail } from "./components/IntegrationsRail";
 import { IntegrationsPicker } from "./components/IntegrationsPicker";
@@ -68,7 +69,9 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
           onOpenFlow={(f) => onOpenFlow?.(f)}
         />
       ) : (
-        <MessageList items={chat.items} status={chat.status} onApprove={approve} onDecline={decline} />
+        <ThreadErrorBoundary resetKey={chat.items.length}>
+          <MessageList items={chat.items} status={chat.status} onApprove={approve} onDecline={decline} />
+        </ThreadErrorBoundary>
       )}
       {pickerOpen && (
         <IntegrationsPicker
