@@ -21,7 +21,7 @@ Research-first format evaluation (A2UI / Crayon·OpenUI Lang / Vercel json-rende
 
 F3b draws on the stage F3a built. It turns an agent-generated declarative tree into mounted UI inside the sandbox, meshing generated layout with registered brand components, and updating it incrementally as the agent streams.
 
-- **In scope:** the **Flowlet GenUI v1 format** (the `generated` node payload, §2); the **renderer** that walks it and mounts it inside the F3a stage (§4), resolving names against the F1 registry + Flowlet primitives (§3); **`ui-delta` prop-level streaming** (§5); **loading/streaming visual states** (§5); **payload versioning** (§6); per-node error isolation (impl of F3a's contract).
+- **In scope:** the **Flowlet GenUI v1 format** (the `generated` node payload, §2); the **host-side resolver** that expands it into a bound tree the F3a stage mounts (§4), resolving names against the F1 registry + Flowlet primitives (§3); **`ui-delta` prop-level streaming** (§5); **loading/streaming visual states** (§5); **payload versioning** (§6); per-node error isolation (the F3a contract).
 - **Out of scope (F3a, done):** the sandbox, CSP egress jail, bridge transport, theme/state injection, host-component provisioning, the `StageCapabilities` seam. F3b consumes these.
 - **Out of scope (F4):** the concrete brand component implementations. F3b renders them by name; F4 registers them.
 - **Out of scope (F2):** the real LLM that *emits* the format. F3b builds against fabricated/stub payloads; F2's real stream is revalidated when it lands. (F2 may import the format types from `@flowlet/core` to emit, §7.)
@@ -71,30 +71,28 @@ This is ENG-180's "reference registered components by name inside a generated tr
 
 **Prop validation:** when a node resolves to a `RegisteredComponent`, its bound props validate against the descriptor's `propsSchema` (zod) before mount; a failure is a typed per-node error, not a thrown render.
 
-## 4. The renderer — a compiled module inside the stage
+## 4. Architecture — host-side resolution, in-sandbox mount
 
-The renderer runs **inside the sandbox** — the only realm with the resolved components + data, and the realm data cannot escape. F3a's runtime is currently a hand-written `STAGE_RUNTIME_SRC` string; a real A2UI renderer (parse → flat-graph walk → JSON-Pointer binding → delta reconciliation → skeletons → per-node error boundaries) is too much for a maintained string literal.
+The **format brain runs host-side**; the **React mount stays in-sandbox**. This split was chosen after reading F3a's internals: the string runtime (`STAGE_RUNTIME_SRC`) already renders a nested bound tree in-sandbox (resolve name→impl, bind `$state`, per-node error boundary, replace-by-id), and the host (`stage-host.ts`, vanilla TS, unit-tested) already walks the tree to mint capabilities and splice replacements. Host-side resolution reuses that proven path with minimal disruption and keeps all the hard logic in trivially-tested TypeScript — no runtime build pipeline.
 
-**Decision:** the renderer is **proper, unit-tested TypeScript compiled into the sandbox-runtime bundle**, using the same build approach F3a uses for the host bundle (Vite, externalized/shared React, `process.env.NODE_ENV` defined at build time — the F3a finding). The `STAGE_RUNTIME_SRC` bootstrap shrinks to: set up the DOM root, load the compiled renderer + shared React, wire the bridge, and hand incoming payloads/deltas to the renderer. The existing bridge handlers (`ui/initialize`, `ui/update`, `ui/action-result`, `ui/teardown`), capability map, action dispatch, auto-size, and theme injection are retained and refactored to call into the renderer module rather than inlining the render walk.
+**What runs where:**
+- **Host-side (pure TS, fully unit-tested):** validate the `GeneratedPayload` (§6); resolve the flat ID-addressed graph into a **nested tree** (resolve `root`, walk `children` by id, cycle/dangling guards); bind props (`$path` against the payload `data` model + `$state` against host scoped state) into literal values; mark a child id with no node yet as a `Skeleton` placeholder. The output is a nested, fully-bound tree **shaped exactly like the component tree the runtime already renders** — so generated nodes flow through the existing `ui/initialize` path.
+- **In-sandbox (the existing string runtime, lightly extended):** resolve each `component` name against the catalog (§3) — host components via the F3a bundle, **prewired primitives** (`Stack`/`Row`/`Grid`/`Text`/`Skeleton`) added to the runtime — and React-mount with the existing per-node error boundary + persistent root. Component name→impl resolution and the React mount are the only things that *must* be in-sandbox (impls live there; data cannot escape).
 
-**Render walk:** resolve `root` → for each node, resolve `component` against the catalog (§3), bind props (`$state` + `$path`), wrap in a per-node error boundary, recurse over `children` (resolved by id). A child id not yet present in `nodes` renders a `Skeleton` (§5).
+The runtime's existing bridge handlers (`ui/initialize`, `ui/update`, `ui/action-result`, `ui/teardown`), capability map, action dispatch, auto-size, and theme injection are retained; the only runtime additions are the prewired primitive impls and skeleton rendering.
 
-**State:** the renderer holds the current `{ nodes, data, theme, state }` and re-renders against React's persistent root (F3a's `window.__flowletRoot`). Re-renders are driven by deltas (§5), not full re-init.
+**Security:** unchanged. Data-binding host-side is not a regression — the `data` model is agent-generated *content*, and host scoped state was already bound host-side via `$state`. Bound values cross inward as data, exactly as today; nothing executable crosses inward; sandbox→host stays data-only; the egress jail is untouched.
 
 ## 5. `ui-delta` streaming + the bridge
 
-F3b finalizes F3a's **provisional `subscribe` capability**: the renderer subscribes to model changes and re-renders affected nodes. Updates arrive over the existing `ui/update` bridge method, extended to two delta shapes:
+Updates are **driven host-side** and arrive over the existing `ui/update` bridge method, in two shapes:
 
-- **Structural delta** — replace/add a node by id (F3a already has recursive replace-by-id; generalize to the flat node list, and rebuild the capability map so removed subtrees lose their tokens — the F3a invariant).
-- **Prop-level delta (`ui-delta`)** — `{ data: { path, value } }` patches the data model at a JSON Pointer; **only nodes whose props `$path`-bind to (a prefix of) that path re-render.** This is the prop-granular update A2UI gives natively. `value` omitted = delete the key (A2UI semantics).
+- **Structural delta** — replace/add a node by id. The host applies it to its data/tree model, re-resolves the affected subtree, and sends the bound replacement inward via F3a's existing recursive replace-by-id (rebuilding the capability map so removed subtrees lose their tokens — the F3a invariant).
+- **Prop-level delta (`ui-delta`)** — `update({ data: { path, value } })` patches the **host-held** data model at a JSON Pointer; the host recomputes **only the nodes whose props `$path`-bind to (a prefix of) that path** and sends those nodes inward. The runtime re-renders them against the persistent root; **React reconciles by stable `key` (node id) → props update without a remount.** This is the prop-granular update A2UI gives natively. `value` omitted = delete the key (A2UI semantics).
 
-**Loading / streaming states.** While a payload streams, a node referenced as a child before its definition has arrived renders a **`Skeleton`** placeholder; when its node streams in (a structural delta), the skeleton is replaced. This is the visible "generating…" state. The `Skeleton` primitive is theme-aware (uses brand tokens).
+**Loading / streaming states.** While a payload streams, a node referenced as a child before its definition has arrived is resolved host-side to a **`Skeleton`** placeholder; when its node streams in (a structural delta), the skeleton is replaced. This is the visible "generating…" state. The `Skeleton` primitive is theme-aware (uses brand tokens).
 
-**Mapping to `StageCapabilities` (frozen seam, unchanged):**
-- `resolveComponent(name, source)` — catalog resolution (§3).
-- `getState()` / `theme` — `$state` binding + theming (F3a).
-- `subscribe(cb)` — now real: fires on structural or prop deltas.
-- `dispatch(action)` — action descriptors in props → chokepoint (F3a, unchanged; approval-pending model intact).
+**Mapping to `StageCapabilities` (frozen seam, unchanged):** the seam is honored without adding methods. With host-side resolution, the renderer-facing capabilities (`resolveComponent`, `theme`, `getState`, `dispatch`) are satisfied by the existing runtime; **`subscribe` is realized host-side** — the host owns the model and pushes recomputed nodes inward over `ui/update`, rather than the sandbox subscribing to an in-sandbox model. `dispatch` (action descriptors → chokepoint) and the approval-pending model are unchanged from F3a.
 
 ## 6. Versioning + errors
 
@@ -109,8 +107,8 @@ F3b finalizes F3a's **provisional `subscribe` capability**: the renderer subscri
 ## 7. Package layout
 
 - **`@flowlet/core`** — gains the **format types + a validator** for `GeneratedPayload`/`GenNode`/`PropValue` (and a JSON-Pointer helper). It is a contract shared by the emit side (F2) and the render side (F3b); `core/ui.ts` already declares `GeneratedNode.payload` "format chosen by F3", so this fills it. *(If the format later grows a registry→system-prompt generation helper, extract a dedicated `@flowlet/genui` package; not now.)*
-- **`@flowlet/stage`** — gains the **renderer module** (compiled into the sandbox runtime, §4) and the **prewired primitives** (`Stack`/`Row`/`Grid`/`Text`/`Skeleton`). Replaces the `[generated]` placeholder. Bridge/host largely unchanged; `ui/update` extended for prop deltas (§5).
-- **`flowlet-react`** — the `FlowletStage` adapter is unchanged (it already mounts `@flowlet/stage`); a generated payload flows through the same path a component node does.
+- **`@flowlet/stage`** — gains, on the **host side** (vanilla TS, unit-tested), the **resolver** that expands a `GeneratedPayload` + data model into the nested bound tree (§4) and the **prop-delta recompute** (§5); and, in the **sandbox runtime** (the existing string), the **prewired primitives** (`Stack`/`Row`/`Grid`/`Text`/`Skeleton`) + skeleton rendering, replacing the `[generated]` placeholder. `ui/update` and `StageUpdatePayload` are extended for prop deltas (§5).
+- **`flowlet-react`** — the `FlowletStage` adapter is unchanged (it already mounts `@flowlet/stage`); a generated payload is resolved by the host and flows through the same path a component node does.
 - **`examples/basic`** — gains a demo emitting a small generated payload (mixed primitives + a host component, a prop-delta update, a streamed skeleton) to exercise the path end to end.
 
 ## 8. Testing
@@ -125,7 +123,7 @@ F3b finalizes F3a's **provisional `subscribe` capability**: the renderer subscri
 2. **Children-by-id flat graph is a different authoring model than a nested tree** for the emitting LLM. Mitigated: it is validatable (dangling ids → skeleton or typed error) and is the right shape for deltas. The F2 prompt side (out of scope here) carries the burden of correct id bookkeeping; F3b validates.
 3. **Prop-delta reconciliation correctness** — re-rendering exactly the bound nodes (not over- or under-rendering) is the subtle part. Covered by targeted unit + real-browser identity tests (§8).
 4. **Two binding sources (`$state`, `$path`)** could confuse authors. Mitigated by keeping them syntactically distinct and documented; the resolver treats them as separate sources.
-5. **Renderer-into-runtime refactor** touches F3a's shipped runtime. Mitigated by the existing F3a real-browser CI guarding the sandbox behaviors against regression.
+5. **Host-side resolution** keeps the data model outside the sandbox (diverges from the original in-sandbox framing). Accepted trade-off: the model is agent-generated content, not secret host state; it buys reuse of F3a's proven render path and zero runtime-build risk. The minimal runtime additions (primitives + skeleton) are guarded by the existing F3a real-browser CI against regression.
 
 ## 10. Open questions (resolved during implementation or deferred)
 
