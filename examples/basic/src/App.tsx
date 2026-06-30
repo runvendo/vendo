@@ -18,9 +18,12 @@ type FlowletPart = FlowletUIMessage["parts"][number];
 function Chat() {
   const chat = useFlowletChat();
   const parts = chat.messages.flatMap((m) => m.parts);
+  // Native ai SDK tool part in the approval-requested state. Its `tool-${string}`
+  // discriminant can't be Extract-narrowed to a literal, so cast the matched part.
   const approval = parts.find(
-    (p): p is Extract<FlowletPart, { type: "data-approval" }> => p.type === "data-approval",
-  );
+    (p) => p.type === "tool-renderDemoCard" && (p as { state?: string }).state === "approval-requested",
+  ) as { approval: { id: string } } | undefined;
+  // Our custom data-ui node, emitted by the approved tool's execution.
   const uiNode = parts.find(
     (p): p is Extract<FlowletPart, { type: "data-ui" }> => p.type === "data-ui",
   );
@@ -34,8 +37,8 @@ function Chat() {
       <button onClick={() => chat.sendMessage({ text: "show me a card" })}>Send</button>
       {text && <p>{text}</p>}
       {approval && (
-        <button onClick={() => chat.respondToApproval(approval.data.approvalId, true)}>
-          Approve: {approval.data.prompt}
+        <button onClick={() => chat.addToolApprovalResponse({ id: approval.approval.id, approved: true })}>
+          Approve rendering the demo card
         </button>
       )}
       {uiNode && <StubRenderer node={uiNode.data} impls={impls} />}

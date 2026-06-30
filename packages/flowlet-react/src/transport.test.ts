@@ -1,17 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { createStubAgent } from "@flowlet/core";
+import { createStubAgent, type FlowletUIMessage } from "@flowlet/core";
 import { createLocalTransport } from "./transport";
 
 describe("local transport", () => {
-  it("drives the stub agent and exposes a client-part sink", async () => {
+  it("drives the agent for a turn and streams a tool-approval-request", async () => {
     const agent = createStubAgent();
-    const { transport, sendClientPart } = createLocalTransport(agent);
+    const { transport } = createLocalTransport(agent);
 
+    const messages: FlowletUIMessage[] = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "show me a card" }] },
+    ];
     const stream = await transport.sendMessages({
       trigger: "submit-message",
       chatId: "c1",
       messageId: undefined,
-      messages: [],
+      messages,
       abortSignal: new AbortController().signal,
     });
 
@@ -20,12 +23,10 @@ describe("local transport", () => {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      seen.push((value as any).type);
-      if ((value as any).type === "data-approval") {
-        sendClientPart({ type: "data-approval-response", data: { approvalId: (value as any).data.approvalId, approved: true } });
-      }
+      seen.push((value as { type: string }).type);
     }
-    expect(seen).toContain("data-approval");
-    expect(seen).toContain("data-ui");
+    // Turn 1: the SDK pauses on the needsApproval tool; no ui node until approval.
+    expect(seen).toContain("tool-approval-request");
+    expect(seen).not.toContain("data-ui");
   });
 });

@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { createRegistry, type ComponentRegistry, type RegisteredComponent, type StubAgent } from "@flowlet/core";
+import { createRegistry, type ComponentRegistry, type RegisteredComponent, type FlowletAgent } from "@flowlet/core";
 import { createLocalTransport, type LocalTransport } from "./transport";
 
 interface FlowletContextValue {
@@ -10,7 +10,7 @@ interface FlowletContextValue {
 const FlowletContext = createContext<FlowletContextValue | null>(null);
 
 export interface FlowletProviderProps {
-  agent: StubAgent;
+  agent: FlowletAgent;
   components: RegisteredComponent[];
   children: ReactNode;
 }

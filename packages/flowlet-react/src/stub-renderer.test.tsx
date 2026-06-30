@@ -1,13 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { createStubAgent, type FlowletUIMessage } from "@flowlet/core";
+import { createStubAgent, type UINode } from "@flowlet/core";
 import { z } from "zod";
 import { FlowletProvider } from "./provider";
 import { useFlowletChat } from "./use-flowlet-chat";
 import { StubRenderer } from "./stub-renderer";
-
-type FlowletPart = FlowletUIMessage["parts"][number];
 
 function DemoCard({ title }: { title: string }) {
   return <div data-testid="demo-card">{title}</div>;
@@ -15,25 +12,21 @@ function DemoCard({ title }: { title: string }) {
 
 function Harness() {
   const chat = useFlowletChat();
-  const [answered, setAnswered] = useState(false);
-  const parts = chat.messages.flatMap((m: FlowletUIMessage) => m.parts);
+  const parts = chat.messages.flatMap((m) => m.parts) as any[];
+  // Native ai SDK tool part in the approval-requested state.
   const approval = parts.find(
-    (p): p is Extract<FlowletPart, { type: "data-approval" }> => p.type === "data-approval",
+    (p) => p.type === "tool-renderDemoCard" && p.state === "approval-requested",
   );
-  const uiNode = parts.find(
-    (p): p is Extract<FlowletPart, { type: "data-ui" }> => p.type === "data-ui",
-  );
+  // Our custom data-ui node, emitted by the approved tool's execution.
+  const uiNode = parts.find((p) => p.type === "data-ui") as { data: UINode } | undefined;
 
   return (
     <div>
-      <button onClick={() => chat.sendMessage({ text: "hi" })}>send</button>
-      {approval && !answered && (
+      <button onClick={() => chat.sendMessage({ text: "show me a card" })}>send</button>
+      {approval && (
         <button
           data-testid="approve"
-          onClick={() => {
-            setAnswered(true);
-            chat.respondToApproval(approval.data.approvalId, true);
-          }}
+          onClick={() => chat.addToolApprovalResponse({ id: approval.approval.id, approved: true })}
         >
           approve
         </button>
@@ -43,12 +36,14 @@ function Harness() {
   );
 }
 
-describe("end-to-end stub loop", () => {
-  it("streams text -> approval -> approve -> renders the component node", async () => {
+describe("end-to-end native HITL loop", () => {
+  it("send -> approval-requested -> approve -> renders the DemoCard node", async () => {
     render(
       <FlowletProvider
         agent={createStubAgent()}
-        components={[{ name: "DemoCard", description: "a demo card", propsSchema: z.object({ title: z.string() }), source: "prewired" }]}
+        components={[
+          { name: "DemoCard", description: "a demo card", propsSchema: z.object({ title: z.string() }), source: "prewired" },
+        ]}
       >
         <Harness />
       </FlowletProvider>,
