@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * The automation alert, self-standing. When a rule fires while the overlay is
- * closed, this graphite-glass toast slides in bottom-right, auto-dismisses after
- * a few seconds, and opens the overlay when clicked. Replaces the older in-dock
- * banner and the dark inline toast.
+ * The automation alert, now self-standing. When a rule fires while the overlay
+ * is closed, this graphite-glass toast slides in bottom-right, auto-dismisses
+ * after a few seconds, and opens the overlay when clicked. It replaces the fire
+ * banner that used to live inside the (now-deleted) dock.
  */
 import { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -42,7 +42,7 @@ export function FlowletToast({
             position: "fixed",
             right: 24,
             bottom: 24,
-            zIndex: 2147483002,
+            zIndex: 2147482900,
             width: 320,
             cursor: "pointer",
             display: "flex",
@@ -88,7 +88,7 @@ export function FlowletToast({
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 650, letterSpacing: "-.005em" }}>
-              Automation ran → <span style={{ color: "var(--flowlet-ok)" }}>#{fire.channel}</span>
+              Rule fired → <span style={{ color: "var(--flowlet-ok)" }}>#{fire.channel}</span>
             </div>
             <div
               style={{

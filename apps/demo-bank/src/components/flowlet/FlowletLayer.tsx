@@ -2,12 +2,12 @@
 
 /**
  * The Flowlet layer dropped over Maple. A single client island that owns the
- * shared agent session, the background poller, and the backstage order-inject
- * fallback. Mounted once in the root layout so it floats above the untouched
- * bank UI — the "we dropped in one layer" thesis, literally.
+ * shared agent session, the Cmd/Ctrl+K overlay, the background poller, and the
+ * backstage order-inject fallback. Mounted once in the root layout so it floats
+ * above the untouched bank UI — the "we dropped in one layer" thesis, literally.
  *
- * Flowlet is summoned with Cmd/Ctrl+K (one surface, no always-on dock). When an
- * automation fires, a toast announces it regardless of whether the overlay is open.
+ * No persistent launcher: Flowlet is invisible until summoned with Cmd/Ctrl+K.
+ * When a rule fires, a self-standing toast surfaces it bottom-right.
  */
 import { useCallback, useEffect, useState } from "react";
 import { FlowletOverlay } from "@flowlet/shell";
@@ -68,10 +68,10 @@ export function FlowletLayer() {
           setOverlayOpen(true);
         }}
       />
-      {/* The one surface: the shared thread, summoned anywhere via Cmd/Ctrl+K. */}
+      {/* The only surface: invisible until summoned with Cmd/Ctrl+K. */}
       <FlowletOverlay
         shortcutKey="k"
-        hideLauncher
+        launcherLabel="Ask Maple"
         greeting="Ask Maple anything"
         suggestions={SUGGESTIONS}
         open={overlayOpen}

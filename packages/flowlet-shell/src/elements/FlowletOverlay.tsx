@@ -6,8 +6,6 @@ export interface FlowletOverlayProps extends FlowletThreadProps {
   launcherLabel?: string;
   /** Open with this keyboard shortcut key (with meta/ctrl). Default "k". */
   shortcutKey?: string;
-  /** Hide the launcher button — the overlay is opened purely via the shortcut. */
-  hideLauncher?: boolean;
   /** Controlled open state. When provided, the parent owns open/close. */
   open?: boolean;
   /** Controlled open change handler. Pair with `open`. */
@@ -17,7 +15,6 @@ export interface FlowletOverlayProps extends FlowletThreadProps {
 export function FlowletOverlay({
   launcherLabel = "Ask",
   shortcutKey = "k",
-  hideLauncher = false,
   open: openProp,
   onOpenChange,
   ...thread
@@ -48,12 +45,8 @@ export function FlowletOverlay({
     if (e.key === "Escape") setOpen(false);
   };
 
-  if (!open) {
-    if (hideLauncher || controlled) return null;
-    return (
-      <button type="button" className="fl-launcher" onClick={() => setOpen(true)}>{launcherLabel}</button>
-    );
-  }
+  // Invisible until summoned (Cmd/Ctrl+K) — no persistent launcher.
+  if (!open) return null;
 
   return (
     <>
