@@ -16,9 +16,24 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider, createLocalIntegrations } from "@flowlet/shell";
+import { FlowletShellProvider, type FlowletTheme } from "@flowlet/shell";
 import { prewiredComponents } from "@flowlet/components";
 import { renderNode } from "./render-node";
+import { createComposioIntegrations } from "./integrations";
+
+/** Flowlet themed to Maple's brand so the layer feels native, not bolted-on. */
+const mapleTheme: FlowletTheme = {
+  accent: "#1E7F53",
+  accentFg: "#FFFFFF",
+  fg: "#111111",
+  fgMuted: "#908C85",
+  bg: "#FBFBFA",
+  surface: "#FFFFFF",
+  border: "#ECEBE8",
+  radius: "14px",
+  shadow: "0 18px 50px rgba(27,30,37,.14)",
+  font: "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
+};
 
 export function FlowletRoot({ children }: { children: ReactNode }) {
   const transport = useMemo(
@@ -26,19 +41,12 @@ export function FlowletRoot({ children }: { children: ReactNode }) {
     [],
   );
 
-  // Phase 0 placeholder integration status; Phase 1 replaces with live Composio.
-  const integrations = useMemo(
-    () =>
-      createLocalIntegrations([
-        { id: "gmail", name: "Gmail", connected: true },
-        { id: "slack", name: "Slack", connected: true },
-      ]),
-    [],
-  );
+  // Live Composio connection status (gmail/slack) for the integrations rail.
+  const integrations = useMemo(() => createComposioIntegrations(), []);
 
   return (
     <FlowletProvider transport={transport} components={prewiredComponents}>
-      <FlowletShellProvider renderNode={renderNode} integrations={integrations}>
+      <FlowletShellProvider renderNode={renderNode} integrations={integrations} theme={mapleTheme}>
         {children}
       </FlowletShellProvider>
     </FlowletProvider>
