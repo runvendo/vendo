@@ -6,7 +6,18 @@ status.id = "stage-status";
 status.textContent = "booting";
 document.body.appendChild(status);
 
+function ensure(id: string) {
+  let el = document.getElementById(id);
+  if (!el) { el = document.createElement("div"); el.id = id; document.body.appendChild(el); }
+  return el;
+}
+
 createStage(slot);
 window.addEventListener("message", (e) => {
-  if (e.data?.flowlet && e.data.type === "ready") status.textContent = "ready";
+  if (!e.data?.flowlet) return;
+  if (e.data.type === "ready") status.textContent = "ready";
+  if (e.data.type === "egress") {
+    ensure("egress-fetch").textContent = e.data.fetchResult;
+    ensure("egress-img").textContent = e.data.imgResult;
+  }
 });
