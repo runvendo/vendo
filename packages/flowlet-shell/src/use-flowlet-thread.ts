@@ -17,6 +17,7 @@ export type ThreadItem =
     }
   | { kind: "approval"; key: string; approvalId: string; toolName: string; input: unknown }
   | { kind: "ui"; key: string; node: UINode }
+  | { kind: "skeleton"; key: string }
   | { kind: "error"; key: string; message: string };
 
 /**
@@ -49,8 +50,17 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
           const approval = part.approval as { id: string };
           items.push({ kind: "approval", key, approvalId: approval.id, toolName, input: part.input });
         } else if (toolName === RENDER_UI_TOOL) {
-          // Suppressed: render_ui's output is the sibling data-ui node, so a
-          // chip here would just be junk next to the rendered component.
+          // render_ui's finished output is the sibling data-ui node (so no chip).
+          // But while it's still streaming/pending, show a skeleton in its place
+          // so the user sees a view being built — and ONLY then, never for
+          // text-only turns.
+          const state = String(part.state ?? "");
+          if (state === "input-streaming" || state === "input-available") {
+            items.push({ kind: "skeleton", key });
+          } else if (state === "output-error") {
+            items.push({ kind: "error", key, message: String(part.errorText ?? "Failed to render UI") });
+          }
+          // output-available: skip — the data-ui node carries the result.
         } else {
           // Carry tool detail through so the chip can show meaningful content.
           // Fields stay `undefined` when absent (the SDK only populates `input`

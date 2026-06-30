@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
@@ -11,23 +12,8 @@ export interface MessageListProps {
   onDecline?: (approvalId: string) => void;
 }
 
-/** True once the current turn has produced something visible to the user. */
-function hasVisibleOutput(items: ThreadItem[]): boolean {
-  let lastUser = -1;
-  items.forEach((it, i) => {
-    if (it.kind === "text" && it.role === "user") lastUser = i;
-  });
-  return items
-    .slice(lastUser + 1)
-    .some((it) => it.kind === "ui" || it.kind === "approval" || (it.kind === "text" && it.role !== "user"));
-}
-
 export function MessageList({ items, status, onApprove, onDecline }: MessageListProps) {
   const lastTextKey = [...items].reverse().find((i) => i.kind === "text")?.key;
-  // Tool calls are intentionally NOT shown in the thread. While the agent works
-  // on a turn and hasn't produced visible output yet, a skeleton holds the space.
-  const working = status === "submitted" || status === "streaming";
-  const showSkeleton = working && !hasVisibleOutput(items);
 
   return (
     <div className="fl-msglist" role="log" aria-live="polite">
@@ -40,7 +26,15 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
               </div>
             );
           case "tool":
-            return null; // hidden — the skeleton + the rendered result carry the turn
+            return null; // tool chips are hidden — the result (or skeleton) carries the turn
+          case "skeleton":
+            // Shown only while render_ui is in flight; never for text-only turns.
+            return (
+              <Fragment key={item.key}>
+                <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
+                <Skeleton />
+              </Fragment>
+            );
           case "approval":
             return (
               <ApprovalCard
@@ -57,12 +51,6 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
             return <div key={item.key} className="fl-error" role="alert">{item.message}</div>;
         }
       })}
-      {showSkeleton && (
-        <>
-          <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
-          <Skeleton />
-        </>
-      )}
     </div>
   );
 }

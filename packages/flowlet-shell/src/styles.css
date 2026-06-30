@@ -139,6 +139,9 @@
 .fl-rail-chip { display: flex; align-items: center; gap: 7px; border: 1px solid var(--flowlet-border);
   border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 500; background: var(--flowlet-glass-strong);
   -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
+/* Connected tools get a soft green wash. */
+.fl-rail-chip.is-connected { background: color-mix(in srgb, var(--flowlet-ok) 11%, var(--flowlet-surface));
+  border-color: color-mix(in srgb, var(--flowlet-ok) 30%, var(--flowlet-border)); }
 .fl-rail-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--flowlet-ok); }
 .fl-rail-icon { display: block; flex-shrink: 0; }
 .fl-rail-connect { border: 1px dashed var(--flowlet-border-strong); border-radius: 999px;
@@ -158,6 +161,8 @@
 .fl-picker-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 11px;
   border: 1px solid var(--flowlet-border); background: var(--flowlet-surface); transition: transform .12s, border-color .12s, box-shadow .12s; }
 .fl-picker-item:hover { transform: translateY(-1px); border-color: var(--flowlet-border-strong); box-shadow: var(--flowlet-shadow); }
+.fl-picker-item.is-connected { background: color-mix(in srgb, var(--flowlet-ok) 9%, var(--flowlet-surface));
+  border-color: color-mix(in srgb, var(--flowlet-ok) 26%, var(--flowlet-border)); }
 .fl-picker-ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0;
   background: var(--flowlet-surface); border: 1px solid var(--flowlet-border); font-size: 11px; font-weight: 700; }
 .fl-picker-nm { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
