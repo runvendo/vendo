@@ -27,19 +27,34 @@ DoorDash charge at 1:14 AM.
 ## Look & feel
 
 - Near-monochrome: ink `#111` on warm white `#FBFBFA`, hairline borders `#ECEBE8`.
-- Color used only for transaction amounts (red negative, green positive) and small
-  positive/negative deltas. Everything structural stays monochrome.
-- Generous whitespace, refined system sans typography, tight letter-spacing on numerals.
-- Subtle data viz: thin line/area charts and simple category bars. No decorative gradients.
-- Rounded cards (10–12px radius), 1px borders, minimal shadow.
+- Color used only for transaction amounts (red negative, green positive), small
+  positive/negative deltas, and category accents in charts. Everything structural
+  stays monochrome.
+- Typography: **Inter** (variable), tight letter-spacing on headings, `tabular-nums`
+  on all money so columns align. A clear type scale (display / title / body / caption).
+- Generous whitespace, refined hierarchy, rounded cards (12–16px radius), 1px borders,
+  soft layered shadows used sparingly for elevation (menus, modals, card hover).
+- Subtle, real data viz: thin line/area trend charts, category donut, budget progress
+  bars, sparklines. No decorative gradients; charts are restrained and legible.
+- Premium micro-interactions: hover/active states on every interactive element, smooth
+  200ms transitions, subtle row hover, focus rings, animated number/chart mount.
+
+This must clear a high bar — it should be indistinguishable from a real, well-funded
+neobank dashboard at a glance. Cut corners on data realism before visual polish.
 
 ## Tech stack
 
 - Next.js (App Router) + TypeScript + Tailwind CSS.
-- Hand-built components; no heavy UI kit. Lucide for icons.
+- Hand-built component library (buttons, cards, tabs, table, modal/sheet, dropdown,
+  toast, skeleton, badge, segmented control, command palette). No heavy UI kit; small
+  primitives via Radix where it saves accessibility work (dialog, dropdown, tooltip).
+- Inter via `next/font`. Lucide for icons. A small chart layer (lightweight, e.g.
+  hand-rolled SVG + a minimal lib like Recharts only where it clearly helps).
+- Framer Motion for restrained animation (number/chart mount, sheet/modal transitions).
 - Backend = Next.js Route Handlers under `app/api/*` over a clean service/repository
   layer with a seeded in-memory store. The UI never imports seed data directly — it
-  fetches from the API over HTTP, like a real app (SWR for client-side data fetching).
+  fetches from the API over HTTP, like a real app (SWR for client-side data fetching,
+  with skeleton loading states).
 - Lives in the monorepo at `apps/demo-bank`, fully separate from `flowlet-core`.
 
 ## Monorepo layout
@@ -64,30 +79,45 @@ HTTP; the frontend is a client of that API.
 ```
 apps/demo-bank/src/
   server/
+    types.ts          # shared domain types
     store.ts          # seeded in-memory store (module singleton), source of truth
-    seed.ts           # deterministic seed: accounts, ~30 days of transactions
-    accounts.ts       # repository: list/get accounts, account transactions
-    transactions.ts   # repository: list (search/filter), get by id
-    insights.ts       # repository: spending-by-category aggregation
+    seed.ts           # deterministic seed: accounts, ~150+ transactions, derived data
+    accounts.ts       # repository: accounts, account transactions, statements
+    transactions.ts   # repository: list (search/filter/sort/paginate), get by id
+    cards.ts          # repository: cards + card transactions
+    insights.ts       # repositories: spending, cashflow, budgets, recurring
+    payments.ts       # repositories: payees, scheduled payments, goals
+    notifications.ts  # repository: activity feed
   app/api/            # HTTP surface (Route Handlers) over the repositories
-  lib/api-client.ts   # typed fetch client used by all UI
+  components/         # design-system primitives + feature components
+  lib/api-client.ts   # typed fetch client + SWR hooks used by all UI
 ```
 
 ### REST endpoints
 
-- `GET /api/profile` — persona (name, account summary)
-- `GET /api/accounts` — all accounts
-- `GET /api/accounts/:id` — one account
+- `GET /api/profile` — persona + summary (name, net worth, account count)
+- `GET /api/accounts` — all accounts (with sparkline series)
+- `GET /api/accounts/:id` — one account (incl. account/routing, APY, statements)
 - `GET /api/accounts/:id/transactions` — that account's transactions
-- `GET /api/transactions` — list; query params `search`, `category`, `accountId`, `limit`
+- `GET /api/transactions` — list; query `search`, `category`, `accountId`, `status`,
+  `from`, `to`, `min`, `max`, `sort`, `limit`, `cursor` (pagination)
 - `GET /api/transactions/:id` — one transaction (the $87 DoorDash detail)
-- `GET /api/cards` — card(s) for the account
+- `GET /api/cards` — cards (physical + virtual) with masked details
+- `GET /api/cards/:id/transactions` — transactions on a card
 - `GET /api/insights/spending` — category breakdown for the month
+- `GET /api/insights/cashflow` — money in/out series
+- `GET /api/insights/budgets` — budgets with spent/limit
+- `GET /api/insights/recurring` — detected subscriptions / recurring payments
+- `GET /api/payees` — saved payees
+- `GET /api/payments/scheduled` — upcoming & recurring payments
+- `GET /api/goals` — savings goals with progress
+- `GET /api/notifications` — activity / notification feed
 
 Conventions like a real API: JSON bodies, proper status codes (200 / 404 for missing
-ids), consistent envelope (`{ data }` / `{ error }`), stable ids. Writes are out of
-scope for this issue but the repository layer is structured to add them later (the
-demo's "powerful action" will mutate through this same layer).
+ids, 400 for bad query), consistent envelope (`{ data }` / `{ error }`), pagination via
+cursor, stable ids. Writes are out of scope for this issue but the repository layer is
+structured to add them later (the demo's "powerful action" will mutate through this
+same layer).
 
 ### Data fetching in the UI
 
@@ -103,36 +133,84 @@ seed data directly. Loading and 404 states are handled.
 
 ## Pages / surface
 
+A full neobank surface — richer than a skeleton, every page populated with believable
+content. Routes:
+
+**App shell (every page)**
+- Left sidebar: brand, primary nav (Home, Accounts, Transactions, Cards, Payments,
+  Insights), secondary (Activity, Settings), profile footer with account switcher.
+- Top bar: page title, global search, **⌘K command palette**, notifications bell with
+  unread dot + dropdown, quick-action buttons (Send, Request, Move money).
+- Responsive: full sidebar on desktop, collapsible on narrow widths.
+
 1. **Home** (`/`)
-   - Total balance + small month-over-month delta.
-   - Balance trend line chart (last ~30 days).
-   - Account summary cards (Checking, Savings).
-   - Recent activity (latest ~6 transactions). DoorDash 1:14 AM is visible here.
+   - Greeting + total net worth across accounts, month-over-month delta.
+   - Balance trend chart with range toggle (1W / 1M / 3M / 1Y / All).
+   - Account summary cards (Checking, Savings, Credit, Investing) with mini sparklines.
+   - Cashflow widget: money in vs. out this month.
+   - Quick actions row (Send, Request, Move money, Pay bill, Deposit).
+   - Recent activity (latest ~8) with merchant avatars. DoorDash 1:14 AM visible here.
+   - Upcoming bills / scheduled payments. Spending-by-category mini donut.
+   - Savings goals progress.
 
 2. **Accounts** (`/accounts`, `/accounts/[id]`)
-   - List of accounts with balances.
-   - Account detail: balance, account/routing (masked), its transaction list.
+   - Overview: each account as a card (balance, type, mask, APY for savings, sparkline).
+   - Account detail: large balance, account & routing numbers (masked, reveal toggle),
+     interest/APY, this account's transaction list, "Statements & documents" section.
 
 3. **Transactions** (`/transactions`, `/transactions/[id]`)
-   - Full list: searchable by merchant, filterable by category/account, grouped by date.
-   - Transaction detail: merchant, amount, exact timestamp, category, account, status,
-     payment method, location, notes. The $87 DoorDash detail is the demo's anchor —
-     it should look like a normal, slightly mysterious charge ("DOORDASH" descriptor,
-     1:14 AM, no itemization — the blank the rest of the demo later fills in).
+   - Rich list: merchant avatar + category icon, date grouping, running context.
+   - Search; filters for date range, amount range, category, account, status; sort.
+   - Pagination / load-more; CSV export button (presentational). Summary header
+     (count + total for current filter).
+   - Transaction detail: hero amount, merchant + logo, exact timestamp, category (editable
+     UI), account, status **timeline** (authorized → posted), payment method, location
+     with a small static map, notes, "report a problem" / "split" actions (presentational).
+     The $87 DoorDash charge is the anchor — a normal, slightly mysterious line
+     ("DOORDASH" descriptor, 1:14 AM, no itemization — the blank the rest of the demo fills).
 
 4. **Cards** (`/cards`)
-   - Maple debit card visual + static controls (freeze toggle, limits) — non-functional,
-     presentational only.
+   - Card carousel: physical Maple debit + a virtual card, realistic card visuals.
+   - Per-card: freeze toggle, spend limit control, masked number reveal, "add to wallet",
+     recent transactions on that card. Controls are presentational (optimistic UI only).
 
-5. **Insights** (`/insights`)
-   - Spending by category (bars), simple monthly summary. Derived from seed data.
+5. **Payments / Move money** (`/payments`)
+   - Tabs: Send, Request, Transfer between accounts, Pay bills.
+   - Payees list, scheduled & recurring payments, recent transfers. Forms are
+     presentational (no real money movement; writes are out of scope this issue).
 
-Shared: left sidebar nav (Home, Accounts, Transactions, Cards, Insights) + account
-switcher / profile footer. Responsive enough for a laptop on a projector.
+6. **Insights** (`/insights`)
+   - Spending by category (donut + ranked bars), month-over-month trend.
+   - Budgets with progress bars (over/under), top merchants, recurring subscriptions
+     detected from seed data, cashflow chart. All derived from seed data.
+
+7. **Activity** (`/activity`)
+   - Notification/event feed (deposits posted, low-balance alerts, card used, security).
+
+8. **Settings** (`/settings`)
+   - Profile, security toggles, linked accounts, preferences. Presentational.
+
+Where a page exceeds this issue's needs, content can be lightly populated — but no page
+should feel empty or obviously fake.
+
+## Polish & interaction (the bar)
+
+- **Loading:** every data surface has a tailored skeleton (not a spinner) while its
+  `/api/*` call resolves; content fades/slides in on arrival.
+- **States:** designed empty, zero, and 404 states. No raw error text.
+- **Motion:** Framer Motion for sheet/modal/menu transitions, number count-up on
+  balances, chart draw-on-mount. Restrained, ~150–250ms, respects reduced-motion.
+- **Command palette (⌘K):** fuzzy nav + jump-to-transaction; reinforces "real app".
+- **Toasts** for presentational actions (freeze card, copy account number, export).
+- **Detail polish:** copy-to-clipboard on account/card numbers, hover tooltips,
+  keyboard focus rings, sticky table headers, hover row affordances.
+- **Money formatting:** one shared formatter, `tabular-nums`, correct signs/colors,
+  cents handled as integers throughout.
+- **Responsive:** works from ~1024px (projector/laptop) up; sidebar collapses gracefully.
 
 ## Data model
 
-Shared types under `apps/demo-bank/src/server/` (also re-exported for the API client).
+Shared types under `apps/demo-bank/src/server/types.ts` (re-exported for the API client).
 
 ```ts
 type Category =
@@ -142,48 +220,89 @@ type Category =
 type Account = {
   id: string
   name: string            // "Maple Checking"
-  kind: "checking" | "savings"
+  kind: "checking" | "savings" | "credit" | "investing"
   mask: string            // "4471"
   balance: number         // cents
+  accountNumber: string   // masked full number
+  routingNumber?: string
+  apy?: number            // savings/credit
+  sparkline: number[]     // recent balance series
 }
 
 type Transaction = {
   id: string
   accountId: string
+  cardId?: string
   merchant: string        // display name, e.g. "DoorDash"
   descriptor: string      // raw bank descriptor, e.g. "DOORDASH*ORDER 1140"
+  logo?: string           // asset/initials key for the merchant avatar
   amount: number          // cents, negative = debit
-  timestamp: string       // ISO 8601 with local time, incl. the 1:14 AM charge
+  timestamp: string       // ISO 8601 local time, incl. the 1:14 AM charge
   category: Category
-  status: "posted" | "pending"
+  status: "posted" | "pending" | "authorized"
+  statusTimeline: { state: string; at: string }[]
   method: string          // "Maple Debit ·· 4471"
   location?: string       // "San Francisco, CA"
   notes?: string
+  recurringId?: string
+}
+
+type Card = {
+  id: string; accountId: string
+  type: "physical" | "virtual"
+  network: "visa" | "mastercard"
+  mask: string; expMonth: number; expYear: number
+  frozen: boolean; spendLimit?: number
+  design: string          // gradient/style key
+}
+
+type Budget = { category: Category; limit: number; spent: number }
+type Goal = { id: string; name: string; target: number; saved: number; emoji: string }
+type Payee = { id: string; name: string; kind: "person" | "biller"; mask?: string }
+type ScheduledPayment = {
+  id: string; payeeId: string; amount: number; nextDate: string
+  cadence: "once" | "weekly" | "monthly"
+}
+type Recurring = {
+  id: string; merchant: string; amount: number; cadence: "monthly" | "weekly"
+  category: Category; nextDate: string
+}
+type Notification = {
+  id: string; kind: "deposit" | "card" | "alert" | "security" | "transfer"
+  title: string; body: string; at: string; read: boolean
 }
 ```
 
 ### Seed data requirements
 
-- ~30 days of activity across both accounts: paycheck deposits (2), rent, groceries
-  (Whole Foods, Trader Joe's), coffee, rideshare (Uber/Lyft), subscriptions (Spotify,
-  Netflix, iCloud), a few restaurants, transfers to savings. Realistic amounts and
-  cadence so the month reads as a real person's spending.
-- **The planted charge:** DoorDash, **−$87.00**, timestamp **1:14 AM**, category Dining,
-  on Maple Checking. Descriptor reads like a real bank line (no itemization). Dated so it
-  is the most recent / top-of-feed transaction for demo impact.
+- Four accounts: Checking, Savings (with APY), a Credit card, and an Investing account,
+  with believable balances that sum to a realistic net worth.
+- **~60–90 days** of activity (so 1M/3M ranges and trend charts have real shape), ~150+
+  transactions: biweekly paycheck deposits, rent/housing, groceries (Whole Foods, Trader
+  Joe's, Safeway), coffee (Blue Bottle, Sightglass), rideshare (Uber, Lyft), transit,
+  subscriptions (Spotify, Netflix, iCloud, ChatGPT, gym), restaurants & late-night food,
+  shopping (Amazon, Apple), transfers to savings, a refund, a couple pending/authorized
+  items. Realistic amounts, merchants, and cadence so the month reads as a real person.
+- Derived data must be consistent: budgets, recurring/subscriptions, category breakdown,
+  cashflow, and goals are all computed from (or aligned with) the transaction set.
+- **The planted charge:** DoorDash, **−$87.00**, timestamp **1:14 AM**, category dining,
+  on Maple Checking, with a status timeline. Descriptor reads like a real bank line (no
+  itemization). Dated as the most recent / top-of-feed transaction for demo impact.
 - Deterministic seed (no random at request time) so the demo is identical every run.
-  Stable ids.
+  Stable ids. A seeded PRNG may be used at build/seed time for variety, never per request.
 
 ## Testing / verification
 
-- App builds and runs (`next dev` / `next build`) with no type errors.
-- API smoke test: each endpoint returns expected shape and status (200s, 404 for a
-  missing id), and `GET /api/transactions/:id` for the DoorDash charge returns −$87.00
-  at the 1:14 AM timestamp. A small test guards that the planted charge exists.
+- App builds and runs (`next dev` / `next build`) with no type/lint errors.
+- API smoke test: each endpoint returns the expected shape and status (200s, 404 for a
+  missing id, 400 for bad query); `GET /api/transactions/:id` for the DoorDash charge
+  returns −$87.00 at the 1:14 AM timestamp. A test guards that the planted charge exists
+  and that derived totals (budgets/insights) reconcile with the transaction set.
 - Manual walkthrough: every page renders from live `/api/*` calls (visible in the
-  network tab), nav works, the $87 DoorDash transaction is on Home and opens a detail
-  page showing the 1:14 AM timestamp.
-- Visual check against the approved mockup (monochrome, hairline borders, premium feel).
+  network tab) with skeletons → content, nav + ⌘K work, the $87 DoorDash transaction is
+  on Home and opens a detail page showing the 1:14 AM timestamp.
+- Visual QA against the approved look: monochrome, hairline borders, Inter, aligned
+  numerals, hover/focus states, no empty-feeling pages. Screenshot key pages and review.
 
 ## Out of scope / later
 
