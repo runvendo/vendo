@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { createRegistry, type ComponentRegistry, type RegisteredComponent, type FlowletAgent } from "@flowlet/core";
+import { createRegistry, type ComponentRegistry, type RegisteredComponent, type FlowletAgent, type FlowletUIMessage } from "@flowlet/core";
+import type { ChatTransport } from "ai";
 import { createLocalTransport, type LocalTransport } from "./transport";
 
 interface FlowletContextValue {
@@ -10,14 +11,28 @@ interface FlowletContextValue {
 const FlowletContext = createContext<FlowletContextValue | null>(null);
 
 export interface FlowletProviderProps {
-  agent: FlowletAgent;
+  /**
+   * Drive the thread with an in-process agent (F1 stand-in). Mutually exclusive
+   * with `transport`. The agent is server-only when it uses Composio, so a host
+   * with a networked backend should pass `transport` instead.
+   */
+  agent?: FlowletAgent;
+  /**
+   * Drive the thread with an explicit `ChatTransport` (e.g. an HTTP transport
+   * pointed at a server route). Mutually exclusive with `agent`.
+   */
+  transport?: ChatTransport<FlowletUIMessage>;
   components: RegisteredComponent[];
   children: ReactNode;
 }
 
-export function FlowletProvider({ agent, components, children }: FlowletProviderProps) {
+export function FlowletProvider({ agent, transport, components, children }: FlowletProviderProps) {
   const registry = useMemo(() => createRegistry(components), [components]);
-  const local = useMemo(() => createLocalTransport(agent), [agent]);
+  const local = useMemo<LocalTransport>(() => {
+    if (transport) return { transport };
+    if (agent) return createLocalTransport(agent);
+    throw new Error("FlowletProvider requires either `agent` or `transport`");
+  }, [agent, transport]);
   const value = useMemo<FlowletContextValue>(() => ({ registry, local }), [registry, local]);
   return <FlowletContext.Provider value={value}>{children}</FlowletContext.Provider>;
 }
