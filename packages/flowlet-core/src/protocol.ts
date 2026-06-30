@@ -35,11 +35,12 @@ export interface ActionRequest {
 }
 
 /** Flowlet's typed data-* parts layered on the ai SDK UIMessage. */
-export interface FlowletDataParts {
+export type FlowletDataParts = {
   run: RunInfo;
   ui: UINode;
   approval: ApprovalRequest;
-}
+  [key: string]: unknown;
+};
 
 /** The public message type: an ai SDK UIMessage with Flowlet data parts. */
 export type FlowletUIMessage = UIMessage<never, FlowletDataParts>;
