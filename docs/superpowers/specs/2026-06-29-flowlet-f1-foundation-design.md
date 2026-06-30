@@ -31,7 +31,7 @@ F1 owns Layer 0 in full, the contracts for Layers 3 and 4, and ships stubs so F2
 These were settled during brainstorming and a three-reviewer design critique.
 
 1. **Stack:** TypeScript, pnpm workspaces, Turborepo, Vitest, Zod.
-2. **Own thin protocol, AG-UI-aligned.** F1 defines its own discriminated-union stream contract whose semantics mirror the open AG-UI event model, but does **not** depend on the `@ag-ui` packages (pre-1.0, vendor-controlled). This keeps the runtime swappable and avoids coupling the public seam to a moving spec.
+2. **Reuse the `ai` SDK protocol directly.** The public stream contract **is** the `ai` SDK's `UIMessage` / `UIMessagePart` taxonomy; Flowlet-specific pieces (UI render directives, approvals) ride on its first-class typed `data-*` part extension mechanism. We do not invent a parallel vocabulary or maintain an adapter. Accepted trade-off: a soft coupling to the `ai` SDK's shape and versioning — judged worth it for the speed/reuse, since F2 runs the `ai` SDK natively and the realistic alternative runtimes (Mastra, LangGraph) already emit `ai`-SDK-compatible streams. (This reverses an earlier "own thin protocol" recommendation that was never actually chosen.)
 3. **Engine reuse, runtime swappable.** F2 builds the engine on the Vercel `ai` SDK (provider-agnostic, best-in-class partial-object streaming). The `FlowletAgent` interface keeps the runtime swappable — raw Anthropic SDK, Mastra, or anything else can implement it.
 4. **All agent-rendered UI is sandboxed.** Every piece of UI the agent renders runs inside a sandbox, never in the host's trusted tree. The Flowlet shell stays native. Rationale: one airtight security boundary and the ability to run any code uniformly. Cost accepted: theme and app-state must be proxied into the sandbox.
 5. **One stage per surface.** The whole composition tree for an agent surface renders inside a **single** sandbox iframe — not one iframe per component. Components share theme/CSS/layout and overflow naturally; the iframe cost is paid once per surface. This is how artifact systems work and is what makes "fully sandboxed" practical.
@@ -56,60 +56,60 @@ Contract fields are typed against the **Standard Schema** interface (the neutral
 **Caveat (edit 10):** Standard Schema only standardizes *validation*; JSON Schema conversion (needed to hand schemas to the LLM) is best-effort across libraries. F1 therefore **requires schemas used at the LLM boundary to be JSON-Schema-convertible** (or simply uses Zod's conversion there). This keeps the public API library-neutral while guaranteeing the tool/LLM boundary works.
 
 ### 5.2 Tool interface
-A named, schema-bearing action. `requiresApproval` drives consent; richer danger *policy* (severity, scope, reversibility) is deferred to F2 once real tools exist, carried meanwhile as opaque `risk` metadata. Reused by both Flowlet tools and Composio integrations (F2).
+**Shaped to mirror the MCP tool definition** so MCP tools (and Composio integrations, which expose MCP) map in with near-zero friction; MCP is a first-class *source* of tools, ingested via an adapter. `FlowletTool` adds `execute` for in-process / frontend tools (the ergonomic path for app-defined tools).
 
 ```ts
 interface FlowletTool<I, O> {
   name: string
   description: string
-  inputSchema: StandardSchema<I>
+  inputSchema: StandardSchema<I>          // JSON-Schema-convertible (MCP uses JSON Schema)
   outputSchema?: StandardSchema<O>
-  requiresApproval: boolean        // edit 3: replaces the coarse "safe|read|mutate" enum
-  risk?: unknown                   // optional, opaque; F2 defines the policy model
+  annotations?: ToolAnnotations           // reuse MCP hints (see below)
+  permission?: unknown                    // open slot for any custom gating metadata
   execute(input: I, ctx: ToolContext): Promise<O>   // ctx carries the (opaque) principal
+}
+
+// Reuse MCP's standard annotation vocabulary as the broad permission signal.
+type ToolAnnotations = {
+  readOnlyHint?: boolean
+  destructiveHint?: boolean
+  idempotentHint?: boolean
+  openWorldHint?: boolean
 }
 ```
 
-> Edit 3: the previous `Danger = "safe" | "read" | "mutate"` enum was both too coarse (a read can be sensitive; "mutate" lumps trivial edits with money movement) and premature (policy before real tools). A boolean + opaque metadata is enough for F1; F2 designs the real policy.
+**Permission model is broad by construction:** F1 owns only the *mechanism* (approval request/response/edit/expire, §5.5) and these standard *hints*; the *policy* — how hints translate to "gate or not," and any richer strategy (ask-once-remember, role-based, threshold) — is a pluggable concern owned by F2. This replaces the earlier coarse `safe|read|mutate` enum (too crude and premature) with reuse + openness.
 
 ### 5.3 UI composition model
-A node tree, each node carrying a stable `id`. All nodes render in the stage; `source` is provenance. Two variants only — a named component, or an opaque-but-version-stamped generated payload. F1 invents **no** layout/description DSL of its own (edit 1); nesting/arrangement comes with whatever format F3 chooses for the `generated` lane.
+A node tree, each node carrying a stable `id`. All nodes render in the stage; `source` is provenance. Two variants only — a named component, or a **fully opaque** generated payload. F1 invents **no** layout/description DSL and **no** envelope of its own; F3 chooses the generated format (and adds versioning then).
 
 ```ts
 type UINode =
   | { id: string; kind: "component"; source: "prewired" | "host"; name: string; props: unknown; children?: UINode[] }
-  | { id: string; kind: "generated"; envelope: GeneratedEnvelope }
-
-// edit 7: opaque payload, but stamped on the outside so F3 can evolve the format without breaking F1
-interface GeneratedEnvelope {
-  format: string            // e.g. "a2ui" | "crayon" | "openui"  (chosen in F3)
-  formatVersion: string
-  capabilities?: unknown    // hint only; capability *semantics* are defined by F3 at the sandbox boundary
-  payload: unknown          // opaque to F1
-}
+  | { id: string; kind: "generated"; payload: unknown }   // fully opaque; format chosen by F3
 ```
 
-> Edit 1: the previous `layout` node was a custom UI DSL in disguise, which contradicted the "F3 picks the format" decision. Removed. Edit 7: the `generated` payload stays opaque to F1 but is wrapped in a labeled, versioned envelope.
+**Fast meshing of pre-built + generated is the design goal:** because a `component` node is just a name+props reference (instant, no generation) and a `generated` node sits beside or nests with it in the *same* tree and *same* sandbox stage, the agent can drop a pre-built `OrderCard` next to a custom generated bit in one response. This makes **"can the generated format reference registered components by name inside its tree"** a hard selection criterion when F3 picks the format (A2UI does this well).
 
 ### 5.4 Chat / stream protocol
-A discriminated union of stream parts. It is **not a new vocabulary** — it is a thin, explicit **adapter/superset over the `ai` SDK's `UIMessagePart`** (edit 8): F1 ships the adapter that maps `ai`-SDK parts → Flowlet parts plus a **conformance test** that enforces the mapping, so "aligned" is verified, not aspirational. Every part carries a `schemaVersion`; the stream carries a `runId` and `threadId` (edit 9 — cheap now, a migration later).
+**The protocol is the `ai` SDK's `UIMessage` stream**, reused directly. We do **not** define a parallel union or an adapter — F2 (running the `ai` SDK) emits these parts natively, and `flowlet-react` consumes them via `useChat`. Flowlet-specific pieces are added as the `ai` SDK's first-class typed `data-*` parts:
 
-**Server → client parts (core set only — edit 5):**
-`run-start` (with `runId`, `threadId`, `schemaVersion`) · `text-delta` · `tool-input-available` · `tool-output-available/denied` · `approval-request` · `ui` (full UINode) · `run-finish` · `error` (typed code: provider / tool / validation / sandbox)
+- **Native `ai` SDK parts we rely on:** text, tool-input/output (incl. tool-output-denied), error. (Reasoning, usage, source, file parts are available but not required by F1.)
+- **Flowlet `data-*` parts (our additions):**
+  - `data-ui` — carries a `UINode` to render in the stage (full-node replacement: a new `data-ui` with the same node `id` replaces it). Incremental partial-prop streaming is deferred to F3.
+  - `data-approval` — the approval request (§5.5).
+- **Run/thread identity + version:** carried on the `UIMessage` metadata (`runId`, `threadId`, `schemaVersion`) — cheap now, a migration later.
 
-**Client → server return channel:**
-`approval-response` · `action`
+**Client → server (return channel):** approval responses and sandbox actions ride the `ai` SDK's existing client→server message path (`data-approval-response`, `data-action`).
 
-**Named deferred extension points** (NOT in F1; added when the consuming track needs them, as non-breaking union members): `state-snapshot/delta`, `reasoning`, `usage`, fine-grained `text-start/end` + `tool-input-start/delta`, and `ui-delta`.
-
-> Edit 6: F1 uses **full-node replacement** — a new `ui` part replaces the node with the same `id`. The incremental partial-prop streaming (`ui-delta`) was under-specified (it referenced a `propsSchema` that lives on the registry, not the node, and defined no "finalized" event) and would have forced a break; it is owned and designed by F3.
+> Why this shape: the `ai` SDK already models text/tool/error and gives a typed `data-*` extension slot purpose-built for app-specific parts — so reusing it directly is less code than an own-union-plus-adapter and removes drift risk entirely. `data-*` parts can be persistent (in history) or transient (status only), which we use for durable UI vs ephemeral state.
 
 ### 5.5 Approval / human-in-the-loop
-**One channel only (edit 2):** approval flows entirely through the stream's return channel — request out, response back, correlated by a stable `approvalId`. There is **no** imperative `resolveApproval()` side method (it was a run-stateful second door that breaks under serverless, refresh, and resumed runs). Responses may **edit** the arguments (full replacement) and requests **expire**.
+**One channel only:** approval is carried as `data-*` parts on the same `ai` SDK message stream — `data-approval` out, `data-approval-response` back — correlated by a stable `approvalId`. There is **no** imperative `resolveApproval()` side method (a run-stateful second door that breaks under serverless, refresh, and resumed runs). Responses may **edit** the arguments (full replacement) and requests **expire**.
 
 ```ts
-type ApprovalRequest  = { type: "approval-request"; approvalId: string; toolCallId: string; prompt: string; input: unknown; expiresAt?: number }
-type ApprovalResponse = { type: "approval-response"; approvalId: string; approved: boolean; editedInput?: unknown }
+type ApprovalRequest  = { approvalId: string; toolCallId: string; prompt: string; input: unknown; expiresAt?: number }  // as data-approval
+type ApprovalResponse = { approvalId: string; approved: boolean; editedInput?: unknown }                                // as data-approval-response
 ```
 
 ### 5.6 Action chokepoint
@@ -131,17 +131,17 @@ Runtime-agnostic. The input names the seams F2 needs — multi-turn, per-user au
 ```ts
 interface FlowletAgent {
   run(input: {
-    messages: Message[]            // multi-turn history
+    messages: UIMessage[]          // ai SDK UIMessage history (multi-turn)
     tools: FlowletTool[]
     system?: string
     principal?: unknown            // opaque per-user identity/credentials; F2 defines the shape
     signal: AbortSignal            // cancellation
-    onClientPart?: (p: FlowletClientPart) => void   // approval-response + sandbox action, in-band
-  }): AsyncIterable<FlowletPart>
+    onClientPart?: (p: ClientPart) => void   // data-approval-response + data-action, in-band
+  }): AsyncIterable<UIMessageChunk>   // the ai SDK UI message stream (incl. our data-* parts)
 }
 ```
 
-The **stub agent** emits a scripted `FlowletPart` stream — text, a tool call, an approval request, and a UI node — with no LLM, so F3 and the React layer can build against a realistic stream immediately. It is a development fixture, not a runtime.
+The **stub agent** emits a scripted `ai` SDK `UIMessage` stream — text, a tool call, a `data-approval` request, and a `data-ui` node — with no LLM, so F3 and the React layer can build against a realistic stream immediately. It is a development fixture, not a runtime.
 
 ### 5.8 Component registry
 **Descriptors only (edit 9).** This is the LLM-facing *menu* — what the agent may emit and how the renderer resolves a name. It is explicitly **not** the host-component provisioning contract (bundle loading, CSS/tokens, state proxy, sizing, focus, a11y); making a host component actually run inside the sandbox is owned by **F3a** and opens with a spike (decision #9). Eager references for v1; lazy provisioning is deferred.
@@ -160,7 +160,7 @@ interface RegisteredComponent {
 | Piece | F1 ships |
 |---|---|
 | All contracts in §5 (types + Standard Schema validators, Zod default) | Real |
-| Stub agent (scripted `FlowletPart` stream) | Real |
+| Stub agent (scripted `ai` SDK `UIMessage` stream) | Real |
 | `FlowletProvider` + registry + `useFlowletChat` | Real |
 | Stub renderer (renders `component` nodes; placeholder for `generated`) — **non-production, no security boundary**; API kept close to the future stage seam | Real (stub) |
 | Real iframe stage, theme/state proxy, declarative renderer | F3 |
@@ -181,32 +181,34 @@ This proves every seam — streaming, tools, approval correlation, UI nodes, reg
 
 - **Errors:** an `error` stream part with a typed code (provider / tool / validation / sandbox). The sandbox bridge error taxonomy comes from mcp-ui (F3), not F1.
 - **Cancellation:** `AbortSignal` on `run()` propagates to the provider stream and running tools; a pending approval is abortable.
-- **Consent/audit:** every tool with `requiresApproval` emits an `approval-request`; every sandbox action routes through the action chokepoint. These two are the only paths to side effects.
+- **Consent/audit:** any tool the policy gates emits a `data-approval` request; every sandbox action routes through the action chokepoint. These two are the only paths to side effects.
 
 ## 9. Testing
 
 Pointed at contract *risk*, not contract *volume*:
-- **`ai`-SDK adapter conformance (edit 8):** the load-bearing test — assert the adapter round-trips `ai`-SDK `UIMessagePart`s ↔ Flowlet parts, so "aligned" can't silently drift.
-- **Stub stream conformance:** drive the stub agent and assert the `FlowletPart` sequence is well-formed — ordering, matched `id`s/`runId`, approval correlation by `approvalId`, cancellation via `AbortSignal`.
-- **React seam:** mount `FlowletProvider` + stub agent + the example registry; assert the loop completes through an approval (request → `approval-response` → result).
-- **Schema boundary:** assert schemas at the LLM boundary are JSON-Schema-convertible.
+- **Valid `ai` SDK stream:** assert the stub emits a well-formed `ai` SDK `UIMessage` stream including our `data-ui` / `data-approval` parts — ordering, matched node `id`s, approval correlation by `approvalId`, cancellation via `AbortSignal`.
+- **MCP tool mapping:** assert an MCP tool definition maps cleanly to/from `FlowletTool` (the first-class ingestion path).
+- **React seam:** mount `FlowletProvider` + stub agent + the example registry; assert the loop completes through an approval (request → response → result) via `useChat`.
+- **Schema boundary:** assert schemas at the LLM/tool boundary are JSON-Schema-convertible.
 
 ## 10. Reuse summary
 
 | Concern | Decision |
 |---|---|
-| Schema | Zod (implements Standard Schema); JSON Schema at LLM edge |
+| Schema | Standard Schema (Zod default); JSON-Schema-convertible at the LLM/tool edge |
 | Engine (F2) | Vercel `ai` SDK, runtime swappable behind `FlowletAgent` |
-| Protocol | Adapter/superset over `ai` SDK parts (with conformance test); AG-UI-aligned semantics; no `@ag-ui` dependency |
+| Protocol | Reuse the `ai` SDK `UIMessage` stream directly + typed `data-*` parts (`data-ui`, `data-approval`); no own union, no adapter |
+| Tools | Shape `FlowletTool` like the MCP tool def; MCP is a first-class tool source (ingested via adapter) |
+| Permissions | Reuse MCP tool annotations + open `permission` slot; mechanism in F1, policy in F2 |
 | Sandbox bridge (F3) | mcp-ui / MCP Apps — bridge primitive, validated by the F3a spike |
 | Pre-wired components (F4) | Crayon (MIT) |
-| Declarative format (F3) | A2UI / Crayon / OpenUI Lang — chosen in F3 |
+| Generated format (F3) | A2UI / Crayon / OpenUI Lang — chosen in F3 (must support referencing registered components by name) |
 
 ## 11. Risks and cons (honest)
 
 1. **Fully-sandboxed is the heaviest path.** The theme + app-state bridge is real, ongoing engineering, and host components must be adapted to receive data over the bridge instead of app context. Deferred to F3, but the direction commits us to it.
-2. **Pre-1.0 dependencies.** `ai` SDK (major churn), mcp-ui / MCP Apps (spec finalizing mid-2026). Mitigated by keeping them behind our own contracts.
-3. **The `generated`-node format is unchosen.** Intentional (F3 decides), but it leaves one contract variant opaque until then.
+2. **`ai` SDK coupling (accepted).** Reusing the `ai` SDK `UIMessage` protocol directly means its major-version changes touch our public contract. Chosen deliberately over an own-union+adapter for speed/reuse; revisit only if a genuinely non-`ai`-SDK runtime becomes a priority. mcp-ui / MCP Apps (spec finalizing mid-2026) stays behind F3.
+3. **The `generated`-node format is unchosen and fully opaque.** Intentional (F3 decides), but it leaves one contract variant opaque until then — and pushes the "reference components by name" meshing requirement onto F3's format choice.
 
 ## 12. Future (not in F1; Layer 5 vision)
 
@@ -219,7 +221,7 @@ Tracked separately so nothing is lost while the board stays focused on F1–F3:
 ## 13. Open questions
 
 - The exact `principal` shape — opaque in F1 (edit 4), defined when F2 wires Composio per-user auth.
-- The `generated` envelope's concrete `format` (A2UI / Crayon / OpenUI) — chosen in F3.
+- The `generated` payload's concrete format + versioning (A2UI / Crayon / OpenUI) — chosen and added in F3 (F1 keeps it fully opaque).
 - Host-component provisioning model — the subject of the F3a spike (decision #9).
 - Whether the example app should also demonstrate a `generated` node against the stub, or only `component` nodes.
 
