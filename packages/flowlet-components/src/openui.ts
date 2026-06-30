@@ -3,14 +3,22 @@ import {
   CardHeader as _CardHeader,
   Tag as _Tag,
   TagBlock as _TagBlock,
+  Table as _Table,
+  TableHeader as _TableHeader,
+  TableBody as _TableBody,
+  TableRow as _TableRow,
+  TableHead as _TableHead,
+  TableCell as _TableCell,
 } from "@openuidev/react-ui";
 import type {
   CardProps,
   CardHeaderProps,
   TagProps,
   TagBlockProps,
+  TableHeadProps,
+  TableCellProps,
 } from "@openuidev/react-ui";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 
 /**
  * OpenUI ships @types/react@19 types (ReactNode includes bigint); this monorepo
@@ -25,3 +33,10 @@ export const Card = ui<CardProps & { children?: ReactNode }>(_Card);
 export const CardHeader = ui<CardHeaderProps>(_CardHeader);
 export const Tag = ui<TagProps>(_Tag);
 export const TagBlock = ui<TagBlockProps & { children?: ReactNode }>(_TagBlock);
+
+export const Table = ui<HTMLAttributes<HTMLTableElement> & { children?: ReactNode }>(_Table);
+export const TableHeader = ui<HTMLAttributes<HTMLTableSectionElement> & { children?: ReactNode }>(_TableHeader);
+export const TableBody = ui<HTMLAttributes<HTMLTableSectionElement> & { children?: ReactNode }>(_TableBody);
+export const TableRow = ui<HTMLAttributes<HTMLTableRowElement> & { children?: ReactNode }>(_TableRow);
+export const TableHead = ui<TableHeadProps & { children?: ReactNode }>(_TableHead);
+export const TableCell = ui<TableCellProps & { children?: ReactNode }>(_TableCell);
