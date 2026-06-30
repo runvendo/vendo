@@ -98,5 +98,12 @@ export const STAGE_RUNTIME_SRC = String.raw`
   }
   probeEgress();
 
+  var lastH = 0;
+  var ro = new ResizeObserver(function () {
+    var h = document.documentElement.scrollHeight;
+    if (Math.abs(h - lastH) > 1) { lastH = h; parent.postMessage({ flowlet: true, type: "resize", height: h }, "*"); }
+  });
+  ro.observe(document.documentElement);
+
   parent.postMessage({ flowlet: true, type: "ready" }, "*");
 `;

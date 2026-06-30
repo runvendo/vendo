@@ -61,6 +61,10 @@ window.addEventListener("message", (e) => {
     }));
   }
   if (e.data.type === "init-ack") ensure("init-ack").textContent = "initialized";
+  if (e.data.type === "resize") {
+    const iframe = document.getElementById("flowlet-stage") as HTMLIFrameElement;
+    iframe.style.height = e.data.height + "px";
+  }
   if (e.data.type === "egress") {
     ensure("egress-fetch").textContent = e.data.fetchResult;
     ensure("egress-img").textContent = e.data.imgResult;
