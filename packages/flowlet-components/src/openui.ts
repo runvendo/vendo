@@ -9,6 +9,10 @@ import {
   TableRow as _TableRow,
   TableHead as _TableHead,
   TableCell as _TableCell,
+  BarChart as _BarChart,
+  LineChart as _LineChart,
+  AreaChart as _AreaChart,
+  PieChart as _PieChart,
 } from "@openuidev/react-ui";
 import type {
   CardProps,
@@ -17,6 +21,10 @@ import type {
   TagBlockProps,
   TableHeadProps,
   TableCellProps,
+  BarChartProps,
+  LineChartProps,
+  AreaChartProps,
+  PieChartProps,
 } from "@openuidev/react-ui";
 import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 
@@ -40,3 +48,11 @@ export const TableBody = ui<HTMLAttributes<HTMLTableSectionElement> & { children
 export const TableRow = ui<HTMLAttributes<HTMLTableRowElement> & { children?: ReactNode }>(_TableRow);
 export const TableHead = ui<TableHeadProps & { children?: ReactNode }>(_TableHead);
 export const TableCell = ui<TableCellProps & { children?: ReactNode }>(_TableCell);
+
+// Chart data type shared across bar/line/area charts
+type ChartRecord = Record<string, string | number>;
+
+export const BarChart = ui<BarChartProps<ChartRecord[]>>(_BarChart);
+export const LineChart = ui<LineChartProps<ChartRecord[]>>(_LineChart);
+export const AreaChart = ui<AreaChartProps<ChartRecord[]>>(_AreaChart);
+export const PieChart = ui<PieChartProps<ChartRecord[]>>(_PieChart);
