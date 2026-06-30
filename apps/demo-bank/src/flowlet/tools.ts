@@ -11,29 +11,8 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { listTransactions } from "@/server/transactions";
-
-/** Hour-of-day (0-24, fractional) for an ISO timestamp, fixed to Pacific so the
- *  value is deterministic regardless of the server's timezone. */
-function pacificHour(iso: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hourCycle: "h23",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(new Date(iso));
-  const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-  const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-  return Number((h + m / 60).toFixed(2));
-}
-
-function pacificTimeLabel(iso: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(iso));
-}
+import { pacificHour, pacificTimeLabel } from "./time";
+import { addRule } from "./rules-store";
 
 const getTransactions = tool({
   description:
@@ -58,8 +37,36 @@ const getTransactions = tool({
   },
 });
 
+const setRule = tool({
+  description:
+    "Set a standing natural-language rule that fires automatically when a matching " +
+    "transaction appears (e.g. 'post to Slack #general whenever I order late-night " +
+    "delivery'). Do NOT post to Slack yourself — the rule does it when a charge matches. " +
+    "Capture both the human-readable description and a structured trigger.",
+  inputSchema: z.object({
+    description: z.string().describe("Human-readable rule, e.g. 'Post to #general on any late-night delivery order'."),
+    channel: z.string().optional().describe("Slack channel name (no #). Default 'general'."),
+    trigger: z.object({
+      lateNightOnly: z.boolean().optional().describe("Only fire for charges between 12am and 5am."),
+      categories: z.array(z.string()).optional().describe("Maple categories to match, e.g. ['dining']."),
+      keywords: z.array(z.string()).optional().describe("Merchant/descriptor keywords, e.g. ['doordash','uber eats','delivery','grubhub']."),
+    }),
+  }),
+  execute: async ({ description, channel, trigger }) => {
+    const rule = addRule({ description, channel, trigger });
+    return {
+      ok: true,
+      ruleId: rule.id,
+      description: rule.description,
+      channel: rule.channel,
+      summary: `Active. Any matching charge now posts to #${rule.channel}.`,
+    };
+  },
+});
+
 export function demoTools(): ToolSet {
   return {
     get_transactions: getTransactions,
+    set_rule: setRule,
   };
 }

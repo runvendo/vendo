@@ -34,9 +34,20 @@ const allowAllPolicy: ApprovalPolicy = {
   evaluate: () => "allow",
 };
 
+/** Compact "{ field, optional? }" hint from a component's zod props schema, so
+ *  the model uses exact prop names (e.g. Callout's `text`, not `body`). */
+function fieldHint(schema: unknown): string {
+  const shape = (schema as { shape?: Record<string, { isOptional?: () => boolean }> }).shape;
+  if (!shape) return "";
+  const parts = Object.entries(shape).map(([key, def]) =>
+    typeof def?.isOptional === "function" && def.isOptional() ? `${key}?` : key,
+  );
+  return parts.length ? `  props: { ${parts.join(", ")} }` : "";
+}
+
 function componentCatalog(): string {
   return prewiredComponents
-    .map((c) => `- ${c.name}: ${c.description}`)
+    .map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`)
     .join("\n");
 }
 
@@ -65,9 +76,12 @@ function buildInstructions(): string {
     "  REAL line items. Surface the receipt's stated order time, not the email's",
     "  received time.",
     "- 'Tell my roommate / put me on blast when I order late-night delivery' and similar:",
-    "  set a natural-language rule with the rule tool and confirm it in plain language.",
-    "  Do NOT post to Slack yourself — the rule fires automatically when a matching",
-    "  charge appears.",
+    "  call set_rule with a clear description and a structured trigger — for late-night",
+    "  delivery use lateNightOnly:true, categories:['dining'], and keywords like",
+    "  ['doordash','uber eats','grubhub','delivery']. Then render a Callout (variant",
+    "  'success') confirming the rule in plain language, e.g. 'Rule set — any delivery",
+    "  order between 12am and 5am now posts to #general.' Do NOT post to Slack yourself;",
+    "  the rule fires automatically when a matching charge appears.",
   ].join("\n");
 }
 
