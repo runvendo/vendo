@@ -30,4 +30,15 @@ export interface PolicyContext {
 /** A single guardrail layer. Evaluation may be async (e.g. LLM judge). */
 export interface ApprovalPolicy {
   evaluate(ctx: PolicyContext): ApprovalDecision | Promise<ApprovalDecision>;
+  /**
+   * Optional hook invoked by `wrapTool` AFTER the real tool successfully
+   * executes — i.e. the call was `allow`, or it was `approve`, the user
+   * approved it, and the real `execute` ran to completion.
+   *
+   * It is NEVER called for a `deny` (the tool did not run), nor if the real
+   * `execute` throws or aborts. Layers use it to record that a call genuinely
+   * happened (e.g. ask-once memoisation), so nothing is recorded merely because
+   * a prompt was shown.
+   */
+  onExecuted?(ctx: PolicyContext): void | Promise<void>;
 }

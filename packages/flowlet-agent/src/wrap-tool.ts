@@ -85,8 +85,12 @@ export function wrapTool(args: WrapToolArgs): Tool {
    * guarantee comes from the cache being created fresh per `run()`: a new run
    * has a cold cache, so `execute` re-evaluates the policy from scratch.
    */
+  function buildCtx(input: unknown): PolicyContext {
+    return { toolName: name, input, descriptor, principal };
+  }
+
   async function evaluate(input: unknown): Promise<ApprovalDecision> {
-    const ctx: PolicyContext = { toolName: name, input, descriptor, principal };
+    const ctx = buildCtx(input);
     if (decisionCache) {
       const key = canonicalKey(ctx, policyVersion);
       const cached = decisionCache.get(key);
@@ -97,6 +101,10 @@ export function wrapTool(args: WrapToolArgs): Tool {
     }
     return policy.evaluate(ctx);
   }
+
+  // Preserve any caller-supplied output transform so we can delegate normal
+  // (non-deny) outputs to it.
+  const originalToModelOutput = (tool as Tool).toModelOutput;
 
   const wrapped = {
     ...tool,
@@ -115,11 +123,47 @@ export function wrapTool(args: WrapToolArgs): Tool {
         // (executeTool → executeToolCall) does NOT validate an execute return
         // against the tool's `outputSchema` (only the opt-in validateUIMessages
         // utility does), so this object is safe even for a tool whose
-        // `outputSchema` is non-object (e.g. `z.string()`).
+        // `outputSchema` is non-object (e.g. `z.string()`). `onExecuted` is NOT
+        // called: the real tool never ran.
         return policyDenied(name, "denied by approval policy");
       }
-      return boundExecute(input, options);
+      const result = await boundExecute(input, options);
+      // Signal a genuine, successful execute. Only reached for non-deny
+      // decisions and only after `boundExecute` resolves (a throw propagates
+      // before this line, so a failed call is never recorded as executed).
+      await policy.onExecuted?.(buildCtx(input));
+      return result;
     },
+    // Guard the model-output transform against the deny payload. When `execute`
+    // returns a `policy_denied` object, convert it to plain text rather than
+    // letting a caller's `toModelOutput` (which expects the tool's normal output
+    // shape) mis-handle it. Normal outputs delegate to the original transform.
+    // When no original existed, leave `toModelOutput` unset so the SDK applies
+    // its default (the deny payload is a plain serialisable object — safe).
+    ...(originalToModelOutput
+      ? {
+          toModelOutput: (options: {
+            toolCallId: string;
+            input: unknown;
+            output: unknown;
+          }) => {
+            const output = options.output as { code?: unknown } | null | undefined;
+            if (
+              output != null &&
+              typeof output === "object" &&
+              output.code === "policy_denied"
+            ) {
+              return {
+                type: "text" as const,
+                value: `Tool "${name}" was denied by the approval policy.`,
+              };
+            }
+            return originalToModelOutput(
+              options as Parameters<typeof originalToModelOutput>[0],
+            );
+          },
+        }
+      : {}),
   };
 
   return wrapped as Tool;

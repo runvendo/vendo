@@ -10,6 +10,19 @@ import { createFlowletAgent, RENDER_TOOL_NAME } from "./engine";
 import type { ApprovalPolicy } from "./policy";
 import type { ComposioClient } from "./composio";
 
+// Replace `createComposioClient` with a spy so we can assert the engine builds
+// the client ONCE and reuses it across runs (Finding 4). `ingestComposioTools`
+// and everything else keep their real implementations.
+vi.mock("./composio", async (importActual) => {
+  const actual = await importActual<typeof import("./composio")>();
+  return {
+    ...actual,
+    createComposioClient: vi.fn(
+      (): ComposioClient => ({ fetchTools: vi.fn(async () => ({})) }),
+    ),
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Offline mock-model scaffolding (mirrors flowlet-core/src/stub-agent.ts).
 // ---------------------------------------------------------------------------
@@ -186,5 +199,76 @@ describe("createFlowletAgent", () => {
 
     expect(callerExecute).toHaveBeenCalledOnce();
     expect(callerExecute.mock.calls[0][0]).toEqual({ msg: "hi" });
+  });
+
+  it("warns when a tool name collides across sources (Finding 2)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // Caller claims `render_ui`, colliding with the engine's built-in render
+      // tool (lower precedence) — the engine tool is dropped and logged.
+      const callerTool = tool({ inputSchema: z.object({}), execute: async () => "x" });
+      const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+
+      await collect(
+        agent.run({
+          messages: userTurn,
+          tools: { [RENDER_TOOL_NAME]: callerTool },
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(warnSpy).toHaveBeenCalled();
+      const logged = warnSpy.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+      expect(logged).toContain(RENDER_TOOL_NAME);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("builds the Composio client once and reuses it across runs (Finding 4)", async () => {
+    const { createComposioClient } = await import("./composio");
+    const spy = createComposioClient as unknown as ReturnType<typeof vi.fn>;
+    spy.mockClear();
+
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      // No client injected → the engine must build one (and only one).
+      composio: { config: { toolkits: ["gmail"] } },
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        principal: { userId: "user-a" },
+        signal: new AbortController().signal,
+      }),
+    );
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        principal: { userId: "user-b" },
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("tolerates a caller passing undefined tools (Finding 5)", async () => {
+    const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+
+    const parts = await collect(
+      agent.run({
+        messages: userTurn,
+        // Non-TS caller may omit `tools` entirely.
+        tools: undefined as unknown as ToolSet,
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
   });
 });

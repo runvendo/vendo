@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./types";
 import { composePolicy } from "./compose";
 
@@ -57,5 +57,21 @@ describe("composePolicy", () => {
   it("returns 'allow' when zero policies are composed", async () => {
     const policy = composePolicy();
     expect(await policy.evaluate(fakeCtx)).toBe("allow");
+  });
+
+  it("onExecuted awaits every layer that defines it and skips those that don't", async () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    const layerWithExec1: ApprovalPolicy = { evaluate: () => "allow", onExecuted: a };
+    const layerNoExec: ApprovalPolicy = { evaluate: () => "allow" }; // no onExecuted
+    const layerWithExec2: ApprovalPolicy = { evaluate: () => "allow", onExecuted: b };
+
+    const policy = composePolicy(layerWithExec1, layerNoExec, layerWithExec2);
+    await policy.onExecuted!(fakeCtx);
+
+    expect(a).toHaveBeenCalledOnce();
+    expect(a).toHaveBeenCalledWith(fakeCtx);
+    expect(b).toHaveBeenCalledOnce();
+    expect(b).toHaveBeenCalledWith(fakeCtx);
   });
 });

@@ -42,5 +42,12 @@ export function composePolicy(...policies: ApprovalPolicy[]): ApprovalPolicy {
 
       return BY_RANK[maxRank]!;
     },
+    async onExecuted(ctx: PolicyContext): Promise<void> {
+      // Propagate the post-execute signal to every layer that defines it so
+      // each can record that the call genuinely ran.
+      for (const policy of policies) {
+        await policy.onExecuted?.(ctx);
+      }
+    },
   };
 }

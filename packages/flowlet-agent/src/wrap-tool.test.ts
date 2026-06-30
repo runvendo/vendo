@@ -3,6 +3,7 @@ import { z } from "zod";
 import { tool, type Tool, type ToolExecutionOptions } from "ai";
 import { wrapTool } from "./wrap-tool";
 import type { ApprovalDecision, ApprovalPolicy } from "./policy";
+import { canonicalKey, createInMemoryDecisionStore, rememberDecisions } from "./policy";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError } from "./errors";
@@ -122,7 +123,7 @@ describe("wrapTool", () => {
     expect(allowSpy).toHaveBeenCalledOnce();
   });
 
-  it("preserves all SDK fields, overriding only needsApproval/execute", () => {
+  it("preserves all SDK fields, overriding only needsApproval/execute/toModelOutput", () => {
     const toModelOutput = () => ({ type: "text" as const, value: "x" });
     const original = {
       type: "function",
@@ -149,12 +150,177 @@ describe("wrapTool", () => {
     );
     expect(w.title).toBe("My Tool");
     expect(w.providerOptions).toEqual({ foo: { bar: "baz" } });
-    expect(w.toModelOutput).toBe(toModelOutput);
     expect((w as unknown as { customField: number }).customField).toBe(123);
     expect((w as { type?: string }).type).toBe("function");
     // overridden:
     expect(w.needsApproval).not.toBe(original.needsApproval);
     expect(w.execute).not.toBe(original.execute);
+    // toModelOutput is now wrapped (deny-payload guard), but delegates normal
+    // outputs to the original.
+    expect(w.toModelOutput).not.toBe(toModelOutput);
+    expect(
+      (w.toModelOutput as (o: unknown) => unknown)({
+        toolCallId: "c",
+        input: {},
+        output: "normal",
+      }),
+    ).toEqual({ type: "text", value: "x" });
+  });
+
+  it("when the original has no toModelOutput, the wrapped tool has none either (SDK default)", () => {
+    const original = tool({
+      inputSchema: z.object({ v: z.number() }),
+      execute: async () => "ok",
+    });
+    const w = wrapTool({
+      name: "t",
+      tool: original,
+      descriptor: descriptorFor(true),
+      policy: fixedPolicy("allow"),
+      principal,
+    });
+    expect(w.toModelOutput).toBeUndefined();
+  });
+
+  it("deny + custom toModelOutput: denial is converted to text and the original is NOT called", async () => {
+    const toModelOutput = vi.fn(() => ({ type: "text" as const, value: "original" }));
+    const original = {
+      type: "function",
+      inputSchema: z.object({ v: z.number() }),
+      execute: vi.fn(async () => "real-output"),
+      toModelOutput,
+    } as unknown as Tool;
+
+    const w = wrapTool({
+      name: "t",
+      tool: original,
+      descriptor: descriptorFor(true),
+      policy: fixedPolicy("deny"),
+      principal,
+    });
+
+    const denyPayload = await callExecute(w, { v: 1 }, opts);
+    expect(denyPayload).toMatchObject({ code: "policy_denied", tool: "t" });
+
+    // The SDK would feed the execute result into toModelOutput. The wrapped
+    // toModelOutput must safely convert the deny payload to text and NOT
+    // delegate the deny payload to the original toModelOutput.
+    const modelOutput = (w.toModelOutput as (o: unknown) => unknown)({
+      toolCallId: "c",
+      input: { v: 1 },
+      output: denyPayload,
+    });
+    expect(modelOutput).toMatchObject({ type: "text" });
+    expect((modelOutput as { value: string }).value).toContain("t");
+    expect(toModelOutput).not.toHaveBeenCalled();
+  });
+
+  it("onExecuted: fires after a successful (allow) execute with the same PolicyContext", async () => {
+    const onExecuted = vi.fn();
+    const policy: ApprovalPolicy = { evaluate: () => "allow", onExecuted };
+    const w = wrapTool({
+      name: "t",
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: async () => "ok" }),
+      descriptor: descriptorFor(true),
+      policy,
+      principal,
+    });
+
+    expect(await callExecute(w, { v: 7 }, opts)).toBe("ok");
+    expect(onExecuted).toHaveBeenCalledOnce();
+    expect(onExecuted).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: "t", input: { v: 7 }, principal }),
+    );
+  });
+
+  it("onExecuted: NOT fired for a deny decision (tool never ran)", async () => {
+    const onExecuted = vi.fn();
+    const spy = vi.fn(async () => "should-not-run");
+    const policy: ApprovalPolicy = { evaluate: () => "deny", onExecuted };
+    const w = wrapTool({
+      name: "t",
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+      descriptor: descriptorFor(true),
+      policy,
+      principal,
+    });
+
+    await callExecute(w, { v: 1 }, opts);
+    expect(spy).not.toHaveBeenCalled();
+    expect(onExecuted).not.toHaveBeenCalled();
+  });
+
+  it("onExecuted: NOT fired when the real execute throws", async () => {
+    const onExecuted = vi.fn();
+    const policy: ApprovalPolicy = { evaluate: () => "allow", onExecuted };
+    const w = wrapTool({
+      name: "t",
+      tool: tool({
+        inputSchema: z.object({}),
+        execute: async () => {
+          throw new Error("boom");
+        },
+      }),
+      descriptor: descriptorFor(true),
+      policy,
+      principal,
+    });
+
+    await expect(callExecute(w, {}, opts)).rejects.toThrow("boom");
+    expect(onExecuted).not.toHaveBeenCalled();
+  });
+
+  it("integration: rememberDecisions records on execute and suppresses the next prompt", async () => {
+    const store = createInMemoryDecisionStore();
+    const spy = vi.fn(async () => "ran");
+    const policy = rememberDecisions(fixedPolicy("approve"), store);
+    const input = { v: 1 };
+    const w = wrapTool({
+      name: "t",
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+      descriptor: descriptorFor(true),
+      policy,
+      principal,
+    });
+
+    // Ask turn: needs approval, nothing recorded yet.
+    expect(await callNeedsApproval(w, input)).toBe(true);
+    const key = canonicalKey(
+      { toolName: "t", input, descriptor: descriptorFor(true), principal },
+      "v1",
+    );
+    expect(await store.get(key)).toBeUndefined();
+
+    // Execute turn (post-approval): runs the tool AND records via onExecuted.
+    expect(await callExecute(w, input, opts)).toBe("ran");
+    expect(spy).toHaveBeenCalledOnce();
+    expect(await store.get(key)).toBe("approve");
+
+    // Next identical call no longer needs approval (suppressed).
+    expect(await callNeedsApproval(w, input)).toBe(false);
+  });
+
+  it("integration: a deny decision does NOT record and does NOT run the tool", async () => {
+    const store = createInMemoryDecisionStore();
+    const spy = vi.fn(async () => "ran");
+    const policy = rememberDecisions(fixedPolicy("deny"), store);
+    const input = { v: 1 };
+    const w = wrapTool({
+      name: "t",
+      tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+      descriptor: descriptorFor(true),
+      policy,
+      principal,
+    });
+
+    const res = await callExecute(w, input, opts);
+    expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
+    expect(spy).not.toHaveBeenCalled();
+    const key = canonicalKey(
+      { toolName: "t", input, descriptor: descriptorFor(true), principal },
+      "v1",
+    );
+    expect(await store.get(key)).toBeUndefined();
   });
 
   it("decisionCache: same input evaluates the policy once; a different input re-evaluates", async () => {

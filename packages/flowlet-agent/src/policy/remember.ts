@@ -1,14 +1,19 @@
 /**
  * Ask-once-remember policy layer for the Flowlet guardrail engine.
  *
- * After an `"approve"` decision has been issued once for a given
- * principal + tool + exact arguments combination, every subsequent
- * identical call is auto-allowed without prompting again.
+ * After a call has been APPROVED AND ACTUALLY EXECUTED once for a given
+ * principal + tool + exact arguments combination, every subsequent identical
+ * call is auto-allowed without prompting again.
  *
- * Security invariant: `"deny"` decisions are NEVER recorded.  Recording a
- * deny as a cached entry would risk turning it into an `"allow"` under a
- * future code path change.  Only `"approve"` is memoised; `"allow"` needs
- * no memoisation because it is already unconditional.
+ * Security invariants (fail-closed):
+ * - Recording happens ONLY in `onExecuted`, which `wrapTool` calls after the
+ *   real tool successfully runs. Nothing is recorded at ask/`evaluate` time, so
+ *   a call the user DENIES (execute skipped → `onExecuted` never fires) is never
+ *   memoised and will re-prompt if it recurs.
+ * - Suppression never overrides a currently-applicable `"deny"`: when a key is
+ *   remembered, `evaluate` re-runs the inner policy and lets a fresh `"deny"`
+ *   win (e.g. a role was revoked since the call first executed). Only a
+ *   non-deny decision is downgraded to `"allow"`.
  */
 
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
@@ -71,12 +76,15 @@ export function canonicalKey(ctx: PolicyContext, policyVersion: string): string 
  * Wrap `inner` with an ask-once-remember layer.
  *
  * Behaviour:
- * - If the store already holds a value for this (principal, tool, args, version)
- *   combination, return `"allow"` immediately — the user already approved it.
- * - Otherwise delegate to `inner`.  If the inner decision is `"approve"`,
- *   record it in the store (so the NEXT identical call is suppressed) and
- *   return `"approve"`.
- * - `"deny"` and `"allow"` from `inner` are passed through without recording.
+ * - `evaluate`: if the store already holds this (principal, tool, args, version)
+ *   key (the call has executed before), re-run `inner.evaluate` and return its
+ *   decision if it is `"deny"`, otherwise `"allow"` (suppress the re-prompt by
+ *   downgrading `approve`→`allow`, but let a now-applicable `deny` still win).
+ *   If the key is absent, delegate straight to `inner`. `evaluate` records
+ *   NOTHING.
+ * - `onExecuted`: record the key (the call genuinely ran), then propagate to
+ *   `inner.onExecuted`. This is the ONLY place a key is recorded, so a denied
+ *   call — whose `execute` the SDK skips — is never memoised.
  */
 export function rememberDecisions(
   inner: ApprovalPolicy,
@@ -89,17 +97,19 @@ export function rememberDecisions(
 
       const remembered = await store.get(key);
       if (remembered !== undefined) {
-        // A previous "approve" was already presented to the user — skip re-prompt.
-        return "allow";
+        // The call executed before. Re-run the inner policy so a freshly
+        // applicable deny (e.g. revoked role) still wins — fail-closed. Any
+        // non-deny decision is downgraded to "allow" to suppress the re-prompt.
+        const current = await inner.evaluate(ctx);
+        return current === "deny" ? "deny" : "allow";
       }
 
-      const decision = await inner.evaluate(ctx);
-
-      if (decision === "approve") {
-        await store.set(key, "approve");
-      }
-
-      return decision;
+      return inner.evaluate(ctx);
+    },
+    async onExecuted(ctx: PolicyContext): Promise<void> {
+      // Recorded only after a real, successful execute — never at ask time.
+      await store.set(canonicalKey(ctx, policyVersion), "approve");
+      await inner.onExecuted?.(ctx);
     },
   };
 }

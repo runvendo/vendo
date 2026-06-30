@@ -75,6 +75,14 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   // Stable, deterministic run identity without Math.random/Date.now.
   let runCounter = 0;
 
+  // Build the Composio client ONCE and reuse it across runs. `fetchTools` takes
+  // the `userId` per call, so reuse is safe (no cross-user leak), and
+  // `createComposioClient` is lazy (it never connects at construction). The
+  // injected-client path stays intact for tests.
+  const composioClient: ComposioClient | undefined = config.composio
+    ? config.composio.client ?? createComposioClient(config.composio.config)
+    : undefined;
+
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     const ordinal = ++runCounter;
     const runId = `run-${ordinal}`;
@@ -101,13 +109,11 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         // 4. Composio ingestion (fail-closed inside ingestComposioTools).
         let composioTools: ToolSet = {};
         let composioDescriptors: Record<string, ToolDescriptor> = {};
-        if (config.composio) {
-          const client =
-            config.composio.client ?? createComposioClient(config.composio.config);
+        if (config.composio && composioClient) {
           const ingested = await ingestComposioTools({
             principal,
             config: config.composio.config,
-            client,
+            client: composioClient,
           });
           composioTools = ingested.toolset;
           composioDescriptors = Object.fromEntries(
@@ -117,7 +123,8 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
 
         // 5. Sources in precedence order: caller > engine > composio.
         const sources: ToolSourceInput[] = [
-          { source: "caller", tools: input.tools },
+          // Defensive: a non-TS caller may omit `tools` entirely.
+          { source: "caller", tools: input.tools ?? {} },
           {
             source: "engine",
             tools: { ...config.tools, [RENDER_TOOL_NAME]: renderTool },
@@ -132,6 +139,16 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           principal,
           decisionCache,
           policyVersion: config.policyVersion,
+          // Surface dropped tools rather than discarding them silently.
+          onCollision: (name, kept, dropped) =>
+            console.warn(
+              `[flowlet] tool "${name}" from source "${dropped}" dropped: ` +
+                `name already claimed by higher-precedence source "${kept}".`,
+            ),
+          onSkip: (name, source, reason) =>
+            console.warn(
+              `[flowlet] tool "${name}" from source "${source}" skipped: ${reason}`,
+            ),
         });
 
         // 7. Drive the model->tool loop.
