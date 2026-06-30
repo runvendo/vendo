@@ -35,6 +35,16 @@ function buildPrompt(rules: string[], ctx: PolicyContext): string {
   ].join("\n");
 }
 
+/** Options for {@link naturalLanguagePolicy}. */
+export interface NaturalLanguagePolicyOptions {
+  /**
+   * Maximum judge-result cache entries before the least-recently-used is
+   * evicted. Bounds memory for high-cardinality tool inputs on a long-lived
+   * policy instance. Default 1000.
+   */
+  maxMemo?: number;
+}
+
 /**
  * Build a policy layer that consults a judge language model against a set of
  * plain-English rules. Fail-closed: any model error or unrecognised response
@@ -42,23 +52,43 @@ function buildPrompt(rules: string[], ctx: PolicyContext): string {
  *
  * @param rules      Plain-English guardrail rules, applied to every tool call.
  * @param judgeModel The language model used as the judge.
+ * @param opts       Optional tuning (e.g. the bounded memo size).
  */
 export function naturalLanguagePolicy(
   rules: string[],
   judgeModel: LanguageModel,
+  opts: NaturalLanguagePolicyOptions = {},
 ): ApprovalPolicy {
   // Memoise the judge's result so the (now always re-evaluating) deterministic
   // layers do not provoke a duplicate LLM call for an identical input. The
   // `rules` are fixed per policy instance, so the key is just the call shape.
   // Only SUCCESSFUL decisions are stored — a transient judge failure must not
-  // be cached as a permanent "deny".
+  // be cached as a permanent "deny". The cache is a BOUNDED LRU so memory stays
+  // capped no matter how many distinct inputs a long-lived policy sees.
+  const maxMemo = opts.maxMemo ?? 1000;
   const memo = new Map<string, ApprovalDecision>();
+
+  function remember(key: string, decision: ApprovalDecision): void {
+    // Evict the least-recently-used (oldest insertion) entry at capacity.
+    // `Map` preserves insertion order, and `evaluate` re-inserts on each hit,
+    // so the oldest key is the genuine LRU victim.
+    if (memo.size >= maxMemo) {
+      const lru = memo.keys().next().value;
+      if (lru !== undefined) memo.delete(lru);
+    }
+    memo.set(key, decision);
+  }
 
   return {
     async evaluate(ctx: PolicyContext): Promise<ApprovalDecision> {
       const key = JSON.stringify([ctx.toolName, ctx.input]);
       const cached = memo.get(key);
-      if (cached !== undefined) return cached;
+      if (cached !== undefined) {
+        // LRU refresh: re-insert so a hot entry survives eviction.
+        memo.delete(key);
+        memo.set(key, cached);
+        return cached;
+      }
 
       try {
         const { text } = await generateText({
@@ -73,7 +103,7 @@ export function naturalLanguagePolicy(
           : "deny"; // Unrecognised token — fail-closed.
 
         // Store only a successful evaluation (the model responded).
-        memo.set(key, result);
+        remember(key, result);
         return result;
       } catch {
         // Any model error — fail-closed (a broken judge must never allow), and

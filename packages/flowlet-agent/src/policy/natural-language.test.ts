@@ -139,4 +139,27 @@ describe("naturalLanguagePolicy", () => {
     expect(await policy.evaluate(fakeCtx)).toBe("allow");
     expect(spy).toHaveBeenCalledTimes(2);
   });
+
+  it("bounds the judge memo with LRU eviction so it cannot grow without limit", async () => {
+    const ctxWith = (id: number): PolicyContext => ({
+      ...fakeCtx,
+      input: { to: `user${id}@example.com` },
+    });
+    const { model, spy } = spyMock(() => "allow");
+    const policy = naturalLanguagePolicy(rules, model, { maxMemo: 2 });
+
+    await policy.evaluate(ctxWith(1)); // miss → memo [1]
+    await policy.evaluate(ctxWith(2)); // miss → memo [1,2]
+    await policy.evaluate(ctxWith(1)); // HIT → refresh recency → memo [2,1]
+    await policy.evaluate(ctxWith(3)); // miss → evict LRU (2) → memo [1,3]
+    expect(spy).toHaveBeenCalledTimes(3);
+
+    // input 1 was recently used, so it survived eviction → cache hit, no new call.
+    await policy.evaluate(ctxWith(1));
+    expect(spy).toHaveBeenCalledTimes(3);
+
+    // input 2 was the LRU victim → cache miss → the model is consulted again.
+    await policy.evaluate(ctxWith(2));
+    expect(spy).toHaveBeenCalledTimes(4);
+  });
 });
