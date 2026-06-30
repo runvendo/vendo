@@ -12,7 +12,7 @@ const FOCUSABLE =
  */
 export function useFocusTrap(
   active: boolean,
-  containerRef: RefObject<HTMLElement>,
+  containerRef: RefObject<HTMLElement | null>,
 ): void {
   useEffect(() => {
     if (!active) return;

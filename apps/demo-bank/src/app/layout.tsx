@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { AppShell } from "@/components/shell/app-shell"
+import { FlowletLayer } from "@/components/flowlet/FlowletLayer"
 import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-bg text-ink antialiased">
         <AppShell>{children}</AppShell>
+        <FlowletLayer />
       </body>
     </html>
   )
