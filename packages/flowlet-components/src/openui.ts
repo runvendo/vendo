@@ -17,6 +17,16 @@ import {
   Label as _Label,
   Input as _Input,
   TextArea as _TextArea,
+  Accordion as _Accordion,
+  AccordionItem as _AccordionItem,
+  AccordionTrigger as _AccordionTrigger,
+  AccordionContent as _AccordionContent,
+  Carousel as _Carousel,
+  CarouselContent as _CarouselContent,
+  CarouselItem as _CarouselItem,
+  Callout as _Callout,
+  Steps as _Steps,
+  StepsItem as _StepsItem,
 } from "@openuidev/react-ui";
 import type {
   CardProps,
@@ -69,3 +79,32 @@ export const BarChart = ui<BarChartProps<ChartRecord[]>>(_BarChart);
 export const LineChart = ui<LineChartProps<ChartRecord[]>>(_LineChart);
 export const AreaChart = ui<AreaChartProps<ChartRecord[]>>(_AreaChart);
 export const PieChart = ui<PieChartProps<ChartRecord[]>>(_PieChart);
+
+// Accordion
+export const Accordion = ui<{
+  type: "single" | "multiple";
+  variant?: "clear" | "card" | "sunk";
+  collapsible?: boolean;
+  defaultValue?: string | string[];
+  children?: ReactNode;
+}>(_Accordion);
+export const AccordionItem = ui<{ value: string; className?: string; children?: ReactNode }>(_AccordionItem);
+export const AccordionTrigger = ui<{ text: ReactNode; icon?: ReactNode; className?: string }>(_AccordionTrigger);
+export const AccordionContent = ui<{ className?: string; children?: ReactNode }>(_AccordionContent);
+
+// Carousel
+export const Carousel = ui<{ children?: ReactNode; variant?: "card" | "sunk"; showButtons?: boolean }>(_Carousel);
+export const CarouselContent = ui<{ children?: ReactNode; className?: string }>(_CarouselContent);
+export const CarouselItem = ui<{ children?: ReactNode; className?: string }>(_CarouselItem);
+
+// Callout
+export const Callout = ui<{
+  variant?: "info" | "danger" | "warning" | "success" | "neutral";
+  title?: ReactNode;
+  description?: ReactNode;
+  className?: string;
+}>(_Callout);
+
+// Steps
+export const Steps = ui<{ children: ReactNode }>(_Steps);
+export const StepsItem = ui<{ title: ReactNode; details: ReactNode; number?: number }>(_StepsItem);
