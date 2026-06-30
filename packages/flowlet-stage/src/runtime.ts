@@ -88,6 +88,54 @@ export const STAGE_RUNTIME_SRC = String.raw`
     });
   }
 
+  // ── Built-in prewired primitives ──────────────────────────────────────────────
+  // Layout/text/skeleton components referenced by name when node.source === "prewired".
+  // Each reads window.__React at call time (React isn't available at module-eval time).
+  var PRIMITIVES = {
+    Stack: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Stack",
+        style: { display: "flex", flexDirection: "column", gap: props.gap || "8px" }
+      }, props.children);
+    },
+    Row: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Row",
+        style: { display: "flex", flexDirection: "row", gap: props.gap || "8px", alignItems: props.align || "stretch" }
+      }, props.children);
+    },
+    Grid: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Grid",
+        style: { display: "grid", gridTemplateColumns: "repeat(" + (props.columns || 2) + ", 1fr)", gap: props.gap || "8px" }
+      }, props.children);
+    },
+    Text: function(props) {
+      var R = window.__React;
+      return R.createElement(props.as || "span", {
+        "data-primitive": "Text",
+        style: { color: "var(--brand-text, inherit)" }
+      }, props.text != null ? props.text : props.children);
+    },
+    Skeleton: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Skeleton",
+        "data-skeleton": "true",
+        "aria-hidden": "true",
+        style: {
+          background: "var(--brand-skeleton, rgba(0,0,0,0.08))",
+          minHeight: props.height || "16px",
+          width: props.width || "100%",
+          borderRadius: "4px"
+        }
+      });
+    }
+  };
+
   // ── Renderer ─────────────────────────────────────────────────────────────────
   // host is cached after first bundle load so re-renders don't re-fetch.
   var cachedHost = null;
@@ -96,7 +144,9 @@ export const STAGE_RUNTIME_SRC = String.raw`
     var React = window.__React;
     function toElement(node) {
       if (node.kind === "component") {
-        var Impl = host[node.name];
+        // Prewired primitives resolve against the built-in PRIMITIVES table first;
+        // every other name (incl. prewired __row/__badge) falls back to the host bundle.
+        var Impl = (node.source === "prewired" && PRIMITIVES[node.name]) ? PRIMITIVES[node.name] : host[node.name];
         if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
         var boundProps = bindProps(node.props, params.state);
         boundProps.__nodeId = node.id;

@@ -11,6 +11,17 @@ describe("stage runtime source", () => {
       "ResizeObserver", "$state", "getDerivedStateFromError", "__React",
     ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
   });
+  it("defines the built-in prewired primitives", () => {
+    for (const marker of [
+      "PRIMITIVES", "Stack", "Row", "Grid", "Text", "Skeleton",
+      "data-skeleton", "data-primitive",
+    ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
+  });
+  it("resolves prewired names against primitives first, falling back to host", () => {
+    expect(STAGE_RUNTIME_SRC).toContain('node.source === "prewired"');
+    // Fallback to the host bundle (e.g. __row/__badge) must be preserved.
+    expect(STAGE_RUNTIME_SRC).toContain("host[node.name]");
+  });
 });
 
 describe("$state prop binding (bindProps)", () => {
