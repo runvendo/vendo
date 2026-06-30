@@ -10,3 +10,7 @@ dist
 
 # misc
 .superpowers/
+
+# browser-verification artifacts
+.playwright-mcp/
+*.png
