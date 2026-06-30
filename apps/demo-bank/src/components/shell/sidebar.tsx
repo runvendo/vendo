@@ -33,7 +33,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const { data: profile } = useProfile()
   return (
-    <aside className="flex h-screen w-16 shrink-0 flex-col overflow-hidden border-r border-border bg-surface lg:w-[248px]">
+    <aside className="sticky top-0 flex h-screen w-16 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface lg:w-[248px]">
       <div className="flex items-center justify-center gap-2.5 px-0 py-5 lg:justify-start lg:px-5">
         <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[8px] bg-ink text-[15px] font-bold text-white">
           <MapleMark className="h-3.5 w-3.5 text-white" />
