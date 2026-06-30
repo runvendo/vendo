@@ -1,0 +1,35 @@
+import { describe, it, expect } from "vitest";
+import type { FlowletUIMessage } from "@flowlet/core";
+import { toThreadItems } from "./use-flowlet-thread";
+
+const msg = (id: string, role: "user" | "assistant", parts: unknown[]): FlowletUIMessage =>
+  ({ id, role, parts } as unknown as FlowletUIMessage);
+
+describe("toThreadItems", () => {
+  it("flattens text parts with role", () => {
+    const items = toThreadItems([msg("m1", "user", [{ type: "text", text: "hi" }])]);
+    expect(items).toEqual([{ kind: "text", key: "m1:0", role: "user", text: "hi" }]);
+  });
+
+  it("emits an approval item for a tool part awaiting approval", () => {
+    const items = toThreadItems([
+      msg("m2", "assistant", [
+        { type: "tool-budgetCreate", state: "approval-requested", approval: { id: "a1" }, input: { cap: 2000 } },
+      ]),
+    ]);
+    expect(items[0]).toEqual({
+      kind: "approval", key: "m2:0", approvalId: "a1", toolName: "budgetCreate", input: { cap: 2000 },
+    });
+  });
+
+  it("emits a tool item for other tool states and a ui item for data-ui", () => {
+    const items = toThreadItems([
+      msg("m3", "assistant", [
+        { type: "tool-budgetCreate", state: "output-available" },
+        { type: "data-ui", id: "ui-1", data: { id: "ui-1", kind: "component", source: "prewired", name: "Card", props: {} } },
+      ]),
+    ]);
+    expect(items[0]).toEqual({ kind: "tool", key: "m3:0", toolName: "budgetCreate", state: "output-available" });
+    expect(items[1]).toMatchObject({ kind: "ui", key: "m3:1" });
+  });
+});
