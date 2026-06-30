@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { FlowletThread, type FlowletThreadProps } from "../FlowletThread";
+import { useFocusTrap } from "../use-focus-trap";
 
 export interface FlowletOverlayProps extends FlowletThreadProps {
   launcherLabel?: string;
@@ -22,9 +23,7 @@ export function FlowletOverlay({ launcherLabel = "Ask", shortcutKey = "k", ...th
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcutKey]);
 
-  useEffect(() => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
+  useFocusTrap(open, panelRef);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") setOpen(false);

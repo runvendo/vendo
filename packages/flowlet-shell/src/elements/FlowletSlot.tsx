@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { UINode } from "@flowlet/core";
 import { UINodeView } from "../components/UINodeView";
 import { FlowletThread } from "../FlowletThread";
+import { useFocusTrap } from "../use-focus-trap";
 
 export interface FlowletSlotProps {
   flowletId: string;
@@ -11,6 +12,8 @@ export interface FlowletSlotProps {
 
 export function FlowletSlot({ flowletId, savedNode, emptyLabel = "Design a flowlet here" }: FlowletSlotProps) {
   const [designing, setDesigning] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(designing, panelRef);
 
   return (
     <div className="fl-slot" data-flowlet-id={flowletId}>
@@ -31,6 +34,7 @@ export function FlowletSlot({ flowletId, savedNode, emptyLabel = "Design a flowl
             aria-modal="true"
             aria-label="Design flowlet"
             tabIndex={-1}
+            ref={panelRef}
             onKeyDown={(e) => { if (e.key === "Escape") setDesigning(false); }}
           >
             <FlowletThread greeting="What should this flowlet show?" />

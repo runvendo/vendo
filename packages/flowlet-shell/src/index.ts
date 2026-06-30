@@ -27,3 +27,4 @@ export * from "./FlowletThread";
 export * from "./elements/FlowletOverlay";
 export * from "./elements/FlowletSlot";
 export * from "./elements/FlowletPage";
+export * from "./use-focus-trap";
