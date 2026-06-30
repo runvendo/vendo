@@ -37,6 +37,8 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
             );
           case "ui":
             return <UINodeView key={item.key} node={item.node} />;
+          case "error":
+            return <div key={item.key} className="fl-error" role="alert">{item.message}</div>;
         }
       })}
     </div>

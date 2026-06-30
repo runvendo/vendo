@@ -51,6 +51,11 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
         />
       )}
       <IntegrationsRail integrations={tools} onConnectClick={() => setPickerOpen(true)} />
+      {chat.status === "error" && (
+        <div className="fl-error" role="alert">
+          {chat.error?.message ?? "Something went wrong. Try again."}
+        </div>
+      )}
       <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />
     </div>
   );

@@ -80,3 +80,5 @@
 .fl-slot-empty { border: 1.5px dashed var(--flowlet-fg-muted); border-radius: var(--flowlet-radius);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   padding: 22px; cursor: pointer; background: var(--flowlet-surface); color: var(--flowlet-fg); }
+.fl-error { margin: 8px 12px; padding: 9px 12px; border-radius: var(--flowlet-radius);
+  border: 1px solid #f0caca; background: #fff5f5; color: #9b1c1c; font-size: 12.5px; }

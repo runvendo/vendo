@@ -22,6 +22,11 @@ describe("toThreadItems", () => {
     });
   });
 
+  it("emits an error item for an error part", () => {
+    const items = toThreadItems([msg("m0", "assistant", [{ type: "error", errorText: "boom" }])]);
+    expect(items[0]).toEqual({ kind: "error", key: "m0:0", message: "boom" });
+  });
+
   it("emits a tool item for other tool states and a ui item for data-ui", () => {
     const items = toThreadItems([
       msg("m3", "assistant", [
