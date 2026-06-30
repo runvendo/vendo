@@ -82,16 +82,19 @@ generated UI renders in the sandbox (replacing the non-production fallback).
 
 ### Beat 1 — Generative UI: the radial clock
 A new prewired **`TimeOfDayClock`** component in `@flowlet/components` (24-hour radial
-clock, late-night hours lit, a fat **$87 dot at 3:39 AM**). The agent selects it via
+clock, late-night hours lit, a fat **$87 dot at 1:14 AM**). The agent selects it via
 `render_ui` and supplies the data. **Hybrid approach:** prewired now for stage
 reliability; the F3b generated-UI path is wired so the same beat can run as true generated
 UI once ENG-180 merges. Demoed as generated; prewired is the never-fails fallback.
 
 ### Beat 2 — Gmail is the hero
-The agent calls Composio Gmail, finds the **real 3:39 AM** DoorDash receipt in the inbox,
-and renders an itemized card (prewired `Card` / `List`): *six Crunchwraps, four nachos,
-two Baja Blasts. Party of one.* The bank only ever saw "DOORDASH — $87"; the detail comes
-from outside the bank.
+The agent calls Composio Gmail, finds the **real** DoorDash receipt in the inbox (verified
+present: "Your DoorDash order from Taco Bell has been delivered"), and renders an itemized
+card (prewired `Card` / `List`) from the receipt's real contents: *6 Crunchwrap Supreme
+$38.94, 4 Nachos BellGrande $23.96, 2 Baja Blast (Large) $5.58 … Total $87.00. Party size:
+1 — ordered 1:14 AM.* The bank only ever saw "DOORDASH — $87"; the detail comes from
+outside the bank. The agent surfaces the receipt's stated **order time (1:14 AM)**, not the
+email's later delivery/received timestamp.
 
 ### Beat 3 — The snitch + live action
 The agent sets a natural-language rule ("post to #general on any late-night delivery"),
@@ -104,11 +107,13 @@ transaction's late-night timestamp, and fires a **real Composio Slack message to
 
 ## The planted data
 
-The seeded charge `txn_doordash_87` is **re-timed from 1:14 AM to 3:39 AM** to match the
-real Gmail receipt, so Beat 1 (bank dot) and Beat 2 (receipt) show the same time on stage.
-The Notion script's "1:14am" references are updated to "3:39am". Everything else about the
-seed (amount −8700, category dining, descriptor `DOORDASH*ORDER 8742 CA`, most-recent
-position) is unchanged and deterministic.
+The seeded charge `txn_doordash_87` stays at its original **1:14 AM** — which already
+matches both the real Gmail receipt ("Ordered at 1:14 AM") and the Notion script copy. No
+re-timing is needed. (An earlier plan to shift to 3:39 AM was based on the email's
+*received* timestamp; the receipt body itself says the order was placed at 1:14 AM, so 1:14
+is the single consistent time across Beat 1's bank dot, Beat 2's receipt, and the script.)
+Everything about the seed (amount −8700, category dining, descriptor
+`DOORDASH*ORDER 8742 CA`, most-recent position) is unchanged and deterministic.
 
 ## Integrations status in the UI
 
