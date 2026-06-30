@@ -218,12 +218,24 @@
 
 /* ---------- overlay (clipping fixed: bounded height, scrolls) ---------- */
 .fl-overlay-scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--flowlet-fg) 22%, transparent);
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 2147483000; }
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 2147483000;
+  animation: fl-scrim-in .2s ease both; }
 .fl-overlay-panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2147483001;
   width: min(620px, 94vw); height: min(680px, 86vh); display: flex; flex-direction: column;
   background: var(--flowlet-glass); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
   border: 1px solid var(--flowlet-border-strong); border-radius: 20px; overflow: hidden;
-  box-shadow: 0 30px 80px color-mix(in srgb, var(--flowlet-fg) 28%, transparent); }
+  box-shadow: 0 30px 80px color-mix(in srgb, var(--flowlet-fg) 28%, transparent);
+  /* open animation — "stretch": grow from a thin centered sliver with overshoot */
+  transform-origin: center; animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
+@keyframes fl-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fl-overlay-stretch {
+  from { transform: translate(-50%, -50%) scaleX(.06) scaleY(.7); opacity: .4; }
+  60%  { opacity: 1; }
+  to   { transform: translate(-50%, -50%) scaleX(1) scaleY(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .fl-overlay-panel { animation: fl-overlay-fade .18s ease both; }
+  @keyframes fl-overlay-fade { from { opacity: 0; } to { opacity: 1; } }
+}
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--flowlet-fg);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
