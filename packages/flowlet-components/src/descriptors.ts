@@ -15,8 +15,10 @@ import { imageGalleryDescriptor } from "./components/ImageGallery/descriptor";
 import { markdownDescriptor } from "./components/Markdown/descriptor";
 import { codeBlockDescriptor } from "./components/CodeBlock/descriptor";
 import { tabsDescriptor } from "./components/Tabs/descriptor";
+import { timeOfDayClockDescriptor } from "./components/TimeOfDayClock/descriptor";
 
 export const descriptors: PrewiredDescriptor[] = [
+  timeOfDayClockDescriptor,
   cardDescriptor,
   tableDescriptor,
   chartDescriptor,

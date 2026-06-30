@@ -12,14 +12,13 @@
  * are trusted, so they render directly. The sandboxed FlowletStage is reserved
  * for untrusted *generated* UI (the F3b path, wired when ENG-180 lands).
  */
-import { useMemo, type ComponentType, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
 import { FlowletShellProvider, createLocalIntegrations } from "@flowlet/shell";
-import { prewiredComponents, prewiredImpls } from "@flowlet/components";
-
-const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
+import { prewiredComponents } from "@flowlet/components";
+import { renderNode } from "./render-node";
 
 export function FlowletRoot({ children }: { children: ReactNode }) {
   const transport = useMemo(
@@ -39,7 +38,7 @@ export function FlowletRoot({ children }: { children: ReactNode }) {
 
   return (
     <FlowletProvider transport={transport} components={prewiredComponents}>
-      <FlowletShellProvider impls={impls} integrations={integrations}>
+      <FlowletShellProvider renderNode={renderNode} integrations={integrations}>
         {children}
       </FlowletShellProvider>
     </FlowletProvider>
