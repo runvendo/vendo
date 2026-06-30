@@ -5,12 +5,39 @@ export const STAGE_RUNTIME_SRC = String.raw`
   root.style.minHeight = "1px";
   document.body.appendChild(root);
 
+  function injectTheme(theme) {
+    var style = document.createElement("style");
+    style.textContent = ":root{" + Object.keys(theme || {}).map(function(k){return k+":"+theme[k];}).join(";") + "}";
+    document.head.appendChild(style);
+  }
+  async function loadBundle(src) {
+    if (!src) return {};
+    var url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+    await import(/* @vite-ignore */ url); // executes; sets window.__React/__createRoot/__FLOWLET_HOST__
+    return window.__FLOWLET_HOST__ || {};
+  }
+  async function render(params) {
+    injectTheme(params.theme || {});
+    var host = await loadBundle(params.bundleSource);
+    var React = window.__React, createRoot = window.__createRoot;
+    function toElement(node) {
+      if (node.kind === "component") {
+        var Impl = host[node.name];
+        if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
+        return React.createElement(Impl, node.props || {});
+      }
+      return React.createElement("div", { "data-generated": true }, "[generated]");
+    }
+    createRoot(document.getElementById("stage-root")).render(toElement(params.tree));
+  }
+
   window.addEventListener("message", function (e) {
     var m = e.data; if (!m || !m.flowlet) return;
     if (m.method === "ui/initialize") {
       window.__flowletInit = m.params;
       parent.postMessage({ flowlet: true, id: m.id, result: { ok: true } }, "*");
       parent.postMessage({ flowlet: true, type: "init-ack" }, "*");
+      render(m.params).catch(function(err){ console.error("[flowlet] render error", err); });
     }
   });
 
