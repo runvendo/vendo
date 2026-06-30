@@ -69,7 +69,7 @@ A `component` name resolves in order:
 
 This is ENG-180's "reference registered components by name inside a generated tree / fast meshing of pre-built + generated UI": a generated tree drops `{ component: "AccountCard", source: "host" }` between `{ component: "Stack" }` nodes, in one walk. An unknown name renders a contained error placeholder (§6), never crashes the tree.
 
-**Prop validation:** when a node resolves to a `RegisteredComponent`, its bound props validate against the descriptor's `propsSchema` (zod) before mount; a failure is a typed per-node error, not a thrown render.
+**Prop validation:** when a node resolves to a `RegisteredComponent`, its bound props validate against the descriptor's `propsSchema` (zod, via the Standard Schema `~standard` interface) before mount; a failure replaces the node with a contained per-node error placeholder, not a thrown render. Only synchronous schemas are validated in v1 — a schema whose `validate` returns a Promise is skipped (left unvalidated) rather than awaited.
 
 ## 4. Architecture — host-side resolution, in-sandbox mount
 

@@ -12,6 +12,7 @@ import {
   resolveGeneratedPayload,
   validateGeneratedPayload,
   type GeneratedPayload,
+  type RegisteredComponent,
   type UINode,
 } from "@flowlet/core";
 
@@ -38,9 +39,71 @@ function pointersOverlap(pointer: string, path: string): boolean {
   );
 }
 
-export function createGenUISession(payload: unknown): CreateGenUISessionResult {
+/** A contained placeholder for a host node whose props failed registry validation. */
+const invalidPropsNode = (id: string, name: string): UINode => ({
+  id,
+  kind: "component",
+  source: "prewired",
+  name: "Text",
+  props: { text: `[invalid props: ${name}]` },
+});
+
+/**
+ * Walk a resolved `UINode` tree and, for each `source === "host"` node whose
+ * name is in the registry, validate its already-bound props against the
+ * descriptor's `propsSchema` via Standard Schema. A node that fails is REPLACED
+ * by a contained error placeholder (siblings unaffected). Nodes not in the
+ * registry are left as-is (unknown names are handled at runtime). Only SYNCHRONOUS
+ * schemas are validated in v1: if `validate` returns a Promise the node is left
+ * unchanged. Returns the original node reference when nothing changed.
+ */
+function validateHostProps(
+  node: UINode,
+  registry: ReadonlyMap<string, RegisteredComponent>,
+): UINode {
+  if (node.kind !== "component") return node;
+
+  const children = node.children;
+  let nextChildren = children;
+  if (children !== undefined) {
+    let changed = false;
+    const mapped = children.map((child) => {
+      const v = validateHostProps(child, registry);
+      if (v !== child) changed = true;
+      return v;
+    });
+    if (changed) nextChildren = mapped;
+  }
+
+  if (node.source === "host") {
+    const descriptor = registry.get(node.name);
+    if (descriptor !== undefined) {
+      const result = descriptor.propsSchema["~standard"].validate(node.props);
+      // Async schemas are not validated in v1 — a Promise means skip this node.
+      if (!(result instanceof Promise) && result.issues) {
+        return invalidPropsNode(node.id, node.name);
+      }
+    }
+  }
+
+  return nextChildren === children ? node : { ...node, children: nextChildren };
+}
+
+export interface CreateGenUISessionOptions {
+  /** F1 component registry; host-node props are validated against descriptors. */
+  registry?: RegisteredComponent[];
+}
+
+export function createGenUISession(
+  payload: unknown,
+  opts?: CreateGenUISessionOptions,
+): CreateGenUISessionResult {
   const validation = validateGeneratedPayload(payload);
   if (!validation.ok) return { ok: false, error: validation.error };
+
+  const registry = new Map<string, RegisteredComponent>(
+    (opts?.registry ?? []).map((c) => [c.name, c]),
+  );
 
   const base: GeneratedPayload = validation.payload;
   let data: Record<string, unknown> = base.data ?? {};
@@ -62,7 +125,7 @@ export function createGenUISession(payload: unknown): CreateGenUISessionResult {
   // untrusted input escape session creation — surface it as a provision error.
   let tree: UINode;
   try {
-    tree = resolveGeneratedPayload({ ...base, data });
+    tree = validateHostProps(resolveGeneratedPayload({ ...base, data }), registry);
   } catch (err) {
     return {
       ok: false,
@@ -93,7 +156,10 @@ export function createGenUISession(payload: unknown): CreateGenUISessionResult {
           .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
           .map((nodeId) => ({
             nodeId,
-            node: resolveGeneratedPayload({ ...base, root: nodeId, data }),
+            node: validateHostProps(
+              resolveGeneratedPayload({ ...base, root: nodeId, data }),
+              registry,
+            ),
           }));
       } catch {
         // Defense-in-depth: never let a resolve throw escape a data patch.

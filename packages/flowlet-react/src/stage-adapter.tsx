@@ -13,6 +13,7 @@ import {
   resolvePointer,
   type UINode,
   type GeneratedPayload,
+  type RegisteredComponent,
 } from "@flowlet/core";
 
 /** Stable structural fingerprint of a payload's node graph (data excluded). */
@@ -25,6 +26,8 @@ export interface FlowletStageProps {
   theme?: Record<string, string>;
   state?: Record<string, unknown>;
   onAction?: OnAction;
+  /** F1 component registry; generated host-node props are validated against it. */
+  components?: RegisteredComponent[];
 }
 
 export function FlowletStage({
@@ -34,6 +37,7 @@ export function FlowletStage({
   theme = {},
   state = {},
   onAction,
+  components,
 }: FlowletStageProps) {
   const slotRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<StageController | null>(null);
@@ -97,7 +101,7 @@ export function FlowletStage({
             nodesKey(prev) === nodesKey(payload);
 
           if (!sameStructure) {
-            const result = createGenUISession(node.payload);
+            const result = createGenUISession(node.payload, { registry: components });
             if (!result.ok) {
               // Surface the validation error AND render a visible top-level error
               // node (spec §6) instead of silently leaving a stale/blank tree.
