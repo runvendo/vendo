@@ -13,6 +13,7 @@ import { z } from "zod";
 import { listTransactions } from "@/server/transactions";
 import { pacificHour, pacificTimeLabel } from "./time";
 import { addRule } from "./rules-store";
+import { connect as connectToolkit } from "./connections-store";
 
 const getTransactions = tool({
   description:
@@ -54,6 +55,9 @@ const setRule = tool({
   }),
   execute: async ({ description, channel, trigger }) => {
     const rule = addRule({ description, channel, trigger });
+    // A Slack automation implies Slack is in use — reflect it as connected so the
+    // rail shows it (the automation posts via Composio, which is authorized).
+    connectToolkit("slack");
     return {
       ok: true,
       ruleId: rule.id,

@@ -47,6 +47,11 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
     window.addEventListener("flowlet:integrations-changed", onChange);
     return () => window.removeEventListener("flowlet:integrations-changed", onChange);
   }, [integrations]); // eslint-disable-line react-hooks/exhaustive-deps
+  // After each turn completes, re-list — a turn may have connected a tool
+  // server-side (e.g. setting a Slack automation), and the rail should reflect it.
+  useEffect(() => {
+    if (chat.status === "ready") refresh();
+  }, [chat.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = (text: string) => { void chat.sendMessage({ text }); };
   const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };

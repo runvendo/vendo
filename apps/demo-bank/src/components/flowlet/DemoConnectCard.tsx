@@ -12,6 +12,7 @@
  * so the Integrations rail can refresh.
  */
 import { useState } from "react";
+import { useFlowletChat } from "@flowlet/react";
 import { ConnectCard, type Integration } from "@flowlet/shell";
 import { runConnectFlow } from "./connect-flow";
 
@@ -37,15 +38,19 @@ type Status = "idle" | "connecting" | "connected" | "needs-auth" | "error";
 export function DemoConnectCard({ toolkit, reason }: { toolkit: string; reason?: string }) {
   const [status, setStatus] = useState<Status>("idle");
   const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const { sendMessage } = useFlowletChat();
   const name = NAMES[toolkit] ?? toolkit;
   const integration: Integration = { id: toolkit, name, connected: status === "connected" };
 
-  function announceConnected() {
+  function onConnected() {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("flowlet:integrations-changed", { detail: { id: toolkit } }),
       );
     }
+    // Auto-continue: the agent now has the tool, so pick up where we left off
+    // instead of making the user re-ask.
+    void sendMessage({ text: `I've connected ${name}. Go ahead and continue.` });
   }
 
   async function connect() {
@@ -54,7 +59,7 @@ export function DemoConnectCard({ toolkit, reason }: { toolkit: string; reason?:
       const outcome = await runConnectFlow(toolkit);
       if (outcome.result === "active") {
         setStatus("connected");
-        announceConnected();
+        onConnected();
       } else if (outcome.result === "needs-auth") {
         setAuthUrl(outcome.redirectUrl);
         setStatus("needs-auth");
