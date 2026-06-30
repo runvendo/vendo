@@ -2,10 +2,23 @@
 import { Snowflake } from "lucide-react"
 import type { Card } from "@/server/types"
 import { cn } from "@/lib/cn"
-import { BrandLogo } from "@/components/ui/brand-logo"
-import { networkDomain } from "@/lib/logos"
 
 const CARDHOLDER = "YOUSEF HELAL"
+
+/** Crisp card network mark drawn directly (favicons look muddy on the card face). */
+function CardNetwork({ network }: { network: Card["network"] }) {
+  if (network === "mastercard") {
+    return (
+      <svg viewBox="0 0 48 30" className="h-7 w-auto" aria-label="Mastercard">
+        <circle cx="19" cy="15" r="11" fill="#EB001B" />
+        <circle cx="29" cy="15" r="11" fill="#F79E1B" fillOpacity="0.85" />
+      </svg>
+    )
+  }
+  return (
+    <span className="text-[22px] font-bold italic leading-none tracking-wide text-white">VISA</span>
+  )
+}
 
 export function CardVisual({ card, revealed }: { card: Card; revealed?: boolean }) {
   const isAmber = card.design === "amber"
@@ -53,8 +66,7 @@ export function CardVisual({ card, revealed }: { card: Card; revealed?: boolean 
               Exp <span className="tabular-nums">{exp}</span>
             </div>
           </div>
-          <BrandLogo domain={networkDomain(card.network)} alt={card.network} size={36} rounded="rounded-md"
-            fallback={<span className="text-white font-bold italic tracking-wide">{card.network === "mastercard" ? "Mastercard" : "VISA"}</span>} />
+          <CardNetwork network={card.network} />
         </div>
       </div>
 
