@@ -12,6 +12,7 @@ import { List } from "./components/List/impl";
 import { Image } from "./components/Image/impl";
 import { ImageGallery } from "./components/ImageGallery/impl";
 import { Markdown } from "./components/Markdown/impl";
+import { CodeBlock } from "./components/CodeBlock/impl";
 
 export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>>> = {
   Card,
@@ -27,4 +28,5 @@ export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>
   Image,
   ImageGallery,
   Markdown,
+  CodeBlock,
 };
