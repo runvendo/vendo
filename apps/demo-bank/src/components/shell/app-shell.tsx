@@ -11,16 +11,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = React.useState(false)
   const pathname = usePathname()
 
-  React.useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        setPaletteOpen((o) => !o)
-      }
-    }
-    document.addEventListener("keydown", onKeyDown)
-    return () => document.removeEventListener("keydown", onKeyDown)
-  }, [])
+  // Cmd/Ctrl+K is owned by the Flowlet overlay in this demo. Maple's command
+  // palette stays reachable via the topbar search button.
 
   return (
     <TooltipProvider>

@@ -39,6 +39,13 @@ describe("prewired contract", () => {
 describe("JSON round-trip contract (§8)", () => {
   /** Minimal valid props for each descriptor, keyed by descriptor name. */
   const samples: Record<string, unknown> = {
+    TimeOfDayClock: {
+      title: "When you spend",
+      points: [
+        { hour: 9, amount: 12 },
+        { hour: 1.23, amount: 87, label: "DoorDash", highlight: true },
+      ],
+    },
     Card: { title: "My Card" },
     Table: {
       columns: [{ key: "name", label: "Name" }],
