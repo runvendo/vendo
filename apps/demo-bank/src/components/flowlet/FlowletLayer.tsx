@@ -6,11 +6,14 @@
  * backstage order-inject fallback. Mounted once in the root layout so it floats
  * above the untouched bank UI — the "we dropped in one layer" thesis, literally.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { FlowletOverlay } from "@flowlet/shell";
 import { FlowletRoot } from "./FlowletRoot";
 import { FlowletDock } from "./FlowletDock";
 import { FlowletPoller, type FireEvent } from "./FlowletPoller";
+import { FlowletSaver, type SavedView } from "./FlowletSaver";
+import { SavedViews } from "./SavedViews";
 import { resetDemo } from "./reset";
 
 const SUGGESTIONS = [
@@ -20,6 +23,14 @@ const SUGGESTIONS = [
 
 export function FlowletLayer() {
   const [fire, setFire] = useState<FireEvent | null>(null);
+  const [saved, setSaved] = useState<SavedView[]>([]);
+  const pathname = usePathname();
+  // On the dedicated Flowlet tab, that page IS the surface — hide the floating dock.
+  const showDock = pathname !== "/flowlet";
+
+  const addSaved = useCallback((v: SavedView) => {
+    setSaved((prev) => (prev.some((s) => s.id === v.id) ? prev : [...prev, v]));
+  }, []);
 
   // Stage shortcuts:
   //  - Cmd/Ctrl+Shift+Backslash: backstage inject of a late-night order (same
@@ -47,7 +58,9 @@ export function FlowletLayer() {
   return (
     <FlowletRoot>
       <FlowletPoller onFire={setFire} />
-      <FlowletDock fire={fire} onDismissFire={() => setFire(null)} />
+      <FlowletSaver onSave={addSaved} />
+      {showDock ? <FlowletDock fire={fire} onDismissFire={() => setFire(null)} /> : null}
+      {showDock ? <SavedViews views={saved} /> : null}
       {/* Secondary surface: same agent + thread, reachable anywhere via Cmd/Ctrl+K. */}
       <FlowletOverlay
         shortcutKey="k"

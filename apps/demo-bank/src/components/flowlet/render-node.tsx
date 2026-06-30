@@ -12,10 +12,24 @@
  * lands they show a placeholder.
  */
 import type { ComponentType, ReactNode } from "react";
+import { motion } from "framer-motion";
 import type { UINode } from "@flowlet/core";
 import { prewiredImpls } from "@flowlet/components";
 
 const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
+
+/** Tasteful entrance so each generated view "arrives" rather than popping in. */
+function Reveal({ children }: { children: ReactNode }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 function coerceProps(props: unknown): Record<string, unknown> {
   if (typeof props === "string") {
@@ -34,7 +48,11 @@ export function renderNode(node: UINode): ReactNode {
   if (node.kind === "component") {
     const Impl = impls[node.name];
     if (!Impl) return <div data-testid="unimpl-node">{node.name} (no impl)</div>;
-    return <Impl {...coerceProps(node.props)} />;
+    return (
+      <Reveal>
+        <Impl {...coerceProps(node.props)} />
+      </Reveal>
+    );
   }
   return <div data-testid="generated-placeholder">[generated UI — rendered in the F3b sandbox]</div>;
 }

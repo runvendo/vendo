@@ -6,6 +6,7 @@
  * on-stage surface. It renders the shared shell thread, so generated views show
  * up here as cards. When a rule fires, a confirmation banner drops in on top.
  */
+import { AnimatePresence, motion } from "framer-motion";
 import { FlowletThread } from "@flowlet/shell";
 import type { FireEvent } from "./FlowletPoller";
 import { resetDemo } from "./reset";
@@ -17,7 +18,11 @@ const SUGGESTIONS = [
 
 function FireBanner({ fire, onDismiss }: { fire: FireEvent; onDismiss?: () => void }) {
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: -14, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ type: "spring", stiffness: 420, damping: 30 }}
       style={{
         margin: 10,
         padding: "12px 14px",
@@ -49,7 +54,7 @@ function FireBanner({ fire, onDismiss }: { fire: FireEvent; onDismiss?: () => vo
           ×
         </button>
       ) : null}
-    </div>
+    </motion.div>
   );
 }
 
@@ -78,7 +83,9 @@ export function FlowletDock({
         boxShadow: "0 18px 50px rgba(27,30,37,.16)",
       }}
     >
-      {fire ? <FireBanner fire={fire} onDismiss={onDismissFire} /> : null}
+      <AnimatePresence>
+        {fire ? <FireBanner key="fire" fire={fire} onDismiss={onDismissFire} /> : null}
+      </AnimatePresence>
       <FlowletThread greeting="Ask Maple anything" suggestions={SUGGESTIONS} />
       <button
         onClick={() => void resetDemo()}
