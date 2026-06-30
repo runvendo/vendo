@@ -2,7 +2,7 @@ import { z } from "zod";
 import { prewired } from "../../descriptor";
 
 export const markdownSchema = z.object({
-  content: z.string(),
+  content: z.string().max(50000),
 });
 
 export const markdownDescriptor = prewired(

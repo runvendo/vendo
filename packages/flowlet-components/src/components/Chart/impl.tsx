@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { BarChart, LineChart, AreaChart, PieChart } from "../../openui";
 import { createPrewiredImpl } from "../../impl-helpers/create-impl";
 import { chartSchema } from "./descriptor";
@@ -17,19 +18,26 @@ export const Chart = createPrewiredImpl(chartSchema, (p) => {
     isAnimationActive: false,
   };
 
+  let chart: ReactNode;
   switch (p.kind) {
     case "bar":
-      return <BarChart {...commonProps} />;
+      chart = <BarChart {...commonProps} />;
+      break;
     case "line":
-      return <LineChart {...commonProps} />;
+      chart = <LineChart {...commonProps} />;
+      break;
     case "area":
-      return <AreaChart {...commonProps} />;
+      chart = <AreaChart {...commonProps} />;
+      break;
     case "pie":
-      return (
-        <PieChart
-          {...commonProps}
-          dataKey={p.series[0] as string}
-        />
-      );
+      chart = <PieChart {...commonProps} dataKey={p.series[0] as string} />;
+      break;
   }
+
+  return (
+    <>
+      {p.title ? <h3>{p.title}</h3> : null}
+      {chart}
+    </>
+  );
 });

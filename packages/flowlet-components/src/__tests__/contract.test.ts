@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
+import { fileURLToPath } from "url";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { descriptors, prewiredComponents } from "../descriptors";
 import { prewiredImpls } from "../impls";
@@ -116,8 +117,12 @@ describe("descriptors React-free guard", () => {
     "/impl",
   ];
 
-  const PKG_ROOT =
-    "/Users/yousefh/orca/workspaces/flowlet/eng-181-component-library/packages/flowlet-components";
+  // Derive package root from import.meta.url (always a file:// URL in Vitest).
+  // Avoid `new URL("../..", import.meta.url)` — Vite intercepts that pattern and
+  // pre-computes it based on the package's Vite module-graph URL, not the source path.
+  // Instead: convert to a filesystem path first, then navigate with path.resolve.
+  // The test file is at src/__tests__/contract.test.ts → 3 resolve("..")'s reach pkg root.
+  const PKG_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
   const COMPONENTS_DIR = join(PKG_ROOT, "src", "components");
 
   // Discover per-component descriptor files via readdirSync

@@ -10,6 +10,11 @@ describe("Table", () => {
     expect(tableDescriptor.propsSchema.safeParse({ columns: [] }).success).toBe(false);
   });
 
+  it("rejects rows array exceeding 1000 items", () => {
+    const rows = Array.from({ length: 1001 }, (_, i) => ({ a: i }));
+    expect(tableDescriptor.propsSchema.safeParse({ columns: [{ key: "a", label: "A" }], rows }).success).toBe(false);
+  });
+
   it("renders headers and cell values", () => {
     render(
       <FlowletThemeProvider>

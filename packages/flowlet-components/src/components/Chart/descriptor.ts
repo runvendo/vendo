@@ -6,7 +6,7 @@ export const chartSchema = z.object({
   title: z.string().optional(),
   categoryKey: z.string(),
   series: z.array(z.string()).min(1),
-  data: z.array(z.record(z.union([z.string(), z.number()]))),
+  data: z.array(z.record(z.union([z.string(), z.number()]))).min(1).max(2000),
 });
 
 export const chartDescriptor = prewired(

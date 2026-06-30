@@ -9,22 +9,22 @@ type FormField = z.infer<typeof formFieldSchema>;
 function renderInput(f: FormField) {
   switch (f.type) {
     case "text":
-      return <Input type="text" name={f.name} placeholder={f.placeholder} required={f.required} />;
+      return <Input id={f.name} type="text" name={f.name} placeholder={f.placeholder} required={f.required} />;
     case "number":
-      return <Input type="number" name={f.name} placeholder={f.placeholder} required={f.required} />;
+      return <Input id={f.name} type="number" name={f.name} placeholder={f.placeholder} required={f.required} />;
     case "textarea":
-      return <TextArea name={f.name} placeholder={f.placeholder} required={f.required} />;
+      return <TextArea id={f.name} name={f.name} placeholder={f.placeholder} required={f.required} />;
     case "checkbox":
-      return <Input type="checkbox" name={f.name} required={f.required} />;
+      return <Input id={f.name} type="checkbox" name={f.name} required={f.required} />;
     case "switch":
-      return <Input type="checkbox" role="switch" name={f.name} />;
+      return <Input id={f.name} type="checkbox" role="switch" name={f.name} />;
     case "slider":
-      return <Input type="range" name={f.name} min={f.min} max={f.max} />;
+      return <Input id={f.name} type="range" name={f.name} min={f.min} max={f.max} />;
     case "date":
-      return <Input type="date" name={f.name} />;
+      return <Input id={f.name} type="date" name={f.name} />;
     case "select":
       return (
-        <select name={f.name} disabled>
+        <select id={f.name} name={f.name} required={f.required}>
           {f.options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
@@ -32,10 +32,10 @@ function renderInput(f: FormField) {
       );
     case "radio":
       return (
-        <div role="radiogroup">
+        <div id={f.name} role="radiogroup">
           {f.options.map((o) => (
             <label key={o.value}>
-              <input type="radio" name={f.name} value={o.value} disabled />
+              <input type="radio" name={f.name} value={o.value} />
               {o.label}
             </label>
           ))}
@@ -43,9 +43,9 @@ function renderInput(f: FormField) {
       );
     case "toggle":
       return (
-        <div role="group">
+        <div id={f.name} role="group">
           {f.options.map((o) => (
-            <button key={o.value} type="button" value={o.value} disabled>{o.label}</button>
+            <button key={o.value} type="button" value={o.value}>{o.label}</button>
           ))}
         </div>
       );

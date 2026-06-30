@@ -3,7 +3,7 @@ import type { BrandTokens } from "./brand";
 
 /** Map Flowlet brand tokens onto the OpenUI Theme object (flat string fields). */
 export function mapBrandToTheme(brand: BrandTokens): Theme {
-  const radius = `${brand.radius}px`;
+  const radius = typeof brand.radius === "number" ? `${brand.radius}px` : brand.radius;
   return {
     background: brand.background,
     elevated: brand.surface,

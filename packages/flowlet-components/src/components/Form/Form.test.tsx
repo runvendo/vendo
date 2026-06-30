@@ -36,4 +36,28 @@ describe("Form", () => {
     expect(screen.getByText("Pro Plan")).toBeInTheDocument();
     expect(screen.getByText("Free Plan")).toBeInTheDocument();
   });
+
+  it("text input has id matching field name for label association", () => {
+    const { container } = render(
+      <FlowletThemeProvider>
+        <Form submitLabel="Save" fields={[{ type: "text", name: "email", label: "Email" }]} />
+      </FlowletThemeProvider>,
+    );
+    const input = container.querySelector('input[name="email"]');
+    expect(input).not.toBeNull();
+    expect(input?.getAttribute("id")).toBe("email");
+  });
+
+  it("select field is NOT disabled (form is inert via submit, not via disabled)", () => {
+    const { container } = render(
+      <FlowletThemeProvider>
+        <Form submitLabel="Go" fields={[
+          { type: "select", name: "plan", label: "Plan", options: [{ value: "a", label: "A" }] },
+        ]} />
+      </FlowletThemeProvider>,
+    );
+    const select = container.querySelector("select");
+    expect(select).not.toBeNull();
+    expect(select?.disabled).toBe(false);
+  });
 });

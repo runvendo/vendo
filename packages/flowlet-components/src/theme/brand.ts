@@ -16,7 +16,7 @@ export const brandTokensSchema = z.object({
   text: hexColor,
   mutedText: hexColor,
   fontFamily: z.string().min(1),
-  radius: z.number().nonnegative(),
+  radius: z.union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d+)?px$/)]),
   mode: z.enum(["light", "dark"]).optional(),
 });
 
