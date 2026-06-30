@@ -33,6 +33,12 @@ every run.
 2. Make sure the "snitch" friend and a phone are in that Slack workspace's
    `#general`.
 
+## Surfaces (all live)
+
+- **Docked composer** (bottom-right) — the primary on-stage surface; the 3 beats run here.
+- **Cmd/Ctrl+K overlay** — the same agent + **same thread** from anywhere; a card made in the dock shows here too.
+- **Flowlet tab** (sidebar) — a full-page version (its own thread); the floating dock hides on that route.
+
 ## The three beats
 
 **Beat 1 — the clock.** Type:
@@ -55,6 +61,12 @@ ordered **1:14 AM**.
 Then place the live order (below). The detector fires and a **real Slack message
 posts to #general** — the friend's phone buzzes. Close on *"All I needed was
 your email."*
+
+## The close
+
+Every view Flowlet generated persists as a tappable card in the **"Your views · saved"**
+strip (bottom-left). Click one to reopen the full view in a modal — "the views you
+build don't vanish; you keep them."
 
 ## Placing the live order (Beat 3 trigger)
 
