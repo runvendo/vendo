@@ -31,6 +31,13 @@ describe("stub agent (native ai SDK HITL)", () => {
     expect(types).toContain("tool-approval-request");
     // no UI node is rendered until the tool is approved + executed
     expect(types).not.toContain("data-ui");
+    // run identity rides as message metadata on the start chunk (no data-run part)
+    expect(types).not.toContain("data-run");
+    const start = parts.find((p) => p.type === "start") as
+      | { messageMetadata?: { runId: string; schemaVersion: number } }
+      | undefined;
+    expect(start?.messageMetadata?.runId).toBe("run-1");
+    expect(start?.messageMetadata?.schemaVersion).toBe(1);
   });
 
   it("cancels via AbortSignal without emitting a ui node", async () => {

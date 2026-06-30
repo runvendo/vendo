@@ -3,8 +3,8 @@ import type { UINode } from "./ui";
 
 export const SCHEMA_VERSION = 1 as const;
 
-/** Run identity, carried as a (transient) data-run part at stream start. */
-export interface RunInfo {
+/** Run identity, carried as ai SDK UIMessage metadata (not a custom data part). */
+export interface FlowletMetadata {
   runId: string;
   threadId: string;
   schemaVersion: number;
@@ -34,9 +34,8 @@ export type DispatchAction = (req: ActionRequest) => Promise<ActionResult>;
  * (`needsApproval` tools + `addToolApprovalResponse`), not a custom data part.
  */
 export type FlowletDataParts = {
-  run: RunInfo;
   ui: UINode;
 };
 
-/** The public message type: an ai SDK UIMessage with Flowlet data parts. */
-export type FlowletUIMessage = UIMessage<never, FlowletDataParts>;
+/** The public message type: an ai SDK UIMessage with Flowlet metadata + data parts. */
+export type FlowletUIMessage = UIMessage<FlowletMetadata, FlowletDataParts>;

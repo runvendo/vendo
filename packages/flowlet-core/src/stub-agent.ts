@@ -74,12 +74,6 @@ export function createStubAgent(): FlowletAgent {
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     return createUIMessageStream<FlowletUIMessage>({
       execute: async ({ writer }) => {
-        writer.write({
-          type: "data-run",
-          transient: true,
-          data: { runId: "run-1", threadId: "thread-1", schemaVersion: SCHEMA_VERSION },
-        });
-
         const renderDemoCard = tool({
           description: "Render a demo card in the UI.",
           inputSchema: z.object({ title: z.string() }),
@@ -106,7 +100,16 @@ export function createStubAgent(): FlowletAgent {
           stopWhen: stepCountIs(5),
         });
 
-        writer.merge(result.toUIMessageStream());
+        // Run identity rides as ai SDK message metadata (attached on `start`),
+        // replacing the old custom data-run part.
+        writer.merge(
+          result.toUIMessageStream({
+            messageMetadata: ({ part }) =>
+              part.type === "start"
+                ? { runId: "run-1", threadId: "thread-1", schemaVersion: SCHEMA_VERSION }
+                : undefined,
+          }),
+        );
       },
     });
   }
