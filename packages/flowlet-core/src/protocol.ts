@@ -49,7 +49,6 @@ export type FlowletDataParts = {
   run: RunInfo;
   ui: UINode;
   approval: ApprovalRequest;
-  [key: string]: unknown;
 };
 
 /** The public message type: an ai SDK UIMessage with Flowlet data parts. */
