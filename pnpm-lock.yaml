@@ -20,6 +20,36 @@ importers:
 
   apps/demo-bank:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 3.0.12
+        version: 3.0.12(zod@3.25.76)
+      '@ai-sdk/react':
+        specifier: 3.0.30
+        version: 3.0.30(react@19.2.4)(zod@3.25.76)
+      '@composio/core':
+        specifier: 0.4.0
+        version: 0.4.0(ws@8.21.0)(zod@3.25.76)
+      '@composio/vercel':
+        specifier: 0.4.0
+        version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
+      '@flowlet/agent':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-agent
+      '@flowlet/components':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-components
+      '@flowlet/core':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-core
+      '@flowlet/react':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-react
+      '@flowlet/shell':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-shell
+      '@flowlet/stage':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-stage
       '@radix-ui/react-dialog':
         specifier: ^1.1.17
         version: 1.1.17(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -35,6 +65,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.10
         version: 1.2.10(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -65,6 +98,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
@@ -4881,6 +4917,16 @@ snapshots:
       ai: 6.0.28(zod@3.25.76)
       react: 18.3.1
       swr: 2.4.2(react@18.3.1)
+      throttleit: 2.1.0
+    transitivePeerDependencies:
+      - zod
+
+  '@ai-sdk/react@3.0.30(react@19.2.4)(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider-utils': 4.0.4(zod@3.25.76)
+      ai: 6.0.28(zod@3.25.76)
+      react: 19.2.4
+      swr: 2.4.2(react@19.2.4)
       throttleit: 2.1.0
     transitivePeerDependencies:
       - zod
