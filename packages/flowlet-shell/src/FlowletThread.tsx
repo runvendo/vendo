@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
 import { useShell } from "./context";
 import type { Flowlet } from "./seams/store";
@@ -14,13 +15,27 @@ export interface FlowletThreadProps {
   suggestions?: string[];
   flows?: Flowlet[];
   onOpenFlow?: (flow: Flowlet) => void;
+  /**
+   * When set, shows a "Pin to card" footer that commits the latest rendered view
+   * to a host slot. Slot-only seam — other surfaces omit it and render unchanged.
+   */
+  onPin?: (node: UINode) => void;
 }
 
-export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFlow }: FlowletThreadProps) {
+export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFlow, onPin }: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // The most recent rendered view — what "Pin to card" commits.
+  const latestNode = useMemo<UINode | null>(() => {
+    for (let i = chat.items.length - 1; i >= 0; i--) {
+      const item = chat.items[i];
+      if (item?.kind === "ui") return item.node;
+    }
+    return null;
+  }, [chat.items]);
 
   const refresh = () => { void integrations.list().then(setTools); };
   useEffect(refresh, [integrations]);
@@ -62,6 +77,23 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
       {chat.status === "error" && (
         <div className="fl-error" role="alert">
           {chat.error?.message ?? "Something went wrong. Try again."}
+        </div>
+      )}
+      {onPin && (
+        <div className="fl-pinbar">
+          <button
+            type="button"
+            className="fl-pin-btn"
+            disabled={!latestNode}
+            onClick={() => latestNode && onPin(latestNode)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 17v5" /><path d="M5 17h14l-1.5-4.5a2 2 0 0 1 0-1.3L19 7H5l1.5 4.2a2 2 0 0 1 0 1.3Z" />
+            </svg>
+            Pin to card
+          </button>
+          <span className="fl-pinbar-hint">{latestNode ? "pins the latest view" : "describe a view first"}</span>
         </div>
       )}
       <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />

@@ -40,7 +40,15 @@ const mapleTheme: FlowletTheme = {
   font: "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
 };
 
-export function FlowletRoot({ children }: { children: ReactNode }) {
+export function FlowletRoot({
+  children,
+  threadId = "maple-demo",
+}: {
+  children: ReactNode;
+  /** Surfaces sharing a threadId share one conversation. The dashboard slot
+   *  passes its own id so it gets an isolated thread. */
+  threadId?: string;
+}) {
   const transport = useMemo(
     () => new DefaultChatTransport<FlowletUIMessage>({ api: "/api/flowlet/chat" }),
     [],
@@ -50,7 +58,7 @@ export function FlowletRoot({ children }: { children: ReactNode }) {
   const integrations = useMemo(() => createComposioIntegrations(), []);
 
   return (
-    <FlowletProvider transport={transport} components={prewiredComponents} threadId="maple-demo">
+    <FlowletProvider transport={transport} components={prewiredComponents} threadId={threadId}>
 
       <FlowletShellProvider renderNode={renderNode} integrations={integrations} theme={mapleTheme}>
         {children}

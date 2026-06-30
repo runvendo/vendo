@@ -4,7 +4,6 @@ import { NetWorthCard } from "@/components/home/net-worth-card"
 import { AccountsStrip } from "@/components/home/accounts-strip"
 import { RecentActivity } from "@/components/home/recent-activity"
 import { CashflowCard } from "@/components/home/cashflow-card"
-import { SpendingMini } from "@/components/home/spending-mini"
 import { UpcomingBills } from "@/components/home/upcoming-bills"
 import { GoalsCard } from "@/components/home/goals-card"
 import { FlowletCard } from "@/components/home/flowlet-card"
@@ -26,7 +25,6 @@ export default function HomePage() {
         <div className="space-y-6">
           <FlowletCard />
           <CashflowCard />
-          <SpendingMini />
           <UpcomingBills />
           <GoalsCard />
         </div>
