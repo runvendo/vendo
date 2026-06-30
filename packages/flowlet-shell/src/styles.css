@@ -226,6 +226,8 @@
   border-top: 1.5px solid var(--flowlet-border-strong); border-right: 1.5px solid var(--flowlet-border-strong); transform: rotate(45deg); }
 
 /* ---------- overlay (clipping fixed: bounded height, scrolls) ---------- */
+/* Portal wrapper: provides theme vars to the modal without generating a box. */
+.fl-overlay-portal { display: contents; }
 .fl-overlay-scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--flowlet-fg) 22%, transparent);
   -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); z-index: 2147483000;
   animation: fl-scrim-in .2s ease both; }

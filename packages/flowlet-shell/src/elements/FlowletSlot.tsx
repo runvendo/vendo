@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { UINode } from "@flowlet/core";
 import { useFlowletChat } from "@flowlet/react";
 import { UINodeView } from "../components/UINodeView";
+import { OverlayPanel } from "../components/OverlayPanel";
 import { FlowletThread } from "../FlowletThread";
-import { useFocusTrap } from "../use-focus-trap";
 
 export interface FlowletSlotProps {
   flowletId: string;
@@ -34,10 +34,8 @@ export function FlowletSlot({
   const [pinned, setPinned] = useState<UINode | null>(savedNode ?? null);
   const [designing, setDesigning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { setMessages } = useFlowletChat();
-  useFocusTrap(designing, panelRef);
 
   // Hydrate from localStorage after mount so SSR and first client render agree
   // (both start empty), then the saved view fills in.
@@ -134,22 +132,9 @@ export function FlowletSlot({
           </span>
         </button>
       )}
-      {designing && (
-        <>
-          <div className="fl-overlay-scrim" onClick={() => setDesigning(false)} />
-          <div
-            className="fl-overlay-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Design flowlet"
-            tabIndex={-1}
-            ref={panelRef}
-            onKeyDown={(e) => { if (e.key === "Escape") setDesigning(false); }}
-          >
-            <FlowletThread greeting={greeting} suggestions={suggestions} onPin={pin} />
-          </div>
-        </>
-      )}
+      <OverlayPanel open={designing} onClose={() => setDesigning(false)} ariaLabel="Design view">
+        <FlowletThread greeting={greeting} suggestions={suggestions} onPin={pin} />
+      </OverlayPanel>
     </div>
   );
 }

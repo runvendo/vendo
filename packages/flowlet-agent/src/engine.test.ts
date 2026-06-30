@@ -22,6 +22,7 @@ vi.mock("./composio", async (importActual) => {
         fetchTools: vi.fn(async () => ({})),
         authorize: vi.fn(async () => ({ redirectUrl: null, connectedAccountId: "ca_fake" })),
         connectionStatus: vi.fn(async () => "active" as const),
+        hasActiveConnection: vi.fn(async () => true),
       }),
     ),
   };
@@ -146,6 +147,7 @@ describe("createFlowletAgent", () => {
       fetchTools,
       authorize: vi.fn(async () => ({ redirectUrl: null, connectedAccountId: "ca_fake" })),
       connectionStatus: vi.fn(async () => "active" as const),
+      hasActiveConnection: vi.fn(async () => true),
     };
 
     const agent = createFlowletAgent({

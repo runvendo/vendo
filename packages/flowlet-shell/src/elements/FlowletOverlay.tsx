@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
 import { FlowletThread, type FlowletThreadProps } from "../FlowletThread";
-import { useFocusTrap } from "../use-focus-trap";
+import { OverlayPanel } from "../components/OverlayPanel";
 
 export interface FlowletOverlayProps extends FlowletThreadProps {
   launcherLabel?: string;
@@ -26,7 +26,6 @@ export function FlowletOverlay({
     if (!controlled) setOpenState(next);
     onOpenChange?.(next);
   };
-  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -39,29 +38,10 @@ export function FlowletOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcutKey, open, controlled]);
 
-  useFocusTrap(open, panelRef);
-
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") setOpen(false);
-  };
-
   // Invisible until summoned (Cmd/Ctrl+K) — no persistent launcher.
-  if (!open) return null;
-
   return (
-    <>
-      <div className="fl-overlay-scrim" onClick={() => setOpen(false)} />
-      <div
-        className="fl-overlay-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={launcherLabel}
-        tabIndex={-1}
-        ref={panelRef}
-        onKeyDown={onKeyDown}
-      >
-        <FlowletThread {...thread} />
-      </div>
-    </>
+    <OverlayPanel open={open} onClose={() => setOpen(false)} ariaLabel={launcherLabel}>
+      <FlowletThread {...thread} />
+    </OverlayPanel>
   );
 }

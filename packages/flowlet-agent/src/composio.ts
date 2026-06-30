@@ -58,6 +58,13 @@ export interface ComposioClient {
   connectionStatus(
     connectedAccountId: string,
   ): Promise<"active" | "pending" | "failed">;
+
+  /**
+   * True only if the user has an ACTIVE connected account for the toolkit. This
+   * is the authoritative "is it connected" check — unlike fetchTools, which can
+   * return a toolkit's tool schemas even when the user hasn't authorized it.
+   */
+  hasActiveConnection(userId: string, toolkit: string): Promise<boolean>;
 }
 
 /**
@@ -108,6 +115,11 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
     };
     connectedAccounts: {
       get(connectedAccountId: string): Promise<{ status?: string }>;
+      list(query: {
+        userIds?: string[];
+        toolkitSlugs?: string[];
+        statuses?: string[];
+      }): Promise<{ items?: Array<{ status?: string }> }>;
     };
   };
 
@@ -153,6 +165,20 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
         for (const set of perToolkit) Object.assign(merged, set);
       }
       return merged;
+    },
+
+    async hasActiveConnection(userId, toolkit) {
+      const client = await getComposio();
+      try {
+        const res = await client.connectedAccounts.list({
+          userIds: [userId],
+          toolkitSlugs: [toolkit],
+          statuses: ["ACTIVE"],
+        });
+        return (res.items ?? []).length > 0;
+      } catch {
+        return false;
+      }
     },
 
     async authorize(userId, toolkit) {

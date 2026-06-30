@@ -51,4 +51,5 @@ export const stubComposioClient: ComposioClient = {
   fetchTools: async () => ({}),
   authorize: async () => ({ redirectUrl: null, connectedAccountId: "ca_stub" }),
   connectionStatus: async () => "active",
+  hasActiveConnection: async () => true,
 };

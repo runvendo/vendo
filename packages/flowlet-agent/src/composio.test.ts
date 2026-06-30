@@ -51,6 +51,7 @@ function fakeClient(toolset: ToolSet) {
     fetchTools,
     authorize: vi.fn(async () => ({ redirectUrl: null, connectedAccountId: "ca_fake" })),
     connectionStatus: vi.fn(async () => "active" as const),
+    hasActiveConnection: vi.fn(async () => true),
   };
   return { client, fetchTools, calls };
 }
