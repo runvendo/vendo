@@ -81,6 +81,13 @@ inside the wrapper; dates are ISO strings. Each wrapper adapts JSON props to Cra
 (which take React nodes). A test round-trips every schema through `JSON.parse(JSON.stringify(...))` and
 confirms JSON-Schema convertibility (§8).
 
+**Each wrapper validates its own props.** The agent (and a buggy/hostile stream) can emit malformed
+props, and `StubRenderer` spreads `node.props` into the impl *without* validating. So each wrapper parses
+its incoming props against its own `propsSchema` at the top of render and, on failure, renders a small
+inline error/fallback instead of throwing or passing garbage into Crayon. Validation lives in the wrapper
+(not the renderer) precisely because F4 does not modify `StubRenderer`, and it stays correct when the F3
+stage swaps in.
+
 **Content / display:** Card, Table, Chart (`kind`: bar | line | area | pie), Accordion, Carousel,
 Callout, Tags, Steps, List, Image, ImageGallery, Markdown, CodeBlock, Tabs.
 
@@ -88,9 +95,10 @@ Callout, Tags, Steps, List, Image, ImageGallery, Markdown, CodeBlock, Tabs.
 (text, number, textarea, select, checkbox, radio, switch, toggle, slider, date) plus a submit label.
 One clean menu entry covering the whole input surface. In F4 the Form is **inert**: fields render as real
 Crayon inputs, but there is **no submit callback in the schema** (that would be a function prop, violating
-the JSON boundary) — submit is disabled / no-op. Submission routes through the F3 action chokepoint via a
-declarative action descriptor on the node, defined and wired when that transport exists. F4 ships the
-field rendering, not the side effect.
+the JSON boundary) — submit is disabled / no-op. The mechanism for routing a submission to the action
+chokepoint is **owned by F3 and not yet defined** — F1's `ComponentNode` has no action field today, so
+F4 makes **no claim** about the eventual node/action shape. F4 ships the field rendering, not the side
+effect.
 
 **Excluded — chat-shell / runtime chrome (F5's job, not the agent's menu):** OpenUIChat, AgentInterface,
 ToolCall, ToolResult, FollowUpBlock/Item, MessageLoading, Skeleton. Registering these would let the agent
@@ -116,13 +124,34 @@ Rendering arbitrary nested `UINode` children — a recursive tree walk — is a 
 by the F3 stage**, not a per-component concern. This keeps F4 honest about what the stub can actually do
 and avoids inventing a child-slot contract on a renderer that ignores children.
 
+This does **not** paint F3 into a corner: the leaf schemas are forward-compatible. When F3 wants rich
+nested slots (a Card body that is itself a `UINode` subtree), it adds an **optional** slot field and the
+recursive rendering — a non-breaking, additive change layered on F1's existing `children?` field. F4's
+string/markdown content fields remain valid; they become the simple case alongside the slot case.
+
+### 5.3 Untrusted content: sanitization and resources
+
+The agent-supplied props are **untrusted**, and the F4 stub renders them **directly in the host tree with
+no sandbox** (F1: "non-production, no security boundary"). So content components that emit markup or load
+resources need an explicit policy, applied inside the wrapper:
+
+- **Markdown:** render through a configuration that **disallows raw HTML** (no `<script>`/`<iframe>`/
+  arbitrary tags) — markdown formatting only. Confirm Crayon's `MarkDownRenderer` HTML handling during
+  implementation; if it permits raw HTML, sanitize or disable it.
+- **Image / ImageGallery / any `src`/`href`:** **allowlist URL protocols** — `https:` and `data:image/*`
+  only; reject `javascript:`, `data:text/html`, and other protocols at the schema/wrapper boundary.
+- The real isolation boundary is the **F3 sandbox**; these wrapper-level rules are defense-in-depth so the
+  unsandboxed stub and the example page are not an XSS vector, and they carry forward into F3.
+
 ### 5.2 Name collisions and `source`
 
 F1's registry resolves by `name` alone and ignores `source`, so a prewired name could one day collide with
 a host component (F3a). F4's scope-safe guarantees: prewired names are a documented, stable, globally
-unique set (PascalCase, no namespace prefix needed for v1), enforced by a uniqueness test. Making
-resolution `source`-aware is a change to `@flowlet/core`'s registry and `flowlet-react`'s `StubRenderer`,
-which F4 does **not** own — it is flagged here as a recommendation for F1/F3a.
+unique set (PascalCase, no namespace prefix needed for v1), enforced by a uniqueness test. This is
+**harmless while only prewired components exist** (F4's world), but it is a real contract gap that **must
+be closed before host components ship** (F3a): resolution should be keyed by `(source, name)`. That change
+lives in `@flowlet/core`'s registry and `flowlet-react`'s `StubRenderer`, which F4 does **not** own — it
+is flagged here as a required follow-up for F1/F3a, tracked there rather than worked around in F4.
 
 ## 6. Theming (brand → Crayon)
 
@@ -162,6 +191,9 @@ Vitest + `@testing-library/react` + jsdom (mirrors `flowlet-react`'s setup):
   descriptor;
 - **name uniqueness (§5.2):** prewired names are globally unique;
 - the `descriptors` entrypoint imports with no React/Crayon in its module graph;
+- **invalid-props fallback (§5):** a wrapper given malformed props renders its inline fallback, not a throw;
+- **content safety (§5.3):** Markdown drops raw HTML, and a `javascript:`/non-allowlisted image `src` is
+  rejected/neutralized;
 - every component renders expected themed content under `FlowletThemeProvider`;
 - `BrandTokens` (versioned, resolved primitives) map to a valid Crayon theme object.
 
@@ -182,3 +214,6 @@ out mechanically.
   mismatch immediately.
 - `Charts` vs `ChartsV2`: pick the current/stable one during implementation; the `Chart` wrapper's
   `kind`-based public schema is unaffected by the choice.
+- **Crayon base CSS:** `@crayonai/react-ui` ships a base stylesheet its components require. The impls
+  entrypoint documents/re-exports that CSS import, and the `examples/components` page (and later the F3
+  stage bundle) must include it, or components render unstyled. Confirm the exact CSS path on install.
