@@ -31,6 +31,15 @@ describe("stage runtime source", () => {
     // makeEB must NOT be called directly inside render()/rerender() anymore.
     expect(STAGE_RUNTIME_SRC).not.toContain("var EB = makeEB(");
   });
+  it("allowlists the Text primitive's as-tag to safe text elements", () => {
+    // props.as is LLM-controlled; only text tags are permitted, else fall back to span.
+    expect(STAGE_RUNTIME_SRC).toContain("TEXT_TAGS");
+    expect(STAGE_RUNTIME_SRC).toContain(
+      "span:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, strong:1, em:1, small:1, label:1, div:1",
+    );
+    // The raw, unguarded passthrough must be gone.
+    expect(STAGE_RUNTIME_SRC).not.toContain('R.createElement(props.as || "span"');
+  });
   it("resets the cached error boundary when its child changes so ui-delta recovers", () => {
     // Without a reset, a node that throws once stays "render error" forever even
     // after a valid ui/update. componentDidUpdate clears err when children change.

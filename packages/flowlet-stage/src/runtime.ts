@@ -133,7 +133,12 @@ export const STAGE_RUNTIME_SRC = String.raw`
     },
     Text: function(props) {
       var R = window.__React;
-      return R.createElement(props.as || "span", {
+      // props.as is LLM-controlled; allowlist to safe text tags so it can't be
+      // used to inject arbitrary (e.g. interactive/structural) elements. Anything
+      // off the list falls back to "span".
+      var TEXT_TAGS = { span:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, strong:1, em:1, small:1, label:1, div:1 };
+      var tag = (props.as && TEXT_TAGS[props.as]) ? props.as : "span";
+      return R.createElement(tag, {
         "data-primitive": "Text",
         style: { color: "var(--brand-text, inherit)" }
       }, props.text != null ? props.text : props.children);
