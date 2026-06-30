@@ -1,6 +1,5 @@
 "use client"
 import * as React from "react"
-import { cn } from "@/lib/cn"
 
 type Toast = { id: number; title: string; description?: string }
 const ToastCtx = React.createContext<(t: Omit<Toast, "id">) => void>(() => {})

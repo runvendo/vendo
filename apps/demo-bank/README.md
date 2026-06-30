@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Maple
 
-## Getting Started
+Maple is a demo consumer neobank. It is the host app for the Flowlet "$87 Mystery" product demo: a polished, believable banking UI that the Flowlet agent embeds into. It is disposable and self-contained, kept separate from flowlet-core so it can be reshaped or thrown away without touching the core product.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 (App Router)
+- TypeScript
+- Tailwind v4
+- SWR for data fetching
+- Framer Motion for animation
+- Recharts for charts
+- Radix UI primitives
+- Vitest for tests
+
+## Run it
 
 ```bash
+cd apps/demo-bank
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build   # production build
+npm test        # vitest
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Architecture
 
-## Learn More
+Every screen is backed by a real HTTP API. The UI never imports seed data directly. The flow:
 
-To learn more about Next.js, take a look at the following resources:
+```
+seeded in-memory store          src/server/store.ts + src/server/seed.ts
+        ->
+repositories                    src/server/{accounts,transactions,cards,insights,payments,notifications}.ts
+        ->
+Route Handlers                  src/app/api/**
+        ->
+typed client + SWR hooks        src/lib/api-client.ts + src/lib/hooks.ts
+        ->
+pages                           src/app/**
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The store is seeded once in memory, deterministically, via a seeded PRNG in `src/server/prng.ts`. Repositories read from the store and apply filtering, sorting, and pagination. Route Handlers expose them under `/api/*`. The browser fetches those endpoints over HTTP through the typed client and SWR hooks. Pages never reach into the seed directly.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## API endpoints
 
-## Deploy on Vercel
+- `GET /api/profile`
+- `GET /api/accounts`
+- `GET /api/accounts/:id`
+- `GET /api/accounts/:id/transactions`
+- `GET /api/transactions` (query params: `search`, `category`, `accountId`, `status`, `from`, `to`, `min`, `max`, `sort`, `limit`, `cursor`)
+- `GET /api/transactions/:id`
+- `GET /api/cards`
+- `GET /api/cards/:id/transactions`
+- `GET /api/insights/spending`
+- `GET /api/insights/cashflow`
+- `GET /api/insights/budgets`
+- `GET /api/insights/recurring`
+- `GET /api/payees`
+- `GET /api/payments/scheduled`
+- `GET /api/goals`
+- `GET /api/notifications`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+All `/api/*` routes are dynamic (server-rendered on demand).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Pages
+
+Home, Accounts, Transactions, Cards, Payments, Insights, Activity, Settings.
+
+## The planted charge
+
+The demo anchors on one transaction: `txn_doordash_87`, an $87.00 DoorDash charge at 1:14 AM on Maple Checking (`amount: -8700`, `category: dining`, descriptor `DOORDASH*ORDER 8742 CA`). It is the most recent transaction in the seed and the thing the Flowlet "$87 Mystery" demo investigates. The seed is deterministic, so the charge and surrounding data are identical on every run.
+
+## Out of scope (this issue)
+
+- The Flowlet embed and agent
+- Gmail receipt lookup
+- Slack integration
+- API writes and mutations
+
+The repository layer is shaped to add writes later, but only reads exist today. All form, card, and settings controls are presentational.
