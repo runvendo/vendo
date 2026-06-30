@@ -1,0 +1,59 @@
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { FlowletThemeProvider } from "../../theme/FlowletThemeProvider";
+import { imageGalleryDescriptor } from "./descriptor";
+import { ImageGallery } from "./impl";
+
+const renderThemed = (ui: React.ReactNode) =>
+  render(<FlowletThemeProvider>{ui}</FlowletThemeProvider>);
+
+describe("ImageGallery", () => {
+  it("schema accepts valid images and rejects empty array", () => {
+    expect(
+      imageGalleryDescriptor.propsSchema.safeParse({
+        images: [{ src: "https://example.com/a.jpg", alt: "A" }],
+      }).success
+    ).toBe(true);
+    expect(imageGalleryDescriptor.propsSchema.safeParse({ images: [] }).success).toBe(false);
+    expect(imageGalleryDescriptor.propsSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("renders valid https images", () => {
+    const { container } = renderThemed(
+      <ImageGallery
+        images={[
+          { src: "https://example.com/a.jpg", alt: "Photo A" },
+          { src: "https://example.com/b.jpg", alt: "Photo B" },
+        ]}
+      />
+    );
+    const imgs = container.querySelectorAll("img");
+    expect(imgs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("SECURITY: drops javascript: srcs — no img rendered with that src", () => {
+    const { container } = renderThemed(
+      <ImageGallery
+        images={[
+          { src: "javascript:alert(1)", alt: "evil" },
+          { src: "https://example.com/safe.jpg", alt: "safe" },
+        ]}
+      />
+    );
+    expect(container.querySelector('img[src^="javascript:"]')).toBeNull();
+    // the safe image should still render
+    expect(container.querySelector("img")).not.toBeNull();
+  });
+
+  it("SECURITY: drops all images when all srcs are invalid", () => {
+    const { container } = renderThemed(
+      <ImageGallery
+        images={[
+          { src: "javascript:alert(1)", alt: "evil1" },
+          { src: "data:text/html,bad", alt: "evil2" },
+        ]}
+      />
+    );
+    expect(container.querySelector("img")).toBeNull();
+  });
+});

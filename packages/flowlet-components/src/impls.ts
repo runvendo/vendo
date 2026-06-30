@@ -10,6 +10,7 @@ import { Tags } from "./components/Tags/impl";
 import { Steps } from "./components/Steps/impl";
 import { List } from "./components/List/impl";
 import { Image } from "./components/Image/impl";
+import { ImageGallery } from "./components/ImageGallery/impl";
 
 export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>>> = {
   Card,
@@ -23,4 +24,5 @@ export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>
   Steps,
   List,
   Image,
+  ImageGallery,
 };
