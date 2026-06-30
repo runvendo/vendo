@@ -2,6 +2,7 @@ import type { ActionRequest, ActionResult } from "@flowlet/core";
 export * from "./protocol";
 export * from "./bridge";
 export { STAGE_RUNTIME_SRC } from "./runtime";
+export * from "./stage-host";
 
 /** CSS-variable brand tokens, e.g. { "--brand-primary": "#0a7" }. */
 export type ThemeTokens = Record<string, string>;
