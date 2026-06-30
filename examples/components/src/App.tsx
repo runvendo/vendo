@@ -1,13 +1,14 @@
-import { createStubAgent } from "@flowlet/core";
-import { FlowletProvider, StubRenderer } from "@flowlet/react";
+import type { ComponentType } from "react";
 import {
-  prewiredComponents,
   prewiredImpls,
   FlowletThemeProvider,
   defaultBrand,
 } from "@flowlet/components";
 
-const agent = createStubAgent();
+// F4 demo: render each pre-wired component through its impl, themed. (The F1
+// StubRenderer was replaced by the real stage in F3; this example only needs to
+// show the component set, so it renders the impls directly.)
+const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
 
 const samples = [
   {
@@ -260,20 +261,21 @@ export function App() {
 
 export function App() {
   return (
-    <FlowletProvider agent={agent} components={prewiredComponents}>
-      <FlowletThemeProvider brand={defaultBrand}>
-        <main style={{ display: "grid", gap: 24, maxWidth: 760, margin: "40px auto", padding: 16 }}>
-          <h1 style={{ fontFamily: "system-ui", marginBottom: 8 }}>Flowlet pre-wired components</h1>
-          {samples.map((node) => (
+    <FlowletThemeProvider brand={defaultBrand}>
+      <main style={{ display: "grid", gap: 24, maxWidth: 760, margin: "40px auto", padding: 16 }}>
+        <h1 style={{ fontFamily: "system-ui", marginBottom: 8 }}>Flowlet pre-wired components</h1>
+        {samples.map((node) => {
+          const Impl = impls[node.name];
+          return (
             <section key={node.id}>
               <h2 style={{ fontFamily: "system-ui", fontSize: 13, opacity: 0.55, fontWeight: 500, marginBottom: 8 }}>
                 {node.name}
               </h2>
-              <StubRenderer node={node} impls={prewiredImpls as never} />
+              {Impl ? <Impl {...node.props} /> : null}
             </section>
-          ))}
-        </main>
-      </FlowletThemeProvider>
-    </FlowletProvider>
+          );
+        })}
+      </main>
+    </FlowletThemeProvider>
   );
 }

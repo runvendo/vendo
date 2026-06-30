@@ -1,0 +1,274 @@
+import { describe, it, expect, vi } from "vitest";
+import { tool } from "ai";
+import type { ToolSet } from "ai";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { z } from "zod";
+import { SCHEMA_VERSION } from "@flowlet/core";
+import type { FlowletUIMessage } from "@flowlet/core";
+import { createFlowletAgent, RENDER_TOOL_NAME } from "./engine";
+import type { ApprovalPolicy } from "./policy";
+import type { ComposioClient } from "./composio";
+
+// Replace `createComposioClient` with a spy so we can assert the engine builds
+// the client ONCE and reuses it across runs (Finding 4). `ingestComposioTools`
+// and everything else keep their real implementations.
+vi.mock("./composio", async (importActual) => {
+  const actual = await importActual<typeof import("./composio")>();
+  return {
+    ...actual,
+    createComposioClient: vi.fn(
+      (): ComposioClient => ({ fetchTools: vi.fn(async () => ({})) }),
+    ),
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Offline mock-model scaffolding (mirrors flowlet-core/src/stub-agent.ts).
+// ---------------------------------------------------------------------------
+
+const ZERO_USAGE = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+} as const;
+
+function textChunks(id: string, text: string): LanguageModelV3StreamPart[] {
+  return [
+    { type: "text-start", id },
+    { type: "text-delta", id, delta: text },
+    { type: "text-end", id },
+  ];
+}
+
+/** True once the conversation already contains an assistant tool call. */
+function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolean {
+  return prompt.some(
+    (m) =>
+      m.role === "assistant" &&
+      Array.isArray(m.content) &&
+      m.content.some((c) => (c as { type?: string }).type === "tool-call"),
+  );
+}
+
+/**
+ * Mock model: turn 1 streams text + (optionally) a single tool-call; once the
+ * prompt carries that tool-call (turn 2+), streams text only and finishes, so
+ * the model->tool loop terminates.
+ */
+function mockModel(call?: { toolName: string; input: unknown }): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      const chunks: LanguageModelV3StreamPart[] =
+        call === undefined || promptHasToolCall(prompt)
+          ? [
+              ...textChunks("t-done", "All done."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ]
+          : [
+              ...textChunks("t1", "Working on it."),
+              {
+                type: "tool-call",
+                toolCallId: "call-1",
+                toolName: call.toolName,
+                input: JSON.stringify(call.input),
+              },
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
+            ];
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  });
+}
+
+async function collect<T>(stream: ReadableStream<T>): Promise<T[]> {
+  const out: T[] = [];
+  const reader = stream.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out.push(value);
+  }
+  return out;
+}
+
+const allowPolicy: ApprovalPolicy = { evaluate: () => "allow" };
+
+const userTurn: FlowletUIMessage[] = [
+  { id: "m1", role: "user", parts: [{ type: "text", text: "go" }] },
+];
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("createFlowletAgent", () => {
+  it("emits a valid UIMessage stream with run metadata and a data-ui node", async () => {
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: RENDER_TOOL_NAME, input: { name: "DemoCard", props: { title: "Hi" } } }),
+      policy: allowPolicy,
+    });
+
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+    const types = parts.map((p) => (p as { type: string }).type);
+
+    // Valid stream shape: starts with `start`, ends with `finish`.
+    expect(types).toContain("start");
+    expect(types).toContain("text-delta");
+    expect(types).toContain("finish");
+
+    // Run identity rides as message metadata on the `start` chunk.
+    const start = parts.find((p) => (p as { type: string }).type === "start") as {
+      messageMetadata?: { runId: string; threadId: string; schemaVersion: number };
+    };
+    expect(start.messageMetadata?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(typeof start.messageMetadata?.runId).toBe("string");
+    expect(start.messageMetadata?.runId.length).toBeGreaterThan(0);
+    expect(typeof start.messageMetadata?.threadId).toBe("string");
+    expect(start.messageMetadata?.threadId.length).toBeGreaterThan(0);
+
+    // The render tool executed and emitted a data-ui component node.
+    const ui = parts.find((p) => (p as { type: string }).type === "data-ui") as {
+      data: { kind: string; name: string };
+    };
+    expect(ui).toBeDefined();
+    expect(ui.data.kind).toBe("component");
+    expect(ui.data.name).toBe("DemoCard");
+  });
+
+  it("scopes Composio ingestion to the run principal's userId", async () => {
+    const fetchTools = vi.fn(async (): Promise<ToolSet> => ({}));
+    const client: ComposioClient = { fetchTools };
+
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      composio: { config: { toolkits: ["gmail"] }, client },
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        principal: { userId: "user-42" },
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(fetchTools).toHaveBeenCalledOnce();
+    expect(fetchTools.mock.calls[0][0]).toBe("user-42");
+    expect(fetchTools.mock.calls[0][1]).toEqual({ toolkits: ["gmail"], tools: undefined });
+  });
+
+  it("surfaces the SDK native abort when the signal is aborted (no hang, no throw)", async () => {
+    const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+    const controller = new AbortController();
+    controller.abort();
+
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: controller.signal }),
+    );
+    const types = parts.map((p) => (p as { type: string }).type);
+
+    // Aborted signal short-circuits streamText: it emits `abort` and the stream
+    // completes rather than hanging or throwing.
+    expect(types).toContain("abort");
+    expect(types).not.toContain("data-ui");
+  });
+
+  it("merges a caller-supplied tool into the loop so the model can call it", async () => {
+    const callerExecute = vi.fn(async () => "echoed");
+    const callerTool = tool({
+      description: "Echo a message.",
+      inputSchema: z.object({ msg: z.string() }),
+      execute: callerExecute,
+    });
+
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: "caller_echo", input: { msg: "hi" } }),
+      policy: allowPolicy,
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: { caller_echo: callerTool },
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(callerExecute).toHaveBeenCalledOnce();
+    expect(callerExecute.mock.calls[0][0]).toEqual({ msg: "hi" });
+  });
+
+  it("warns when a tool name collides across sources (Finding 2)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // Caller claims `render_ui`, colliding with the engine's built-in render
+      // tool (lower precedence) — the engine tool is dropped and logged.
+      const callerTool = tool({ inputSchema: z.object({}), execute: async () => "x" });
+      const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+
+      await collect(
+        agent.run({
+          messages: userTurn,
+          tools: { [RENDER_TOOL_NAME]: callerTool },
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(warnSpy).toHaveBeenCalled();
+      const logged = warnSpy.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+      expect(logged).toContain(RENDER_TOOL_NAME);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("builds the Composio client once and reuses it across runs (Finding 4)", async () => {
+    const { createComposioClient } = await import("./composio");
+    const spy = createComposioClient as unknown as ReturnType<typeof vi.fn>;
+    spy.mockClear();
+
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      // No client injected → the engine must build one (and only one).
+      composio: { config: { toolkits: ["gmail"] } },
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        principal: { userId: "user-a" },
+        signal: new AbortController().signal,
+      }),
+    );
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        principal: { userId: "user-b" },
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("tolerates a caller passing undefined tools (Finding 5)", async () => {
+    const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+
+    const parts = await collect(
+      agent.run({
+        messages: userTurn,
+        // Non-TS caller may omit `tools` entirely.
+        tools: undefined as unknown as ToolSet,
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+  });
+});
