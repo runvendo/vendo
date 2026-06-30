@@ -242,6 +242,21 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     });
   }
 
+  if (kind === "gen-unknown") {
+    // A generated tree that references an UNKNOWN host component name. The
+    // runtime renders a contained [data-error] node for the unknown name while
+    // the present sibling Text still renders — per-node isolation.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["t1", "nope"] },
+        { id: "t1", component: "Text", source: "prewired", props: { text: "sibling lives" } },
+        { id: "nope", component: "NopeNotReal", source: "host" },
+      ],
+    });
+  }
+
   if (kind === "gen-delta") {
     // A Card whose title binds to /acct/name — used to drive a prop-level data
     // delta and prove the host element is reconciled in place (no remount).
