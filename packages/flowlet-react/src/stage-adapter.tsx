@@ -97,6 +97,7 @@ export function FlowletStage({
           const sameStructure =
             session !== null &&
             prev !== null &&
+            prev.formatVersion === payload.formatVersion &&
             prev.root === payload.root &&
             nodesKey(prev) === nodesKey(payload);
 
@@ -125,10 +126,13 @@ export function FlowletStage({
             sessionRef.current = result.session;
             payloadRef.current = payload;
             // First init OR a new structure both re-initialize with the resolved
-            // tree (mirrors the non-generated re-init path).
+            // tree (mirrors the non-generated re-init path). Track the resolved
+            // tree's root id — NOT the wrapper GeneratedNode.id — because that is
+            // the id actually mounted in the stage; a later non-generated render
+            // reusing the wrapper id would otherwise update an unmounted node.
             c.initialize({ theme, state, bundleSource, tree: result.session.tree });
             initedRef.current = true;
-            rootIdRef.current = node.id;
+            rootIdRef.current = result.session.tree.id;
             return;
           }
 
@@ -151,13 +155,22 @@ export function FlowletStage({
           return;
         }
 
+        // A non-generated node is now the root, so any prior generated session
+        // no longer reflects what's mounted; drop it so a future generated
+        // payload re-initializes rather than taking a stale data-delta path.
+        const switchedFromGenerated = sessionRef.current !== null;
+        if (switchedFromGenerated) {
+          sessionRef.current = null;
+          payloadRef.current = null;
+        }
         if (!initedRef.current) {
           c.initialize({ theme, state, bundleSource, tree: node });
           initedRef.current = true;
           rootIdRef.current = node.id;
-        } else if (node.id !== rootIdRef.current) {
-          // The root id changed → this is a new tree. Re-initialize (a plain
-          // update would target a nodeId that no longer exists and no-op).
+        } else if (switchedFromGenerated || node.id !== rootIdRef.current) {
+          // New tree (root id changed, or we just switched off a generated tree
+          // whose mounted root id differs from this node). Re-initialize — a
+          // plain update would target a nodeId that no longer exists and no-op.
           c.initialize({ theme, state, bundleSource, tree: node });
           rootIdRef.current = node.id;
         } else {

@@ -62,8 +62,8 @@
 .fl-picker-item { display: flex; align-items: center; gap: 9px; padding: 8px 11px; font-size: 13px; }
 .fl-connect { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   padding: 13px; background: var(--flowlet-surface); max-width: 430px; }
-.fl-overlay-scrim { position: fixed; inset: 0; background: rgba(27,29,34,.26); }
-.fl-overlay-panel { position: fixed; left: 50%; top: 12%; transform: translateX(-50%);
+.fl-overlay-scrim { position: fixed; inset: 0; background: rgba(27,29,34,.26); z-index: 1000; }
+.fl-overlay-panel { position: fixed; left: 50%; top: 12%; transform: translateX(-50%); z-index: 1001;
   width: min(560px, 92vw); background: var(--flowlet-surface); border: 1px solid var(--flowlet-border);
   border-radius: 16px; box-shadow: 0 24px 60px rgba(27,29,34,.35); overflow: hidden; }
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);

@@ -88,6 +88,11 @@ function patchNode(node: unknown, tokens: string[], value: unknown, isDelete: bo
     return { ...base, [key]: value };
   }
 
+  // Non-leaf descent. A delete must never fabricate intermediate containers: if
+  // the next segment is absent, there is nothing to remove, so leave `node` as
+  // is (an idempotent miss). Only sets create intermediates so paths can form.
+  if (isDelete && !Object.prototype.hasOwnProperty.call(base, key)) return node;
+
   return { ...base, [key]: patchNode(base[key], rest, value, isDelete) };
 }
 
@@ -95,8 +100,9 @@ function patchNode(node: unknown, tokens: string[], value: unknown, isDelete: bo
  * Immutably apply a patch at `pointer`. Omitting `value` deletes the target
  * (object key removed, array element spliced); otherwise it is set (array
  * indices replace in-range or append at `length`). Missing intermediate object
- * segments are created. Patching the root (`""`) with a value replaces the
- * whole model; a root delete is a no-op. Inputs are never mutated.
+ * segments are created for sets; a delete over a missing path is a no-op and
+ * fabricates nothing. Patching the root (`""`) with a value replaces the whole
+ * model; a root delete is a no-op. Inputs are never mutated.
  */
 export function applyPointerPatch<T extends Record<string, unknown>>(
   data: T,
