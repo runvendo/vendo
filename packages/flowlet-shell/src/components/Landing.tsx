@@ -15,7 +15,7 @@ export function Landing({
 }: LandingProps) {
   return (
     <div className="fl-landing">
-      <div className="fl-greet">{greeting}</div>
+      <h1 className="fl-greet">{greeting}</h1>
       <SuggestionChips suggestions={suggestions} onSelect={onSuggestion} />
       <FlowGallery flows={flows} onOpen={onOpenFlow} />
     </div>

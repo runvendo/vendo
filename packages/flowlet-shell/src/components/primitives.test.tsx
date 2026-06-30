@@ -4,11 +4,17 @@ import { StreamingText } from "./StreamingText";
 import { ToolCall } from "./ToolCall";
 
 describe("StreamingText", () => {
-  it("renders text and shows a caret while streaming", () => {
+  it("renders text and marks the block streaming so the caret trails it", () => {
     const { rerender, container } = render(<StreamingText text="hello" />);
     expect(screen.getByText("hello")).toBeTruthy();
-    expect(container.querySelector(".fl-caret")).toBeNull();
+    expect(container.querySelector(".fl-md--streaming")).toBeNull();
+    // The caret is a pseudo-element on the last block, flagged by this modifier.
     rerender(<StreamingText text="hello" streaming />);
+    expect(container.querySelector(".fl-md--streaming")).not.toBeNull();
+  });
+
+  it("shows a lone caret while a streamed turn is still empty", () => {
+    const { container } = render(<StreamingText text="" streaming />);
     expect(container.querySelector(".fl-caret")).not.toBeNull();
   });
 });

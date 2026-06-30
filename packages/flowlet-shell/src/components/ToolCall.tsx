@@ -26,8 +26,17 @@ function friendlyLabel(toolName: string): string {
     set_rule: "Setting up rule",
   };
   if (exact[toolName]) return exact[toolName];
-  if (/^GMAIL_/i.test(toolName)) return "Searching Gmail";
-  if (/^SLACK_/i.test(toolName)) return "Posting to Slack";
+  // Branch on the verb so e.g. GMAIL_SEND_EMAIL isn't mislabeled as a search.
+  if (/^GMAIL_/i.test(toolName)) {
+    if (/SEND/i.test(toolName)) return "Sending email";
+    if (/FETCH|SEARCH|LIST|GET|READ/i.test(toolName)) return "Searching Gmail";
+    return humanize(toolName);
+  }
+  if (/^SLACK_/i.test(toolName)) {
+    if (/SEND|POST/i.test(toolName)) return "Posting to Slack";
+    if (/FETCH|SEARCH|LIST|GET|HISTORY|READ/i.test(toolName)) return "Reading Slack";
+    return humanize(toolName);
+  }
   return humanize(toolName);
 }
 

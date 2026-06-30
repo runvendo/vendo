@@ -20,6 +20,10 @@
   --flowlet-glass-strong: color-mix(in srgb, var(--flowlet-surface) 80%, transparent);
   --flowlet-blur: saturate(1.4) blur(22px);
   --flowlet-ok: #2e9e6b;
+  /* Danger surface — theme-aware so it doesn't flash a near-white box in dark. */
+  --flowlet-danger: light-dark(#b0392b, #f1816f);
+  --flowlet-danger-bg: light-dark(#fff5f5, color-mix(in srgb, #f1816f 13%, var(--flowlet-surface)));
+  --flowlet-danger-border: light-dark(#f0caca, color-mix(in srgb, #f1816f 32%, var(--flowlet-border)));
   color: var(--flowlet-fg);
   font-family: var(--flowlet-font);
   letter-spacing: -.011em;
@@ -29,9 +33,31 @@
 
 /* ---------- thread shell ---------- */
 .fl-thread { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.fl-msglist { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px 16px;
-  scrollbar-width: none; }
+/* Positioned wrapper so the "jump to latest" button stays fixed to the viewport
+   of the list instead of scrolling away with the content. */
+.fl-msglist-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;
+  animation: fl-fade-in .18s ease; }
+.fl-msglist { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 14px; padding: 18px 16px 10px; scrollbar-width: none;
+  /* Faint top fade hints at scrollable history above (the scrollbar is hidden). */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14px);
+  mask-image: linear-gradient(180deg, transparent 0, #000 14px); }
+/* A single short turn rests just above the composer (auto collapses to 0 once the
+   thread overflows, so long threads scroll normally) — no dead gap at the bottom. */
+.fl-msglist > :first-child { margin-top: auto; }
 .fl-msglist::-webkit-scrollbar { display: none; }
+@keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* Visually-hidden live region — announces only the settled assistant turn. */
+.fl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Jump to latest — appears only when scrolled up from the bottom. */
+.fl-jump { position: absolute; right: 14px; bottom: 12px; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; color: var(--flowlet-fg);
+  border: 1px solid var(--flowlet-border-strong); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); animation: fl-fade-in .15s ease; transition: border-color .12s; }
+.fl-jump:hover { border-color: var(--flowlet-accent); }
+.fl-jump:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
 /* Typing indicator — three pulsing dots while the agent is working. */
 .fl-typing { align-self: flex-start; display: flex; align-items: center; gap: 5px; padding: 4px 2px; }
 .fl-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--flowlet-fg-muted);
@@ -42,10 +68,17 @@
 
 .fl-turn-user { align-self: flex-end; background: var(--flowlet-accent); color: var(--flowlet-accent-fg);
   padding: 9px 13px; border-radius: 15px 15px 5px 15px; max-width: 82%; font-size: 13.5px; line-height: 1.5;
-  box-shadow: var(--flowlet-shadow); }
+  box-shadow: 0 1px 2px light-dark(rgba(20,21,26,.06), rgba(0,0,0,.35)); }
+.fl-usertext { white-space: pre-wrap; word-break: break-word; }
 .fl-turn-assistant { align-self: flex-start; max-width: 92%; line-height: 1.6; font-size: 13.5px; }
-.fl-caret { display: inline-block; width: 7px; height: 1.05em; background: var(--flowlet-accent);
+/* Lone caret while a streamed turn is still empty (stable line box, no jitter). */
+.fl-caret { display: inline-block; width: 7px; min-height: 1.05em; height: 1.05em; background: var(--flowlet-accent);
   vertical-align: -2px; margin-left: 2px; border-radius: 1px; animation: fl-blink 1s steps(1) infinite; }
+/* Once text is flowing, the caret trails the last block as a pseudo-element so it
+   stays inline instead of dropping onto its own line below the final paragraph. */
+.fl-md--streaming > :last-child::after { content: ""; display: inline-block; width: .5em; height: 1.05em;
+  margin-left: 2px; vertical-align: -2px; background: var(--flowlet-accent); border-radius: 1px;
+  animation: fl-blink 1s steps(1) infinite; }
 @keyframes fl-blink { 50% { opacity: 0; } }
 
 /* ---------- markdown ---------- */
@@ -64,10 +97,20 @@
 .fl-md pre { background: var(--flowlet-accent-soft); border: 1px solid var(--flowlet-border); border-radius: 11px;
   padding: 11px 13px; overflow-x: auto; margin: 0 0 8px; }
 .fl-md pre code { background: none; border: 0; padding: 0; font-size: .85em; }
+/* Code block with a hover Copy button. */
+.fl-codeblock { position: relative; margin: 0 0 8px; }
+.fl-codeblock pre { margin: 0; }
+.fl-copy { position: absolute; top: 7px; right: 7px; font: 500 11px/1 var(--flowlet-font); padding: 4px 8px;
+  border-radius: 7px; border: 1px solid var(--flowlet-border); color: var(--flowlet-fg-muted);
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  cursor: pointer; opacity: 0; transition: opacity .12s, color .12s; }
+.fl-codeblock:hover .fl-copy, .fl-copy:focus-visible { opacity: 1; }
+.fl-copy:hover { color: var(--flowlet-fg); }
 .fl-md blockquote { margin: 0 0 8px; padding-left: 10px;
   border-left: 2px solid var(--flowlet-border-strong); color: var(--flowlet-fg-muted); }
-.fl-md table { border-collapse: collapse; font-size: .92em; margin: 0 0 8px; }
+.fl-md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: .92em; margin: 0 0 8px; }
 .fl-md th, .fl-md td { border: 1px solid var(--flowlet-border); padding: 4px 8px; text-align: left; }
+.fl-md img { max-width: 100%; height: auto; border-radius: 8px; }
 .fl-md hr { border: 0; border-top: 1px solid var(--flowlet-border); margin: 10px 0; }
 .fl-turn-user .fl-md a, .fl-turn-user .fl-md code { color: inherit; border-color: rgba(255,255,255,.4); }
 
@@ -93,13 +136,17 @@
   font: 500 12px/1 var(--flowlet-font-mono); color: var(--flowlet-fg-muted);
   border: 1px solid var(--flowlet-border); border-radius: 10px; padding: 7px 11px;
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
-.fl-tool-name { color: var(--flowlet-fg); }
-.fl-tool-spin { width: 13px; height: 13px; border-radius: 50%;
+.fl-tool-label { color: var(--flowlet-fg); }
+.fl-tool-detail { color: var(--flowlet-fg-muted); font-weight: 400;
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-tool-icon { display: grid; place-items: center; width: 14px; height: 14px; font-size: 11px; flex-shrink: 0; }
+.fl-tool-done .fl-tool-icon { color: var(--flowlet-ok); }
+.fl-tool-error { color: var(--flowlet-danger); border-color: var(--flowlet-danger-border); }
+.fl-tool-error .fl-tool-icon, .fl-tool-err { color: var(--flowlet-danger); }
+/* Working spinner. */
+.fl-tool-spinner { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid var(--flowlet-border-strong); border-top-color: var(--flowlet-fg-muted);
   animation: fl-spin .8s linear infinite; }
-.fl-tool-check { width: 14px; height: 14px; border-radius: 50%; background: var(--flowlet-accent);
-  color: var(--flowlet-accent-fg); display: grid; place-items: center; font-size: 9px; }
-.fl-tool-err { color: #b0473a; }
 @keyframes fl-spin { to { transform: rotate(360deg); } }
 
 /* ---------- approval / buttons ---------- */
@@ -116,23 +163,34 @@
 .fl-uinode { align-self: flex-start; width: 100%; }
 
 /* ---------- composer ---------- */
-.fl-composer { display: flex; align-items: center; gap: 10px; margin: 12px 14px 14px; padding: 11px 13px;
+/* align-items:flex-end so the buttons sit at the bottom as the field grows. */
+.fl-composer { display: flex; align-items: flex-end; gap: 10px; margin: 10px 16px 16px; padding: 8px 11px 8px 13px;
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
-  border: 1px solid var(--flowlet-border-strong); border-radius: 13px; box-shadow: var(--flowlet-shadow); }
-.fl-composer input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--flowlet-fg);
-  font-family: var(--flowlet-font); font-size: 13.5px; }
-.fl-composer input::placeholder { color: var(--flowlet-fg-muted); }
-.fl-icon-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--flowlet-border);
+  border: 1px solid var(--flowlet-border-strong); border-radius: 16px; box-shadow: var(--flowlet-shadow);
+  transition: border-color .14s, box-shadow .14s; }
+/* The focus ring lives on the container (the field itself keeps outline:0). */
+.fl-composer:focus-within { border-color: var(--flowlet-accent);
+  box-shadow: var(--flowlet-shadow), 0 0 0 3px var(--flowlet-accent-soft); }
+.fl-composer textarea { flex: 1; border: 0; outline: 0; background: transparent; color: var(--flowlet-fg);
+  font-family: var(--flowlet-font); font-size: 16px; line-height: 1.5; resize: none; max-height: 200px;
+  padding: 4px 0; overflow-y: auto; scrollbar-width: none; }
+.fl-composer textarea::-webkit-scrollbar { display: none; }
+.fl-composer textarea::placeholder { color: var(--flowlet-fg-muted); }
+.fl-icon-btn { flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--flowlet-border);
   background: var(--flowlet-surface); display: flex; align-items: center; justify-content: center; cursor: pointer;
-  color: var(--flowlet-fg-muted); transition: background .12s; }
+  color: var(--flowlet-fg-muted); transition: background .12s, opacity .12s; }
 .fl-icon-btn:hover { background: var(--flowlet-accent-soft); }
+.fl-icon-btn:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
+.fl-icon-btn:disabled { opacity: .4; cursor: default; }
+.fl-icon-btn:disabled:hover { background: var(--flowlet-surface); }
 .fl-send { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: var(--flowlet-accent); }
 .fl-send:hover { opacity: .92; background: var(--flowlet-accent); }
+.fl-send:disabled:hover { opacity: .4; background: var(--flowlet-accent); }
 
 /* ---------- landing ---------- */
 .fl-landing { display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px; flex: 1; padding: 30px; text-align: center; }
-.fl-greet { font-size: 23px; font-weight: 600; letter-spacing: -.022em; }
+.fl-greet { margin: 0; font-size: 23px; font-weight: 600; letter-spacing: -.022em; }
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .fl-chip { border: 1px solid var(--flowlet-border); background: var(--flowlet-glass-strong);
   -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
@@ -144,7 +202,7 @@
   -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); cursor: pointer; }
 
 /* ---------- connection rail ---------- */
-.fl-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 14px 6px; }
+.fl-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 16px 6px; }
 .fl-rail-chip { display: flex; align-items: center; gap: 7px; border: 1px solid var(--flowlet-border);
   border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 500; background: var(--flowlet-glass-strong);
   -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
@@ -212,7 +270,7 @@
 .fl-auto-toggle { margin-left: auto; width: 40px; height: 23px; border-radius: 999px; background: var(--flowlet-accent);
   position: relative; flex-shrink: 0; border: 0; cursor: pointer; }
 .fl-auto-toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 18px; height: 18px;
-  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.22); }
+  border-radius: 50%; background: var(--flowlet-accent-fg); box-shadow: 0 1px 3px rgba(0,0,0,.22); }
 .fl-auto-flow { display: flex; align-items: center; padding: 14px 16px 16px; border-top: 1px solid var(--flowlet-border); }
 .fl-auto-node { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px;
   background: var(--flowlet-bg); border: 1px solid var(--flowlet-border); }
@@ -236,7 +294,8 @@
   background: var(--flowlet-glass); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
   border: 1px solid var(--flowlet-border-strong); border-radius: 20px; overflow: hidden;
   box-shadow: 0 30px 80px color-mix(in srgb, var(--flowlet-fg) 28%, transparent);
-  /* open animation — "stretch": grow from a thin centered sliver with overshoot */
+  /* open animation — the "squeeze": a horizontal stretch out from a sliver, with a
+     springy overshoot. transform-origin stays centered so it grows symmetrically. */
   transform-origin: center; animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
 @keyframes fl-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fl-overlay-stretch {
@@ -246,6 +305,11 @@
 @media (prefers-reduced-motion: reduce) {
   .fl-overlay-panel { animation: fl-overlay-fade .18s ease both; }
   @keyframes fl-overlay-fade { from { opacity: 0; } to { opacity: 1; } }
+  /* Silence every looping loader for vestibular-sensitive users. */
+  .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
+  .fl-typing span, .fl-generating .fl-pulse, .fl-skeleton-bar,
+  .fl-tool-spin, .fl-tool-spinner { animation: none; }
+  .fl-msglist-wrap, .fl-jump { animation: none; }
 }
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--flowlet-fg);
@@ -321,7 +385,7 @@
 .fl-slot-menu button { text-align: left; font-size: 12.5px; padding: 7px 9px; border: 0; border-radius: 8px;
   background: transparent; color: var(--flowlet-fg); cursor: pointer; }
 .fl-slot-menu button:hover { background: var(--flowlet-accent-soft); }
-.fl-slot-menu button.is-danger { color: #d9534f; }
+.fl-slot-menu button.is-danger { color: var(--flowlet-danger); }
 
 /* ---- pin-to-card footer (slot overlay only) ---- */
 .fl-pinbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px 0; }
@@ -332,5 +396,6 @@
 .fl-pinbar-hint { font-size: 11.5px; color: var(--flowlet-fg-muted); }
 
 /* ---------- error ---------- */
-.fl-error { margin: 8px 14px; padding: 10px 13px; border-radius: 12px;
-  border: 1px solid #f0caca; background: #fff5f5; color: #9b1c1c; font-size: 12.5px; }
+.fl-error { margin: 8px 16px; padding: 10px 13px; border-radius: 12px;
+  border: 1px solid var(--flowlet-danger-border); background: var(--flowlet-danger-bg);
+  color: var(--flowlet-danger); font-size: 12.5px; }

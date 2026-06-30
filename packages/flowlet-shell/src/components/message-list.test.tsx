@@ -25,7 +25,7 @@ describe("MessageList", () => {
     expect(screen.getByText("Something exploded")).toBeTruthy();
   });
 
-  it("renders text, approval, and ui items, hides tool chips, and is a log", () => {
+  it("renders text, approval, ui items, surfaces tool chips, and announces via a log", () => {
     const onApprove = vi.fn();
     renderList([
       { kind: "text", key: "a", role: "assistant", text: "hello" },
@@ -33,10 +33,12 @@ describe("MessageList", () => {
       { kind: "approval", key: "c", approvalId: "a1", toolName: "budgetCreate", input: {} },
       { kind: "ui", key: "d", node },
     ], onApprove);
+    // A dedicated visually-hidden live region announces the settled assistant turn,
+    // so the assistant text appears both in the bubble and (atomically) in the log.
     expect(screen.getByRole("log")).toBeTruthy();
-    expect(screen.getByText("hello")).toBeTruthy();
-    // Tool calls are intentionally hidden in the thread (skeleton carries the wait).
-    expect(screen.queryByTestId("tool-call")).toBeNull();
+    expect(screen.getAllByText("hello").length).toBeGreaterThan(0);
+    // Non-render_ui tool calls surface as a quiet chip (render_ui stays a skeleton).
+    expect(screen.getByTestId("tool-call")).toBeTruthy();
     expect(screen.getByTestId("ui-node")).toBeTruthy();
     fireEvent.click(screen.getByText("Approve"));
     expect(onApprove).toHaveBeenCalledWith("a1");

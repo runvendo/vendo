@@ -79,7 +79,9 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
         />
       )}
       <IntegrationsRail integrations={tools} onConnectClick={() => setPickerOpen(true)} />
-      {chat.status === "error" && (
+      {/* One error surface: skip the banner when the stream already rendered an
+          inline error item as the last turn, so a failure isn't shown twice. */}
+      {chat.status === "error" && chat.items[chat.items.length - 1]?.kind !== "error" && (
         <div className="fl-error" role="alert">
           {chat.error?.message ?? "Something went wrong. Try again."}
         </div>
