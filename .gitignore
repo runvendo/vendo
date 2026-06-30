@@ -1,4 +1,12 @@
 node_modules
+node_modules/
 dist
 .turbo
 *.tsbuildinfo
+
+# demo app
+.next/
+*.log
+
+# misc
+.superpowers/

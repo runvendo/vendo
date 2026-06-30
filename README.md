@@ -1,12 +1,39 @@
 # Flowlet
 
-Monorepo for Flowlet. F1 (this milestone) ships the foundation contracts + stubs:
+Monorepo for Flowlet — a drop-in agentic experience — and the demo that showcases it.
 
-- `packages/flowlet-core` — tools, UI nodes, stream protocol, agent, registry, stub agent
-- `packages/flowlet-react` — provider, `useFlowletChat`, in-memory transport, stub renderer
-- `examples/basic` — proves the stub loop end-to-end
+## Layout
 
-Design: `docs/superpowers/specs/2026-06-29-flowlet-f1-foundation-design.md`.
-Reuse: `ai` SDK (protocol), MCP (tools + permission annotations), mcp-ui (sandbox — F3), Crayon (components — F4).
+```
+packages/
+  flowlet-core    tools, UI nodes, stream protocol, agent, registry, stub agent
+  flowlet-react   provider, useFlowletChat, in-memory transport, stub renderer
+examples/
+  basic           proves the stub loop end-to-end
+apps/
+  demo-bank       Maple — a demo consumer neobank, the host app for the "$87 Mystery" demo
+docs/
+  superpowers     design and plan docs (plans/, specs/)
+```
 
-`pnpm install && pnpm build && pnpm test`
+## Quickstart
+
+```bash
+pnpm install
+pnpm build
+pnpm test
+```
+
+Run the demo bank:
+
+```bash
+pnpm --filter demo-bank dev
+```
+
+Open http://localhost:3000.
+
+## More
+
+- `apps/demo-bank/README.md` — the Maple app: stack, architecture, API endpoints, and the planted demo charge.
+- `docs/superpowers/specs/2026-06-29-flowlet-f1-foundation-design.md` — F1 foundation design.
+- Reuse: `ai` SDK (protocol), MCP (tools + permission annotations), mcp-ui (sandbox — F3), Crayon (components — F4).

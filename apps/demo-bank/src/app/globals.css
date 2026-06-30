@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #FBFBFA;
+  --color-surface: #FFFFFF;
+  --color-ink: #111111;
+  --color-ink-soft: #46443F;
+  --color-muted: #908C85;
+  --color-border: #ECEBE8;
+  --color-border-strong: #DFDDD8;
+  --color-hover: #F4F3F1;
+  --color-pos: #1E7F53;
+  --color-pos-bg: #E7F4EE;
+  --color-neg: #B0473A;
+  --color-neg-bg: #FBEDE9;
+  --radius-card: 14px;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes maple-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-in {
+  animation: maple-fade-in 0.25s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in {
+    animation: none;
+  }
+}
