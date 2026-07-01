@@ -6,7 +6,7 @@ Monorepo for Flowlet — a drop-in agentic experience — and the demo that show
 
 ```
 packages/
-  flowlet-core    tools, UI nodes, stream protocol, agent, registry, stub agent
+  flowlet-core    tools, UI nodes, GenUI format, generated components, stream protocol, agent, registry, stub agent
   flowlet-react   provider, useFlowletChat, in-memory transport, stub renderer
 examples/
   basic           proves the stub loop end-to-end
@@ -15,6 +15,8 @@ apps/
 docs/
   superpowers     design and plan docs (plans/, specs/)
 ```
+
+The agent composes novel views with the `render_view` tool: a `components` map of generated React code bound to `$path` data, meshed with catalog and primitive components.
 
 ## Quickstart
 
