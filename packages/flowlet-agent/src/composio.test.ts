@@ -47,7 +47,12 @@ function fakeClient(toolset: ToolSet) {
       return toolset;
     },
   );
-  const client: ComposioClient = { fetchTools };
+  const client: ComposioClient = {
+    fetchTools,
+    authorize: vi.fn(async () => ({ redirectUrl: null, connectedAccountId: "ca_fake" })),
+    connectionStatus: vi.fn(async () => "active" as const),
+    hasActiveConnection: vi.fn(async () => true),
+  };
   return { client, fetchTools, calls };
 }
 

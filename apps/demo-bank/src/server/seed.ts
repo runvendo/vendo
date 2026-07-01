@@ -118,6 +118,32 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   add({ accountId: CREDIT, merchant: "United Airlines", descriptor: "UNITED 016", amount: -41800,
     timestamp: iso(daysAgo(anchor, 1, 11, 5)), category: "transport", status: "authorized", cardId: "card_virtual" })
 
+  // Late-night spending — a believable after-hours pattern across the quarter
+  // (food delivery, rides home, 2 AM impulse buys). This is the substance behind
+  // "what did I spend when I should've been asleep?"; the planted $87 DoorDash
+  // below is simply the most recent of these.
+  const LATE_NIGHT: {
+    d: number; h: number; m: number; merchant: string; descriptor: string;
+    cents: number; category: Category; account: string; card: string;
+  }[] = [
+    { d: 4,  h: 0,  m: 42, merchant: "Uber Eats",  descriptor: "UBER EATS SF",        cents: -3460, category: "dining",    account: CHECKING, card: "card_physical" },
+    { d: 4,  h: 2,  m: 18, merchant: "Lyft",       descriptor: "LYFT *RIDE",          cents: -2340, category: "transport", account: CHECKING, card: "card_physical" },
+    { d: 9,  h: 2,  m: 33, merchant: "Amazon",     descriptor: "AMZN MKTP US",        cents: -6499, category: "shopping",  account: CREDIT,   card: "card_virtual" },
+    { d: 12, h: 1,  m: 50, merchant: "Taco Bell",  descriptor: "TACO BELL 7042",      cents: -1820, category: "dining",    account: CHECKING, card: "card_physical" },
+    { d: 18, h: 23, m: 52, merchant: "DoorDash",   descriptor: "DOORDASH*ORDER 5521", cents: -4130, category: "dining",    account: CHECKING, card: "card_physical" },
+    { d: 22, h: 1,  m: 5,  merchant: "Uber",       descriptor: "UBER *TRIP",          cents: -2975, category: "transport", account: CHECKING, card: "card_physical" },
+    { d: 26, h: 0,  m: 28, merchant: "Steam",      descriptor: "STEAMGAMES.COM",      cents: -5999, category: "shopping",  account: CREDIT,   card: "card_virtual" },
+    { d: 33, h: 1,  m: 37, merchant: "Uber Eats",  descriptor: "UBER EATS SF",        cents: -2780, category: "dining",    account: CHECKING, card: "card_physical" },
+    { d: 41, h: 2,  m: 9,  merchant: "7-Eleven",   descriptor: "7-ELEVEN 33418",      cents: -1240, category: "groceries", account: CHECKING, card: "card_physical" },
+    { d: 48, h: 0,  m: 15, merchant: "McDonald's", descriptor: "MCDONALDS F2241",     cents: -1485, category: "dining",    account: CHECKING, card: "card_physical" },
+    { d: 57, h: 1,  m: 22, merchant: "Amazon",     descriptor: "AMZN MKTP US",        cents: -3850, category: "shopping",  account: CREDIT,   card: "card_virtual" },
+  ]
+  for (const x of LATE_NIGHT) {
+    add({ accountId: x.account, cardId: x.card, merchant: x.merchant, descriptor: x.descriptor,
+      amount: x.cents, timestamp: iso(daysAgo(anchor, x.d, x.h, x.m)), category: x.category,
+      status: "posted", location: "San Francisco, CA" })
+  }
+
   // THE PLANTED CHARGE — most recent, 1:14 AM today, $87.00, DoorDash, checking
   const dd = new Date(anchor); dd.setHours(1, 14, 0, 0)
   add({ id: "txn_doordash_87", accountId: CHECKING, cardId: "card_physical",
@@ -160,9 +186,9 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   ]
 
   const goals: Goal[] = [
-    { id: "goal_japan", name: "Japan trip", target: 500000, saved: 312000, emoji: "🗾" },
-    { id: "goal_emergency", name: "Emergency fund", target: 1000000, saved: 740000, emoji: "🛟" },
-    { id: "goal_mac", name: "New MacBook", target: 250000, saved: 90000, emoji: "💻" },
+    { id: "goal_japan", name: "Japan trip", target: 500000, saved: 312000, icon: "plane" },
+    { id: "goal_emergency", name: "Emergency fund", target: 1000000, saved: 740000, icon: "shield" },
+    { id: "goal_mac", name: "New MacBook", target: 250000, saved: 90000, icon: "laptop" },
   ]
 
   const notifications: Notification[] = [

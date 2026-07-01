@@ -11,6 +11,8 @@ export interface ShellContextValue {
   store: FlowletStore;
   integrations: FlowletIntegrations;
   renderNode: RenderNode;
+  /** Host brand theme — so portaled surfaces (the overlay) can re-apply it. */
+  theme?: FlowletTheme;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -50,7 +52,8 @@ export function FlowletShellProvider({
     store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
-  }), [store, integrations, renderNode, impls]);
+    theme,
+  }), [store, integrations, renderNode, impls, theme]);
 
   return (
     <ShellContext.Provider value={value}>

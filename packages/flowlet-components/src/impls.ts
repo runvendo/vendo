@@ -14,8 +14,10 @@ import { ImageGallery } from "./components/ImageGallery/impl";
 import { Markdown } from "./components/Markdown/impl";
 import { CodeBlock } from "./components/CodeBlock/impl";
 import { Tabs } from "./components/Tabs/impl";
+import { TimeOfDayClock } from "./components/TimeOfDayClock/impl";
 
 export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>>> = {
+  TimeOfDayClock,
   Card,
   Table,
   Chart,

@@ -20,6 +20,12 @@
   --font-sans: var(--font-inter);
 }
 
+/* The dock is Flowlet's visible surface; the overlay is Cmd/Ctrl+K-only, so its
+   floating launcher button is hidden in the demo. */
+.fl-launcher {
+  display: none !important;
+}
+
 * {
   border-color: var(--color-border);
 }

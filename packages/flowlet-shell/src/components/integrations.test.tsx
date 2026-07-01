@@ -25,7 +25,7 @@ describe("IntegrationsPicker", () => {
   it("connects a disconnected integration", () => {
     const onConnect = vi.fn();
     render(<IntegrationsPicker integrations={list} onConnect={onConnect} onDisconnect={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getByText("Connect"));
+    fireEvent.click(screen.getByRole("button", { name: /Connect Gmail/ }));
     expect(onConnect).toHaveBeenCalledWith("gmail");
   });
 });

@@ -1,5 +1,4 @@
 import { useChat } from "@ai-sdk/react";
-import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { useFlowletContext } from "./provider";
 
@@ -10,11 +9,9 @@ import { useFlowletContext } from "./provider";
  * all approvals are in, which runs the approved tool and renders its `data-ui` node.
  */
 export function useFlowletChat() {
-  const { registry, local } = useFlowletContext();
-  const chat = useChat<FlowletUIMessage>({
-    transport: local.transport,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-  });
-
-  return { ...chat, registry };
+  const { registry, chat } = useFlowletContext();
+  // `experimental_throttle` coalesces per-token state updates onto a 50ms cadence
+  // so streaming text re-renders smoothly instead of thrashing on every delta.
+  const helpers = useChat<FlowletUIMessage>({ chat, experimental_throttle: 50 });
+  return { ...helpers, registry };
 }

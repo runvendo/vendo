@@ -50,7 +50,7 @@ export interface Card {
 }
 
 export interface Budget { category: Category; limit: number; spent: number }
-export interface Goal { id: string; name: string; target: number; saved: number; emoji: string }
+export interface Goal { id: string; name: string; target: number; saved: number; icon: string }
 export interface Payee { id: string; name: string; kind: "person" | "biller"; mask?: string }
 export interface ScheduledPayment {
   id: string; payeeId: string; payeeName: string; amount: number; nextDate: string

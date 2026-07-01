@@ -7,11 +7,19 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "demo": "infisical run --projectId=b366cac7-1716-47a0-9617-f335500f6dee --env=dev -- pnpm --filter demo-bank dev",
+    "composio:connect": "infisical run --projectId=b366cac7-1716-47a0-9617-f335500f6dee --env=dev -- node scripts/composio-connect.mjs"
   },
   "devDependencies": {
     "turbo": "^2.1.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "^19.2.0",
+      "@types/react-dom": "^19.2.0"
+    }
   }
 }

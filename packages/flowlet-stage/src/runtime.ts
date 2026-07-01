@@ -17,6 +17,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   var currentParams = null;   // { theme, state, tree, bundleSource }
   var __pendingActions = {};  // actionId → { resolve, reject } (approval-pending dispatch)
   var currentCapabilityMap = {}; // nodeId → capability token (built from tree on ui/initialize)
+  var cachedEB = null; // ErrorBoundary class, built once (see getEB) and reused across renders
 
   // ── Theme injection ──────────────────────────────────────────────────────────
   function injectTheme(theme) {
@@ -60,12 +61,29 @@ export const STAGE_RUNTIME_SRC = String.raw`
     return class EB extends R.Component {
       constructor(p) { super(p); this.state = { err: false }; }
       static getDerivedStateFromError() { return { err: true }; }
+      componentDidUpdate(prevProps) {
+        // A node keyed to this boundary that threw once stays in the error state
+        // forever otherwise. When the child element changes (e.g. a ui/update or
+        // ui-delta supplies new, valid props) clear the error so the next render
+        // retries the new child.
+        if (prevProps.children !== this.props.children && this.state.err) {
+          this.setState({ err: false });
+        }
+      }
       render() {
         return this.state.err
           ? R.createElement("div", { "data-error-boundary": true }, "render error")
           : this.props.children;
       }
     };
+  }
+
+  // Build the ErrorBoundary class once and reuse it across renders. A fresh class
+  // per render is a NEW React component type, so React would remount the whole
+  // tree on every ui/update (destroying DOM identity); caching keeps element
+  // identity stable so prop-level updates reconcile in place. Mirrors cachedHost.
+  function getEB() {
+    return cachedEB || (cachedEB = makeEB(window.__React));
   }
 
   // ── Tree helpers ─────────────────────────────────────────────────────────────
@@ -88,6 +106,59 @@ export const STAGE_RUNTIME_SRC = String.raw`
     });
   }
 
+  // ── Built-in prewired primitives ──────────────────────────────────────────────
+  // Layout/text/skeleton components referenced by name when node.source === "prewired".
+  // Each reads window.__React at call time (React isn't available at module-eval time).
+  var PRIMITIVES = {
+    Stack: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Stack",
+        style: { display: "flex", flexDirection: "column", gap: props.gap || "8px" }
+      }, props.children);
+    },
+    Row: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Row",
+        style: { display: "flex", flexDirection: "row", gap: props.gap || "8px", alignItems: props.align || "stretch" }
+      }, props.children);
+    },
+    Grid: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Grid",
+        style: { display: "grid", gridTemplateColumns: "repeat(" + (props.columns || 2) + ", 1fr)", gap: props.gap || "8px" }
+      }, props.children);
+    },
+    Text: function(props) {
+      var R = window.__React;
+      // props.as is LLM-controlled; allowlist to safe text tags so it can't be
+      // used to inject arbitrary (e.g. interactive/structural) elements. Anything
+      // off the list falls back to "span".
+      var TEXT_TAGS = { span:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, strong:1, em:1, small:1, label:1, div:1 };
+      var tag = (props.as && TEXT_TAGS[props.as]) ? props.as : "span";
+      return R.createElement(tag, {
+        "data-primitive": "Text",
+        style: { color: "var(--brand-text, inherit)" }
+      }, props.text != null ? props.text : props.children);
+    },
+    Skeleton: function(props) {
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Skeleton",
+        "data-skeleton": "true",
+        "aria-hidden": "true",
+        style: {
+          background: "var(--brand-skeleton, rgba(0,0,0,0.08))",
+          minHeight: props.height || "16px",
+          width: props.width || "100%",
+          borderRadius: "4px"
+        }
+      });
+    }
+  };
+
   // ── Renderer ─────────────────────────────────────────────────────────────────
   // host is cached after first bundle load so re-renders don't re-fetch.
   var cachedHost = null;
@@ -96,7 +167,9 @@ export const STAGE_RUNTIME_SRC = String.raw`
     var React = window.__React;
     function toElement(node) {
       if (node.kind === "component") {
-        var Impl = host[node.name];
+        // Prewired primitives resolve against the built-in PRIMITIVES table first;
+        // every other name (incl. prewired __row/__badge) falls back to the host bundle.
+        var Impl = (node.source === "prewired" && PRIMITIVES[node.name]) ? PRIMITIVES[node.name] : host[node.name];
         if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
         var boundProps = bindProps(node.props, params.state);
         boundProps.__nodeId = node.id;
@@ -116,7 +189,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // Re-render the current tree into the persistent root.
   function rerender() {
     if (!currentParams || !window.__flowletRoot) return;
-    var EB = makeEB(window.__React);
+    var EB = getEB();
     window.__flowletRoot.render(buildElement(cachedHost || {}, currentParams, EB));
   }
 
@@ -127,7 +200,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
     cachedHost = await loadBundle(params.bundleSource);
 
     var React = window.__React, createRoot = window.__createRoot;
-    var EB = makeEB(React);
+    var EB = getEB();
 
     // Create the root once and persist it.
     if (!window.__flowletRoot) {

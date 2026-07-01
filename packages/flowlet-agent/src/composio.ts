@@ -38,6 +38,47 @@ export interface ComposioClient {
     userId: string,
     allowlist: { toolkits?: string[]; tools?: string[] },
   ): Promise<ToolSet>;
+
+  /**
+   * Kick off (or resume) a per-user OAuth connection for a toolkit. Returns the
+   * real provider OAuth `redirectUrl` to open in a popup, plus the
+   * `connectedAccountId` to poll. When the user is already authorized the SDK may
+   * return a `null` redirectUrl and an already-ACTIVE account (fast path).
+   */
+  authorize(
+    userId: string,
+    toolkit: string,
+  ): Promise<{ redirectUrl: string | null; connectedAccountId: string }>;
+
+  /**
+   * Normalized status of a connected account: `"active"` once the OAuth flow has
+   * completed, `"pending"` while it is still in flight, `"failed"` for any
+   * terminal non-active state (failed/expired/inactive).
+   */
+  connectionStatus(
+    connectedAccountId: string,
+  ): Promise<"active" | "pending" | "failed">;
+
+  /**
+   * True only if the user has an ACTIVE connected account for the toolkit. This
+   * is the authoritative "is it connected" check — unlike fetchTools, which can
+   * return a toolkit's tool schemas even when the user hasn't authorized it.
+   */
+  hasActiveConnection(userId: string, toolkit: string): Promise<boolean>;
+}
+
+/**
+ * Normalize a raw Composio `ConnectedAccountStatus`
+ * (INITIALIZING | INITIATED | ACTIVE | FAILED | EXPIRED | INACTIVE) down to the
+ * three states the Flowlet connect flow cares about.
+ */
+function normalizeConnectionStatus(
+  raw: string | undefined,
+): "active" | "pending" | "failed" {
+  const status = (raw ?? "").toUpperCase();
+  if (status === "ACTIVE") return "active";
+  if (status === "INITIALIZING" || status === "INITIATED") return "pending";
+  return "failed";
 }
 
 /**
@@ -65,6 +106,20 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
   }) => {
     tools: {
       get(userId: string, filters: unknown): Promise<ToolSet>;
+    };
+    toolkits: {
+      authorize(
+        userId: string,
+        toolkitSlug: string,
+      ): Promise<{ id: string; redirectUrl?: string | null }>;
+    };
+    connectedAccounts: {
+      get(connectedAccountId: string): Promise<{ status?: string }>;
+      list(query: {
+        userIds?: string[];
+        toolkitSlugs?: string[];
+        statuses?: string[];
+      }): Promise<{ items?: Array<{ status?: string }> }>;
     };
   };
 
@@ -96,12 +151,49 @@ export function createComposioClient(config: ComposioConfig): ComposioClient {
         Object.assign(merged, byTool);
       }
       if (allowlist.toolkits && allowlist.toolkits.length > 0) {
-        const byToolkit = await client.tools.get(userId, {
-          toolkits: allowlist.toolkits,
-        });
-        Object.assign(merged, byToolkit);
+        // Fetch per-toolkit and tolerate failures: a toolkit the user hasn't
+        // connected (or a bad slug) must NOT wipe out the toolkits they have.
+        const perToolkit = await Promise.all(
+          allowlist.toolkits.map(async (toolkit) => {
+            try {
+              return await client.tools.get(userId, { toolkits: [toolkit] });
+            } catch {
+              return {} as ToolSet;
+            }
+          }),
+        );
+        for (const set of perToolkit) Object.assign(merged, set);
       }
       return merged;
+    },
+
+    async hasActiveConnection(userId, toolkit) {
+      const client = await getComposio();
+      try {
+        const res = await client.connectedAccounts.list({
+          userIds: [userId],
+          toolkitSlugs: [toolkit],
+          statuses: ["ACTIVE"],
+        });
+        return (res.items ?? []).length > 0;
+      } catch {
+        return false;
+      }
+    },
+
+    async authorize(userId, toolkit) {
+      const client = await getComposio();
+      const request = await client.toolkits.authorize(userId, toolkit);
+      return {
+        redirectUrl: request.redirectUrl ?? null,
+        connectedAccountId: request.id,
+      };
+    },
+
+    async connectionStatus(connectedAccountId) {
+      const client = await getComposio();
+      const account = await client.connectedAccounts.get(connectedAccountId);
+      return normalizeConnectionStatus(account.status);
     },
   };
 }
