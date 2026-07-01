@@ -33,6 +33,9 @@ export type { ToolSourceInput } from "./toolset";
 // Render tool
 export { createRenderTool } from "./render-tool";
 
+// Render view tool
+export { createRenderViewTool } from "./render-view-tool";
+
 // Composio ingestion
 export {
   ingestComposioTools,
