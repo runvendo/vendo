@@ -12,14 +12,23 @@ import { composePolicy, type ApprovalPolicy } from "@flowlet/agent";
 /** In-process tools that are safe by construction. */
 const ALWAYS_ALLOW = new Set(["render_ui", "render_view", "get_transactions", "set_rule"]);
 
-/** Read-shaped external (Composio) tool names. */
-const READ_SHAPED = /(FETCH|GET|LIST|SEARCH|FIND|READ)/;
+/** Read-shaped external (Composio) verb segments — safe to run freely. */
+const READ_VERBS = new Set(["FETCH", "GET", "LIST", "SEARCH", "FIND", "READ"]);
+/** Write/destructive verb segments — always gated behind approval. */
+const WRITE_VERBS = new Set(["SEND", "CREATE", "DELETE", "UPDATE", "REPLACE", "ADD", "SET", "POST", "REMOVE", "WRITE"]);
 
 const namePolicy: ApprovalPolicy = {
   evaluate({ toolName }) {
     if (ALWAYS_ALLOW.has(toolName)) return "allow";
-    if (READ_SHAPED.test(toolName)) return "allow";
-    return "approve"; // fail-safe: gate writes and the unknown
+    // Composio names are underscore-delimited segments (TOOLKIT_VERB_OBJECT).
+    // Match verbs as whole segments, and let any write-verb segment take
+    // precedence so e.g. GOOGLEDOCS_FIND_AND_REPLACE (FIND + REPLACE) is gated.
+    // An unanchored substring test here would auto-allow write tools whose name
+    // merely contains a read word (e.g. BUDGET_CREATE contains "GET").
+    const segments = toolName.split("_");
+    if (segments.some((s) => WRITE_VERBS.has(s))) return "approve";
+    if (segments.some((s) => READ_VERBS.has(s))) return "allow";
+    return "approve"; // fail-safe: gate the unknown
   },
 };
 

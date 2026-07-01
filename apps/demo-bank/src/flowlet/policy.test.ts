@@ -26,4 +26,9 @@ describe("demoPolicy", () => {
   it("requires approval for unknown tools (fail-safe)", async () => {
     expect(await demoPolicy.evaluate(ctx("SOME_NEW_TOOL"))).toBe("approve");
   });
+  it("gates write/destructive tools whose name merely contains a read word", async () => {
+    for (const name of ["GOOGLEDOCS_FIND_AND_REPLACE", "BUDGET_CREATE", "PLAYLIST_ADD_TRACK", "TARGET_DELETE"]) {
+      expect(await demoPolicy.evaluate(ctx(name))).toBe("approve");
+    }
+  });
 });

@@ -32,7 +32,7 @@ export async function handleStageAction(req: Request): Promise<Response> {
 
   const decision = await demoPolicy.evaluate({
     toolName: body.action,
-    input: body.payload,
+    input: body.payload ?? {},
     descriptor: buildDescriptor(body.action, tool, "caller"),
     principal: DEMO_PRINCIPAL,
   });
@@ -46,6 +46,13 @@ export async function handleStageAction(req: Request): Promise<Response> {
   if (!tool?.execute) {
     return Response.json({ error: `unknown action "${body.action}"` }, { status: 404 });
   }
+  // SAFETY INVARIANT: the trusted `approved:true` re-POST is only safe because
+  // every in-process demo tool is in ALWAYS_ALLOW (→allow, executes directly)
+  // and every approve-shaped name has NO in-process `execute` (→404 above, never
+  // runs). So no approve-gated action can reach this line via a forged re-POST.
+  // If a future WRITE tool is ever added to demoTools() that is NOT in
+  // ALWAYS_ALLOW, this invariant breaks and a server-side approval token would
+  // be required before executing here.
   const result = await tool.execute(body.payload ?? {}, { toolCallId: "stage-action", messages: [] });
   return Response.json({ decision, result });
 }
