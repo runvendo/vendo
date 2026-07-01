@@ -217,6 +217,17 @@ describe("resolveGeneratedPayload — depth bound (DoS)", () => {
   });
 });
 
+it("preserves source: 'generated' on resolved nodes", () => {
+  const tree = resolveGeneratedPayload({
+    formatVersion: "flowlet-genui/v1",
+    root: "r",
+    nodes: [{ id: "r", component: "Gauge", source: "generated" }],
+    components: { Gauge: "export default 1" },
+  });
+  expect(tree.kind).toBe("component");
+  if (tree.kind === "component") expect(tree.source).toBe("generated");
+});
+
 describe("collectBindings", () => {
   it("returns the $paths of a node's top-level bindings in prop order", () => {
     const node: GenNode = {

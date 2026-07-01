@@ -1,4 +1,4 @@
-export type UINodeSource = "prewired" | "host";
+export type UINodeSource = "prewired" | "host" | "generated";
 
 export interface ComponentNode {
   id: string;
