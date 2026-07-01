@@ -141,6 +141,35 @@ describe("createFlowletAgent", () => {
     expect(ui.data.name).toBe("DemoCard");
   });
 
+  it("registers render_view beside render_ui", async () => {
+    // Capture the toolset the engine hands to streamText by reading the tools
+    // the SDK forwards to the model's doStream (provider-format function tools,
+    // each carrying a `name`).
+    let capturedTools: { name: string }[] | undefined;
+    const model = new MockLanguageModelV3({
+      doStream: async ({ tools }) => {
+        capturedTools = tools as { name: string }[] | undefined;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-done", "All done."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ],
+          }),
+        };
+      },
+    });
+
+    const agent = createFlowletAgent({ model, policy: allowPolicy });
+    await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+
+    const names = (capturedTools ?? []).map((t) => t.name);
+    expect(names).toContain("render_ui");
+    expect(names).toContain("render_view");
+  });
+
   it("scopes Composio ingestion to the run principal's userId", async () => {
     const fetchTools = vi.fn(async (): Promise<ToolSet> => ({}));
     const client: ComposioClient = {

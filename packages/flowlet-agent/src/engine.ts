@@ -28,6 +28,7 @@ import type { FlowletAgent, RunInput, FlowletUIMessage } from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
 import { createRenderTool } from "./render-tool";
+import { createRenderViewTool } from "./render-view-tool";
 import {
   ingestComposioTools,
   createComposioClient,
@@ -40,6 +41,9 @@ import type { ToolDescriptor } from "./descriptor";
 
 /** Canonical name of the engine's built-in UI render tool. */
 export const RENDER_TOOL_NAME = "render_ui";
+
+/** Canonical name of the engine's built-in composed-view tool (Tier 2.5). */
+export const RENDER_VIEW_TOOL_NAME = "render_view";
 
 /** Grounded default system prompt used when the caller supplies none. */
 const DEFAULT_INSTRUCTIONS =
@@ -116,8 +120,9 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ? candidate
             : { userId: "" };
 
-        // 2. The render tool, bound to this run's stream writer.
+        // 2. The render tools, bound to this run's stream writer.
         const renderTool = createRenderTool(writer);
+        const renderViewTool = createRenderViewTool(writer);
 
         // 3. Composio ingestion (fail-closed inside ingestComposioTools).
         //    Memoized per principal so the schema round-trip blocks only the
@@ -161,7 +166,11 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           { source: "caller", tools: input.tools ?? {} },
           {
             source: "engine",
-            tools: { ...config.tools, [RENDER_TOOL_NAME]: renderTool },
+            tools: {
+              ...config.tools,
+              [RENDER_TOOL_NAME]: renderTool,
+              [RENDER_VIEW_TOOL_NAME]: renderViewTool,
+            },
           },
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
         ];

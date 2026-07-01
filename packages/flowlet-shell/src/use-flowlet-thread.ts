@@ -21,11 +21,11 @@ export type ThreadItem =
   | { kind: "error"; key: string; message: string };
 
 /**
- * Built-in render tool name (mirrors `RENDER_TOOL_NAME` in `@flowlet/agent`).
- * Its product is a `data-ui` node, so its tool chip is suppressed to avoid a
- * redundant "render_ui" sliver next to the component it rendered.
+ * Built-in render tool names (mirror `RENDER_TOOL_NAME`/`RENDER_VIEW_TOOL_NAME`
+ * in `@flowlet/agent`). Their product is a `data-ui` node, so their tool chips
+ * are suppressed to avoid a redundant sliver next to the rendered component.
  */
-const RENDER_UI_TOOL = "render_ui";
+const RENDER_TOOLS = new Set(["render_ui", "render_view"]);
 
 /** Pure normalizer: flattens message parts into ordered render items. */
 export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
@@ -49,8 +49,8 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
         if (part.state === "approval-requested") {
           const approval = part.approval as { id: string };
           items.push({ kind: "approval", key, approvalId: approval.id, toolName, input: part.input });
-        } else if (toolName === RENDER_UI_TOOL) {
-          // render_ui's finished output is the sibling data-ui node (so no chip).
+        } else if (RENDER_TOOLS.has(toolName)) {
+          // A render tool's finished output is the sibling data-ui node (so no chip).
           // But while it's still streaming/pending, show a skeleton in its place
           // so the user sees a view being built — and ONLY then, never for
           // text-only turns.

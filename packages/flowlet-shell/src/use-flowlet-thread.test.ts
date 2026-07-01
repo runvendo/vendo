@@ -27,6 +27,19 @@ describe("toThreadItems", () => {
     expect(items[0]).toEqual({ kind: "error", key: "m0:0", message: "boom" });
   });
 
+  it("suppresses the render_view tool chip (its product is the data-ui node)", () => {
+    const items = toThreadItems([
+      msg("m4", "assistant", [
+        { type: "tool-render_view", state: "output-available" },
+        { type: "data-ui", id: "ui-2", data: { id: "ui-2", kind: "component", source: "generated", name: "View", props: {} } },
+      ]),
+    ]);
+    // render_view, like render_ui, emits no tool chip — the sibling data-ui node
+    // is its product.
+    expect(items.some((i) => i.kind === "tool")).toBe(false);
+    expect(items[0]).toMatchObject({ kind: "ui", key: "m4:1" });
+  });
+
   it("emits a tool item for other tool states and a ui item for data-ui", () => {
     const items = toThreadItems([
       msg("m3", "assistant", [
