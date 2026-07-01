@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/copy-flowlet-sandbox.mjs",
+    "predev": "pnpm --filter @flowlet/stage build:react-shim && pnpm --filter @flowlet/components build:sandbox && node scripts/copy-flowlet-sandbox.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-flowlet-sandbox.mjs",
+    "prebuild": "pnpm --filter @flowlet/stage build:react-shim && pnpm --filter @flowlet/components build:sandbox && node scripts/copy-flowlet-sandbox.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
