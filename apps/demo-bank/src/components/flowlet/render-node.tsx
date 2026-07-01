@@ -17,10 +17,10 @@ import type { ComponentType, ReactNode } from "react";
 import { motion } from "framer-motion";
 import type { UINode } from "@flowlet/core";
 import { stripEmojiDeep } from "@flowlet/core";
-import { FlowletStage } from "@flowlet/react";
-import { prewiredImpls, prewiredComponents } from "@flowlet/components";
+import { prewiredImpls } from "@flowlet/components";
 import { DemoConnectCard } from "./DemoConnectCard";
 import { HtmlApp } from "./HtmlApp";
+import { SandboxStage } from "./SandboxStage";
 
 const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
 
@@ -107,7 +107,7 @@ export function renderNode(node: UINode): ReactNode {
   }
   return (
     <Reveal>
-      <FlowletStage node={node} components={prewiredComponents} />
+      <SandboxStage node={node} />
     </Reveal>
   );
 }
