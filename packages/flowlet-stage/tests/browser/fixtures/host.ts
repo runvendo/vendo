@@ -31,10 +31,10 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const reactSource =
-  caseParam === "shared-react"
-    ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
-    : undefined;
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error"]);
+const reactSource = NEEDS_REACT_SHIM.has(caseParam)
+  ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
+  : undefined;
 
 const { iframe, endpoints } = createStage(slot, { reactSource });
 
@@ -210,7 +210,10 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
 
   const VERSION = "flowlet-genui/v1";
 
-  async function gen(payload: GeneratedPayload): Promise<StageInitPayload> {
+  async function gen(
+    payload: GeneratedPayload,
+    opts?: { ext?: boolean },
+  ): Promise<StageInitPayload> {
     const result = createGenUISession(payload);
     if (!result.ok) {
       throw new Error(`createGenUISession failed: ${result.error.code}: ${result.error.message}`);
@@ -220,7 +223,15 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     (window as any).__patchData = (path: string, value: unknown) => {
       session.applyDataPatch(path, value).forEach((r) => controller.update({ replace: r }));
     };
-    return { theme, state: {}, bundleSource: await bundle(), tree: session.tree };
+    return {
+      theme,
+      state: {},
+      // ext: externalized bundle (React from the import-map shim) — required for
+      // cases whose generated code does `import React from "react"`.
+      bundleSource: opts?.ext ? await bundleExt() : await bundle(),
+      tree: session.tree,
+      generatedComponents: payload.components,
+    };
   }
 
   if (kind === "gen-basic") {
@@ -322,6 +333,52 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     }
     (window as any).__session = result.session;
     return { theme, state: {}, bundleSource: await bundle(), tree: result.session.tree };
+  }
+
+  if (kind === "gen-code") {
+    // A NOVEL generated component meshed with a prewired Text and a host Card
+    // in one tree — the Tier 2.5 capability gate. It also receives a $path-bound
+    // prop and dispatches through its per-node flowlet closure.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["t1", "g1", "c1"] },
+        { id: "t1", component: "Text", source: "prewired", props: { text: "prewired sibling" } },
+        { id: "g1", component: "Gauge", source: "generated", props: { value: { $path: "/gauge/value" } } },
+        { id: "c1", component: "Card", source: "host", props: { title: "Host sibling", body: "meshed" } },
+      ],
+      data: { gauge: { value: 42 } },
+      components: {
+        Gauge: [
+          "import React from 'react';",
+          "export default function Gauge(props) {",
+          "  return React.createElement('div', { 'data-generated-impl': 'Gauge' },",
+          "    React.createElement('span', { 'data-gauge-value': true }, String(props.value)),",
+          "    React.createElement('button', {",
+          "      onClick: function() { props.flowlet.dispatch({ action: 'gauge_reset', payload: { to: 0 } }); }",
+          "    }, 'Reset'));",
+          "}",
+        ].join("\n"),
+      },
+    }, { ext: true });
+  }
+
+  if (kind === "gen-code-error") {
+    // One broken module (syntax error) + one good one: per-name containment.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["bad", "good"] },
+        { id: "bad", component: "Broken", source: "generated" },
+        { id: "good", component: "Fine", source: "generated" },
+      ],
+      components: {
+        Broken: "this is not (valid javascript",
+        Fine: "import React from 'react'; export default function Fine(){ return React.createElement('div', { 'data-generated-impl': 'Fine' }, 'fine'); }",
+      },
+    }, { ext: true });
   }
 
   // Default: empty stage (used by load + bridge gate)
