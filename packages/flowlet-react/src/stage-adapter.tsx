@@ -18,9 +18,17 @@ import {
 
 /** Stable structural fingerprint of a payload's node graph and generated
  *  component code (data excluded) — a components-map change (e.g. an LLM
- *  revising a component's source) must re-initialize just like a nodes change. */
-const structureKey = (payload: GeneratedPayload): string =>
-  JSON.stringify([payload.nodes, payload.components ?? {}]);
+ *  revising a component's source) must re-initialize just like a nodes change.
+ *  The components map is a Record with no ordering semantics, so its entries are
+ *  sorted by name before stringifying: same content ⇒ same key regardless of key
+ *  insertion order. Node array order is meaningful and preserved as-is. */
+const structureKey = (payload: GeneratedPayload): string => {
+  const components = payload.components ?? {};
+  const sortedComponents = Object.keys(components)
+    .sort()
+    .map((name) => [name, components[name]]);
+  return JSON.stringify([payload.nodes, sortedComponents]);
+};
 
 export interface FlowletStageProps {
   node: UINode | null;
