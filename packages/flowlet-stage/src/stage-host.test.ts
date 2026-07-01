@@ -35,6 +35,24 @@ describe("buildSrcdoc", () => {
   });
 });
 
+describe("CSP (Tier 2.5 hardening)", () => {
+  it("does not include 'strict-dynamic' (remote script-load exfil channel)", () => {
+    expect(buildSrcdoc()).not.toContain("strict-dynamic");
+  });
+  it("allows only nonce'd and blob: scripts", () => {
+    const html = buildSrcdoc();
+    expect(html).toMatch(/script-src 'nonce-[a-f0-9]+' blob:;/);
+  });
+  it("keeps connect-src 'none' and default-src 'none'", () => {
+    const html = buildSrcdoc();
+    expect(html).toContain("connect-src 'none'");
+    expect(html).toContain("default-src 'none'");
+  });
+  it("nonces the dynamically created importmap script (strict-dynamic no longer propagates trust)", () => {
+    expect(buildSrcdoc("shim-src")).toContain("_im.nonce=");
+  });
+});
+
 // ── connectStage ─────────────────────────────────────────────────────────────
 //
 // Setup convention:
