@@ -31,7 +31,7 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error"]);
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "mixed"]);
 const reactSource = NEEDS_REACT_SHIM.has(caseParam)
   ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
   : undefined;
@@ -140,38 +140,6 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     };
   }
 
-  if (kind === "mixed") {
-    return {
-      theme,
-      state: {},
-      bundleSource: await bundle(),
-      tree: {
-        id: "root",
-        kind: "component",
-        source: "prewired",
-        name: "__row",
-        props: {},
-        children: [
-          {
-            id: "b1",
-            kind: "component",
-            source: "prewired",
-            name: "__badge",
-            props: { label: "New" },
-          },
-          {
-            id: "c1",
-            kind: "component",
-            source: "host",
-            name: "Card",
-            props: { title: "Hello", body: "World" },
-          },
-          { id: "g1", kind: "generated", payload: { note: "placeholder" } },
-        ],
-      },
-    };
-  }
-
   if (kind === "update") {
     return {
       theme,
@@ -251,6 +219,27 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         },
       ],
     });
+  }
+
+  if (kind === "mixed") {
+    // prewired (__row/__badge) + host (Card) + a REAL generated component
+    // (Badge2) coexist in one stage under the current generated-node model.
+    // Uses the externalized bundle so the generated code's `import React` and
+    // the host components share one React via the import map.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "__row", source: "prewired", children: ["b1", "c1", "g1"] },
+        { id: "b1", component: "__badge", source: "prewired", props: { label: "New" } },
+        { id: "c1", component: "Card", source: "host", props: { title: "Hello", body: "World" } },
+        { id: "g1", component: "Badge2", source: "generated" },
+      ],
+      components: {
+        Badge2:
+          "import React from 'react'; export default function Badge2(){ return React.createElement('div', { 'data-generated-impl': 'Badge2' }, 'gen'); }",
+      },
+    }, { ext: true });
   }
 
   if (kind === "gen-unknown") {
