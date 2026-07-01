@@ -5,7 +5,7 @@
 export const FLOWLET_AGENT_PACKAGE = "@flowlet/agent";
 
 // Engine
-export { createFlowletAgent, RENDER_TOOL_NAME } from "./engine";
+export { createFlowletAgent, RENDER_TOOL_NAME, RENDER_VIEW_TOOL_NAME } from "./engine";
 export type { FlowletAgentConfig } from "./engine";
 
 // Principal
