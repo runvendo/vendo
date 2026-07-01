@@ -32,7 +32,7 @@ describe("createRenderViewTool", () => {
     const tool = createRenderViewTool(writer);
     const bad = { ...VALID, components: {} }; // generated node with no definition
     const result = await tool.execute!(bad as never, {} as never);
-    expect(String(result)).toContain("error");
+    expect(String(result)).toMatch(/^render_view error \((version|provision)\):/);
     expect((writer.write as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
   });
 
