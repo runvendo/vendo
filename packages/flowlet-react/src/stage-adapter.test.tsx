@@ -211,4 +211,51 @@ describe("FlowletStage", () => {
     );
     err.mockRestore();
   });
+
+  // ---- Generated component code (Tier 2.5) ----
+
+  it("re-initializes when only the components map changes (same nodes)", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const theme = {};
+    const state = {};
+    const makeNode = (code: string): UINode => ({
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "r",
+        nodes: [{ id: "r", component: "Gauge", source: "generated" }],
+        components: { Gauge: code },
+      },
+    });
+    const { rerender } = render(
+      <FlowletStage node={makeNode("export default function A(){}")} theme={theme} state={state} />,
+    );
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(
+      <FlowletStage node={makeNode("export default function B(){}")} theme={theme} state={state} />,
+    );
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+  });
+
+  it("passes generatedComponents through to initialize", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const node: UINode = {
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "r",
+        nodes: [{ id: "r", component: "Gauge", source: "generated" }],
+        components: { Gauge: "export default function A(){}" },
+      },
+    };
+    render(<FlowletStage node={node} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    expect(initialize.mock.calls[0][0].generatedComponents).toEqual({
+      Gauge: "export default function A(){}",
+    });
+  });
 });

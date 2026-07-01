@@ -16,8 +16,11 @@ import {
   type RegisteredComponent,
 } from "@flowlet/core";
 
-/** Stable structural fingerprint of a payload's node graph (data excluded). */
-const nodesKey = (payload: GeneratedPayload): string => JSON.stringify(payload.nodes);
+/** Stable structural fingerprint of a payload's node graph and generated
+ *  component code (data excluded) — a components-map change (e.g. an LLM
+ *  revising a component's source) must re-initialize just like a nodes change. */
+const structureKey = (payload: GeneratedPayload): string =>
+  JSON.stringify([payload.nodes, payload.components ?? {}]);
 
 export interface FlowletStageProps {
   node: UINode | null;
@@ -99,7 +102,7 @@ export function FlowletStage({
             prev !== null &&
             prev.formatVersion === payload.formatVersion &&
             prev.root === payload.root &&
-            nodesKey(prev) === nodesKey(payload);
+            structureKey(prev) === structureKey(payload);
 
           if (!sameStructure) {
             const result = createGenUISession(node.payload, { registry: components });
@@ -130,7 +133,13 @@ export function FlowletStage({
             // tree's root id — NOT the wrapper GeneratedNode.id — because that is
             // the id actually mounted in the stage; a later non-generated render
             // reusing the wrapper id would otherwise update an unmounted node.
-            c.initialize({ theme, state, bundleSource, tree: result.session.tree });
+            c.initialize({
+              theme,
+              state,
+              bundleSource,
+              tree: result.session.tree,
+              generatedComponents: payload.components,
+            });
             initedRef.current = true;
             rootIdRef.current = result.session.tree.id;
             return;
