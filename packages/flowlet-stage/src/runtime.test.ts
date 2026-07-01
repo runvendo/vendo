@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { RESERVED_COMPONENT_NAMES } from "@flowlet/core";
 import { STAGE_RUNTIME_SRC } from "./runtime";
 
 describe("stage runtime source", () => {
@@ -16,6 +17,13 @@ describe("stage runtime source", () => {
       "PRIMITIVES", "Stack", "Row", "Grid", "Text", "Skeleton",
       "data-skeleton", "data-primitive",
     ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
+  });
+  it("implements every name core reserves for prewired primitives (drift guard)", () => {
+    // RESERVED_COMPONENT_NAMES in @flowlet/core blocks generated components from
+    // shadowing these; each must exist as a key in the PRIMITIVES table here.
+    for (const name of RESERVED_COMPONENT_NAMES) {
+      expect(STAGE_RUNTIME_SRC).toContain(`${name}:`);
+    }
   });
   it("resolves prewired names against primitives first, falling back to host", () => {
     expect(STAGE_RUNTIME_SRC).toContain('node.source === "prewired"');

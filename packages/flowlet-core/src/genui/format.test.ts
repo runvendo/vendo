@@ -297,11 +297,28 @@ describe("generated components (Tier 2.5)", () => {
     expect(v.ok).toBe(false);
   });
 
-  it("enforces the per-component and total source-size caps", () => {
+  it("enforces the per-component source-size cap", () => {
     const big = "x".repeat(MAX_COMPONENT_SOURCE_CHARS + 1);
     const v = validateGeneratedPayload({ ...base, components: { Gauge: big } });
     expect(v.ok).toBe(false);
     if (!v.ok) expect(v.error.message).toContain("source too large");
+  });
+
+  it("accepts a source at exactly the per-component cap", () => {
+    const atCap = "x".repeat(MAX_COMPONENT_SOURCE_CHARS);
+    const v = validateGeneratedPayload({ ...base, components: { Gauge: atCap } });
+    expect(v.ok).toBe(true);
+  });
+
+  it("enforces the total source-size cap (exactly at cap accepted, one char over rejected)", () => {
+    // 4 components at exactly the per-component cap = exactly the total cap.
+    const atCap = "x".repeat(MAX_COMPONENT_SOURCE_CHARS);
+    const four = { Gauge: atCap, A: atCap, B: atCap, C: atCap };
+    expect(validateGeneratedPayload({ ...base, components: four }).ok).toBe(true);
+    // A fifth 1-char component pushes the total one char over the cap.
+    const v = validateGeneratedPayload({ ...base, components: { ...four, D: "x" } });
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.error.message).toContain("sources too large in total");
   });
 
   it("enforces the component-count cap", () => {
@@ -309,6 +326,14 @@ describe("generated components (Tier 2.5)", () => {
     for (let i = 0; i <= MAX_GENERATED_COMPONENTS; i++) components[`C${i}`] = CODE;
     const v = validateGeneratedPayload({ ...base, components });
     expect(v.ok).toBe(false);
+  });
+
+  it("accepts exactly the component-count cap", () => {
+    const components: Record<string, string> = { Gauge: CODE };
+    for (let i = 0; i < MAX_GENERATED_COMPONENTS - 1; i++) components[`C${i}`] = CODE;
+    expect(Object.keys(components)).toHaveLength(MAX_GENERATED_COMPONENTS);
+    const v = validateGeneratedPayload({ ...base, components });
+    expect(v.ok).toBe(true);
   });
 
   it("accepts source: 'generated' in the node source union", () => {

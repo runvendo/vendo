@@ -109,6 +109,9 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // ── Built-in prewired primitives ──────────────────────────────────────────────
   // Layout/text/skeleton components referenced by name when node.source === "prewired".
   // Each reads window.__React at call time (React isn't available at module-eval time).
+  // Keep the keys in sync with RESERVED_COMPONENT_NAMES in @flowlet/core's
+  // genui/format.ts — the format reserves exactly these names so generated
+  // components can't shadow them (pinned by a drift-guard test in runtime.test.ts).
   var PRIMITIVES = {
     Stack: function(props) {
       var R = window.__React;

@@ -154,14 +154,10 @@ export function validateGeneratedPayload(input: unknown): GenUIValidation {
   // A generated-source node must have a definition. Deliberately stricter than
   // dangling child ids (which resolve to Skeleton as a streaming affordance):
   // a missing child may still arrive; a missing definition never will.
-  for (const node of nodes) {
-    if (
-      isPlainObject(node) &&
-      (node as Record<string, unknown>).source === "generated" &&
-      !(typeof (node as Record<string, unknown>).component === "string" &&
-        Object.prototype.hasOwnProperty.call(componentMap, (node as Record<string, unknown>).component as string))
-    ) {
-      return fail("provision", `node "${(node as Record<string, unknown>).id}" references generated component "${(node as Record<string, unknown>).component}" with no definition in components`);
+  // (Every node was shape-validated by the loop above, so the cast is safe.)
+  for (const node of nodes as GenNode[]) {
+    if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(componentMap, node.component)) {
+      return fail("provision", `node "${node.id}" references generated component "${node.component}" with no definition in components`);
     }
   }
 
