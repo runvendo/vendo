@@ -17,6 +17,18 @@ describe("StreamingText", () => {
     const { container } = render(<StreamingText text="" streaming />);
     expect(container.querySelector(".fl-caret")).not.toBeNull();
   });
+
+  it("renders GFM tables", () => {
+    const md = "| A | B |\n| - | - |\n| 1 | 2 |";
+    const { container } = render(<StreamingText text={md} />);
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.querySelectorAll("tbody tr").length).toBe(1);
+  });
+
+  it("renders LaTeX math via KaTeX", () => {
+    const { container } = render(<StreamingText text={"Euler: $e^{i\\pi}+1=0$"} />);
+    expect(container.querySelector(".katex")).not.toBeNull();
+  });
 });
 
 describe("ToolCall", () => {

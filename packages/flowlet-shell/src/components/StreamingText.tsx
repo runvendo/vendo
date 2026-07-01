@@ -1,7 +1,10 @@
 import { useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { stripEmoji } from "@flowlet/core";
+import "katex/dist/katex.min.css";
 
 export interface StreamingTextProps {
   text: string;
@@ -70,7 +73,8 @@ export function StreamingText({ text, streaming = false }: StreamingTextProps) {
   return (
     <div className={`fl-md${streaming ? " fl-md--streaming" : ""}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
         urlTransform={safeUrl}
         components={{
           a: ({ children, href }) => (

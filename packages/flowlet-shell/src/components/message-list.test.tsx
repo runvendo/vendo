@@ -25,20 +25,20 @@ describe("MessageList", () => {
     expect(screen.getByText("Something exploded")).toBeTruthy();
   });
 
-  it("renders text, approval, ui items, surfaces tool chips, and announces via a log", () => {
+  it("renders text, approval, ui items, groups tool calls into an activity panel, and announces via a log", () => {
     const onApprove = vi.fn();
     renderList([
-      { kind: "text", key: "a", role: "assistant", text: "hello" },
-      { kind: "tool", key: "b", toolName: "q", state: "output-available" },
-      { kind: "approval", key: "c", approvalId: "a1", toolName: "budgetCreate", input: {} },
-      { kind: "ui", key: "d", node },
+      { kind: "text", key: "a", messageId: "m", role: "assistant", text: "hello" },
+      { kind: "tool", key: "b", messageId: "m", toolName: "q", state: "output-available" },
+      { kind: "approval", key: "c", messageId: "m", approvalId: "a1", toolName: "budgetCreate", input: {} },
+      { kind: "ui", key: "d", messageId: "m", node },
     ], onApprove);
     // A dedicated visually-hidden live region announces the settled assistant turn,
     // so the assistant text appears both in the bubble and (atomically) in the log.
     expect(screen.getByRole("log")).toBeTruthy();
     expect(screen.getAllByText("hello").length).toBeGreaterThan(0);
-    // Non-render_ui tool calls surface as a quiet chip (render_ui stays a skeleton).
-    expect(screen.getByTestId("tool-call")).toBeTruthy();
+    // Non-render_ui tool calls are grouped into one collapsible activity panel.
+    expect(screen.getByTestId("activity-panel")).toBeTruthy();
     expect(screen.getByTestId("ui-node")).toBeTruthy();
     fireEvent.click(screen.getByText("Approve"));
     expect(onApprove).toHaveBeenCalledWith("a1");
