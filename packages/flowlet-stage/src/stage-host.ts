@@ -172,6 +172,8 @@ export interface StageInitPayload {
   state: Record<string, unknown>;
   bundleSource: string;
   tree: UINode;
+  /** Tier 2.5: name → ESM component source, loaded as blob modules in-sandbox. */
+  generatedComponents?: Record<string, string>;
 }
 
 /** Payload for `controller.update()`. */

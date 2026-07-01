@@ -83,3 +83,25 @@ describe("$state prop binding (bindProps)", () => {
     expect(out.plain).toBe("x");
   });
 });
+
+describe("generated components (Tier 2.5)", () => {
+  it("loads generated component modules per-name with error sentinels", () => {
+    for (const marker of [
+      "function loadGeneratedComponents(",
+      "generatedErrors",
+      "cachedGenerated",
+      'typeof mod.default === "function"',
+    ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
+  });
+  it("resolves source 'generated' against the generated map with contained errors", () => {
+    expect(STAGE_RUNTIME_SRC).toContain('node.source === "generated"');
+    expect(STAGE_RUNTIME_SRC).toContain('"data-error": "generated:"');
+  });
+  it("passes a per-node flowlet.dispatch closure to generated components", () => {
+    expect(STAGE_RUNTIME_SRC).toContain("boundProps.flowlet");
+    expect(STAGE_RUNTIME_SRC).toContain("window.__flowletDispatch(descriptor, node.id)");
+  });
+  it("no longer renders the '[generated]' placeholder branch", () => {
+    expect(STAGE_RUNTIME_SRC).not.toContain('"[generated]"');
+  });
+});

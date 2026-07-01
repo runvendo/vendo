@@ -14,7 +14,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   document.body.appendChild(root);
 
   // ── Module-level state ───────────────────────────────────────────────────────
-  var currentParams = null;   // { theme, state, tree, bundleSource }
+  var currentParams = null;   // { theme, state, tree, bundleSource, generatedComponents }
   var __pendingActions = {};  // actionId → { resolve, reject } (approval-pending dispatch)
   var currentCapabilityMap = {}; // nodeId → capability token (built from tree on ui/initialize)
   var cachedEB = null; // ErrorBoundary class, built once (see getEB) and reused across renders
@@ -43,6 +43,32 @@ export const STAGE_RUNTIME_SRC = String.raw`
       URL.revokeObjectURL(url);
     }
     return window.__FLOWLET_HOST__ || {};
+  }
+
+  // ── Generated component loader ───────────────────────────────────────────────
+  // Loads each entry of { name → ESM source } as a blob module. Failures are
+  // contained per-name: a bad module records an error sentinel and the rest of
+  // the map still loads (per-node containment downstream, never a blank stage).
+  async function loadGeneratedComponents(map) {
+    var components = {}, errors = {};
+    var names = Object.keys(map || {});
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      var url = URL.createObjectURL(new Blob([map[name]], { type: "text/javascript" }));
+      try {
+        var mod = await import(/* @vite-ignore */ url);
+        if (mod && typeof mod.default === "function") {
+          components[name] = mod.default;
+        } else {
+          errors[name] = "default export is not a function";
+        }
+      } catch (err) {
+        errors[name] = String(err && err.message || err);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+    return { components: components, errors: errors };
   }
 
   // ── Prop binding ($state substitution) ──────────────────────────────────────
@@ -165,23 +191,41 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // ── Renderer ─────────────────────────────────────────────────────────────────
   // host is cached after first bundle load so re-renders don't re-fetch.
   var cachedHost = null;
+  var cachedGenerated = {};   // name → component fn (loaded generated modules)
+  var generatedErrors = {};   // name → error message (load/shape failures)
 
   function buildElement(host, params, EB) {
     var React = window.__React;
     function toElement(node) {
       if (node.kind === "component") {
-        // Prewired primitives resolve against the built-in PRIMITIVES table first;
-        // every other name (incl. prewired __row/__badge) falls back to the host bundle.
-        var Impl = (node.source === "prewired" && PRIMITIVES[node.name]) ? PRIMITIVES[node.name] : host[node.name];
+        var Impl;
+        if (node.source === "generated") {
+          if (generatedErrors[node.name]) {
+            return React.createElement("div", { "data-error": "generated:" + node.name }, "component failed to load");
+          }
+          Impl = cachedGenerated[node.name];
+        } else {
+          // Prewired primitives resolve against the built-in PRIMITIVES table first;
+          // every other name (incl. prewired __row/__badge) falls back to the host bundle.
+          Impl = (node.source === "prewired" && PRIMITIVES[node.name]) ? PRIMITIVES[node.name] : host[node.name];
+        }
         if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
         var boundProps = bindProps(node.props, params.state);
         boundProps.__nodeId = node.id;
+        if (node.source === "generated") {
+          // Per-node dispatch closure: origin is fixed by the runtime, so generated
+          // code cannot pick an originNodeId. (originNodeId is bookkeeping, not a
+          // trust boundary — the host policy decides on the ACTION.)
+          boundProps.flowlet = {
+            dispatch: function(descriptor) { return window.__flowletDispatch(descriptor, node.id); }
+          };
+        }
         var kids = (node.children || []).map(function(c) { return wrap(c); });
         return kids.length
           ? React.createElement(Impl, boundProps, kids)
           : React.createElement(Impl, boundProps);
       }
-      return React.createElement("div", { "data-generated": true }, "[generated]");
+      return React.createElement("div", { "data-error": "unresolved-generated:" + node.id });
     }
     function wrap(node) {
       return React.createElement(EB, { key: node.id }, toElement(node));
@@ -201,6 +245,9 @@ export const STAGE_RUNTIME_SRC = String.raw`
     currentParams = params;
     injectTheme(params.theme || {});
     cachedHost = await loadBundle(params.bundleSource);
+    var gen = await loadGeneratedComponents(params.generatedComponents);
+    cachedGenerated = gen.components;
+    generatedErrors = gen.errors;
 
     var React = window.__React, createRoot = window.__createRoot;
     var EB = getEB();
