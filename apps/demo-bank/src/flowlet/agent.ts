@@ -2,7 +2,7 @@
  * Server-only Flowlet agent for the Maple demo.
  *
  * Builds the real `createFlowletAgent` (anthropic model + a broad Composio toolkit
- * set + an allow-all demo policy) and a general-purpose, generative-UI system prompt
+ * set + the real `demoPolicy` guardrail) and a general-purpose, generative-UI system prompt
  * (not a step-by-step demo script). This module pulls in `@composio/core` (Node internals) and
  * the anthropic provider, so it MUST stay server-only — import it from route
  * handlers, never from a client component.
@@ -15,24 +15,14 @@ import { anthropic } from "@ai-sdk/anthropic";
 import {
   createFlowletAgent,
   type ComposioClient,
-  type ApprovalPolicy,
 } from "@flowlet/agent";
 import type { FlowletAgent } from "@flowlet/core";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
+import { demoPolicy } from "./policy";
 
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
-
-/**
- * Allow-all policy. The demo script shows no approval modals — the "powerful
- * action" (Beat 3's Slack post) is gated by the natural-language rule + the
- * server-side poller, not by an interactive approval. So every interactive tool
- * call (render, Gmail read, rule-set) clears automatically.
- */
-const allowAllPolicy: ApprovalPolicy = {
-  evaluate: () => "allow",
-};
 
 /** Compact "{ field, optional? }" hint from a component's zod props schema, so
  *  the model uses exact prop names (e.g. Callout's `text`, not `body`). */
@@ -145,7 +135,7 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
   const model = opts.model ?? anthropic(DEMO_MODEL);
   return createFlowletAgent({
     model,
-    policy: allowAllPolicy,
+    policy: demoPolicy,
     instructions: buildInstructions(),
     composio: {
       // Only ingest toolkits the user has actually CONNECTED (the caller passes
