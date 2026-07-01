@@ -48,8 +48,11 @@ describe("CSP (Tier 2.5 hardening)", () => {
     expect(html).toContain("connect-src 'none'");
     expect(html).toContain("default-src 'none'");
   });
-  it("nonces the dynamically created importmap script (strict-dynamic no longer propagates trust)", () => {
-    expect(buildSrcdoc("shim-src")).toContain("_im.nonce=");
+  it("pins the importmap script nonce to the CSP header nonce", () => {
+    const html = buildSrcdoc("shim-src");
+    const cspNonce = html.match(/nonce-([a-f0-9]+)'/)?.[1];
+    expect(cspNonce).toBeTruthy();
+    expect(html).toContain(`_im.nonce=${JSON.stringify(cspNonce)};`);
   });
 });
 

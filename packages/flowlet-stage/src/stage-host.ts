@@ -59,7 +59,8 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
       `var _im=document.createElement('script');` +
       `_im.type='importmap';` +
       // Without 'strict-dynamic' this inserted script needs its own nonce.
-      `_im.nonce=${JSON.stringify(nonce)};` +
+      // Escaped for parity with safeJson (the nonce is hex so this is a no-op).
+      `_im.nonce=${JSON.stringify(nonce).replace(/</g, "\\u003c")};` +
       `_im.textContent=JSON.stringify({imports:{` +
       `"react":_u,` +
       `"react-dom":_u,` +
