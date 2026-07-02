@@ -15,7 +15,14 @@ export interface ToolAction {
 
 const EXACT: Record<string, ToolAction> = {
   get_transactions: { active: "Reading transactions", done: "Read transactions" },
-  set_rule: { active: "Setting up rule", done: "Set up rule" },
+  create_automation: { active: "Setting up automation", done: "Set up automation" },
+  update_automation: { active: "Updating automation", done: "Updated automation" },
+  delete_automation: { active: "Deleting automation", done: "Deleted automation" },
+  list_automations: { active: "Listing automations", done: "Listed automations" },
+  get_automation_runs: { active: "Reading run history", done: "Read run history" },
+  pause_automation: { active: "Pausing automation", done: "Paused automation" },
+  resume_automation: { active: "Resuming automation", done: "Resumed automation" },
+  run_automation_now: { active: "Test-firing automation", done: "Test-fired automation" },
 };
 
 /**
