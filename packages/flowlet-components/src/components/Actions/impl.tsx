@@ -48,14 +48,14 @@ function ActionButtons(p: z.infer<typeof withFlowlet>) {
             onClick={() => run(i)}
             title={canDispatch ? undefined : "Actions are available inside the app"}
             style={{
-              font: "inherit", fontSize: 13, fontWeight: 600,
-              padding: "8px 14px", cursor: canDispatch ? "pointer" : "default",
+              font: "inherit", fontSize: 12.5, fontWeight: 600, letterSpacing: "-0.006em",
+              padding: "9px 16px", minHeight: 34, cursor: canDispatch ? "pointer" : "default",
               borderRadius: "calc(var(--flowlet-radius, 12px) * 0.6)",
               ...styles,
               opacity: pending === i ? 0.6 : !canDispatch ? 0.5 : 1,
             }}
           >
-            {pending === i ? "…" : a.label}
+            {a.label}
           </button>
         );
       })}

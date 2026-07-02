@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { UINode, ActionRequest, ActionResult } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
+import { ApprovalCard } from "@flowlet/shell";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@flowlet/components";
 import { mapleHostComponents } from "@/flowlet/host-components/descriptors";
 import { mapleBrand } from "@/flowlet/brand";
@@ -46,6 +47,67 @@ async function callAction(action: string, payload: unknown, approved: boolean): 
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? `action failed (${res.status})`);
   return { result: json.result };
+}
+
+/** Review scaffolding (brand-tier treatment pick): "card" | "modal" | "sheet".
+ *  Collapses to the chosen treatment once Yousef picks. Default: card. */
+function approvalTreatment(): string {
+  try {
+    return window.localStorage.getItem("flowlet-approval-treatment") ?? "card";
+  } catch {
+    return "card";
+  }
+}
+
+/**
+ * The sandbox action consent moment — the SAME ApprovalCard the chat path uses
+ * (ENG-204, Yousef-approved), replacing the demo-era yellow inline prompt.
+ * The card is host chrome: it must never render inside the untrusted iframe.
+ */
+function StageApproval({ req, settle }: { req: ActionRequest; settle: (approved: boolean) => void }) {
+  const treatment = approvalTreatment();
+  const card = (
+    <ApprovalCard
+      toolName={req.action}
+      input={req.payload}
+      onApprove={() => settle(true)}
+      onDecline={() => settle(false)}
+    />
+  );
+
+  if (treatment === "modal") {
+    return (
+      <div
+        data-testid="stage-approval"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Approve action"
+        onClick={(e) => { if (e.target === e.currentTarget) settle(false); }}
+        style={{
+          position: "fixed", inset: 0, zIndex: 60, display: "grid", placeItems: "center",
+          background: "color-mix(in srgb, var(--flowlet-fg, #111) 24%, transparent)",
+          backdropFilter: "blur(2.5px)", WebkitBackdropFilter: "blur(2.5px)",
+        }}
+      >
+        <div className="maple-approval-pop" style={{ minWidth: "min(420px, 92vw)" }}>{card}</div>
+      </div>
+    );
+  }
+
+  if (treatment === "sheet") {
+    return (
+      <div data-testid="stage-approval" className="maple-approval-sheet" style={{ marginTop: 10 }}>
+        {card}
+      </div>
+    );
+  }
+
+  // "card" (default): the approved card in-flow, directly beneath the view.
+  return (
+    <div data-testid="stage-approval" className="maple-approval-inflow" style={{ marginTop: 10 }}>
+      {card}
+    </div>
+  );
 }
 
 export function SandboxStage({ node }: { node: UINode }): ReactNode {
@@ -99,17 +161,7 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
         theme={theme}
         componentTheme={componentTheme}
       />
-      {pending && (
-        <div role="alertdialog" aria-label="Approve action" data-testid="stage-approval"
-          style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px",
-            border: "1px solid #e6c200", borderRadius: 8, marginTop: 8, fontSize: 13 }}>
-          <span style={{ flex: 1 }}>
-            Allow <strong>{pending.req.action}</strong>?
-          </span>
-          <button type="button" onClick={() => pending.settle(true)}>Allow</button>
-          <button type="button" onClick={() => pending.settle(false)}>Deny</button>
-        </div>
-      )}
+      {pending && <StageApproval req={pending.req} settle={pending.settle} />}
     </div>
   );
 }
