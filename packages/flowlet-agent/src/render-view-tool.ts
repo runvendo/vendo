@@ -27,8 +27,19 @@ const genNodeSchema = z.object({
   children: z.array(z.string()).optional().describe("Child node ids."),
 });
 
+const dataQuerySchema = z.object({
+  path: z.string().describe("JSON Pointer into `data` where this tool's result lives ('' = the whole model)."),
+  tool: z.string().describe("Name of the tool whose call produced the data at `path`."),
+  input: z.record(z.string(), z.unknown()).optional()
+    .describe("The exact input to replay the tool with on refresh."),
+});
+
 export function createRenderViewTool(writer: FlowletWriter) {
+  // Node ids key saved flowlets (ENG-183), and a tool instance lives for ONE
+  // request — a bare counter would make every session's first view "view-1".
+  // The random suffix keeps ids unique across instances.
   let counter = 0;
+  const mintId = () => `view-${++counter}-${crypto.randomUUID().slice(0, 8)}`;
 
   return tool({
     description:
@@ -47,6 +58,10 @@ export function createRenderViewTool(writer: FlowletWriter) {
         .describe("Data model for { $path } prop bindings."),
       components: z.record(z.string(), z.string()).optional()
         .describe("PascalCase name → ESM source for novel components (max 16, 64KB each)."),
+      queries: z.array(dataQuerySchema).optional()
+        .describe("Provenance of `data` for refreshable views: which policy-governed tool calls produced it. " +
+          "Place each tool's result VERBATIM at its `path` in `data` (transform inside generated components, " +
+          "not between tool and data). Reopening a saved view re-runs these to fetch fresh data."),
     }),
     execute: async (payload) => {
       const validation = validateGeneratedPayload(payload);
@@ -70,7 +85,7 @@ export function createRenderViewTool(writer: FlowletWriter) {
         shipped = { ...validation.payload, components: compiled };
       }
       const node: UINode = {
-        id: `view-${++counter}`,
+        id: mintId(),
         kind: "generated",
         payload: shipped,
       };

@@ -55,6 +55,7 @@ export {
 } from "react";
 export { createRoot } from "react-dom/client";
 // The import map points "react-dom" here too; recharts/OpenUI import these.
-export { createPortal, flushSync, findDOMNode } from "react-dom";
+// (No findDOMNode: React 19 removed it and no bundle imports it.)
+export { createPortal, flushSync } from "react-dom";
 // jsx / jsxs are used by the automatic JSX runtime transform.
 export { jsx, jsxs } from "react/jsx-runtime";

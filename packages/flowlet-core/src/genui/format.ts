@@ -16,6 +16,16 @@ export function isPropBinding(v: unknown): v is PropBinding {
   return typeof v === "object" && v !== null && typeof (v as { $path?: unknown }).$path === "string";
 }
 
+/** Declared provenance of a `data` subtree: the tool call that produced it.
+ *  Reopening a saved view re-runs these through the normal (policy-governed)
+ *  tool path and patches results back in at `path` (ENG-183). */
+export interface DataQuery {
+  /** RFC 6901 JSON Pointer into `data`; "" replaces the whole model. */
+  path: string;
+  tool: string;
+  input?: Record<string, unknown>;
+}
+
 export interface GenNode {
   id: string;
   component: string;
@@ -29,6 +39,8 @@ export interface GeneratedPayload {
   root: string;
   nodes: GenNode[];
   data?: Record<string, unknown>;
+  /** Declared provenance of `data`: re-runnable on reopen for fresh data. */
+  queries?: DataQuery[];
   /** Tier 2.5: name → ESM React component source, evaluated in-sandbox. */
   components?: Record<string, string>;
 }
@@ -40,6 +52,9 @@ export const MAX_GENUI_NODES = 5000;
 /** Names of the prewired primitives shipped inside the stage runtime. The
  *  format reserves them: a generated component may not shadow a primitive. */
 export const RESERVED_COMPONENT_NAMES = ["Stack", "Row", "Grid", "Text", "Skeleton"] as const;
+
+/** Cap on declared data queries (DoS defense, consistent with MAX_GENUI_NODES). */
+export const MAX_GENUI_QUERIES = 16;
 
 /** Caps for generated component code (DoS defense, consistent with MAX_GENUI_NODES). */
 export const MAX_GENERATED_COMPONENTS = 16;
@@ -86,6 +101,24 @@ export function validateGeneratedPayload(input: unknown): GenUIValidation {
   }
   if (input.data !== undefined && !isPlainObject(input.data)) {
     return fail("provision", "data must be a plain object");
+  }
+  if (input.queries !== undefined) {
+    if (!Array.isArray(input.queries)) return fail("provision", "queries must be an array");
+    if (input.queries.length > MAX_GENUI_QUERIES) {
+      return fail("provision", `too many queries (max ${MAX_GENUI_QUERIES})`);
+    }
+    for (const q of input.queries) {
+      if (!isPlainObject(q)) return fail("provision", "each query must be an object");
+      if (typeof q.path !== "string" || (q.path !== "" && q.path[0] !== "/")) {
+        return fail("provision", "query path must be a JSON Pointer ('' or starting with '/')");
+      }
+      if (typeof q.tool !== "string" || q.tool.length === 0) {
+        return fail("provision", "query tool must be a non-empty string");
+      }
+      if (q.input !== undefined && !isPlainObject(q.input)) {
+        return fail("provision", "query input must be a plain object");
+      }
+    }
   }
 
   const ids = new Set<string>();

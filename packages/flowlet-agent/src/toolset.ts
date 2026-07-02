@@ -16,6 +16,7 @@ import type { ToolSet } from "ai";
 import type { ToolSource, ToolDescriptor } from "./descriptor";
 import { buildDescriptor } from "./descriptor";
 import { wrapTool } from "./wrap-tool";
+import { wrapClientTool } from "./wrap-client-tool";
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 
@@ -68,10 +69,15 @@ export function buildToolset(args: {
       // provides enriched descriptors), otherwise derive it from the tool object.
       const descriptor = descriptors?.[name] ?? buildDescriptor(name, tool, source);
 
-      // Wrap and register. If wrapTool throws (e.g. tool has no `execute`),
-      // catch it, report via onSkip, and leave the tool out — fail-closed.
+      // Wrap and register. Client-executed tools (host-API tools that run in
+      // the user's browser, ENG-202) have no `execute` by design and are
+      // governed via `needsApproval` only; everything else takes the standard
+      // execute-gated wrapper. If wrapping throws (e.g. an unmarked tool has
+      // no `execute`), catch it, report via onSkip, and leave the tool out —
+      // fail-closed.
       try {
-        const wrapped = wrapTool({
+        const wrap = descriptor.executor === "client" ? wrapClientTool : wrapTool;
+        const wrapped = wrap({
           name,
           tool,
           descriptor,
