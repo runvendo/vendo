@@ -17,7 +17,13 @@ export const mapleBrand: BrandTokens = {
   surface: "#FFFFFF", // mapleTheme.surface
   text: "#14151A", // mapleTheme.fg
   mutedText: "#8A8B92", // mapleTheme.fgMuted
-  fontFamily: "var(--font-inter), ui-sans-serif, system-ui, sans-serif", // mapleTheme.font
+  // Concrete stack — BrandTokens must be fully resolved primitives. A var()
+  // here cannot resolve inside the sandbox iframe (host vars don't exist
+  // there) and invalidates the whole font-family declaration, falling back to
+  // UA serif. Inter isn't loaded in the sandbox (next/font registers it under
+  // a mangled name, host-only), so the box lands on ui-sans-serif; the host
+  // shell keeps real Inter via the delivery override in FlowletRoot.
+  fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
   radius: "16px", // mapleTheme.radius
   mode: "light",
 };
