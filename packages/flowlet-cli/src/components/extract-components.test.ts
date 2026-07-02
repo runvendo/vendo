@@ -32,4 +32,18 @@ describe("extractComponents", () => {
     await readFile(path.join(dir, ".flowlet/components/entry.ts"), "utf8");
     await readFile(path.join(dir, ".flowlet/components/vite.config.ts"), "utf8");
   });
+
+  it("repairs a broken wrapper once by feeding the codegen error back", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "comp-"));
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
+    const BROKEN = JSON.stringify({
+      include: true, reason: "primitive", name: "Badge", description: "A badge.",
+      imports: ["Badge"], props: [{ name: "text", type: "string", optional: false, description: "Text." }],
+      jsx: "<Badge>{p.text}</Badge", // syntax error
+    });
+    const summary = await extractComponents(dir, textModel([BROKEN, INCLUDE]), { force: false });
+    expect(summary.written).toEqual(["Badge"]);
+    expect(summary.failed).toEqual([]);
+  });
 });

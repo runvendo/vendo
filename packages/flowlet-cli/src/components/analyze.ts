@@ -15,8 +15,9 @@ export const componentAnalysisSchema = z.object({
   include: z.boolean(),
   reason: z.string(),
   // PascalCase is only enforced at codegen time (writeComponent) — an
-  // include:false reply may carry any placeholder name and must still validate.
-  name: z.string().min(1),
+  // include:false reply may carry any placeholder (or empty) name and must
+  // still validate.
+  name: z.string(),
   description: z.string(),
   /** Named exports to import from the host file (e.g. ["Button"]). */
   imports: z.array(z.string()),
@@ -26,7 +27,10 @@ export const componentAnalysisSchema = z.object({
 });
 export type ComponentAnalysis = z.infer<typeof componentAnalysisSchema>;
 
-function buildPrompt(c: ComponentCandidate): string {
+function buildPrompt(c: ComponentCandidate, feedback?: string): string {
+  const feedbackBlock = feedback
+    ? ["", "Your previous wrapper spec for this component failed:", feedback, "Fix the problem and respond again.", ""]
+    : [];
   return [
     "You are wrapping a host React component so a sandboxed generated-UI runtime can render it.",
     "The sandbox renders components from JSON props only. Decide whether this component is a",
@@ -45,12 +49,17 @@ function buildPrompt(c: ComponentCandidate): string {
     '{"include":bool,"reason":"...","name":"PascalCase","description":"...",',
     ' "imports":["..."],"props":[{"name":"...","type":"string","optional":false,"description":"..."}],',
     ' "jsx":"<Button variant={p.variant}>{p.label}</Button>"}',
+    ...feedbackBlock,
     "",
     `--- ${c.relFile} ---`,
     c.source,
   ].join("\n");
 }
 
-export async function analyzeComponent(c: ComponentCandidate, model: LanguageModel): Promise<ComponentAnalysis> {
-  return generateJson({ model, schema: componentAnalysisSchema, prompt: buildPrompt(c) });
+export async function analyzeComponent(
+  c: ComponentCandidate,
+  model: LanguageModel,
+  feedback?: string,
+): Promise<ComponentAnalysis> {
+  return generateJson({ model, schema: componentAnalysisSchema, prompt: buildPrompt(c, feedback) });
 }

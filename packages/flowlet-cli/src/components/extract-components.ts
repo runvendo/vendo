@@ -24,12 +24,23 @@ export async function extractComponents(
 
   for (const candidate of candidates) {
     try {
-      const analysis = await analyzeComponent(candidate, model);
+      let analysis = await analyzeComponent(candidate, model);
       if (!analysis.include) {
         excluded.push({ file: candidate.relFile, reason: analysis.reason });
         continue;
       }
-      written.push(await writeComponent(targetDir, analysis, candidate, opts));
+      try {
+        written.push(await writeComponent(targetDir, analysis, candidate, opts));
+      } catch (codegenErr) {
+        // One repair round-trip: hand the codegen error back to the model.
+        const feedback = codegenErr instanceof Error ? codegenErr.message : String(codegenErr);
+        analysis = await analyzeComponent(candidate, model, feedback);
+        if (!analysis.include) {
+          excluded.push({ file: candidate.relFile, reason: analysis.reason });
+          continue;
+        }
+        written.push(await writeComponent(targetDir, analysis, candidate, opts));
+      }
     } catch (err) {
       failed.push({ file: candidate.relFile, error: err instanceof Error ? err.message : String(err) });
     }
