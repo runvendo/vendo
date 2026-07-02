@@ -276,6 +276,24 @@ describe("POST /api/demo/reset", () => {
     expect(data.clientsMissingDocs).toBe(8)
     expect(getStore().documents.find(d => d.id === "doc_rivera_w2")?.status).toBe("missing")
   })
+
+  it("returns the full documented DashboardMetrics shape (the ENG-202 contract)", async () => {
+    const res = await postDemoReset()
+    const { data } = await res.json()
+
+    expect(data.clientsTotal).toBe(12)
+    expect(data.documentsReceived + data.documentsOutstanding).toBe(data.documentsTotal)
+    expect(Number.isNaN(Date.parse(data.nearestDeadline))).toBe(false)
+    expect(data.nearestDeadlineClient).toMatchObject({
+      id: "cl_rivera",
+      businessName: "Rivera Landscaping LLC",
+      filingDeadline: data.nearestDeadline,
+    })
+
+    // Reset and dashboard share one schema in openapi.json; catch any drift.
+    const dashboard = await (await getDashboard()).json()
+    expect(data).toEqual(dashboard.data)
+  })
 })
 
 describe("POST /api/demo/simulate/upload", () => {

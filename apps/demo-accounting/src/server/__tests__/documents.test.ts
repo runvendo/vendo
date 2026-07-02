@@ -134,6 +134,8 @@ describe("derived helpers", () => {
       .map(c => c.filingDeadline)
       .sort((a, b) => +new Date(a) - +new Date(b))[0]
     expect(metrics.nearestDeadline).toBe(soonest)
+    expect(metrics.clientsTotal).toBe(store.clients.length)
+    expect(metrics.nearestDeadlineClient?.filingDeadline).toBe(soonest)
   })
 
   it("clientsMissingDocs drops by 1 after clearing one client's missing docs", () => {

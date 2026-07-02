@@ -3,16 +3,10 @@
 // (e.g. a personal bank statement instead of the business one) lands it in
 // 'needs_review' with an explanatory note. Either way a client -> firm message
 // and activity are recorded so the UI shows the client uploading.
-import { receiveForReview, transitionDocument } from "@/server/documents"
+import { receiveForReview, slugify, transitionDocument } from "@/server/documents"
 import { badRequest, fromDomainError, notFound, ok } from "@/server/http"
 import { sendMessage } from "@/server/messages"
 import { getStore } from "@/server/store"
-
-const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
@@ -39,7 +33,7 @@ export async function POST(req: Request) {
     const document =
       variant === "correct"
         ? transitionDocument(docId, "receive", {
-            fileName: fileName ?? `${slug(client.businessName)}-${slug(doc.kind)}.pdf`,
+            fileName: fileName ?? `${slugify(client.businessName)}-${slugify(doc.kind)}.pdf`,
           })
         : receiveForReview(docId, {
             fileName: fileName ?? "personal-checking-statements-jan-jun.pdf",

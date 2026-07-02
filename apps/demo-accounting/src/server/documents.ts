@@ -13,6 +13,14 @@ export interface TransitionOptions {
 /** Statuses from which a firm review action (verify/reject) is valid. */
 const REVIEWABLE = ["received", "needs_review"] as const
 
+/** Lowercase hyphen-separated slug, used for generated upload file names. */
+export function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
 function invalid(doc: DocumentRequest, action: string): DomainError {
   return new DomainError(
     "invalid_transition",
@@ -42,7 +50,7 @@ export function transitionDocument(
       if (doc.status !== "missing") throw invalid(doc, action)
       doc.status = "received"
       doc.file = {
-        name: opts.fileName ?? `${doc.kind.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
+        name: opts.fileName ?? `${slugify(doc.kind)}.pdf`,
         uploadedAt: new Date().toISOString(),
       }
       delete doc.note
@@ -99,7 +107,7 @@ export function receiveForReview(
   doc.status = "needs_review"
   doc.note = opts.note
   doc.file = {
-    name: opts.fileName ?? `${doc.kind.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
+    name: opts.fileName ?? `${slugify(doc.kind)}.pdf`,
     uploadedAt: new Date().toISOString(),
   }
   recordActivity(
@@ -134,24 +142,39 @@ export interface DashboardMetrics {
   documentsOutstanding: number
   documentsReceived: number
   documentsTotal: number
+  clientsTotal: number
   nearestDeadline: string | null
+  nearestDeadlineClient: { id: string; businessName: string; filingDeadline: string } | null
 }
 
+/**
+ * The full shape of GET /api/dashboard and POST /api/demo/reset (the
+ * DashboardMetrics schema in openapi.json). Both routes must return exactly
+ * this, so keep any additions here rather than shaping inline in a route.
+ */
 export function dashboardMetrics(): DashboardMetrics {
   const store = getStore()
   const total = store.documents.length
   const outstanding = store.documents.filter(
     d => d.status === "missing" || d.status === "rejected",
   ).length
-  const nearestDeadline =
-    [...store.clients]
-      .map(c => c.filingDeadline)
-      .sort((a, b) => +new Date(a) - +new Date(b))[0] ?? null
+  const nearest =
+    [...store.clients].sort(
+      (a, b) => +new Date(a.filingDeadline) - +new Date(b.filingDeadline),
+    )[0] ?? null
   return {
     clientsMissingDocs: clientsMissingDocs(),
     documentsOutstanding: outstanding,
     documentsReceived: total - outstanding,
     documentsTotal: total,
-    nearestDeadline,
+    clientsTotal: store.clients.length,
+    nearestDeadline: nearest?.filingDeadline ?? null,
+    nearestDeadlineClient: nearest
+      ? {
+          id: nearest.id,
+          businessName: nearest.businessName,
+          filingDeadline: nearest.filingDeadline,
+        }
+      : null,
   }
 }

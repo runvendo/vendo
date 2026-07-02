@@ -30,14 +30,7 @@ export async function fetcher<T>(url: string): Promise<T> {
   return json.data as T
 }
 
-/** Shape of GET /api/dashboard. */
-export interface DashboardData extends DashboardMetrics {
-  clientsTotal: number
-  nearestDeadlineClient: {
-    id: string
-    businessName: string
-    filingDeadline: string
-  } | null
-}
+/** Shape of GET /api/dashboard (and POST /api/demo/reset): the full server metrics. */
+export type DashboardData = DashboardMetrics
 
 export type { ActivityEvent, ClientSummary, DeadlineEntry, DocumentRequest, Message }
