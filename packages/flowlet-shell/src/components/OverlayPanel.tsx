@@ -46,11 +46,16 @@ export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPane
         ref={panelRef}
         onKeyDown={onKeyDown}
       >
+        {children}
+        {/* AFTER the content in DOM order (absolute-positioned, so visually
+            top-right regardless): the focus trap sends initial focus to the
+            first focusable descendant, and that must stay the content — with
+            the X first, opening the overlay focused Close and Enter dismissed
+            the dialog the user just opened. */}
         <button type="button" className="fl-overlay-close" aria-label="Close" onClick={onClose}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
-        {children}
       </div>
     </div>,
     document.body,
