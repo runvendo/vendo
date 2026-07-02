@@ -13,7 +13,7 @@
 import { demoTools } from "./tools";
 import { demoPolicy } from "./policy";
 import { DEMO_PRINCIPAL } from "./principal";
-import { buildDescriptor } from "@flowlet/agent";
+import { buildDescriptor } from "@flowlet/runtime";
 
 interface ActionBody {
   action?: string;

@@ -2,7 +2,7 @@
  * LLM plumbing for the CLI's assisted extractors.
  *
  * Uses generateText + zod-parse (NOT generateObject) so MockLanguageModelV3
- * can drive unit tests — same precedent as flowlet-agent's natural-language
+ * can drive unit tests — same precedent as flowlet-runtime's natural-language
  * policy judge.
  */
 import { generateText, type LanguageModel } from "ai";

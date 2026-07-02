@@ -4,7 +4,7 @@
  * guardrail gating a real model's tool call.
  *
  * Skipped unless ANTHROPIC_API_KEY is set. Run with keys injected, e.g.:
- *   infisical run --projectId <id> --env dev -- pnpm -F @flowlet/agent test engine.live
+ *   infisical run --projectId <id> --env dev -- pnpm -F @flowlet/runtime test engine.live
  *
  * Override the model with FLOWLET_E2E_MODEL if needed.
  */

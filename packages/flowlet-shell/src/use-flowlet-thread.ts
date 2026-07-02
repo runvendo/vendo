@@ -42,7 +42,7 @@ export type RenderItem =
  * Built-in tools whose product is a `data-ui` node (the rendered view, or the
  * host-privileged Connect card). Their raw tool chip is suppressed to avoid a
  * redundant sliver next to the rendered component. Mirrors `RENDER_VIEW_TOOL_NAME`
- * and `REQUEST_CONNECT_TOOL_NAME` in `@flowlet/agent`.
+ * and `REQUEST_CONNECT_TOOL_NAME` in `@flowlet/runtime`.
  */
 const RENDER_TOOLS = new Set(["render_view", "request_connect"]);
 

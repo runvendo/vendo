@@ -1,5 +1,5 @@
 {
-  "name": "@flowlet/agent",
+  "name": "@flowlet/runtime",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",

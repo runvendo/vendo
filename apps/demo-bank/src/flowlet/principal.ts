@@ -6,7 +6,7 @@
  * empty userId makes Composio fail closed, so this is threaded through the chat
  * route into `agent.run({ principal })`.
  */
-import type { FlowletPrincipal } from "@flowlet/agent";
+import type { FlowletPrincipal } from "@flowlet/runtime";
 
 export const DEMO_USER_ID = "flowlet-demo";
 

@@ -8,7 +8,7 @@
  * Pulls in `@composio/core` (Node internals) — import only from route handlers,
  * never from a client component.
  */
-import { createComposioClient, type ComposioClient } from "@flowlet/agent";
+import { createComposioClient, type ComposioClient } from "@flowlet/runtime";
 import { DEMO_PRINCIPAL } from "./principal";
 
 // Lazily-constructed singleton: never touches the network until first use.

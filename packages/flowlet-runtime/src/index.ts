@@ -1,8 +1,10 @@
 /**
- * Public API surface for `@flowlet/agent` — Flowlet's F2 agent runtime.
+ * Public API surface for `@flowlet/runtime` — Flowlet's portable agent runtime
+ * (architecture Decision 1: loop, tool calling, policy, UI generation,
+ * automations; depends only on the five frozen seams + @flowlet/core).
  */
 
-export const FLOWLET_AGENT_PACKAGE = "@flowlet/agent";
+export const FLOWLET_RUNTIME_PACKAGE = "@flowlet/runtime";
 
 // Engine
 export { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
@@ -54,3 +56,21 @@ export type { ComposioClient, ComposioConfig } from "./composio";
 // Automations engine (ENG-188): DSL, interpreter, store, runner, scheduler,
 // ingest helpers, and chat authoring tools.
 export * from "./automations";
+
+// Embedded seam implementations (in-memory/in-process) for tests and
+// embedded deployments — the other half of architecture Decision 1.
+// InMemoryAutomationStore and InProcessScheduler already flow from the
+// automations barrel above, so only the new embedded modules are listed.
+export {
+  createInMemoryStore,
+  InMemoryAuditLog,
+  InMemorySavedFlowletStore,
+  InMemoryThreadStore,
+  type InMemoryStore,
+} from "./embedded/in-memory-store";
+export {
+  InProcessCredentialBroker,
+  type InProcessCredentialBrokerConfig,
+} from "./embedded/in-process-credential-broker";
+export { InProcessExecutor, type InProcessToolFn } from "./embedded/in-process-executor";
+export { InAppChannels, type InAppChannelsConfig } from "./embedded/in-app-channels";

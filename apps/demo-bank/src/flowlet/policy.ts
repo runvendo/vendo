@@ -1,13 +1,13 @@
 /**
  * The Maple demo's REAL guardrail policy (replaces the old allow-all).
  *
- * Layered on the @flowlet/agent policy machinery: one deterministic name-based
+ * Layered on the @flowlet/runtime policy machinery: one deterministic name-based
  * layer. Render + in-process demo tools and read-shaped external tools run
  * freely; anything write-shaped or unknown requires approval. The same policy
  * governs automation firings: the interpreter evaluates it per step, and an
  * approve-gated step runs unattended only under a scope-hashed grant.
  */
-import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/agent";
+import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/runtime";
 
 /** In-process tools that are safe by construction (incl. read-shaped
  *  automation authoring; create/update/delete/pause/run-now stay gated). */

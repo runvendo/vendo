@@ -4,7 +4,7 @@
  */
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
-import type { ComposioClient } from "@flowlet/agent";
+import type { ComposioClient } from "@flowlet/runtime";
 
 export const ZERO_USAGE = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },

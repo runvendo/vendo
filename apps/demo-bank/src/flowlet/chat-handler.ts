@@ -12,7 +12,7 @@
  */
 import { createUIMessageStreamResponse } from "ai";
 import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
-import { hostToolset } from "@flowlet/agent";
+import { hostToolset } from "@flowlet/runtime";
 import { DEMO_PRINCIPAL } from "./principal";
 import { mapleHostToolDefs } from "./host-tools";
 

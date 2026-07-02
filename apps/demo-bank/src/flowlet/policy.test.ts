@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { demoPolicy } from "./policy";
-import type { PolicyContext } from "@flowlet/agent";
+import type { PolicyContext } from "@flowlet/runtime";
 
 const ctx = (toolName: string): PolicyContext => ({
   toolName,

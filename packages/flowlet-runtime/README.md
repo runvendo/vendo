@@ -1,6 +1,13 @@
-# @flowlet/agent
+# @flowlet/runtime
 
-The Flowlet F2 agent runtime. Built on the Vercel `ai` SDK v6, it implements
+Flowlet's portable agent runtime (architecture Decision 1): the model->tool
+loop, tool calling, policy, UI generation, and the automations engine, plus
+in-memory implementations of the five frozen seams for tests and embedded use.
+It never imports a database, queue, or HTTP server (enforced by
+`src/dependency-guard.test.ts`). Renamed from `@flowlet/agent` in the
+2026-07-02 runtime carve-out.
+
+Built on the Vercel `ai` SDK v6, it implements
 F1's `FlowletAgent` interface with a real model->tool loop, per-user Composio
 tool ingestion, and a pluggable guardrail policy. F1's `@flowlet/core` and
 `@flowlet/react` are unchanged: approvals use the ai SDK's native
@@ -12,7 +19,7 @@ include this package in a browser bundle.
 ## `createFlowletAgent(config)`
 
 ```ts
-import { createFlowletAgent } from "@flowlet/agent";
+import { createFlowletAgent } from "@flowlet/runtime";
 
 const agent = createFlowletAgent({
   model,           // LanguageModel (ai SDK) — required
