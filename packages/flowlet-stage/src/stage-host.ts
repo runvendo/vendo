@@ -121,12 +121,20 @@ export interface StageEndpoints {
  * srcdoc and an import map is set up so externalized host bundles share one
  * React instance. When omitted the self-contained bundle path is used.
  */
+/** Host-owned ceiling for runtime-reported stage heights. In-sandbox code can
+ *  post any `resize` payload it likes; the host clamps so a hostile component
+ *  cannot force arbitrary host-page growth. */
+const DEFAULT_MAX_STAGE_HEIGHT = 8192;
+
 export function createStage(
   slot: HTMLElement,
-  opts?: { reactSource?: string },
+  opts?: { reactSource?: string; maxStageHeight?: number },
 ): {
   iframe: HTMLIFrameElement;
   endpoints: StageEndpoints;
+  /** Deterministic teardown of the resize listener (and any pending frame).
+   *  Call alongside removing the iframe — the listener does NOT die with it. */
+  dispose: () => void;
 } {
   const iframe = document.createElement("iframe");
   iframe.id = "flowlet-stage";
@@ -140,20 +148,34 @@ export function createStage(
   // ResizeObserver on its documentElement; consume it here so the iframe tracks
   // its content instead of clipping at the UA default height. Lives in
   // createStage (the DOM layer) rather than connectStage, which is DOM-free.
-  // Self-cleaning: once the iframe is removed from the document the next
-  // message drops the listener.
+  // Untrusted input: ANY in-sandbox code can post this message, so heights are
+  // validated (finite, positive) and clamped to a host-owned max, and applies
+  // are coalesced to one per animation frame.
+  const maxHeight = opts?.maxStageHeight ?? DEFAULT_MAX_STAGE_HEIGHT;
+  let pendingHeight: number | null = null;
+  let frame: number | null = null;
   const onResize = (e: MessageEvent) => {
-    if (!iframe.isConnected) {
-      window.removeEventListener("message", onResize);
-      return;
-    }
     if (e.source !== iframe.contentWindow) return;
     const d = e.data as { flowlet?: boolean; type?: string; height?: number } | undefined;
-    if (d?.flowlet === true && d.type === "resize" && typeof d.height === "number") {
-      iframe.style.height = `${d.height}px`;
-    }
+    if (d?.flowlet !== true || d.type !== "resize") return;
+    const h = d.height;
+    if (typeof h !== "number" || !Number.isFinite(h) || h <= 0) return;
+    pendingHeight = Math.min(h, maxHeight);
+    frame ??= requestAnimationFrame(() => {
+      frame = null;
+      if (pendingHeight !== null && iframe.isConnected) {
+        iframe.style.height = `${pendingHeight}px`;
+      }
+      pendingHeight = null;
+    });
   };
   window.addEventListener("message", onResize);
+  const dispose = () => {
+    window.removeEventListener("message", onResize);
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+    pendingHeight = null;
+  };
 
   // Wrap contentWindow.postMessage to supply the required targetOrigin ("*").
   // The MessageEndpoint interface only takes one argument, but the browser's
@@ -197,6 +219,7 @@ export function createStage(
       listen: listenEndpoint,
       post: postEndpoint,
     },
+    dispose,
   };
 }
 

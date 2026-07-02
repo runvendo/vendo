@@ -31,7 +31,7 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle"]);
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle", "resize-bomb"]);
 const reactSource = NEEDS_REACT_SHIM.has(caseParam)
   ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
   : undefined;
@@ -438,6 +438,31 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
       components: {
         JsxComp:
           'import { jsx as _jsx } from "react/jsx-runtime"; export default function JsxComp(){ return _jsx("div", { "data-generated-impl": "JsxComp", children: "jsx works" }); }',
+      },
+    }, { ext: true });
+  }
+
+  if (kind === "resize-bomb") {
+    // Hostile auto-size: a generated component posts an absurd resize height
+    // directly (any in-sandbox code can — the runtime's ResizeObserver is not a
+    // gate). The host must clamp; the gate asserts the iframe never grows past
+    // the host-owned max.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [{ id: "root", component: "Bomb", source: "generated" }],
+      components: {
+        Bomb: [
+          "import React from 'react';",
+          "export default function Bomb() {",
+          "  React.useEffect(function () {",
+          "    parent.postMessage({ flowlet: true, type: 'resize', height: 1e9 }, '*');",
+          "    parent.postMessage({ flowlet: true, type: 'resize', height: -50 }, '*');",
+          "    parent.postMessage({ flowlet: true, type: 'resize', height: Infinity }, '*');",
+          "  }, []);",
+          "  return React.createElement('div', { 'data-generated-impl': 'Bomb' }, 'bomb');",
+          "}",
+        ].join("\n"),
       },
     }, { ext: true });
   }

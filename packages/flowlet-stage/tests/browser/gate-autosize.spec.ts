@@ -1,6 +1,26 @@
 import { test, expect } from "@playwright/test";
 
 test(
+  "gate 6b: hostile resize heights are clamped — in-sandbox code cannot force arbitrary host page growth",
+  async ({ page }) => {
+    await page.goto("/fixtures/host.html?case=resize-bomb");
+    const frame = page.frameLocator("#flowlet-stage");
+    await expect(frame.getByText("bomb")).toBeVisible();
+
+    // The Bomb component posts height:1e9, -50, and Infinity. The host must
+    // clamp to its max (8192 default) and ignore non-finite/non-positive
+    // values — the iframe never explodes past the max.
+    const iframe = page.locator("#flowlet-stage");
+    // The bomb posts from useEffect, so it has fired by the time the component
+    // is visible; give the messages + rAF a beat to apply, then assert.
+    await page.waitForTimeout(400);
+    const height = (await iframe.boundingBox())!.height;
+    expect(height).toBeLessThanOrEqual(8192);
+    expect(height).toBeGreaterThan(0);
+  },
+);
+
+test(
   "gate 6 (strengthened): iframe height tracks content and grows when a ui/update adds taller content",
   async ({ page }) => {
     await page.goto("/fixtures/host.html?case=card");
