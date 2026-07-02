@@ -20,7 +20,9 @@ const ShellContext = createContext<ShellContextValue | null>(null);
 /** Fire the no-store dev warning at most once per module lifetime. */
 let warnedNoStore = false;
 function warnNoStoreOnce() {
-  if (warnedNoStore || process.env.NODE_ENV === "production") return;
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+    ?.env;
+  if (warnedNoStore || env?.NODE_ENV === "production") return;
   warnedNoStore = true;
   console.warn(
     "[flowlet] No `store` prop passed to FlowletShellProvider; using an in-memory " +
