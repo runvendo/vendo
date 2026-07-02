@@ -98,10 +98,14 @@ passed to `useState`/`setState` is invoked as a lazy initializer/updater and cra
 - Perf (live): tray open/close p50 8.3 ms / p95 9.1 ms (one >33 ms frame on the picker's
   first mount — 14 rows of brand icons, pre-existing content cost); bar morph zero long
   frames.
-- Productization once Yousef picks: winner becomes the default, rail + losing variants
-  deleted, overlay/slot surfaces verified (overlay already inherits via prop spread), and
-  the hero-composer arrangement gets a dedicated pass (the tray currently anchors to the
-  hero composer wrapper).
+- **PICKED: A (icon-tray), productized 2026-07-02.** The dock + tray is now the only
+  connect entry (no prop): `IntegrationsRail`, `ConnectBarMorph`, the chip-cluster
+  variant, and the demo `?connect=` switch are deleted; `IntegrationsRail` left the
+  public API (no consumers existed outside the shell), `ConnectDock`/`ConnectTray`
+  entered it. Verified live on all three surfaces: page hero (option-A recordings),
+  page with a running thread (tray above the bottom composer, badge live), the Cmd+K
+  overlay, and the slot's design-view panel — tray unclipped in all (bounding-box
+  checked, screenshots delivered at review).
 
 ## Pre-existing issues noticed (not touched, not mine)
 

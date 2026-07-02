@@ -7,7 +7,7 @@ describe("public API", () => {
       "FlowletPage", "FlowletOverlay", "FlowletSlot", "FlowletThread",
       "FlowletShellProvider", "useShell", "useFlowletThread", "toThreadItems",
       "MessageList", "Composer", "ApprovalCard", "UINodeView", "Landing",
-      "SuggestionChips", "FlowGallery", "IntegrationsRail", "IntegrationsPicker",
+      "SuggestionChips", "FlowGallery", "ConnectDock", "ConnectTray", "IntegrationsPicker",
       "ConnectCard", "StreamingText", "ToolCall", "VoiceButton",
       "themeToStyle", "createLocalStore", "createLocalIntegrations", "useVoiceInput",
     ];

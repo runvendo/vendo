@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { IntegrationsRail } from "./IntegrationsRail";
 import { IntegrationsPicker } from "./IntegrationsPicker";
 import { ConnectCard } from "./ConnectCard";
 import type { Integration } from "../seams/integrations";
@@ -9,17 +8,6 @@ const list: Integration[] = [
   { id: "plaid", name: "Plaid", connected: true },
   { id: "gmail", name: "Gmail", connected: false },
 ];
-
-describe("IntegrationsRail", () => {
-  it("shows connected integrations and a connect action", () => {
-    const onConnectClick = vi.fn();
-    render(<IntegrationsRail integrations={list} onConnectClick={onConnectClick} />);
-    expect(screen.getByText("Plaid")).toBeTruthy();
-    expect(screen.queryByText("Gmail")).toBeNull();
-    fireEvent.click(screen.getByText("+ Connect tools"));
-    expect(onConnectClick).toHaveBeenCalledOnce();
-  });
-});
 
 describe("IntegrationsPicker", () => {
   it("connects a disconnected integration", () => {

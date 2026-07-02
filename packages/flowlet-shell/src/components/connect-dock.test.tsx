@@ -26,10 +26,10 @@ beforeEach(() => {
 });
 
 describe("ConnectDock", () => {
-  it("icon variant: shows a connected-count badge and toggles", () => {
+  it("shows a connected-count badge and toggles", () => {
     const onToggle = vi.fn();
     const { getByRole } = render(
-      <ConnectDock variant="icon" integrations={tools} open={false} onToggle={onToggle} />,
+      <ConnectDock integrations={tools} open={false} onToggle={onToggle} />,
     );
     const btn = getByRole("button", { name: /connect tools/i });
     expect(btn.textContent).toContain("2");
@@ -38,42 +38,15 @@ describe("ConnectDock", () => {
     expect(onToggle).toHaveBeenCalled();
   });
 
-  it("icon variant: no badge when nothing is connected", () => {
+  it("no badge when nothing is connected", () => {
     const { getByRole } = render(
       <ConnectDock
-        variant="icon"
         integrations={tools.map((t) => ({ ...t, connected: false }))}
         open={false}
         onToggle={vi.fn()}
       />,
     );
     expect(getByRole("button", { name: /connect tools/i }).querySelector(".fl-dock-badge")).toBeNull();
-  });
-
-  it("cluster variant: one coin per connected tool plus overflow count", () => {
-    const many: Integration[] = [
-      ...tools,
-      { id: "linear", name: "Linear", connected: true },
-      { id: "github", name: "GitHub", connected: true },
-    ];
-    const { getByRole } = render(
-      <ConnectDock variant="cluster" integrations={many} open={false} onToggle={vi.fn()} />,
-    );
-    const btn = getByRole("button", { name: /connect tools/i });
-    expect(btn.querySelectorAll(".fl-dock-coin").length).toBe(3);
-    expect(btn.textContent).toContain("+1");
-  });
-
-  it("cluster variant: dashed + affordance when nothing is connected", () => {
-    const { getByRole } = render(
-      <ConnectDock
-        variant="cluster"
-        integrations={tools.map((t) => ({ ...t, connected: false }))}
-        open={false}
-        onToggle={vi.fn()}
-      />,
-    );
-    expect(getByRole("button", { name: /connect tools/i }).querySelector(".fl-dock-coin-add")).toBeTruthy();
   });
 });
 
