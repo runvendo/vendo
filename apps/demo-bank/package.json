@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "pnpm --filter @flowlet/stage build:react-shim && pnpm --filter @flowlet/components build:sandbox && node scripts/copy-flowlet-sandbox.mjs",
+    "predev": "pnpm --filter @flowlet/stage build:react-shim && pnpm run build:flowlet-sandbox && node scripts/copy-flowlet-sandbox.mjs",
     "dev": "next dev",
     "prebuild": "pnpm --filter @flowlet/stage build:react-shim && pnpm --filter @flowlet/components build:sandbox && node scripts/copy-flowlet-sandbox.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:flowlet-sandbox": "vite build -c flowlet-sandbox/vite.config.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
@@ -52,6 +53,7 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "vite": "^5.4.0"
   }
 }

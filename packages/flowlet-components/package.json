@@ -16,6 +16,10 @@
     "./theme": {
       "types": "./dist/theme/brand.d.ts",
       "default": "./dist/theme/brand.js"
+    },
+    "./sandbox": {
+      "types": "./dist/sandbox-install.d.ts",
+      "default": "./dist/sandbox-install.js"
     }
   },
   "scripts": {
