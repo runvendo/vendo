@@ -50,6 +50,27 @@ describe("IntegrationsPicker", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /Connect Gmail/ })).toBeTruthy());
   });
 
+  it("drops the celebration when a just-connected row is disconnected with the tray open", async () => {
+    let settle!: () => void;
+    const onConnect = vi.fn(() => new Promise<void>((r) => { settle = r; }));
+    const { rerender, container } = render(
+      <IntegrationsPicker integrations={list} onConnect={onConnect} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Connect Gmail/ }));
+    settle();
+    const connected = list.map((i) => (i.id === "gmail" ? { ...i, connected: true } : i));
+    rerender(
+      <IntegrationsPicker integrations={connected} onConnect={onConnect} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    await waitFor(() => expect(container.querySelector(".is-just-connected")).toBeTruthy());
+    // Disconnect without closing: the + row must come back bloom-free.
+    rerender(
+      <IntegrationsPicker integrations={list} onConnect={onConnect} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    expect(container.querySelector(".is-just-connected")).toBeNull();
+    expect(screen.getByRole("button", { name: /Connect Gmail/ })).toBeTruthy();
+  });
+
   it("connected rows on a fresh mount get no celebration class", () => {
     const connected = list.map((i) => ({ ...i, connected: true }));
     const { container } = render(

@@ -15,7 +15,7 @@ export interface FluidRippleProps extends HTMLAttributes<HTMLDivElement> {
  * fluidkit's press ripple as an enhancement: a plain wrapper until (unless)
  * the library loads. fluidkit itself no-ops the ripple under reduced motion.
  */
-export function FluidRipple({ children, ...rest }: FluidRippleProps) {
+export function FluidRipple({ children, color, ...rest }: FluidRippleProps) {
   const [Ripple, setRipple] = useState<RippleComponent | null>(() => cached ?? null);
 
   useEffect(() => {
@@ -35,6 +35,7 @@ export function FluidRipple({ children, ...rest }: FluidRippleProps) {
     };
   }, []);
 
+  // `color` is Ripple's prop, not a DOM attribute — keep it off the fallback div.
   if (!Ripple) return <div {...rest}>{children}</div>;
-  return <Ripple {...rest}>{children}</Ripple>;
+  return <Ripple color={color} {...rest}>{children}</Ripple>;
 }

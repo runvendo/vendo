@@ -110,6 +110,14 @@ export function FluidReveal({ phase, children }: FluidRevealProps) {
     return () => {
       cancelled = true;
       for (const a of animations) (a as { stop?: () => void }).stop?.();
+      // Defensive reset (idempotent after a completed run): StrictMode's
+      // mount→cleanup→remount must not carry overflow/height into the second
+      // run's measurements.
+      host.style.overflow = "";
+      host.style.height = "";
+      enter.style.opacity = "";
+      enter.style.transform = "";
+      enter.style.filter = "";
     };
   }, [animating]);
 

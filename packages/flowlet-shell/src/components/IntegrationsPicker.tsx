@@ -22,23 +22,36 @@ export function IntegrationsPicker({ integrations, onConnect, onDisconnect, onCl
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
-  // A pending row that arrives connected graduates to the celebration set.
+  // Celebrate every OBSERVED disconnected→connected transition (tracked via a
+  // per-id snapshot, so fresh mounts never celebrate). Deliberately not tied
+  // to `pending`: whatever order the un-pend timer and the refreshed-list
+  // commit land in, a real flip always blooms.
+  const prevConnected = useRef<Map<string, boolean>>(new Map());
   useEffect(() => {
-    const landed = integrations.filter((i) => i.connected && pending.has(i.id)).map((i) => i.id);
+    const landed: string[] = [];
+    for (const i of integrations) {
+      if (prevConnected.current.get(i.id) === false && i.connected) landed.push(i.id);
+      prevConnected.current.set(i.id, i.connected);
+    }
     if (landed.length === 0) return;
-    setPending((prev) => new Set([...prev].filter((id) => !landed.includes(id))));
     setJustConnected((prev) => new Set([...prev, ...landed]));
-  }, [integrations, pending]);
+    setPending((prev) => {
+      if (!landed.some((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      for (const id of landed) next.delete(id);
+      return next;
+    });
+  }, [integrations]);
 
   const connect = (id: string) => {
     setPending((prev) => new Set([...prev, id]));
     void Promise.resolve(onConnect(id))
       .catch(() => undefined)
       .then(() => {
-        // Success is prop-driven: the refreshed list's commit (and the
-        // graduation effect) precedes this timer, so a connected row has
-        // already left `pending`. The timer only returns declined/failed
-        // flows to the + — never racing the celebration.
+        // Failure fallback: return the row to the + once the flow settles.
+        // Successful flips are handled independently by the transition effect
+        // above, so this timer can't lose a celebration whatever order the
+        // refreshed list commits in.
         setTimeout(() => {
           if (!alive.current) return;
           setPending((prev) => {
@@ -59,7 +72,9 @@ export function IntegrationsPicker({ integrations, onConnect, onDisconnect, onCl
     const classes = [
       "fl-picker-item",
       i.connected ? "is-connected" : "",
-      justConnected.has(i.id) ? "is-just-connected" : "",
+      // Celebration only while the row is still connected — a disconnect with
+      // the tray open must not leave the bloom on the returned + row.
+      i.connected && justConnected.has(i.id) ? "is-just-connected" : "",
     ].filter(Boolean).join(" ");
     return (
       <div key={i.id} className={classes}>

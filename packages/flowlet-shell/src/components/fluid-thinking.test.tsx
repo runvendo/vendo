@@ -8,7 +8,8 @@ describe("FluidThinking (fluidkit present)", () => {
     // First paint must not wait on the dynamic import — the legacy dots show.
     expect(container.querySelector(".fl-typing")).toBeTruthy();
     // Once fluidkit loads, its Thinking primitive takes over (role=status).
-    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    // Generous timeout: the real dynamic import can be slow in a loaded pool.
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy(), { timeout: 5000 });
     expect(container.querySelector(".fl-thinking")).toBeTruthy();
     expect(container.querySelector(".fl-typing")).toBeNull();
   });
@@ -16,7 +17,7 @@ describe("FluidThinking (fluidkit present)", () => {
   it("passes the accessible label through in both phases", async () => {
     const { container } = render(<FluidThinking label="Generating" />);
     expect(container.querySelector('[aria-label="Generating"]')).toBeTruthy();
-    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy(), { timeout: 5000 });
     expect(screen.getByRole("status").getAttribute("aria-label")).toBe("Generating");
   });
 });

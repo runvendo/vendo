@@ -69,7 +69,12 @@ export function ConnectTray({ open, onClose, children }: ConnectTrayProps) {
       const surface = el?.closest(".fl-thread");
       if (!el || !anchor || !(surface instanceof HTMLElement)) return;
       const room = anchor.getBoundingClientRect().top - surface.getBoundingClientRect().top - 16;
-      if (room > 0) el.style.setProperty("--fl-tray-max", `${Math.round(room)}px`);
+      // jsdom (rects all zero) reads as room < 0 with no real layout — leave
+      // the CSS default. Real layouts always set the clamp, even to 0 (a bar
+      // pinned at the surface top must hide the tray, not overflow it).
+      if (anchor.getBoundingClientRect().top > 0 || surface.getBoundingClientRect().top > 0) {
+        el.style.setProperty("--fl-tray-max", `${Math.max(0, Math.round(room))}px`);
+      }
     };
     clamp();
     window.addEventListener("resize", clamp);
@@ -98,13 +103,19 @@ export function ConnectTray({ open, onClose, children }: ConnectTrayProps) {
         { duration: 0.35, ease: EASE },
       ),
     ];
+    // Cancelled guard: if the user closes while the entrance is settling, the
+    // stale continuation must not clear styles out from under the exit
+    // animation (a visible flash otherwise).
+    let cancelled = false;
     void Promise.all(controls.map((c) => Promise.resolve(c).catch(() => undefined))).then(() => {
+      if (cancelled) return;
       el.style.height = "";
       el.style.opacity = "";
       el.style.transform = "";
       el.style.filter = "";
     });
     return () => {
+      cancelled = true;
       for (const c of controls) (c as { stop?: () => void }).stop?.();
     };
   }, [open]);
