@@ -1,0 +1,26 @@
+{
+  "name": "@flowlet/cli",
+  "version": "0.0.0",
+  "type": "module",
+  "bin": { "flowlet": "./dist/cli.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@flowlet/components": "workspace:*",
+    "ai": "6.0.28",
+    "sucrase": "^3.35.0",
+    "yaml": "^2.5.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
