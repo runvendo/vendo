@@ -26,7 +26,7 @@ import {
   type AutomationRun,
   type HostEventDoc,
   type RegisteredTool,
-} from "@flowlet/agent";
+} from "@flowlet/runtime";
 import { listTransactions } from "@/server/transactions";
 import type { Transaction } from "@/server/types";
 import { demoPolicy } from "./policy";

@@ -2,7 +2,7 @@
  * Test-only helpers (imported by *.test.ts, excluded from the build via the
  * tsconfig test exclude — kept in src so vitest resolves relative imports).
  * Mirrors the MockLanguageModelV3 wiring used across the repo
- * (see packages/flowlet-agent/src/policy/natural-language.test.ts).
+ * (see packages/flowlet-runtime/src/policy/natural-language.test.ts).
  */
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";

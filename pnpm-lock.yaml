@@ -36,9 +36,6 @@ importers:
       '@composio/vercel':
         specifier: 0.4.0
         version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
-      '@flowlet/agent':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-agent
       '@flowlet/components':
         specifier: workspace:*
         version: link:../../packages/flowlet-components
@@ -48,6 +45,9 @@ importers:
       '@flowlet/react':
         specifier: workspace:*
         version: link:../../packages/flowlet-react
+      '@flowlet/runtime':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-runtime
       '@flowlet/shell':
         specifier: workspace:*
         version: link:../../packages/flowlet-shell
@@ -86,7 +86,7 @@ importers:
         version: 1.22.0(react@19.2.4)
       next:
         specifier: 16.2.9
-        version: 16.2.9(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        version: 16.2.9(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react:
         specifier: 19.2.4
         version: 19.2.4
@@ -148,15 +148,15 @@ importers:
       '@ai-sdk/provider':
         specifier: 3.0.2
         version: 3.0.2
-      '@flowlet/agent':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-agent
       '@flowlet/core':
         specifier: workspace:*
         version: link:../../packages/flowlet-core
       '@flowlet/react':
         specifier: workspace:*
         version: link:../../packages/flowlet-react
+      '@flowlet/runtime':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-runtime
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -256,73 +256,6 @@ importers:
       vite:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
-
-  packages/flowlet-agent:
-    dependencies:
-      '@ai-sdk/anthropic':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
-      '@ai-sdk/mcp':
-        specifier: 1.0.6
-        version: 1.0.6(zod@3.25.76)
-      '@ai-sdk/provider':
-        specifier: 3.0.2
-        version: 3.0.2
-      '@composio/core':
-        specifier: 0.4.0
-        version: 0.4.0(ws@8.21.0)(zod@3.25.76)
-      '@composio/vercel':
-        specifier: 0.4.0
-        version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
-      '@flowlet/core':
-        specifier: workspace:*
-        version: link:../flowlet-core
-      ai:
-        specifier: 6.0.28
-        version: 6.0.28(zod@3.25.76)
-      croner:
-        specifier: ^10.0.1
-        version: 10.0.1
-      jsonata:
-        specifier: ^2.2.1
-        version: 2.2.1
-      sucrase:
-        specifier: ^3.35.0
-        version: 3.35.1
-      zod:
-        specifier: ^3.24.0
-        version: 3.25.76
-    devDependencies:
-      '@ai-sdk/react':
-        specifier: 3.0.30
-        version: 3.0.30(react@18.3.1)(zod@3.25.76)
-      '@flowlet/react':
-        specifier: workspace:*
-        version: link:../flowlet-react
-      '@testing-library/react':
-        specifier: ^16.0.0
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@types/react':
-        specifier: ^19.2.0
-        version: 19.2.17
-      '@types/react-dom':
-        specifier: ^19.2.0
-        version: 19.2.3(@types/react@19.2.17)
-      jsdom:
-        specifier: ^25.0.0
-        version: 25.0.1
-      react:
-        specifier: ^18.3.0
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.0
-        version: 18.3.1(react@18.3.1)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/flowlet-cli:
     dependencies:
@@ -489,6 +422,73 @@ importers:
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+
+  packages/flowlet-runtime:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 3.0.12
+        version: 3.0.12(zod@3.25.76)
+      '@ai-sdk/mcp':
+        specifier: 1.0.6
+        version: 1.0.6(zod@3.25.76)
+      '@ai-sdk/provider':
+        specifier: 3.0.2
+        version: 3.0.2
+      '@composio/core':
+        specifier: 0.4.0
+        version: 0.4.0(ws@8.21.0)(zod@3.25.76)
+      '@composio/vercel':
+        specifier: 0.4.0
+        version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
+      '@flowlet/core':
+        specifier: workspace:*
+        version: link:../flowlet-core
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
+      jsonata:
+        specifier: ^2.2.1
+        version: 2.2.1
+      sucrase:
+        specifier: ^3.35.0
+        version: 3.35.1
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@ai-sdk/react':
+        specifier: 3.0.30
+        version: 3.0.30(react@18.3.1)(zod@3.25.76)
+      '@flowlet/react':
+        specifier: workspace:*
+        version: link:../flowlet-react
+      '@testing-library/react':
+        specifier: ^16.0.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.0
+        version: 19.2.3(@types/react@19.2.17)
+      jsdom:
+        specifier: ^25.0.0
+        version: 25.0.1
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/flowlet-shell:
     dependencies:
@@ -9324,7 +9324,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next@16.2.9(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+  next@16.2.9(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
     dependencies:
       '@next/env': 16.2.9
       '@swc/helpers': 0.5.15
@@ -9333,7 +9333,7 @@ snapshots:
       postcss: 8.4.31
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      styled-jsx: 5.1.6(react@19.2.4)
+      styled-jsx: 5.1.6(@babel/core@7.29.7)(react@19.2.4)
     optionalDependencies:
       '@next/swc-darwin-arm64': 16.2.9
       '@next/swc-darwin-x64': 16.2.9
@@ -10096,10 +10096,12 @@ snapshots:
     dependencies:
       inline-style-parser: 0.2.7
 
-  styled-jsx@5.1.6(react@19.2.4):
+  styled-jsx@5.1.6(@babel/core@7.29.7)(react@19.2.4):
     dependencies:
       client-only: 0.0.1
       react: 19.2.4
+    optionalDependencies:
+      '@babel/core': 7.29.7
 
   sucrase@3.35.1:
     dependencies:

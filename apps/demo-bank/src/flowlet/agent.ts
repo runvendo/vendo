@@ -15,7 +15,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import {
   createFlowletAgent,
   type ComposioClient,
-} from "@flowlet/agent";
+} from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";

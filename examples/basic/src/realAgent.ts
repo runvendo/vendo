@@ -16,7 +16,7 @@ import {
   composePolicy,
   naturalLanguagePolicy,
   RENDER_VIEW_TOOL_NAME,
-} from "@flowlet/agent";
+} from "@flowlet/runtime";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart, LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import { tool } from "ai";
