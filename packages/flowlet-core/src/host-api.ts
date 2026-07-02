@@ -209,7 +209,10 @@ export async function executeHostToolCall(
     }
   }
 
-  const url = `${baseUrl}${path}${query.size > 0 ? `?${query.toString()}` : ""}`;
+  // Note: not URLSearchParams.size — it is missing in Safari < 17, and this
+  // runs in the user's browser.
+  const queryString = query.toString();
+  const url = `${baseUrl}${path}${queryString ? `?${queryString}` : ""}`;
   const body = def.http.hasBody && input["body"] !== undefined
     ? JSON.stringify(input["body"])
     : undefined;
