@@ -1,10 +1,17 @@
 import type { UINode } from "@flowlet/core";
 
-/** A saved flowlet: a generated UI node plus identity. Persisted by Flowlet. */
+/** A saved flowlet per architecture Decision 6: tree + provenance + name/pin.
+ *  Persisted by Flowlet. The bound data queries live INSIDE a generated node's
+ *  payload (`queries`), so the record stays a self-contained artifact. */
 export interface Flowlet {
   id: string;
   name: string;
   node: UINode;
+  /** The user prompt that originally produced the view. */
+  prompt?: string;
+  pinned?: boolean;
+  /** Stamped by the store on first save; preserved on later saves. */
+  createdAt?: number;
   updatedAt: number;
 }
 
@@ -31,7 +38,9 @@ export function createLocalStore(seed: Flowlet[] = []): FlowletStore {
       return map.get(id) ?? null;
     },
     async save(draft) {
-      const flowlet: Flowlet = { ...draft, updatedAt: draft.updatedAt ?? ++clock };
+      const updatedAt = draft.updatedAt ?? ++clock;
+      const createdAt = draft.createdAt ?? map.get(draft.id)?.createdAt ?? updatedAt;
+      const flowlet: Flowlet = { ...draft, createdAt, updatedAt };
       map.set(flowlet.id, flowlet);
       return flowlet;
     },
