@@ -15,7 +15,7 @@ async function collectChunks(stream: ReadableStream<unknown>): Promise<unknown[]
 }
 
 describe("createDemoAgent", () => {
-  it("streams a data-ui node when the model calls render_ui", async () => {
+  it("streams a data-ui node when the model calls render_view", async () => {
     const agent = createDemoAgent({
       model: mockRenderModel(),
       composioClient: stubComposioClient,

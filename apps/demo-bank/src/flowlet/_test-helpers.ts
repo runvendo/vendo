@@ -20,7 +20,7 @@ function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolea
   );
 }
 
-/** Mock model: emits a `render_ui` call on turn 1, closing text on the follow-up. */
+/** Mock model: emits a `render_view` call on turn 1, closing text on the follow-up. */
 export function mockRenderModel() {
   return new MockLanguageModelV3({
     doStream: async ({ prompt }) => {
@@ -36,8 +36,12 @@ export function mockRenderModel() {
             {
               type: "tool-call",
               toolCallId: "call-1",
-              toolName: "render_ui",
-              input: JSON.stringify({ name: "Card", props: { title: "Hello" }, source: "prewired" }),
+              toolName: "render_view",
+              input: JSON.stringify({
+                formatVersion: "flowlet-genui/v1",
+                root: "r",
+                nodes: [{ id: "r", component: "Text", source: "prewired", props: { text: "hi" } }],
+              }),
             },
             { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
           ];
