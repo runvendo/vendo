@@ -8,5 +8,5 @@ test("gate 1c+2: host bundle loads as data and renders with injected theme", asy
   const color = await frame
     .getByRole("heading", { name: "Hello" })
     .evaluate((el) => getComputedStyle(el).color);
-  expect(color).toBe("rgb(0, 170, 119)"); // #00aa77 from --brand-primary
+  expect(color).toBe("rgb(0, 170, 119)"); // #00aa77 from --flowlet-accent
 });

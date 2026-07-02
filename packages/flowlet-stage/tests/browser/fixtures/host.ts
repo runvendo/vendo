@@ -61,9 +61,9 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
   }
 
   const theme = {
-    "--brand-primary": "#00aa77",
-    "--brand-surface": "#fff",
-    "--brand-text": "#111",
+    "--flowlet-accent": "#00aa77",
+    "--flowlet-surface": "#fff",
+    "--flowlet-fg": "#111",
   };
 
   if (kind === "card") {
@@ -77,6 +77,50 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         source: "host",
         name: "Card",
         props: { title: "Hello", body: "World" },
+      },
+    };
+  }
+
+  if (kind === "theme-vars") {
+    // Regression guard for silent theme-var drop: inject a DISTINCTIVE
+    // --flowlet-accent and render a component that reads it. The spec asserts the
+    // computed color equals the injected brand value (not a hardcoded fallback),
+    // proving injected brand vars actually theme the sandboxed component.
+    return {
+      theme: {
+        "--flowlet-accent": "#ff00aa",
+        "--flowlet-surface": "#fff",
+        "--flowlet-fg": "#111",
+      },
+      state: {},
+      bundleSource: await bundle(),
+      tree: {
+        id: "c1",
+        kind: "component",
+        source: "host",
+        name: "Card",
+        props: { title: "Themed", body: "x" },
+      },
+    };
+  }
+
+  if (kind === "component-theme" || kind === "component-theme-none") {
+    // TU-3 end-to-end (sample wrapper): the runtime mounts the bundle-supplied
+    // __FLOWLET_THEME_WRAP__ around the tree ONLY when the init payload carries a
+    // componentTheme. ThemeProbe reads blob.marker out of that wrap's context.
+    //   - "component-theme":      componentTheme present → probe renders the marker
+    //   - "component-theme-none": componentTheme absent  → wrap is a no-op (empty)
+    return {
+      theme,
+      state: {},
+      bundleSource: await bundle(),
+      ...(kind === "component-theme" ? { componentTheme: { marker: "themed-ok" } } : {}),
+      tree: {
+        id: "root",
+        kind: "component",
+        source: "host",
+        name: "ThemeProbe",
+        props: {},
       },
     };
   }
