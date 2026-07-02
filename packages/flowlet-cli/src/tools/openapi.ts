@@ -1,15 +1,16 @@
 import { promises as fs } from "node:fs";
 import YAML from "yaml";
-import { annotationsFor, type ToolEntry } from "./manifest.js";
+import { annotationsFor, type HttpMethod, type ManifestTool } from "./manifest.js";
 
 type JsonObj = Record<string, unknown>;
-const METHODS = ["get", "post", "put", "patch", "delete", "head"] as const;
+// The frozen http binding has no HEAD; HEAD operations are not extracted.
+const METHODS = ["get", "post", "put", "patch", "delete"] as const;
 
-export async function convertOpenApi(specPath: string): Promise<ToolEntry[]> {
+export async function convertOpenApi(specPath: string): Promise<ManifestTool[]> {
   const raw = await fs.readFile(specPath, "utf8");
   const doc = (specPath.endsWith(".yaml") || specPath.endsWith(".yml") ? YAML.parse(raw) : JSON.parse(raw)) as JsonObj;
   const paths = (doc["paths"] ?? {}) as Record<string, JsonObj>;
-  const tools: ToolEntry[] = [];
+  const tools: ManifestTool[] = [];
 
   for (const [route, item] of Object.entries(paths)) {
     for (const method of METHODS) {
@@ -24,8 +25,7 @@ export async function convertOpenApi(specPath: string): Promise<ToolEntry[]> {
         description,
         inputSchema: buildInputSchema(doc, item, op),
         annotations: annotationsFor(method, name),
-        http: { method, path: route },
-        source: "openapi",
+        binding: { type: "http", method: method.toUpperCase() as HttpMethod, path: route },
       });
     }
   }

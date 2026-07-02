@@ -25,7 +25,8 @@ function stripFences(text: string): string {
 
 export async function generateJson<T>(opts: {
   model: LanguageModel;
-  schema: z.ZodType<T>;
+  /** Output-typed: schemas with .default() fields infer their parsed shape. */
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>;
   prompt: string;
 }): Promise<T> {
   const ask = async (prompt: string): Promise<{ value?: T; error: string }> => {

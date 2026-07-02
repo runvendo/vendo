@@ -3,9 +3,11 @@ import type { LanguageModel } from "ai";
 import { writeGenerated } from "../fsx.js";
 import { convertOpenApi } from "./openapi.js";
 import { scanRoutes } from "./route-scan.js";
-import { toolsManifestSchema, type ToolsManifest } from "./manifest.js";
+import { manifestToolSchema, toolsManifestSchema, type ManifestTool } from "./manifest.js";
 
 export interface ToolsSummary {
+  /** Where the tools came from — report-only; the artifact carries no provenance
+   *  (the frozen toolsManifestSchema is .strict()). */
   source: "openapi" | "route-scan" | "none";
   toolCount: number;
   errors: string[];
@@ -18,33 +20,32 @@ export async function extractTools(
   opts: { force: boolean },
 ): Promise<ToolsSummary> {
   const errors: string[] = [];
-  let manifest: ToolsManifest | null = null;
+  let extracted: ManifestTool[] = [];
   let source: ToolsSummary["source"] = "none";
 
   if (info.openapiPath) {
-    const tools = await convertOpenApi(info.openapiPath);
-    manifest = {
-      version: 1,
-      extractedFrom: { kind: "openapi", path: path.relative(targetDir, info.openapiPath) },
-      tools,
-      events: [],
-    };
+    extracted = await convertOpenApi(info.openapiPath);
     source = "openapi";
   } else if (model) {
-    const tools = await scanRoutes(targetDir, model);
-    if (tools.length > 0) {
-      manifest = { version: 1, extractedFrom: { kind: "route-scan", path: "app/api/**/route.ts" }, tools, events: [] };
-      source = "route-scan";
-    } else {
-      errors.push("no OpenAPI spec and no scannable routes found — write .flowlet/tools.json by hand");
-    }
+    extracted = await scanRoutes(targetDir, model);
+    if (extracted.length > 0) source = "route-scan";
+    else errors.push("no OpenAPI spec and no scannable routes found — write .flowlet/tools.json by hand");
   } else {
     errors.push("no OpenAPI spec found and LLM unavailable (set ANTHROPIC_API_KEY) — tools.json skipped");
   }
 
-  if (manifest) {
-    const valid = toolsManifestSchema.parse(manifest); // never emit an invalid artifact
+  // Validate per entry against the frozen contract; drop and report invalid
+  // entries rather than failing the whole artifact.
+  const tools: ManifestTool[] = [];
+  for (const t of extracted) {
+    const parsed = manifestToolSchema.safeParse(t);
+    if (parsed.success) tools.push(parsed.data);
+    else errors.push(`dropped tool ${JSON.stringify(t.name)}: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+  }
+
+  if (source !== "none" && tools.length > 0) {
+    const valid = toolsManifestSchema.parse({ version: 1, tools, events: [] }); // never emit an invalid artifact
     await writeGenerated(path.join(targetDir, ".flowlet/tools.json"), JSON.stringify(valid, null, 2) + "\n", opts);
   }
-  return { source, toolCount: manifest?.tools.length ?? 0, errors };
+  return { source, toolCount: tools.length, errors };
 }

@@ -32,9 +32,8 @@ describe("scanRoutes", () => {
     expect(tools).toHaveLength(1);
     expect(tools[0]).toMatchObject({
       name: "list_transactions",
-      source: "route-scan",
-      http: { method: "get", path: "/api/transactions" },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      binding: { type: "http", method: "GET", path: "/api/transactions" },
+      annotations: { mutating: false, dangerous: false },
     });
   });
 

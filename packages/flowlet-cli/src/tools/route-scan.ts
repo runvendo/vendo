@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { LanguageModel } from "ai";
 import { walk } from "../fsx.js";
 import { generateJson } from "../llm.js";
-import { annotationsFor, type ToolEntry } from "./manifest.js";
+import { annotationsFor, type HttpMethod, type ManifestTool } from "./manifest.js";
 
 const routeToolSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9_]*$/),
@@ -40,7 +40,7 @@ function buildPrompt(routes: Array<{ urlPath: string; source: string }>): string
   ].join("\n");
 }
 
-export async function scanRoutes(targetDir: string, model: LanguageModel): Promise<ToolEntry[]> {
+export async function scanRoutes(targetDir: string, model: LanguageModel): Promise<ManifestTool[]> {
   const files = await walk(targetDir, (p) => /(^|\/)app\/api\/.*route\.tsx?$/.test(p.replace(/\\/g, "/")), 200);
   if (files.length === 0) return [];
   const routes = await Promise.all(
@@ -52,7 +52,6 @@ export async function scanRoutes(targetDir: string, model: LanguageModel): Promi
     description: t.description,
     inputSchema: t.inputSchema,
     annotations: annotationsFor(t.method, t.name),
-    http: { method: t.method, path: t.path },
-    source: "route-scan" as const,
+    binding: { type: "http" as const, method: t.method.toUpperCase() as HttpMethod, path: t.path },
   }));
 }

@@ -16,6 +16,8 @@ describe("extractTools", () => {
     expect(manifest.version).toBe(1);
     expect(manifest.tools.length).toBe(4);
     expect(manifest.events).toEqual([]);
+    // strict contract: no provenance keys in the artifact
+    expect(Object.keys(manifest).sort()).toEqual(["events", "tools", "version"]);
     expect(summary.source).toBe("openapi");
   });
 

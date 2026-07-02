@@ -14,17 +14,17 @@ describe("convertOpenApi", () => {
     );
 
     const list = tools.find((t) => t.name === "list_transactions")!;
-    expect(list.annotations).toEqual({ readOnlyHint: true, openWorldHint: false });
+    expect(list.annotations).toEqual({ mutating: false, dangerous: false });
     expect((list.inputSchema as { properties: Record<string, unknown> }).properties).toHaveProperty("limit");
 
     const del = tools.find((t) => t.name === "delete_payee")!;
-    expect(del.annotations.destructiveHint).toBe(true);
+    expect(del.annotations).toEqual({ mutating: true, dangerous: true, idempotent: true });
 
     const create = tools.find((t) => t.name === "create_payment")!;
     // $ref resolved into the body property
     const body = (create.inputSchema as { properties: { body: { properties: Record<string, unknown> } } }).properties.body;
     expect(body.properties).toHaveProperty("amount");
-    expect(create.http).toEqual({ method: "post", path: "/api/payments" });
+    expect(create.binding).toEqual({ type: "http", method: "POST", path: "/api/payments" });
 
     const byId = tools.find((t) => t.name === "get_api_transactions_by_id")!;
     expect((byId.inputSchema as { required?: string[] }).required).toContain("id");

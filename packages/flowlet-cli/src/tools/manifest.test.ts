@@ -1,28 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { annotationsFor, toolsManifestSchema } from "./manifest.js";
 
-describe("toolsManifestSchema", () => {
+describe("toolsManifestSchema (canonical, re-exported from @flowlet/core)", () => {
   it("accepts a well-formed manifest", () => {
     const m = {
       version: 1,
-      extractedFrom: { kind: "openapi", path: "openapi.json" },
       tools: [{
         name: "list_transactions",
         description: "List transactions",
         inputSchema: { type: "object", properties: {} },
-        annotations: { readOnlyHint: true },
-        http: { method: "get", path: "/api/transactions" },
-        source: "openapi",
+        annotations: { mutating: false, dangerous: false },
+        binding: { type: "http", method: "GET", path: "/api/transactions" },
       }],
       events: [],
     };
     expect(toolsManifestSchema.parse(m)).toBeTruthy();
   });
 
-  it("rejects bad tool names", () => {
+  it("rejects unknown keys (strict contract)", () => {
     const bad = {
       version: 1,
-      tools: [{ name: "Bad Name!", description: "x", inputSchema: {}, annotations: {}, source: "openapi" }],
+      extractedFrom: { kind: "openapi", path: "openapi.json" },
+      tools: [],
       events: [],
     };
     expect(() => toolsManifestSchema.parse(bad)).toThrow();
@@ -30,15 +29,11 @@ describe("toolsManifestSchema", () => {
 });
 
 describe("annotationsFor", () => {
-  it("marks reads read-only and deletes destructive", () => {
-    expect(annotationsFor("get", "list_things")).toEqual({ readOnlyHint: true, openWorldHint: false });
-    expect(annotationsFor("delete", "delete_payee")).toMatchObject({
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: true,
-    });
-    expect(annotationsFor("post", "cancel_order")).toMatchObject({ readOnlyHint: false, destructiveHint: true });
-    expect(annotationsFor("post", "create_payment")).toEqual({ readOnlyHint: false, openWorldHint: false });
-    expect(annotationsFor("put", "update_profile")).toMatchObject({ idempotentHint: true });
+  it("marks reads non-mutating and deletes dangerous+idempotent", () => {
+    expect(annotationsFor("get", "list_things")).toEqual({ mutating: false, dangerous: false });
+    expect(annotationsFor("delete", "delete_payee")).toEqual({ mutating: true, dangerous: true, idempotent: true });
+    expect(annotationsFor("post", "cancel_order")).toEqual({ mutating: true, dangerous: true });
+    expect(annotationsFor("post", "create_payment")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("put", "update_profile")).toEqual({ mutating: true, dangerous: false, idempotent: true });
   });
 });

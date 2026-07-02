@@ -1,6 +1,6 @@
-#!/usr/bin/env node
 /**
- * @flowlet/cli — the one-click dev tool (ENG-197).
+ * @flowlet/cli — the one-click dev tool (ENG-197). The shebang is added by the
+ * vite build banner (see vite.config.ts).
  *   flowlet init [dir]     extract theme/tools/components into <dir>/.flowlet/
  *   flowlet publish [dir]  stub until the cloud registry lands (ENG-198)
  */
