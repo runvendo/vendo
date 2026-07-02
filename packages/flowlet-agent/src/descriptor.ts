@@ -18,6 +18,15 @@ export interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 
+/**
+ * Where a tool call physically runs. `"server"` (default) executes in-process
+ * via the tool's own `execute`; `"client"` streams the call to the user's
+ * browser, which executes it on their existing session and returns the result
+ * (topology B host-API tools, ENG-202). A tool opts into `"client"` by
+ * carrying `flowletExecutor: "client"` (see `hostToolset`).
+ */
+export type ToolExecutor = "server" | "client";
+
 /** Normalised, source-of-truth descriptor stored per registered tool. */
 export interface ToolDescriptor {
   name: string;
@@ -30,6 +39,8 @@ export interface ToolDescriptor {
    * `"provider-defined"`, …). Defaults to `"function"` when absent.
    */
   kind: string;
+  /** Where the call executes. Defaults to `"server"`. */
+  executor: ToolExecutor;
 }
 
 /**
@@ -73,7 +84,12 @@ export function buildDescriptor(
       ? ((tool as Record<string, unknown>)["type"] as string)
       : "function";
 
-  return { name, source, annotations, hasExecute, kind };
+  const executor: ToolExecutor =
+    isObj && (tool as Record<string, unknown>)["flowletExecutor"] === "client"
+      ? "client"
+      : "server";
+
+  return { name, source, annotations, hasExecute, kind, executor };
 }
 
 // ---------------------------------------------------------------------------
