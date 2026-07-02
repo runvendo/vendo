@@ -107,6 +107,26 @@ passed to `useState`/`setState` is invoked as a lazy initializer/updater and cra
   overlay, and the slot's design-view panel — tray unclipped in all (bounding-box
   checked, screenshots delivered at review).
 
+## Connect-flow polish (Yousef: "make it nice")
+
+- The picker's + now hands its status slot to a mini metaball loader (FluidThinking at
+  size 5 — it grew `size`/`spread` props) while `integrations.connect` runs, then the row
+  blooms green: background/border wash in fluidkit's flow easing plus a dot pop with a
+  soft ripple ring. One-shot: only an *observed* flip celebrates (`is-just-connected`);
+  reopens render plain `is-connected`. Declined/failed flows return to the +.
+- Contract change: `IntegrationsPicker.onConnect` may return the flow's promise, and
+  `FlowletThread` resolves it only after the refreshed list lands in state — that's what
+  lets the connecting row see its own flip. The fallback un-pend sits behind a short
+  timer so it can never race the celebration (commit + effects always precede timers).
+- Reduced motion: loader renders fluidkit's static dots, celebration classes carry no
+  animation (guarded in the reduced-motion block) — verified live via emulation.
+- Recordings: `motion-connect-oauth{,-closeup,-reduced}.gif` + mp4. Note: with the
+  Composio account already ACTIVE the flow lands in ~550 ms, so the loader is brief on
+  video; a first-time OAuth (popup + user consent) holds it for the full duration.
+- Known softness: the row still *jumps* between the Available and Connected groups at
+  flip (separate grids). A cross-group glide needs shared layout animation — candidate
+  for a fluidkit `useFlow` extension (filed under upstream gaps) or a later pass.
+
 ## Pre-existing issues noticed (not touched, not mine)
 
 - `pnpm lint` fails on main in demo-bank sources (react-hooks setState-in-effect and

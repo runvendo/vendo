@@ -10,6 +10,10 @@ let cached: ThinkingComponent | null | undefined;
 export interface FluidThinkingProps {
   /** Accessible label for the working state. */
   label?: string;
+  /** Drop diameter in px (fluidkit Thinking `size`). */
+  size?: number;
+  /** Cluster extent in px (fluidkit Thinking `spread`). */
+  spread?: number;
 }
 
 /**
@@ -19,7 +23,7 @@ export interface FluidThinkingProps {
  * library is missing or fails to load, the dots simply stay — the shell never
  * depends on it to function.
  */
-export function FluidThinking({ label = "Working" }: FluidThinkingProps) {
+export function FluidThinking({ label = "Working", size = 9, spread = 30 }: FluidThinkingProps) {
   // Initializer form: the cached value is itself a function component, and a
   // bare function passed to useState would be invoked as a lazy initializer.
   const [Thinking, setThinking] = useState<ThinkingComponent | null>(() => cached ?? null);
@@ -52,7 +56,7 @@ export function FluidThinking({ label = "Working" }: FluidThinkingProps) {
   }
   return (
     <div className="fl-thinking">
-      <Thinking label={label} material="flat" size={9} spread={30} />
+      <Thinking label={label} material="flat" size={size} spread={spread} />
     </div>
   );
 }

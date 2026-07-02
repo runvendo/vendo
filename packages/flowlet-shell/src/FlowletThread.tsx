@@ -111,7 +111,9 @@ export function FlowletThread({
       <ConnectTray open={pickerOpen} onClose={() => setPickerOpen(false)}>
         <IntegrationsPicker
           integrations={tools}
-          onConnect={(id) => integrations.connect(id).then(refresh)}
+          // Resolves only after the refreshed list has landed in state, so the
+          // picker's connecting row can observe its flip to connected.
+          onConnect={(id) => integrations.connect(id).then(() => integrations.list()).then(setTools)}
           onDisconnect={(id) => integrations.disconnect(id).then(refresh)}
           onClose={() => setPickerOpen(false)}
         />

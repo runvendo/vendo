@@ -421,7 +421,25 @@
   border: 1px solid var(--flowlet-border); background: var(--flowlet-surface); transition: transform .12s, border-color .12s, box-shadow .12s; }
 .fl-picker-item:hover { transform: translateY(-1px); border-color: var(--flowlet-border-strong); box-shadow: var(--flowlet-shadow); }
 .fl-picker-item.is-connected { background: color-mix(in srgb, var(--flowlet-ok) 9%, var(--flowlet-surface));
-  border-color: color-mix(in srgb, var(--flowlet-ok) 26%, var(--flowlet-border)); }
+  border-color: color-mix(in srgb, var(--flowlet-ok) 26%, var(--flowlet-border));
+  transition: transform .12s, border-color .35s cubic-bezier(.22,1,.36,1), box-shadow .12s, background .35s cubic-bezier(.22,1,.36,1); }
+/* OAuth in flight: the + hands the status slot to a mini metaball loader. */
+.fl-picker-connecting { display: inline-flex; align-items: center; color: var(--flowlet-fg-muted);
+  min-width: 19px; justify-content: center; }
+.fl-picker-connecting .fl-typing span { width: 4px; height: 4px; }
+/* Observed connect: the green wash blooms in and the dot lands with a soft
+   ripple ring — a one-shot celebration; reopens render is-connected plain. */
+.fl-picker-item.is-just-connected { animation: fl-connect-bloom .5s cubic-bezier(.22,1,.36,1) both; }
+.fl-picker-item.is-just-connected .fl-picker-on { animation: fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both; }
+@keyframes fl-connect-bloom {
+  from { background: var(--flowlet-surface); border-color: var(--flowlet-border); }
+  to   { background: color-mix(in srgb, var(--flowlet-ok) 9%, var(--flowlet-surface));
+         border-color: color-mix(in srgb, var(--flowlet-ok) 26%, var(--flowlet-border)); } }
+@keyframes fl-connect-pop {
+  0%   { transform: scale(0); box-shadow: 0 0 0 0 color-mix(in srgb, var(--flowlet-ok) 45%, transparent); }
+  55%  { transform: scale(1.35); }
+  80%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--flowlet-ok) 0%, transparent); }
+  100% { transform: scale(1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--flowlet-ok) 16%, transparent); } }
 .fl-picker-ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0;
   background: var(--flowlet-surface); border: 1px solid var(--flowlet-border); font-size: 11px; font-weight: 700; }
 .fl-picker-nm { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -494,6 +512,7 @@
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
   .fl-typing span, .fl-generating .fl-pulse, .fl-skeleton-bar,
   .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin { animation: none; }
+  .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
 }
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);
