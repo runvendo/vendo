@@ -425,6 +425,32 @@ describe("agent steps and agentic mode", () => {
     expect(Object.keys(req.tools)).toEqual(["send_msg"]);
   });
 
+  it("policy-gates tools inside an agent step: approve without a grant rejects the call", async () => {
+    const freeze = makeTool("freeze_card");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        { id: "act", type: "agent", goal: "Handle it", tools: ["freeze_card"] },
+      ],
+    });
+    let callError: string | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { freeze_card: freeze }),
+      policy: approveFor("freeze_card"),
+      agentRunner: async (req) => {
+        try {
+          await req.tools["freeze_card"]!.execute({ cardId: "c1" }, { idempotencyKey: "k" });
+        } catch (err) {
+          callError = err instanceof Error ? err.message : String(err);
+        }
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded"); // the agent handled the rejection
+    expect(freeze.calls).toHaveLength(0);
+    expect(callError).toMatch(/approval|grant/i);
+  });
+
   it("fails an agent step whose output misses a required field", async () => {
     const spec = specOf({
       mode: "steps",

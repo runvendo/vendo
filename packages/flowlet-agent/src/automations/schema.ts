@@ -270,3 +270,15 @@ export const automationSpecSchema = z
   });
 
 export type AutomationSpec = z.infer<typeof automationSpecSchema>;
+
+export type AutomationTier = "deterministic" | "hybrid" | "agentic";
+
+/** The user-facing tier: derived, never stored (the card's tier badge). */
+export function specTier(spec: AutomationSpec): AutomationTier {
+  if (spec.execution.mode === "agent") return "agentic";
+  let hasAgentStep = false;
+  walkSteps(spec.execution.steps, (s) => {
+    if (s.type === "agent") hasAgentStep = true;
+  });
+  return hasAgentStep ? "hybrid" : "deterministic";
+}

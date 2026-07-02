@@ -320,6 +320,47 @@ async function executeToolStep(ctx: ExecContext, step: ToolStep): Promise<void> 
   }
 }
 
+/**
+ * Tools handed to an agent run are policy-gated per call: an unattended agent
+ * cannot pause for approval, so deny — and approve without a matching grant —
+ * reject the call with an error the model sees and can route around.
+ */
+function gateAgentTool(
+  ctx: ExecContext,
+  name: string,
+  tool: RegisteredTool,
+  grantStep: AutomationStep | null,
+): RegisteredTool {
+  return {
+    ...tool,
+    execute: async (input, execCtx) => {
+      const decision = await ctx.input.policy.evaluate({
+        toolName: name,
+        input,
+        descriptor: tool.descriptor,
+        principal: ctx.input.principal,
+      });
+      if (decision === "deny") {
+        throw new Error(`policy denied tool "${name}"`);
+      }
+      if (decision === "approve") {
+        const granted = hasValidGrant(ctx.grants, {
+          tool: name,
+          descriptor: tool.descriptor,
+          spec: ctx.input.spec,
+          step: grantStep,
+        });
+        if (!granted) {
+          throw new Error(
+            `tool "${name}" needs user approval and has no grant for unattended runs`,
+          );
+        }
+      }
+      return tool.execute(input, execCtx);
+    },
+  };
+}
+
 async function executeAgentStep(ctx: ExecContext, step: AgentStep): Promise<void> {
   const startedAt = ctx.now();
   const runner = ctx.input.agentRunner;
@@ -343,7 +384,7 @@ async function executeAgentStep(ctx: ExecContext, step: AgentStep): Promise<void
   for (const name of step.tools) {
     const tool = ctx.input.tools[name];
     if (!tool) throw new StepFailure(step.id, `allowlisted tool "${name}" is not registered`);
-    allowlisted[name] = tool;
+    allowlisted[name] = gateAgentTool(ctx, name, tool, step);
   }
 
   let output: unknown;
@@ -544,7 +585,8 @@ async function executeAgenticMode(ctx: ExecContext, execution: AgentExecution): 
   for (const name of execution.tools) {
     const tool = ctx.input.tools[name];
     if (!tool) throw new StepFailure("agent", `allowlisted tool "${name}" is not registered`);
-    allowlisted[name] = tool;
+    // Agentic-mode grants are scoped to the spec, not a step (step = null).
+    allowlisted[name] = gateAgentTool(ctx, name, tool, null);
   }
 
   let output: unknown;
