@@ -1,12 +1,11 @@
 import React, { useState } from "react";
-// import "./composeMessage.styles.css";
 import { AiOutlineArrowLeft } from "react-icons/ai";
 import { BiPaperclip } from "react-icons/bi";
 import { BiSend } from "react-icons/bi";
 import { BsThreeDotsVertical } from "react-icons/bs";
 import { Link, withRouter } from "react-router-dom";
-import { addSent } from "../../redux/outbox/outbox.actions";
 import { connect } from "react-redux";
+import { refreshMail, sendMessage } from "../../mail-api";
 import {
   ComposeContainer,
   TopLinks,
@@ -21,46 +20,17 @@ import {
   Body,
 } from "./composeMessage.styles";
 
-const ComposeMessage = ({ addSent, history, match }) => {
-  let monthList = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sept",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-
-  const formatDate = (item) => {
-    if (item < 10) {
-      return (item = `0${item}`);
-    }
-    return item;
-  };
-
-  let today = new Date();
-  let date = formatDate(today.getDate());
-  let month = monthList[today.getMonth()];
-  let timeSent = `${month} ${date}`;
-
+const ComposeMessage = ({ refresh, history }) => {
   const [composeDetails, setComposeDetails] = useState({
     to: "",
     subject: "",
     body: "",
-    month: timeSent,
   });
 
   const { to, subject, body } = composeDetails;
 
   const handleChange = (event) => {
     const { name, value } = event.target;
-
     setComposeDetails({ ...composeDetails, [name]: value });
   };
 
@@ -68,7 +38,11 @@ const ComposeMessage = ({ addSent, history, match }) => {
     e.preventDefault();
 
     if (to !== "" && body !== "" && subject !== "") {
-      addSent(composeDetails);
+      sendMessage({ to, subject, body })
+        .then(refresh)
+        .then(() => history.push("/sent"))
+        .catch(console.error);
+      return;
     }
 
     history.push("/");
@@ -128,7 +102,7 @@ const ComposeMessage = ({ addSent, history, match }) => {
 };
 
 const mapDispatchToProps = (dispatch) => ({
-  addSent: (sent) => dispatch(addSent(sent)),
+  refresh: () => refreshMail(dispatch),
 });
 
 export default withRouter(connect(null, mapDispatchToProps)(ComposeMessage));

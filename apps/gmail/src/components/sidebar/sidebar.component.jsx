@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import { connect } from "react-redux";
+import { createStructuredSelector } from "reselect";
+import { selectUnreadCount } from "../../redux/mail/mail.selectors";
 import { Link } from "react-router-dom";
 import {
   SidebarContainer,
@@ -18,7 +21,7 @@ import {
   HangoutArrow,
 } from "./sidebar.styles";
 
-const SideBar = ({ shouldMessageShow }) => {
+const SideBar = ({ shouldMessageShow, unreadCount }) => {
   const [hightlight, setHighlight] = useState("inbox");
 
   const handleClick = () => {
@@ -53,7 +56,7 @@ const SideBar = ({ shouldMessageShow }) => {
                 )}
               </span>
               <span className="title">Inbox</span>
-              <span className="number">51</span>
+              {unreadCount > 0 && <span className="number">{unreadCount}</span>}
             </SideNavList>
           </Link>
           <Link to="/starred">
@@ -271,4 +274,8 @@ const SideBar = ({ shouldMessageShow }) => {
   );
 };
 
-export default SideBar;
+const mapStateToProps = createStructuredSelector({
+  unreadCount: selectUnreadCount,
+});
+
+export default connect(mapStateToProps)(SideBar);

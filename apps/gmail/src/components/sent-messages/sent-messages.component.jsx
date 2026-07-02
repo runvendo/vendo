@@ -1,4 +1,5 @@
 import React from "react";
+import { withRouter } from "react-router-dom";
 import {
   MessageTemplateContainer,
   SquareBox,
@@ -13,9 +14,9 @@ import {
   Date,
 } from "../message-template/message-template.styles";
 
-const SentMessages = ({ item }) => {
+const SentMessages = ({ item, history }) => {
   return (
-    <MessageTemplateContainer>
+    <MessageTemplateContainer onClick={() => history.push(`/message/${item.id}`)} style={{ cursor: "pointer" }}>
       <SquareBox className="square">
         <i className="far fa-square"></i>
       </SquareBox>
@@ -33,11 +34,11 @@ const SentMessages = ({ item }) => {
         )} */}
         <i className="far fa-star dark"></i>
       </Star>
-      <MessageName>{item.to}</MessageName>
+      <MessageName>To: {item.to}</MessageName>
 
       <MessageBody>
         <MessageBodyFirst>
-          <MessageTitle>{item.subject}</MessageTitle>
+          <MessageTitle>{item.title}</MessageTitle>
           <Dash>-</Dash>
           <MessageContent>{item.body}</MessageContent>
         </MessageBodyFirst>
@@ -59,7 +60,7 @@ const SentMessages = ({ item }) => {
             alt="snooze-icon"
           />
         </HoverIcons>
-        <Date className="date">{item.month}</Date>
+        <Date className="date">{item.date}</Date>
         {/* <p className="message-title">To: {item.to}</p>
       <p className="message-body">
         {item.subject} - {item.body}
@@ -70,4 +71,4 @@ const SentMessages = ({ item }) => {
   );
 };
 
-export default SentMessages;
+export default withRouter(SentMessages);

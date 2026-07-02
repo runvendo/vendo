@@ -1,4 +1,7 @@
 import React from "react";
+import { connect } from "react-redux";
+import { createStructuredSelector } from "reselect";
+import { selectInboxRows } from "../../redux/mail/mail.selectors";
 import {
   TopLineContainer,
   TopLineLeft,
@@ -14,7 +17,7 @@ import {
   RightArrowDown,
 } from "./top-line.styles";
 
-const TopLine = () => {
+const TopLine = ({ inboxRows }) => {
   return (
     <TopLineContainer>
       <TopLineLeft>
@@ -32,7 +35,7 @@ const TopLine = () => {
         </span>
       </TopLineLeft>
       <TopLineRight>
-        <TopFigure>1-50 of 51</TopFigure>
+        <TopFigure>1-{inboxRows.length} of {inboxRows.length}</TopFigure>
         <Lesser>
           <TopIcon className="fas fa-less-than"></TopIcon>
         </Lesser>
@@ -50,4 +53,8 @@ const TopLine = () => {
   );
 };
 
-export default TopLine;
+const mapStateToProps = createStructuredSelector({
+  inboxRows: selectInboxRows,
+});
+
+export default connect(mapStateToProps)(TopLine);

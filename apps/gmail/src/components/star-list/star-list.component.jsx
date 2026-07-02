@@ -1,7 +1,7 @@
 import React from "react";
-// import "./star-list.styles.css";
 import { connect } from "react-redux";
-import { removeStarred } from "../../redux/starred/starred.actions";
+import { withRouter } from "react-router-dom";
+import { refreshMail, setStar } from "../../mail-api";
 import {
   MessageTemplateContainer,
   SquareBox,
@@ -16,28 +16,21 @@ import {
   Date,
 } from "../message-template/message-template.styles";
 
-const StarList = ({ starred, removeStarred }) => {
-  const handleRemoval = () => {
-    removeStarred(starred);
+const StarList = ({ starred, refresh, history }) => {
+  const handleRemoval = (event) => {
+    event.stopPropagation();
+    setStar(starred.id, false).then(refresh).catch(console.error);
   };
 
   return (
-    <MessageTemplateContainer>
-      <SquareBox className="square">
+    <MessageTemplateContainer
+      onClick={() => history.push(`/message/${starred.id}`)}
+      style={{ cursor: "pointer" }}
+    >
+      <SquareBox className="square" onClick={(e) => e.stopPropagation()}>
         <i className="far fa-square"></i>
       </SquareBox>
       <Star className="star" onClick={handleRemoval}>
-        {/* {!toggle ? (
-              <img
-                src="https://www.gstatic.com/images/icons/material/system/1x/star_border_black_20dp.png"
-                alt="star"
-              />
-            ) : (
-              <img
-                src="https://www.gstatic.com/images/icons/material/system/1x/star_googyellow500_20dp.png"
-                alt="star"
-              />
-            )} */}
         <img
           src="https://www.gstatic.com/images/icons/material/system/1x/star_googyellow500_20dp.png"
           alt="star"
@@ -69,14 +62,14 @@ const StarList = ({ starred, removeStarred }) => {
             alt="snooze-icon"
           />
         </HoverIcons>
-        <Date className="date">26 Jan</Date>
+        <Date className="date">{starred.date}</Date>
       </MessageBody>
     </MessageTemplateContainer>
   );
 };
 
 const mapDispatchToProps = (dispatch) => ({
-  removeStarred: (unstar) => dispatch(removeStarred(unstar)),
+  refresh: () => refreshMail(dispatch),
 });
 
-export default connect(null, mapDispatchToProps)(StarList);
+export default withRouter(connect(null, mapDispatchToProps)(StarList));

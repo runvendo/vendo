@@ -1,7 +1,7 @@
 import React from "react";
 import { connect } from "react-redux";
 import { createStructuredSelector } from "reselect";
-import { selectStarredList } from "../../redux/starred/starred.selectors";
+import { selectStarredRows } from "../../redux/mail/mail.selectors";
 import StarList from "../star-list/star-list.component";
 import { StarredContainer, NoItem, StarredHeading } from "./starred.styles";
 
@@ -11,8 +11,8 @@ const Starred = ({ starredItems }) => {
       {starredItems.length > 0 ? (
         <div>
           <StarredHeading>STARRED</StarredHeading>
-          {starredItems.map((starred, index) => (
-            <StarList key={index} starred={starred} />
+          {starredItems.map((starred) => (
+            <StarList key={starred.id} starred={starred} />
           ))}
         </div>
       ) : (
@@ -23,6 +23,6 @@ const Starred = ({ starredItems }) => {
 };
 
 const mapStateToProps = createStructuredSelector({
-  starredItems: selectStarredList,
+  starredItems: selectStarredRows,
 });
 export default connect(mapStateToProps)(Starred);

@@ -1,7 +1,7 @@
 import React from "react";
 import { connect } from "react-redux";
 import { createStructuredSelector } from "reselect";
-import { selectOutboxList } from "../../redux/outbox/outbox.selectors";
+import { selectSentRows } from "../../redux/mail/mail.selectors";
 import SentMessages from "../sent-messages/sent-messages.component";
 import { SentContainer, NoItem, Heading } from "./sent.styles";
 
@@ -11,8 +11,8 @@ const Sent = ({ sentItems }) => {
       {sentItems.length > 0 ? (
         <div>
           <Heading>SENT</Heading>
-          {sentItems.map((item, index) => (
-            <SentMessages key={index} item={item} />
+          {sentItems.map((item) => (
+            <SentMessages key={item.id} item={item} />
           ))}
         </div>
       ) : (
@@ -23,7 +23,7 @@ const Sent = ({ sentItems }) => {
 };
 
 const mapStateToProps = createStructuredSelector({
-  sentItems: selectOutboxList,
+  sentItems: selectSentRows,
 });
 
 export default connect(mapStateToProps)(Sent);

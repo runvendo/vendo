@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import React from "react";
 import { connect } from "react-redux";
-import { addStarred } from "../../redux/starred/starred.actions";
-import { createStructuredSelector } from "reselect";
-import { changeStarColor } from "../../redux/starred/starred.selectors";
+import { withRouter } from "react-router-dom";
+import { refreshMail, setStar } from "../../mail-api";
 import {
   MessageTemplateContainer,
   SquareBox,
@@ -17,24 +16,28 @@ import {
   Date,
 } from "./message-template.styles";
 
-const MessageTemplate = ({ data, addStarred, changeStarColor }) => {
-  const [toggle, setToggle] = useState("false");
-  // console.log(changeStarColor);
-
-  const handleClick = () => {
-    // history.push("/starred");
-    setToggle((prev) => !prev);
-
-    addStarred(data);
+const MessageTemplate = ({ data, refresh, history }) => {
+  const handleStar = (event) => {
+    event.stopPropagation();
+    setStar(data.id, !data.starred).then(refresh).catch(console.error);
   };
 
+  const openMessage = () => {
+    history.push(`/message/${data.id}`);
+  };
+
+  const emphasis = data.unread ? { fontWeight: 700 } : {};
+
   return (
-    <MessageTemplateContainer>
-      <SquareBox className="square">
+    <MessageTemplateContainer
+      onClick={openMessage}
+      style={{ cursor: "pointer", background: data.unread ? "#ffffff" : "#f6f7f8" }}
+    >
+      <SquareBox className="square" onClick={(e) => e.stopPropagation()}>
         <i className="far fa-square"></i>
       </SquareBox>
-      <Star className={!toggle ? "star star-bg" : "star"} onClick={handleClick}>
-        {!toggle ? (
+      <Star className={data.starred ? "star star-bg" : "star"} onClick={handleStar}>
+        {data.starred ? (
           <img
             src="https://www.gstatic.com/images/icons/material/system/1x/star_googyellow500_20dp.png"
             alt="star"
@@ -47,13 +50,12 @@ const MessageTemplate = ({ data, addStarred, changeStarColor }) => {
             className="dark"
           />
         )}
-        {/* <i className="far fa-star"></i> */}
       </Star>
-      <MessageName>{data.name}</MessageName>
+      <MessageName style={emphasis}>{data.name}</MessageName>
 
       <MessageBody>
         <MessageBodyFirst>
-          <MessageTitle>{data.title}</MessageTitle>
+          <MessageTitle style={emphasis}>{data.title}</MessageTitle>
           <Dash>-</Dash>
           <MessageContent>{data.body}</MessageContent>
         </MessageBodyFirst>
@@ -75,18 +77,14 @@ const MessageTemplate = ({ data, addStarred, changeStarColor }) => {
             alt="snooze-icon"
           />
         </HoverIcons>
-        <Date className="date">{data.date}</Date>
+        <Date className="date" style={emphasis}>{data.date}</Date>
       </MessageBody>
     </MessageTemplateContainer>
   );
 };
 
-const mapStateToProps = createStructuredSelector({
-  changeStarColor,
-});
-
 const mapDispatchToProps = (dispatch) => ({
-  addStarred: (star) => dispatch(addStarred(star)),
+  refresh: () => refreshMail(dispatch),
 });
 
-export default connect(mapStateToProps, mapDispatchToProps)(MessageTemplate);
+export default withRouter(connect(null, mapDispatchToProps)(MessageTemplate));

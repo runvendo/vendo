@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 // import "./message-box.styles.css";
 import { connect } from "react-redux";
-import { addSent } from "../../redux/outbox/outbox.actions";
+import { refreshMail, sendMessage } from "../../mail-api";
 import {
   MessageBoxContainer,
   MessageBoxTop,
@@ -19,7 +19,7 @@ import {
   BottomRightIcons,
 } from "./message-box.styles";
 
-const MessageBox = ({ showMessage, shouldMessageShow, addSent }) => {
+const MessageBox = ({ showMessage, shouldMessageShow, refresh }) => {
   let monthList = [
     "Jan",
     "Feb",
@@ -84,7 +84,7 @@ const MessageBox = ({ showMessage, shouldMessageShow, addSent }) => {
 
     if (to !== "" && body !== "" && subject !== "") {
       shouldMessageShow(true);
-      addSent(messageDetail);
+      sendMessage({ to, subject, body }).then(refresh).catch(console.error);
     }
 
     updateMessageDetail({
@@ -205,7 +205,7 @@ const MessageBox = ({ showMessage, shouldMessageShow, addSent }) => {
 };
 
 const mapDispatchToProps = (dispatch) => ({
-  addSent: (sent) => dispatch(addSent(sent)),
+  refresh: () => refreshMail(dispatch),
 });
 
 export default connect(null, mapDispatchToProps)(MessageBox);

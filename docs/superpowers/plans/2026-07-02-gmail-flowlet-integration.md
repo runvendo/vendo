@@ -53,27 +53,27 @@ Implications folded into tasks below: the action route must EXECUTE approval-gat
 
 **Files:** `pnpm-workspace.yaml` (drop `!apps/gmail`), `apps/gmail/package.json` (react 18, scripts, name `gmail-demo`), `apps/gmail/src/index.js` (createRoot), delete `apps/gmail/package-lock.json` + CRA test boilerplate, `apps/gmail/README.md` update.
 
-- [ ] Move the app into the workspace, upgrade React, fix the entry point
-- [ ] `pnpm install` clean; app boots visually unchanged at :3199 under pnpm
-- [ ] Commit
+- [x] Move the app into the workspace, upgrade React, fix the entry point
+- [x] `pnpm install` clean; app boots visually unchanged at :3199 under pnpm
+- [x] Commit
 
 ### Task 2: Mail backend (API + seed + OpenAPI)
 
 **Files:** `apps/gmail/server/{store,seed,api,index}.ts`, `apps/gmail/server/__tests__/`, `apps/gmail/openapi.json`, `apps/gmail/src/setupProxy.js`, deps (express, tsx, vitest).
 
-- [ ] TDD the store: folders, search, star, archive, label, mark-read, send (in-memory, reseedable)
-- [ ] Express routes matching `openapi.json` exactly; author the spec with real annotations (reads `readOnlyHint`, sends/mutations mutating)
-- [ ] Vitest green (`pnpm --filter gmail-demo test`)
-- [ ] Commit
+- [x] TDD the store: folders, search, star, archive, label, mark-read, send (in-memory, reseedable)
+- [x] Express routes matching `openapi.json` exactly; author the spec with real annotations (reads `readOnlyHint`, sends/mutations mutating)
+- [x] Vitest green (`pnpm --filter gmail-demo test`)
+- [x] Commit
 
 ### Task 3: Frontend re-pointed at the API + read view
 
 **Files:** `apps/gmail/src/redux/mail/` (new slice), edits to paginate/starred/outbox consumers (`inbox-content`, `starred`, `sent`, `message-template`, `composeMessage`), new `message-view` component + route, `App.js`.
 
-- [ ] Inbox/starred/sent render from `GET /api/messages`; star/send go through the API; light poll keeps UI fresh
-- [ ] Read view opens a message (marks read) in keeping with existing styles
-- [ ] Live check in browser: views work, reload persists (server state)
-- [ ] Commit
+- [x] Inbox/starred/sent render from `GET /api/messages`; star/send go through the API; light poll keeps UI fresh
+- [x] Read view opens a message (marks read) in keeping with existing styles
+- [x] Live check in browser: views work, reload persists (server state)
+- [x] Commit
 
 ### Task 4: Embedded Flowlet server side
 
