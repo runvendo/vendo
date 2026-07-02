@@ -253,7 +253,10 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
         spec: automationSpecSchema,
         grantedTools: z.array(z.string()).optional(),
       }),
-      execute: async ({ spec, grantedTools }) => {
+      execute: async ({ spec: rawSpec, grantedTools }) => {
+        // Re-parse even though the SDK validates at the call boundary: direct
+        // callers (tests, wrappers) must get the same defaults + rejections.
+        const spec = automationSpecSchema.parse(rawSpec);
         const compiled = await compile(spec, grantedTools ?? []);
         if (!compiled.ok) return compiled;
         const { automation } = await config.store.create(scope, {
@@ -277,9 +280,10 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
         spec: automationSpecSchema,
         grantedTools: z.array(z.string()).optional(),
       }),
-      execute: async ({ id, spec, grantedTools }) => {
+      execute: async ({ id, spec: rawSpec, grantedTools }) => {
         const automation = await config.store.get(scope, id);
         if (!automation) return notFound(id);
+        const spec = automationSpecSchema.parse(rawSpec);
         const compiled = await compile(spec, grantedTools ?? []);
         if (!compiled.ok) return compiled;
         await config.store.cancelPendingRuns(scope, id);

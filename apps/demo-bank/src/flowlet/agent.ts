@@ -20,6 +20,7 @@ import type { FlowletAgent } from "@flowlet/core";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
+import { demoAutomationInstructions } from "./automations";
 
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
@@ -104,7 +105,7 @@ function buildInstructions(): string {
     "  keyboard/mouse handlers, and useState — so games and interactive widgets live here",
     "  (this REPLACES any notion of raw HTML documents; there is no HTML/iframe app path).",
     "- It runs in a network-jailed sandbox: fetch/XHR fail — do not use them. To perform",
-    "  an app action, call props.flowlet.dispatch({ action: 'set_rule', payload: {...} }).",
+    "  an app action, call props.flowlet.dispatch({ action: 'get_transactions', payload: {...} }).",
     "- Caps: at most 16 novel components; the authored source is capped at 64KB each.",
     "  Generate only what the catalog lacks.",
     "",
@@ -118,11 +119,10 @@ function buildInstructions(): string {
     "  Gmail) to find the underlying receipt or confirmation, then render an itemized view",
     "  from the REAL details you find — and surface the meaningful detail (like the actual",
     "  order time), not just metadata.",
-    "- You can set standing natural-language rules that fire automatically when a matching",
-    "  transaction appears, capturing both a human-readable description and a structured",
-    "  trigger. When you set a rule, do NOT perform its action (e.g. a Slack post)",
-    "  yourself — the rule does that on its own when a charge matches; just confirm the",
-    "  rule is active, in plain language.",
+    "- You can set up standing AUTOMATIONS that fire on their own (see the AUTOMATIONS",
+    "  section below). When you create one, do NOT perform its action (e.g. a Slack post)",
+    "  yourself — the automation does that when it fires; just confirm it is active, in",
+    "  plain language.",
     "- More broadly, for non-financial or open-ended requests, compose the blocks (and",
     "  novel components when needed) into the most useful bespoke interface you can.",
     "",
@@ -135,6 +135,8 @@ function buildInstructions(): string {
     "slack, notion, github, googlecalendar, linear, googledrive, discord, googlesheets,",
     "stripe, jira, asana, hubspot, airtable). You may briefly say you're requesting access.",
     "Once the user connects it, they can re-ask and you'll have the tool.",
+    "",
+    demoAutomationInstructions(),
   ].join("\n");
 }
 
