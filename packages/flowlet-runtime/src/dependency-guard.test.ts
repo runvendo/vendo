@@ -42,16 +42,18 @@ const FORBIDDEN_MODULES = [
   "pg-boss", "bullmq", "bull", "bee-queue", "amqplib", "kafkajs", "agenda",
   // http servers / frameworks
   "express", "fastify", "koa", "hono", "@hapi/hapi", "restify", "next",
-  // Node server builtins
-  "http", "https", "net", "tls", "http2", "dgram", "cluster",
+  // Node server builtins, plus node:module (createRequire is a require()
+  // escape hatch that would bypass this scan)
+  "http", "https", "net", "tls", "http2", "dgram", "cluster", "module",
   "node:http", "node:https", "node:net", "node:tls", "node:http2", "node:dgram", "node:cluster",
+  "node:module",
 ];
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
-    return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+    return /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name) ? [path] : [];
   });
 }
 
@@ -98,6 +100,21 @@ describe("dependency guard: @flowlet/runtime is portable (Decision 1)", () => {
         if (FORBIDDEN_MODULES.includes(moduleRoot(specifier))) {
           offending.push(`${file} -> ${specifier}`);
         }
+      }
+    }
+    expect(offending).toEqual([]);
+  });
+
+  it("dynamic imports in src/ use only literal specifiers", () => {
+    // A computed specifier would evade the literal scan above, so ban the
+    // construct outright: every dynamic import must open with a plain quote.
+    // (Static-lint limits beyond this are accepted: a determined author can
+    // always evade a regex; this guard exists to catch honest mistakes.)
+    const nonLiteralDynamicImport = /(?<![A-Za-z0-9_$.])import\s*\(\s*(?!["'])/;
+    const offending: string[] = [];
+    for (const file of sourceFiles(join(PKG_ROOT, "src"))) {
+      if (nonLiteralDynamicImport.test(readFileSync(file, "utf8"))) {
+        offending.push(file);
       }
     }
     expect(offending).toEqual([]);

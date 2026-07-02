@@ -75,6 +75,83 @@ describe("InMemoryAuditLog", () => {
   });
 });
 
+describe("Principal scope integrity", () => {
+  // Delimiter-collision regression (PR #22 review): these two scopes
+  // concatenate to the same "a::b::c" under a naive string key.
+  const left: Principal = { tenantId: "a", subject: "b::c" };
+  const right: Principal = { tenantId: "a::b", subject: "c" };
+
+  it("scopes whose tenant/subject concatenations match stay isolated", async () => {
+    const store = createInMemoryStore({ now });
+    const thread = await store.threads.create(left);
+    expect(await store.threads.get(right, thread.id)).toBeUndefined();
+    expect(await store.threads.list(right)).toHaveLength(0);
+
+    const saved = await store.flowlets.save(left, {
+      name: "n",
+      pinned: false,
+      uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
+      query: { toolName: "t", input: {} },
+      originatingPrompt: "p",
+    });
+    expect(await store.flowlets.get(right, saved.id)).toBeUndefined();
+    expect(await store.flowlets.list(right)).toHaveLength(0);
+  });
+});
+
+describe("isolation from caller mutation (PR #22 review)", () => {
+  it("thread history is isolated from caller-owned and returned message objects", async () => {
+    const store = createInMemoryStore({ now });
+    const thread = await store.threads.create(scope);
+    const message = { id: "m1", role: "user", parts: [] } as never;
+    await store.threads.appendMessages(scope, thread.id, [message]);
+
+    (message as { id: string }).id = "mutated-input";
+    const readBack = await store.threads.getMessages(scope, thread.id);
+    expect(readBack[0]?.id).toBe("m1");
+
+    (readBack[0] as { id: string }).id = "mutated-output";
+    expect((await store.threads.getMessages(scope, thread.id))[0]?.id).toBe("m1");
+  });
+
+  it("saved flowlets are isolated from draft and returned-record mutation", async () => {
+    const store = createInMemoryStore({ now });
+    const draft = {
+      name: "n",
+      pinned: false,
+      uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
+      query: { toolName: "t", input: { limit: 40 } },
+      originatingPrompt: "p",
+    };
+    const saved = await store.flowlets.save(scope, draft);
+
+    (draft.uiTree as { id: string }).id = "corrupted-by-draft";
+    (saved.query.input as { limit: number }).limit = 999;
+    const got = await store.flowlets.get(scope, saved.id);
+    expect((got?.uiTree as { id: string }).id).toBe("n1");
+    expect((got?.query.input as { limit: number }).limit).toBe(40);
+  });
+
+  it("audit log is append-only: neither the input event, the returned array, nor its elements are live references", async () => {
+    const store = createInMemoryStore({ now });
+    const event = {
+      at: now(),
+      principal: scope,
+      kind: "approval",
+      toolCallId: "call-1",
+      decision: "approved",
+    } as const;
+    await store.audit.append({ ...event });
+
+    // Mutating the returned array or its elements must not touch the log.
+    store.audit.events.splice(0);
+    expect(store.audit.events).toHaveLength(1);
+    const [first] = store.audit.events;
+    (first as { decision: string }).decision = "denied";
+    expect(store.audit.events[0]).toMatchObject({ decision: "approved" });
+  });
+});
+
 describe("createInMemoryStore", () => {
   it("aggregates all four frozen sub-stores", async () => {
     const store = createInMemoryStore({ now });

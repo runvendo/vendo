@@ -18,6 +18,16 @@ describe("InAppChannels", () => {
     expect(seen).toEqual([message]);
   });
 
+  it("awaits an async host callback and propagates its failure (delivery not recorded)", async () => {
+    const channels = new InAppChannels({
+      onDeliver: async () => {
+        throw new Error("socket down");
+      },
+    });
+    await expect(channels.deliver(message)).rejects.toThrow(/socket down/);
+    expect(channels.delivered).toHaveLength(0);
+  });
+
   it("rejects non in-app channels (embedded is in-app only, fail closed)", async () => {
     const channels = new InAppChannels();
     await expect(channels.deliver({ ...message, channel: "sms" })).rejects.toThrow(/in-app/i);

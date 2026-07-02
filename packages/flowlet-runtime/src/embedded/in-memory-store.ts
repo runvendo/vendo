@@ -6,7 +6,12 @@
  * already implements the frozen AutomationStore surface.
  *
  * Style matches InMemoryAutomationStore: Map state, injectable `now` clock,
- * counter ids, Principal ownership checked as `tenantId::subject`.
+ * counter ids. Two deliberate hardenings over that style (PR #22 review):
+ * Principal ownership compares tenantId and subject as FIELDS (a delimiter
+ * key would let {a, b::c} and {a::b, c} collide), and everything that crosses
+ * the store boundary is structuredClone'd so callers can never mutate
+ * persisted state through retained references — the cloud Postgres store gets
+ * both properties for free from serialization, and this stand-in must match.
  */
 import type {
   AuditEvent,
@@ -21,7 +26,8 @@ import type {
 } from "@flowlet/core";
 import { InMemoryAutomationStore } from "../automations/store";
 
-const scopeKey = (scope: Principal): string => `${scope.tenantId}::${scope.subject}`;
+const sameScope = (scope: Principal, owned: { tenantId: string; subject: string }): boolean =>
+  scope.tenantId === owned.tenantId && scope.subject === owned.subject;
 
 interface OwnedThread extends ThreadRecord {
   messages: FlowletUIMessage[];
@@ -34,7 +40,7 @@ export class InMemoryThreadStore implements ThreadStore {
 
   private owned(scope: Principal, thread: OwnedThread | undefined): OwnedThread | undefined {
     if (!thread) return undefined;
-    return scopeKey(scope) === `${thread.tenantId}::${thread.subject}` ? thread : undefined;
+    return sameScope(scope, thread) ? thread : undefined;
   }
 
   async create(scope: Principal, init: { title?: string } = {}): Promise<ThreadRecord> {
@@ -72,14 +78,18 @@ export class InMemoryThreadStore implements ThreadStore {
     messages: FlowletUIMessage[],
   ): Promise<void> {
     const thread = this.owned(scope, this.threads.get(threadId));
-    if (!thread) throw new Error(`unknown thread "${threadId}" for scope ${scopeKey(scope)}`);
-    thread.messages.push(...messages);
+    if (!thread) {
+      throw new Error(
+        `unknown thread "${threadId}" for scope ${scope.tenantId}/${scope.subject}`,
+      );
+    }
+    thread.messages.push(...structuredClone(messages));
     thread.updatedAt = this.clock();
   }
 
   async getMessages(scope: Principal, threadId: string): Promise<FlowletUIMessage[]> {
     const thread = this.owned(scope, this.threads.get(threadId));
-    return thread ? [...thread.messages] : [];
+    return thread ? structuredClone(thread.messages) : [];
   }
 }
 
@@ -95,7 +105,7 @@ export class InMemorySavedFlowletStore implements SavedFlowletStore {
 
   private owned(scope: Principal, f: OwnedFlowlet | undefined): OwnedFlowlet | undefined {
     if (!f) return undefined;
-    return scopeKey(scope) === `${f.tenantId}::${f.subject}` ? f : undefined;
+    return sameScope(scope, f) ? f : undefined;
   }
 
   async save(
@@ -104,7 +114,7 @@ export class InMemorySavedFlowletStore implements SavedFlowletStore {
   ): Promise<SavedFlowlet> {
     const now = this.clock();
     const owned: OwnedFlowlet = {
-      ...flowlet,
+      ...structuredClone(flowlet),
       id: `flowlet-${++this.idCounter}`,
       createdAt: now,
       updatedAt: now,
@@ -112,21 +122,23 @@ export class InMemorySavedFlowletStore implements SavedFlowletStore {
       subject: scope.subject,
     };
     this.flowlets.set(owned.id, owned);
-    const { tenantId: _t, subject: _s, ...record } = owned;
-    return record;
+    return this.toRecord(owned);
   }
 
   async get(scope: Principal, id: string): Promise<SavedFlowlet | undefined> {
     const owned = this.owned(scope, this.flowlets.get(id));
-    if (!owned) return undefined;
-    const { tenantId: _t, subject: _s, ...record } = owned;
-    return record;
+    return owned ? this.toRecord(owned) : undefined;
   }
 
   async list(scope: Principal): Promise<SavedFlowlet[]> {
     return [...this.flowlets.values()]
       .filter((f) => this.owned(scope, f) !== undefined)
-      .map(({ tenantId: _t, subject: _s, ...record }) => record);
+      .map((f) => this.toRecord(f));
+  }
+
+  private toRecord(owned: OwnedFlowlet): SavedFlowlet {
+    const { tenantId: _t, subject: _s, ...record } = structuredClone(owned);
+    return record;
   }
 
   async delete(scope: Principal, id: string): Promise<void> {
@@ -134,11 +146,18 @@ export class InMemorySavedFlowletStore implements SavedFlowletStore {
   }
 }
 
-/** Append-only; `events` is exposed read-only so tests can assert on it. */
+/** Append-only: the log clones on both sides of the boundary, so neither the
+ *  caller's event object nor anything read via `events` is a live reference. */
 export class InMemoryAuditLog implements AuditLog {
-  readonly events: AuditEvent[] = [];
+  private log: AuditEvent[] = [];
+
+  /** A detached copy for tests/inspection — mutating it never touches the log. */
+  get events(): AuditEvent[] {
+    return structuredClone(this.log);
+  }
+
   async append(event: AuditEvent): Promise<void> {
-    this.events.push(event);
+    this.log.push(structuredClone(event));
   }
 }
 
