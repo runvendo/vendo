@@ -1,10 +1,10 @@
 import { combineReducers } from "redux";
-import starredReducer from "./starred/starred.reducer";
-import outboxReducer from "./outbox/outbox.reducer";
+import mailReducer from "./mail/mail.reducer";
 import paginationReducer from "./paginate/paginate.reducer";
 
 export default combineReducers({
-  starred: starredReducer,
-  outbox: outboxReducer,
+  // The server-backed mailbox (inbox/starred/sent all derive from it).
+  mail: mailReducer,
+  // Kept for the category-tab chip dismissal flags only.
   paginate: paginationReducer,
 });

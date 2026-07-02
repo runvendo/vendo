@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import { connect } from "react-redux";
+import { createStructuredSelector } from "reselect";
+import { selectUnreadCount } from "../../redux/mail/mail.selectors";
 import { Link } from "react-router-dom";
 import {
   SidebarContainer,
@@ -18,7 +21,7 @@ import {
   HangoutArrow,
 } from "./sidebar.styles";
 
-const SideBar = ({ shouldMessageShow }) => {
+const SideBar = ({ shouldMessageShow, unreadCount }) => {
   const [hightlight, setHighlight] = useState("inbox");
 
   const handleClick = () => {
@@ -53,7 +56,7 @@ const SideBar = ({ shouldMessageShow }) => {
                 )}
               </span>
               <span className="title">Inbox</span>
-              <span className="number">51</span>
+              {unreadCount > 0 && <span className="number">{unreadCount}</span>}
             </SideNavList>
           </Link>
           <Link to="/starred">
@@ -68,6 +71,23 @@ const SideBar = ({ shouldMessageShow }) => {
                 />
               </span>
               <span className="title">Starred</span>
+            </SideNavList>
+          </Link>
+
+          <Link to="/flowlet">
+            <SideNavList
+              className={hightlight === "flowlet" ? "highlight" : ""}
+              onClick={() => setHighlight("flowlet")}
+            >
+              <span>
+                {/* Inline sparkle — Vendo has no gstatic asset. */}
+                <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"
+                  style={{ display: "block" }} fill="#5f6368">
+                  <path d="M12 2l1.9 5.7L19.6 9.6l-5.7 1.9L12 17.2l-1.9-5.7L4.4 9.6l5.7-1.9L12 2z" />
+                  <path d="M19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9L19 14z" />
+                </svg>
+              </span>
+              <span className="title">Vendo</span>
             </SideNavList>
           </Link>
 
@@ -271,4 +291,8 @@ const SideBar = ({ shouldMessageShow }) => {
   );
 };
 
-export default SideBar;
+const mapStateToProps = createStructuredSelector({
+  unreadCount: selectUnreadCount,
+});
+
+export default connect(mapStateToProps)(SideBar);

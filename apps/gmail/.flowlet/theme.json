@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "accent": "#1A73E8",
+  "background": "#F6F7F8",
+  "surface": "#FFFFFF",
+  "text": "#202124",
+  "mutedText": "#5F6368",
+  "fontFamily": "Roboto, 'Segoe UI', Arial, sans-serif",
+  "radius": "8px",
+  "mode": "light"
+}
