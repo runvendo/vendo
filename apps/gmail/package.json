@@ -28,8 +28,8 @@
     "zod": "^3.24.0"
   },
   "scripts": {
-    "start": "PORT=3199 DISABLE_ESLINT_PLUGIN=true react-scripts start",
-    "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
+    "start": "PORT=3199 DISABLE_ESLINT_PLUGIN=true craco start",
+    "build": "DISABLE_ESLINT_PLUGIN=true craco build",
     "dev": "concurrently -k -n server,web \"pnpm dev:server\" \"pnpm start\"",
     "dev:server": "tsx watch server/index.ts",
     "test": "vitest run",
@@ -47,7 +47,8 @@
     "typescript": "^5",
     "vitest": "^3.2.4",
     "vite": "^5.4.0",
-    "@vitejs/plugin-react": "^4.3.4"
+    "@vitejs/plugin-react": "^4.3.4",
+    "@craco/craco": "^7.1.0"
   },
   "eslintConfig": {
     "extends": [

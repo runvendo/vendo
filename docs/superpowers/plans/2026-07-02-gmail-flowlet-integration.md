@@ -107,10 +107,10 @@ Implications folded into tasks below: the action route must EXECUTE approval-gat
 
 **Files:** `apps/gmail/src/pages/flowlet-page.jsx` + route + sidebar nav item, overlay mount in `App.js`, slot in `inbox-content`.
 
-- [ ] PAGE at `/flowlet` (full-height thread, suggestions, saved flows)
-- [ ] OVERLAY on Cmd/Ctrl+K anywhere
-- [ ] SLOT at top of inbox (own thread id, pin/edit/remove)
-- [ ] Commit
+- [x] PAGE at `/flowlet` (full-height thread, suggestions, saved flows)
+- [x] OVERLAY on Cmd/Ctrl+K anywhere
+- [x] SLOT at top of inbox (own thread id, pin/edit/remove)
+- [x] Commit
 
 ### Task 8: Live verification + placement proposal → PAUSE for Yousef
 

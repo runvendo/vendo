@@ -5,11 +5,13 @@ import { connect } from "react-redux";
 import { createStructuredSelector } from "reselect";
 import { selectInboxRows } from "../../redux/mail/mail.selectors";
 import { InboxContainer } from "./inbox-content.styles";
+import { InboxSlot } from "../../flowlet/InboxSlot";
 
 const InboxContent = ({ currentMessages }) => {
   return (
     <InboxContainer>
       <CategoryBtn />
+      <InboxSlot />
       {currentMessages.map((data) => (
         <MessageTemplate key={data.id} data={data} />
       ))}
