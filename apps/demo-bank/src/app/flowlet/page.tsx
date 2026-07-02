@@ -12,9 +12,9 @@
  * hidden on this route (see FlowletLayer).
  */
 import { useEffect, useState } from "react"
-import { FlowletThread, useFlowletThread, useShell } from "@flowlet/shell"
-import { stripEmoji, type UINode } from "@flowlet/core"
+import { FlowletThread, useFlowletThread, useShell, useReopenFlowlet, type Flowlet } from "@flowlet/shell"
 import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
+import { deriveSavedDrafts } from "@/flowlet/saved-flowlets"
 
 const SUGGESTIONS = [
   "What did I spend money on when I should've been asleep?",
@@ -22,40 +22,34 @@ const SUGGESTIONS = [
   "Put me on blast in Slack when I order late-night delivery",
 ]
 
-type ComponentNode = Extract<UINode, { kind: "component" }>
-interface SavedTab { id: string; label: string; node: ComponentNode }
-
-/** A readable tab label from a generated component node. */
-function labelFor(node: ComponentNode): string {
-  const props = (node.props && typeof node.props === "object" ? node.props : {}) as Record<string, unknown>
-  if (node.name === "TimeOfDayClock") return "Time-of-day spending"
-  if (typeof props.title === "string" && props.title.trim()) return stripEmoji(props.title)
-  return node.name
-}
-
 const CHAT = "chat"
 
 function PageSurface() {
   const chat = useFlowletThread()
-  const { renderNode } = useShell()
+  const { store } = useShell()
   const [active, setActive] = useState<string>(CHAT)
-  const [saved, setSaved] = useState<SavedTab[]>([])
+  const [saved, setSaved] = useState<Flowlet[]>([])
 
-  // Every generated component view in the thread becomes a saved tab (deduped by
-  // node id). We only ever append, so saved tabs survive a "+" reset that clears
-  // the live thread.
+  // Hydrate the tab strip from the store (ENG-183): saved flowlets survive
+  // reloads. Oldest-first so tabs keep their creation order.
   useEffect(() => {
-    setSaved((prev) => {
-      const seen = new Set(prev.map((s) => s.id))
-      const next = [...prev]
-      for (const item of chat.items) {
-        if (item.kind !== "ui" || item.node.kind !== "component") continue
-        if (seen.has(item.node.id)) continue
-        seen.add(item.node.id)
-        next.push({ id: item.node.id, label: labelFor(item.node), node: item.node })
-      }
-      return next.length === prev.length ? prev : next
+    let cancelled = false
+    void store.list().then((all) => {
+      if (!cancelled) setSaved(all.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)))
     })
+    return () => { cancelled = true }
+  }, [store])
+
+  // Every rendered view in the thread becomes a saved flowlet (deduped by node
+  // id), persisted through the store with the prompt that produced it. Saved
+  // tabs survive a "+" reset that clears the live thread — and now reloads too.
+  useEffect(() => {
+    const drafts = deriveSavedDrafts(chat.items, new Set(saved.map((s) => s.id)))
+    if (drafts.length === 0) return
+    void Promise.all(drafts.map((d) => store.save(d))).then((records) => {
+      setSaved((prev) => [...prev, ...records.filter((r) => !prev.some((p) => p.id === r.id))])
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.items])
 
   const newChat = () => {
@@ -87,7 +81,7 @@ function PageSurface() {
             onClick={() => setActive(s.id)}
           >
             <span className="fl-tab-dot" aria-hidden />
-            {s.label}
+            {s.name}
           </button>
         ))}
         <button type="button" className="fl-tab fl-tab-new" aria-label="New chat" onClick={newChat}>
@@ -99,14 +93,23 @@ function PageSurface() {
         <div className="fl-page-pane" hidden={active !== CHAT}>
           <FlowletThread greeting="What do you want to build?" suggestions={SUGGESTIONS} />
         </div>
-        {activeSaved ? (
-          <div className="fl-saved-pane" key={activeSaved.id}>
-            {renderNode(activeSaved.node)}
-          </div>
-        ) : null}
+        {activeSaved ? <SavedPane key={activeSaved.id} flowlet={activeSaved} /> : null}
       </div>
     </div>
   )
+}
+
+/**
+ * A reopened saved flowlet: renders the persisted snapshot instantly, then
+ * re-runs the view's declared data queries through the policy-governed action
+ * route (the RunQuery seam) and streams the fresh data in via the stage's
+ * data-delta path. Query failures silently keep the snapshot (ENG-183 default:
+ * live re-run with graceful fallback).
+ */
+function SavedPane({ flowlet }: { flowlet: Flowlet }) {
+  const { renderNode } = useShell()
+  const { node } = useReopenFlowlet(flowlet)
+  return <div className="fl-saved-pane">{renderNode(node)}</div>
 }
 
 export default function FlowletTabPage() {
