@@ -63,6 +63,53 @@
   box-shadow: var(--flowlet-shadow); animation: fl-fade-in .15s ease; transition: border-color .12s; }
 .fl-jump:hover { border-color: var(--flowlet-accent); }
 .fl-jump:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
+/* Connect dock (ENG-205): the in-bar connect-tools entry. The .fl-dock
+   wrapper hosts the ripple; the anchor positions the liquid tray over the bar. */
+.fl-dock { position: relative; display: inline-flex; }
+/* The ripple wrapper is the clip box (button rounding); the badge overhangs
+   it, so it lives on the outer .fl-dock instead. */
+.fl-dock-ripple { display: inline-flex; border-radius: 10px; }
+.fl-dock-btn { position: relative; gap: 3px; }
+.fl-dock-badge { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px;
+  border-radius: 999px; background: var(--flowlet-ok); color: #fff; font-size: 10px;
+  font-weight: 700; line-height: 15px; text-align: center; padding: 0 3px;
+  z-index: 1; pointer-events: none;
+  box-shadow: 0 0 0 2px var(--flowlet-surface); }
+.fl-dock-anchor { position: relative; }
+/* Bottom-justified so the panel grows out of the bar edge while the entrance
+   spring clamps its height. --fl-tray-max is set at open time to the room
+   actually above the bar within this surface (page, overlay, or slot panel),
+   so the tray never runs off the top — the picker scrolls internally instead. */
+.fl-tray { position: absolute; bottom: 100%; left: 16px; right: 16px; margin-bottom: 8px;
+  z-index: 30; transform-origin: bottom center; overflow: hidden; border-radius: var(--flowlet-radius);
+  display: flex; flex-direction: column; justify-content: flex-end; }
+/* Opaque elevated sheet: the tray floats over display text (the hero greet,
+   thread turns), and even a few percent of translucency reads big dark glyphs
+   straight through. Depth comes from the border + shadow, not glass. */
+.fl-tray .fl-picker { max-height: min(420px, 48vh, var(--fl-tray-max, 9999px));
+  background: var(--flowlet-surface);
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Soft bottom scrim signals the list scrolls instead of dead-cutting a row;
+   it matches the panel surface so the border and corners stay crisp. */
+.fl-tray::after { content: ""; position: absolute; left: 1px; right: 1px; bottom: 1px; height: 26px;
+  border-radius: 0 0 var(--flowlet-radius) var(--flowlet-radius);
+  background: linear-gradient(180deg, transparent, var(--flowlet-surface));
+  pointer-events: none; }
+
+/* Render slot (ENG-205): the persistent wrapper a skeleton and its replacing
+   view share, so the reveal can morph. The column layout + 14px gap mirror the
+   message list so wrapping changes nothing about spacing; the exiting overlay
+   repeats it so the fading skeleton sits exactly where it was. */
+.fl-reveal { position: relative; align-self: flex-start; width: 100%;
+  display: flex; flex-direction: column; gap: 14px; }
+.fl-reveal-enter { display: flex; flex-direction: column; width: 100%; }
+.fl-reveal-exit { position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
+  display: flex; flex-direction: column; gap: 14px; }
+
+/* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
+   foreground as the flat-material fill. The .fl-typing dots below are its
+   first-paint and no-fluidkit fallback. */
+.fl-thinking { align-self: flex-start; color: var(--flowlet-fg-muted); padding: 4px 2px; }
 /* Typing indicator — three pulsing dots while the agent is working. */
 .fl-typing { align-self: flex-start; display: flex; align-items: center; gap: 5px; padding: 4px 2px; }
 .fl-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--flowlet-fg-muted);
@@ -324,7 +371,9 @@
 /* Brand focus ring — the UA default blue halo is off-brand in every host. */
 .fl-chip:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
 .fl-landing-composer { width: 100%; max-width: 560px; }
-.fl-landing-composer .fl-composer { padding: 0; }
+/* No padding override here: the hero composer keeps the standard bar
+   geometry, so the send circle stays inset and concentric with the bar's
+   rounded end instead of colliding with the border arc. */
 
 /* ---------- saved-flowlet library (ENG-183) ---------- */
 .fl-library { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
@@ -374,28 +423,6 @@
 .fl-stale-note { font-family: var(--flowlet-font-mono); font-size: 11px;
   color: color-mix(in srgb, var(--flowlet-fg) 46%, transparent); padding: 6px 2px; }
 
-/* ---------- connection rail ---------- */
-.fl-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 16px 6px; }
-.fl-rail-chip { display: flex; align-items: center; gap: 7px; border: 1px solid var(--flowlet-border);
-  border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 550; letter-spacing: -.006em;
-  background: var(--flowlet-glass-strong);
-  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
-  transition: transform .18s cubic-bezier(.22,1,.36,1), border-color .16s, background .16s; }
-.fl-rail-chip:hover { transform: translateY(-1px); }
-/* Connected tools get a soft green wash. */
-.fl-rail-chip.is-connected { background: color-mix(in srgb, var(--flowlet-ok) 11%, var(--flowlet-surface));
-  border-color: color-mix(in srgb, var(--flowlet-ok) 30%, var(--flowlet-border)); }
-/* Live "breathing" pulse on the connected dot. */
-.fl-rail-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--flowlet-ok);
-  animation: fl-breathe 2.4s ease-in-out infinite; }
-@keyframes fl-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--flowlet-ok) 45%, transparent); }
-  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--flowlet-ok) 0%, transparent); } }
-.fl-rail-icon { display: block; flex-shrink: 0; }
-.fl-rail-connect { border: 1px dashed var(--flowlet-border-strong); border-radius: 999px;
-  padding: 6px 12px; font-size: 12px; background: transparent; color: var(--flowlet-fg-muted); cursor: pointer; transition: color .12s; }
-.fl-rail-connect:hover { color: var(--flowlet-fg); }
-
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
@@ -417,7 +444,25 @@
   border: 1px solid var(--flowlet-border); background: var(--flowlet-surface); transition: transform .12s, border-color .12s, box-shadow .12s; }
 .fl-picker-item:hover { transform: translateY(-1px); border-color: var(--flowlet-border-strong); box-shadow: var(--flowlet-shadow); }
 .fl-picker-item.is-connected { background: color-mix(in srgb, var(--flowlet-ok) 9%, var(--flowlet-surface));
-  border-color: color-mix(in srgb, var(--flowlet-ok) 26%, var(--flowlet-border)); }
+  border-color: color-mix(in srgb, var(--flowlet-ok) 26%, var(--flowlet-border));
+  transition: transform .12s, border-color .35s cubic-bezier(.22,1,.36,1), box-shadow .12s, background .35s cubic-bezier(.22,1,.36,1); }
+/* OAuth in flight: the + hands the status slot to a mini metaball loader. */
+.fl-picker-connecting { display: inline-flex; align-items: center; color: var(--flowlet-fg-muted);
+  min-width: 19px; justify-content: center; }
+.fl-picker-connecting .fl-typing span { width: 4px; height: 4px; }
+/* Observed connect: the green wash blooms in and the dot lands with a soft
+   ripple ring — a one-shot celebration; reopens render is-connected plain. */
+.fl-picker-item.is-just-connected { animation: fl-connect-bloom .5s cubic-bezier(.22,1,.36,1) both; }
+.fl-picker-item.is-just-connected .fl-picker-on { animation: fl-connect-pop .55s cubic-bezier(.22,1,.36,1) both; }
+@keyframes fl-connect-bloom {
+  from { background: var(--flowlet-surface); border-color: var(--flowlet-border); }
+  to   { background: color-mix(in srgb, var(--flowlet-ok) 9%, var(--flowlet-surface));
+         border-color: color-mix(in srgb, var(--flowlet-ok) 26%, var(--flowlet-border)); } }
+@keyframes fl-connect-pop {
+  0%   { transform: scale(0); box-shadow: 0 0 0 0 color-mix(in srgb, var(--flowlet-ok) 45%, transparent); }
+  55%  { transform: scale(1.35); }
+  80%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--flowlet-ok) 0%, transparent); }
+  100% { transform: scale(1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--flowlet-ok) 16%, transparent); } }
 .fl-picker-ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0;
   background: var(--flowlet-surface); border: 1px solid var(--flowlet-border); font-size: 11px; font-weight: 700; }
 .fl-picker-nm { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -489,7 +534,8 @@
   /* Silence every looping loader for vestibular-sensitive users. */
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
   .fl-typing span, .fl-generating .fl-pulse, .fl-skeleton-bar,
-  .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin, .fl-rail-dot { animation: none; }
+  .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin { animation: none; }
+  .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
 }
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--flowlet-border);

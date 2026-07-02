@@ -20,6 +20,52 @@ function renderList(items: ThreadItem[], onApprove = vi.fn()) {
 }
 
 describe("MessageList", () => {
+  it("shows an accessible working indicator during dead air after the user sends", () => {
+    const { container } = render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider renderNode={() => <div data-testid="rendered" />}>
+          <MessageList
+            items={[{ kind: "text", key: "u1", messageId: "m1", role: "user", text: "hi" }]}
+            status="submitted"
+            onApprove={vi.fn()}
+          />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    // First paint is the static-dot fallback; the async fluidkit upgrade is
+    // covered by fluid-thinking.test.tsx.
+    expect(container.querySelector('[aria-label="Working"]')).toBeTruthy();
+  });
+
+  it("keeps one persistent reveal slot across the skeleton→view swap", () => {
+    const skeletonItems: ThreadItem[] = [
+      { kind: "skeleton", key: "m1:1", messageId: "m1", name: "SpendChart" },
+    ];
+    const uiItems: ThreadItem[] = [{ kind: "ui", key: "m1:2", messageId: "m1", node }];
+    const { container, rerender } = render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider renderNode={() => <div data-testid="rendered" />}>
+          <MessageList items={skeletonItems} status="streaming" onApprove={vi.fn()} />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    const slotBefore = container.querySelector(".fl-reveal");
+    expect(slotBefore?.getAttribute("data-phase")).toBe("skeleton");
+    rerender(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider renderNode={() => <div data-testid="rendered" />}>
+          <MessageList items={uiItems} status="ready" onApprove={vi.fn()} />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    const slotAfter = container.querySelector(".fl-reveal");
+    expect(slotAfter?.getAttribute("data-phase")).toBe("view");
+    // Same DOM node = same React identity: the slot survived the item swap,
+    // which is what lets the reveal morph instead of remount.
+    expect(slotAfter).toBe(slotBefore);
+    expect(screen.getByTestId("ui-node")).toBeTruthy();
+  });
+
   it("renders an error item with friendly copy — raw detail never reaches the DOM", () => {
     const { container } = renderList([
       { kind: "error", key: "e1", messageId: "m", message: "Something exploded" } as unknown as ThreadItem,

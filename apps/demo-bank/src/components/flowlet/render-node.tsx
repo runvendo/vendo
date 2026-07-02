@@ -11,24 +11,10 @@
  * — parse it so the component gets real props rather than a char-indexed spread.
  */
 import type { ReactNode } from "react";
-import { motion } from "framer-motion";
 import type { UINode } from "@flowlet/core";
 import { stripEmojiDeep } from "@flowlet/core";
 import { DemoConnectCard } from "./DemoConnectCard";
 import { SandboxStage } from "./SandboxStage";
-
-/** Tasteful entrance so each generated view "arrives" rather than popping in. */
-function Reveal({ children }: { children: ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10, scale: 0.985 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
-}
 
 function coerceProps(props: unknown): Record<string, unknown> {
   let obj: Record<string, unknown> = {};
@@ -55,21 +41,15 @@ export function renderNode(node: UINode): ReactNode {
     const props = coerceProps(node.props);
     const toolkit = typeof props.toolkit === "string" ? props.toolkit : "";
     const reason = typeof props.reason === "string" ? props.reason : undefined;
-    return (
-      <Reveal>
-        <DemoConnectCard toolkit={toolkit} reason={reason} />
-      </Reveal>
-    );
+    // Entrance motion is owned by the shell's FluidReveal (ENG-205) — a host
+    // wrapper here would double-animate.
+    return <DemoConnectCard toolkit={toolkit} reason={reason} />;
   }
 
   // Every other UI the agent produces is a "generated" node, rendered
   // untrusted inside the sandbox.
   if (node.kind === "generated") {
-    return (
-      <Reveal>
-        <SandboxStage node={node} />
-      </Reveal>
-    );
+    return <SandboxStage node={node} />;
   }
 
   // Unexpected: some other component node slipped through (only "Connect" is

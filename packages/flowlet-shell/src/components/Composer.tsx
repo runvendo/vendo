@@ -1,4 +1,4 @@
-import { useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { FileUIPart } from "ai";
 import { VoiceButton } from "./VoiceButton";
 import { AttachmentChips } from "./AttachmentChips";
@@ -10,9 +10,11 @@ export interface ComposerProps {
   status?: string;
   onStop?: () => void;
   placeholder?: string;
+  /** In-bar affordance rendered beside attach (ENG-205 connect dock). */
+  accessory?: ReactNode;
 }
 
-export function Composer({ onSend, status, onStop, placeholder = "Ask anything" }: ComposerProps) {
+export function Composer({ onSend, status, onStop, placeholder = "Ask anything", accessory }: ComposerProps) {
   const [value, setValue] = useState("");
   const [dragging, setDragging] = useState(false);
   const voice = useVoiceInput();
@@ -90,6 +92,7 @@ export function Composer({ onSend, status, onStop, placeholder = "Ask anything" 
           hidden
           onChange={(e) => { if (e.target.files) att.add(e.target.files); e.target.value = ""; }}
         />
+        {accessory}
         <button type="button" className="fl-icon-btn fl-attach" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
