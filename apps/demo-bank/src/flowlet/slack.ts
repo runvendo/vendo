@@ -4,8 +4,9 @@
  * Set `FLOWLET_STAGE_FALLBACK=1` to opt into the canned "posted" fallback for
  * stage reliability — off by default so the demo never silently claims success.
  */
+import { DEMO_USER_ID } from "./principal"
+
 const COMPOSIO_API = "https://backend.composio.dev/api/v3"
-const USER_ID = "flowlet-demo"
 
 /** Whether to fake a successful post on failure (stage reliability crutch). */
 const stageFallback = () => process.env.FLOWLET_STAGE_FALLBACK === "1"
@@ -36,7 +37,7 @@ export async function postToSlack(channel: string, text: string): Promise<SlackF
       method: "POST",
       headers: { "x-api-key": apiKey, "content-type": "application/json" },
       body: JSON.stringify({
-        user_id: USER_ID,
+        user_id: DEMO_USER_ID,
         arguments: { channel: resolveChannel(channel), text },
       }),
     })
