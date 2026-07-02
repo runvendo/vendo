@@ -18,6 +18,10 @@ export interface FlowletThreadProps {
   suggestions?: string[];
   flows?: Flowlet[];
   onOpenFlow?: (flow: Flowlet) => void;
+  /** Library management on the empty-state gallery (ENG-183). */
+  onRenameFlow?: (flow: Flowlet, name: string) => void;
+  onPinFlow?: (flow: Flowlet, pinned: boolean) => void;
+  onDeleteFlow?: (flow: Flowlet) => void;
   /**
    * When set, shows a "Pin to card" footer that commits the latest rendered view
    * to a host slot. Slot-only seam — other surfaces omit it and render unchanged.
@@ -30,7 +34,9 @@ export interface FlowletThreadProps {
   onFeedback?: (messageId: string, feedback: Feedback) => void;
 }
 
-export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFlow, onPin, onFeedback }: FlowletThreadProps) {
+export function FlowletThread({
+  greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow, onPin, onFeedback,
+}: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
@@ -66,15 +72,22 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
   const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
 
+  const empty = chat.items.length === 0;
+  const composerEl = <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />;
+
   return (
     <div className="fl-thread">
-      {chat.items.length === 0 ? (
+      {empty ? (
         <Landing
           greeting={greeting}
           suggestions={suggestions}
           flows={flows}
+          composer={composerEl}
           onSuggestion={send}
           onOpenFlow={(f) => onOpenFlow?.(f)}
+          onRenameFlow={onRenameFlow}
+          onPinFlow={onPinFlow}
+          onDeleteFlow={onDeleteFlow}
         />
       ) : (
         <ThreadErrorBoundary resetKey={chat.items.length}>
@@ -121,7 +134,9 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
           <span className="fl-pinbar-hint">{latestNode ? "pins the latest view" : "describe a view first"}</span>
         </div>
       )}
-      <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />
+      {/* Empty state hoists the composer into the Landing hero (placement A);
+          once the thread has content it returns to the bottom. */}
+      {!empty && composerEl}
     </div>
   );
 }

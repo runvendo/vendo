@@ -12,7 +12,7 @@
  * hidden on this route (see FlowletLayer).
  */
 import { useEffect, useState } from "react"
-import { FlowletThread, useFlowletThread, useShell, useReopenFlowlet, type Flowlet } from "@flowlet/shell"
+import { FlowletThread, FlowletToast, useFlowletThread, useShell, useReopenFlowlet, type Flowlet } from "@flowlet/shell"
 import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
 import { deriveSavedDrafts } from "@/flowlet/saved-flowlets"
 
@@ -61,6 +61,43 @@ function PageSurface() {
     setActive(CHAT)
   }
 
+  // Library management (ENG-183 gate): rename + pin persist through the store;
+  // delete is undoable via a toast (no confirm dialog), never destructive twice.
+  const [deleted, setDeleted] = useState<Flowlet | null>(null)
+
+  const persistPatch = (flow: Flowlet, patch: Partial<Flowlet>) => {
+    const { updatedAt: _prior, ...base } = flow
+    void store
+      .save({ ...base, ...patch })
+      .then((record) => setSaved((prev) => prev.map((p) => (p.id === record.id ? record : p))))
+      .catch((error: unknown) => console.error("[flowlet] failed to update saved view", error))
+  }
+
+  const deleteFlow = (flow: Flowlet) => {
+    void store
+      .remove(flow.id)
+      .then(() => {
+        setSaved((prev) => prev.filter((p) => p.id !== flow.id))
+        setActive((current) => (current === flow.id ? CHAT : current))
+        setDeleted(flow)
+      })
+      .catch((error: unknown) => console.error("[flowlet] failed to delete saved view", error))
+  }
+
+  const undoDelete = () => {
+    const flow = deleted
+    setDeleted(null)
+    if (!flow) return
+    void store
+      .save(flow) // full record, original timestamps — restores exactly
+      .then((record) =>
+        setSaved((prev) =>
+          [...prev, record].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)),
+        ),
+      )
+      .catch((error: unknown) => console.error("[flowlet] failed to restore saved view", error))
+  }
+
   const activeSaved = saved.find((s) => s.id === active)
 
   return (
@@ -95,10 +132,25 @@ function PageSurface() {
 
       <div className="fl-page-body">
         <div className="fl-page-pane" hidden={active !== CHAT}>
-          <FlowletThread greeting="What do you want to build?" suggestions={SUGGESTIONS} />
+          <FlowletThread
+            greeting="What do you want to build?"
+            suggestions={SUGGESTIONS}
+            flows={saved}
+            onOpenFlow={(f) => setActive(f.id)}
+            onRenameFlow={(f, name) => persistPatch(f, { name })}
+            onPinFlow={(f, pinned) => persistPatch(f, { pinned })}
+            onDeleteFlow={deleteFlow}
+          />
         </div>
         {activeSaved ? <SavedPane key={activeSaved.id} flowlet={activeSaved} /> : null}
       </div>
+      {deleted && (
+        <FlowletToast
+          message={`Deleted "${deleted.name}"`}
+          onAction={undoDelete}
+          onDismiss={() => setDeleted(null)}
+        />
+      )}
     </div>
   )
 }
@@ -112,8 +164,17 @@ function PageSurface() {
  */
 function SavedPane({ flowlet }: { flowlet: Flowlet }) {
   const { renderNode } = useShell()
-  const { node } = useReopenFlowlet(flowlet)
-  return <div className="fl-saved-pane">{renderNode(node)}</div>
+  const { node, status, errors } = useReopenFlowlet(flowlet)
+  return (
+    <div className="fl-saved-pane">
+      {/* Surfaced stale state (ENG-183 gate): quiet mono note when any query
+          could not re-run (reads-only refusal, policy deny, network). */}
+      {errors.length > 0 && status !== "live" && (
+        <div className="fl-stale-note">showing saved data — live refresh unavailable</div>
+      )}
+      {renderNode(node)}
+    </div>
+  )
 }
 
 export default function FlowletTabPage() {
@@ -130,6 +191,7 @@ export default function FlowletTabPage() {
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        position: "relative", // anchors the undo toast
       }}
     >
       <FlowletRoot>

@@ -14,6 +14,9 @@ export interface ShellContextValue {
   /** Host seam: re-run one declared data query through the policy-governed
    *  tool path (ENG-183). Absent → reopened views stay snapshots. */
   runQuery?: RunQuery;
+  /** Live-refresh cadence for OPEN saved views (ms). Ticks only while the tab
+   *  is visible and stop after repeated failures. 0 disables. Default 60s. */
+  refreshIntervalMs: number;
   renderNode: RenderNode;
   /** Host brand theme — so portaled surfaces (the overlay) can re-apply it. */
   theme?: FlowletTheme;
@@ -60,6 +63,8 @@ export interface FlowletShellProviderProps {
   integrations?: FlowletIntegrations;
   /** Host seam for reopening saved views with fresh data; see ShellContextValue. */
   runQuery?: RunQuery;
+  /** Live-refresh cadence for open saved views (ms); 0 disables. Default 60s. */
+  refreshIntervalMs?: number;
   /** Override the render surface. Default is a non-production fallback; wire F3's
    *  sandboxed `FlowletStage` here for real generated UI. */
   renderNode?: RenderNode;
@@ -72,7 +77,7 @@ export interface FlowletShellProviderProps {
 }
 
 export function FlowletShellProvider({
-  store, integrations, runQuery, renderNode, impls, theme, cssVars, children,
+  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
@@ -80,10 +85,11 @@ export function FlowletShellProvider({
     store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
     runQuery,
+    refreshIntervalMs: refreshIntervalMs ?? 60_000,
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
     theme,
     cssVars: cssVars ?? {},
-  }), [store, integrations, runQuery, renderNode, impls, theme, cssVars]);
+  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars]);
 
   return (
     <ShellContext.Provider value={value}>
