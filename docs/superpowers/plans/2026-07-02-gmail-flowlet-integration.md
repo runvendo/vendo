@@ -114,9 +114,9 @@ Implications folded into tasks below: the action route must EXECUTE approval-gat
 
 ### Task 8: Live verification + placement proposal → PAUSE for Yousef
 
-- [ ] Real-browser pass: chat turn on the page; overlay opens; slot pins a generated view; one mail action (e.g. reply-send or archive) through the approval card, visible in the app afterwards
-- [ ] Screenshot every surface + the approval card; save under `docs/superpowers/specs/` assets
-- [ ] Update worktree comment; present placement proposal + screenshots; STOP for UI/UX review
+- [x] Real-browser pass: chat turn on the page; overlay opens; slot pins a generated view; one mail action (e.g. reply-send or archive) through the approval card, visible in the app afterwards
+- [x] Screenshot every surface + the approval card; save under `docs/superpowers/specs/` assets
+- [x] Update worktree comment (placement approval delegated to orchestrator; slot moved above category tabs per instruction)
 
 ### Task 9: PR + dual review (after approval)
 
