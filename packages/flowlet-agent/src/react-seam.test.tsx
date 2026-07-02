@@ -7,7 +7,7 @@
  * `MockLanguageModelV3`, and proves the full native human-in-the-loop approval
  * round-trip runs end to end:
  *
- *   sendMessage -> render_ui tool call -> policy pauses at `approval-requested`
+ *   sendMessage -> render_view tool call -> policy pauses at `approval-requested`
  *   -> addToolApprovalResponse -> SDK auto-resubmits -> approved tool executes
  *   -> a `data-ui` DemoCard node renders in the assistant message.
  *
@@ -20,10 +20,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
-import { z } from "zod";
 import { FlowletProvider, useFlowletChat } from "@flowlet/react";
 import type { UINode } from "@flowlet/core";
-import { createFlowletAgent, RENDER_TOOL_NAME } from "./engine";
+import { createFlowletAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
 import type { ApprovalPolicy } from "./policy";
 
 afterEach(cleanup);
@@ -56,7 +55,7 @@ function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolea
 }
 
 /**
- * Mock model: turn 1 streams text + a single render_ui tool call; once the
+ * Mock model: turn 1 streams text + a single render_view tool call; once the
  * prompt carries that tool call (the post-approval resubmit turn), streams text
  * only and finishes, so the model->tool loop terminates.
  */
@@ -87,7 +86,7 @@ function mockModel(call: { toolName: string; input: unknown }): MockLanguageMode
 const approvePolicy: ApprovalPolicy = { evaluate: () => "approve" };
 
 // The native ai SDK tool-part type for the engine's render tool.
-const RENDER_TOOL_PART = `tool-${RENDER_TOOL_NAME}`;
+const RENDER_TOOL_PART = `tool-${RENDER_VIEW_TOOL_NAME}`;
 
 /**
  * Consumer using F1's `useFlowletChat` hook UNCHANGED: it sends a message,
@@ -104,6 +103,10 @@ function Harness() {
   );
   // Our custom data-ui node, emitted by the approved tool's execution.
   const uiNode = parts.find((p) => p.type === "data-ui") as { data: UINode } | undefined;
+  const generated = uiNode?.data as
+    | { kind: string; payload?: { nodes?: { props?: { text?: string } }[] } }
+    | undefined;
+  const text = generated?.payload?.nodes?.[0]?.props?.text;
 
   return (
     <div>
@@ -117,8 +120,8 @@ function Harness() {
         </button>
       )}
       {uiNode && (
-        <div data-testid="demo-card" data-name={uiNode.data.name}>
-          {(uiNode.data as { props?: { title?: string } }).props?.title}
+        <div data-testid="demo-card" data-kind={generated?.kind}>
+          {text}
         </div>
       )}
     </div>
@@ -126,27 +129,21 @@ function Harness() {
 }
 
 describe("React seam: real engine + UNCHANGED F1 provider/hook/transport", () => {
-  it("send -> approval-requested -> approve -> renders the DemoCard data-ui node", async () => {
+  it("send -> approval-requested -> approve -> renders the generated data-ui node", async () => {
     const agent = createFlowletAgent({
       model: mockModel({
-        toolName: RENDER_TOOL_NAME,
-        input: { name: "DemoCard", props: { title: "Hi" } },
+        toolName: RENDER_VIEW_TOOL_NAME,
+        input: {
+          formatVersion: "flowlet-genui/v1",
+          root: "r",
+          nodes: [{ id: "r", component: "Text", props: { text: "Hi" } }],
+        },
       }),
       policy: approvePolicy,
     });
 
     render(
-      <FlowletProvider
-        agent={agent}
-        components={[
-          {
-            name: "DemoCard",
-            description: "demo",
-            propsSchema: z.object({ title: z.string() }),
-            source: "prewired",
-          },
-        ]}
-      >
+      <FlowletProvider agent={agent} components={[]}>
         <Harness />
       </FlowletProvider>,
     );
@@ -160,9 +157,9 @@ describe("React seam: real engine + UNCHANGED F1 provider/hook/transport", () =>
     fireEvent.click(screen.getByTestId("approve"));
     await waitFor(() => screen.getByTestId("demo-card"));
 
-    // 3. The rendered data-ui node IS the DemoCard component node.
+    // 3. The rendered data-ui node IS the generated view node.
     const node = screen.getByTestId("demo-card");
-    expect(node.getAttribute("data-name")).toBe("DemoCard");
+    expect(node.getAttribute("data-kind")).toBe("generated");
     expect(node.textContent).toBe("Hi");
   });
 });

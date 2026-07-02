@@ -13,7 +13,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { FlowletUIMessage } from "@flowlet/core";
-import { createFlowletAgent, RENDER_TOOL_NAME } from "./engine";
+import { createFlowletAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
 import { createComposioClient } from "./composio";
 import type { ApprovalPolicy } from "./policy";
 
@@ -40,19 +40,19 @@ const allowPolicy: ApprovalPolicy = { evaluate: () => "allow" };
 
 describe.skipIf(!HAS_KEY)("LIVE e2e: real Anthropic model + agent loop", () => {
   it(
-    "allow path: the real model calls render_ui and a data-ui node streams out",
+    "allow path: the real model calls render_view and a data-ui node streams out",
     async () => {
       const agent = createFlowletAgent({
         model: anthropic(MODEL),
         policy: allowPolicy,
         instructions:
-          "You are a UI agent. When asked to render something, you MUST call the render_ui tool.",
+          `You are a UI agent. When asked to render something, you MUST call the ${RENDER_VIEW_TOOL_NAME} tool.`,
       });
 
       const parts = await collect(
         agent.run({
           messages: userTurn(
-            "Render a DemoCard component with props { title: 'E2E OK' } by calling the render_ui tool now.",
+            `Render a view containing a single Text node showing "E2E OK" by calling the ${RENDER_VIEW_TOOL_NAME} tool now.`,
           ),
           tools: {},
           principal: { userId: "e2e-user" },
@@ -66,7 +66,7 @@ describe.skipIf(!HAS_KEY)("LIVE e2e: real Anthropic model + agent loop", () => {
         .map((p) => (p as { delta?: string }).delta ?? "")
         .join("");
       const ui = parts.find((p) => (p as { type: string }).type === "data-ui") as
-        | { data: { kind: string; name: string; props: unknown } }
+        | { data: { kind: string; payload: unknown } }
         | undefined;
 
       // Visible proof of the live run.
@@ -80,8 +80,7 @@ describe.skipIf(!HAS_KEY)("LIVE e2e: real Anthropic model + agent loop", () => {
       expect(types).toContain("start");
       expect(types).toContain("finish");
       expect(ui).toBeDefined();
-      expect(ui!.data.kind).toBe("component");
-      expect(ui!.data.name).toBe("DemoCard");
+      expect(ui!.data.kind).toBe("generated");
     },
     60_000,
   );

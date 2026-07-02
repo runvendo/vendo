@@ -21,11 +21,11 @@ export type ThreadItem =
   | { kind: "error"; key: string; message: string };
 
 /**
- * Built-in render tool names (mirror `RENDER_TOOL_NAME`/`RENDER_VIEW_TOOL_NAME`
- * in `@flowlet/agent`). Their product is a `data-ui` node, so their tool chips
- * are suppressed to avoid a redundant sliver next to the rendered component.
+ * The built-in render tool name (mirrors `RENDER_VIEW_TOOL_NAME` in
+ * `@flowlet/agent`). Its product is a `data-ui` node, so its tool chip is
+ * suppressed to avoid a redundant sliver next to the rendered component.
  */
-const RENDER_TOOLS = new Set(["render_ui", "render_view"]);
+const RENDER_TOOLS = new Set(["render_view"]);
 
 /** Pure normalizer: flattens message parts into ordered render items. */
 export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {

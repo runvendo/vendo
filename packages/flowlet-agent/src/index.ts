@@ -5,7 +5,7 @@
 export const FLOWLET_AGENT_PACKAGE = "@flowlet/agent";
 
 // Engine
-export { createFlowletAgent, RENDER_TOOL_NAME, RENDER_VIEW_TOOL_NAME } from "./engine";
+export { createFlowletAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
 export type { FlowletAgentConfig } from "./engine";
 
 // Principal
@@ -29,9 +29,6 @@ export type { ToolDescriptor, ToolSource, ToolAnnotations } from "./descriptor";
 // Toolset assembly
 export { buildToolset } from "./toolset";
 export type { ToolSourceInput } from "./toolset";
-
-// Render tool
-export { createRenderTool } from "./render-tool";
 
 // Render view tool
 export { createRenderViewTool } from "./render-view-tool";

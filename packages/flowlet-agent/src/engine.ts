@@ -27,7 +27,6 @@ import {
 import type { FlowletAgent, RunInput, FlowletUIMessage } from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
-import { createRenderTool } from "./render-tool";
 import { createRenderViewTool } from "./render-view-tool";
 import {
   ingestComposioTools,
@@ -38,9 +37,6 @@ import {
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 import type { ToolDescriptor } from "./descriptor";
-
-/** Canonical name of the engine's built-in UI render tool. */
-export const RENDER_TOOL_NAME = "render_ui";
 
 /** Canonical name of the engine's built-in composed-view tool (Tier 2.5). */
 export const RENDER_VIEW_TOOL_NAME = "render_view";
@@ -120,8 +116,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ? candidate
             : { userId: "" };
 
-        // 2. The render tools, bound to this run's stream writer.
-        const renderTool = createRenderTool(writer);
+        // 2. The render tool, bound to this run's stream writer.
         const renderViewTool = createRenderViewTool(writer);
 
         // 3. Composio ingestion (fail-closed inside ingestComposioTools).
@@ -168,7 +163,6 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             source: "engine",
             tools: {
               ...config.tools,
-              [RENDER_TOOL_NAME]: renderTool,
               [RENDER_VIEW_TOOL_NAME]: renderViewTool,
             },
           },

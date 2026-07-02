@@ -6,7 +6,7 @@ import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import type { FlowletUIMessage } from "@flowlet/core";
-import { createFlowletAgent, RENDER_TOOL_NAME } from "./engine";
+import { createFlowletAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
 import type { ApprovalPolicy } from "./policy";
 import type { ComposioClient } from "./composio";
 
@@ -107,8 +107,13 @@ const userTurn: FlowletUIMessage[] = [
 
 describe("createFlowletAgent", () => {
   it("emits a valid UIMessage stream with run metadata and a data-ui node", async () => {
+    const payload = {
+      formatVersion: "flowlet-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Text", props: { text: "Hi" } }],
+    };
     const agent = createFlowletAgent({
-      model: mockModel({ toolName: RENDER_TOOL_NAME, input: { name: "DemoCard", props: { title: "Hi" } } }),
+      model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
       policy: allowPolicy,
     });
 
@@ -132,16 +137,16 @@ describe("createFlowletAgent", () => {
     expect(typeof start.messageMetadata?.threadId).toBe("string");
     expect(start.messageMetadata?.threadId.length).toBeGreaterThan(0);
 
-    // The render tool executed and emitted a data-ui component node.
+    // The render tool executed and emitted a data-ui generated-view node.
     const ui = parts.find((p) => (p as { type: string }).type === "data-ui") as {
-      data: { kind: string; name: string };
+      data: { kind: string; payload: unknown };
     };
     expect(ui).toBeDefined();
-    expect(ui.data.kind).toBe("component");
-    expect(ui.data.name).toBe("DemoCard");
+    expect(ui.data.kind).toBe("generated");
+    expect(ui.data.payload).toEqual(payload);
   });
 
-  it("registers render_view beside render_ui", async () => {
+  it("registers render_view and not render_ui", async () => {
     // Capture the toolset the engine hands to streamText by reading the tools
     // the SDK forwards to the model's doStream (provider-format function tools,
     // each carrying a `name`).
@@ -166,8 +171,8 @@ describe("createFlowletAgent", () => {
     );
 
     const names = (capturedTools ?? []).map((t) => t.name);
-    expect(names).toContain("render_ui");
     expect(names).toContain("render_view");
+    expect(names).not.toContain("render_ui");
   });
 
   it("scopes Composio ingestion to the run principal's userId", async () => {
@@ -243,7 +248,7 @@ describe("createFlowletAgent", () => {
   it("warns when a tool name collides across sources (Finding 2)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      // Caller claims `render_ui`, colliding with the engine's built-in render
+      // Caller claims `render_view`, colliding with the engine's built-in render
       // tool (lower precedence) — the engine tool is dropped and logged.
       const callerTool = tool({ inputSchema: z.object({}), execute: async () => "x" });
       const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
@@ -251,14 +256,14 @@ describe("createFlowletAgent", () => {
       await collect(
         agent.run({
           messages: userTurn,
-          tools: { [RENDER_TOOL_NAME]: callerTool },
+          tools: { [RENDER_VIEW_TOOL_NAME]: callerTool },
           signal: new AbortController().signal,
         }),
       );
 
       expect(warnSpy).toHaveBeenCalled();
       const logged = warnSpy.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
-      expect(logged).toContain(RENDER_TOOL_NAME);
+      expect(logged).toContain(RENDER_VIEW_TOOL_NAME);
     } finally {
       warnSpy.mockRestore();
     }
