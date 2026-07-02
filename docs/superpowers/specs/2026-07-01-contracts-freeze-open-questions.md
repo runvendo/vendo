@@ -1,10 +1,16 @@
 # Contracts Freeze — Open Questions
 
 **Date:** 2026-07-01
-**Status:** AWAITING REVIEW (Yousef, mid-flight)
-**Branch:** `yousef/contracts-freeze` — contracts are drafted, tested, and committed per the recommendations below; every question here can still be changed cheaply before the PR.
+**Status:** ANSWERED — LOCKED (Yousef, mid-flight review 2026-07-01)
+**Branch:** `yousef/contracts-freeze`
 
-How to answer: each question needs one letter. "Confirm" questions can be answered in bulk ("confirm all").
+**Resolution:** Yousef answered all 13. Every A/B question resolved to **Option A** (the draft position); all seven confirm questions **CONFIRMED**. The committed contracts already implement every decision — no changes resulted from the review. These contracts are now frozen; changing any of them requires a new review.
+
+Q1 **A** · Q2 **A** (incl. the query/body-convention sub-point) · Q3 **A** · Q4 **confirmed** · Q5 **confirmed** · Q6 **confirmed** · Q7 **confirmed** · Q8 **A** · Q9 **A** · Q10 **confirmed** · Q11 **confirmed** · Q12 **A** · Q13 **confirmed**
+
+**Coordination note (from the review):** ENG-188 locked its DSL in its own session (JSONata step graph, versions table). Q6's opaque `spec: unknown` at the Store seam remains correct — the runtime contracts do NOT import ENG-188's schema; their spec shape lives with the automations track.
+
+The original questions follow, unchanged, for the record.
 
 ---
 
