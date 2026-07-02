@@ -138,27 +138,95 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // Keep the keys in sync with RESERVED_COMPONENT_NAMES in @flowlet/core's
   // genui/format.ts — the format reserves exactly these names so generated
   // components can't shadow them (pinned by a drift-guard test in runtime.test.ts).
+  // Every visual value is either a --flowlet-* token or a neutral scale value,
+  // so the primitives stay host-agnostic: the brand arrives via the theme vars.
+
+  // Named spacing scale for gap/padding: tokens the model can reason about.
+  // Numbers are px; unknown strings pass through (raw CSS lengths keep working).
+  var SPACE = { xs: "4px", sm: "8px", md: "12px", lg: "20px", xl: "32px" };
+  function space(v, dflt) {
+    if (v == null) return dflt;
+    if (typeof v === "number") return v + "px";
+    return SPACE[v] || v;
+  }
+  // Text variants: host-like hierarchy from tokens (label = the uppercase
+  // letter-spaced section label most product UIs use; value = tabular numerals).
+  var TEXT_VARIANTS = {
+    title:   { fontSize: "16px", fontWeight: 600, letterSpacing: "-0.01em" },
+    heading: { fontSize: "20px", fontWeight: 650, letterSpacing: "-0.015em" },
+    label:   { fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))" },
+    muted:   { color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))" },
+    caption: { fontSize: "12px", color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))" },
+    value:   { fontSize: "22px", fontWeight: 650, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }
+  };
+
   var PRIMITIVES = {
     Stack: function(props) {
       var R = window.__React;
       return R.createElement("div", {
         "data-primitive": "Stack",
-        style: { display: "flex", flexDirection: "column", gap: props.gap || "8px" }
+        style: {
+          display: "flex", flexDirection: "column",
+          gap: space(props.gap, "8px"),
+          padding: space(props.padding, undefined),
+          alignItems: props.align || undefined,
+          justifyContent: props.justify || undefined
+        }
       }, props.children);
     },
     Row: function(props) {
       var R = window.__React;
       return R.createElement("div", {
         "data-primitive": "Row",
-        style: { display: "flex", flexDirection: "row", gap: props.gap || "8px", alignItems: props.align || "stretch" }
+        style: {
+          display: "flex", flexDirection: "row",
+          gap: space(props.gap, "8px"),
+          padding: space(props.padding, undefined),
+          alignItems: props.align || "stretch",
+          justifyContent: props.justify || undefined,
+          flexWrap: props.wrap ? "wrap" : undefined
+        }
       }, props.children);
     },
     Grid: function(props) {
       var R = window.__React;
       return R.createElement("div", {
         "data-primitive": "Grid",
-        style: { display: "grid", gridTemplateColumns: "repeat(" + (props.columns || 2) + ", 1fr)", gap: props.gap || "8px" }
+        style: {
+          display: "grid",
+          gridTemplateColumns: "repeat(" + (props.columns || 2) + ", 1fr)",
+          gap: space(props.gap, "8px"),
+          padding: space(props.padding, undefined)
+        }
       }, props.children);
+    },
+    Surface: function(props) {
+      // The host-card container: surface bg, hairline border, brand radius and
+      // shadow, roomy padding — the building block for host-native panels.
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Surface",
+        style: {
+          background: "var(--flowlet-surface, #fff)",
+          border: "1px solid var(--flowlet-border, rgba(0,0,0,0.10))",
+          borderRadius: "var(--flowlet-radius, 12px)",
+          boxShadow: "var(--flowlet-shadow, none)",
+          padding: space(props.padding, SPACE.lg),
+          display: "flex", flexDirection: "column",
+          gap: space(props.gap, "8px")
+        }
+      }, props.children);
+    },
+    Divider: function(props) {
+      var R = window.__React;
+      var vertical = props.vertical === true;
+      return R.createElement("div", {
+        "data-primitive": "Divider",
+        "aria-hidden": "true",
+        style: vertical
+          ? { width: "1px", alignSelf: "stretch", background: "var(--flowlet-border, rgba(0,0,0,0.10))" }
+          : { height: "1px", width: "100%", background: "var(--flowlet-border, rgba(0,0,0,0.10))" }
+      });
     },
     Text: function(props) {
       var R = window.__React;
@@ -167,9 +235,14 @@ export const STAGE_RUNTIME_SRC = String.raw`
       // off the list falls back to "span".
       var TEXT_TAGS = { span:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, strong:1, em:1, small:1, label:1, div:1 };
       var tag = (props.as && TEXT_TAGS[props.as]) ? props.as : "span";
+      var style = { color: "var(--flowlet-fg, inherit)" };
+      var variant = TEXT_VARIANTS[props.variant];
+      if (variant) for (var k in variant) style[k] = variant[k];
+      if (props.align) style.textAlign = props.align;
       return R.createElement(tag, {
         "data-primitive": "Text",
-        style: { color: "var(--flowlet-fg, inherit)" }
+        "data-variant": variant ? props.variant : undefined,
+        style: style
       }, props.text != null ? props.text : props.children);
     },
     Skeleton: function(props) {

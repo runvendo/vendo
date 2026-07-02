@@ -64,10 +64,44 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     "--flowlet-accent": "#00aa77",
     "--flowlet-surface": "#fff",
     "--flowlet-fg": "#111",
+    "--flowlet-fg-muted": "#8A8B92",
+    "--flowlet-border": "#e5e5e5",
+    "--flowlet-radius": "16px",
+    "--flowlet-shadow": "0 1px 2px rgba(0,0,0,0.06)",
     // Distinctive first family so the baseline-styles gate can assert the
     // sandbox body actually inherits the brand font (not the UA serif default).
     "--flowlet-font": "TestBrandFont, sans-serif",
   };
+
+  if (kind === "primitives-rich") {
+    // Enriched primitives (brand tier): Surface, Divider, Text variants, and
+    // named gap tokens — all styled purely from the injected --flowlet-* vars.
+    return {
+      theme,
+      state: {},
+      // The sample bundle supplies React (sets window.__React); primitives
+      // themselves need no host components.
+      bundleSource: await bundle(),
+      tree: {
+        id: "root",
+        kind: "component",
+        source: "prewired",
+        name: "Stack",
+        props: { gap: "md" },
+        children: [
+          { id: "l1", kind: "component", source: "prewired", name: "Text", props: { variant: "label", text: "Total Spent" } },
+          { id: "v1", kind: "component", source: "prewired", name: "Text", props: { variant: "value", text: "$3,222.00" } },
+          { id: "d1", kind: "component", source: "prewired", name: "Divider", props: {} },
+          {
+            id: "s1", kind: "component", source: "prewired", name: "Surface", props: { padding: "md" },
+            children: [
+              { id: "t1", kind: "component", source: "prewired", name: "Text", props: { text: "inside card" } },
+            ],
+          },
+        ],
+      } as unknown as StageInitPayload["tree"],
+    };
+  }
 
   if (kind === "real-bundle") {
     // The REAL @flowlet/components sandbox bundle (copied from its dist-sandbox

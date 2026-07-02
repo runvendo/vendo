@@ -19,7 +19,7 @@ type FlowletWriter = UIMessageStreamWriter<FlowletUIMessage>;
 
 const genNodeSchema = z.object({
   id: z.string().describe("Unique node id within this payload."),
-  component: z.string().describe("Component name: a prewired primitive (Stack/Row/Grid/Text/Skeleton), a registered catalog component, or a key of `components`."),
+  component: z.string().describe("Component name: a prewired primitive (Stack/Row/Grid/Surface/Divider/Text/Skeleton), a registered catalog component, or a key of `components`."),
   source: z.enum(["prewired", "host", "generated"]).optional()
     .describe("'prewired' (default) for primitives + catalog, 'generated' for a component defined in `components`."),
   props: z.record(z.string(), z.unknown()).optional()
