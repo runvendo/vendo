@@ -9,6 +9,7 @@ import {
   Inbox,
   LayoutDashboard,
   Settings,
+  Sparkles,
   Users,
   UsersRound,
   type LucideIcon,
@@ -25,7 +26,11 @@ interface NavItem {
 const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
   {
     label: null,
-    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
+    items: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      // The embedded Flowlet page surface (host-named Vendo in this demo).
+      { href: "/assistant", label: "Vendo", icon: Sparkles },
+    ],
   },
   {
     label: "Workspace",

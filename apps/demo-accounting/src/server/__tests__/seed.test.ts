@@ -74,13 +74,21 @@ describe("opening invariants", () => {
     }
   })
 
-  it("puts the nearest deadline about 2-3 weeks out and staggers the rest within ~11 weeks", () => {
+  it("puts at least two clients inside the 3-day deadline window (the automation beat) and staggers the rest within ~11 weeks", () => {
     const days = data.clients
       .map(c => (+new Date(c.filingDeadline) - +anchor) / 86_400_000)
       .sort((a, b) => a - b)
-    expect(days[0]).toBeGreaterThanOrEqual(10)
-    expect(days[0]).toBeLessThanOrEqual(21)
+    // Rivera + Chen: within 3 days AND missing documents, so the demo
+    // automation's "book a call" branch always has real work to do.
+    expect(days.filter(d => d <= 3.5).length).toBeGreaterThanOrEqual(2)
+    expect(days[0]).toBeGreaterThan(0)
     expect(days[days.length - 1]).toBeLessThanOrEqual(77)
+  })
+
+  it("plus-addresses every contact email to the demo inbox (real sends must land in an inbox we own)", () => {
+    for (const c of data.clients) {
+      expect(c.contactEmail).toMatch(/^yousef\+[a-z]+@vendo\.run$/)
+    }
   })
 
   it("seeds 4 staff including the signed-in persona Maya Alvarez", () => {

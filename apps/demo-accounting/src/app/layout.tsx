@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Hanken_Grotesk, Spline_Sans_Mono } from "next/font/google"
 import { AppShell } from "@/components/shell/app-shell"
+import { FlowletLayer } from "@/components/flowlet/FlowletLayer"
 import "./globals.css"
 
 const hanken = Hanken_Grotesk({ subsets: ["latin"], variable: "--font-hanken" })
@@ -17,6 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${hanken.variable} ${splineMono.variable}`}>
       <body className="min-h-screen antialiased">
         <AppShell>{children}</AppShell>
+        {/* Flowlet's invisible layer: the Cmd/Ctrl+K overlay + scheduler
+            heartbeat, floating over the untouched Cadence UI. */}
+        <FlowletLayer />
       </body>
     </html>
   )

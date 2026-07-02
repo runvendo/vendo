@@ -52,44 +52,49 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
   const staff = STAFF.map(s => ({ ...s }))
 
   // 12 clients. The first 8 have at least one missing document (the dashboard's
-  // hero number); the last 4 are fully verified. Deadlines are staggered from
-  // ~2 weeks to ~10 weeks out so the countdown always reads urgent.
+  // hero number); the last 4 are fully verified. Rivera and Chen sit INSIDE the
+  // 3-day deadline window (the Flowlet demo automation books calls for them);
+  // the rest stagger out to ~10 weeks so the countdown always reads urgent.
+  //
+  // Contact emails are plus-addressed to the demo Gmail account (yousef@vendo.run)
+  // ON PURPOSE: the Flowlet automation sends REAL email via Composio Gmail, and
+  // real sends must land in an inbox we own — never at third-party domains.
   const clients: Client[] = [
     { id: "cl_rivera", businessName: "Rivera Landscaping LLC", entityType: "s_corp",
-      contactName: "Marisol Rivera", contactEmail: "marisol@riveralandscaping.com",
-      assigneeId: "st_maya", filingDeadline: deadline(anchor, 15) },
+      contactName: "Marisol Rivera", contactEmail: "yousef+rivera@vendo.run",
+      assigneeId: "st_maya", filingDeadline: deadline(anchor, 2) },
     { id: "cl_chen", businessName: "Chen Consulting", entityType: "sole_prop",
-      contactName: "Wei Chen", contactEmail: "wei.chen@chenconsulting.co",
-      assigneeId: "st_maya", filingDeadline: deadline(anchor, 18) },
+      contactName: "Wei Chen", contactEmail: "yousef+chen@vendo.run",
+      assigneeId: "st_maya", filingDeadline: deadline(anchor, 3) },
     { id: "cl_delgado", businessName: "Delgado Restaurant Group", entityType: "partnership",
-      contactName: "Antonio Delgado", contactEmail: "antonio@delgadorestaurants.com",
+      contactName: "Antonio Delgado", contactEmail: "yousef+delgado@vendo.run",
       assigneeId: "st_maya", filingDeadline: deadline(anchor, 21) },
     { id: "cl_harborview", businessName: "Harborview Fitness", entityType: "s_corp",
-      contactName: "Dana Kowalski", contactEmail: "dana@harborviewfitness.com",
+      contactName: "Dana Kowalski", contactEmail: "yousef+harborview@vendo.run",
       assigneeId: "st_priya", filingDeadline: deadline(anchor, 25) },
     { id: "cl_foster", businessName: "Foster Home Services", entityType: "sole_prop",
-      contactName: "Greg Foster", contactEmail: "greg@fosterhomeservices.net",
+      contactName: "Greg Foster", contactEmail: "yousef+foster@vendo.run",
       assigneeId: "st_tomas", filingDeadline: deadline(anchor, 29) },
     { id: "cl_patel", businessName: "Anjali Patel", entityType: "individual",
-      contactName: "Anjali Patel", contactEmail: "anjali.patel@gmail.com",
+      contactName: "Anjali Patel", contactEmail: "yousef+patel@vendo.run",
       assigneeId: "st_maya", filingDeadline: deadline(anchor, 33) },
     { id: "cl_kim", businessName: "Kim & Associates Realty", entityType: "partnership",
-      contactName: "Susan Kim", contactEmail: "susan@kimrealty.com",
+      contactName: "Susan Kim", contactEmail: "yousef+kim@vendo.run",
       assigneeId: "st_priya", filingDeadline: deadline(anchor, 38) },
     { id: "cl_cortez", businessName: "Cortez Auto Repair", entityType: "sole_prop",
-      contactName: "Luis Cortez", contactEmail: "luis@cortezautorepair.com",
+      contactName: "Luis Cortez", contactEmail: "yousef+cortez@vendo.run",
       assigneeId: "st_tomas", filingDeadline: deadline(anchor, 43) },
     { id: "cl_lakeside", businessName: "Lakeside Veterinary Clinic", entityType: "c_corp",
-      contactName: "Emily Rhodes", contactEmail: "emily@lakesidevet.com",
+      contactName: "Emily Rhodes", contactEmail: "yousef+lakeside@vendo.run",
       assigneeId: "st_priya", filingDeadline: deadline(anchor, 49) },
     { id: "cl_whitfield", businessName: "Whitfield Design Studio", entityType: "sole_prop",
-      contactName: "Jonah Whitfield", contactEmail: "jonah@whitfielddesign.studio",
+      contactName: "Jonah Whitfield", contactEmail: "yousef+whitfield@vendo.run",
       assigneeId: "st_daniel", filingDeadline: deadline(anchor, 55) },
     { id: "cl_mercer", businessName: "Mercer & Boyd Law", entityType: "partnership",
-      contactName: "Alice Mercer", contactEmail: "amercer@mercerboyd.com",
+      contactName: "Alice Mercer", contactEmail: "yousef+mercer@vendo.run",
       assigneeId: "st_daniel", filingDeadline: deadline(anchor, 62) },
     { id: "cl_ellison", businessName: "Grant Ellison", entityType: "individual",
-      contactName: "Grant Ellison", contactEmail: "grant.ellison@outlook.com",
+      contactName: "Grant Ellison", contactEmail: "yousef+ellison@vendo.run",
       assigneeId: "st_maya", filingDeadline: deadline(anchor, 70) },
   ]
 
@@ -347,7 +352,7 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
 
   const activity: ActivityEvent[] = [
     { id: "act_001", type: "deadline_approaching", clientId: "cl_rivera",
-      summary: "Rivera Landscaping LLC filing deadline is 15 days out with 3 documents missing",
+      summary: "Rivera Landscaping LLC filing deadline is 2 days out with 3 documents missing",
       at: iso(hoursAgo(anchor, 1, 10)) },
     { id: "act_002", type: "upload_received", clientId: "cl_delgado",
       summary: "Antonio Delgado uploaded Payroll summary (adp-payroll-summary-q1-q2.pdf)",

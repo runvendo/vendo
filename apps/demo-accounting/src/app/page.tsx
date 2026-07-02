@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react"
 import { ActivityFeed } from "@/components/dashboard/activity-feed"
 import { DeadlineList } from "@/components/dashboard/deadline-list"
 import { StatRow } from "@/components/dashboard/stat-row"
+import { FlowletCard } from "@/components/flowlet/flowlet-card"
 import { PageHeader } from "@/components/ui/page-header"
 import { Reveal } from "@/components/ui/reveal"
 
@@ -41,6 +42,10 @@ export default function DashboardPage() {
           <DeadlineList className="col-span-2" />
           <ActivityFeed />
         </div>
+      </Reveal>
+      {/* The droppable Flowlet slot: "put my generated UI here" (F5 surface #3). */}
+      <Reveal delay={0.15}>
+        <FlowletCard />
       </Reveal>
     </div>
   )
