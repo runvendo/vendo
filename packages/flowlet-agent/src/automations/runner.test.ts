@@ -1,9 +1,11 @@
 /**
  * Runner tests: fire() end-to-end against the real interpreter and in-memory
  * store, with stub tools. Covers dedup, guard-skip, firing caps, failure
- * streaks, per-automation serialization, and pause/resume.
+ * streaks (frozen "paused" + disabledReason), per-automation serialization,
+ * and pause/resume. Everything is Principal-scoped per the contracts freeze.
  */
 import { describe, expect, it } from "vitest";
+import type { Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import { AutomationRunner } from "./runner";
 import { automationSpecSchema, type AutomationSpec } from "./schema";
@@ -11,6 +13,7 @@ import type { RegisteredTool } from "./interpreter";
 import { InMemoryAutomationStore, type TriggerEnvelope } from "./store";
 
 const NOW = "2026-07-01T08:00:00.000Z";
+const scope: Principal = { tenantId: "tenant-1", subject: "user-1" };
 const allowAll: ApprovalPolicy = { evaluate: () => "allow" };
 const approveFor = (...names: string[]): ApprovalPolicy => ({
   evaluate: (ctx) => (names.includes(ctx.toolName) ? "approve" : "allow"),
@@ -36,9 +39,9 @@ function makeTool(
       await opts.onCall?.();
       if (failuresLeft > 0) {
         failuresLeft -= 1;
-        throw new Error("boom");
+        return { ok: false, error: { code: "boom", message: "boom" } };
       }
-      return { ok: true };
+      return { ok: true, result: { done: true } };
     },
   };
   return tool;
@@ -75,25 +78,15 @@ async function setup(opts: {
   spec?: AutomationSpec;
   tools: Record<string, RegisteredTool>;
   policy?: ApprovalPolicy;
-  nowMs?: () => number;
-  now?: () => string;
 }) {
-  const store = new InMemoryAutomationStore();
-  const { automation } = await store.createAutomation({
-    tenantId: "tenant-1",
-    userId: "user-1",
-    spec: opts.spec ?? spec(),
-    grants: [],
-    now: NOW,
-  });
+  const store = new InMemoryAutomationStore({ now: () => NOW });
+  const { automation } = await store.create(scope, { spec: opts.spec ?? spec(), grants: [] });
   const runner = new AutomationRunner({
     store,
     tools: async () => opts.tools,
     policy: opts.policy ?? allowAll,
-    principal: { userId: "user-1" },
-    userClaims: async () => ({ id: "user-1", name: "Yousef" }),
-    now: opts.now ?? (() => NOW),
-    nowMs: opts.nowMs ?? (() => Date.parse(NOW)),
+    now: () => NOW,
+    nowMs: () => Date.parse(NOW),
   });
   return { store, automation, runner };
 }
@@ -103,20 +96,21 @@ describe("fire", () => {
     const send = makeTool("send_msg");
     const { runner, automation, store } = await setup({ tools: { send_msg: send } });
 
-    const run = await runner.fire(automation.id, envelope("e1"));
+    const run = await runner.fire(scope, automation.id, envelope("e1"));
     expect(run?.status).toBe("succeeded");
     expect(send.calls[0]).toEqual({ text: "DoorDash" });
-    expect((await store.getAutomation(automation.id))?.counters.totalRuns).toBe(1);
+    expect((await store.get(scope, automation.id))?.counters.totalRuns).toBe(1);
   });
 
-  it("records a guard-false firing as a compact skipped run", async () => {
+  it("records a guard-false firing as a compact skipped run (coarse succeeded)", async () => {
     const send = makeTool("send_msg");
     const { runner, automation } = await setup({
       spec: spec({ if: "trigger.amountDollars > 500" }),
       tools: { send_msg: send },
     });
-    const run = await runner.fire(automation.id, envelope("e1"));
-    expect(run?.status).toBe("skipped");
+    const run = await runner.fire(scope, automation.id, envelope("e1"));
+    expect(run?.status).toBe("succeeded");
+    expect(run?.outcome).toBe("skipped");
     expect(run?.steps).toEqual([]);
     expect(send.calls).toHaveLength(0);
   });
@@ -124,10 +118,10 @@ describe("fire", () => {
   it("drops a duplicate envelope as a no-op", async () => {
     const send = makeTool("send_msg");
     const { runner, automation, store } = await setup({ tools: { send_msg: send } });
-    await runner.fire(automation.id, envelope("e1"));
-    const dup = await runner.fire(automation.id, envelope("e1"));
+    await runner.fire(scope, automation.id, envelope("e1"));
+    const dup = await runner.fire(scope, automation.id, envelope("e1"));
     expect(dup).toBeUndefined();
-    expect(await store.listRuns(automation.id)).toHaveLength(1);
+    expect(await store.listRuns(scope, automation.id)).toHaveLength(1);
     expect(send.calls).toHaveLength(1);
   });
 
@@ -137,23 +131,25 @@ describe("fire", () => {
       spec: spec({ limits: { maxFiringsPerHour: 2 } }),
       tools: { send_msg: send },
     });
-    await runner.fire(automation.id, envelope("e1"));
-    await runner.fire(automation.id, envelope("e2"));
-    const third = await runner.fire(automation.id, envelope("e3"));
-    expect(third?.status).toBe("cancelled");
+    await runner.fire(scope, automation.id, envelope("e1"));
+    await runner.fire(scope, automation.id, envelope("e2"));
+    const third = await runner.fire(scope, automation.id, envelope("e3"));
+    expect(third?.outcome).toBe("cancelled");
     expect(third?.error).toMatch(/maxFiringsPerHour/);
     expect(send.calls).toHaveLength(2);
   });
 
-  it("disables the automation after 5 consecutive failures and refuses further firings", async () => {
+  it("parks the automation after 5 consecutive failures (paused + disabledReason)", async () => {
     const send = makeTool("send_msg", { failTimes: 99 });
     const { runner, automation, store } = await setup({ tools: { send_msg: send } });
     for (let i = 0; i < 5; i++) {
-      const run = await runner.fire(automation.id, envelope(`e${i}`));
+      const run = await runner.fire(scope, automation.id, envelope(`e${i}`));
       expect(run?.status).toBe("failed");
     }
-    expect((await store.getAutomation(automation.id))?.status).toBe("disabled_error");
-    const after = await runner.fire(automation.id, envelope("e-after"));
+    const parked = await store.get(scope, automation.id);
+    expect(parked?.status).toBe("paused");
+    expect(parked?.disabledReason).toBe("consecutive_failures");
+    const after = await runner.fire(scope, automation.id, envelope("e-after"));
     expect(after).toBeUndefined();
   });
 
@@ -176,9 +172,8 @@ describe("fire", () => {
     });
     const { runner, automation } = await setup({ tools: { send_msg: send } });
 
-    const p1 = runner.fire(automation.id, envelope("e1"));
-    const p2 = runner.fire(automation.id, envelope("e2"));
-    // Give the first firing a chance to start, then release it.
+    const p1 = runner.fire(scope, automation.id, envelope("e1"));
+    const p2 = runner.fire(scope, automation.id, envelope("e2"));
     await new Promise((r) => setTimeout(r, 10));
     expect(order).toEqual(["first-start"]);
     releaseFirst!();
@@ -208,16 +203,17 @@ describe("pause and resume", () => {
       policy: approveFor("freeze_card"),
     });
 
-    const paused = await runner.fire(automation.id, envelope("e1"));
-    expect(paused?.status).toBe("waiting_approval");
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    expect(paused?.status).toBe("running"); // coarse
+    expect(paused?.outcome).toBe("waiting_approval");
     expect(paused?.pendingApproval?.stepId).toBe("freeze");
     expect(freeze.calls).toHaveLength(0);
 
-    const resumed = await runner.resume(paused!.id, true);
+    const resumed = await runner.resume(scope, paused!.id, true);
     expect(resumed?.status).toBe("succeeded");
     expect(freeze.calls).toHaveLength(1);
     expect(send.calls).toHaveLength(1);
-    expect((await store.getRun(paused!.id))?.status).toBe("succeeded");
+    expect((await store.getRun(scope, paused!.id))?.status).toBe("succeeded");
   });
 
   it("fails the run when the approval is declined", async () => {
@@ -227,8 +223,8 @@ describe("pause and resume", () => {
       tools: { freeze_card: freeze, send_msg: makeTool("send_msg") },
       policy: approveFor("freeze_card"),
     });
-    const paused = await runner.fire(automation.id, envelope("e1"));
-    const resumed = await runner.resume(paused!.id, false);
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    const resumed = await runner.resume(scope, paused!.id, false);
     expect(resumed?.status).toBe("failed");
     expect(freeze.calls).toHaveLength(0);
   });

@@ -483,6 +483,15 @@ Two independent Codex reviews of this doc surfaced defects. All fixes were accep
 
 **Still deferred (recorded, out of this slice):** tenant/user quotas and token-cost metering; large-artifact offload to separate storage (v1 truncates inline); forced recompile/migration flows on manifest republish (v1 pauses via grant-hash mismatch). These land with ENG-198/ENG-194.
 
+## Contracts-freeze alignment (2026-07-02)
+
+PR #14 froze the five runtime seams in `packages/flowlet-core/src/seams`. The engine implements against them; engine types EXTEND the frozen ones additively, never redefine them:
+
+- **Store:** the engine's `AutomationEngineStore` extends the frozen core `AutomationStore` (its `save/get/list/recordRun/listRuns` keep their signatures; `save()` accepts the opaque spec and validates it against the DSL). All operations are Principal-scoped; the store owns identity and timestamps.
+- **Statuses:** the frozen coarse unions stay exhaustive. Engine refinements ride additive fields: run `outcome` (`waiting_approval` = coarse `running`, `skipped` = `succeeded`, `cancelled` = `failed`; refined outcomes never count as failures) and automation `disabledReason` (what this doc called `disabled_error` is frozen `paused` + `disabledReason: "consecutive_failures"`).
+- **Scheduler:** `InProcessScheduler` implements the frozen seam — explicit `schedule(automationId, TimeTrigger, Principal)` / `cancel` / `onFire`; the Principal is persisted with the schedule and replayed on every `AutomationFiring`. Host events and Composio triggers are ingest paths that invoke the same firing pipeline directly (`host-events.ts`), per the freeze — they never pass through the Scheduler.
+- **Tool outcomes:** `RegisteredTool.execute` resolves to the frozen ok-discriminated `ToolCallOutcome`; the interpreter and agent-step gating never depend on result truthiness.
+
 ## Out of scope for the brainstorm (already decided or someone else's epic)
 
 - Card visual design: Yousef-gated, separate pass.

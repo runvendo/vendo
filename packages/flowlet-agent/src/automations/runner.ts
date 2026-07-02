@@ -1,15 +1,17 @@
 /**
  * AutomationRunner — everything from "a firing exists" onward, identical in
- * every deployment (spec section c). Producers (in-process scheduler, demo
- * poller adapter, later pg-boss cron / webhook ingest) construct a trigger
- * envelope and call `fire`; nothing deployment-specific lives below that line.
+ * every deployment (spec section c). Producers construct a trigger envelope
+ * and call `fire` with the Principal the automation was scheduled under (the
+ * frozen Scheduler seam replays it on every AutomationFiring); host webhooks
+ * and Composio triggers are ingest paths that reach the same method directly.
  *
  * fire(): load -> dedup (deterministic run id) -> firing cap -> guard (false =>
- * compact skipped run) -> interpret -> finalize + counters -> disabled_error
- * after N consecutive failures. Firings are serialized per automation.
+ * compact skipped run) -> interpret -> finalize + counters. After N
+ * consecutive failures the automation is parked: frozen status "paused" plus
+ * disabledReason (the frozen status union stays untouched).
  */
+import type { Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
-import type { FlowletPrincipal } from "../principal";
 import { evaluateGuard } from "./expressions";
 import {
   interpret,
@@ -19,25 +21,27 @@ import {
 import type { AutomationSpec } from "./schema";
 import {
   DuplicateRunError,
+  type AutomationEngineStore,
   type AutomationGrant,
   type AutomationRecord,
   type AutomationRun,
-  type AutomationStore,
   type StepRecord,
   type TriggerEnvelope,
 } from "./store";
 
-/** Consecutive failures before an automation is parked as disabled_error. */
+/** Consecutive failures before an automation is parked (spec amendment). */
 export const CONSECUTIVE_FAILURE_LIMIT = 5;
 
 export interface AutomationRunnerConfig {
-  store: AutomationStore;
+  store: AutomationEngineStore;
   /** Build the registered toolset for a firing (host tools + integrations). */
-  tools: (automation: AutomationRecord) => Promise<Record<string, RegisteredTool>>;
+  tools: (
+    scope: Principal,
+    automation: AutomationRecord,
+  ) => Promise<Record<string, RegisteredTool>>;
   policy: ApprovalPolicy;
-  principal: FlowletPrincipal;
-  /** Vouched claims exposed to expressions as `user`. */
-  userClaims?: (automation: AutomationRecord) => Promise<Record<string, unknown>>;
+  /** Vouched claims exposed to expressions as `user`; defaults to the scope. */
+  userClaims?: (scope: Principal) => Promise<Record<string, unknown>>;
   agentRunner?: AgentStepRunner;
   consecutiveFailureLimit?: number;
   now?: () => string;
@@ -70,11 +74,15 @@ export class AutomationRunner {
     return this.config.nowMs?.() ?? Date.now();
   }
 
+  private async claims(scope: Principal): Promise<Record<string, unknown>> {
+    if (this.config.userClaims) return this.config.userClaims(scope);
+    return { id: scope.subject, ...scope.claims };
+  }
+
   /** Serialize work per automation id; different automations run independently. */
   private enqueue<T>(automationId: string, work: () => Promise<T>): Promise<T> {
     const tail = this.queues.get(automationId) ?? Promise.resolve();
     const next = tail.then(work, work);
-    // Keep the chain alive regardless of individual outcomes.
     this.queues.set(
       automationId,
       next.catch(() => undefined),
@@ -84,39 +92,38 @@ export class AutomationRunner {
 
   /**
    * Fire one envelope at one automation. Returns the finalized (or paused) run,
-   * or undefined when nothing fired (unknown/disabled automation, duplicate).
+   * or undefined when nothing fired (unknown/paused automation, duplicate).
    */
   fire(
+    scope: Principal,
     automationId: string,
     envelope: TriggerEnvelope,
     options: FireOptions = {},
   ): Promise<AutomationRun | undefined> {
-    return this.enqueue(automationId, () => this.fireNow(automationId, envelope, options));
+    return this.enqueue(automationId, () => this.fireNow(scope, automationId, envelope, options));
   }
 
   private async fireNow(
+    scope: Principal,
     automationId: string,
     envelope: TriggerEnvelope,
     options: FireOptions,
   ): Promise<AutomationRun | undefined> {
     const { store } = this.config;
-    const automation = await store.getAutomation(automationId);
+    const automation = await store.get(scope, automationId);
     if (!automation) return undefined;
-    const statusOk =
-      automation.status === "enabled" || (options.isTest === true && automation.status === "paused");
-    if (!statusOk) return undefined;
+    if (automation.status !== "enabled" && options.isTest !== true) return undefined;
 
-    const version = await store.getVersion(automationId, automation.currentVersion);
+    const version = await store.getVersion(scope, automationId, automation.currentVersion);
     if (!version) return undefined;
 
     let run: AutomationRun;
     try {
-      run = await store.createRun({
+      run = await store.createRun(scope, {
         automation,
         version: version.version,
         envelope,
         isTest: options.isTest ?? false,
-        now: this.now(),
       });
     } catch (err) {
       if (err instanceof DuplicateRunError) return undefined; // redelivery no-op
@@ -127,21 +134,20 @@ export class AutomationRunner {
     if (options.isTest !== true) {
       const cap = version.spec.limits.maxFiringsPerHour;
       const hourAgo = this.nowMs() - 60 * 60 * 1000;
-      const recent = (await store.listRuns(automationId)).filter(
+      const recent = (await store.listRuns(scope, automationId)).filter(
         (r) => r.id !== run.id && !r.isTest && Date.parse(r.startedAt) >= hourAgo,
       );
       if (recent.length >= cap) {
-        const cancelled = await store.finalizeRun(run.id, {
-          status: "cancelled",
+        const cancelled = await store.finalizeRun(scope, run.id, {
+          outcome: "cancelled",
           error: `dropped: exceeded maxFiringsPerHour (${cap})`,
-          now: this.now(),
         });
         this.config.onRunFinished?.(cancelled, automation);
         return cancelled;
       }
     }
 
-    const user = (await this.config.userClaims?.(automation)) ?? { id: automation.userId };
+    const user = await this.claims(scope);
 
     // Top-level guard: false is a compact skipped run, never a failure.
     if (version.spec.if !== undefined) {
@@ -154,22 +160,23 @@ export class AutomationRunner {
           user,
         });
       } catch (err) {
-        return this.finalize(run.id, automation, {
+        return this.finalize(scope, run.id, automation, {
           status: "failed",
           error: err instanceof Error ? err.message : String(err),
         });
       }
       if (!pass) {
-        const skipped = await store.finalizeRun(run.id, { status: "skipped", now: this.now() });
+        const skipped = await store.finalizeRun(scope, run.id, { outcome: "skipped" });
         this.config.onRunFinished?.(skipped, automation);
         return skipped;
       }
     }
 
-    return this.execute(run, automation, version.spec, version.grants, user, options);
+    return this.execute(scope, run, automation, version.spec, version.grants, user, options);
   }
 
   private async execute(
+    scope: Principal,
     run: AutomationRun,
     automation: AutomationRecord,
     spec: AutomationSpec,
@@ -178,16 +185,17 @@ export class AutomationRunner {
     options: FireOptions,
     resume?: { checkpoint: unknown; approved: boolean },
   ): Promise<AutomationRun> {
-    const tools = await this.config.tools(automation);
+    const tools = await this.config.tools(scope, automation);
     const outcome = await interpret({
       spec,
       grants,
       runId: run.id,
+      automationId: automation.id,
       envelope: run.trigger,
       user,
       tools,
       policy: this.config.policy,
-      principal: this.config.principal,
+      principal: { userId: scope.subject },
       agentRunner: this.config.agentRunner,
       dryRun: options.dryRun,
       now: this.config.now,
@@ -196,13 +204,13 @@ export class AutomationRunner {
     });
 
     if (outcome.status === "waiting_approval") {
-      return this.config.store.updateRun(run.id, {
-        status: "waiting_approval",
+      return this.config.store.updateRun(scope, run.id, {
+        outcome: "waiting_approval",
         steps: outcome.steps,
         pendingApproval: outcome.pendingApproval,
       });
     }
-    return this.finalize(run.id, automation, {
+    return this.finalize(scope, run.id, automation, {
       status: outcome.status,
       steps: outcome.steps,
       error: outcome.status === "failed" ? outcome.error : undefined,
@@ -210,19 +218,22 @@ export class AutomationRunner {
   }
 
   private async finalize(
+    scope: Principal,
     runId: string,
     automation: AutomationRecord,
-    input: { status: "succeeded" | "failed" | "skipped"; steps?: StepRecord[]; error?: string },
+    input: { status: "succeeded" | "failed"; steps?: StepRecord[]; error?: string },
   ): Promise<AutomationRun> {
     const { store } = this.config;
-    const finalized = await store.finalizeRun(runId, { ...input, now: this.now() });
+    const finalized = await store.finalizeRun(scope, runId, input);
 
     if (input.status === "failed") {
       const limit = this.config.consecutiveFailureLimit ?? CONSECUTIVE_FAILURE_LIMIT;
-      const fresh = await store.getAutomation(automation.id);
+      const fresh = await store.get(scope, automation.id);
       if (fresh && fresh.counters.consecutiveFailures >= limit && fresh.status === "enabled") {
-        await store.setStatus(automation.id, "disabled_error", this.now());
-        await store.cancelPendingRuns(automation.id, this.now());
+        await store.setStatus(scope, automation.id, "paused", {
+          disabledReason: "consecutive_failures",
+        });
+        await store.cancelPendingRuns(scope, automation.id);
       }
     }
     this.config.onRunFinished?.(finalized, automation);
@@ -230,27 +241,26 @@ export class AutomationRunner {
   }
 
   /** Resume a waiting_approval run with the user's decision. */
-  resume(runId: string, approved: boolean): Promise<AutomationRun | undefined> {
+  resume(scope: Principal, runId: string, approved: boolean): Promise<AutomationRun | undefined> {
     return (async () => {
-      const run = await this.config.store.getRun(runId);
-      if (!run || run.status !== "waiting_approval" || !run.pendingApproval) return undefined;
+      const run = await this.config.store.getRun(scope, runId);
+      if (!run || run.outcome !== "waiting_approval" || !run.pendingApproval) return undefined;
       return this.enqueue(run.automationId, async () => {
-        const automation = await this.config.store.getAutomation(run.automationId);
+        const automation = await this.config.store.get(scope, run.automationId);
         const version = automation
-          ? await this.config.store.getVersion(run.automationId, run.version)
+          ? await this.config.store.getVersion(scope, run.automationId, run.version)
           : undefined;
         if (!automation || !version) return undefined;
 
         // Expired approvals cancel instead of executing stale intent.
         if (Date.parse(run.pendingApproval!.expiresAt) < this.nowMs()) {
-          return this.config.store.finalizeRun(run.id, {
-            status: "cancelled",
+          return this.config.store.finalizeRun(scope, run.id, {
+            outcome: "cancelled",
             error: "pending approval expired",
-            now: this.now(),
           });
         }
-        const user = (await this.config.userClaims?.(automation)) ?? { id: automation.userId };
-        return this.execute(run, automation, version.spec, version.grants, user, {}, {
+        const user = await this.claims(scope);
+        return this.execute(scope, run, automation, version.spec, version.grants, user, {}, {
           checkpoint: run.pendingApproval!.checkpoint,
           approved,
         });

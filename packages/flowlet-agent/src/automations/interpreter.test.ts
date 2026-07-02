@@ -60,9 +60,9 @@ function makeTool(
       tool.calls.push(input);
       if (failuresLeft > 0) {
         failuresLeft -= 1;
-        throw new Error("transient failure");
+        return { ok: false, error: { code: "transient", message: "transient failure" } };
       }
-      return opts.result ?? { ok: true };
+      return { ok: true, result: opts.result ?? { done: true } };
     },
   };
   return tool;
@@ -433,22 +433,23 @@ describe("agent steps and agentic mode", () => {
         { id: "act", type: "agent", goal: "Handle it", tools: ["freeze_card"] },
       ],
     });
-    let callError: string | undefined;
+    let callOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
     const outcome = await interpret({
       ...baseInput(spec, { freeze_card: freeze }),
       policy: approveFor("freeze_card"),
       agentRunner: async (req) => {
-        try {
-          await req.tools["freeze_card"]!.execute({ cardId: "c1" }, { idempotencyKey: "k" });
-        } catch (err) {
-          callError = err instanceof Error ? err.message : String(err);
-        }
+        callOutcome = await req.tools["freeze_card"]!.execute(
+          { cardId: "c1" },
+          { idempotencyKey: "k" },
+        );
         return { done: true };
       },
     });
     expect(outcome.status).toBe("succeeded"); // the agent handled the rejection
     expect(freeze.calls).toHaveLength(0);
-    expect(callError).toMatch(/approval|grant/i);
+    expect(callOutcome?.ok).toBe(false);
+    if (callOutcome?.ok !== false) throw new Error("unreachable");
+    expect(callOutcome.error.message).toMatch(/approval|grant/i);
   });
 
   it("fails an agent step whose output misses a required field", async () => {

@@ -1,29 +1,37 @@
 /**
- * AutomationStore — the Store-seam contract for automations, versions, and
- * runs (spec section b, as amended), plus the in-memory implementation used by
- * embedded mode and tests. The cloud Postgres implementation (ENG-198) lands
- * behind the same interface.
+ * AutomationEngineStore — ENG-188's refinement of the FROZEN core Store seam
+ * (@flowlet/core `AutomationStore`, contracts freeze 2026-07-02).
+ *
+ * Alignment rules:
+ *  - The frozen surface (save/get/list/recordRun/listRuns, Principal scoping,
+ *    store-owned identity + timestamps, coarse statuses) is inherited, never
+ *    redefined. `save()` remains callable with an opaque spec — it validates
+ *    against the DSL and delegates to `create()`.
+ *  - Engine semantics are ADDITIVE: versions + grants, trigger envelopes with
+ *    deterministic firing ids, counters, pending approvals. Richer run states
+ *    refine the frozen coarse union via `outcome` (waiting_approval = running,
+ *    skipped = succeeded, cancelled = failed); `disabled_error` is the frozen
+ *    "paused" plus `disabledReason`.
  *
  * Retention (Yousef ruling 2026-07-01): retain EVERYTHING in v1 — no pruning.
- * Rows stay sane via per-step output truncation, not deletion. A real
- * retention policy is a deliberate TODO for the cloud phase.
+ * Rows stay sane via per-step output truncation. Real retention policy is a
+ * deliberate TODO for the cloud phase.
  */
-import type { AutomationSpec } from "./schema";
+import type {
+  AutomationRecord as CoreAutomationRecord,
+  AutomationRun as CoreAutomationRun,
+  AutomationStore as CoreAutomationStore,
+  Principal,
+} from "@flowlet/core";
+import { automationSpecSchema, type AutomationSpec } from "./schema";
 
 /** Per-step output cap: truncate + flag + record full size (never delete runs). */
 export const MAX_STEP_OUTPUT_BYTES = 32_768;
 /** Trigger payload cap inside a stored run. */
 export const MAX_TRIGGER_PAYLOAD_BYTES = 32_768;
 
-export type AutomationStatus = "enabled" | "paused" | "disabled_error";
-
-export type RunStatus =
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "skipped"
-  | "waiting_approval"
-  | "cancelled";
+/** Additive refinement of the frozen coarse run status. */
+export type RunOutcome = "skipped" | "cancelled" | "waiting_approval";
 
 export type StepStatus =
   | "succeeded"
@@ -36,11 +44,11 @@ export type TriggerKind = "schedule" | "host_event" | "composio";
 
 /** Every firing arrives wrapped in this envelope (spec amendment 3). */
 export interface TriggerEnvelope {
-  /** Producer identity: "poller", "cron", "webhook", "composio", "test", … */
+  /** Producer identity: "poller", "cron", "host", "composio", "test", … */
   source: string;
   /** Producer-supplied id (transaction id, delivery id, cron tick) — dedup key. */
   eventId: string;
-  /** The owning user; fan-out never crosses subjects. */
+  /** The owning subject; fan-out never crosses users. */
   subject: string;
   occurredAt: string;
   payload: unknown;
@@ -71,26 +79,25 @@ export interface AutomationVersion {
 export interface AutomationCounters {
   totalRuns: number;
   totalFailures: number;
-  /** Drives disabled_error at the runner's threshold; success resets it. */
+  /** Drives the runner's disable threshold; a success resets it. */
   consecutiveFailures: number;
   lastRunAt: string | null;
-  lastStatus: RunStatus | null;
+  lastStatus: string | null;
 }
 
-export interface AutomationRecord {
-  id: string;
+/** Engine record: extends the frozen core record; status union stays frozen. */
+export interface AutomationRecord extends CoreAutomationRecord {
+  spec: AutomationSpec;
   tenantId: string;
-  userId: string;
-  name: string;
-  status: AutomationStatus;
+  subject: string;
   currentVersion: number;
   triggerKind: TriggerKind;
   /** host event name or Composio trigger slug; null for schedules. */
   triggerKey: string | null;
-  createdFromThreadId: string | null;
   counters: AutomationCounters;
-  createdAt: string;
-  updatedAt: string;
+  /** Why a paused automation was parked by the system, if it was. */
+  disabledReason?: "consecutive_failures";
+  createdFromThreadId?: string | null;
 }
 
 export interface StepRecord {
@@ -119,22 +126,17 @@ export interface PendingApproval {
   checkpoint: unknown;
 }
 
-export interface AutomationRun {
-  /** Deterministic firing id — see {@link firingRunId}. */
-  id: string;
-  automationId: string;
+/** Engine run: frozen coarse status + additive `outcome` refinement. */
+export interface AutomationRun extends CoreAutomationRun {
+  outcome?: RunOutcome;
   version: number;
   manifestHash: string | null;
   tenantId: string;
-  userId: string;
-  status: RunStatus;
+  subject: string;
   trigger: TriggerEnvelope;
   steps: StepRecord[];
-  pendingApproval: PendingApproval | null;
+  pendingApproval?: PendingApproval;
   isTest: boolean;
-  error: string | null;
-  startedAt: string;
-  finishedAt: string | null;
 }
 
 /** Deterministic run identity: redelivered events become duplicate-key no-ops. */
@@ -150,14 +152,13 @@ export class DuplicateRunError extends Error {
 }
 
 export interface CreateAutomationInput {
-  tenantId: string;
-  userId: string;
   spec: AutomationSpec;
+  /** Display name; defaults to spec.name (the frozen save() supplies its own). */
+  name?: string;
   grants: AutomationGrant[];
   manifestHash?: string | null;
   createdFromThreadId?: string | null;
   createdBy?: "compiler" | "user_edit";
-  now: string;
 }
 
 export interface UpdateAutomationInput {
@@ -166,7 +167,6 @@ export interface UpdateAutomationInput {
   grants: AutomationGrant[];
   manifestHash?: string | null;
   createdBy: "compiler" | "user_edit";
-  now: string;
 }
 
 export interface CreateRunInput {
@@ -174,49 +174,61 @@ export interface CreateRunInput {
   version: number;
   envelope: TriggerEnvelope;
   isTest: boolean;
-  now: string;
 }
 
+/** Exactly one of `status` (succeeded|failed) or a refining `outcome`. */
 export interface FinalizeRunInput {
-  status: Extract<RunStatus, "succeeded" | "failed" | "skipped" | "cancelled">;
+  status?: Extract<CoreAutomationRun["status"], "succeeded" | "failed">;
+  outcome?: RunOutcome;
   steps?: StepRecord[];
   error?: string;
-  now: string;
 }
 
-export interface TriggerLookup {
-  tenantId: string;
-  userId: string;
-  kind: TriggerKind;
-  key: string | null;
-}
+/**
+ * The engine seam: the frozen core surface plus ENG-188 semantics. The cloud
+ * Postgres implementation (ENG-198) lands behind this same interface.
+ */
+export interface AutomationEngineStore extends CoreAutomationStore {
+  get(scope: Principal, id: string): Promise<AutomationRecord | undefined>;
+  list(scope: Principal): Promise<AutomationRecord[]>;
+  listRuns(scope: Principal, automationId: string): Promise<AutomationRun[]>;
 
-/** The seam. All methods are async so the Postgres impl is a drop-in. */
-export interface AutomationStore {
-  createAutomation(
+  create(
+    scope: Principal,
     input: CreateAutomationInput,
   ): Promise<{ automation: AutomationRecord; version: AutomationVersion }>;
-  updateAutomation(
+  update(
+    scope: Principal,
     id: string,
     input: UpdateAutomationInput,
   ): Promise<{ automation: AutomationRecord; version: AutomationVersion }>;
-  getAutomation(id: string): Promise<AutomationRecord | undefined>;
-  getVersion(id: string, version: number): Promise<AutomationVersion | undefined>;
-  listAutomations(filter?: { tenantId?: string; userId?: string }): Promise<AutomationRecord[]>;
-  setStatus(id: string, status: AutomationStatus, now: string): Promise<void>;
-  deleteAutomation(id: string): Promise<void>;
-  findEnabledByTrigger(lookup: TriggerLookup): Promise<AutomationRecord[]>;
-
-  createRun(input: CreateRunInput): Promise<AutomationRun>;
-  updateRun(
+  getVersion(
+    scope: Principal,
     id: string,
-    patch: Partial<Pick<AutomationRun, "status" | "steps" | "pendingApproval" | "error">>,
+    version: number,
+  ): Promise<AutomationVersion | undefined>;
+  setStatus(
+    scope: Principal,
+    id: string,
+    status: CoreAutomationRecord["status"],
+    opts?: { disabledReason?: AutomationRecord["disabledReason"] },
+  ): Promise<void>;
+  delete(scope: Principal, id: string): Promise<void>;
+  findEnabledByTrigger(
+    scope: Principal,
+    lookup: { kind: TriggerKind; key: string | null },
+  ): Promise<AutomationRecord[]>;
+
+  createRun(scope: Principal, input: CreateRunInput): Promise<AutomationRun>;
+  updateRun(
+    scope: Principal,
+    id: string,
+    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error">>,
   ): Promise<AutomationRun>;
-  finalizeRun(id: string, input: FinalizeRunInput): Promise<AutomationRun>;
-  getRun(id: string): Promise<AutomationRun | undefined>;
-  listRuns(automationId: string): Promise<AutomationRun[]>;
+  finalizeRun(scope: Principal, id: string, input: FinalizeRunInput): Promise<AutomationRun>;
+  getRun(scope: Principal, id: string): Promise<AutomationRun | undefined>;
   /** waiting_approval runs are cancelled on pause/edit/delete (amendment 7). */
-  cancelPendingRuns(automationId: string, now: string): Promise<void>;
+  cancelPendingRuns(scope: Principal, automationId: string): Promise<void>;
 }
 
 function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: string | null } {
@@ -255,32 +267,114 @@ function capEnvelope(envelope: TriggerEnvelope): TriggerEnvelope {
   return { ...envelope, payload: truncateValue(envelope.payload, MAX_TRIGGER_PAYLOAD_BYTES) };
 }
 
+/** Coarse status for an engine outcome (the frozen union stays exhaustive). */
+function coarseStatus(input: FinalizeRunInput): CoreAutomationRun["status"] {
+  if (input.outcome === "skipped") return "succeeded";
+  if (input.outcome === "cancelled") return "failed";
+  if (input.outcome === "waiting_approval") return "running";
+  return input.status ?? "succeeded";
+}
+
+function scopeKey(scope: Principal): string {
+  return `${scope.tenantId}::${scope.subject}`;
+}
+
 /** In-memory implementation: the embedded seam slot and the test double. */
-export class InMemoryAutomationStore implements AutomationStore {
+export class InMemoryAutomationStore implements AutomationEngineStore {
   private automations = new Map<string, AutomationRecord>();
   private versions = new Map<string, AutomationVersion>();
   private runs = new Map<string, AutomationRun>();
   private idCounter = 0;
+  private readonly clock: () => string;
+
+  constructor(opts: { now?: () => string } = {}) {
+    this.clock = opts.now ?? (() => new Date().toISOString());
+  }
 
   private versionKey(id: string, version: number): string {
     return `${id}::v${version}`;
   }
 
-  async createAutomation(
+  private owned(scope: Principal, record: AutomationRecord | undefined): AutomationRecord | undefined {
+    if (!record) return undefined;
+    return scopeKey(scope) === `${record.tenantId}::${record.subject}` ? record : undefined;
+  }
+
+  // ---- frozen core surface -------------------------------------------------
+
+  async save(
+    scope: Principal,
+    automation: Omit<CoreAutomationRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<AutomationRecord> {
+    // The core-facing entry point: spec arrives opaque, the DSL validates it.
+    const spec = automationSpecSchema.parse(automation.spec);
+    const { automation: record } = await this.create(scope, {
+      spec,
+      name: automation.name,
+      grants: [],
+    });
+    if (automation.status === "paused") await this.setStatus(scope, record.id, "paused");
+    return (await this.get(scope, record.id))!;
+  }
+
+  async get(scope: Principal, id: string): Promise<AutomationRecord | undefined> {
+    return this.owned(scope, this.automations.get(id));
+  }
+
+  async list(scope: Principal): Promise<AutomationRecord[]> {
+    return [...this.automations.values()].filter((a) => this.owned(scope, a) !== undefined);
+  }
+
+  async recordRun(scope: Principal, run: CoreAutomationRun): Promise<void> {
+    // Core-shaped upsert: merge onto the engine row when it exists.
+    const existing = this.runs.get(run.id);
+    if (existing) {
+      this.runs.set(run.id, { ...existing, ...run });
+      return;
+    }
+    this.runs.set(run.id, {
+      ...run,
+      version: 0,
+      manifestHash: null,
+      tenantId: scope.tenantId,
+      subject: scope.subject,
+      trigger: {
+        source: "external",
+        eventId: run.id,
+        subject: scope.subject,
+        occurredAt: run.startedAt,
+        payload: undefined,
+      },
+      steps: [],
+      isTest: false,
+    });
+  }
+
+  async listRuns(scope: Principal, automationId: string): Promise<AutomationRun[]> {
+    return [...this.runs.values()].filter(
+      (r) => r.automationId === automationId && r.tenantId === scope.tenantId && r.subject === scope.subject,
+    );
+  }
+
+  // ---- engine surface ------------------------------------------------------
+
+  async create(
+    scope: Principal,
     input: CreateAutomationInput,
   ): Promise<{ automation: AutomationRecord; version: AutomationVersion }> {
     const id = `auto-${++this.idCounter}`;
+    const now = this.clock();
     const { kind, key } = triggerIndex(input.spec);
     const automation: AutomationRecord = {
       id,
-      tenantId: input.tenantId,
-      userId: input.userId,
-      name: input.spec.name,
+      name: input.name ?? input.spec.name,
       status: "enabled",
+      spec: input.spec,
+      tenantId: scope.tenantId,
+      subject: scope.subject,
       currentVersion: 1,
       triggerKind: kind,
       triggerKey: key,
-      createdFromThreadId: input.createdFromThreadId ?? null,
       counters: {
         totalRuns: 0,
         totalFailures: 0,
@@ -288,8 +382,9 @@ export class InMemoryAutomationStore implements AutomationStore {
         lastRunAt: null,
         lastStatus: null,
       },
-      createdAt: input.now,
-      updatedAt: input.now,
+      createdFromThreadId: input.createdFromThreadId ?? null,
+      createdAt: now,
+      updatedAt: now,
     };
     const version: AutomationVersion = {
       automationId: id,
@@ -299,18 +394,20 @@ export class InMemoryAutomationStore implements AutomationStore {
       manifestHash: input.manifestHash ?? null,
       grants: input.grants,
       createdBy: input.createdBy ?? "compiler",
-      createdAt: input.now,
+      createdAt: now,
     };
     this.automations.set(id, automation);
     this.versions.set(this.versionKey(id, 1), version);
     return { automation, version };
   }
 
-  async updateAutomation(
+  async update(
+    scope: Principal,
     id: string,
     input: UpdateAutomationInput,
   ): Promise<{ automation: AutomationRecord; version: AutomationVersion }> {
-    const automation = this.mustGet(id);
+    const automation = this.mustGet(scope, id);
+    const now = this.clock();
     const nextVersion = automation.currentVersion + 1;
     const { kind, key } = triggerIndex(input.spec);
     const version: AutomationVersion = {
@@ -321,61 +418,62 @@ export class InMemoryAutomationStore implements AutomationStore {
       manifestHash: input.manifestHash ?? null,
       grants: input.grants,
       createdBy: input.createdBy,
-      createdAt: input.now,
+      createdAt: now,
     };
     const updated: AutomationRecord = {
       ...automation,
       name: input.spec.name,
+      spec: input.spec,
       currentVersion: nextVersion,
       triggerKind: kind,
       triggerKey: key,
-      updatedAt: input.now,
+      updatedAt: now,
     };
     this.versions.set(this.versionKey(id, nextVersion), version);
     this.automations.set(id, updated);
     return { automation: updated, version };
   }
 
-  async getAutomation(id: string): Promise<AutomationRecord | undefined> {
-    return this.automations.get(id);
-  }
-
-  async getVersion(id: string, version: number): Promise<AutomationVersion | undefined> {
+  async getVersion(
+    scope: Principal,
+    id: string,
+    version: number,
+  ): Promise<AutomationVersion | undefined> {
+    if (!this.owned(scope, this.automations.get(id))) return undefined;
     return this.versions.get(this.versionKey(id, version));
   }
 
-  async listAutomations(filter?: {
-    tenantId?: string;
-    userId?: string;
-  }): Promise<AutomationRecord[]> {
-    return [...this.automations.values()].filter(
-      (a) =>
-        (filter?.tenantId === undefined || a.tenantId === filter.tenantId) &&
-        (filter?.userId === undefined || a.userId === filter.userId),
+  async setStatus(
+    scope: Principal,
+    id: string,
+    status: CoreAutomationRecord["status"],
+    opts?: { disabledReason?: AutomationRecord["disabledReason"] },
+  ): Promise<void> {
+    const automation = this.mustGet(scope, id);
+    const next: AutomationRecord = {
+      ...automation,
+      status,
+      updatedAt: this.clock(),
+    };
+    if (opts?.disabledReason !== undefined) next.disabledReason = opts.disabledReason;
+    else delete next.disabledReason;
+    this.automations.set(id, next);
+  }
+
+  async delete(scope: Principal, id: string): Promise<void> {
+    if (this.owned(scope, this.automations.get(id))) this.automations.delete(id);
+  }
+
+  async findEnabledByTrigger(
+    scope: Principal,
+    lookup: { kind: TriggerKind; key: string | null },
+  ): Promise<AutomationRecord[]> {
+    return (await this.list(scope)).filter(
+      (a) => a.status === "enabled" && a.triggerKind === lookup.kind && a.triggerKey === lookup.key,
     );
   }
 
-  async setStatus(id: string, status: AutomationStatus, now: string): Promise<void> {
-    const automation = this.mustGet(id);
-    this.automations.set(id, { ...automation, status, updatedAt: now });
-  }
-
-  async deleteAutomation(id: string): Promise<void> {
-    this.automations.delete(id);
-  }
-
-  async findEnabledByTrigger(lookup: TriggerLookup): Promise<AutomationRecord[]> {
-    return [...this.automations.values()].filter(
-      (a) =>
-        a.status === "enabled" &&
-        a.tenantId === lookup.tenantId &&
-        a.userId === lookup.userId &&
-        a.triggerKind === lookup.kind &&
-        a.triggerKey === lookup.key,
-    );
-  }
-
-  async createRun(input: CreateRunInput): Promise<AutomationRun> {
+  async createRun(scope: Principal, input: CreateRunInput): Promise<AutomationRun> {
     const id = firingRunId(input.automation.id, input.envelope.source, input.envelope.eventId);
     if (this.runs.has(id)) throw new DuplicateRunError(id);
     const versionRow = this.versions.get(this.versionKey(input.automation.id, input.version));
@@ -384,99 +482,110 @@ export class InMemoryAutomationStore implements AutomationStore {
       automationId: input.automation.id,
       version: input.version,
       manifestHash: versionRow?.manifestHash ?? null,
-      tenantId: input.automation.tenantId,
-      userId: input.automation.userId,
+      tenantId: scope.tenantId,
+      subject: scope.subject,
       status: "running",
       trigger: capEnvelope(input.envelope),
       steps: [],
-      pendingApproval: null,
       isTest: input.isTest,
-      error: null,
-      startedAt: input.now,
-      finishedAt: null,
+      startedAt: this.clock(),
     };
     this.runs.set(id, run);
     return run;
   }
 
   async updateRun(
+    scope: Principal,
     id: string,
-    patch: Partial<Pick<AutomationRun, "status" | "steps" | "pendingApproval" | "error">>,
+    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error">>,
   ): Promise<AutomationRun> {
-    const run = this.mustGetRun(id);
+    const run = this.mustGetRun(scope, id);
     const next: AutomationRun = {
       ...run,
       ...patch,
+      status: patch.outcome === "waiting_approval" ? "running" : run.status,
       steps: patch.steps ? patch.steps.map(capStep) : run.steps,
     };
     this.runs.set(id, next);
     return next;
   }
 
-  async finalizeRun(id: string, input: FinalizeRunInput): Promise<AutomationRun> {
-    const run = this.mustGetRun(id);
+  async finalizeRun(scope: Principal, id: string, input: FinalizeRunInput): Promise<AutomationRun> {
+    const run = this.mustGetRun(scope, id);
+    const now = this.clock();
+    const status = coarseStatus(input);
     // Skipped runs stay compact: no steps array is stored for them.
-    const steps = input.status === "skipped" ? [] : (input.steps ?? run.steps).map(capStep);
+    const steps = input.outcome === "skipped" ? [] : (input.steps ?? run.steps).map(capStep);
     const finalized: AutomationRun = {
       ...run,
-      status: input.status,
+      status,
+      outcome: input.outcome,
       steps,
-      pendingApproval: null,
-      error: input.error ?? null,
-      finishedAt: input.now,
+      error: input.error,
+      finishedAt: now,
     };
+    delete finalized.pendingApproval;
     this.runs.set(id, finalized);
 
     const automation = this.automations.get(run.automationId);
     if (automation) {
-      const failed = input.status === "failed";
-      const counted = input.status === "succeeded" || failed;
+      // Only clean successes and real failures move the streak; refined
+      // outcomes (skipped/cancelled) never count as failures.
+      const failed = status === "failed" && input.outcome === undefined;
+      const succeeded = status === "succeeded" && input.outcome === undefined;
       const counters: AutomationCounters = {
         totalRuns: automation.counters.totalRuns + 1,
         totalFailures: automation.counters.totalFailures + (failed ? 1 : 0),
         consecutiveFailures: failed
           ? automation.counters.consecutiveFailures + 1
-          : counted
+          : succeeded
             ? 0
             : automation.counters.consecutiveFailures,
-        lastRunAt: input.now,
-        lastStatus: input.status,
+        lastRunAt: now,
+        lastStatus: input.outcome ?? status,
       };
-      this.automations.set(automation.id, { ...automation, counters, updatedAt: input.now });
+      this.automations.set(automation.id, { ...automation, counters, updatedAt: now });
     }
     return finalized;
   }
 
-  async getRun(id: string): Promise<AutomationRun | undefined> {
-    return this.runs.get(id);
+  async getRun(scope: Principal, id: string): Promise<AutomationRun | undefined> {
+    const run = this.runs.get(id);
+    if (!run) return undefined;
+    return run.tenantId === scope.tenantId && run.subject === scope.subject ? run : undefined;
   }
 
-  async listRuns(automationId: string): Promise<AutomationRun[]> {
-    return [...this.runs.values()].filter((r) => r.automationId === automationId);
-  }
-
-  async cancelPendingRuns(automationId: string, now: string): Promise<void> {
+  async cancelPendingRuns(scope: Principal, automationId: string): Promise<void> {
     for (const run of this.runs.values()) {
-      if (run.automationId === automationId && run.status === "waiting_approval") {
-        this.runs.set(run.id, {
+      if (
+        run.automationId === automationId &&
+        run.tenantId === scope.tenantId &&
+        run.subject === scope.subject &&
+        run.outcome === "waiting_approval"
+      ) {
+        const cancelled: AutomationRun = {
           ...run,
-          status: "cancelled",
-          pendingApproval: null,
-          finishedAt: now,
-        });
+          status: "failed",
+          outcome: "cancelled",
+          finishedAt: this.clock(),
+        };
+        delete cancelled.pendingApproval;
+        this.runs.set(run.id, cancelled);
       }
     }
   }
 
-  private mustGet(id: string): AutomationRecord {
-    const automation = this.automations.get(id);
+  private mustGet(scope: Principal, id: string): AutomationRecord {
+    const automation = this.owned(scope, this.automations.get(id));
     if (!automation) throw new Error(`automation "${id}" not found`);
     return automation;
   }
 
-  private mustGetRun(id: string): AutomationRun {
+  private mustGetRun(scope: Principal, id: string): AutomationRun {
     const run = this.runs.get(id);
-    if (!run) throw new Error(`run "${id}" not found`);
+    if (!run || run.tenantId !== scope.tenantId || run.subject !== scope.subject) {
+      throw new Error(`run "${id}" not found`);
+    }
     return run;
   }
 }

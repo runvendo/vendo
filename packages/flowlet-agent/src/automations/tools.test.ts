@@ -1,16 +1,20 @@
 /**
  * Authoring-tool tests: create/update/list/pause/resume/delete/run-now wired
- * over the store + runner, with closed-world and safe-profile validation at
- * creation time and scope-hashed grant computation.
+ * over the Principal-scoped store + runner, with closed-world and safe-profile
+ * validation at creation time, scope-hashed grant computation, and explicit
+ * registration on the frozen Scheduler seam.
  */
 import { describe, expect, it } from "vitest";
 import type { Tool, ToolCallOptions } from "ai";
+import type { Principal, Scheduler, TimeTrigger } from "@flowlet/core";
 import { createAutomationTools } from "./tools";
 import { AutomationRunner } from "./runner";
 import type { RegisteredTool } from "./interpreter";
 import { InMemoryAutomationStore } from "./store";
+import { automationSpecSchema } from "./schema";
 
 const NOW = "2026-07-01T08:00:00.000Z";
+const scope: Principal = { tenantId: "t1", subject: "user-1" };
 const CALL_OPTS = { toolCallId: "tc", messages: [] } as unknown as ToolCallOptions;
 
 function makeTool(name: string, opts: { readOnly?: boolean; idempotent?: boolean } = {}) {
@@ -26,10 +30,23 @@ function makeTool(name: string, opts: { readOnly?: boolean; idempotent?: boolean
     },
     execute: async (input) => {
       calls.push(input);
-      return { ok: true };
+      return { ok: true, result: { done: true } };
     },
   };
   return tool;
+}
+
+class FakeScheduler implements Scheduler {
+  scheduled = new Map<string, TimeTrigger>();
+  cancelled: string[] = [];
+  async schedule(id: string, trigger: TimeTrigger): Promise<void> {
+    this.scheduled.set(id, trigger);
+  }
+  async cancel(id: string): Promise<void> {
+    this.scheduled.delete(id);
+    this.cancelled.push(id);
+  }
+  onFire(): void {}
 }
 
 function validSpec(overrides: Record<string, unknown> = {}) {
@@ -51,23 +68,23 @@ function validSpec(overrides: Record<string, unknown> = {}) {
 }
 
 function setup() {
-  const store = new InMemoryAutomationStore();
+  const store = new InMemoryAutomationStore({ now: () => NOW });
   const slack = makeTool("SLACK_SEND_MESSAGE");
   const read = makeTool("maple_list_transactions", { readOnly: true });
   const registered = { SLACK_SEND_MESSAGE: slack, maple_list_transactions: read };
+  const scheduler = new FakeScheduler();
   const runner = new AutomationRunner({
     store,
     tools: async () => registered,
     policy: { evaluate: () => "allow" },
-    principal: { userId: "user-1" },
     now: () => NOW,
     nowMs: () => Date.parse(NOW),
   });
   const toolset = createAutomationTools({
     store,
     runner,
-    tenantId: "t1",
-    userId: "user-1",
+    scheduler,
+    principal: scope,
     registeredTools: async () => registered,
     hostEvents: ["transaction.created"],
     now: () => NOW,
@@ -76,7 +93,7 @@ function setup() {
     const tool = toolset[name] as Tool;
     return (await tool.execute!(input as never, CALL_OPTS)) as Record<string, unknown>;
   };
-  return { store, runner, toolset, exec, slack };
+  return { store, runner, toolset, exec, slack, scheduler };
 }
 
 describe("create_automation", () => {
@@ -91,10 +108,27 @@ describe("create_automation", () => {
     expect(automation["tier"]).toBe("deterministic");
     expect(automation["status"]).toBe("enabled");
 
-    const version = await store.getVersion(automation["id"] as string, 1);
+    const version = await store.getVersion(scope, automation["id"] as string, 1);
     expect(version?.grants).toHaveLength(1);
     expect(version?.grants[0]).toMatchObject({ tool: "SLACK_SEND_MESSAGE" });
     expect(version?.grants[0]?.scopeHash).toBeTruthy();
+  });
+
+  it("registers schedule triggers on the Scheduler seam with the Principal", async () => {
+    const { exec, scheduler } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        trigger: { type: "schedule", cron: "0 17 * * 0", timezone: "America/Los_Angeles" },
+        if: undefined,
+      }),
+    });
+    expect(result["ok"]).toBe(true);
+    const id = (result["automation"] as Record<string, unknown>)["id"] as string;
+    expect(scheduler.scheduled.get(id)).toEqual({
+      kind: "cron",
+      expression: "0 17 * * 0",
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("rejects tools outside the registered closed world without persisting", async () => {
@@ -109,7 +143,7 @@ describe("create_automation", () => {
     });
     expect(result["ok"]).toBe(false);
     expect(String(result["errors"])).toMatch(/NOT_A_TOOL/);
-    expect(await store.listAutomations()).toHaveLength(0);
+    expect(await store.list(scope)).toHaveLength(0);
   });
 
   it("rejects undeclared host events", async () => {
@@ -179,16 +213,15 @@ describe("lifecycle tools", () => {
     });
     const id = (created["automation"] as Record<string, unknown>)["id"] as string;
 
-    const automation = (await store.getAutomation(id))!;
-    const pending = await store.createRun({
+    const automation = (await store.get(scope, id))!;
+    const pending = await store.createRun(scope, {
       automation,
       version: 1,
       envelope: { source: "host", eventId: "e1", subject: "user-1", occurredAt: NOW, payload: {} },
       isTest: false,
-      now: NOW,
     });
-    await store.updateRun(pending.id, {
-      status: "waiting_approval",
+    await store.updateRun(scope, pending.id, {
+      outcome: "waiting_approval",
       pendingApproval: {
         stepId: "send",
         tool: "SLACK_SEND_MESSAGE",
@@ -204,49 +237,55 @@ describe("lifecycle tools", () => {
       grantedTools: [],
     });
     expect(updated["ok"]).toBe(true);
-    expect((await store.getAutomation(id))?.currentVersion).toBe(2);
-    expect((await store.getVersion(id, 2))?.grants).toEqual([]);
-    expect((await store.getRun(pending.id))?.status).toBe("cancelled");
+    expect((await store.get(scope, id))?.currentVersion).toBe(2);
+    expect((await store.getVersion(scope, id, 2))?.grants).toEqual([]);
+    expect((await store.getRun(scope, pending.id))?.outcome).toBe("cancelled");
   });
 
-  it("pause cancels pending runs, resume re-enables, delete removes", async () => {
-    const { store, exec } = setup();
-    const created = await exec("create_automation", { spec: validSpec() });
+  it("pause cancels the schedule, resume re-registers it, delete removes", async () => {
+    const { store, exec, scheduler } = setup();
+    const created = await exec("create_automation", {
+      spec: validSpec({
+        trigger: { type: "schedule", cron: "0 9 * * *", timezone: "UTC" },
+        if: undefined,
+      }),
+    });
     const id = (created["automation"] as Record<string, unknown>)["id"] as string;
+    expect(scheduler.scheduled.has(id)).toBe(true);
 
     await exec("pause_automation", { id });
-    expect((await store.getAutomation(id))?.status).toBe("paused");
+    expect((await store.get(scope, id))?.status).toBe("paused");
+    expect(scheduler.scheduled.has(id)).toBe(false);
+
     await exec("resume_automation", { id });
-    expect((await store.getAutomation(id))?.status).toBe("enabled");
+    expect((await store.get(scope, id))?.status).toBe("enabled");
+    expect(scheduler.scheduled.has(id)).toBe(true);
+
     await exec("delete_automation", { id });
-    expect(await store.getAutomation(id)).toBeUndefined();
+    expect(await store.get(scope, id)).toBeUndefined();
+    expect(scheduler.scheduled.has(id)).toBe(false);
   });
 
   it("refuses to touch another user's automation", async () => {
     const { store, exec } = setup();
-    const { automation: other } = await store.createAutomation({
-      tenantId: "t1",
-      userId: "someone-else",
-      spec: (await import("./schema")).automationSpecSchema.parse(validSpec()),
+    const other: Principal = { tenantId: "t1", subject: "someone-else" };
+    const { automation } = await store.create(other, {
+      spec: automationSpecSchema.parse(validSpec()),
       grants: [],
-      now: NOW,
     });
-    const result = await exec("pause_automation", { id: other.id });
+    const result = await exec("pause_automation", { id: automation.id });
     expect(result["ok"]).toBe(false);
-    expect((await store.getAutomation(other.id))?.status).toBe("enabled");
+    expect((await store.get(other, automation.id))?.status).toBe("enabled");
   });
 
   it("lists only the caller's automations and returns trimmed run history", async () => {
     const { store, exec } = setup();
     const created = await exec("create_automation", { spec: validSpec() });
     const id = (created["automation"] as Record<string, unknown>)["id"] as string;
-    await store.createAutomation({
-      tenantId: "t1",
-      userId: "someone-else",
-      spec: (await import("./schema")).automationSpecSchema.parse(validSpec()),
-      grants: [],
-      now: NOW,
-    });
+    await store.create(
+      { tenantId: "t1", subject: "someone-else" },
+      { spec: automationSpecSchema.parse(validSpec()), grants: [] },
+    );
 
     const list = await exec("list_automations", {});
     expect((list["automations"] as unknown[]).length).toBe(1);

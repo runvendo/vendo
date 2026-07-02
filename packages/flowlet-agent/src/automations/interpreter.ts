@@ -16,6 +16,7 @@
  * resumable in v1 and fail the step instead (grant the tool, or keep it out of
  * loops) — an unattended loop that pauses per-iteration is broken UX anyway.
  */
+import type { ToolCallOutcome } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import type { FlowletPrincipal } from "../principal";
 import type { ToolDescriptor } from "../descriptor";
@@ -48,17 +49,23 @@ export const PENDING_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * The narrow tool shape the interpreter executes. Adapters map ai-SDK tools
- * (which carry zod `inputSchema` and `execute`) onto this.
+ * (which carry zod `inputSchema` and `execute`) onto this. Execution resolves
+ * to the FROZEN core `ToolCallOutcome` — discriminated on `ok`, so a
+ * legitimate `undefined` result never reads as an error (contracts freeze).
  */
 export interface RegisteredTool {
   descriptor: ToolDescriptor;
+  /** Model-facing description, re-exposed to agent steps. */
+  description?: string;
+  /** Model-facing input schema (JSON Schema), re-exposed to agent steps. */
+  modelInputSchema?: Record<string, unknown>;
   inputSchema?: {
     safeParse(input: unknown): { success: boolean; error?: unknown };
   };
   execute(
     input: Record<string, unknown>,
     ctx: { idempotencyKey: string },
-  ): Promise<unknown>;
+  ): Promise<ToolCallOutcome>;
 }
 
 export interface AgentStepRequest {
@@ -86,6 +93,7 @@ export interface InterpretInput {
   spec: AutomationSpec;
   grants?: AutomationGrant[];
   runId: string;
+  automationId?: string;
   envelope: TriggerEnvelope;
   user?: Record<string, unknown>;
   tools: Record<string, RegisteredTool>;
@@ -177,7 +185,7 @@ function buildScope(ctx: ExecContext): ExpressionScope {
     steps: ctx.outputs,
     run: {
       id: ctx.input.runId,
-      automationId: ctx.input.envelope.source,
+      automationId: ctx.input.automationId ?? "",
       firedAt: ctx.input.envelope.occurredAt,
     },
     user: ctx.input.user ?? {},
@@ -300,14 +308,15 @@ async function executeToolStep(ctx: ExecContext, step: ToolStep): Promise<void> 
     attempt += 1;
     const idempotencyKey = `${ctx.input.runId}/${step.id}/${attempt}`;
     try {
-      const output = await tool.execute(resolved, { idempotencyKey });
-      ctx.outputs[step.id] = { output };
+      const outcome = await tool.execute(resolved, { idempotencyKey });
+      if (!outcome.ok) throw new Error(outcome.error.message);
+      ctx.outputs[step.id] = { output: outcome.result };
       ctx.records.push({
         id: step.id,
         status: "succeeded",
         startedAt,
         finishedAt: ctx.now(),
-        output,
+        output: outcome.result,
         attempts: attempt,
         idempotencyKey,
       });
@@ -341,7 +350,10 @@ function gateAgentTool(
         principal: ctx.input.principal,
       });
       if (decision === "deny") {
-        throw new Error(`policy denied tool "${name}"`);
+        return {
+          ok: false,
+          error: { code: "policy_denied", message: `policy denied tool "${name}"` },
+        };
       }
       if (decision === "approve") {
         const granted = hasValidGrant(ctx.grants, {
@@ -351,9 +363,13 @@ function gateAgentTool(
           step: grantStep,
         });
         if (!granted) {
-          throw new Error(
-            `tool "${name}" needs user approval and has no grant for unattended runs`,
-          );
+          return {
+            ok: false,
+            error: {
+              code: "approval_required",
+              message: `tool "${name}" needs user approval and has no grant for unattended runs`,
+            },
+          };
         }
       }
       return tool.execute(input, execCtx);

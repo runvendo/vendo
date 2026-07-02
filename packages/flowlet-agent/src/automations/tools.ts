@@ -10,9 +10,14 @@
  * authority is always approval-gated, with no new policy machinery. Grants are
  * computed here (scope-hashed per step) and stored as version metadata, never
  * inside the compiler-emitted DSL.
+ *
+ * Schedule-triggered automations are registered on the FROZEN core Scheduler
+ * seam explicitly (schedule/cancel), with the caller's Principal, which the
+ * scheduler persists and replays on firings.
  */
 import { tool, type Tool, type ToolSet } from "ai";
 import { z } from "zod";
+import type { Principal, Scheduler, TimeTrigger } from "@flowlet/core";
 import { ExpressionError, validateExpression } from "./expressions";
 import { computeGrant } from "./grants";
 import type { RegisteredTool } from "./interpreter";
@@ -23,27 +28,35 @@ import {
   walkSteps,
   type AutomationSpec,
   type AutomationStep,
+  type AutomationTrigger,
 } from "./schema";
 import type {
+  AutomationEngineStore,
   AutomationGrant,
   AutomationRecord,
-  AutomationStore,
 } from "./store";
 
 export interface AutomationToolsConfig {
-  store: AutomationStore;
+  store: AutomationEngineStore;
   runner: AutomationRunner;
-  tenantId: string;
-  userId: string;
+  /** The frozen Scheduler seam; omit when no schedule triggers are possible. */
+  scheduler?: Scheduler;
+  principal: Principal;
   /** The closed world: every tool a spec may reference. */
   registeredTools: () => Promise<Record<string, RegisteredTool>>;
   /** Host event types available as triggers (manifest-declared later). */
   hostEvents?: string[];
   createdFromThreadId?: string;
+  /** Timestamp source for grant metadata (the store owns row timestamps). */
   now?: () => string;
 }
 
 const INTERPOLATION_RE = /\{\{([\s\S]+?)\}\}/g;
+
+function toTimeTrigger(trigger: Extract<AutomationTrigger, { type: "schedule" }>): TimeTrigger {
+  if (trigger.at !== undefined) return { kind: "at", at: trigger.at };
+  return { kind: "cron", expression: trigger.cron!, timezone: trigger.timezone };
+}
 
 /** Collect every expression in a spec: guards, items, and input templates. */
 function collectExpressions(spec: AutomationSpec): string[] {
@@ -180,6 +193,7 @@ function summarize(automation: AutomationRecord, spec: AutomationSpec) {
     id: automation.id,
     name: automation.name,
     status: automation.status,
+    disabledReason: automation.disabledReason,
     version: automation.currentVersion,
     tier: specTier(spec),
     trigger: spec.trigger,
@@ -198,22 +212,22 @@ function markDestructive<T extends Tool>(t: T): T {
 
 export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
   const now = (): string => config.now?.() ?? new Date().toISOString();
+  const scope = config.principal;
   let testCounter = 0;
-
-  /** Load + ownership check; returns undefined (and an error result) otherwise. */
-  const own = async (id: string): Promise<AutomationRecord | undefined> => {
-    const automation = await config.store.getAutomation(id);
-    if (!automation) return undefined;
-    if (automation.tenantId !== config.tenantId || automation.userId !== config.userId) {
-      return undefined;
-    }
-    return automation;
-  };
 
   const notFound = (id: string) => ({
     ok: false as const,
     errors: [`automation "${id}" not found`],
   });
+
+  const syncSchedule = async (id: string, spec: AutomationSpec): Promise<void> => {
+    if (!config.scheduler) return;
+    if (spec.trigger.type === "schedule") {
+      await config.scheduler.schedule(id, toTimeTrigger(spec.trigger), scope);
+    } else {
+      await config.scheduler.cancel(id);
+    }
+  };
 
   const compile = async (
     spec: AutomationSpec,
@@ -242,14 +256,12 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
       execute: async ({ spec, grantedTools }) => {
         const compiled = await compile(spec, grantedTools ?? []);
         if (!compiled.ok) return compiled;
-        const { automation } = await config.store.createAutomation({
-          tenantId: config.tenantId,
-          userId: config.userId,
+        const { automation } = await config.store.create(scope, {
           spec,
           grants: compiled.grants,
           createdFromThreadId: config.createdFromThreadId ?? null,
-          now: now(),
         });
+        await syncSchedule(automation.id, spec);
         return { ok: true, automation: summarize(automation, spec) };
       },
     }),
@@ -266,17 +278,17 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
         grantedTools: z.array(z.string()).optional(),
       }),
       execute: async ({ id, spec, grantedTools }) => {
-        const automation = await own(id);
+        const automation = await config.store.get(scope, id);
         if (!automation) return notFound(id);
         const compiled = await compile(spec, grantedTools ?? []);
         if (!compiled.ok) return compiled;
-        await config.store.cancelPendingRuns(id, now());
-        const updated = await config.store.updateAutomation(id, {
+        await config.store.cancelPendingRuns(scope, id);
+        const updated = await config.store.update(scope, id, {
           spec,
           grants: compiled.grants,
           createdBy: "user_edit",
-          now: now(),
         });
+        await syncSchedule(id, spec);
         return { ok: true, automation: summarize(updated.automation, spec) };
       },
     }),
@@ -287,10 +299,11 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
       description: "Delete an automation permanently and cancel its pending runs.",
       inputSchema: z.object({ id: z.string() }),
       execute: async ({ id }) => {
-        const automation = await own(id);
+        const automation = await config.store.get(scope, id);
         if (!automation) return notFound(id);
-        await config.store.cancelPendingRuns(id, now());
-        await config.store.deleteAutomation(id);
+        await config.store.cancelPendingRuns(scope, id);
+        await config.store.delete(scope, id);
+        await config.scheduler?.cancel(id);
         return { ok: true };
       },
     }),
@@ -300,16 +313,8 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
     description: "List the user's automations with status and run counters.",
     inputSchema: z.object({}),
     execute: async () => {
-      const automations = await config.store.listAutomations({
-        tenantId: config.tenantId,
-        userId: config.userId,
-      });
-      const summaries = [];
-      for (const automation of automations) {
-        const version = await config.store.getVersion(automation.id, automation.currentVersion);
-        if (version) summaries.push(summarize(automation, version.spec));
-      }
-      return { ok: true, automations: summaries };
+      const automations = await config.store.list(scope);
+      return { ok: true, automations: automations.map((a) => summarize(a, a.spec)) };
     },
   });
 
@@ -320,14 +325,14 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
       limit: z.number().int().min(1).max(100).default(20),
     }),
     execute: async ({ id, limit }) => {
-      const automation = await own(id);
+      const automation = await config.store.get(scope, id);
       if (!automation) return notFound(id);
-      const runs = (await config.store.listRuns(id))
+      const runs = (await config.store.listRuns(scope, id))
         .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
         .slice(0, limit)
         .map((run) => ({
           id: run.id,
-          status: run.status,
+          status: run.outcome ?? run.status,
           startedAt: run.startedAt,
           finishedAt: run.finishedAt,
           isTest: run.isTest,
@@ -342,21 +347,23 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
     description: "Pause an automation (it stops firing; pending approvals are cancelled).",
     inputSchema: z.object({ id: z.string() }),
     execute: async ({ id }) => {
-      const automation = await own(id);
+      const automation = await config.store.get(scope, id);
       if (!automation) return notFound(id);
-      await config.store.cancelPendingRuns(id, now());
-      await config.store.setStatus(id, "paused", now());
+      await config.store.cancelPendingRuns(scope, id);
+      await config.store.setStatus(scope, id, "paused");
+      await config.scheduler?.cancel(id);
       return { ok: true };
     },
   });
 
   const resumeAutomation = tool({
-    description: "Re-enable a paused (or error-disabled) automation.",
+    description: "Re-enable a paused (or error-parked) automation.",
     inputSchema: z.object({ id: z.string() }),
     execute: async ({ id }) => {
-      const automation = await own(id);
+      const automation = await config.store.get(scope, id);
       if (!automation) return notFound(id);
-      await config.store.setStatus(id, "enabled", now());
+      await config.store.setStatus(scope, id, "enabled");
+      await syncSchedule(id, automation.spec);
       return { ok: true };
     },
   });
@@ -372,15 +379,16 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
       live: z.boolean().default(false),
     }),
     execute: async ({ id, samplePayload, live }) => {
-      const automation = await own(id);
+      const automation = await config.store.get(scope, id);
       if (!automation) return notFound(id);
       const firedAt = now();
       const run = await config.runner.fire(
+        scope,
         id,
         {
           source: "test",
           eventId: `test-${firedAt}-${++testCounter}`,
-          subject: config.userId,
+          subject: scope.subject,
           occurredAt: firedAt,
           payload: samplePayload ?? { firedAt },
         },
@@ -391,7 +399,7 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
         ok: true,
         run: {
           id: run.id,
-          status: run.status,
+          status: run.outcome ?? run.status,
           isTest: run.isTest,
           dryRun: !live,
           error: run.error,

@@ -1,54 +1,59 @@
 /**
- * InProcessScheduler — the embedded Scheduler-seam implementation (spec
- * section c). Two producers, both reduced to runner.fire() envelopes:
+ * InProcessScheduler — the embedded implementation of the FROZEN core
+ * `Scheduler` seam (time-based triggers only). Schedules are registered
+ * explicitly with the Principal scope, which is persisted with the schedule
+ * and REPLAYED on every firing (contracts freeze); the runtime registers one
+ * firing handler via onFire().
  *
- *  - a clock tick (start() interval or an external caller invoking tick())
- *    that computes due cron / one-shot schedules with croner, per-automation
- *    IANA timezone. Missed fires are skipped: the next occurrence wins, and
- *    the occurrence timestamp doubles as the dedup eventId.
- *  - emitHostEvent(): the host's own code path hands us a domain event; fan-out
- *    is per subject, never tenant-wide.
+ * Host webhooks and Composio triggers deliberately do NOT pass through here —
+ * they are ingest paths that invoke the same firing pipeline directly (see
+ * host-events.ts). Composio trigger delivery needs a reachable webhook
+ * endpoint and is cloud-only.
  *
- * Composio triggers need a reachable webhook endpoint and are cloud-only;
- * they never register here.
+ * Missed fires are skipped (the next occurrence wins) and the occurrence
+ * timestamp doubles as the dedup eventId downstream, so a double tick can
+ * never double-fire.
  */
 import { Cron } from "croner";
-import type { AutomationRunner } from "./runner";
-import type { AutomationRecord, AutomationStore, TriggerEnvelope } from "./store";
+import type { AutomationFiring, Principal, Scheduler, TimeTrigger } from "@flowlet/core";
 
 export interface InProcessSchedulerConfig {
-  store: AutomationStore;
-  runner: AutomationRunner;
   /** Tick interval for start(); tests call tick() directly. */
   tickMs?: number;
-  now?: () => string;
   nowMs?: () => number;
 }
 
-export interface HostEvent {
-  tenantId: string;
-  eventId: string;
-  subject: string;
-  occurredAt: string;
-  payload: unknown;
+interface RegisteredSchedule {
+  trigger: TimeTrigger;
+  scope: Principal;
 }
 
-export class InProcessScheduler {
+export class InProcessScheduler implements Scheduler {
   private readonly config: InProcessSchedulerConfig;
+  private schedules = new Map<string, RegisteredSchedule>();
+  private handler: ((firing: AutomationFiring) => Promise<void>) | undefined;
   private lastTickMs: number;
   private interval: ReturnType<typeof setInterval> | undefined;
 
-  constructor(config: InProcessSchedulerConfig) {
+  constructor(config: InProcessSchedulerConfig = {}) {
     this.config = config;
     this.lastTickMs = this.nowMs();
   }
 
-  private now(): string {
-    return this.config.now?.() ?? new Date().toISOString();
-  }
-
   private nowMs(): number {
     return this.config.nowMs?.() ?? Date.now();
+  }
+
+  async schedule(automationId: string, trigger: TimeTrigger, scope: Principal): Promise<void> {
+    this.schedules.set(automationId, { trigger, scope });
+  }
+
+  async cancel(automationId: string): Promise<void> {
+    this.schedules.delete(automationId);
+  }
+
+  onFire(handler: (firing: AutomationFiring) => Promise<void>): void {
+    this.handler = handler;
   }
 
   start(): void {
@@ -70,65 +75,30 @@ export class InProcessScheduler {
     const tickMs = this.nowMs();
     const windowStart = this.lastTickMs;
     this.lastTickMs = tickMs;
+    if (!this.handler) return;
 
-    const automations = await this.config.store.listAutomations();
-    for (const automation of automations) {
-      if (automation.status !== "enabled" || automation.triggerKind !== "schedule") continue;
-      const due = await this.dueOccurrence(automation, windowStart, tickMs);
+    for (const [automationId, registered] of this.schedules) {
+      const due = dueOccurrence(registered.trigger, windowStart, tickMs);
       if (due === undefined) continue;
-      const occurredAt = new Date(due).toISOString();
-      await this.config.runner.fire(automation.id, {
-        source: "cron",
-        eventId: occurredAt, // occurrence timestamp = idempotent dedup key
-        subject: automation.userId,
-        occurredAt,
-        payload: { firedAt: occurredAt },
-      });
+      const firedAt = new Date(due).toISOString();
+      await this.handler({ automationId, principal: registered.scope, firedAt });
+      if (registered.trigger.kind === "at") this.schedules.delete(automationId); // one-shot
     }
   }
+}
 
-  /** Latest occurrence in (windowStart, now], or undefined. */
-  private async dueOccurrence(
-    automation: AutomationRecord,
-    windowStartMs: number,
-    nowMs: number,
-  ): Promise<number | undefined> {
-    const version = await this.config.store.getVersion(
-      automation.id,
-      automation.currentVersion,
-    );
-    const trigger = version?.spec.trigger;
-    if (!trigger || trigger.type !== "schedule") return undefined;
-
-    if (trigger.at !== undefined) {
-      const atMs = Date.parse(trigger.at);
-      return atMs > windowStartMs && atMs <= nowMs ? atMs : undefined;
-    }
-    if (trigger.cron !== undefined) {
-      const cron = new Cron(trigger.cron, { timezone: trigger.timezone });
-      const next = cron.nextRun(new Date(windowStartMs));
-      if (next && next.getTime() <= nowMs) return next.getTime();
-    }
-    return undefined;
+/** Latest occurrence in (windowStart, now], or undefined. */
+function dueOccurrence(
+  trigger: TimeTrigger,
+  windowStartMs: number,
+  nowMs: number,
+): number | undefined {
+  if (trigger.kind === "at") {
+    const atMs = Date.parse(trigger.at);
+    return atMs > windowStartMs && atMs <= nowMs ? atMs : undefined;
   }
-
-  /** Host-event producer: fan out to the subject's matching automations. */
-  async emitHostEvent(eventType: string, event: HostEvent): Promise<void> {
-    const envelope: TriggerEnvelope = {
-      source: "host",
-      eventId: event.eventId,
-      subject: event.subject,
-      occurredAt: event.occurredAt,
-      payload: event.payload,
-    };
-    const matches = await this.config.store.findEnabledByTrigger({
-      tenantId: event.tenantId,
-      userId: event.subject,
-      kind: "host_event",
-      key: eventType,
-    });
-    for (const automation of matches) {
-      await this.config.runner.fire(automation.id, envelope);
-    }
-  }
+  const cron = new Cron(trigger.expression, { timezone: trigger.timezone });
+  const next = cron.nextRun(new Date(windowStartMs));
+  if (next && next.getTime() <= nowMs) return next.getTime();
+  return undefined;
 }

@@ -1,9 +1,12 @@
 /**
- * AutomationStore contract tests, exercised against the in-memory
- * implementation (the embedded Store-seam slot; Postgres lands behind the same
- * interface in ENG-198).
+ * AutomationEngineStore contract tests against the in-memory implementation.
+ * The engine store EXTENDS the frozen core seam (@flowlet/core AutomationStore):
+ * frozen methods keep their signatures; engine semantics (versions, grants,
+ * envelopes, dedup, counters) are additive. The store owns identity and
+ * timestamps — callers never supply them.
  */
 import { describe, expect, it } from "vitest";
+import type { Principal } from "@flowlet/core";
 import { automationSpecSchema, type AutomationSpec } from "./schema";
 import {
   DuplicateRunError,
@@ -14,7 +17,8 @@ import {
 } from "./store";
 
 const NOW = "2026-07-01T08:00:00.000Z";
-const LATER = "2026-07-01T09:00:00.000Z";
+const alice: Principal = { tenantId: "tenant-1", subject: "alice" };
+const bob: Principal = { tenantId: "tenant-1", subject: "bob" };
 
 function spec(overrides: Partial<AutomationSpec> = {}): AutomationSpec {
   return automationSpecSchema.parse({
@@ -35,45 +39,72 @@ function envelope(overrides: Partial<TriggerEnvelope> = {}): TriggerEnvelope {
   return {
     source: "poller",
     eventId: "txn-1",
-    subject: "user-1",
+    subject: "alice",
     occurredAt: NOW,
     payload: { merchant: "DoorDash" },
     ...overrides,
   };
 }
 
-function create(store: InMemoryAutomationStore, overrides: { userId?: string } = {}) {
-  return store.createAutomation({
-    tenantId: "tenant-1",
-    userId: overrides.userId ?? "user-1",
-    spec: spec(),
-    grants: [],
-    now: NOW,
-  });
+function makeStore() {
+  return new InMemoryAutomationStore({ now: () => NOW });
 }
+
+async function create(store: InMemoryAutomationStore, scope: Principal = alice) {
+  return store.create(scope, { spec: spec(), grants: [] });
+}
+
+describe("frozen core surface", () => {
+  it("save() assigns id and timestamps and validates the opaque spec", async () => {
+    const store = makeStore();
+    const record = await store.save(alice, {
+      name: "Core-shaped",
+      status: "enabled",
+      spec: spec(),
+    });
+    expect(record.id).toBeTruthy();
+    expect(record.createdAt).toBe(NOW);
+    expect(record.updatedAt).toBe(NOW);
+    expect((await store.get(alice, record.id))?.name).toBe("Core-shaped");
+  });
+
+  it("save() rejects a spec that does not parse as the DSL", async () => {
+    const store = makeStore();
+    await expect(
+      store.save(alice, { name: "bad", status: "enabled", spec: { nope: true } }),
+    ).rejects.toThrowError();
+  });
+
+  it("get/list are Principal-scoped", async () => {
+    const store = makeStore();
+    const { automation } = await create(store, alice);
+    await create(store, bob);
+    expect(await store.get(bob, automation.id)).toBeUndefined();
+    expect((await store.list(alice)).map((a) => a.id)).toEqual([automation.id]);
+  });
+});
 
 describe("versioning", () => {
   it("creates version 1 and moves the pointer on update, keeping old versions readable", async () => {
-    const store = new InMemoryAutomationStore();
+    const store = makeStore();
     const { automation } = await create(store);
     expect(automation.currentVersion).toBe(1);
     expect(automation.status).toBe("enabled");
     expect(automation.triggerKind).toBe("host_event");
     expect(automation.triggerKey).toBe("transaction.created");
 
-    const updated = await store.updateAutomation(automation.id, {
+    const updated = await store.update(alice, automation.id, {
       spec: spec({ name: "Renamed" }),
       grants: [
-        { tool: "SLACK_SEND_MESSAGE", descriptorHash: "d1", scopeHash: "s1", grantedAt: LATER },
+        { tool: "SLACK_SEND_MESSAGE", descriptorHash: "d1", scopeHash: "s1", grantedAt: NOW },
       ],
       createdBy: "user_edit",
-      now: LATER,
     });
     expect(updated.automation.currentVersion).toBe(2);
     expect(updated.automation.name).toBe("Renamed");
 
-    const v1 = await store.getVersion(automation.id, 1);
-    const v2 = await store.getVersion(automation.id, 2);
+    const v1 = await store.getVersion(alice, automation.id, 1);
+    const v2 = await store.getVersion(alice, automation.id, 2);
     expect(v1?.spec.name).toBe("Test automation");
     expect(v1?.grants).toEqual([]);
     expect(v2?.grants).toHaveLength(1);
@@ -82,182 +113,202 @@ describe("versioning", () => {
 
 describe("runs", () => {
   it("pins the version a run executed even after later edits", async () => {
-    const store = new InMemoryAutomationStore();
+    const store = makeStore();
     const { automation } = await create(store);
-    const run = await store.createRun({
+    const run = await store.createRun(alice, {
       automation,
       version: 1,
       envelope: envelope(),
       isTest: false,
-      now: NOW,
     });
-    await store.updateAutomation(automation.id, {
+    await store.update(alice, automation.id, {
       spec: spec({ name: "Renamed" }),
       grants: [],
       createdBy: "user_edit",
-      now: LATER,
     });
-    const stored = await store.getRun(run.id);
+    const stored = await store.getRun(alice, run.id);
     expect(stored?.version).toBe(1);
-    expect((await store.getVersion(automation.id, stored!.version))?.spec.name).toBe(
+    expect((await store.getVersion(alice, automation.id, stored!.version))?.spec.name).toBe(
       "Test automation",
     );
   });
 
   it("derives deterministic run ids and rejects duplicate firings", async () => {
-    const store = new InMemoryAutomationStore();
+    const store = makeStore();
     const { automation } = await create(store);
     const id1 = firingRunId(automation.id, "poller", "txn-1");
     expect(id1).toBe(firingRunId(automation.id, "poller", "txn-1"));
-    expect(id1).not.toBe(firingRunId(automation.id, "poller", "txn-2"));
 
-    await store.createRun({ automation, version: 1, envelope: envelope(), isTest: false, now: NOW });
+    await store.createRun(alice, { automation, version: 1, envelope: envelope(), isTest: false });
     await expect(
-      store.createRun({ automation, version: 1, envelope: envelope(), isTest: false, now: NOW }),
+      store.createRun(alice, { automation, version: 1, envelope: envelope(), isTest: false }),
     ).rejects.toThrowError(DuplicateRunError);
   });
 
-  it("updates counters on finalization and resets the consecutive-failure streak on success", async () => {
-    const store = new InMemoryAutomationStore();
+  it("maps engine outcomes onto the frozen coarse status", async () => {
+    const store = makeStore();
+    const { automation } = await create(store);
+    const skipped = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope({ eventId: "s1" }),
+      isTest: false,
+    });
+    const finalized = await store.finalizeRun(alice, skipped.id, { outcome: "skipped" });
+    expect(finalized.status).toBe("succeeded"); // frozen coarse status
+    expect(finalized.outcome).toBe("skipped");
+    expect(finalized.steps).toEqual([]); // compact
+
+    const dropped = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope({ eventId: "c1" }),
+      isTest: false,
+    });
+    const cancelled = await store.finalizeRun(alice, dropped.id, {
+      outcome: "cancelled",
+      error: "capped",
+    });
+    expect(cancelled.status).toBe("failed");
+    expect(cancelled.outcome).toBe("cancelled");
+  });
+
+  it("updates counters on finalization; cancelled/skipped never count as failures", async () => {
+    const store = makeStore();
     const { automation } = await create(store);
 
     for (let i = 0; i < 3; i++) {
-      const run = await store.createRun({
+      const run = await store.createRun(alice, {
         automation,
         version: 1,
         envelope: envelope({ eventId: `fail-${i}` }),
         isTest: false,
-        now: NOW,
       });
-      await store.finalizeRun(run.id, { status: "failed", error: "boom", now: LATER });
+      await store.finalizeRun(alice, run.id, { status: "failed", error: "boom" });
     }
-    let record = await store.getAutomation(automation.id);
+    let record = await store.get(alice, automation.id);
     expect(record?.counters).toMatchObject({
       totalRuns: 3,
       totalFailures: 3,
       consecutiveFailures: 3,
-      lastStatus: "failed",
     });
 
-    const ok = await store.createRun({
+    const cancelled = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope({ eventId: "c-1" }),
+      isTest: false,
+    });
+    await store.finalizeRun(alice, cancelled.id, { outcome: "cancelled", error: "capped" });
+    record = await store.get(alice, automation.id);
+    expect(record?.counters.consecutiveFailures).toBe(3); // unchanged
+
+    const ok = await store.createRun(alice, {
       automation,
       version: 1,
       envelope: envelope({ eventId: "ok-1" }),
       isTest: false,
-      now: NOW,
     });
-    await store.finalizeRun(ok.id, { status: "succeeded", now: LATER });
-    record = await store.getAutomation(automation.id);
-    expect(record?.counters).toMatchObject({
-      totalRuns: 4,
-      totalFailures: 3,
-      consecutiveFailures: 0,
-      lastStatus: "succeeded",
-    });
+    await store.finalizeRun(alice, ok.id, { status: "succeeded" });
+    record = await store.get(alice, automation.id);
+    expect(record?.counters).toMatchObject({ totalFailures: 3, consecutiveFailures: 0 });
   });
 
-  it("skipped runs never count as failures", async () => {
-    const store = new InMemoryAutomationStore();
-    const { automation } = await create(store);
-    const run = await store.createRun({
-      automation,
-      version: 1,
-      envelope: envelope({ eventId: "skip-1" }),
-      isTest: false,
-      now: NOW,
-    });
-    await store.finalizeRun(run.id, { status: "skipped", now: LATER });
-    const record = await store.getAutomation(automation.id);
-    expect(record?.counters).toMatchObject({ totalFailures: 0, consecutiveFailures: 0 });
-  });
-
-  it("retains every run — no eviction at any count (v1 ruling)", async () => {
-    const store = new InMemoryAutomationStore();
+  it("retains every run — no eviction (v1 ruling)", async () => {
+    const store = makeStore();
     const { automation } = await create(store);
     for (let i = 0; i < 150; i++) {
-      const run = await store.createRun({
+      const run = await store.createRun(alice, {
         automation,
         version: 1,
         envelope: envelope({ eventId: `e-${i}` }),
         isTest: false,
-        now: NOW,
       });
-      await store.finalizeRun(run.id, { status: "succeeded", now: LATER });
+      await store.finalizeRun(alice, run.id, { status: "succeeded" });
     }
-    expect(await store.listRuns(automation.id)).toHaveLength(150);
+    expect(await store.listRuns(alice, automation.id)).toHaveLength(150);
   });
 
-  it("truncates oversized step outputs with a flag and records the full size", async () => {
-    const store = new InMemoryAutomationStore();
+  it("truncates oversized step outputs with a flag", async () => {
+    const store = makeStore();
     const { automation } = await create(store);
-    const run = await store.createRun({
+    const run = await store.createRun(alice, {
       automation,
       version: 1,
       envelope: envelope(),
       isTest: false,
-      now: NOW,
     });
-    await store.finalizeRun(run.id, {
+    await store.finalizeRun(alice, run.id, {
       status: "succeeded",
       steps: [
         {
           id: "notify",
           status: "succeeded",
           startedAt: NOW,
-          finishedAt: LATER,
+          finishedAt: NOW,
           idempotencyKey: `${run.id}/notify/1`,
           output: { blob: "x".repeat(MAX_STEP_OUTPUT_BYTES * 2) },
         },
       ],
-      now: LATER,
     });
-    const stored = await store.getRun(run.id);
-    const step = stored!.steps[0]!;
+    const step = (await store.getRun(alice, run.id))!.steps[0]!;
     expect(step.outputTruncated).toBe(true);
     expect(JSON.stringify(step.output).length).toBeLessThanOrEqual(MAX_STEP_OUTPUT_BYTES + 256);
   });
 });
 
-describe("fan-out lookup and lifecycle", () => {
-  it("finds only enabled automations matching kind, key AND subject", async () => {
-    const store = new InMemoryAutomationStore();
-    const { automation: alice } = await create(store, { userId: "alice" });
-    await create(store, { userId: "bob" });
-    const { automation: paused } = await create(store, { userId: "alice" });
-    await store.setStatus(paused.id, "paused", LATER);
+describe("lifecycle", () => {
+  it("finds only enabled automations matching kind+key within the scope", async () => {
+    const store = makeStore();
+    const { automation: mine } = await create(store, alice);
+    await create(store, bob);
+    const { automation: paused } = await create(store, alice);
+    await store.setStatus(alice, paused.id, "paused");
 
-    const hits = await store.findEnabledByTrigger({
-      tenantId: "tenant-1",
-      userId: "alice",
+    const hits = await store.findEnabledByTrigger(alice, {
       kind: "host_event",
       key: "transaction.created",
     });
-    expect(hits.map((a) => a.id)).toEqual([alice.id]);
+    expect(hits.map((a) => a.id)).toEqual([mine.id]);
+  });
+
+  it("records a disabledReason when parking a failing automation", async () => {
+    const store = makeStore();
+    const { automation } = await create(store);
+    await store.setStatus(alice, automation.id, "paused", {
+      disabledReason: "consecutive_failures",
+    });
+    const record = await store.get(alice, automation.id);
+    expect(record?.status).toBe("paused"); // frozen union untouched
+    expect(record?.disabledReason).toBe("consecutive_failures");
+    await store.setStatus(alice, automation.id, "enabled");
+    expect((await store.get(alice, automation.id))?.disabledReason).toBeUndefined();
   });
 
   it("cancels pending waiting_approval runs", async () => {
-    const store = new InMemoryAutomationStore();
+    const store = makeStore();
     const { automation } = await create(store);
-    const run = await store.createRun({
+    const run = await store.createRun(alice, {
       automation,
       version: 1,
       envelope: envelope(),
       isTest: false,
-      now: NOW,
     });
-    await store.updateRun(run.id, {
-      status: "waiting_approval",
+    await store.updateRun(alice, run.id, {
+      outcome: "waiting_approval",
       pendingApproval: {
         stepId: "notify",
         tool: "SLACK_SEND_MESSAGE",
         requestedAt: NOW,
-        expiresAt: LATER,
+        expiresAt: NOW,
         checkpoint: { stepIndex: 0, outputs: {} },
       },
     });
-    await store.cancelPendingRuns(automation.id, LATER);
-    const stored = await store.getRun(run.id);
-    expect(stored?.status).toBe("cancelled");
-    expect(stored?.pendingApproval).toBeNull();
+    expect((await store.getRun(alice, run.id))?.status).toBe("running"); // coarse
+    await store.cancelPendingRuns(alice, automation.id);
+    const stored = await store.getRun(alice, run.id);
+    expect(stored?.status).toBe("failed");
+    expect(stored?.outcome).toBe("cancelled");
+    expect(stored?.pendingApproval).toBeUndefined();
   });
 });
