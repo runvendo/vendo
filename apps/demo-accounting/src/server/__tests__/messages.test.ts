@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { __reseed, getStore } from "../store"
-import { ClientNotFoundError, sendMessage } from "../messages"
+import { DomainError } from "../errors"
+import { sendMessage } from "../messages"
 import { recordActivity } from "../activity"
 
 const anchor = new Date("2026-07-02T09:00:00-07:00")
@@ -37,10 +38,14 @@ describe("sendMessage", () => {
     expect(latest.clientId).toBe(client.id)
   })
 
-  it("throws a typed error for an unknown client", () => {
-    expect(() => sendMessage("cl_nope", "firm", "Maya Alvarez", "Hello there")).toThrowError(
-      ClientNotFoundError,
-    )
+  it("throws a typed not_found error for an unknown client", () => {
+    try {
+      sendMessage("cl_nope", "firm", "Maya Alvarez", "Hello there")
+      expect.unreachable("unknown client must throw")
+    } catch (err) {
+      expect(err).toBeInstanceOf(DomainError)
+      expect((err as DomainError).code).toBe("not_found")
+    }
   })
 })
 

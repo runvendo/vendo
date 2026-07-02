@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { __reseed, getStore } from "../store"
+import { DomainError } from "../errors"
 import {
-  DocumentError,
   clientDocProgress,
   clientsMissingDocs,
   dashboardMetrics,
@@ -66,22 +66,22 @@ describe("transitionDocument", () => {
   it("throws a typed error on invalid transitions", () => {
     const doc = firstMissingDoc()
 
-    expect(() => transitionDocument(doc.id, "verify")).toThrowError(DocumentError)
-    expect(() => transitionDocument(doc.id, "reject")).toThrowError(DocumentError)
+    expect(() => transitionDocument(doc.id, "verify")).toThrowError(DomainError)
+    expect(() => transitionDocument(doc.id, "reject")).toThrowError(DomainError)
 
     transitionDocument(doc.id, "receive")
-    expect(() => transitionDocument(doc.id, "receive")).toThrowError(DocumentError)
+    expect(() => transitionDocument(doc.id, "receive")).toThrowError(DomainError)
 
     transitionDocument(doc.id, "verify")
-    expect(() => transitionDocument(doc.id, "verify")).toThrowError(DocumentError)
-    expect(() => transitionDocument(doc.id, "reject")).toThrowError(DocumentError)
+    expect(() => transitionDocument(doc.id, "verify")).toThrowError(DomainError)
+    expect(() => transitionDocument(doc.id, "reject")).toThrowError(DomainError)
 
     try {
       transitionDocument(doc.id, "receive")
       expect.unreachable("receive on a verified doc must throw")
     } catch (err) {
-      expect(err).toBeInstanceOf(DocumentError)
-      expect((err as DocumentError).code).toBe("invalid_transition")
+      expect(err).toBeInstanceOf(DomainError)
+      expect((err as DomainError).code).toBe("invalid_transition")
     }
   })
 
@@ -90,8 +90,8 @@ describe("transitionDocument", () => {
       transitionDocument("doc_nope", "receive")
       expect.unreachable("unknown doc must throw")
     } catch (err) {
-      expect(err).toBeInstanceOf(DocumentError)
-      expect((err as DocumentError).code).toBe("not_found")
+      expect(err).toBeInstanceOf(DomainError)
+      expect((err as DomainError).code).toBe("not_found")
     }
   })
 
@@ -122,7 +122,9 @@ describe("derived helpers", () => {
   it("dashboardMetrics reflects the seed", () => {
     const store = getStore()
     const metrics = dashboardMetrics()
-    const outstanding = store.documents.filter(d => d.status === "missing").length
+    const outstanding = store.documents.filter(
+      d => d.status === "missing" || d.status === "rejected",
+    ).length
 
     expect(metrics.clientsMissingDocs).toBe(8)
     expect(metrics.documentsTotal).toBe(store.documents.length)

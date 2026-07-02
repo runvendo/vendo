@@ -1,13 +1,7 @@
 import { recordActivity } from "./activity"
+import { DomainError } from "./errors"
 import { getStore } from "./store"
 import type { Message, MessageDirection } from "./types"
-
-export class ClientNotFoundError extends Error {
-  constructor(clientId: string) {
-    super(`Unknown client: ${clientId}`)
-    this.name = "ClientNotFoundError"
-  }
-}
 
 let counter = 0
 
@@ -19,7 +13,7 @@ export function sendMessage(
 ): Message {
   const store = getStore()
   const client = store.clients.find(c => c.id === clientId)
-  if (!client) throw new ClientNotFoundError(clientId)
+  if (!client) throw new DomainError("not_found", `Unknown client: ${clientId}`)
 
   const message: Message = {
     id: `msg_live_${++counter}`,

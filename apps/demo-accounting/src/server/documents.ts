@@ -1,4 +1,5 @@
 import { recordActivity } from "./activity"
+import { DomainError } from "./errors"
 import { getStore } from "./store"
 import type { DocumentRequest } from "./types"
 
@@ -9,21 +10,11 @@ export interface TransitionOptions {
   reason?: string
 }
 
-export class DocumentError extends Error {
-  constructor(
-    readonly code: "not_found" | "invalid_transition",
-    message: string,
-  ) {
-    super(message)
-    this.name = "DocumentError"
-  }
-}
-
 /** Statuses from which a firm review action (verify/reject) is valid. */
 const REVIEWABLE = ["received", "needs_review"] as const
 
-function invalid(doc: DocumentRequest, action: DocumentAction): DocumentError {
-  return new DocumentError(
+function invalid(doc: DocumentRequest, action: string): DomainError {
+  return new DomainError(
     "invalid_transition",
     `Cannot ${action} document ${doc.id} in status '${doc.status}'`,
   )
@@ -42,7 +33,7 @@ export function transitionDocument(
 ): DocumentRequest {
   const store = getStore()
   const doc = store.documents.find(d => d.id === docId)
-  if (!doc) throw new DocumentError("not_found", `Unknown document: ${docId}`)
+  if (!doc) throw new DomainError("not_found", `Unknown document: ${docId}`)
   const client = store.clients.find(c => c.id === doc.clientId)
   const clientName = client?.businessName ?? doc.clientId
 
@@ -88,7 +79,7 @@ export function transitionDocument(
   return doc
 }
 
-/** "3 of 6 received" — received counts every document that is no longer missing. */
+/** "3 of 6 received" — received counts every document that is no longer missing or rejected. */
 export function clientDocProgress(clientId: string): { received: number; total: number } {
   const docs = getStore().documents.filter(d => d.clientId === clientId)
   return {
