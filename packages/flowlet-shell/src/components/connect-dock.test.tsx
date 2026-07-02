@@ -28,25 +28,29 @@ beforeEach(() => {
 describe("ConnectDock", () => {
   it("shows a connected-count badge and toggles", () => {
     const onToggle = vi.fn();
-    const { getByRole } = render(
+    const { container, getByRole } = render(
       <ConnectDock integrations={tools} open={false} onToggle={onToggle} />,
     );
-    const btn = getByRole("button", { name: /connect tools/i });
-    expect(btn.textContent).toContain("2");
+    const btn = getByRole("button", { name: /connect tools \(2 connected\)/i });
     expect(btn.getAttribute("aria-expanded")).toBe("false");
+    // The badge sits on the wrapper, outside the ripple's clip box, so the
+    // count can overhang the button without being cut off.
+    const badge = container.querySelector(".fl-dock > .fl-dock-badge");
+    expect(badge?.textContent).toBe("2");
+    expect(badge?.getAttribute("aria-hidden")).toBe("true");
     fireEvent.click(btn);
     expect(onToggle).toHaveBeenCalled();
   });
 
   it("no badge when nothing is connected", () => {
-    const { getByRole } = render(
+    const { container } = render(
       <ConnectDock
         integrations={tools.map((t) => ({ ...t, connected: false }))}
         open={false}
         onToggle={vi.fn()}
       />,
     );
-    expect(getByRole("button", { name: /connect tools/i }).querySelector(".fl-dock-badge")).toBeNull();
+    expect(container.querySelector(".fl-dock-badge")).toBeNull();
   });
 });
 

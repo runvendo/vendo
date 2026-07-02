@@ -55,6 +55,27 @@ export function ConnectTray({ open, onClose, children }: ConnectTrayProps) {
     };
   }, [open]);
 
+  // Fit the tray to the room actually above the bar inside this surface
+  // (page, overlay panel, or slot panel): the picker then scrolls internally
+  // instead of the tray running off the top. No floor — staying inside the
+  // surface is the invariant, however small the viewport. Runs before the
+  // entrance effect below so the spring measures the clamped height, and
+  // re-clamps on resize while open.
+  useLayoutEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    const clamp = () => {
+      const el = ref.current;
+      const anchor = el?.parentElement;
+      const surface = el?.closest(".fl-thread");
+      if (!el || !anchor || !(surface instanceof HTMLElement)) return;
+      const room = anchor.getBoundingClientRect().top - surface.getBoundingClientRect().top - 16;
+      if (room > 0) el.style.setProperty("--fl-tray-max", `${Math.round(room)}px`);
+    };
+    clamp();
+    window.addEventListener("resize", clamp);
+    return () => window.removeEventListener("resize", clamp);
+  }, [open]);
+
   // Entrance runs on the commit where the tray appears; layout effect =
   // initial styles land before paint (no flash at full opacity).
   useLayoutEffect(() => {

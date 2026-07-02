@@ -65,15 +65,36 @@
 .fl-jump:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
 /* Connect dock (ENG-205): the in-bar connect-tools entry. The .fl-dock
    wrapper hosts the ripple; the anchor positions the liquid tray over the bar. */
-.fl-dock { display: inline-flex; border-radius: 10px; }
+.fl-dock { position: relative; display: inline-flex; }
+/* The ripple wrapper is the clip box (button rounding); the badge overhangs
+   it, so it lives on the outer .fl-dock instead. */
+.fl-dock-ripple { display: inline-flex; border-radius: 10px; }
 .fl-dock-btn { position: relative; gap: 3px; }
 .fl-dock-badge { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px;
   border-radius: 999px; background: var(--flowlet-ok); color: #fff; font-size: 10px;
-  font-weight: 700; line-height: 15px; text-align: center; padding: 0 3px; }
+  font-weight: 700; line-height: 15px; text-align: center; padding: 0 3px;
+  z-index: 1; pointer-events: none;
+  box-shadow: 0 0 0 2px var(--flowlet-surface); }
 .fl-dock-anchor { position: relative; }
+/* Bottom-justified so the panel grows out of the bar edge while the entrance
+   spring clamps its height. --fl-tray-max is set at open time to the room
+   actually above the bar within this surface (page, overlay, or slot panel),
+   so the tray never runs off the top — the picker scrolls internally instead. */
 .fl-tray { position: absolute; bottom: 100%; left: 16px; right: 16px; margin-bottom: 8px;
-  z-index: 30; transform-origin: bottom center; overflow: hidden; border-radius: var(--flowlet-radius); }
-.fl-tray .fl-picker { max-height: min(420px, 48vh); }
+  z-index: 30; transform-origin: bottom center; overflow: hidden; border-radius: var(--flowlet-radius);
+  display: flex; flex-direction: column; justify-content: flex-end; }
+/* Opaque elevated sheet: the tray floats over display text (the hero greet,
+   thread turns), and even a few percent of translucency reads big dark glyphs
+   straight through. Depth comes from the border + shadow, not glass. */
+.fl-tray .fl-picker { max-height: min(420px, 48vh, var(--fl-tray-max, 9999px));
+  background: var(--flowlet-surface);
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Soft bottom scrim signals the list scrolls instead of dead-cutting a row;
+   it matches the panel surface so the border and corners stay crisp. */
+.fl-tray::after { content: ""; position: absolute; left: 1px; right: 1px; bottom: 1px; height: 26px;
+  border-radius: 0 0 var(--flowlet-radius) var(--flowlet-radius);
+  background: linear-gradient(180deg, transparent, var(--flowlet-surface));
+  pointer-events: none; }
 
 /* Render slot (ENG-205): the persistent wrapper a skeleton and its replacing
    view share, so the reveal can morph. The column layout + 14px gap mirror the
@@ -350,7 +371,9 @@
 /* Brand focus ring — the UA default blue halo is off-brand in every host. */
 .fl-chip:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
 .fl-landing-composer { width: 100%; max-width: 560px; }
-.fl-landing-composer .fl-composer { padding: 0; }
+/* No padding override here: the hero composer keeps the standard bar
+   geometry, so the send circle stays inset and concentric with the bar's
+   rounded end instead of colliding with the border arc. */
 
 /* ---------- saved-flowlet library (ENG-183) ---------- */
 .fl-library { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }

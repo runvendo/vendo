@@ -127,6 +127,28 @@ passed to `useState`/`setState` is invoked as a lazy initializer/updater and cra
   flip (separate grids). A cross-group glide needs shared layout animation — candidate
   for a fluidkit `useFlow` extension (filed under upstream gaps) or a later pass.
 
+## Quality pass (Yousef's bug reports, 2026-07-02)
+
+- **Tray see-through:** the panel was glass (`--flowlet-glass-strong`) and even a 96%
+  surface + 28px backdrop blur left the hero greet legible through it (verified with an
+  in-page A/B). Resolution: the tray is an **opaque elevated sheet** — it floats over
+  display text, so depth comes from border + shadow, not translucency. Keep glass for
+  elements over imagery only.
+- **Tray cutoff:** the tray could outgrow the space above the bar and run off the
+  surface top. `ConnectTray` now measures the room above the anchor inside the nearest
+  `.fl-thread` at open (and on resize while open) and clamps via `--fl-tray-max` — no
+  floor, staying inside the surface is the invariant; the picker scrolls internally. A
+  bottom scrim signals the scroll instead of dead-cutting a row.
+- **Clipped badge:** fluidkit `Ripple` clips children to the button's rounded box; the
+  count badge overhangs by design, so it moved outside the ripple wrapper (sibling on
+  `.fl-dock`, `aria-hidden`, count stays in the button's label) with a surface ring.
+- **Send-button collision:** `.fl-landing-composer .fl-composer { padding: 0 }` (ENG-183
+  hero layout) left the send circle flush against the border, colliding with the corner
+  arc. Override removed — the hero bar keeps the standard composer geometry, so the
+  circle is inset and concentric with the bar end on every surface.
+- Recordings consolidated to the ratified treatment: `motion-connect-option-a{,-closeup,-reduced}.gif`
+  + mp4 re-recorded post-fixes; B/C exploration recordings removed with their code.
+
 ## Pre-existing issues noticed (not touched, not mine)
 
 - `pnpm lint` fails on main in demo-bank sources (react-hooks setState-in-effect and
