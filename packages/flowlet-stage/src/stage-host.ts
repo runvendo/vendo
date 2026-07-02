@@ -75,10 +75,27 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
       `})();` +
       `<\/script>`;
   }
+  // Baseline document styles: consume the injected --flowlet-* brand vars so
+  // bare generated markup starts from the host brand (font, fg color) instead
+  // of the UA serif default with an 8px body margin. Fallbacks apply when no
+  // theme is injected. Background stays transparent — the host page shows
+  // through, matching the pre-existing behavior.
+  const baselineStyle =
+    `<style>` +
+    `html,body{margin:0;padding:0}` +
+    `body{` +
+    `font-family:var(--flowlet-font,ui-sans-serif,system-ui,sans-serif);` +
+    `color:var(--flowlet-fg,#111418);` +
+    `background:transparent;` +
+    `-webkit-font-smoothing:antialiased;` +
+    `}` +
+    `</style>`;
+
   return (
     `<!doctype html><html lang="en"><head>` +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<title>Flowlet Stage</title>` +
+    baselineStyle +
     `</head><body>${reactSetupScript}` +
     `<script type="module" nonce="${nonce}">${STAGE_RUNTIME_SRC}<\/script>` +
     `</body></html>`
@@ -104,12 +121,20 @@ export interface StageEndpoints {
  * srcdoc and an import map is set up so externalized host bundles share one
  * React instance. When omitted the self-contained bundle path is used.
  */
+/** Host-owned ceiling for runtime-reported stage heights. In-sandbox code can
+ *  post any `resize` payload it likes; the host clamps so a hostile component
+ *  cannot force arbitrary host-page growth. */
+const DEFAULT_MAX_STAGE_HEIGHT = 8192;
+
 export function createStage(
   slot: HTMLElement,
-  opts?: { reactSource?: string },
+  opts?: { reactSource?: string; maxStageHeight?: number },
 ): {
   iframe: HTMLIFrameElement;
   endpoints: StageEndpoints;
+  /** Deterministic teardown of the resize listener (and any pending frame).
+   *  Call alongside removing the iframe — the listener does NOT die with it. */
+  dispose: () => void;
 } {
   const iframe = document.createElement("iframe");
   iframe.id = "flowlet-stage";
@@ -118,6 +143,39 @@ export function createStage(
   iframe.srcdoc = buildSrcdoc(opts?.reactSource);
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
+
+  // Auto-size: the runtime posts { flowlet:true, type:"resize", height } from a
+  // ResizeObserver on its documentElement; consume it here so the iframe tracks
+  // its content instead of clipping at the UA default height. Lives in
+  // createStage (the DOM layer) rather than connectStage, which is DOM-free.
+  // Untrusted input: ANY in-sandbox code can post this message, so heights are
+  // validated (finite, positive) and clamped to a host-owned max, and applies
+  // are coalesced to one per animation frame.
+  const maxHeight = opts?.maxStageHeight ?? DEFAULT_MAX_STAGE_HEIGHT;
+  let pendingHeight: number | null = null;
+  let frame: number | null = null;
+  const onResize = (e: MessageEvent) => {
+    if (e.source !== iframe.contentWindow) return;
+    const d = e.data as { flowlet?: boolean; type?: string; height?: number } | undefined;
+    if (d?.flowlet !== true || d.type !== "resize") return;
+    const h = d.height;
+    if (typeof h !== "number" || !Number.isFinite(h) || h <= 0) return;
+    pendingHeight = Math.min(h, maxHeight);
+    frame ??= requestAnimationFrame(() => {
+      frame = null;
+      if (pendingHeight !== null && iframe.isConnected) {
+        iframe.style.height = `${pendingHeight}px`;
+      }
+      pendingHeight = null;
+    });
+  };
+  window.addEventListener("message", onResize);
+  const dispose = () => {
+    window.removeEventListener("message", onResize);
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+    pendingHeight = null;
+  };
 
   // Wrap contentWindow.postMessage to supply the required targetOrigin ("*").
   // The MessageEndpoint interface only takes one argument, but the browser's
@@ -161,6 +219,7 @@ export function createStage(
       listen: listenEndpoint,
       post: postEndpoint,
     },
+    dispose,
   };
 }
 

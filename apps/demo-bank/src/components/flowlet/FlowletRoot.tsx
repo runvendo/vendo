@@ -69,7 +69,16 @@ export function FlowletRoot({
           store={store}
           runQuery={runQuery}
           theme={{ scheme: "light" }}
-          cssVars={brandToCssVars(mapleBrand)}
+          cssVars={{
+            ...brandToCssVars(mapleBrand),
+            // Host-scope font DELIVERY override: the brand token is a concrete
+            // "Inter, …" stack (it must resolve inside the sandbox, where host
+            // vars don't exist), but next/font registers Inter under a mangled
+            // family name exposed only as --font-inter — defined here on the
+            // host page — so shell chrome keeps rendering real Inter. The
+            // sandbox path (SandboxStage) uses the unmodified token.
+            "--flowlet-font": "var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif",
+          }}
         >
           {children}
         </FlowletShellProvider>

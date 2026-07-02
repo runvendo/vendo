@@ -31,7 +31,7 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed"]);
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle", "resize-bomb"]);
 const reactSource = NEEDS_REACT_SHIM.has(caseParam)
   ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
   : undefined;
@@ -64,7 +64,35 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     "--flowlet-accent": "#00aa77",
     "--flowlet-surface": "#fff",
     "--flowlet-fg": "#111",
+    // Distinctive first family so the baseline-styles gate can assert the
+    // sandbox body actually inherits the brand font (not the UA serif default).
+    "--flowlet-font": "TestBrandFont, sans-serif",
   };
+
+  if (kind === "real-bundle") {
+    // The REAL @flowlet/components sandbox bundle (copied from its dist-sandbox
+    // by the test:browser pre-step). Regression gate for the shim-exports P0:
+    // the externalized bundle's static named imports ({ PureComponent, … } from
+    // "react", { createPortal } from "react-dom") must link against the shim,
+    // and the bundle must carry OpenUI's base CSS so catalog components render
+    // styled, not as bare HTML.
+    return {
+      theme,
+      state: {},
+      bundleSource: await fetch("/components-sandbox.js").then((r) => {
+        if (!r.ok) throw new Error("components-sandbox.js missing — run the test:browser pre-step");
+        return r.text();
+      }),
+      componentTheme: { theme: {}, mode: "light" },
+      tree: {
+        id: "c1",
+        kind: "component",
+        source: "prewired",
+        name: "Card",
+        props: { title: "Real Bundle", body: "catalog card" },
+      },
+    };
+  }
 
   if (kind === "card") {
     return {
@@ -414,6 +442,31 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     }, { ext: true });
   }
 
+  if (kind === "resize-bomb") {
+    // Hostile auto-size: a generated component posts an absurd resize height
+    // directly (any in-sandbox code can — the runtime's ResizeObserver is not a
+    // gate). The host must clamp; the gate asserts the iframe never grows past
+    // the host-owned max.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [{ id: "root", component: "Bomb", source: "generated" }],
+      components: {
+        Bomb: [
+          "import React from 'react';",
+          "export default function Bomb() {",
+          "  React.useEffect(function () {",
+          "    parent.postMessage({ flowlet: true, type: 'resize', height: 1e9 }, '*');",
+          "    parent.postMessage({ flowlet: true, type: 'resize', height: -50 }, '*');",
+          "    parent.postMessage({ flowlet: true, type: 'resize', height: Infinity }, '*');",
+          "  }, []);",
+          "  return React.createElement('div', { 'data-generated-impl': 'Bomb' }, 'bomb');",
+          "}",
+        ].join("\n"),
+      },
+    }, { ext: true });
+  }
+
   if (kind === "gen-code-error") {
     // One broken module (syntax error) + one good one: per-name containment.
     return gen({
@@ -458,10 +511,6 @@ window.addEventListener("message", async (e) => {
 
   if (d["type"] === "init-ack") {
     ensure("init-ack").textContent = "initialized";
-  }
-
-  if (d["type"] === "resize") {
-    iframe.style.height = d["height"] + "px";
   }
 
   if (d["type"] === "egress") {
