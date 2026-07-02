@@ -158,12 +158,13 @@ function ChecklistSkeleton() {
 export function DocumentChecklist({ clientId }: { clientId: string }) {
   const { data, error, mutate } = useSWR<DocumentRequest[]>(`/api/clients/${clientId}/documents`, fetcher)
   const { mutate: globalMutate } = useSWRConfig()
-  const [pendingId, setPendingId] = useState<string | null>(null)
+  // Per-doc pending set so concurrent row actions don't clear each other's state.
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set())
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   async function act(docId: string, action: DocAction, reason?: string) {
-    setPendingId(docId)
+    setPendingIds(prev => new Set(prev).add(docId))
     setActionError(null)
     try {
       const res = await fetch(`/api/clients/${clientId}/documents/${docId}/status`, {
@@ -181,7 +182,11 @@ export function DocumentChecklist({ clientId }: { clientId: string }) {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "The update didn't go through. Try again.")
     } finally {
-      setPendingId(null)
+      setPendingIds(prev => {
+        const next = new Set(prev)
+        next.delete(docId)
+        return next
+      })
     }
   }
 
@@ -220,7 +225,7 @@ export function DocumentChecklist({ clientId }: { clientId: string }) {
             <DocRow
               key={doc.id}
               doc={doc}
-              pending={pendingId === doc.id}
+              pending={pendingIds.has(doc.id)}
               rejecting={rejectingId === doc.id}
               onAction={(action, reason) => act(doc.id, action, reason)}
               onStartReject={() => setRejectingId(doc.id)}

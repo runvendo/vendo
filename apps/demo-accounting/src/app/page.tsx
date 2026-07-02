@@ -1,23 +1,11 @@
 "use client"
 
 import { useSyncExternalStore } from "react"
-import { motion } from "framer-motion"
 import { ActivityFeed } from "@/components/dashboard/activity-feed"
 import { DeadlineList } from "@/components/dashboard/deadline-list"
 import { StatRow } from "@/components/dashboard/stat-row"
 import { PageHeader } from "@/components/ui/page-header"
-
-function Reveal({ delay, children }: { delay: number; children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay, ease: "easeOut" }}
-    >
-      {children}
-    </motion.div>
-  )
-}
+import { Reveal } from "@/components/ui/reveal"
 
 const noopSubscribe = () => () => {}
 
