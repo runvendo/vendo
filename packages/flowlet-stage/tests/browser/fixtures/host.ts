@@ -31,7 +31,7 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "mixed"]);
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed"]);
 const reactSource = NEEDS_REACT_SHIM.has(caseParam)
   ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
   : undefined;
@@ -349,6 +349,23 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
           "    }, 'Reset'));",
           "}",
         ].join("\n"),
+      },
+    }, { ext: true });
+  }
+
+  if (kind === "gen-jsx") {
+    // A generated component whose source is the AUTOMATIC JSX RUNTIME output
+    // (imports { jsx } from "react/jsx-runtime") — proves the automatic-runtime
+    // shape resolves against the React shim in the real box, unlike gen-code's
+    // React.createElement path. Source is hand-written as already-compiled
+    // automatic-runtime output (the stage feeds component source straight in).
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [{ id: "root", component: "JsxComp", source: "generated" }],
+      components: {
+        JsxComp:
+          'import { jsx as _jsx } from "react/jsx-runtime"; export default function JsxComp(){ return _jsx("div", { "data-generated-impl": "JsxComp", children: "jsx works" }); }',
       },
     }, { ext: true });
   }
