@@ -14,16 +14,15 @@ export const propSpecSchema = z.object({
 export const componentAnalysisSchema = z.object({
   include: z.boolean(),
   reason: z.string(),
-  // PascalCase is only enforced at codegen time (writeComponent) — an
-  // include:false reply may carry any placeholder (or empty) name and must
-  // still validate.
-  name: z.string(),
-  description: z.string(),
+  // Everything below only matters when include=true (enforced at codegen time
+  // in writeComponent) — a minimal include:false reply may omit all of it.
+  name: z.string().default(""),
+  description: z.string().default(""),
   /** Named exports to import from the host file (e.g. ["Button"]). */
-  imports: z.array(z.string()),
-  props: z.array(propSpecSchema),
+  imports: z.array(z.string()).default([]),
+  props: z.array(propSpecSchema).default([]),
   /** A single JSX expression using `p` (parsed props) and the imported names. */
-  jsx: z.string(),
+  jsx: z.string().default(""),
 });
 export type ComponentAnalysis = z.infer<typeof componentAnalysisSchema>;
 

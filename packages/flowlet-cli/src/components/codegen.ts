@@ -116,7 +116,12 @@ export function assertParses(fileLabel: string, source: string): void {
   try {
     transform(source, { transforms: ["typescript", "jsx"] });
   } catch (err) {
-    throw new Error(`generated ${fileLabel} has a syntax error: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    // Surface the offending line so the failure is diagnosable from the report
+    // (and so the analyze repair loop gets real context).
+    const lineNo = Number(msg.match(/\((\d+):\d+\)/)?.[1] ?? NaN);
+    const line = Number.isNaN(lineNo) ? "" : ` — line reads: ${source.split("\n")[lineNo - 1]?.trim() ?? ""}`;
+    throw new Error(`generated ${fileLabel} has a syntax error: ${msg}${line}`);
   }
 }
 
@@ -129,6 +134,8 @@ export async function writeComponent(
   if (!/^[A-Z][A-Za-z0-9]*$/.test(analysis.name)) {
     throw new Error(`component name ${JSON.stringify(analysis.name)} is not PascalCase`);
   }
+  if (!analysis.description.trim()) throw new Error("included component needs a non-empty description");
+  if (!analysis.jsx.trim()) throw new Error("included component needs a non-empty jsx expression");
   const name = registryName(analysis);
   const descriptor = descriptorSource(analysis);
   const impl = implSource(analysis, candidate);
