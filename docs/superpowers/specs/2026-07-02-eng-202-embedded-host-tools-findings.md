@@ -21,6 +21,11 @@ These drove the design and matter for the cloud port (ENG-198):
 - The SDK-side runner (`hostTools` on `FlowletProvider`) is transport-agnostic; it already works over HTTP transports, so it ports to the cloud SSE session unchanged.
 - The adapter doesn't resolve `$ref` yet — specs must inline schemas (demo-bank's does). Fine for the extractor to guarantee later.
 
+## Constraints future work MUST respect (from dual review, 2026-07-02)
+
+- **No persistence/resume for client-tool turns until an idempotency key exists.** The double-execution guard (`started` set in the provider runner) is in-memory only. Today that is sound: the ai SDK generates unique `toolCallId`s per call, and a page reload drops the thread entirely (nothing re-fires). The moment threads persist or streams resume (ENG-198 cloud sessions, `threads`/`messages` tables), a rehydrated message list re-presents settled-looking tool parts to a fresh runner — mutating host calls (`createOrder`) would re-execute. Ship an idempotency key (e.g. `toolCallId` echoed as an `Idempotency-Key` header + host-side dedupe, or executor-side executed-ids in the Store) BEFORE any persistence of client-tool threads.
+- **Side-effecting GETs are a spec-authoring responsibility.** The adapter trusts HTTP semantics: GET/HEAD ⇒ read-only ⇒ auto-allowed. A host whose GET mutates state (it happens) MUST mark that operation `x-flowlet-dangerous: true` (forces the approval gate) or fix the API. The extractor (ENG-197) should lint for suspicious GET names (`/send`, `/create`, `/delete` segments) at publish time.
+
 ## Known quirks / debt (not fixed here, out of scope)
 
 - **Duplicate activity chips:** after a client-tool round-trip, the thread shows the tool chip twice (the continuation turn re-renders the tool part in a second assistant message). Cosmetic; pre-existing rendering behavior in `use-flowlet-thread` grouping, also affects approved Composio tools.

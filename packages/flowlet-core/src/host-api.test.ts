@@ -302,7 +302,99 @@ describe("executeHostToolCall", () => {
     const fetchImpl = vi.fn();
     await expect(
       executeHostToolCall(byName(defs, "getAccount"), {}, { fetchImpl }),
-    ).rejects.toThrow(/path parameter "id"/);
+    ).rejects.toThrow(/"id"/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("throws when any schema-required input is missing (query param, body)", async () => {
+    const requiredQuerySpec = {
+      openapi: "3.1.0",
+      info: { title: "t", version: "1" },
+      paths: {
+        "/api/search": {
+          get: {
+            operationId: "search",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+            ],
+          },
+        },
+      },
+    };
+    const [searchDef] = openApiToHostTools(requiredQuerySpec);
+    const fetchImpl = vi.fn();
+    await expect(executeHostToolCall(searchDef!, {}, { fetchImpl })).rejects.toThrow(/"q"/);
+
+    // createOrder's requestBody is required — a missing body must not execute
+    // (the host would silently apply its defaults to a money-moving call).
+    await expect(
+      executeHostToolCall(byName(defs, "createOrder"), {}, { fetchImpl }),
+    ).rejects.toThrow(/"body"/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("path-item-level parameters", () => {
+  it("merges path-level params into every operation, with operation-level winning", () => {
+    const sharedParamSpec = {
+      openapi: "3.1.0",
+      info: { title: "t", version: "1" },
+      paths: {
+        "/api/things/{id}": {
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "verbose", in: "query", schema: { type: "boolean" } },
+          ],
+          get: { operationId: "getThing" },
+          delete: {
+            operationId: "deleteThing",
+            parameters: [
+              // Overrides the path-level `verbose` definition.
+              { name: "verbose", in: "query", required: true, schema: { type: "string" } },
+            ],
+          },
+        },
+      },
+    };
+    const defs = openApiToHostTools(sharedParamSpec);
+
+    const get = defs.find((d) => d.name === "getThing")!;
+    expect(get.http.params).toEqual([
+      { name: "id", in: "path", required: true },
+      { name: "verbose", in: "query", required: false },
+    ]);
+    expect(get.inputSchema["required"]).toEqual(["id"]);
+
+    const del = defs.find((d) => d.name === "deleteThing")!;
+    expect(del.http.params).toEqual([
+      { name: "id", in: "path", required: true },
+      { name: "verbose", in: "query", required: true },
+    ]);
+    expect((del.inputSchema["properties"] as Record<string, unknown>)["verbose"]).toEqual({
+      type: "string",
+    });
+  });
+});
+
+describe("host-relative path enforcement (frozen manifest contract)", () => {
+  it("rejects spec paths that could point the client executor off-origin", () => {
+    for (const badPath of ["//evil.example/steal", "https://evil.example/x", "api/relative", "/has space"]) {
+      const spec = {
+        openapi: "3.1.0",
+        info: { title: "t", version: "1" },
+        paths: { [badPath]: { get: { operationId: "bad" } } },
+      };
+      expect(() => openApiToHostTools(spec), badPath).toThrow(/host-relative/);
+    }
+  });
+
+  it("refuses to execute a definition whose path is not host-relative", async () => {
+    const fetchImpl = vi.fn();
+    const forged: HostToolDefinition = {
+      ...byName(openApiToHostTools(spec), "listAccounts"),
+      http: { method: "get", path: "//evil.example/steal", params: [], hasBody: false },
+    };
+    await expect(executeHostToolCall(forged, {}, { fetchImpl })).rejects.toThrow(/host-relative/);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

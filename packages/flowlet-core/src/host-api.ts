@@ -53,18 +53,28 @@ export interface HostToolDefinition {
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const;
 
+/**
+ * Host-relative path guard, identical to the frozen manifest contract
+ * (`httpBindingSchema` in `manifest/tool.ts`): a single leading `/`, no
+ * `//authority`, no whitespace — a spec or manifest path can never point the
+ * client executor at a foreign origin.
+ */
+const HOST_RELATIVE_PATH = /^\/(?!\/)\S*$/;
+
 /** Loose structural view of the OpenAPI bits the adapter reads. */
+interface OpenApiParameter {
+  name: string;
+  in: string;
+  required?: boolean;
+  description?: string;
+  schema?: Record<string, unknown>;
+}
+
 interface OpenApiOperation {
   operationId?: string;
   summary?: string;
   description?: string;
-  parameters?: ReadonlyArray<{
-    name: string;
-    in: string;
-    required?: boolean;
-    description?: string;
-    schema?: Record<string, unknown>;
-  }>;
+  parameters?: ReadonlyArray<OpenApiParameter>;
   requestBody?: {
     required?: boolean;
     content?: Record<string, { schema?: Record<string, unknown> }>;
@@ -86,6 +96,9 @@ function deriveName(method: string, path: string): string {
 }
 
 function annotationsFor(method: string, op: OpenApiOperation): HostToolAnnotations {
+  // Trusts HTTP semantics: a GET that mutates host state (it happens) MUST be
+  // marked `x-flowlet-dangerous: true` in the spec, or fixed — the adapter
+  // cannot detect it, and read-only tools are auto-allowed by policy.
   const readOnly = method === "get" || method === "head";
   const destructive = method === "delete" || op["x-flowlet-dangerous"] === true;
   return {
@@ -114,7 +127,15 @@ function annotationsFor(method: string, op: OpenApiOperation): HostToolAnnotatio
 export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
   const defs: HostToolDefinition[] = [];
   for (const [path, rawItem] of Object.entries(spec.paths ?? {})) {
+    if (!HOST_RELATIVE_PATH.test(path)) {
+      throw new Error(
+        `host tool path "${path}" must be host-relative (single leading "/", no authority, no whitespace)`,
+      );
+    }
     const item = (rawItem ?? {}) as Record<string, unknown>;
+    // Path-item-level parameters apply to every operation on the path;
+    // an operation-level parameter with the same (name, in) overrides.
+    const pathParams = (item["parameters"] ?? []) as ReadonlyArray<OpenApiParameter>;
     for (const method of HTTP_METHODS) {
       const op = item[method] as OpenApiOperation | undefined;
       if (op == null) continue;
@@ -124,7 +145,16 @@ export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
 
-      for (const param of op.parameters ?? []) {
+      const merged = [...pathParams];
+      for (const opParam of op.parameters ?? []) {
+        const index = merged.findIndex(
+          (p) => p.name === opParam.name && p.in === opParam.in,
+        );
+        if (index >= 0) merged[index] = opParam;
+        else merged.push(opParam);
+      }
+
+      for (const param of merged) {
         if (param.in !== "path" && param.in !== "query") continue;
         if (param.name === "body") {
           throw new Error(
@@ -194,6 +224,29 @@ export async function executeHostToolCall(
   options: ExecuteHostToolCallOptions = {},
 ): Promise<HostToolCallResult> {
   const { baseUrl = "", fetchImpl = fetch } = options;
+
+  // Same guard as the adapter and the frozen manifest contract — enforced at
+  // execution too, because definitions can arrive from outside the adapter.
+  if (!HOST_RELATIVE_PATH.test(def.http.path)) {
+    throw new Error(
+      `host tool "${def.name}": path "${def.http.path}" is not host-relative`,
+    );
+  }
+
+  // Fail before fetching if any schema-required input is absent (covers path
+  // params, required query params, and a required request body — executing a
+  // write with host-side defaults instead of the declared body is never OK).
+  const requiredInputs = Array.isArray(def.inputSchema["required"])
+    ? (def.inputSchema["required"] as string[])
+    : [];
+  const missing = requiredInputs.filter(
+    (key) => input[key] === undefined || input[key] === null,
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `host tool "${def.name}": missing required input ${missing.map((k) => `"${k}"`).join(", ")}`,
+    );
+  }
 
   let path = def.http.path;
   const query = new URLSearchParams();

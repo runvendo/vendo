@@ -62,9 +62,14 @@ export function FlowletProvider({ agent, transport, components, threadId, hostTo
     if (agent) return createLocalTransport(agent);
     throw new Error("FlowletProvider requires either `agent` or `transport`");
   }, [agent, transport]);
+  // Keyed on the definitions ARRAY, not the config object: callers pass
+  // `hostTools={{ definitions }}` inline, so the config's identity changes on
+  // every parent render. A new Set here would rebuild the Chat below and wipe
+  // the SDK's message/approval state mid-turn.
+  const definitions = hostTools?.definitions;
   const hostToolNames = useMemo(
-    () => new Set((hostTools?.definitions ?? []).map((def) => def.name)),
-    [hostTools],
+    () => new Set((definitions ?? []).map((def) => def.name)),
+    [definitions],
   );
   // One Chat instance shared by every surface (dock, overlay, page) so they all
   // render the same thread. Surfaces consume it via useChat({ chat }).

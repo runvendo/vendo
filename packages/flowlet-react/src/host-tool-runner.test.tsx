@@ -89,6 +89,42 @@ function setup(turns: UIMessageChunk[][], fetchImpl: typeof fetch) {
   return { chat, sendMessages };
 }
 
+describe("chat identity stability", () => {
+  it("keeps the same Chat when a parent re-render passes a fresh inline hostTools object", () => {
+    const transport: ChatTransport<FlowletUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+    const definitions = [listAccountsDef, createOrderDef];
+
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useFlowletContext().chat);
+      return null;
+    }
+    const ui = (nonce: number) => (
+      <FlowletProvider
+        transport={transport}
+        components={[]}
+        // Fresh object literal every render — like FlowletRoot does. Only the
+        // definitions array is stable. A new Chat here would wipe SDK message
+        // and approval state mid-turn.
+        hostTools={{ definitions }}
+        key="stable"
+        data-nonce={nonce}
+      >
+        <Probe />
+      </FlowletProvider>
+    );
+    const { rerender } = render(ui(1));
+    rerender(ui(2));
+    rerender(ui(3));
+
+    expect(seen.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(seen).size).toBe(1);
+  });
+});
+
 describe("host tool runner", () => {
   it("executes an un-gated host tool in the browser and resubmits with the output", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ data: [{ id: "acct_1" }] }));
