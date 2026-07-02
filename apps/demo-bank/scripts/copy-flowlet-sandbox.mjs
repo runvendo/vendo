@@ -9,8 +9,11 @@ const root = resolve(here, "../../..");
 const outDir = resolve(here, "../public/flowlet");
 mkdirSync(outDir, { recursive: true });
 
+// Maple's OWN sandbox bundle (catalog + registered host components), built by
+// flowlet-sandbox/vite.config.ts. The public filename stays the same so
+// SandboxStage needs no change.
 copyFileSync(
-  resolve(root, "packages/flowlet-components/dist-sandbox/flowlet-components-sandbox.js"),
+  resolve(here, "../flowlet-sandbox/dist/host-bundle"),
   resolve(outDir, "components-sandbox.js"),
 );
 copyFileSync(

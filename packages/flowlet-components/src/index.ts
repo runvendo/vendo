@@ -5,4 +5,7 @@ export { FlowletThemeProvider } from "./theme/FlowletThemeProvider";
 export { brandTokensSchema, defaultBrand, type BrandTokens } from "./theme/brand";
 export { mapBrandToTheme } from "./theme/map-brand-to-theme";
 export { brandToCssVars } from "./theme/brand-to-css-vars";
+export { brandToChartPalette } from "./theme/brand-to-chart-palette";
+export { hostComponent, toHostRegistry, type HostComponentDescriptor } from "./host-component";
+export { bindHostImpl } from "./bind-host-impl";
 import "@openuidev/react-ui/index.css";

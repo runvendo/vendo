@@ -51,7 +51,7 @@ export const MAX_GENUI_NODES = 5000;
 
 /** Names of the prewired primitives shipped inside the stage runtime. The
  *  format reserves them: a generated component may not shadow a primitive. */
-export const RESERVED_COMPONENT_NAMES = ["Stack", "Row", "Grid", "Text", "Skeleton"] as const;
+export const RESERVED_COMPONENT_NAMES = ["Stack", "Row", "Grid", "Text", "Skeleton", "Surface", "Divider"] as const;
 
 /** Cap on declared data queries (DoS defense, consistent with MAX_GENUI_NODES). */
 export const MAX_GENUI_QUERIES = 16;

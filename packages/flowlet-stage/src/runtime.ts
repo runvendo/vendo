@@ -138,27 +138,95 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // Keep the keys in sync with RESERVED_COMPONENT_NAMES in @flowlet/core's
   // genui/format.ts — the format reserves exactly these names so generated
   // components can't shadow them (pinned by a drift-guard test in runtime.test.ts).
+  // Every visual value is either a --flowlet-* token or a neutral scale value,
+  // so the primitives stay host-agnostic: the brand arrives via the theme vars.
+
+  // Named spacing scale for gap/padding: tokens the model can reason about.
+  // Numbers are px; unknown strings pass through (raw CSS lengths keep working).
+  var SPACE = { xs: "4px", sm: "8px", md: "12px", lg: "20px", xl: "32px" };
+  function space(v, dflt) {
+    if (v == null) return dflt;
+    if (typeof v === "number") return v + "px";
+    return SPACE[v] || v;
+  }
+  // Text variants: host-like hierarchy from tokens (label = the uppercase
+  // letter-spaced section label most product UIs use; value = tabular numerals).
+  var TEXT_VARIANTS = {
+    title:   { fontSize: "16px", fontWeight: 600, letterSpacing: "-0.01em" },
+    heading: { fontSize: "20px", fontWeight: 650, letterSpacing: "-0.015em" },
+    label:   { fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))" },
+    muted:   { color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))" },
+    caption: { fontSize: "12px", color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))" },
+    value:   { fontSize: "22px", fontWeight: 650, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }
+  };
+
   var PRIMITIVES = {
     Stack: function(props) {
       var R = window.__React;
       return R.createElement("div", {
         "data-primitive": "Stack",
-        style: { display: "flex", flexDirection: "column", gap: props.gap || "8px" }
+        style: {
+          display: "flex", flexDirection: "column",
+          gap: space(props.gap, "8px"),
+          padding: space(props.padding, undefined),
+          alignItems: props.align || undefined,
+          justifyContent: props.justify || undefined
+        }
       }, props.children);
     },
     Row: function(props) {
       var R = window.__React;
       return R.createElement("div", {
         "data-primitive": "Row",
-        style: { display: "flex", flexDirection: "row", gap: props.gap || "8px", alignItems: props.align || "stretch" }
+        style: {
+          display: "flex", flexDirection: "row",
+          gap: space(props.gap, "8px"),
+          padding: space(props.padding, undefined),
+          alignItems: props.align || "stretch",
+          justifyContent: props.justify || undefined,
+          flexWrap: props.wrap ? "wrap" : undefined
+        }
       }, props.children);
     },
     Grid: function(props) {
       var R = window.__React;
       return R.createElement("div", {
         "data-primitive": "Grid",
-        style: { display: "grid", gridTemplateColumns: "repeat(" + (props.columns || 2) + ", 1fr)", gap: props.gap || "8px" }
+        style: {
+          display: "grid",
+          gridTemplateColumns: "repeat(" + (props.columns || 2) + ", 1fr)",
+          gap: space(props.gap, "8px"),
+          padding: space(props.padding, undefined)
+        }
       }, props.children);
+    },
+    Surface: function(props) {
+      // The host-card container: surface bg, hairline border, brand radius and
+      // shadow, roomy padding — the building block for host-native panels.
+      var R = window.__React;
+      return R.createElement("div", {
+        "data-primitive": "Surface",
+        style: {
+          background: "var(--flowlet-surface, #fff)",
+          border: "1px solid var(--flowlet-border, rgba(0,0,0,0.10))",
+          borderRadius: "var(--flowlet-radius, 12px)",
+          boxShadow: "var(--flowlet-shadow, none)",
+          padding: space(props.padding, SPACE.lg),
+          display: "flex", flexDirection: "column",
+          gap: space(props.gap, "8px")
+        }
+      }, props.children);
+    },
+    Divider: function(props) {
+      var R = window.__React;
+      var vertical = props.vertical === true;
+      return R.createElement("div", {
+        "data-primitive": "Divider",
+        "aria-hidden": "true",
+        style: vertical
+          ? { width: "1px", alignSelf: "stretch", background: "var(--flowlet-border, rgba(0,0,0,0.10))" }
+          : { height: "1px", width: "100%", background: "var(--flowlet-border, rgba(0,0,0,0.10))" }
+      });
     },
     Text: function(props) {
       var R = window.__React;
@@ -167,9 +235,14 @@ export const STAGE_RUNTIME_SRC = String.raw`
       // off the list falls back to "span".
       var TEXT_TAGS = { span:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, strong:1, em:1, small:1, label:1, div:1 };
       var tag = (props.as && TEXT_TAGS[props.as]) ? props.as : "span";
+      var style = { color: "var(--flowlet-fg, inherit)" };
+      var variant = TEXT_VARIANTS[props.variant];
+      if (variant) for (var k in variant) style[k] = variant[k];
+      if (props.align) style.textAlign = props.align;
       return R.createElement(tag, {
         "data-primitive": "Text",
-        style: { color: "var(--flowlet-fg, inherit)" }
+        "data-variant": variant ? props.variant : undefined,
+        style: style
       }, props.text != null ? props.text : props.children);
     },
     Skeleton: function(props) {
@@ -209,17 +282,30 @@ export const STAGE_RUNTIME_SRC = String.raw`
           // every other name (incl. prewired __row/__badge) falls back to the host bundle.
           Impl = (node.source === "prewired" && PRIMITIVES[node.name]) ? PRIMITIVES[node.name] : host[node.name];
         }
-        if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
+        if (!Impl) {
+          // Clear error story: an unregistered name renders a visible, contained
+          // notice (not an invisible empty div) so a bad registration or a
+          // hallucinated component name is diagnosable at a glance.
+          return React.createElement("div", {
+            "data-error": "unknown:" + node.name,
+            style: {
+              padding: "8px 12px", fontSize: "12px",
+              color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))",
+              border: "1px dashed var(--flowlet-border, rgba(0,0,0,0.2))",
+              borderRadius: "var(--flowlet-radius, 8px)"
+            }
+          }, 'Unknown component "' + node.name + '"');
+        }
         var boundProps = bindProps(node.props, params.state);
         boundProps.__nodeId = node.id;
-        if (node.source === "generated") {
-          // Per-node dispatch closure: origin is fixed by the runtime, so generated
-          // code cannot pick an originNodeId. (originNodeId is bookkeeping, not a
-          // trust boundary — the host policy decides on the ACTION.)
-          boundProps.flowlet = {
-            dispatch: function(descriptor) { return window.__flowletDispatch(descriptor, node.id); }
-          };
-        }
+        // Per-node dispatch closure for EVERY source (generated, catalog, host):
+        // origin is fixed by the runtime, so component code cannot pick an
+        // originNodeId. (originNodeId is bookkeeping, not a trust boundary — the
+        // host policy decides on the ACTION.) Catalog action affordances
+        // (Actions) and host components use the same governed door.
+        boundProps.flowlet = {
+          dispatch: function(descriptor) { return window.__flowletDispatch(descriptor, node.id); }
+        };
         var kids = (node.children || []).map(function(c) { return wrap(c); });
         return kids.length
           ? React.createElement(Impl, boundProps, kids)
@@ -276,6 +362,13 @@ export const STAGE_RUNTIME_SRC = String.raw`
         if (e.source !== parent) return;
         if (e.data && e.data.flowlet && e.data.id === id) {
           window.removeEventListener("message", handler);
+          // Bridge ERROR replies (policy deny, unknown action, capability
+          // mismatch) must REJECT — resolving undefined would let component
+          // code sail down its success path after a blocked action.
+          if (e.data.error) {
+            reject(Object.assign(new Error(e.data.error.message || "action failed"), { code: e.data.error.code || "bridge" }));
+            return;
+          }
           var result = e.data.result;
           if (result && result.status === "pending") {
             // Two-phase: wait for ui/action-result with this actionId.

@@ -14,12 +14,15 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import {
   createFlowletAgent,
+  buildBrandGuidance,
   type ComposioClient,
 } from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
-import { prewiredComponents } from "@flowlet/components/descriptors";
+import { prewiredComponents, brandToCssVars } from "@flowlet/components/descriptors";
+import { mapleHostComponents } from "./host-components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
+import { mapleBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
 
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
@@ -38,6 +41,14 @@ function fieldHint(schema: unknown): string {
 
 function componentCatalog(): string {
   return prewiredComponents
+    .map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`)
+    .join("\n");
+}
+
+/** The host app's registered components (source:'host') — data-driven from the
+ *  registry, so newly registered components appear here automatically. */
+function hostComponentCatalog(): string {
+  return mapleHostComponents
     .map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`)
     .join("\n");
 }
@@ -70,6 +81,18 @@ function buildInstructions(): string {
     "pass to render_view. Plain text only. You may use light Markdown (bold, lists) in",
     "prose, but no emoji or decorative symbols. Write titles in plain Title Case.",
     "",
+    // Data-driven brand section: rendered from the SAME tokens the sandbox
+    // injects (one source of truth), plus Maple's host-authored style norms.
+    buildBrandGuidance({
+      tokens: brandToCssVars(mapleBrand),
+      norms: {
+        density: "calm and generous — one idea per card, clear hierarchy, no cramming",
+        tone: "quiet financial confidence; plain sentences, no exclamation marks, no hype",
+        spacing: "roomy card padding (about 20px), 12-16px between rows, aligned numerals",
+        charts: "restrained near-monochrome series, minimal gridlines, let the data speak",
+      },
+    }),
+    "",
     "HOW render_view WORKS — there is ONE rendering tool. Every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
     "- formatVersion: 'flowlet-genui/v1'.",
@@ -90,9 +113,24 @@ function buildInstructions(): string {
     "tool output before storing it at the declared path — reshape at render time.",
     "",
     "BUILDING BLOCKS (source:'prewired') — place these inside the nodes tree:",
-    "- Layout primitives: Stack, Row, Grid (containers — use `children`), Text, Skeleton.",
+    "- Layout primitives (containers take `children`; gap/padding accept xs|sm|md|lg|xl or a px number):",
+    "  - Stack (column; gap, padding, align, justify), Row (gap, padding, align, justify, wrap), Grid (columns, gap, padding).",
+    "  - Surface: a host-styled card panel (surface background, hairline border, brand radius, roomy",
+    "    padding). USE THIS to group related content into cards instead of hand-rolling card styles.",
+    "  - Divider: hairline separator ({ vertical: true } for column splits).",
+    "  - Text: props { text, variant?, as?, align? }. Variants: 'label' (uppercase muted section label),",
+    "    'value' (large tabular-numeral stat — pair label+value for KPIs), 'title', 'heading', 'muted',",
+    "    'caption'. A Surface with a label Text, a value Text, and a caption is the host's stat-card idiom.",
+    "  - Skeleton (loading placeholder).",
     "- Catalog components (use a matching name and the exact prop names shown):",
     componentCatalog(),
+    "",
+    "HOST COMPONENTS (source:'host') — the app's OWN components, pixel-identical to the",
+    "product itself. When one fits, PREFER it over both catalog components and novel code",
+    "(nothing is more on-brand than the host's real component). Reference by name with",
+    "source:'host' and the exact props shown:",
+    hostComponentCatalog(),
+    "",
     "Prefer these prewired blocks. Compose them into whatever layout the request needs",
     "— side-by-side panels, a dashboard, a table, a chart, mixed components.",
     "- Images: only data:image URIs render (the sandbox blocks remote image loads); do NOT",

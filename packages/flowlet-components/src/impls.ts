@@ -15,6 +15,11 @@ import { Markdown } from "./components/Markdown/impl";
 import { CodeBlock } from "./components/CodeBlock/impl";
 import { Tabs } from "./components/Tabs/impl";
 import { TimeOfDayClock } from "./components/TimeOfDayClock/impl";
+import { Progress } from "./components/Progress/impl";
+import { Donut } from "./components/Donut/impl";
+import { KeyValue } from "./components/KeyValue/impl";
+import { Actions } from "./components/Actions/impl";
+import { EmptyState } from "./components/EmptyState/impl";
 
 export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>>> = {
   TimeOfDayClock,
@@ -33,4 +38,9 @@ export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>
   Markdown,
   CodeBlock,
   Tabs,
+  Progress,
+  Donut,
+  KeyValue,
+  Actions,
+  EmptyState,
 };

@@ -15,3 +15,4 @@ dist
 .playwright-mcp/
 *.png
 packages/flowlet-stage/tests/browser/public/components-sandbox.js
+apps/demo-bank/flowlet-sandbox/dist/

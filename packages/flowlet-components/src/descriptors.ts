@@ -16,6 +16,11 @@ import { markdownDescriptor } from "./components/Markdown/descriptor";
 import { codeBlockDescriptor } from "./components/CodeBlock/descriptor";
 import { tabsDescriptor } from "./components/Tabs/descriptor";
 import { timeOfDayClockDescriptor } from "./components/TimeOfDayClock/descriptor";
+import { progressDescriptor } from "./components/Progress/descriptor";
+import { donutDescriptor } from "./components/Donut/descriptor";
+import { keyValueDescriptor } from "./components/KeyValue/descriptor";
+import { actionsDescriptor } from "./components/Actions/descriptor";
+import { emptyStateDescriptor } from "./components/EmptyState/descriptor";
 
 export const descriptors: PrewiredDescriptor[] = [
   timeOfDayClockDescriptor,
@@ -34,6 +39,20 @@ export const descriptors: PrewiredDescriptor[] = [
   markdownDescriptor,
   codeBlockDescriptor,
   tabsDescriptor,
+  progressDescriptor,
+  donutDescriptor,
+  keyValueDescriptor,
+  actionsDescriptor,
+  emptyStateDescriptor,
 ];
 
 export const prewiredComponents: RegisteredComponent[] = descriptors.map((d) => d.toRegistered());
+
+// Server-safe theme utilities (React-free, no CSS imports) — the descriptors
+// entrypoint is the one server code may import, so the token → CSS-var / chart
+// palette derivations are re-exported here for prompt assembly and manifests.
+export { brandTokensSchema, defaultBrand, type BrandTokens } from "./theme/brand";
+export { brandToCssVars } from "./theme/brand-to-css-vars";
+export { brandToChartPalette } from "./theme/brand-to-chart-palette";
+export { hostComponent, toHostRegistry, type HostComponentDescriptor } from "./host-component";
+export { jsonValue } from "./descriptor";

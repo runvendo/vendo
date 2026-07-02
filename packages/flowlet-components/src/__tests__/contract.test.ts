@@ -97,6 +97,20 @@ describe("JSON round-trip contract (§8)", () => {
     Tabs: {
       tabs: [{ label: "Overview", content: "Overview content." }],
     },
+    Progress: { label: "Dining budget", value: 318, max: 500, display: "$318 of $500" },
+    Donut: {
+      slices: [{ label: "Housing", value: 2850, display: "$2,850" }],
+      centerLabel: "Total",
+      centerValue: "$2,850",
+    },
+    KeyValue: {
+      title: "Transaction",
+      rows: [{ label: "Amount", value: "$87.00", emphasis: true }],
+    },
+    Actions: {
+      actions: [{ label: "Freeze card", action: "freeze_card", payload: { cardId: "c1" } }],
+    },
+    EmptyState: { variant: "empty", title: "No transactions yet" },
   };
 
   it("every descriptor's representative props survive JSON round-trip and re-validate", () => {

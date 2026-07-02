@@ -31,7 +31,7 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle", "resize-bomb"]);
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle", "real-bundle-actions", "resize-bomb"]);
 const reactSource = NEEDS_REACT_SHIM.has(caseParam)
   ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
   : undefined;
@@ -40,6 +40,9 @@ const { iframe, endpoints } = createStage(slot, { reactSource });
 
 const controller = connectStage(endpoints, {
   onAction: async (req) => {
+    // "deny_me" simulates a policy denial — the bridge must reject the
+    // in-sandbox dispatch promise (gate real-bundle 4).
+    if (req.action === "deny_me") throw new Error("denied by policy");
     ensure("action-log").textContent =
       `origin=${req.originNodeId} action=${req.action} result=ok`;
     return { result: "ok" };
@@ -64,10 +67,44 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     "--flowlet-accent": "#00aa77",
     "--flowlet-surface": "#fff",
     "--flowlet-fg": "#111",
+    "--flowlet-fg-muted": "#8A8B92",
+    "--flowlet-border": "#e5e5e5",
+    "--flowlet-radius": "16px",
+    "--flowlet-shadow": "0 1px 2px rgba(0,0,0,0.06)",
     // Distinctive first family so the baseline-styles gate can assert the
     // sandbox body actually inherits the brand font (not the UA serif default).
     "--flowlet-font": "TestBrandFont, sans-serif",
   };
+
+  if (kind === "primitives-rich") {
+    // Enriched primitives (brand tier): Surface, Divider, Text variants, and
+    // named gap tokens — all styled purely from the injected --flowlet-* vars.
+    return {
+      theme,
+      state: {},
+      // The sample bundle supplies React (sets window.__React); primitives
+      // themselves need no host components.
+      bundleSource: await bundle(),
+      tree: {
+        id: "root",
+        kind: "component",
+        source: "prewired",
+        name: "Stack",
+        props: { gap: "md" },
+        children: [
+          { id: "l1", kind: "component", source: "prewired", name: "Text", props: { variant: "label", text: "Total Spent" } },
+          { id: "v1", kind: "component", source: "prewired", name: "Text", props: { variant: "value", text: "$3,222.00" } },
+          { id: "d1", kind: "component", source: "prewired", name: "Divider", props: {} },
+          {
+            id: "s1", kind: "component", source: "prewired", name: "Surface", props: { padding: "md" },
+            children: [
+              { id: "t1", kind: "component", source: "prewired", name: "Text", props: { text: "inside card" } },
+            ],
+          },
+        ],
+      } as unknown as StageInitPayload["tree"],
+    };
+  }
 
   if (kind === "real-bundle") {
     // The REAL @flowlet/components sandbox bundle (copied from its dist-sandbox
@@ -90,6 +127,27 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         source: "prewired",
         name: "Card",
         props: { title: "Real Bundle", body: "catalog card" },
+      },
+    };
+  }
+
+  if (kind === "real-bundle-actions") {
+    // Catalog action affordance: the Actions component (real bundle) must
+    // receive the per-node dispatch closure and round-trip through onAction.
+    return {
+      theme,
+      state: {},
+      bundleSource: await fetch("/components-sandbox.js").then((r) => r.text()),
+      componentTheme: { theme: {}, mode: "light" },
+      tree: {
+        id: "a1",
+        kind: "component",
+        source: "prewired",
+        name: "Actions",
+        props: { actions: [
+          { label: "Freeze card", action: "freeze_card", payload: { cardId: "c1" } },
+          { label: "Deny me", action: "deny_me" },
+        ] },
       },
     };
   }

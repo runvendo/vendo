@@ -19,7 +19,7 @@ type FlowletWriter = UIMessageStreamWriter<FlowletUIMessage>;
 
 const genNodeSchema = z.object({
   id: z.string().describe("Unique node id within this payload."),
-  component: z.string().describe("Component name: a prewired primitive (Stack/Row/Grid/Text/Skeleton), a registered catalog component, or a key of `components`."),
+  component: z.string().describe("Component name: a prewired primitive (Stack/Row/Grid/Surface/Divider/Text/Skeleton), a registered catalog component, or a key of `components`."),
   source: z.enum(["prewired", "host", "generated"]).optional()
     .describe("'prewired' (default) for primitives + catalog, 'generated' for a component defined in `components`."),
   props: z.record(z.string(), z.unknown()).optional()
@@ -49,7 +49,11 @@ export function createRenderViewTool(writer: FlowletWriter) {
       "JSX/TSX — it is compiled automatically (automatic React runtime, TS types stripped), so you " +
       "do NOT need to import React. Example: `export default function MyComp(props) { return <div>{props.label}</div>; }`. " +
       "Plain `React.createElement` also works. It runs in a network-jailed sandbox; to perform an app " +
-      "action call `props.flowlet.dispatch({ action, payload })`.",
+      "action call `props.flowlet.dispatch({ action, payload })`. " +
+      "BRAND: style novel components with the host's injected CSS variables — var(--flowlet-accent), " +
+      "var(--flowlet-surface), var(--flowlet-fg), var(--flowlet-fg-muted), var(--flowlet-border), " +
+      "var(--flowlet-radius) — never a hardcoded palette, never gradients; typography is inherited " +
+      "(do not set font families). Catalog components are pre-themed; prefer them.",
     inputSchema: z.object({
       formatVersion: z.literal("flowlet-genui/v1"),
       root: z.string().describe("Id of the root node."),
