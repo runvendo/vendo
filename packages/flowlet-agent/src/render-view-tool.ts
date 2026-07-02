@@ -27,6 +27,13 @@ const genNodeSchema = z.object({
   children: z.array(z.string()).optional().describe("Child node ids."),
 });
 
+const dataQuerySchema = z.object({
+  path: z.string().describe("JSON Pointer into `data` where this tool's result lives ('' = the whole model)."),
+  tool: z.string().describe("Name of the tool whose call produced the data at `path`."),
+  input: z.record(z.string(), z.unknown()).optional()
+    .describe("The exact input to replay the tool with on refresh."),
+});
+
 export function createRenderViewTool(writer: FlowletWriter) {
   let counter = 0;
 
@@ -47,6 +54,10 @@ export function createRenderViewTool(writer: FlowletWriter) {
         .describe("Data model for { $path } prop bindings."),
       components: z.record(z.string(), z.string()).optional()
         .describe("PascalCase name → ESM source for novel components (max 16, 64KB each)."),
+      queries: z.array(dataQuerySchema).optional()
+        .describe("Provenance of `data` for refreshable views: which policy-governed tool calls produced it. " +
+          "Place each tool's result VERBATIM at its `path` in `data` (transform inside generated components, " +
+          "not between tool and data). Reopening a saved view re-runs these to fetch fresh data."),
     }),
     execute: async (payload) => {
       const validation = validateGeneratedPayload(payload);

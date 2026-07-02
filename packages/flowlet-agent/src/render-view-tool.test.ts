@@ -66,6 +66,35 @@ describe("createRenderViewTool", () => {
     expect((writer.write as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
   });
 
+  it("keeps declared queries through the input schema and ships them (ENG-183)", async () => {
+    const writer = writerMock();
+    const tool = createRenderViewTool(writer);
+    const withQueries = {
+      formatVersion: "flowlet-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Text", props: { text: { $path: "/tx/0" } } }],
+      data: { tx: ["stale"] },
+      queries: [{ path: "/tx", tool: "get_transactions", input: { limit: 40 } }],
+    };
+    // The zod input schema must declare `queries`, or the SDK strips it in production.
+    const schema = tool.inputSchema as { parse: (v: unknown) => Record<string, unknown> };
+    expect((schema.parse(withQueries) as { queries: unknown[] }).queries).toHaveLength(1);
+
+    const result = await tool.execute!(withQueries as never, {} as never);
+    expect(result).toBe("rendered");
+    const written = (writer.write as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(written.data.payload.queries).toEqual(withQueries.queries);
+  });
+
+  it("returns a correctable error for malformed queries", async () => {
+    const writer = writerMock();
+    const tool = createRenderViewTool(writer);
+    const bad = { ...VALID, queries: [{ path: "no-slash", tool: "t" }] };
+    const result = await tool.execute!(bad as never, {} as never);
+    expect(String(result)).toMatch(/^render_view error \(provision\):/);
+    expect((writer.write as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+  });
+
   it("mints unique node ids across calls", async () => {
     const writer = writerMock();
     const tool = createRenderViewTool(writer);
