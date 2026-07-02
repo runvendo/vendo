@@ -40,16 +40,13 @@ From the architecture doc and ENG-188:
     "mode": "steps",                  // "steps" (deterministic / hybrid) | "agent" (fully agentic)
     "steps": [ /* see Steps */ ]
   },
-  "approvals": {
-    "preAuthorized": ["maple_freeze_card"]   // dangerous tools the user pre-approved at creation
-  },
   "limits": { "maxFiringsPerHour": 60 }      // loop/runaway protection, defaulted
 }
 ```
 
 - `prompt` keeps the original plain-English ask verbatim: it is the ground truth the user gave us, shown on the card, and re-fed to the compiler on edit.
-- The tier is the `execution.mode` discriminator. Hybrid is not a third mode: it is `"steps"` with one or more `agent` steps inside.
-- `approvals.preAuthorized` is written by the creation flow, never by the compiler directly (see section d).
+- The tier is the `execution.mode` discriminator (a discriminated union: `{ mode: "steps", steps }` vs `{ mode: "agent", goal, tools, maxToolCalls }`). Hybrid is not a third mode: it is `"steps"` with one or more `agent` steps inside.
+- Pre-authorization grants are deliberately NOT part of the compiler-emitted DSL. The compiler cannot grant anything; grants are **version metadata** written only by the creation/edit approval flow (see sections b and d): per tool, scope-hashed against the tool's descriptor and the spec's trigger + guard, so any scope change invalidates them.
 
 ### Triggers
 
@@ -69,6 +66,10 @@ From the architecture doc and ENG-188:
 ```
 
 The trigger payload becomes `trigger` in the expression scope. For host events the payload schema comes from the manifest declaration; for Composio triggers from Composio's trigger schema; for schedules `trigger` is `{ firedAt }`.
+
+Every firing arrives wrapped in an **envelope** the producers must fill: `{ source, eventId, subject, occurredAt, payload }`. `eventId` is producer-supplied (transaction id, webhook delivery id, cron tick timestamp) and deduplicates firings per `(automationId, eventId)`: redelivery, retries, and restarted pollers cannot double-fire. `subject` routes the event to the owning user's automations only; a tenant-wide event never fans out across subjects implicitly.
+
+Demo-bank's `transaction.created` payload contract (what the poller adapter emits, and what example 1 and 3 expressions may reference): `{ id, merchant, descriptor, category, hour, time, amountDollars, direction, cardId? }`.
 
 ### Expression language: JSONata
 
@@ -101,6 +102,8 @@ Guards (`if` fields) are bare JSONata predicates without braces, since they are 
 
 No access to secrets, other users, other runs, or anything not listed.
 
+**Safe profile** (not stock JSONata): `$eval` and inline function definitions are rejected at creation time; expression length is capped (1,000 chars); evaluation runs under a timeout and an output-size cap, and a violation at fire time fails the step, never hangs the firing. There is no escape syntax for a literal `{{` in v1; the compiler avoids emitting one.
+
 ### Steps
 
 Steps are an ordered list executed top to bottom. Control flow is **structured nesting** (branch and loop nodes contain child step lists), not an explicit edge graph. A nested tree is what a card can render legibly and covers the realistic automation shapes; an edge graph is a v2 escape hatch if we ever hit a real diamond-shaped need (open question 2).
@@ -131,7 +134,7 @@ Four node types in v1:
 
 // 3. branch: if/else over child step lists.
 {
-  "id": "size-check",
+  "id": "size_check",
   "type": "branch",
   "if": "trigger.amountDollars > 500",
   "then": [ /* steps */ ],
@@ -140,7 +143,7 @@ Four node types in v1:
 
 // 4. for_each: bounded iteration.
 {
-  "id": "remind-each",
+  "id": "remind_each",
   "type": "for_each",
   "items": "{{ steps.fetch.output.overdue }}",
   "as": "item",                                  // adds `item` (and `index`) to child scope
@@ -153,8 +156,12 @@ Notes:
 
 - The fully agentic tier (`execution.mode: "agent"`) is exactly one `agent` node's fields at the top level (`goal`, `tools` allowlist, `maxToolCalls`), no step list. One mental model for both tiers.
 - The `tools` allowlist on agent steps is enforced by the runtime (it builds the toolset for that run from the allowlist), not by prompt. Policy still evaluates every call inside the agent step.
-- `id` is required, unique, `kebab-case`; it is the handle for `steps.<id>.output` and for per-step run results.
+- `id` is required, unique across the whole tree, `snake_case` (NOT kebab-case: `steps.size-check` parses as subtraction in JSONata; underscores keep dotted references valid). It is the handle for `steps.<id>.output` and for per-step run results. `for_each.as` names may not shadow `trigger`, `steps`, `run`, `user`, `item`, or `index`.
+- Output scoping for control nodes: children of an executed `branch` arm ran at most once and remain addressable at `steps.<id>.output`. Children of a `for_each` run per iteration and are NOT addressable directly; the loop's own output is `steps.<loop_id>.output.iterations[]`, each entry `{ item, index, steps: { <child_id>: <output> } }`, plus `truncated: true` when `maxItems` cut the list (never a silent cap).
+- `onError: "retry"` is only valid on tools whose descriptor carries `idempotentHint` or `readOnlyHint`; a send-message or payment tool that times out may have succeeded remotely, so non-idempotent mutating tools never auto-retry (creation-time validation rejects it).
+- The interpreter validates each step's **evaluated** input against the tool's input schema before executing (creation-time zod validates the DSL shape, not what the expressions produce at fire time).
 - Interpreter hard limits (defaulted, compiler cannot raise past a ceiling): max 25 steps per spec, max 100 `for_each` iterations, max run wall-clock (e.g. 5 min deterministic, 15 min with agent steps).
+- Fully agentic runs (`mode: "agent"`) receive the trigger envelope payload, the `user` claims, and the automation's description as their context, and nothing else.
 
 ### Worked examples
 
@@ -171,7 +178,7 @@ All four are in the Maple demo-bank domain (host tools prefixed `maple_`, from t
   "description": "Post to #general when a late-night food delivery charge posts",
   "prompt": "snitch on me in #general if I order food delivery late at night",
   "trigger": { "type": "host_event", "event": "transaction.created" },
-  "if": "trigger.direction = 'debit' and trigger.hour >= 0 and trigger.hour < 5 and (trigger.category = 'dining' or $contains($lowercase(trigger.merchant & ' ' & trigger.descriptor), 'delivery'))",
+  "if": "trigger.direction = 'debit' and trigger.hour >= 0 and trigger.hour < 5 and trigger.category = 'dining' and ($contains($lowercase(trigger.merchant & ' ' & trigger.descriptor), 'delivery') or $contains($lowercase(trigger.merchant), 'doordash') or $contains($lowercase(trigger.merchant), 'grubhub') or $contains($lowercase(trigger.merchant), 'uber eats'))",
   "execution": {
     "mode": "steps",
     "steps": [
@@ -181,7 +188,7 @@ All four are in the Maple demo-bank domain (host tools prefixed `maple_`, from t
         "tool": "SLACK_SEND_MESSAGE",
         "input": {
           "channel": "#general",
-          "text": "Late-night delivery alert: {{ user.name }} just ordered *{{ trigger.merchant }}* (${{ trigger.amountDollars }}). He set up this alert to snitch on himself. Someone stage an intervention."
+          "text": "Late-night delivery alert: {{ user.name }} just ordered *{{ trigger.merchant }}* (${{ trigger.amountDollars }}) at {{ trigger.time }}. He set up this alert to snitch on himself. Someone stage an intervention."
         }
       }
     ]
@@ -252,8 +259,7 @@ Deterministic backbone (fetch, send are fixed and cheap), one LLM call where jud
   "description": "On any debit over $500: freeze the card, then notify me on Slack",
   "prompt": "if any charge over $500 hits my card, freeze it and let me know",
   "trigger": { "type": "host_event", "event": "transaction.created" },
-  "if": "trigger.direction = 'debit' and trigger.amountDollars > 500",
-  "approvals": { "preAuthorized": ["maple_freeze_card"] },
+  "if": "trigger.direction = 'debit' and trigger.amountDollars > 500 and $exists(trigger.cardId)",
   "execution": {
     "mode": "steps",
     "steps": [
@@ -278,7 +284,7 @@ Deterministic backbone (fetch, send are fixed and cheap), one LLM call where jud
 }
 ```
 
-`maple_freeze_card` is annotated dangerous in the manifest. Because the user pre-authorized it at creation (`approvals.preAuthorized`), the run proceeds unattended. Had they declined pre-authorization, the run would pause in `waiting_approval` at that step and notify them (see section b run states and open question 7).
+`maple_freeze_card` is annotated dangerous in the manifest. Because the user granted it on this version's creation card (a scope-hashed grant in version metadata, not in the DSL above), the run proceeds unattended. Had they declined the grant, the run would pause in `waiting_approval` at that step and notify them (see section b run states and open question 7).
 
 #### 4. Fully agentic, Composio trigger: rent invoice handler
 
@@ -292,7 +298,6 @@ Deterministic backbone (fetch, send are fixed and cheap), one LLM call where jud
   "prompt": "when my landlord emails me the monthly invoice, schedule the rent payment and reply to confirm",
   "trigger": { "type": "composio", "trigger": "GMAIL_NEW_GMAIL_MESSAGE", "config": { "labelIds": "INBOX" } },
   "if": "$contains($lowercase(trigger.sender), 'landlord@example.com')",
-  "approvals": { "preAuthorized": [] },
   "execution": {
     "mode": "agent",
     "goal": "The trigger payload is a new email from my landlord. If it contains a rent invoice, extract the amount and due date, schedule a payment from my checking account for one day before the due date, and reply to the email confirming the scheduled date and amount. If it is not an invoice, do nothing.",
@@ -333,24 +338,32 @@ Index: `(tenant_id, user_id)`, `(tenant_id, trigger_kind, trigger_key) where sta
 | `automation_id`, `version` | pk | version increments on every edit |
 | `spec` | jsonb | the full DSL document |
 | `dsl_version` | int | copied out for migration queries |
-| `pre_authorized` | text[] | tool names the user approved at this version's creation |
+| `manifest_hash` | text nullable | the published manifest the spec was compiled against (null in embedded/demo until the registry exists) |
+| `grants` | jsonb | pre-authorization grants: `[{ tool, descriptorHash, scopeHash, grantedAt }]` — see below |
 | `created_by` | enum | `user_edit` \| `compiler` |
 | `created_at` | timestamptz | |
 
-Every edit is a new immutable version; `automations.current_version` moves. Pre-authorization is stored on the version, because an edit can change which tools the spec uses and must re-prompt (open question 7). Runs reference the exact version they executed, so run history is always interpretable even after edits.
+Every edit is a new immutable version; `automations.current_version` moves (the reference is the composite `(automation_id, version)`). Runs reference the exact version they executed, so run history is always interpretable even after edits.
+
+**Grants** are written only by the approval flow, never by the compiler. Each grant covers one tool and is hashed over (tool descriptor, trigger, top-level guard, the granting step's input mapping): at fire time a step is unattended only if a grant exists AND its hashes still match; any drift — a manifest republish changing the tool, or an edit changing the scope — invalidates the grant and the step pauses instead. Since create and update are both approval-gated, every version re-collects grants on its card; grants never carry across versions implicitly.
 
 ### `automation_runs`
 
 | column | type | notes |
 |---|---|---|
-| `id` | uuid pk | |
-| `automation_id`, `version` | fk | exact spec that ran |
-| `tenant_id`, `user_id` | fk | denormalized for retention/quota queries |
+| `id` | text pk | **deterministic firing id**: derived from `(automation_id, source, event_id)`; a unique constraint on it makes redelivered events no-ops |
+| `automation_id`, `version` | fk | exact spec that ran (composite reference) |
+| `manifest_hash` | text nullable | copied from the version at fire time |
+| `tenant_id`, `user_id` | fk | denormalized for quota queries |
 | `status` | enum | `running` \| `succeeded` \| `failed` \| `skipped` (guard false) \| `waiting_approval` \| `cancelled` |
-| `trigger_payload` | jsonb | what fired it (truncated at a size cap) |
-| `steps` | jsonb | array of `{ id, status, startedAt, finishedAt, output?, error?, toolCalls? }`; agent steps record their tool-call trace here |
+| `trigger_envelope` | jsonb | `{ source, eventId, subject, occurredAt, payload }` (payload truncated at a size cap) |
+| `steps` | jsonb | array of `{ id, status, startedAt, finishedAt, output?, outputTruncated?, error?, attempts?, idempotencyKey, toolCalls? }`; agent steps record their tool-call trace here. Each step output is capped (truncate + flag + record full size), so one digest step cannot bloat the row |
+| `pending_approval` | jsonb nullable | set while `waiting_approval`: `{ stepId, tool, inputHash, requestedAt, expiresAt, resumeCheckpoint }`; the checkpoint carries the step index + accumulated outputs so resume replays nothing |
+| `is_test` | boolean | run came from `run_automation_now` |
 | `error` | text nullable | terminal error summary |
 | `started_at`, `finished_at` | timestamptz | |
+
+Per-step **idempotency keys** are deterministic (`<run id>/<step id>/<attempt>`), always recorded in the step results, and passed through to tools that accept one; retry is only legal on idempotent-hinted tools regardless (section a).
 
 Step results live **inline as jsonb** in v1, not a separate `run_steps` table: a run is one write-mostly document, specs are capped at 25 steps, and the card reads a run whole. Split it out only if per-step querying becomes real (open question 6).
 
@@ -360,7 +373,7 @@ Every tool execution inside a run also writes `audit_events` (Decision 6) exactl
 
 ### Retention
 
-Proposal: keep full run rows **90 days**, additionally capped at the **most recent 1,000 runs per automation**; nightly pg-boss job prunes. Keep forever: per-automation counters (`total_runs`, `total_failures`, `last_run_at`, `last_status`) maintained on the `automations` row for the card's at-a-glance line. Embedded mode: ring buffer of the last 100 runs in memory.
+**Ruling (Yousef, 2026-07-01): retain everything in v1 — no pruning, no age or count caps.** The earlier 90-day / last-1,000 recommendation is dropped. Rows stay sane through the per-step output-size caps and truncation above, not through deletion. Per-automation counters (`total_runs`, `total_failures`, `consecutive_failures`, `last_run_at`, `last_status`) are maintained on the `automations` row for the card's at-a-glance line (`consecutive_failures` drives `disabled_error` at 5). `skipped` guard-false runs are stored as compact records (no steps array). **TODO (deliberate, later):** a real retention policy lands with the cloud runtime; nothing in the store interface assumes infinite retention.
 
 ---
 
@@ -405,14 +418,14 @@ Tools added to the engine source:
 - `create_automation(spec)`: input schema IS the DSL zod schema, so the ai SDK validates shape at the call boundary and malformed specs bounce back to the model with errors.
 - `update_automation(id, spec)`: new immutable version.
 - `list_automations()`, `get_automation_runs(id)`, `pause_automation(id)`, `resume_automation(id)`, `delete_automation(id)`.
-- `run_automation_now(id, samplePayload?)`: test firing, marked as such in run history, so the user can see it work before trusting a schedule.
+- `run_automation_now(id, samplePayload?, live?)`: test firing, flagged `is_test` in run history. **Dry-run by default**: read-only tools execute for real; mutating tools are simulated — their evaluated inputs are validated and recorded in the step results, nothing external happens. Passing `live: true` (explicit user opt-in, itself approval-gated) runs everything through the identical policy/grant path as a real firing.
 
 Flow:
 
 1. User describes the automation in plain English (or asks to change one).
 2. System-prompt compiler guidance steers tier choice: **prefer deterministic**; use an `agent` step only where a step genuinely needs judgment over unstructured input; go fully `agentic` only when the steps themselves are unknowable in advance. Validate that every referenced tool/event exists in the registered set.
 3. The agent calls `create_automation`. Policy classifies this call as `approve`, always: creating standing authority to act unattended is inherently danger-gated. The approval card IS the automation card in its proposal state.
-4. The proposal card enumerates the tools the spec uses, flagging dangerous ones, and asks the user to (a) approve the automation and (b) optionally pre-authorize the dangerous tools for unattended firing. Declining (b) still creates the automation; those steps pause for async approval each firing.
+4. The proposal card enumerates every tool the spec uses, flagging each one the policy would gate as `approve` for unattended firing (not just `destructiveHint` ones), and asks the user to (a) approve the automation and (b) optionally grant those tools for unattended firing. Grants are stored as scope-hashed version metadata (section b). Declining (b) still creates the automation; those steps pause for async approval each firing.
 5. On approve: version row written, scheduler registered, card flips to its live state.
 6. Edits: user asks in chat (compiler re-reads `prompt` + current spec, emits new version, same approval gate when the tool set changed), or edits from the card surface (Yousef-gated UI, later).
 
@@ -436,7 +449,7 @@ UI/UX is Yousef-gated; this is a content inventory only, no layout or visual dec
 2. **Control flow: nested blocks vs explicit edge graph.** **Recommend nested blocks** (branch/for_each contain child lists). Cards can render them, the compiler emits them reliably, and they cover realistic automations. Revisit edges only on a demonstrated diamond-shaped need.
 3. **`for_each` in v1?** **Recommend yes, with a hard `maxItems` cap** (default 100). "For each overdue invoice, send a reminder" is too common to defer, and it is cheap in an interpreter.
 4. **Spec versioning.** Immutable `automation_versions` table vs jsonb history array on the row. **Recommend the versions table**: mirrors the manifests pattern, runs pin exact versions, pre-authorization naturally attaches per version.
-5. **Run retention.** **Recommend 90 days AND last-1,000-per-automation, whichever prunes first; aggregate counters kept forever.** Cheap, predictable, enough for "why did this fire last month."
+5. **Run retention.** ~~Recommend 90 days AND last-1,000-per-automation.~~ **Superseded by ruling (see Amendments #10): retain everything in v1, retention TODO later.**
 6. **Step results storage.** Inline jsonb on the run row vs a `run_steps` table. **Recommend inline jsonb for v1** (runs are read whole, specs capped at 25 steps). Split later if per-step analytics become real.
 7. **Dangerous steps at firing time.** Pre-authorize at creation vs always pause for approval. **Recommend both, user-chosen per tool at creation**: the approval card offers pre-authorization per dangerous tool; anything not pre-authorized pauses the run in `waiting_approval` and notifies. Edits that change the tool set re-prompt.
 8. **Where the compiler lives.** Same chat agent with `create_automation` tools vs a dedicated subagent. **Recommend same chat agent for v1**: it already holds the registered toolset, and zod validation at the tool boundary gives the correction loop. A dedicated compiler pass can come later if spec quality demands it.
@@ -447,6 +460,28 @@ UI/UX is Yousef-gated; this is a content inventory only, no layout or visual dec
 13. **Fired-while-running semantics.** Parallel runs vs serialize per automation. **Recommend serialize per automation in v1** (queue the firing): simpler mental model, avoids duplicate-send races in digest-type automations.
 
 ---
+
+## Amendments after independent review (2026-07-01, post-brainstorm; triaged with Yousef)
+
+Two independent Codex reviews of this doc surfaced defects. All fixes were accepted and applied, with two explicit rulings on the behavior-visible items. Inline sections above reflect the final state; this list is the changelog.
+
+1. **Step ids are `snake_case`**, not kebab-case: `steps.size-check` is subtraction in JSONata. Examples updated.
+2. **Control-node output scoping defined**: branch children stay addressable at `steps.<id>.output`; `for_each` children only via `steps.<loop_id>.output.iterations[]` (with `truncated` flag); `as` cannot shadow scope names.
+3. **Trigger envelope + dedup + subject routing**: `{ source, eventId, subject, occurredAt, payload }` with tenant context; run ids are deterministic from `(automation_id, source, event_id)` with a unique constraint, so redelivery/retries/poller restarts cannot double-fire; events fan out per subject, never tenant-wide by accident.
+4. **JSONata safe profile via AST validation**: `$eval` and inline function definitions rejected at creation; expression length, evaluation time, and output size capped; violations at fire time fail the step; no `{{` escape in v1.
+5. **Retry only for idempotent-hinted tools**; deterministic per-step idempotency keys (`<run>/<step>/<attempt>`) recorded always and passed to tools that accept one; evaluated step inputs validated against the tool's input schema at fire time.
+6. **Scope-hashed grants replace name-only pre-authorization**: grants are version metadata (never compiler-emitted DSL), one per tool the policy would gate as `approve` (not just `destructiveHint`), hashed over tool descriptor + trigger + guard + input mapping; any scope or manifest drift invalidates the grant and the step pauses. Every version re-collects grants on its approval card.
+7. **`waiting_approval` lifecycle fields**: runs carry `pending_approval` (step, tool, input hash, requestedAt, expiresAt, resume checkpoint); pausing, editing, or deleting the automation cancels its pending runs; decline fails the run at that step; the checkpoint guarantees resume replays no earlier side effects.
+8. **Manifest hash pinned on versions AND runs** (nullable until the registry exists, ENG-197/198).
+9. **Storage fixes**: `consecutive_failures` on `automations` (drives `disabled_error` at 5); `current_version` documented as the composite reference; `skipped` runs stored compactly; per-step output-size caps with truncation flags so no step bloats the run row.
+10. **Retention ruling (Yousef)**: retain everything in v1 — no pruning, no 90-day/last-1,000 rule, no embedded ring buffer. Output-size caps keep rows sane. Retention policy is a marked TODO for the cloud phase. (Supersedes open question 5's recommendation.)
+11. **`run_automation_now` ruling (Yousef)**: dry-run by default — read-only tools execute, mutating tools are simulated with their evaluated inputs recorded; `live: true` is an explicit opt-in through the full policy/grant path.
+12. **Demo payload contract for `transaction.created`** declared (incl. optional `cardId`); example 3 guards on `$exists(trigger.cardId)`; example 1 tightened to the original demo rule's AND semantics and includes the charge time.
+13. **Card outline addition** (content only, still Yousef-gated): steps list shows each step's input mappings and concrete targets (channel, recipient, payee); the permissions block shows grant scope, so the user approves what will actually happen, not just tool names.
+14. **Status naming mapping**: card "Active" = stored `enabled`; the "proposed" card state is the not-yet-persisted approval card.
+15. **Agentic-mode context defined**: a `mode: "agent"` run receives the trigger envelope payload, `user` claims, and the automation description — nothing else.
+
+**Still deferred (recorded, out of this slice):** tenant/user quotas and token-cost metering; large-artifact offload to separate storage (v1 truncates inline); forced recompile/migration flows on manifest republish (v1 pauses via grant-hash mismatch). These land with ENG-198/ENG-194.
 
 ## Out of scope for the brainstorm (already decided or someone else's epic)
 
