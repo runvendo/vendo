@@ -13,6 +13,7 @@
 import { createDemoAgent } from "@/flowlet/agent";
 import { handleChat } from "@/flowlet/chat-handler";
 import { demoTools } from "@/flowlet/tools";
+import { automationsWorld, automationsGeneration } from "@/flowlet/automations";
 import { connectedToolkits } from "@/flowlet/connections-store";
 import type { FlowletAgent } from "@flowlet/core";
 
@@ -23,10 +24,15 @@ const agents = new Map<string, FlowletAgent>();
 
 function getAgent(): FlowletAgent {
   const toolkits = connectedToolkits();
-  const key = toolkits.slice().sort().join(",");
+  // Key by connected toolkits AND the automations-world generation: a demo
+  // reset recreates the world, and cached agents must not hold the dead store.
+  const key = `${automationsGeneration()}:${toolkits.slice().sort().join(",")}`;
   let agent = agents.get(key);
   if (!agent) {
-    agent = createDemoAgent({ extraTools: demoTools(), toolkits });
+    agent = createDemoAgent({
+      extraTools: { ...demoTools(), ...automationsWorld().authoringTools() },
+      toolkits,
+    });
     agents.set(key, agent);
   }
   return agent;

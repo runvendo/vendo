@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { groupThreadItems, type ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
+import { AutomationCard, isAutomationApproval } from "./AutomationCard";
 import { UINodeView } from "./UINodeView";
 import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
@@ -156,7 +157,17 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                 </Fragment>
               );
             case "approval":
-              return (
+              // Automation authoring approvals get the inspectable card; every
+              // other gated call keeps the generic JSON approval.
+              return isAutomationApproval(item.toolName) ? (
+                <AutomationCard
+                  key={item.key}
+                  toolName={item.toolName}
+                  input={item.input}
+                  onApprove={() => onApprove(item.approvalId)}
+                  onDecline={() => onDecline?.(item.approvalId)}
+                />
+              ) : (
                 <ApprovalCard
                   key={item.key}
                   toolName={item.toolName}

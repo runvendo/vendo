@@ -8,7 +8,11 @@ describe("toolAction", () => {
       done: "Read transactions",
       request: "Read transactions",
     });
-    expect(toolAction("set_rule")).toEqual({ active: "Setting up rule", done: "Set up rule", request: "Set up rule" });
+    expect(toolAction("create_automation")).toEqual({
+      active: "Setting up automation",
+      done: "Set up automation",
+      request: "Create an automation",
+    });
   });
 
   it("keeps the Gmail/Slack specials", () => {

@@ -50,3 +50,7 @@ export {
   createComposioClient,
 } from "./composio";
 export type { ComposioClient, ComposioConfig } from "./composio";
+
+// Automations engine (ENG-188): DSL, interpreter, store, runner, scheduler,
+// ingest helpers, and chat authoring tools.
+export * from "./automations";

@@ -21,8 +21,15 @@ export interface ToolAction {
 
 const EXACT: Record<string, ToolAction> = {
   get_transactions: { active: "Reading transactions", done: "Read transactions", request: "Read transactions" },
-  set_rule: { active: "Setting up rule", done: "Set up rule", request: "Set up rule" },
   SLACK_API_TEST: { active: "Checking Slack", done: "Checked Slack", request: "Check Slack" },
+  create_automation: { active: "Setting up automation", done: "Set up automation", request: "Create an automation" },
+  update_automation: { active: "Updating automation", done: "Updated automation", request: "Update an automation" },
+  delete_automation: { active: "Deleting automation", done: "Deleted automation", request: "Delete an automation" },
+  list_automations: { active: "Listing automations", done: "Listed automations", request: "List automations" },
+  get_automation_runs: { active: "Reading run history", done: "Read run history", request: "Read run history" },
+  pause_automation: { active: "Pausing automation", done: "Paused automation", request: "Pause an automation" },
+  resume_automation: { active: "Resuming automation", done: "Resumed automation", request: "Resume an automation" },
+  run_automation_now: { active: "Test-firing automation", done: "Test-fired automation", request: "Test-fire an automation" },
 };
 
 /** Composio toolkit ids -> display names (mirrors the connect catalog). */
