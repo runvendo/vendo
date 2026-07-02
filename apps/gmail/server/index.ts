@@ -58,6 +58,9 @@ app.post("/api/flowlet/reset", (req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`[gmail-demo] mail API + Flowlet listening on http://localhost:${PORT}`);
+// Loopback-only bind: the Host-header guard in chat.ts is spoofable by any
+// peer that can reach the socket, and this server can post to real Slack.
+// Nothing but the local CRA proxy should ever reach it.
+app.listen(PORT, "127.0.0.1", () => {
+  console.log(`[gmail-demo] mail API + Flowlet listening on http://127.0.0.1:${PORT}`);
 });

@@ -3,9 +3,10 @@
  * streamed UIMessage response. Mirrors demo-bank's networked seam, adapted
  * from fetch Request/Response to Express (the web-Response body is piped).
  *
- * The local-only guard is kept verbatim: the agent acts on a real mailbox and
- * (via slack_summary) a real Slack workspace, so a stray reachable deployment
- * must not drive it. FLOWLET_DEMO_PUBLIC=1 opts a deployment in explicitly.
+ * The local-only guard is kept as defense-in-depth: the agent acts on a real
+ * mailbox and (via slack_summary) a real Slack workspace. The Host header is
+ * client-controlled, so the REAL boundary is the server's loopback-only bind
+ * (see server/index.ts); FLOWLET_DEMO_PUBLIC=1 opts a deployment in explicitly.
  */
 import type { Request, Response } from "express";
 import { Readable } from "node:stream";
