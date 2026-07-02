@@ -112,22 +112,21 @@ export function IntegrationsPicker({ integrations, onConnect, onDisconnect, onCl
 
   return (
     <div className="fl-picker" role="dialog" aria-label="Integrations">
-      <div className="fl-picker-head">
-        <span className="fl-picker-title">Connect tools</span>
+      <div className="fl-picker-toprow">
+        <input
+          className="fl-picker-search"
+          placeholder="Search integrations…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && onClose()}
+          aria-label="Search integrations"
+          autoFocus
+        />
         <button type="button" className="fl-picker-close" aria-label="Close" onClick={onClose}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
       </div>
-      <input
-        className="fl-picker-search"
-        placeholder="Search integrations…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => e.key === "Escape" && onClose()}
-        aria-label="Search integrations"
-        autoFocus
-      />
       {connected.length > 0 && (
         <>
           <div className="fl-picker-group">Connected</div>

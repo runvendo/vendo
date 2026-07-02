@@ -48,7 +48,7 @@ describe("AutomationCard (proposal state)", () => {
     expect(screen.getAllByText(/snitch on me in #general/i).length).toBeGreaterThan(0);
   });
 
-  it("marks granted tools as unattended and ungated reads as ask-each-time", () => {
+  it("marks granted tools as run-without-asking and ungated ones as ask-each-time", () => {
     render(
       <AutomationCard
         toolName="create_automation"
@@ -57,7 +57,7 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/runs unattended/i)).toBeTruthy();
+    expect(screen.getByText(/runs without asking/i)).toBeTruthy();
   });
 
   it("shows the un-granted state truthfully", () => {
@@ -69,7 +69,7 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/asks you each firing/i)).toBeTruthy();
+    expect(screen.getByText(/asks you each time/i)).toBeTruthy();
   });
 
   it("renders a hybrid spec's agent step with its goal and allowlist", () => {

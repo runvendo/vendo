@@ -51,6 +51,15 @@
    minimum and gets crushed to its borders the moment the thread overflows. */
 .fl-msglist > * { flex-shrink: 0; }
 .fl-msglist::-webkit-scrollbar { display: none; }
+/* Every thread item enters fluidly (fade + rise + un-blur) instead of popping —
+   tool panels, approvals, connect cards, turns alike. Render-view slots are
+   excluded: FluidReveal already morphs those. */
+@media (prefers-reduced-motion: no-preference) {
+  .fl-msglist > :not(.fl-reveal) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
+}
+@keyframes fl-item-in {
+  from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
+  to   { opacity: 1; transform: none; filter: none; } }
 @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
 /* Visually-hidden live region — announces only the settled assistant turn. */
 .fl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
@@ -75,26 +84,38 @@
   font-weight: 700; line-height: 15px; text-align: center; padding: 0 3px;
   z-index: 1; pointer-events: none;
   box-shadow: 0 0 0 2px var(--flowlet-surface); }
-.fl-dock-anchor { position: relative; }
+/* Flex column so the composer's top margin never collapses out of the anchor:
+   the anchor's top is then always exactly 10px above the bar's border edge,
+   on every surface (page, overlay, slot), and the tray can dock flush. */
+.fl-dock-anchor { position: relative; display: flex; flex-direction: column; }
 /* Bottom-justified so the panel grows out of the bar edge while the entrance
    spring clamps its height. --fl-tray-max is set at open time to the room
    actually above the bar within this surface (page, overlay, or slot panel),
-   so the tray never runs off the top — the picker scrolls internally instead. */
-.fl-tray { position: absolute; bottom: 100%; left: 16px; right: 16px; margin-bottom: 8px;
-  z-index: 30; transform-origin: bottom center; overflow: hidden; border-radius: var(--flowlet-radius);
+   so the tray never runs off the top — the picker scrolls internally instead.
+   Docked flush onto the composer (one interface): the tray's bottom edge sits
+   on the bar's top border, top corners match the bar's 14px, bottom corners
+   square into the seam. */
+.fl-tray { position: absolute; bottom: calc(100% - 10px); left: 16px; right: 16px;
+  z-index: 30; transform-origin: bottom center; overflow: hidden; border-radius: 14px 14px 0 0;
   display: flex; flex-direction: column; justify-content: flex-end; }
+/* While the tray is up (incl. its exit animation) the bar squares its top
+   corners so the two read as one card; the bar's top border is the seam. */
+.fl-dock-anchor:has(.fl-tray) .fl-composer { border-top-left-radius: 0; border-top-right-radius: 0; }
 /* Opaque elevated sheet: the tray floats over display text (the hero greet,
    thread turns), and even a few percent of translucency reads big dark glyphs
    straight through. Depth comes from the border + shadow, not glass. */
 .fl-tray .fl-picker { max-height: min(420px, 48vh, var(--fl-tray-max, 9999px));
   background: var(--flowlet-surface);
+  border-radius: 14px 14px 0 0; border-bottom: 0;
+  /* Fill the tray exactly: the standalone picker's 560px cap + flex-start
+     would leave a dead strip beside the bar whenever the bar is wider. */
+  max-width: none; align-self: stretch;
   -webkit-backdrop-filter: none; backdrop-filter: none; }
-/* Soft bottom scrim signals the list scrolls instead of dead-cutting a row;
-   it matches the panel surface so the border and corners stay crisp. */
-.fl-tray::after { content: ""; position: absolute; left: 1px; right: 1px; bottom: 1px; height: 26px;
-  border-radius: 0 0 var(--flowlet-radius) var(--flowlet-radius);
-  background: linear-gradient(180deg, transparent, var(--flowlet-surface));
-  pointer-events: none; }
+/* No bottom scrim: the row clipped at the seam is the scroll cue. */
+
+/* Host-component thread items (Connect card): same geometry as the render slot
+   but no morph machinery — the shared item entrance is their only motion. */
+.fl-uihost { align-self: flex-start; width: 100%; }
 
 /* Render slot (ENG-205): the persistent wrapper a skeleton and its replacing
    view share, so the reveal can morph. The column layout + 14px gap mirror the
@@ -186,7 +207,7 @@
 
 /* ---------- tool chip (kept quiet; most are hidden in the thread) ---------- */
 .fl-tool { align-self: flex-start; display: flex; align-items: center; gap: 8px;
-  font: 500 12px/1 var(--flowlet-font-mono); color: var(--flowlet-fg-muted);
+  font: 500 12px/1 var(--flowlet-font); color: var(--flowlet-fg-muted);
   border: 1px solid var(--flowlet-border); border-radius: 10px; padding: 7px 11px;
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
 .fl-tool-label { color: var(--flowlet-fg); }
@@ -210,7 +231,7 @@
 .fl-approval-head { display: flex; align-items: flex-start; gap: 10px; }
 .fl-approval-ic { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0;
   border-radius: 9px; color: var(--flowlet-accent); background: var(--flowlet-accent-soft); }
-.fl-approval-eyebrow { font: 600 10px/1 var(--flowlet-font-mono); letter-spacing: .07em;
+.fl-approval-eyebrow { font: 600 10.5px/1 var(--flowlet-font); letter-spacing: .05em;
   text-transform: uppercase; color: var(--flowlet-fg-muted); }
 .fl-approval-title { margin-top: 4px; font: 600 13.5px/1.3 var(--flowlet-font); color: var(--flowlet-fg);
   letter-spacing: -.01em; }
@@ -242,11 +263,9 @@
   border: 1px solid var(--flowlet-border); border-radius: 14px;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-fg) 5%, transparent),
     0 10px 28px color-mix(in srgb, var(--flowlet-fg) 7%, transparent);
-  transition: border-color .14s, box-shadow .14s; }
-/* The focus ring lives on the container (the field itself keeps outline:0). */
-.fl-composer:focus-within { border-color: color-mix(in srgb, var(--flowlet-accent) 55%, var(--flowlet-border));
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-fg) 5%, transparent),
-    0 10px 28px color-mix(in srgb, var(--flowlet-fg) 9%, transparent), 0 0 0 3px var(--flowlet-accent-soft); }
+  transition: border-color .14s, box-shadow .14s, border-radius .2s ease; }
+/* No focus ring on the bar (Apple/OpenAI-quiet): the caret is the signal.
+   Keyboard :focus-visible outlines on the buttons inside are untouched. */
 .fl-composer-drag { border-color: var(--flowlet-accent); }
 /* align-items:flex-end so the buttons sit at the bottom as the field grows. */
 .fl-composer-row { display: flex; align-items: flex-end; gap: 10px; }
@@ -274,7 +293,7 @@
 .fl-att-file { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 30px 0 10px; position: relative;
   border: 1px solid var(--flowlet-border); border-radius: 9px; background: var(--flowlet-surface); font-size: 12px; max-width: 220px; }
 .fl-att-ext { display: grid; place-items: center; width: 26px; height: 32px; border-radius: 4px; flex-shrink: 0;
-  background: var(--flowlet-danger); color: #fff; font: 700 8px/1 var(--flowlet-font-mono); letter-spacing: .02em; }
+  background: var(--flowlet-danger); color: #fff; font: 700 8px/1 var(--flowlet-font); letter-spacing: .02em; }
 .fl-att-meta { display: flex; flex-direction: column; min-width: 0; }
 .fl-att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-att-meta small { color: var(--flowlet-fg-muted); font-size: 10.5px; }
@@ -366,8 +385,11 @@
 .fl-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .fl-chip { border: 1px solid var(--flowlet-border); background: var(--flowlet-glass-strong);
   -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
-  border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--flowlet-fg); cursor: pointer; transition: border-color .12s; }
-.fl-chip:hover { border-color: var(--flowlet-border-strong); }
+  border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--flowlet-fg); cursor: pointer;
+  transition: border-color .14s, background .14s, transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s; }
+.fl-chip:hover { border-color: var(--flowlet-border-strong); background: var(--flowlet-surface);
+  transform: translateY(-1px); box-shadow: 0 2px 10px color-mix(in srgb, var(--flowlet-fg) 8%, transparent); }
+.fl-chip:active { transform: translateY(0); box-shadow: none; }
 /* Brand focus ring — the UA default blue halo is off-brand in every host. */
 .fl-chip:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
 .fl-landing-composer { width: 100%; max-width: 560px; }
@@ -377,7 +399,7 @@
 
 /* ---------- saved-flowlet library (ENG-183) ---------- */
 .fl-library { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
-.fl-library-label { font-family: var(--flowlet-font-mono); font-size: 10.5px; letter-spacing: .08em;
+.fl-library-label { font-family: var(--flowlet-font); font-weight: 600; font-size: 10.5px; letter-spacing: .05em;
   text-transform: uppercase; color: color-mix(in srgb, var(--flowlet-fg) 46%, transparent);
   text-align: left; margin-top: 6px; }
 .fl-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
@@ -394,7 +416,7 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 18px; }
 .fl-flowcard-prompt { font-size: 11.5px; color: color-mix(in srgb, var(--flowlet-fg) 55%, transparent);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-flowcard-meta { font-family: var(--flowlet-font-mono); font-size: 10.5px;
+.fl-flowcard-meta { font-family: var(--flowlet-font); font-size: 10.5px;
   color: color-mix(in srgb, var(--flowlet-fg) 42%, transparent); margin-top: 3px; }
 .fl-flowcard-actions { position: absolute; top: 7px; right: 7px; display: flex; gap: 2px;
   opacity: 0; transition: opacity .12s; }
@@ -420,16 +442,18 @@
   color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 /* ---------- stale-data note ---------- */
-.fl-stale-note { font-family: var(--flowlet-font-mono); font-size: 11px;
+.fl-stale-note { font-family: var(--flowlet-font); font-size: 11px;
   color: color-mix(in srgb, var(--flowlet-fg) 46%, transparent); padding: 6px 2px; }
 
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
   box-shadow: var(--flowlet-shadow); overflow: auto; padding: 18px 18px 20px; max-width: 560px;
-  max-height: min(560px, 70vh); align-self: flex-start; width: 100%; }
-.fl-picker-head { display: flex; align-items: center; padding: 0 2px 12px; }
-.fl-picker-title { font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; }
+  max-height: min(560px, 70vh); align-self: flex-start; width: 100%;
+  scrollbar-width: none; }
+.fl-picker::-webkit-scrollbar { display: none; }
+.fl-picker-toprow { display: flex; align-items: center; gap: 8px; }
+.fl-picker-toprow .fl-picker-search { flex: 1; width: auto; margin-bottom: 0; }
 .fl-picker-close { margin-left: auto; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
   border: 0; background: transparent; color: var(--flowlet-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
 .fl-picker-close:hover { background: var(--flowlet-accent-soft); color: var(--flowlet-fg); }
@@ -437,7 +461,7 @@
   outline: 0; background: var(--flowlet-surface); font-family: var(--flowlet-font); font-size: 13px;
   color: var(--flowlet-fg); padding: 9px 11px; margin-bottom: 4px; }
 .fl-picker-search::placeholder { color: var(--flowlet-fg-muted); }
-.fl-picker-group { font: 600 10px/1 var(--flowlet-font-mono); letter-spacing: .12em; text-transform: uppercase;
+.fl-picker-group { font: 600 10.5px/1 var(--flowlet-font); letter-spacing: .05em; text-transform: uppercase;
   color: var(--flowlet-fg-muted); margin: 16px 2px 9px; }
 .fl-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0; }
 .fl-picker-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 11px;
@@ -474,6 +498,12 @@
 .fl-picker-item:hover .fl-picker-add { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: var(--flowlet-accent); }
 
 /* ---------- in-conversation connect prompt ---------- */
+/* Compact post-connect confirmation: a quiet status pill, not a display card. */
+.fl-connect-done { display: inline-flex; align-items: center; gap: 9px; align-self: flex-start;
+  border: 1px solid var(--flowlet-border); border-radius: 999px; padding: 7px 14px 7px 9px;
+  background: var(--flowlet-surface); font-size: 12.5px; font-weight: 550; }
+.fl-connect-done-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--flowlet-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--flowlet-ok) 18%, transparent); }
 .fl-connect { border: 1px solid var(--flowlet-border-strong); border-radius: var(--flowlet-radius);
   padding: 15px 16px; background: var(--flowlet-glass-strong);
   -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
@@ -523,6 +553,10 @@
   /* open animation — the "squeeze": a horizontal stretch out from a sliver, with a
      springy overshoot. transform-origin stays centered so it grows symmetrically. */
   transform-origin: center; animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
+.fl-overlay-close { position: absolute; top: 12px; right: 12px; z-index: 5; width: 28px; height: 28px;
+  border-radius: 9px; display: grid; place-items: center; border: 0; background: transparent;
+  color: var(--flowlet-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
+.fl-overlay-close:hover { background: var(--flowlet-accent-soft); color: var(--flowlet-fg); }
 @keyframes fl-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fl-overlay-stretch {
   from { transform: translate(-50%, -50%) scaleX(.06) scaleY(.7); opacity: .4; }

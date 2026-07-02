@@ -90,12 +90,12 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
           items.push({ kind: "approval", key, messageId, approvalId: approval.id, toolName, input: part.input });
         } else if (RENDER_TOOLS.has(toolName)) {
           // A render tool's finished output is the sibling data-ui node (so no chip).
-          // But while it's still streaming/pending, show a skeleton in its place
-          // so the user sees a view being built — and ONLY then, never for
-          // text-only turns. The partial input carries the component name, which
-          // lets the skeleton match the shape of what's being built.
+          // While render_view is still streaming/pending, show a skeleton in its
+          // place so the user sees a view being built. request_connect is NOT a
+          // built view — it resolves instantly into the host Connect card, so it
+          // gets no skeleton (a "building your view" beat there reads absurd).
           const state = String(part.state ?? "");
-          if (state === "input-streaming" || state === "input-available") {
+          if (toolName === "render_view" && (state === "input-streaming" || state === "input-available")) {
             items.push({ kind: "skeleton", key, messageId, name: renderName(part.input) });
           } else if (state === "output-error") {
             items.push({ kind: "error", key, messageId, message: String(part.errorText ?? "Failed to render UI") });

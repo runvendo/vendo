@@ -14,7 +14,7 @@
  */
 import type { CSSProperties } from "react";
 import { ApprovalCard } from "./ApprovalCard";
-import { humanize } from "./tool-labels";
+import { humanize, toolAction } from "./tool-labels";
 
 /** The authoring tools whose approvals render as this card. */
 export function isAutomationApproval(toolName: string): boolean {
@@ -85,16 +85,17 @@ function triggerLine(spec: SpecLike): string {
     if (typeof t["at"] === "string") return `Once at ${t["at"]}`;
     return `On schedule ${String(t["cron"])} (${String(t["timezone"] ?? "UTC")})`;
   }
-  if (t.type === "host_event") return `When ${String(t["event"])} fires`;
-  return `On ${String(t["trigger"])} (integration trigger)`;
+  // Friendly event names: `transaction.created` -> "When transaction created".
+  if (t.type === "host_event") return `When ${humanize(String(t["event"]).replace(/\./g, " ")).toLowerCase()}`;
+  return `When ${humanize(String(t["trigger"]).replace(/\./g, " ")).toLowerCase()}`;
 }
 
-/** One human-readable line per step input mapping: `channel: #general`. */
-function inputSummary(input: Record<string, unknown> | undefined): string {
-  if (!input) return "";
-  return Object.entries(input)
-    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
-    .join(" · ");
+/** First sentence of an agent goal, clamped — the full prompt (with its {{ }}
+ *  templates) reads as scary machinery and lives in the details disclosure. */
+function brief(text: string | undefined, max = 110): string {
+  if (!text) return "";
+  const sentence = text.split(/(?<=\.)\s/)[0] ?? text;
+  return sentence.length > max ? `${sentence.slice(0, max - 1).trimEnd()}…` : sentence;
 }
 
 function flattenSteps(steps: StepLike[] | undefined, depth = 0): Array<{ step: StepLike; depth: number }> {
@@ -146,11 +147,11 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
 
   return (
     <div className="fl-approval" role="group" aria-label={`${verb}: ${spec.name}`}>
-      <div style={mono}>{verb.toLowerCase()} · approval required</div>
+      <div className="fl-approval-eyebrow">{verb} · approval required</div>
 
       <div style={{ marginTop: 8, display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 14, fontWeight: 650 }}>{spec.name}</span>
-        <span className="fl-chip" style={{ ...mono, textTransform: "capitalize" }}>{tier}</span>
+        <span className="fl-chip" style={{ fontSize: 11, textTransform: "capitalize" }}>{tier}</span>
       </div>
 
       {spec.description ? (
@@ -172,31 +173,22 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
         <span style={muted}>Steps</span>
         <ol style={{ margin: "4px 0 0", paddingLeft: 18 }}>
           {spec.execution.mode === "agent" ? (
-            <li>
-              Agent run: {spec.execution.goal}
-              <div style={{ ...mono, ...muted }}>tools: {(spec.execution.tools ?? []).join(", ")}</div>
-            </li>
+            <li>AI step — {brief(spec.execution.goal)}</li>
           ) : (
             steps.map(({ step, depth }) => (
               <li key={step.id} style={{ marginLeft: depth * 14, marginTop: 2 }}>
                 {step.type === "tool" ? (
-                  <>
-                    {humanize(step.tool ?? "")}
-                    {step.input ? (
-                      <div style={{ ...mono, ...muted }}>{inputSummary(step.input)}</div>
-                    ) : null}
-                  </>
+                  toolAction(step.tool ?? "").request
                 ) : step.type === "agent" ? (
-                  <>
-                    Agent step: {step.goal}
-                    <div style={{ ...mono, ...muted }}>
-                      tools: {(step.tools ?? []).length > 0 ? step.tools!.join(", ") : "none (judgment only)"}
-                    </div>
-                  </>
+                  <>AI step — {brief(step.goal)}</>
                 ) : step.type === "branch" ? (
-                  <span style={mono}>if {step.if}</span>
+                  <>
+                    If <span style={{ ...mono, ...muted }}>{step.if}</span>
+                  </>
                 ) : (
-                  <span style={mono}>for each {step.items}</span>
+                  <>
+                    For each <span style={{ ...mono, ...muted }}>{step.items}</span>
+                  </>
                 )}
                 {step.type !== "branch" && step.if ? (
                   <div style={{ ...mono, ...muted }}>only if {step.if}</div>
@@ -209,13 +201,13 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
 
       {tools.length > 0 ? (
         <div style={{ fontSize: 12, marginTop: 10 }}>
-          <span style={muted}>Permissions</span>
+          <span style={muted}>It can</span>
           <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
             {tools.map((tool) => (
               <li key={tool} style={{ marginTop: 2 }}>
-                <span style={mono}>{tool}</span>{" "}
+                {toolAction(tool).request}{" "}
                 <span style={muted}>
-                  {granted.has(tool) ? "— runs unattended (granted)" : "— asks you each firing if gated"}
+                  {granted.has(tool) ? "— runs without asking" : "— asks you each time"}
                 </span>
               </li>
             ))}
@@ -224,8 +216,8 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
       ) : null}
 
       <details style={{ marginTop: 10 }}>
-        <summary style={{ ...mono, cursor: "pointer", ...muted }}>raw spec</summary>
-        <pre style={{ fontSize: 11, margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+        <summary style={{ fontSize: 11, cursor: "pointer", ...muted }}>Show technical details</summary>
+        <pre style={{ fontSize: 11, margin: "6px 0 0", whiteSpace: "pre-wrap", ...mono }}>
           {JSON.stringify(spec, null, 2)}
         </pre>
       </details>

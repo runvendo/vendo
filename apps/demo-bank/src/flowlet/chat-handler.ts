@@ -22,6 +22,37 @@ interface ChatRequestBody {
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
 
+/**
+ * Repair dangling tool calls in client-supplied history. An aborted stream (tab
+ * closed, navigation, error mid-turn) can leave an assistant tool part stuck in
+ * an input-* state; converted to a model message that is a `tool_use` with no
+ * `tool_result`, which the provider rejects — poisoning EVERY later turn of the
+ * thread. Mark such parts failed so they convert to an error tool_result and the
+ * conversation stays usable.
+ */
+function repairDanglingToolParts(messages: FlowletUIMessage[]): FlowletUIMessage[] {
+  return messages.map((message) => {
+    if (message.role !== "assistant") return message;
+    let changed = false;
+    const parts = message.parts.map((rawPart) => {
+      const part = rawPart as { type: string; state?: string };
+      if (
+        part.type.startsWith("tool-") &&
+        (part.state === "input-streaming" || part.state === "input-available")
+      ) {
+        changed = true;
+        return {
+          ...rawPart,
+          state: "output-error",
+          errorText: "Interrupted — this call never finished.",
+        } as typeof rawPart;
+      }
+      return rawPart;
+    });
+    return changed ? { ...message, parts } : message;
+  });
+}
+
 /** Only expose the real Composio identity to local requests, unless an operator
  *  has explicitly opted a deployment in via FLOWLET_DEMO_PUBLIC=1. */
 function principalAllowed(req: Request): boolean {
@@ -53,7 +84,7 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
     return Response.json({ error: "messages must be a non-empty array" }, { status: 400 });
   }
   const stream = agent.run({
-    messages,
+    messages: repairDanglingToolParts(messages),
     // Maple's own API surface enters through the caller seam (ENG-202): no
     // execute — the policy gates each call and the BROWSER executes approved
     // ones on the user's session via the SDK's host-tool runner.
