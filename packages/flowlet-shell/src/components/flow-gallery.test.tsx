@@ -67,4 +67,21 @@ describe("FlowletToast", () => {
       vi.useRealTimers();
     }
   });
+
+  it("does not restart its countdown when the parent re-renders with a new onDismiss identity", () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      const { rerender } = render(
+        <FlowletToast message="Deleted" onDismiss={() => calls.push("first")} durationMs={1000} />,
+      );
+      act(() => vi.advanceTimersByTime(600));
+      // Parent re-render with a fresh inline callback — must NOT reset the timer.
+      rerender(<FlowletToast message="Deleted" onDismiss={() => calls.push("second")} durationMs={1000} />);
+      act(() => vi.advanceTimersByTime(500)); // t=1100 total; a reset timer would still be pending
+      expect(calls).toEqual(["second"]); // fired on schedule, with the LATEST callback
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

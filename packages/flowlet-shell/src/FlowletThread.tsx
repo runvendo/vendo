@@ -23,6 +23,13 @@ export interface FlowletThreadProps {
   onPinFlow?: (flow: Flowlet, pinned: boolean) => void;
   onDeleteFlow?: (flow: Flowlet) => void;
   /**
+   * Hoist the composer into the Landing hero on the empty state (the library
+   * page layout Yousef approved). OFF by default: the overlay and slot keep
+   * their original bottom composer, and surfaces that opt in accept a one-time
+   * composer remount on the first send (draft is empty at that moment).
+   */
+  heroComposer?: boolean;
+  /**
    * When set, shows a "Pin to card" footer that commits the latest rendered view
    * to a host slot. Slot-only seam — other surfaces omit it and render unchanged.
    */
@@ -35,7 +42,8 @@ export interface FlowletThreadProps {
 }
 
 export function FlowletThread({
-  greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow, onPin, onFeedback,
+  greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
+  heroComposer = false, onPin, onFeedback,
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations } = useShell();
@@ -74,6 +82,7 @@ export function FlowletThread({
 
   const empty = chat.items.length === 0;
   const composerEl = <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />;
+  const composerInHero = heroComposer && empty;
 
   return (
     <div className="fl-thread">
@@ -82,7 +91,7 @@ export function FlowletThread({
           greeting={greeting}
           suggestions={suggestions}
           flows={flows}
-          composer={composerEl}
+          composer={composerInHero ? composerEl : undefined}
           onSuggestion={send}
           onOpenFlow={(f) => onOpenFlow?.(f)}
           onRenameFlow={onRenameFlow}
@@ -134,9 +143,9 @@ export function FlowletThread({
           <span className="fl-pinbar-hint">{latestNode ? "pins the latest view" : "describe a view first"}</span>
         </div>
       )}
-      {/* Empty state hoists the composer into the Landing hero (placement A);
-          once the thread has content it returns to the bottom. */}
-      {!empty && composerEl}
+      {/* heroComposer surfaces hoist the composer into the Landing hero while
+          empty; everyone else keeps it here at the bottom, always. */}
+      {!composerInHero && composerEl}
     </div>
   );
 }

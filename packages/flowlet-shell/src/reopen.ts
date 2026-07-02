@@ -94,7 +94,15 @@ export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing
 
     const dataKey = (node: UINode): string =>
       isGeneratedNode(node) ? JSON.stringify((node.payload as GeneratedPayload).data ?? {}) : "";
-    let lastKey = dataKey(flowlet.node);
+    // Ticks patch from the LAST GOOD node, not the original snapshot — else a
+    // partially-failed tick would roll already-freshened paths back to stale
+    // data. Adopted on every non-full-failure result.
+    let baseNode = flowlet.node;
+    let lastKey = dataKey(baseNode);
+    // Track what the UI last showed beyond data: a data-equal tick can still be
+    // a RECOVERY (errors → clean), and dropping it would pin the stale note.
+    let lastStatus: RefreshStatus = "snapshot";
+    let lastErrorCount = 0;
 
     const writeBack = async (node: UINode) => {
       try {
@@ -112,22 +120,29 @@ export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing
       if (inFlight) return;
       inFlight = true;
       try {
-        const fresh = await refreshFlowletNode(flowlet.node, runQuery);
+        const fresh = await refreshFlowletNode(baseNode, runQuery);
         if (cancelled) return;
 
         if (fresh.status === "snapshot" && fresh.errors.length > 0) {
           failures += 1;
           if (failures >= MAX_REFRESH_FAILURES && timer !== undefined) clearInterval(timer);
-          setResult(fresh); // surface the stale state + errors
+          lastStatus = fresh.status;
+          lastErrorCount = fresh.errors.length;
+          setResult(fresh); // surface the stale state + errors (base keeps last good)
           return;
         }
 
         failures = 0;
+        baseNode = fresh.node;
         const key = dataKey(fresh.node);
         const dataChanged = key !== lastKey;
-        // Steady-state ticks with identical data are dropped entirely.
-        if (initial || dataChanged || fresh.status !== "live") {
+        const statusChanged = fresh.status !== lastStatus || fresh.errors.length !== lastErrorCount;
+        // Steady-state ticks (same data, still cleanly live) are dropped; a
+        // data-equal tick that RECOVERS from an error state must still land.
+        if (initial || dataChanged || statusChanged) {
           lastKey = key;
+          lastStatus = fresh.status;
+          lastErrorCount = fresh.errors.length;
           setResult(fresh);
           if (fresh.status === "live" && (initial || dataChanged)) await writeBack(fresh.node);
         }

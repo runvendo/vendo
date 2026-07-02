@@ -63,31 +63,39 @@ function PageSurface() {
 
   // Library management (ENG-183 gate): rename + pin persist through the store;
   // delete is undoable via a toast (no confirm dialog), never destructive twice.
-  const [deleted, setDeleted] = useState<Flowlet | null>(null)
+  // Deletes QUEUE (FIFO): each deleted view gets its own toast with a full
+  // undo window — a rapid second delete must not orphan the first's undo.
+  const [deleted, setDeleted] = useState<Flowlet[]>([])
 
+  // Read-modify-write against the CURRENT store record: the gallery's `flow`
+  // prop can be stale (the reopen hook writes fresh node data back), and a
+  // rename spread from stale state would overwrite that fresh node.
   const persistPatch = (flow: Flowlet, patch: Partial<Flowlet>) => {
-    const { updatedAt: _prior, ...base } = flow
     void store
-      .save({ ...base, ...patch })
+      .load(flow.id)
+      .then((current) => {
+        const { updatedAt: _prior, ...base } = current ?? flow
+        return store.save({ ...base, ...patch })
+      })
       .then((record) => setSaved((prev) => prev.map((p) => (p.id === record.id ? record : p))))
       .catch((error: unknown) => console.error("[flowlet] failed to update saved view", error))
   }
 
   const deleteFlow = (flow: Flowlet) => {
     void store
-      .remove(flow.id)
-      .then(() => {
+      .load(flow.id) // capture the CURRENT record so undo restores fresh data
+      .then(async (current) => {
+        await store.remove(flow.id)
         setSaved((prev) => prev.filter((p) => p.id !== flow.id))
-        setActive((current) => (current === flow.id ? CHAT : current))
-        setDeleted(flow)
+        setActive((now) => (now === flow.id ? CHAT : now))
+        setDeleted((queue) => [...queue, current ?? flow])
       })
       .catch((error: unknown) => console.error("[flowlet] failed to delete saved view", error))
   }
 
-  const undoDelete = () => {
-    const flow = deleted
-    setDeleted(null)
-    if (!flow) return
+  const settleDelete = (flow: Flowlet, restore: boolean) => {
+    setDeleted((queue) => queue.filter((f) => f.id !== flow.id))
+    if (!restore) return
     void store
       .save(flow) // full record, original timestamps — restores exactly
       .then((record) =>
@@ -135,6 +143,7 @@ function PageSurface() {
           <FlowletThread
             greeting="What do you want to build?"
             suggestions={SUGGESTIONS}
+            heroComposer
             flows={saved}
             onOpenFlow={(f) => setActive(f.id)}
             onRenameFlow={(f, name) => persistPatch(f, { name })}
@@ -144,11 +153,12 @@ function PageSurface() {
         </div>
         {activeSaved ? <SavedPane key={activeSaved.id} flowlet={activeSaved} /> : null}
       </div>
-      {deleted && (
+      {deleted[0] && (
         <FlowletToast
-          message={`Deleted "${deleted.name}"`}
-          onAction={undoDelete}
-          onDismiss={() => setDeleted(null)}
+          key={deleted[0].id} // per-view countdown: the next queued toast starts fresh
+          message={`Deleted "${deleted[0].name}"`}
+          onAction={() => settleDelete(deleted[0]!, true)}
+          onDismiss={() => settleDelete(deleted[0]!, false)}
         />
       )}
     </div>
