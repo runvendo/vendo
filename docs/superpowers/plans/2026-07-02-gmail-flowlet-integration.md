@@ -97,11 +97,11 @@ Implications folded into tasks below: the action route must EXECUTE approval-gat
 
 **Files:** `apps/gmail/.flowlet/**` (extractor output, then hand-fixed), `docs/superpowers/specs/2026-07-02-gmail-extraction-fidelity-findings.md`.
 
-- [ ] Run `flowlet init apps/gmail` with ANTHROPIC_API_KEY; capture the run verbatim
-- [ ] Write honest fidelity findings (theme/tools/components: what it got right, wrong, missed)
-- [ ] Hand-fix `.flowlet/` to ground truth; register 1–2 host components (descriptor + sandbox-safe impl + entry merged with prewired)
-- [ ] Rebuild sandbox bundle with host components included; verify a host component renders in a generated view
-- [ ] Commit
+- [x] Run `flowlet init apps/gmail` with ANTHROPIC_API_KEY; capture the run verbatim
+- [x] Write honest fidelity findings (theme/tools/components: what it got right, wrong, missed)
+- [x] Hand-fix `.flowlet/` to ground truth; register 1–2 host components (descriptor + sandbox-safe impl + entry merged with prewired)
+- [x] Rebuild sandbox bundle with host components included; verify a host component renders in a generated view
+- [x] Commit
 
 ### Task 7: The three surfaces
 
