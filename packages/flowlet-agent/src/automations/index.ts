@@ -13,3 +13,6 @@ export * from "./runner";
 export * from "./in-process-scheduler";
 export * from "./host-events";
 export * from "./tools";
+
+export * from "./agent-step";
+export * from "./instructions";
