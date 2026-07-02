@@ -18,6 +18,17 @@ export interface FlowletThreadProps {
   suggestions?: string[];
   flows?: Flowlet[];
   onOpenFlow?: (flow: Flowlet) => void;
+  /** Library management on the empty-state gallery (ENG-183). */
+  onRenameFlow?: (flow: Flowlet, name: string) => void;
+  onPinFlow?: (flow: Flowlet, pinned: boolean) => void;
+  onDeleteFlow?: (flow: Flowlet) => void;
+  /**
+   * Hoist the composer into the Landing hero on the empty state (the library
+   * page layout Yousef approved). OFF by default: the overlay and slot keep
+   * their original bottom composer, and surfaces that opt in accept a one-time
+   * composer remount on the first send (draft is empty at that moment).
+   */
+  heroComposer?: boolean;
   /**
    * When set, shows a "Pin to card" footer that commits the latest rendered view
    * to a host slot. Slot-only seam — other surfaces omit it and render unchanged.
@@ -30,7 +41,10 @@ export interface FlowletThreadProps {
   onFeedback?: (messageId: string, feedback: Feedback) => void;
 }
 
-export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFlow, onPin, onFeedback }: FlowletThreadProps) {
+export function FlowletThread({
+  greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
+  heroComposer = false, onPin, onFeedback,
+}: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
@@ -66,15 +80,23 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
   const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
 
+  const empty = chat.items.length === 0;
+  const composerEl = <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />;
+  const composerInHero = heroComposer && empty;
+
   return (
     <div className="fl-thread">
-      {chat.items.length === 0 ? (
+      {empty ? (
         <Landing
           greeting={greeting}
           suggestions={suggestions}
           flows={flows}
+          composer={composerInHero ? composerEl : undefined}
           onSuggestion={send}
           onOpenFlow={(f) => onOpenFlow?.(f)}
+          onRenameFlow={onRenameFlow}
+          onPinFlow={onPinFlow}
+          onDeleteFlow={onDeleteFlow}
         />
       ) : (
         <ThreadErrorBoundary resetKey={chat.items.length}>
@@ -121,7 +143,9 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
           <span className="fl-pinbar-hint">{latestNode ? "pins the latest view" : "describe a view first"}</span>
         </div>
       )}
-      <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />
+      {/* heroComposer surfaces hoist the composer into the Landing hero while
+          empty; everyone else keeps it here at the bottom, always. */}
+      {!composerInHero && composerEl}
     </div>
   );
 }

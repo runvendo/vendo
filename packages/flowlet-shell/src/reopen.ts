@@ -61,18 +61,29 @@ export async function refreshFlowletNode(node: UINode, runQuery: RunQuery): Prom
   return { node: next, status, errors };
 }
 
+/** Consecutive full-failure ticks after which live refresh gives up. */
+const MAX_REFRESH_FAILURES = 3;
+
 /**
  * Reopen a saved flowlet: snapshot immediately, then live re-run through the
- * host's RunQuery seam (when provided). A fully-live refresh is written back to
- * the store so the next snapshot is newer; write-back failures only warn.
+ * host's RunQuery seam (when provided). While the view stays open it keeps
+ * itself fresh: the (reads-only) queries re-run every `refreshIntervalMs` —
+ * only while the tab is visible, stopping after repeated failures. Data-equal
+ * ticks are dropped so the stage isn't churned and `updatedAt` doesn't creep.
+ * Fresh data is written back onto the CURRENT stored record (a rename/pin
+ * during a refresh survives; a deleted record is never resurrected).
  */
 export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing: boolean } {
-  const { store, runQuery } = useShell();
+  const { store, runQuery, refreshIntervalMs } = useShell();
   const [result, setResult] = useState<RefreshResult>({ node: flowlet.node, status: "snapshot", errors: [] });
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
     setResult({ node: flowlet.node, status: "snapshot", errors: [] });
     if (!runQuery || flowletQueries(flowlet.node).length === 0) {
       // A prior in-flight refresh may have been cancelled with `refreshing`
@@ -81,34 +92,85 @@ export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing
       return;
     }
 
-    setRefreshing(true);
-    void refreshFlowletNode(flowlet.node, runQuery)
-      .then(async (fresh) => {
-        if (cancelled) return;
-        setResult(fresh);
-        if (fresh.status === "live") {
-          try {
-            // Merge onto the CURRENT stored record, not the flowlet captured
-            // when the effect started — a rename/pin during the refresh must
-            // survive the write-back. A missing record means it was deleted
-            // while open: skip, never resurrect it.
-            const current = await store.load(flowlet.id);
-            if (current) {
-              const { updatedAt: _prior, ...base } = current;
-              await store.save({ ...base, node: fresh.node });
-            }
-          } catch (error) {
-            console.warn("[flowlet] refreshed-data write-back failed", error);
-          }
+    const dataKey = (node: UINode): string =>
+      isGeneratedNode(node) ? JSON.stringify((node.payload as GeneratedPayload).data ?? {}) : "";
+    // Ticks patch from the LAST GOOD node, not the original snapshot — else a
+    // partially-failed tick would roll already-freshened paths back to stale
+    // data. Adopted on every non-full-failure result.
+    let baseNode = flowlet.node;
+    let lastKey = dataKey(baseNode);
+    // Track what the UI last showed beyond data: a data-equal tick can still be
+    // a RECOVERY (errors → clean), and dropping it would pin the stale note.
+    let lastStatus: RefreshStatus = "snapshot";
+    let lastErrorCount = 0;
+
+    const writeBack = async (node: UINode) => {
+      try {
+        const current = await store.load(flowlet.id);
+        if (current) {
+          const { updatedAt: _prior, ...base } = current;
+          await store.save({ ...base, node });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setRefreshing(false);
-      });
-    return () => { cancelled = true; };
+      } catch (error) {
+        console.warn("[flowlet] refreshed-data write-back failed", error);
+      }
+    };
+
+    const runOnce = async (initial: boolean) => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const fresh = await refreshFlowletNode(baseNode, runQuery);
+        if (cancelled) return;
+
+        if (fresh.status === "snapshot" && fresh.errors.length > 0) {
+          failures += 1;
+          if (failures >= MAX_REFRESH_FAILURES && timer !== undefined) clearInterval(timer);
+          lastStatus = fresh.status;
+          lastErrorCount = fresh.errors.length;
+          setResult(fresh); // surface the stale state + errors (base keeps last good)
+          return;
+        }
+
+        failures = 0;
+        baseNode = fresh.node;
+        const key = dataKey(fresh.node);
+        const dataChanged = key !== lastKey;
+        const statusChanged = fresh.status !== lastStatus || fresh.errors.length !== lastErrorCount;
+        // Steady-state ticks (same data, still cleanly live) are dropped; a
+        // data-equal tick that RECOVERS from an error state must still land.
+        if (initial || dataChanged || statusChanged) {
+          lastKey = key;
+          lastStatus = fresh.status;
+          lastErrorCount = fresh.errors.length;
+          setResult(fresh);
+          if (fresh.status === "live" && (initial || dataChanged)) await writeBack(fresh.node);
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    setRefreshing(true);
+    void runOnce(true).finally(() => {
+      if (!cancelled) setRefreshing(false);
+    });
+
+    if (refreshIntervalMs > 0) {
+      timer = setInterval(() => {
+        // "Pause when hidden": ticks no-op while the document isn't visible.
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+        void runOnce(false);
+      }, refreshIntervalMs);
+    }
+
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearInterval(timer);
+    };
     // Re-run only when a different saved flowlet is opened (or the seams change).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flowlet.id, runQuery, store]);
+  }, [flowlet.id, runQuery, store, refreshIntervalMs]);
 
   return { ...result, refreshing };
 }
