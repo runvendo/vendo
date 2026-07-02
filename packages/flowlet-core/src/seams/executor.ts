@@ -12,7 +12,7 @@ import type { Principal } from "./principal";
  *
  * The runtime selects an executor per tool call; the policy layer has already
  * evaluated the call before it reaches any executor. Non-streaming by design:
- * a tool call resolves to one outcome (mirrors `ActionResult`).
+ * a tool call resolves to one outcome.
  */
 export interface Executor {
   execute(call: ToolCallRequest, context: ExecutionContext): Promise<ToolCallOutcome>;
@@ -32,6 +32,8 @@ export interface ExecutionContext {
   signal?: AbortSignal;
 }
 
+/** Discriminated on `ok` so narrowing never depends on the truthiness of an
+ *  `unknown` result (a legitimate `result: undefined` must not read as error). */
 export type ToolCallOutcome =
-  | { result: unknown }
-  | { error: { code: string; message: string } };
+  | { ok: true; result: unknown }
+  | { ok: false; error: { code: string; message: string } };

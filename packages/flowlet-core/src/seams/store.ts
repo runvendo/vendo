@@ -60,7 +60,12 @@ export interface SavedFlowlet {
 }
 
 export interface SavedFlowletStore {
-  save(scope: Principal, flowlet: Omit<SavedFlowlet, "id">): Promise<SavedFlowlet>;
+  /** The store assigns `id` and both timestamps — callers never supply them
+   *  (same authorship rule as `ThreadStore.create`). */
+  save(
+    scope: Principal,
+    flowlet: Omit<SavedFlowlet, "id" | "createdAt" | "updatedAt">,
+  ): Promise<SavedFlowlet>;
   get(scope: Principal, id: string): Promise<SavedFlowlet | undefined>;
   list(scope: Principal): Promise<SavedFlowlet[]>;
   delete(scope: Principal, id: string): Promise<void>;
@@ -92,7 +97,11 @@ export interface AutomationRun {
 }
 
 export interface AutomationStore {
-  save(scope: Principal, automation: Omit<AutomationRecord, "id">): Promise<AutomationRecord>;
+  /** The store assigns `id` and both timestamps — callers never supply them. */
+  save(
+    scope: Principal,
+    automation: Omit<AutomationRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<AutomationRecord>;
   get(scope: Principal, id: string): Promise<AutomationRecord | undefined>;
   list(scope: Principal): Promise<AutomationRecord[]>;
   recordRun(scope: Principal, run: AutomationRun): Promise<void>;

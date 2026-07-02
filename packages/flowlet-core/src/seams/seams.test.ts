@@ -26,13 +26,23 @@ function makeStore(): Store {
     getMessages: async () => [],
   };
   const flowlets: SavedFlowletStore = {
-    save: async (_scope, f) => ({ ...f, id: "f1" }),
+    save: async (_scope, f) => ({
+      ...f,
+      id: "f1",
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-01T00:00:00Z",
+    }),
     get: async () => undefined,
     list: async () => [],
     delete: async () => {},
   };
   const automations: AutomationStore = {
-    save: async (_scope, a) => ({ ...a, id: "a1" }),
+    save: async (_scope, a) => ({
+      ...a,
+      id: "a1",
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-01T00:00:00Z",
+    }),
     get: async () => undefined,
     list: async () => [],
     recordRun: async () => {},
@@ -47,6 +57,16 @@ describe("seam interfaces are implementable in-memory", () => {
     const store = makeStore();
     const t = await store.threads.create(principal, { title: "hi" });
     expect(t.tenantId).toBe("t1");
+    // The store owns identity AND timestamps — callers never supply either.
+    const f = await store.flowlets.save(principal, {
+      name: "My invoices",
+      pinned: false,
+      uiTree: { id: "n1", kind: "generated", payload: {} },
+      query: { toolName: "listInvoices", input: {} },
+      originatingPrompt: "show my invoices",
+    });
+    expect(f.id).toBe("f1");
+    expect(f.createdAt).toBeTruthy();
   });
 
   it("CredentialBroker", async () => {
@@ -67,21 +87,24 @@ describe("seam interfaces are implementable in-memory", () => {
 
   it("Executor", async () => {
     const executor: Executor = {
-      execute: async (call) => ({ result: { echoed: call.input } }),
+      execute: async (call) => ({ ok: true, result: { echoed: call.input } }),
     };
     const out = await executor.execute(
       { toolCallId: "c1", toolName: "listInvoices", input: { limit: 1 } },
       { principal },
     );
-    expect("result" in out).toBe(true);
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.result).toEqual({ echoed: { limit: 1 } });
   });
 
   it("Scheduler", async () => {
-    const fired: string[] = [];
-    let handler: ((f: { automationId: string; firedAt: string }) => Promise<void>) | undefined;
+    const fired: Array<{ automationId: string; subject: string }> = [];
+    let handler:
+      | ((f: { automationId: string; principal: Principal; firedAt: string }) => Promise<void>)
+      | undefined;
     const scheduler: Scheduler = {
-      schedule: async (id) => {
-        await handler?.({ automationId: id, firedAt: "2026-07-01T00:00:00Z" });
+      schedule: async (id, _trigger, scope) => {
+        await handler?.({ automationId: id, principal: scope, firedAt: "2026-07-01T00:00:00Z" });
       },
       cancel: async () => {},
       onFire: (h) => {
@@ -89,10 +112,10 @@ describe("seam interfaces are implementable in-memory", () => {
       },
     };
     scheduler.onFire(async (f) => {
-      fired.push(f.automationId);
+      fired.push({ automationId: f.automationId, subject: f.principal.subject });
     });
-    await scheduler.schedule("a1", { kind: "cron", expression: "0 9 * * *" });
-    expect(fired).toEqual(["a1"]);
+    await scheduler.schedule("a1", { kind: "cron", expression: "0 9 * * *" }, principal);
+    expect(fired).toEqual([{ automationId: "a1", subject: "u1" }]);
   });
 
   it("Channels", async () => {

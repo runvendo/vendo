@@ -14,7 +14,7 @@ Everything is scoped by `Principal` (`tenantId` + `subject` + vouch claims). Tim
 
 ## Store
 
-Aggregates one sub-store per concern: `threads` (persisted `FlowletUIMessage` streams), `flowlets` (saved UI tree + bound tool query + originating prompt), `automations` (records + run history), `audit` (append-only `AuditEvent` union: tool execution, approval, grant exchange, firing — written from day 1, ENG-194 is UI over it).
+Aggregates one sub-store per concern: `threads` (persisted `FlowletUIMessage` streams), `flowlets` (saved UI tree + bound tool query + originating prompt), `automations` (records + run history), `audit` (append-only `AuditEvent` union: tool execution, approval, grant exchange, firing — written from day 1, ENG-194 is UI over it). The store owns identity and timestamps: `create`/`save` callers never supply `id`, `createdAt`, or `updatedAt`.
 
 Deferred on purpose: the automation `spec` field is `unknown` until ENG-188 freezes the DSL; memory (ENG-189) has no member yet — adding one later is additive.
 
@@ -24,11 +24,11 @@ Two operations for the two credential lifetimes it owns: `authenticate(credentia
 
 ## Executor
 
-`execute(call, context) → { result } | { error }` — one outcome per call, non-streaming. Policy has already evaluated the call before any executor sees it. `context.grant` is present only on server-executed automation runs.
+`execute(call, context) → { ok: true, result } | { ok: false, error }` — one outcome per call, non-streaming, discriminated on `ok` (so a legitimate `undefined` result never mis-narrows as an error). Policy has already evaluated the call before any executor sees it. `context.grant` is present only on server-executed automation runs.
 
 ## Scheduler
 
-Time-based triggers only (`cron` / `at`); the runtime registers one firing handler. Host webhooks and Composio triggers are ingest paths that invoke the same handler directly — they don't pass through the Scheduler.
+Time-based triggers only (`cron` / `at`); the runtime registers one firing handler. `schedule` takes the `Principal` scope, which the scheduler persists and replays on every `AutomationFiring` — the handler needs it to load the record (Store is Principal-scoped) and acquire the brokered grant. Host webhooks and Composio triggers are ingest paths that invoke the same handler directly — they don't pass through the Scheduler.
 
 ## Channels
 
