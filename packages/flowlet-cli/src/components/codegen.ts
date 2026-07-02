@@ -150,11 +150,13 @@ import { flowletHostPreset } from "@flowlet/stage/build";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const base = flowletHostPreset({ entry: "entry.ts", version: "0.0.1" });
 
-export default {
+const config = {
   ...base,
   // Host tsconfig path aliases, re-rooted relative to this directory.
   resolve: { alias: { ${aliasEntries} } },
 };
+
+export default config;
 `;
 }
 
