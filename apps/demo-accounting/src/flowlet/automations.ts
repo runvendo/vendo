@@ -275,6 +275,17 @@ export function demoAutomationInstructions(): string {
     "professional chase note from Maya Alvarez at Hartwell & Associates that names the",
     "missing documents. When booking a call, put the client's contactEmail in attendees",
     "and reference the business name in the summary.",
+    "",
+    "SPEC PITFALLS — get these right the FIRST time:",
+    "- A for_each `items` value MUST be exactly one {{ expr }} interpolation, e.g.",
+    "  \"{{ steps.fetch.output.clients[status = 'missing_docs'] }}\". A bare expression",
+    "  string without {{ }} is treated as a LITERAL and the step fails with 'items",
+    "  expression did not produce an array'.",
+    "- get_deadlines returns { clients: [...] } — filter steps.<id>.output.clients,",
+    "  never steps.<id>.output directly.",
+    "- GOOGLECALENDAR_CREATE_EVENT start_datetime must be NAIVE local time with no",
+    "  offset/Z. Derive it from the firing time, e.g.",
+    "  \"{{ $substring(run.firedAt, 0, 10) & 'T14:00:00' }}\" for 2 PM on the fire date.",
   ].join("\n");
 }
 
