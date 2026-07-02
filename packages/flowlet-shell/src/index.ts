@@ -9,6 +9,8 @@ export * from "./use-voice-input";
 export * from "./use-attachments";
 export * from "./seams/store";
 export * from "./seams/web-storage";
+export * from "./seams/query";
+export * from "./reopen";
 export * from "./seams/integrations";
 
 export * from "./components/StreamingText";

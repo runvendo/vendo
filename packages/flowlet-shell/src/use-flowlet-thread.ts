@@ -148,6 +148,18 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
   return out;
 }
 
+/** The nearest user text item preceding the item with key `uiKey` — i.e. the
+ *  prompt that produced a rendered view. Used when saving a flowlet (ENG-183). */
+export function originatingPrompt(items: ThreadItem[], uiKey: string): string | undefined {
+  const at = items.findIndex((item) => item.key === uiKey);
+  if (at < 0) return undefined;
+  for (let i = at - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item?.kind === "text" && item.role === "user" && item.text.trim()) return item.text;
+  }
+  return undefined;
+}
+
 /** Hook: F1 chat plus the normalized item list. */
 export function useFlowletThread() {
   const chat = useFlowletChat();
