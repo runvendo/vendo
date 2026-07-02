@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import type { Principal } from "@flowlet/core";
+import type { FlowletPrincipal } from "@flowlet/runtime";
 import { demoPolicy } from "./policy";
 
-const PRINCIPAL = { userId: "test" } as unknown as Principal;
+const PRINCIPAL: FlowletPrincipal = { userId: "test" };
 
 function evaluate(toolName: string, executor?: "client", annotations?: Record<string, boolean>) {
   return demoPolicy.evaluate({

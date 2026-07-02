@@ -85,12 +85,4 @@ export function demoTools(): ToolSet {
   };
 }
 
-/** The in-process tools that are safe to re-run without the user asking —
- *  shared by the policy allowlist and the client's reopen runQuery seam. */
-export const READ_ONLY_TOOLS = [
-  "get_dashboard",
-  "get_clients",
-  "get_client_documents",
-  "get_deadlines",
-  "get_activity",
-] as const;
+export { READ_ONLY_TOOLS } from "./read-only-tools";
