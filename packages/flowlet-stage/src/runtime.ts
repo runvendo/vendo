@@ -298,14 +298,14 @@ export const STAGE_RUNTIME_SRC = String.raw`
         }
         var boundProps = bindProps(node.props, params.state);
         boundProps.__nodeId = node.id;
-        if (node.source === "generated") {
-          // Per-node dispatch closure: origin is fixed by the runtime, so generated
-          // code cannot pick an originNodeId. (originNodeId is bookkeeping, not a
-          // trust boundary — the host policy decides on the ACTION.)
-          boundProps.flowlet = {
-            dispatch: function(descriptor) { return window.__flowletDispatch(descriptor, node.id); }
-          };
-        }
+        // Per-node dispatch closure for EVERY source (generated, catalog, host):
+        // origin is fixed by the runtime, so component code cannot pick an
+        // originNodeId. (originNodeId is bookkeeping, not a trust boundary — the
+        // host policy decides on the ACTION.) Catalog action affordances
+        // (Actions) and host components use the same governed door.
+        boundProps.flowlet = {
+          dispatch: function(descriptor) { return window.__flowletDispatch(descriptor, node.id); }
+        };
         var kids = (node.children || []).map(function(c) { return wrap(c); });
         return kids.length
           ? React.createElement(Impl, boundProps, kids)

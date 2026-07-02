@@ -31,7 +31,7 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle", "resize-bomb"]);
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle", "real-bundle-actions", "resize-bomb"]);
 const reactSource = NEEDS_REACT_SHIM.has(caseParam)
   ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
   : undefined;
@@ -124,6 +124,24 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         source: "prewired",
         name: "Card",
         props: { title: "Real Bundle", body: "catalog card" },
+      },
+    };
+  }
+
+  if (kind === "real-bundle-actions") {
+    // Catalog action affordance: the Actions component (real bundle) must
+    // receive the per-node dispatch closure and round-trip through onAction.
+    return {
+      theme,
+      state: {},
+      bundleSource: await fetch("/components-sandbox.js").then((r) => r.text()),
+      componentTheme: { theme: {}, mode: "light" },
+      tree: {
+        id: "a1",
+        kind: "component",
+        source: "prewired",
+        name: "Actions",
+        props: { actions: [{ label: "Freeze card", action: "freeze_card", payload: { cardId: "c1" } }] },
       },
     };
   }
