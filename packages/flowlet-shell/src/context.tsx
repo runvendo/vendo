@@ -13,6 +13,11 @@ export interface ShellContextValue {
   renderNode: RenderNode;
   /** Host brand theme — so portaled surfaces (the overlay) can re-apply it. */
   theme?: FlowletTheme;
+  /** Opaque `--flowlet-*` var map (from the host's brand). Applied INLINE on every
+   *  `.flowlet-root` element so it overrides the vars styles.css declares there —
+   *  an ancestor's vars would lose to that element-level declaration. The shell is
+   *  a dumb applier: it never inspects or produces these, just spreads them. */
+  cssVars?: Record<string, string>;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -55,11 +60,13 @@ export interface FlowletShellProviderProps {
   /** Component impls for the default fallback renderNode. */
   impls?: ImplMap;
   theme?: FlowletTheme;
+  /** Opaque `--flowlet-*` var map from the host brand; applied inline on `.flowlet-root`. */
+  cssVars?: Record<string, string>;
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, renderNode, impls, theme, children,
+  store, integrations, renderNode, impls, theme, cssVars, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
@@ -68,11 +75,12 @@ export function FlowletShellProvider({
     integrations: integrations ?? createLocalIntegrations([]),
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
     theme,
-  }), [store, integrations, renderNode, impls, theme]);
+    cssVars: cssVars ?? {},
+  }), [store, integrations, renderNode, impls, theme, cssVars]);
 
   return (
     <ShellContext.Provider value={value}>
-      <div className="flowlet-root" style={themeToStyle(theme)}>{children}</div>
+      <div className="flowlet-root" style={{ ...themeToStyle(theme), ...cssVars }}>{children}</div>
     </ShellContext.Provider>
   );
 }

@@ -31,4 +31,17 @@ describe("FlowletShellProvider", () => {
     );
     expect(container.querySelector(".flowlet-root")).not.toBeNull();
   });
+
+  it("applies cssVars inline on the flowlet-root element (so brand vars win over styles.css)", () => {
+    const { container } = render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider cssVars={{ "--flowlet-accent": "#123456" }}>
+          <span>hi</span>
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    const root = container.querySelector<HTMLElement>(".flowlet-root");
+    expect(root).not.toBeNull();
+    expect(root!.style.getPropertyValue("--flowlet-accent")).toBe("#123456");
+  });
 });
