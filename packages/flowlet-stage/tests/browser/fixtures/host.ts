@@ -31,7 +31,7 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed"]);
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed", "real-bundle"]);
 const reactSource = NEEDS_REACT_SHIM.has(caseParam)
   ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
   : undefined;
@@ -64,7 +64,35 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     "--flowlet-accent": "#00aa77",
     "--flowlet-surface": "#fff",
     "--flowlet-fg": "#111",
+    // Distinctive first family so the baseline-styles gate can assert the
+    // sandbox body actually inherits the brand font (not the UA serif default).
+    "--flowlet-font": "TestBrandFont, sans-serif",
   };
+
+  if (kind === "real-bundle") {
+    // The REAL @flowlet/components sandbox bundle (copied from its dist-sandbox
+    // by the test:browser pre-step). Regression gate for the shim-exports P0:
+    // the externalized bundle's static named imports ({ PureComponent, … } from
+    // "react", { createPortal } from "react-dom") must link against the shim,
+    // and the bundle must carry OpenUI's base CSS so catalog components render
+    // styled, not as bare HTML.
+    return {
+      theme,
+      state: {},
+      bundleSource: await fetch("/components-sandbox.js").then((r) => {
+        if (!r.ok) throw new Error("components-sandbox.js missing — run the test:browser pre-step");
+        return r.text();
+      }),
+      componentTheme: { theme: {}, mode: "light" },
+      tree: {
+        id: "c1",
+        kind: "component",
+        source: "prewired",
+        name: "Card",
+        props: { title: "Real Bundle", body: "catalog card" },
+      },
+    };
+  }
 
   if (kind === "card") {
     return {

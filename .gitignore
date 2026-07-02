@@ -14,3 +14,4 @@ dist
 # browser-verification artifacts
 .playwright-mcp/
 *.png
+packages/flowlet-stage/tests/browser/public/components-sandbox.js
