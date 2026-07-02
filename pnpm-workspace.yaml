@@ -2,3 +2,5 @@ packages:
   - "packages/*"
   - "examples/*"
   - "apps/*"
+  # gmail demo prop is a vendored CRA app with legacy deps; keep it out of the workspace (npm install inside it)
+  - "!apps/gmail"
