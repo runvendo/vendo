@@ -58,6 +58,16 @@ describe("codegen", () => {
     ).rejects.toThrow(/PascalCase/);
   });
 
+  it("normalizes statement-shaped import entries to bare names", async () => {
+    const { normalizeImports } = await import("./codegen.js");
+    expect(normalizeImports(["Button"])).toEqual(["Button"]);
+    expect(normalizeImports(['import { Card, CardHeader } from "@/components/ui/card"'])).toEqual([
+      "Card",
+      "CardHeader",
+    ]);
+    expect(normalizeImports(["src/components/charts/bars.tsx"])).toEqual([]);
+  });
+
   it("rejects broken generated JSX", () => {
     expect(() => assertParses("impl", "const x = <div>")).toThrow(/syntax error/);
   });
