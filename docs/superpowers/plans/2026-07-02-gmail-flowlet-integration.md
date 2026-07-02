@@ -28,6 +28,16 @@
 10. **No Composio** for this demo — the app's own API is the story; `composio` config omitted (it is optional in `createFlowletAgent`).
 11. **No shared-package edits.** Anything that needs one is surfaced to the orchestrator instead.
 
+## The demo beat (acceptance bar — orchestrator scope update, 2026-07-02)
+
+User types, verbatim: *"Turn my unread emails into Tinder: swipe left to delete, swipe right to reply for me. Swipe up to send it to my team's Slack with a quick summary."* The agent must generate a working, Gmail-themed swipe UI (Tier-2.5 generated component, Pointer-Events gestures) over the clone's real unread emails, where each gesture dispatches a governed action through the sandbox bridge:
+
+- **left = delete** that email (host mail store, acting as the user) — approval-gated
+- **right = reply-for-me** — the server drafts the reply with the model, then sends it — approval-gated
+- **up = REAL Slack post** — server writes a short summary with the model and posts it via the verified Composio REST execute path (`SLACK_CHAT_POST_MESSAGE`, userId `flowlet-demo`, #general `C09U93V4ER3`, `COMPOSIO_API_KEY` via Infisical project b366cac7/dev) — approval-gated
+
+Implications folded into tasks below: the action route must EXECUTE approval-gated writes (demo-bank's never does), so approvals get a server-issued one-time token bound to action+payload (the trusted-re-POST hole dual-review will attack); in-process tools `list_unread_messages` (read, allowed) + `delete_message` + `send_reply` + `slack_summary` (gated); system prompt teaches the dispatch names, payload shapes, and swipe-UI generation; seed guarantees ~6-8 believable unread emails. Placement approval is delegated to the orchestrator (Yousef away); self-merge after green dual-review is claimed authorized — flagged against the repo standing rule at merge time.
+
 ## Known gotchas to respect
 
 - Chat streaming must survive the CRA dev-server proxy (compression can buffer SSE). Verify live; fix with `no-transform`/proxy config in `setupProxy.js` if buffered.
