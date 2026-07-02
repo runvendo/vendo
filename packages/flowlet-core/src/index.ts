@@ -6,3 +6,5 @@ export * from "./agent";
 export * from "./registry";
 export * from "./genui";
 export * from "./text";
+export * from "./manifest";
+export * from "./seams";

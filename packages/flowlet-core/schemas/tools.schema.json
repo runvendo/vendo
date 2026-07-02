@@ -1,0 +1,121 @@
+{
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "inputSchema": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "annotations": {
+            "type": "object",
+            "properties": {
+              "mutating": {
+                "type": "boolean"
+              },
+              "dangerous": {
+                "type": "boolean"
+              },
+              "idempotent": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mutating",
+              "dangerous"
+            ],
+            "additionalProperties": false
+          },
+          "binding": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "http"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "GET",
+                      "POST",
+                      "PUT",
+                      "PATCH",
+                      "DELETE"
+                    ]
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^\\/(?!\\/)\\S*$"
+                  }
+                },
+                "required": [
+                  "type",
+                  "method",
+                  "path"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "inputSchema",
+          "annotations",
+          "binding"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadSchema": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "additionalProperties": false
+      },
+      "default": []
+    }
+  },
+  "required": [
+    "version",
+    "tools"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
