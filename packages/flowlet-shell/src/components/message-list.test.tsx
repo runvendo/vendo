@@ -37,7 +37,7 @@ describe("MessageList", () => {
     // so the assistant text appears both in the bubble and (atomically) in the log.
     expect(screen.getByRole("log")).toBeTruthy();
     expect(screen.getAllByText("hello").length).toBeGreaterThan(0);
-    // Non-render_ui tool calls surface as a quiet chip (render_ui stays a skeleton).
+    // Non-render_view tool calls surface as a quiet chip (render_view stays a skeleton).
     expect(screen.getByTestId("tool-call")).toBeTruthy();
     expect(screen.getByTestId("ui-node")).toBeTruthy();
     fireEvent.click(screen.getByText("Approve"));

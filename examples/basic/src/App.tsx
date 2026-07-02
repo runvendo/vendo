@@ -70,7 +70,7 @@ function Chat() {
 }
 
 // ---------------------------------------------------------------------------
-// Real-agent chat (F2 — policy auto-allows the render_ui tool, no prompt)
+// Real-agent chat (F2 — policy auto-allows the render_view tool, no prompt)
 // ---------------------------------------------------------------------------
 
 function RealChat() {

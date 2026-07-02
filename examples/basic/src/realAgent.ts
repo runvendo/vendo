@@ -4,7 +4,7 @@
  * `createExampleAgent()` returns a genuine `createFlowletAgent` instance driven
  * entirely by scripted mock models — no network or API keys required.
  *
- * - The main model emits a `render_ui` tool call on turn 1 and closing text on
+ * - The main model emits a `render_view` tool call on turn 1 and closing text on
  *   the follow-up turn (identical pattern to `@flowlet/core`'s stub-agent).
  * - The judge model always returns "allow", so the policy clears every tool call
  *   automatically — no human-approval prompt is shown.
@@ -15,7 +15,7 @@ import {
   createFlowletAgent,
   composePolicy,
   naturalLanguagePolicy,
-  RENDER_TOOL_NAME,
+  RENDER_VIEW_TOOL_NAME,
 } from "@flowlet/agent";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart, LanguageModelV3GenerateResult } from "@ai-sdk/provider";
@@ -56,16 +56,17 @@ function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolea
 /**
  * Build a Flowlet agent wired entirely offline with mock models.
  *
- * Turn 1: the main model emits text + a `render_ui` tool call targeting the
- * prewired `DemoCard` component. Because the policy returns "allow" (judge
- * model is scripted to return "allow"), `wrapTool` sets `needsApproval` to
- * false and the SDK executes the tool in the same run without pausing.
+ * Turn 1: the main model emits text + a `render_view` tool call rendering a
+ * minimal generated view (a single Text node). Because the policy returns
+ * "allow" (judge model is scripted to return "allow"), `wrapTool` sets
+ * `needsApproval` to false and the SDK executes the tool in the same run
+ * without pausing.
  *
  * Turn 2: the main model (seeing the prior tool call in the history) emits
  * closing text and finishes.
  */
 export function createExampleAgent() {
-  // Main driver model — emits render_ui on first turn, text on follow-up.
+  // Main driver model — emits render_view on first turn, text on follow-up.
   const model = new MockLanguageModelV3({
     doStream: async ({ prompt }) => {
       const hasCall = promptHasToolCall(
@@ -85,10 +86,17 @@ export function createExampleAgent() {
             {
               type: "tool-call",
               toolCallId: "call-1",
-              toolName: RENDER_TOOL_NAME,
+              toolName: RENDER_VIEW_TOOL_NAME,
               input: JSON.stringify({
-                name: "DemoCard",
-                props: { title: "Hello from the real agent" },
+                formatVersion: "flowlet-genui/v1",
+                root: "r",
+                nodes: [
+                  {
+                    id: "r",
+                    component: "Text",
+                    props: { text: "Hello from the real agent" },
+                  },
+                ],
               }),
             },
             {

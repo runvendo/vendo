@@ -44,7 +44,7 @@ export const RENDER_VIEW_TOOL_NAME = "render_view";
 /** Grounded default system prompt used when the caller supplies none. */
 const DEFAULT_INSTRUCTIONS =
   "You are a Flowlet agent. Help the user by calling the available tools and, " +
-  "when it helps, rendering UI components via the render_ui tool. Only act " +
+  "when it helps, rendering UI components via the render_view tool. Only act " +
   "within the user's request; do not take destructive actions without approval.";
 
 /** Configuration for {@link createFlowletAgent}. */

@@ -104,11 +104,11 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
                 </div>
               );
             case "tool":
-              // Quiet, stateful chip ("Searching Gmail…" → ✓). render_ui never
+              // Quiet, stateful chip ("Searching Gmail…" → ✓). render_view never
               // reaches here — its turn is carried by the skeleton + data-ui node.
               return <ToolCall key={item.key} toolName={item.toolName} state={item.state} errorText={item.errorText} />;
             case "skeleton":
-              // Shown only while render_ui is in flight; never for text-only turns.
+              // Shown only while render_view is in flight; never for text-only turns.
               return (
                 <Fragment key={item.key}>
                   <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
