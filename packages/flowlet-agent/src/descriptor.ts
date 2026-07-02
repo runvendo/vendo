@@ -39,8 +39,8 @@ export interface ToolDescriptor {
    * `"provider-defined"`, …). Defaults to `"function"` when absent.
    */
   kind: string;
-  /** Where the call executes. Defaults to `"server"`. */
-  executor: ToolExecutor;
+  /** Where the call executes. Absent means `"server"`. */
+  executor?: ToolExecutor;
 }
 
 /**

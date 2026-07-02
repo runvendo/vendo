@@ -1,0 +1,172 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Maple Bank API",
+    "description": "Maple's own REST API. This spec is the host contract Flowlet's agent acts through, as the signed-in user (ENG-202).",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/accounts": {
+      "get": {
+        "operationId": "listAccounts",
+        "summary": "List the user's bank accounts with balances.",
+        "responses": { "200": { "description": "Accounts" } }
+      }
+    },
+    "/api/accounts/{id}": {
+      "get": {
+        "operationId": "getAccount",
+        "summary": "Fetch one account by id.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Account id, e.g. acct_checking" }
+        ],
+        "responses": { "200": { "description": "Account" }, "404": { "description": "Not found" } }
+      }
+    },
+    "/api/accounts/{id}/transactions": {
+      "get": {
+        "operationId": "listAccountTransactions",
+        "summary": "List recent transactions for one account.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Account id" }
+        ],
+        "responses": { "200": { "description": "Transactions" } }
+      }
+    },
+    "/api/transactions": {
+      "get": {
+        "operationId": "listTransactions",
+        "summary": "Search and list transactions across all accounts, with filters, sorting and cursor pagination.",
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Free-text match on merchant/descriptor" },
+          { "name": "category", "in": "query", "schema": { "type": "string" }, "description": "Category, e.g. dining, groceries, coffee, transport, subscriptions" },
+          { "name": "accountId", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" }, "description": "pending | authorized | posted" },
+          { "name": "from", "in": "query", "schema": { "type": "string" }, "description": "ISO date lower bound" },
+          { "name": "to", "in": "query", "schema": { "type": "string" }, "description": "ISO date upper bound" },
+          { "name": "min", "in": "query", "schema": { "type": "number" }, "description": "Minimum absolute amount in cents" },
+          { "name": "max", "in": "query", "schema": { "type": "number" }, "description": "Maximum absolute amount in cents" },
+          { "name": "sort", "in": "query", "schema": { "type": "string" }, "description": "date_desc | date_asc | amount_desc | amount_asc" },
+          { "name": "limit", "in": "query", "schema": { "type": "number" } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Transactions page" } }
+      }
+    },
+    "/api/transactions/{id}": {
+      "get": {
+        "operationId": "getTransaction",
+        "summary": "Fetch one transaction by id, including its status timeline.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Transaction" }, "404": { "description": "Not found" } }
+      }
+    },
+    "/api/cards": {
+      "get": {
+        "operationId": "listCards",
+        "summary": "List the user's physical and virtual cards.",
+        "responses": { "200": { "description": "Cards" } }
+      }
+    },
+    "/api/cards/{id}/transactions": {
+      "get": {
+        "operationId": "listCardTransactions",
+        "summary": "List recent transactions charged to one card.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Card id" }
+        ],
+        "responses": { "200": { "description": "Transactions" } }
+      }
+    },
+    "/api/payees": {
+      "get": {
+        "operationId": "listPayees",
+        "summary": "List saved payees.",
+        "responses": { "200": { "description": "Payees" } }
+      }
+    },
+    "/api/goals": {
+      "get": {
+        "operationId": "listGoals",
+        "summary": "List savings goals with progress.",
+        "responses": { "200": { "description": "Goals" } }
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "operationId": "getProfile",
+        "summary": "Fetch the signed-in user's profile.",
+        "responses": { "200": { "description": "Profile" } }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "summary": "List recent account notifications.",
+        "responses": { "200": { "description": "Notifications" } }
+      }
+    },
+    "/api/payments/scheduled": {
+      "get": {
+        "operationId": "listScheduledPayments",
+        "summary": "List upcoming scheduled payments.",
+        "responses": { "200": { "description": "Scheduled payments" } }
+      }
+    },
+    "/api/insights/spending": {
+      "get": {
+        "operationId": "getSpendingInsights",
+        "summary": "Spending by category for the current period.",
+        "responses": { "200": { "description": "Spending breakdown" } }
+      }
+    },
+    "/api/insights/cashflow": {
+      "get": {
+        "operationId": "getCashflowInsights",
+        "summary": "Cash inflow/outflow summary.",
+        "responses": { "200": { "description": "Cashflow" } }
+      }
+    },
+    "/api/insights/budgets": {
+      "get": {
+        "operationId": "getBudgets",
+        "summary": "Budgets with spend-to-date per category.",
+        "responses": { "200": { "description": "Budgets" } }
+      }
+    },
+    "/api/insights/recurring": {
+      "get": {
+        "operationId": "getRecurringInsights",
+        "summary": "Detected recurring charges and subscriptions.",
+        "responses": { "200": { "description": "Recurring charges" } }
+      }
+    },
+    "/api/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "summary": "Place a delivery order on the user's account. This MOVES MONEY: it charges the user's card and appends a transaction.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "merchant": { "type": "string", "description": "Merchant name, e.g. DoorDash" },
+                  "amountCents": { "type": "number", "description": "Charge amount in cents, e.g. 3184" },
+                  "descriptor": { "type": "string", "description": "Card statement descriptor" },
+                  "items": { "type": "string", "description": "Human-readable order contents" },
+                  "hour": { "type": "number", "description": "Order hour (0-23, Pacific). Demo default is late-night." },
+                  "minute": { "type": "number", "description": "Order minute (0-59)" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "The appended transaction" } }
+      }
+    }
+  }
+}
