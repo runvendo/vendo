@@ -83,6 +83,14 @@ describe("codegen", () => {
     expect(() => assertParses("impl", "const x = <div>")).toThrow(/syntax error/);
   });
 
+  it("re-roots tsconfig path aliases for the emitted vite config", async () => {
+    const { aliasesFromTsconfigPaths, viteConfigSource } = await import("./codegen.js");
+    expect(aliasesFromTsconfigPaths({ "@/*": ["./src/*"], "~lib": ["./lib"] })).toEqual({ "@": "../../src" });
+    const cfg = viteConfigSource({ "@": "../../src" });
+    expect(cfg).toContain('"@": path.resolve(here, "../../src")');
+    assertParses("vite.config", cfg);
+  });
+
   it("entry source wires the __FLOWLET_HOST__ contract", () => {
     const src = entrySource(["Button"]);
     expect(src).toContain("window.__FLOWLET_HOST__ = { Button: ButtonWrapper }");

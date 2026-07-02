@@ -1,9 +1,21 @@
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { LanguageModel } from "ai";
 import { writeGenerated } from "../fsx.js";
 import { scanComponents } from "./scan.js";
 import { analyzeComponent } from "./analyze.js";
-import { writeComponent, entrySource, viteConfigSource } from "./codegen.js";
+import { writeComponent, entrySource, viteConfigSource, aliasesFromTsconfigPaths } from "./codegen.js";
+
+/** Best-effort read of the host tsconfig `paths` (comments tolerated). */
+async function hostAliases(targetDir: string): Promise<Record<string, string>> {
+  try {
+    const raw = await fs.readFile(path.join(targetDir, "tsconfig.json"), "utf8");
+    const json = JSON.parse(raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""));
+    return aliasesFromTsconfigPaths(json?.compilerOptions?.paths ?? {});
+  } catch {
+    return {};
+  }
+}
 
 export interface ComponentsSummary {
   candidates: number;
@@ -48,7 +60,12 @@ export async function extractComponents(
 
   if (written.length > 0) {
     await writeGenerated(path.join(targetDir, ".flowlet/components/entry.ts"), entrySource(written), opts);
-    await writeGenerated(path.join(targetDir, ".flowlet/components/vite.config.ts"), viteConfigSource(), opts);
+    // .mts so vite loads the config as ESM even though .flowlet/ has no package.json.
+    await writeGenerated(
+      path.join(targetDir, ".flowlet/components/vite.config.mts"),
+      viteConfigSource(await hostAliases(targetDir)),
+      opts,
+    );
   }
   return { candidates: candidates.length, written, excluded, failed };
 }

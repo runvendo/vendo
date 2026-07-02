@@ -1,0 +1,508 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "get_account",
+      "description": "Retrieves a single account by its ID. Returns the account object or a 404 if not found.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The account ID to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/accounts/{id}"
+      }
+    },
+    {
+      "name": "list_account_transactions",
+      "description": "Returns all transactions associated with a specific account ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The account ID whose transactions to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/accounts/{id}/transactions"
+      }
+    },
+    {
+      "name": "list_accounts",
+      "description": "Returns the full list of all accounts in the demo store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/accounts"
+      }
+    },
+    {
+      "name": "list_card_transactions",
+      "description": "Returns all transactions associated with a specific card ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The card ID whose transactions to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/cards/{id}/transactions"
+      }
+    },
+    {
+      "name": "list_cards",
+      "description": "Returns the full list of all cards in the demo store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/cards"
+      }
+    },
+    {
+      "name": "dispatch_flowlet_action",
+      "description": "Accepts a stage action dispatched by a generated sandbox component and routes it through the demo policy handler. Write actions require approval per the governing policy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "annotations": {
+        "mutating": true,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/flowlet/action"
+      }
+    },
+    {
+      "name": "send_flowlet_chat",
+      "description": "Streams a Flowlet agent response over HTTP for a chat message. The agent is keyed by the current set of connected toolkits so newly connected integrations are picked up automatically.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "annotations": {
+        "mutating": true,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/flowlet/chat"
+      }
+    },
+    {
+      "name": "list_flowlet_integrations",
+      "description": "Returns the integration catalog with live connected flags for each toolkit. Optionally polls Composio for a specific connection's status by passing the status, id, and account query parameters; marks the toolkit connected in the demo store when Composio reports it as active.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "boolean",
+            "description": "Presence of this parameter switches the endpoint to status-polling mode."
+          },
+          "id": {
+            "type": "string",
+            "description": "The toolkit ID to poll status for (required when status is present)."
+          },
+          "account": {
+            "type": "string",
+            "description": "The Composio connectedAccountId to poll (required when status is present)."
+          }
+        }
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/flowlet/integrations"
+      }
+    },
+    {
+      "name": "manage_flowlet_integration",
+      "description": "Manages toolkit integrations: 'authorize' begins/resumes OAuth and returns a redirectUrl and connectedAccountId; 'connect' fast-paths if already authorized or else starts OAuth; 'disconnect' removes the toolkit from the demo store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The toolkit/integration ID to act on."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "authorize",
+              "connect",
+              "disconnect"
+            ],
+            "description": "The action to perform on the integration."
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ]
+      },
+      "annotations": {
+        "mutating": true,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/flowlet/integrations"
+      }
+    },
+    {
+      "name": "poll_flowlet",
+      "description": "Runs a detector tick that reads current transactions, matches active rules against any new charges, and fires configured actions (e.g. Slack notifications). Returns fired events so the client can surface confirmations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/flowlet/poll"
+      }
+    },
+    {
+      "name": "reset_flowlet",
+      "description": "Resets the entire demo to its pristine starting state by re-seeding data, clearing rules, resetting the poller baseline, and resetting connections. Returns { reset: true } on success.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": true,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/flowlet/reset"
+      }
+    },
+    {
+      "name": "list_goals",
+      "description": "Returns the full list of financial goals from the demo store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/goals"
+      }
+    },
+    {
+      "name": "get_budgets",
+      "description": "Returns budget insight data including category-level budget vs. spend summaries.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/insights/budgets"
+      }
+    },
+    {
+      "name": "get_cashflow",
+      "description": "Returns cashflow insight data showing income versus expenses over time.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/insights/cashflow"
+      }
+    },
+    {
+      "name": "get_recurring",
+      "description": "Returns recurring transaction insight data identifying regular charges and subscriptions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/insights/recurring"
+      }
+    },
+    {
+      "name": "get_spending_by_category",
+      "description": "Returns spending breakdown data grouped by transaction category.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/insights/spending"
+      }
+    },
+    {
+      "name": "list_notifications",
+      "description": "Returns all notifications from the demo notification store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/notifications"
+      }
+    },
+    {
+      "name": "create_order",
+      "description": "Places a late-night delivery order, appending a new transaction to the store. The Flowlet poller will discover the new transaction on its next tick.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "annotations": {
+        "mutating": true,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/orders"
+      }
+    },
+    {
+      "name": "list_payees",
+      "description": "Returns the full list of payees available for payments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/payees"
+      }
+    },
+    {
+      "name": "list_scheduled_payments",
+      "description": "Returns all scheduled (upcoming) payments from the demo store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/payments/scheduled"
+      }
+    },
+    {
+      "name": "get_profile",
+      "description": "Returns the current user's profile information from the demo store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/profile"
+      }
+    },
+    {
+      "name": "get_transaction",
+      "description": "Retrieves a single transaction by its ID. Returns the transaction object or a 404 if not found.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The transaction ID to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/transactions/{id}"
+      }
+    },
+    {
+      "name": "list_transactions",
+      "description": "Returns a filtered, sorted, paginated list of transactions. Supports filtering by search text, category, accountId, status, date range (from/to), and amount range (min/max), with sort and cursor-based pagination via limit and cursor.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search filter."
+          },
+          "category": {
+            "type": "string",
+            "description": "Filter by transaction category."
+          },
+          "accountId": {
+            "type": "string",
+            "description": "Filter by account ID."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by transaction status."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date filter (ISO date string)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date filter (ISO date string)."
+          },
+          "min": {
+            "type": "number",
+            "description": "Minimum transaction amount filter."
+          },
+          "max": {
+            "type": "number",
+            "description": "Maximum transaction amount filter."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order for results."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor for the next page of results."
+          }
+        }
+      },
+      "annotations": {
+        "mutating": false,
+        "dangerous": false
+      },
+      "binding": {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/transactions"
+      }
+    }
+  ],
+  "events": []
+}

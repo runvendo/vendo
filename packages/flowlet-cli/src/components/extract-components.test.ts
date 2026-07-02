@@ -30,7 +30,7 @@ describe("extractComponents", () => {
     await readFile(path.join(dir, ".flowlet/components/Badge/descriptor.ts"), "utf8");
     await readFile(path.join(dir, ".flowlet/components/Badge/impl.tsx"), "utf8");
     await readFile(path.join(dir, ".flowlet/components/entry.ts"), "utf8");
-    await readFile(path.join(dir, ".flowlet/components/vite.config.ts"), "utf8");
+    await readFile(path.join(dir, ".flowlet/components/vite.config.mts"), "utf8");
   });
 
   it("repairs a broken wrapper once by feeding the codegen error back", async () => {
