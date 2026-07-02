@@ -38,10 +38,46 @@ static dots, zero style mutations over the observation window).
   cluster reads as organic drifting more than overt metaball merging. `size`/`spread`/
   `speed` are single-prop tunables on one line of `FluidThinking.tsx`.
 
+## Increment 2 — skeleton → view fluid reveal
+
+- New `FluidReveal` render-slot wrapper: a skeleton and the ui item replacing it now share
+  one React identity (per-message slot keys in `MessageList` — the raw items have different
+  part-index keys, which previously forced a hard remount). On an *observed* skeleton→view
+  flip the card surface springs to its new height while the skeleton face fades/blurs out
+  and the view face rises/un-blurs in. Restored threads mount statically (no flip observed).
+- **Surface/content split honored:** only the slot container's height animates; faces get
+  opacity/translate/blur. The sandboxed iframe is never scaled — generated UI cannot warp.
+- Preload: the motion chunk loads when a skeleton mounts, seconds before the view lands, so
+  the first reveal animates. Toolkit missing / reduced motion → instant swap (verified live:
+  emulated `reduce` produced no exit layer and no inline height).
+- **Perf (live, demo-bank):** reveal transition ≈ 550 ms; instrumented rerun over the full
+  skeleton→settle window recorded **zero frames > 33 ms** (a first, cold-compile run showed
+  3 long frames from Next dev-server chunk compilation at view arrival — not reproducible on
+  warm runs, not the animation).
+- demo-bank's host-side framer-motion `Reveal` in `render-node.tsx` removed: it would have
+  double-animated with the shell reveal, and its `scale: 0.985` entrance warped sandbox
+  content (against the no-warp principle).
+
 ## Upstream API gaps
 
 None hit in increment 1. The `Thinking`/`Droplets` API covered the liveness use case as-is
 (role=status, label, material, reduced-motion, off-screen pause all built in).
+
+Increment 2 (file upstream when fluidkit work resumes):
+
+1. **No content-sized morph primitive.** `MorphSurface` morphs between *fixed* pixel
+   geometries (pill↔panel). The skeleton→view reveal needs a surface that springs between
+   two *content-measured* boxes with cross-fading faces — e.g. `MorphSurface` accepting
+   `size="auto"` per face, or a dedicated `RevealSurface`. Flowlet implements this shell-side
+   for now (`FluidReveal`) using the `motion` peer directly plus fluidkit's reduced-motion
+   resolver — the headless-escape-hatch route `useFlow` documents, not a fork of fluidkit.
+2. **No exit orchestration in `useFlow`.** The headless hook covers enter/reorder but has no
+   AnimatePresence-style affordance for holding an outgoing face during a cross-fade;
+   `FluidReveal` keeps the previous children manually. An upstream `useReveal`/exit variant
+   would subsume it.
+3. `resolvePrefersReducedMotion` resolves a *supplied* preference; a non-hook media-query
+   reader (for event-time checks outside render) would remove the `matchMedia` boilerplate
+   consumers write around it.
 
 Integration gotcha (Flowlet-side, not an upstream bug): storing a fluidkit component in
 React state requires the `useState(() => C)` initializer form — a bare component function

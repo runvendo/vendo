@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { groupThreadItems, type ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
@@ -8,6 +8,7 @@ import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
 import { TurnActions, type Feedback } from "./TurnActions";
 import { FileAttachment } from "./FileAttachment";
+import { FluidReveal } from "./FluidReveal";
 import { FluidThinking } from "./FluidThinking";
 import { friendlyError } from "./error-copy";
 
@@ -24,6 +25,21 @@ export interface MessageListProps {
 
 export function MessageList({ items, status, onApprove, onDecline, onRegenerate, onFeedback }: MessageListProps) {
   const rendered = useMemo(() => groupThreadItems(items), [items]);
+  // Render-slot keys (ENG-205): a skeleton and the ui view that replaces it
+  // carry different item keys (different part indices), but must share one
+  // React identity for the reveal to morph instead of remount. Slots pair by
+  // per-message order, which is stable because message parts append in order.
+  const slotKeys = useMemo(() => {
+    const keys = new Map<string, string>();
+    const counters = new Map<string, number>();
+    for (const item of rendered) {
+      if (item.kind !== "skeleton" && item.kind !== "ui") continue;
+      const n = counters.get(item.messageId) ?? 0;
+      counters.set(item.messageId, n + 1);
+      keys.set(item.key, `reveal:${item.messageId}:${n}`);
+    }
+    return keys;
+  }, [rendered]);
   const lastTextKey = [...items].reverse().find((i) => i.kind === "text")?.key;
   const listRef = useRef<HTMLDivElement>(null);
   // Whether the user is pinned to the bottom. A ref drives the auto-scroll
@@ -152,10 +168,10 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
             case "skeleton":
               // Shown only while render_view is in flight; never for text-only turns.
               return (
-                <Fragment key={item.key}>
+                <FluidReveal key={slotKeys.get(item.key)} phase="skeleton">
                   <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
                   <Skeleton name={item.name} />
-                </Fragment>
+                </FluidReveal>
               );
             case "approval":
               // Automation authoring approvals get the inspectable card; every
@@ -178,7 +194,11 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                 />
               );
             case "ui":
-              return <UINodeView key={item.key} node={item.node} />;
+              return (
+                <FluidReveal key={slotKeys.get(item.key)} phase="view">
+                  <UINodeView node={item.node} />
+                </FluidReveal>
+              );
             case "error": {
               // Friendly copy only — no title attribute, which would leak the
               // raw provider text to hover and the accessibility tree.

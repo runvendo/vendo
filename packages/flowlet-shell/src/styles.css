@@ -63,6 +63,16 @@
   box-shadow: var(--flowlet-shadow); animation: fl-fade-in .15s ease; transition: border-color .12s; }
 .fl-jump:hover { border-color: var(--flowlet-accent); }
 .fl-jump:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
+/* Render slot (ENG-205): the persistent wrapper a skeleton and its replacing
+   view share, so the reveal can morph. The column layout + 14px gap mirror the
+   message list so wrapping changes nothing about spacing; the exiting overlay
+   repeats it so the fading skeleton sits exactly where it was. */
+.fl-reveal { position: relative; align-self: flex-start; width: 100%;
+  display: flex; flex-direction: column; gap: 14px; }
+.fl-reveal-enter { display: flex; flex-direction: column; width: 100%; }
+.fl-reveal-exit { position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
+  display: flex; flex-direction: column; gap: 14px; }
+
 /* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
    foreground as the flat-material fill. The .fl-typing dots below are its
    first-paint and no-fluidkit fallback. */
