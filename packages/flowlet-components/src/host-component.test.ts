@@ -30,3 +30,17 @@ describe("hostComponent", () => {
     expect(() => hostComponent("Sparkline", "", schema)).toThrow(/description/);
   });
 });
+
+describe("hostComponent — registry versioning (ENG-186)", () => {
+  it("threads a declared version into the registry entry", () => {
+    const d = hostComponent("AcmeBadge", "pill", z.object({}), { version: "2" });
+    expect(d.version).toBe("2");
+    expect(d.toRegistered().version).toBe("2");
+  });
+
+  it("leaves version unset when not declared (implied '1')", () => {
+    const d = hostComponent("AcmeBadge", "pill", z.object({}));
+    expect(d.version).toBeUndefined();
+    expect(d.toRegistered().version).toBeUndefined();
+  });
+});

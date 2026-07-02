@@ -55,4 +55,5 @@ export { brandTokensSchema, defaultBrand, type BrandTokens } from "./theme/brand
 export { brandToCssVars } from "./theme/brand-to-css-vars";
 export { brandToChartPalette } from "./theme/brand-to-chart-palette";
 export { hostComponent, toHostRegistry, type HostComponentDescriptor } from "./host-component";
+export { componentPromptCatalog } from "./prompt-catalog";
 export { jsonValue } from "./descriptor";

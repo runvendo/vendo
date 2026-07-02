@@ -47,6 +47,9 @@ export function FlowletRoot({ children, threadId = "gmail-demo" }) {
           renderNode={renderNode}
           store={store}
           runQuery={runQuery}
+          // Same registry as FlowletProvider — reopened saved views diff their
+          // host-component stamp against it and surface drift (ENG-186).
+          components={registry}
           theme={{ scheme: "light" }}
           cssVars={brandToCssVars(brand)}
           productName="Vendo"

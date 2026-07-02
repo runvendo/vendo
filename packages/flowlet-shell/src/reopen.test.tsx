@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { UINode } from "@flowlet/core";
+import type { RegisteredComponent, UINode } from "@flowlet/core";
 import { FlowletShellProvider } from "./context";
 import { createLocalStore, type FlowletStore } from "./seams/store";
 import type { RunQuery } from "./seams/query";
@@ -259,5 +259,49 @@ describe("useReopenFlowlet", () => {
     await waitFor(() => expect(result.current.refreshing).toBe(true));
     rerender({ f: noQueries });
     await waitFor(() => expect(result.current.refreshing).toBe(false));
+  });
+});
+
+describe("useReopenFlowlet — registry drift (ENG-186)", () => {
+  const registered = (name: string, version?: string): RegisteredComponent => ({
+    name,
+    description: "x",
+    propsSchema: { "~standard": { version: 1, vendor: "test", validate: (v: unknown) => ({ value: v }) } } as RegisteredComponent["propsSchema"],
+    source: "host",
+    ...(version !== undefined ? { version } : {}),
+  });
+  const wrapWith = (store: FlowletStore, components?: RegisteredComponent[]) =>
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <FlowletShellProvider store={store} refreshIntervalMs={0} components={components}>
+          {children}
+        </FlowletShellProvider>
+      );
+    };
+
+  it("surfaces missing and version-bumped components from the saved stamp", async () => {
+    const store = createLocalStore();
+    const flowlet = await store.save({
+      id: "f1", name: "V", node: genNode({}),
+      components: { AcmeOld: "1", AcmeBadge: "1" },
+    });
+    const { result } = renderHook(() => useReopenFlowlet(flowlet), {
+      wrapper: wrapWith(store, [registered("AcmeBadge", "2")]),
+    });
+    expect(result.current.drift).toEqual({ missing: ["AcmeOld"], changed: ["AcmeBadge"] });
+  });
+
+  it("reports no drift for a stamp-free record or when no registry is provided", async () => {
+    const store = createLocalStore();
+    const stampFree = await store.save({ id: "f1", name: "V", node: genNode({}) });
+    const stamped = await store.save({
+      id: "f2", name: "W", node: genNode({}), components: { AcmeOld: "1" },
+    });
+    const a = renderHook(() => useReopenFlowlet(stampFree), {
+      wrapper: wrapWith(store, [registered("AcmeBadge", "9")]),
+    });
+    expect(a.result.current.drift).toEqual({ missing: [], changed: [] });
+    const b = renderHook(() => useReopenFlowlet(stamped), { wrapper: wrapWith(store) });
+    expect(b.result.current.drift).toEqual({ missing: [], changed: [] });
   });
 });

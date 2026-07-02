@@ -72,6 +72,9 @@ export function FlowletRoot({
           integrations={integrations}
           store={store}
           runQuery={runQuery}
+          // Same registry as FlowletProvider — reopened saved views diff their
+          // host-component stamp against it and surface drift (ENG-186).
+          components={[...prewiredComponents, ...cadenceHostComponents]}
           theme={{ scheme: "light" }}
           cssVars={{
             ...brandToCssVars(cadenceBrand),

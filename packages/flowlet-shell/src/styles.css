@@ -453,6 +453,11 @@
 .fl-stale-note { font-family: var(--flowlet-font); font-size: 11px;
   color: color-mix(in srgb, var(--flowlet-fg) 46%, transparent); padding: 6px 2px; }
 
+/* ---------- registry-drift note (ENG-186): same quiet register as the
+   stale note, slightly stronger — it explains a degraded node, not a delay. */
+.fl-drift-note { font-family: var(--flowlet-font); font-size: 11px;
+  color: color-mix(in srgb, var(--flowlet-fg) 62%, transparent); padding: 6px 2px; }
+
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);

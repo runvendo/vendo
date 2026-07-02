@@ -30,6 +30,12 @@ describe("stage runtime source", () => {
     // Fallback to the host bundle (e.g. __row/__badge) must be preserved.
     expect(STAGE_RUNTIME_SRC).toContain("host[node.name]");
   });
+  it("renders a visible, diagnosable notice for an unregistered component name (ENG-186 DX)", () => {
+    // An unknown name must never render an invisible empty div: the notice
+    // carries a data-error marker AND user-readable text naming the component.
+    expect(STAGE_RUNTIME_SRC).toContain('"data-error": "unknown:" + node.name');
+    expect(STAGE_RUNTIME_SRC).toContain("'Unknown component \"' + node.name + '\"'");
+  });
   it("caches the error-boundary class so ui/update reconciles instead of remounting", () => {
     // The class is built once via getEB() and reused, mirroring cachedHost. A
     // fresh makeEB() per render would be a new React component type and force a
