@@ -103,4 +103,16 @@ describe("createRenderViewTool", () => {
     const calls = (writer.write as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls[0][0].data.id).not.toBe(calls[1][0].data.id);
   });
+
+  it("mints unique node ids across tool instances (per-request counters must not collide)", async () => {
+    // Each /chat request builds a fresh tool; ids key persistence (ENG-183),
+    // so two sessions' first views must not both be "view-1".
+    const writerA = writerMock();
+    const writerB = writerMock();
+    await createRenderViewTool(writerA).execute!(VALID as never, {} as never);
+    await createRenderViewTool(writerB).execute!(VALID as never, {} as never);
+    const idA = (writerA.write as ReturnType<typeof vi.fn>).mock.calls[0][0].data.id;
+    const idB = (writerB.write as ReturnType<typeof vi.fn>).mock.calls[0][0].data.id;
+    expect(idA).not.toBe(idB);
+  });
 });

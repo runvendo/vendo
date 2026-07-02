@@ -14,6 +14,10 @@ export interface WebStorageOptions {
  * record under `flowlet:saved:<namespace>:`. Failures are loud: an unavailable
  * or full storage throws — persistence must never silently no-op.
  */
+/** Bump when the persisted record shape changes incompatibly; readers skip
+ *  (and warn about) versions they don't know rather than mis-parsing them. */
+const SCHEMA_VERSION = 1;
+
 export function createWebStorage(options: WebStorageOptions = {}): FlowletStore {
   const { namespace = "default", now = Date.now } = options;
   const prefix = `flowlet:saved:${namespace}:`;
@@ -29,7 +33,12 @@ export function createWebStorage(options: WebStorageOptions = {}): FlowletStore 
     const raw = storage().getItem(key);
     if (raw === null) return null;
     try {
-      return JSON.parse(raw) as Flowlet;
+      const parsed = JSON.parse(raw) as { v?: unknown; record?: Flowlet } & Flowlet;
+      // Versioned envelope ({v, record}); bare records predate it (schema v1).
+      if (parsed.v === undefined) return parsed as Flowlet;
+      if (parsed.v === SCHEMA_VERSION && parsed.record) return parsed.record;
+      console.warn(`[flowlet] skipping saved flowlet at "${key}" with unknown schema v${String(parsed.v)}`);
+      return null;
     } catch {
       console.warn(`[flowlet] skipping malformed saved flowlet at "${key}"`);
       return null;
@@ -57,7 +66,7 @@ export function createWebStorage(options: WebStorageOptions = {}): FlowletStore 
       const createdAt = draft.createdAt ?? read(keyOf(draft.id))?.createdAt ?? updatedAt;
       const flowlet: Flowlet = { ...draft, createdAt, updatedAt };
       // Quota/security errors propagate to the caller — loud by design.
-      storage().setItem(keyOf(draft.id), JSON.stringify(flowlet));
+      storage().setItem(keyOf(draft.id), JSON.stringify({ v: SCHEMA_VERSION, record: flowlet }));
       return flowlet;
     },
     async remove(id) {

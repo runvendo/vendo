@@ -62,6 +62,25 @@ describe("createWebStorage", () => {
     await expect(failing.save({ id: "x", name: "X", node })).rejects.toThrow(/Quota/);
   });
 
+  it("writes a versioned envelope, reads legacy bare records, skips unknown versions", async () => {
+    const storage = fakeStorage();
+    const store = createWebStorage({ storage });
+    await store.save({ id: "a", name: "A", node });
+    expect(JSON.parse(storage.getItem("flowlet:saved:default:a")!).v).toBe(1);
+
+    // Legacy bare record (pre-envelope) still reads as schema v1.
+    storage.setItem("flowlet:saved:default:legacy", JSON.stringify({ id: "legacy", name: "L", node, updatedAt: 1 }));
+    expect((await store.load("legacy"))?.name).toBe("L");
+
+    // A future schema version is skipped with a warning, not mis-parsed.
+    storage.setItem("flowlet:saved:default:future", JSON.stringify({ v: 99, record: { id: "future" } }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await store.load("future")).toBeNull();
+    expect(await store.list()).toHaveLength(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("unknown schema v99"));
+    warn.mockRestore();
+  });
+
   it("throws a clear error when no storage exists (SSR)", async () => {
     vi.stubGlobal("localStorage", undefined);
     try {

@@ -12,6 +12,9 @@ import { useShell } from "./context";
 
 export type RefreshStatus = "live" | "partial" | "snapshot";
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
 export interface RefreshResult {
   node: UINode;
   status: RefreshStatus;
@@ -40,8 +43,16 @@ export async function refreshFlowletNode(node: UINode, runQuery: RunQuery): Prom
   const errors: RefreshResult["errors"] = [];
   settled.forEach((outcome, i) => {
     const query = queries[i]!;
-    if (outcome.status === "fulfilled") data = applyPointerPatch(data, query.path, outcome.value);
-    else errors.push({ query, error: outcome.reason });
+    if (outcome.status !== "fulfilled") {
+      errors.push({ query, error: outcome.reason });
+    } else if (query.path === "" && !isPlainObject(outcome.value)) {
+      // A root patch replaces the whole data model, which must stay a plain
+      // object — a non-object result would corrupt the payload (and any
+      // write-back). Keep the snapshot for this query instead.
+      errors.push({ query, error: new Error("root query result must be a plain object") });
+    } else {
+      data = applyPointerPatch(data, query.path, outcome.value);
+    }
   });
 
   const status: RefreshStatus =
@@ -63,7 +74,12 @@ export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing
   useEffect(() => {
     let cancelled = false;
     setResult({ node: flowlet.node, status: "snapshot", errors: [] });
-    if (!runQuery || flowletQueries(flowlet.node).length === 0) return;
+    if (!runQuery || flowletQueries(flowlet.node).length === 0) {
+      // A prior in-flight refresh may have been cancelled with `refreshing`
+      // still true; this open has nothing to refresh, so reset it.
+      setRefreshing(false);
+      return;
+    }
 
     setRefreshing(true);
     void refreshFlowletNode(flowlet.node, runQuery)
@@ -71,10 +87,19 @@ export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing
         if (cancelled) return;
         setResult(fresh);
         if (fresh.status === "live") {
-          const { updatedAt: _prior, ...draft } = flowlet;
-          await store.save({ ...draft, node: fresh.node }).catch((error: unknown) => {
+          try {
+            // Merge onto the CURRENT stored record, not the flowlet captured
+            // when the effect started — a rename/pin during the refresh must
+            // survive the write-back. A missing record means it was deleted
+            // while open: skip, never resurrect it.
+            const current = await store.load(flowlet.id);
+            if (current) {
+              const { updatedAt: _prior, ...base } = current;
+              await store.save({ ...base, node: fresh.node });
+            }
+          } catch (error) {
             console.warn("[flowlet] refreshed-data write-back failed", error);
-          });
+          }
         }
       })
       .finally(() => {

@@ -35,7 +35,11 @@ const dataQuerySchema = z.object({
 });
 
 export function createRenderViewTool(writer: FlowletWriter) {
+  // Node ids key saved flowlets (ENG-183), and a tool instance lives for ONE
+  // request — a bare counter would make every session's first view "view-1".
+  // The random suffix keeps ids unique across instances.
   let counter = 0;
+  const mintId = () => `view-${++counter}-${crypto.randomUUID().slice(0, 8)}`;
 
   return tool({
     description:
@@ -81,7 +85,7 @@ export function createRenderViewTool(writer: FlowletWriter) {
         shipped = { ...validation.payload, components: compiled };
       }
       const node: UINode = {
-        id: `view-${++counter}`,
+        id: mintId(),
         kind: "generated",
         payload: shipped,
       };

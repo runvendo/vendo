@@ -46,9 +46,13 @@ function PageSurface() {
   useEffect(() => {
     const drafts = deriveSavedDrafts(chat.items, new Set(saved.map((s) => s.id)))
     if (drafts.length === 0) return
-    void Promise.all(drafts.map((d) => store.save(d))).then((records) => {
-      setSaved((prev) => [...prev, ...records.filter((r) => !prev.some((p) => p.id === r.id))])
-    })
+    void Promise.all(drafts.map((d) => store.save(d)))
+      .then((records) => {
+        setSaved((prev) => [...prev, ...records.filter((r) => !prev.some((p) => p.id === r.id))])
+      })
+      // save() throws loud (quota/unavailable); an unhandled rejection here
+      // would silently drop the tab. Log it; the next items change retries.
+      .catch((error: unknown) => console.error("[flowlet] failed to persist saved view", error))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.items])
 
