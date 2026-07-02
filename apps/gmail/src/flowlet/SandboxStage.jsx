@@ -80,6 +80,10 @@ export function SandboxStage({ node }) {
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
   const mounted = useRef(true);
+  // Resolvers are also tracked in a plain ref written SYNCHRONOUSLY at dispatch
+  // time (before React commits `pending`), so an unmount racing the state
+  // commit still settles the parked promise instead of leaking it (review).
+  const resolversRef = useRef(new Map());
 
   // Reset on every (re)mount: StrictMode dev runs mount → cleanup → mount.
   useEffect(() => {
@@ -88,7 +92,8 @@ export function SandboxStage({ node }) {
       mounted.current = false;
       // Unmounting with approvals parked: settle as declined so the host-side
       // dispatch promises never leak.
-      for (const p of pendingRef.current.values()) p.settle(false);
+      for (const settle of resolversRef.current.values()) settle(false);
+      resolversRef.current.clear();
     };
   }, []);
 
@@ -107,28 +112,38 @@ export function SandboxStage({ node }) {
   if (!sources) return <div data-testid="stage-loading" aria-busy="true" />;
 
   const settleOne = (requestId, approved) => {
-    const entry = pendingRef.current.get(requestId);
-    if (!entry) return;
+    const settle = resolversRef.current.get(requestId);
+    if (!settle) return; // idempotent: already settled/removed
+    resolversRef.current.delete(requestId);
     setPending((prev) => {
       const next = new Map(prev);
       next.delete(requestId);
       return next;
     });
-    entry.settle(approved);
+    settle(approved);
   };
 
   const onAction = async (req) => {
     // First pass: let the policy decide.
     const first = await postAction({ action: req.action, payload: req.payload });
     if (first.needsApproval !== true) return { result: first.result };
-    // Approval required: park the dispatch promise on the user's consent.
+    // Approval required. The server enriches the payload with the EXACT content
+    // this approval covers (drafted reply body, Slack line, sender/subject) and
+    // binds the token to it — show and re-POST that enriched payload, so the
+    // user approves precisely what will run.
+    const payload = first.payload ?? req.payload;
     const approved = await new Promise((settle) => {
-      setPending((prev) => new Map(prev).set(req.requestId, { req, settle }));
+      // Register the resolver synchronously (survives an unmount before commit),
+      // then render the card.
+      resolversRef.current.set(req.requestId, settle);
+      setPending((prev) =>
+        new Map(prev).set(req.requestId, { req: { action: req.action, payload } }),
+      );
     });
     if (!approved) throw new Error("action declined");
     const second = await postAction({
       action: req.action,
-      payload: req.payload,
+      payload,
       approvalToken: first.approvalToken,
     });
     return { result: second.result };

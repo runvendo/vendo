@@ -8,7 +8,7 @@ import { createMailApi } from "./api";
 import { MailStore } from "./store";
 import { seedMessages, DEMO_ME } from "./seed";
 import { createDemoAgent } from "./flowlet/agent";
-import { demoTools } from "./flowlet/tools";
+import { demoTools, demoPreviews } from "./flowlet/tools";
 import { modelGenerate } from "./flowlet/drafting";
 import { postToSlack } from "./flowlet/slack";
 import { handleChat, principalAllowed } from "./flowlet/chat";
@@ -19,7 +19,9 @@ const PORT = Number(process.env.GMAIL_API_PORT ?? 3198);
 const store = new MailStore(seedMessages(), DEMO_ME);
 const tools = demoTools({ store, generate: modelGenerate(), postToSlack });
 const agent = createDemoAgent({ extraTools: tools });
-const handleAction = createActionHandler(tools);
+const handleAction = createActionHandler(tools, {
+  preview: demoPreviews({ store, generate: modelGenerate() }),
+});
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));

@@ -5,7 +5,7 @@
  * and allowed actions execute against the same in-process tools.
  *
  * Approval flow — HARDER than demo-bank's, because this demo's gated writes
- * (delete_message, send_reply, slack_summary) really execute here: an
+ * (delete_email, send_reply, slack_summary) really execute here: an
  * `approve` decision returns { needsApproval, approvalToken } WITHOUT
  * executing; the client re-POSTs with the token after the user consents. The
  * token is one-time, short-lived, and bound to the exact action+payload, so a
@@ -24,6 +24,13 @@ interface ActionBody {
   approvalToken?: string;
 }
 
+/** Consent-time preview: enrich a gated payload with the exact content the
+ *  user is approving (e.g. the drafted reply body). See tools.demoPreviews. */
+export type ActionPreview = (
+  action: string,
+  payload: Record<string, unknown>,
+) => Promise<Record<string, unknown> | null>;
+
 export interface ActionResponse {
   status: number;
   body: Record<string, unknown>;
@@ -39,7 +46,10 @@ const TOKEN_TTL_MS = 5 * 60 * 1000;
 const bindingKey = (action: string, payload: unknown): string =>
   createHash("sha256").update(`${action}\n${JSON.stringify(payload ?? {})}`).digest("hex");
 
-export function createActionHandler(tools: ToolSet, opts: { now?: () => number } = {}) {
+export function createActionHandler(
+  tools: ToolSet,
+  opts: { now?: () => number; preview?: ActionPreview } = {},
+) {
   const now = opts.now ?? Date.now;
   const pending = new Map<string, PendingApproval>();
 
@@ -51,6 +61,7 @@ export function createActionHandler(tools: ToolSet, opts: { now?: () => number }
   };
 
   return async function handleAction(body: ActionBody): Promise<ActionResponse> {
+    sweep(); // reap expired tokens on every request, not just approve traffic
     if (typeof body.action !== "string" || body.action.length === 0) {
       return { status: 400, body: { error: "action (string) is required" } };
     }
@@ -74,19 +85,36 @@ export function createActionHandler(tools: ToolSet, opts: { now?: () => number }
     }
 
     if (decision === "approve") {
-      sweep();
-      const key = bindingKey(body.action, body.payload);
       if (body.approvalToken) {
+        const key = bindingKey(body.action, body.payload);
         const entry = pending.get(body.approvalToken);
         pending.delete(body.approvalToken); // one-time, consumed on any use
         if (!entry || entry.key !== key || entry.expiresAt <= now()) {
           return { status: 403, body: { error: "approval token invalid or expired" } };
         }
-        // Token checks out — fall through and execute.
+        // Token checks out — fall through and execute the payload the user saw.
       } else {
+        // Mint: preview the exact content this approval covers (drafted reply
+        // body, Slack line), merge it into the payload, and bind the token to
+        // the ENRICHED payload — the user approves what will actually run.
+        let enriched = (body.payload ?? {}) as Record<string, unknown>;
+        if (opts.preview) {
+          try {
+            const extra = await opts.preview(body.action, enriched);
+            if (extra) enriched = { ...enriched, ...extra };
+          } catch (error) {
+            return {
+              status: 400,
+              body: { error: error instanceof Error ? error.message : String(error) },
+            };
+          }
+        }
         const token = randomUUID();
-        pending.set(token, { key, expiresAt: now() + TOKEN_TTL_MS });
-        return { status: 200, body: { decision, needsApproval: true, approvalToken: token } };
+        pending.set(token, { key: bindingKey(body.action, enriched), expiresAt: now() + TOKEN_TTL_MS });
+        return {
+          status: 200,
+          body: { decision, needsApproval: true, approvalToken: token, payload: enriched },
+        };
       }
     }
 

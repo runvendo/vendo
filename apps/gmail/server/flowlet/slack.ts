@@ -24,6 +24,17 @@ function resolveChannel(name: string): string {
   return name;
 }
 
+/**
+ * Neutralize Slack's control characters so untrusted email content (sender,
+ * subject, model summary) can't inject mentions or links. Slack parses `<...>`
+ * as links/`<!channel>` as broadcasts and `&` as an entity prefix — escaping
+ * these three renders the text literally (Slack's documented rule). Applied
+ * server-side, right before the send, so it can't be bypassed upstream.
+ */
+export function escapeSlackText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export async function postToSlack(channel: string, text: string): Promise<SlackPostResult> {
   const apiKey = process.env.COMPOSIO_API_KEY;
   if (!apiKey) {
@@ -35,7 +46,8 @@ export async function postToSlack(channel: string, text: string): Promise<SlackP
       headers: { "x-api-key": apiKey, "content-type": "application/json" },
       body: JSON.stringify({
         user_id: DEMO_USER_ID,
-        arguments: { channel: resolveChannel(channel), text },
+        // Escaped: untrusted email content must not inject Slack mentions/links.
+        arguments: { channel: resolveChannel(channel), text: escapeSlackText(text) },
       }),
     });
     const json = (await res.json().catch(() => ({}))) as { successful?: boolean; error?: string };

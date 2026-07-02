@@ -73,3 +73,18 @@ describe("jsonRepairMiddleware.transformParams", () => {
     expect(content[2]!.input).toEqual({ fine: true });
   });
 });
+
+// Slack markup-injection defense (colocated with the other server unit tests).
+import { escapeSlackText } from "../flowlet/slack";
+describe("escapeSlackText", () => {
+  it("neutralizes mentions and links from untrusted email content", () => {
+    expect(escapeSlackText("Subject <!channel> & <http://evil|click>")).toBe(
+      "Subject &lt;!channel&gt; &amp; &lt;http://evil|click&gt;",
+    );
+  });
+  it("leaves ordinary text untouched", () => {
+    expect(escapeSlackText("PR #482 merged — all checks passed")).toBe(
+      "PR #482 merged — all checks passed",
+    );
+  });
+});

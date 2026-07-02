@@ -3,7 +3,7 @@
  *  - Host-API tools (client-executed, from the OpenAPI adapter) carry real
  *    annotations — decide from those (reads allow; sends/deletes approve).
  *  - In-process reads and the render/request tools run freely.
- *  - Everything else — delete_message, send_reply, slack_summary, unknowns —
+ *  - Everything else — delete_email, send_reply, slack_summary, unknowns —
  *    fails safe to "approve".
  */
 import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/runtime";

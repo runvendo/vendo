@@ -54,6 +54,8 @@ const makeSnippet = (body: string): string =>
 export class MailStore {
   private messages: MailMessage[] = [];
   private seq = 0;
+  /** Bumped on every reset — lets callers scope caches to a seed lifetime. */
+  private resetCount = -1;
   private readonly seed: MailMessage[];
   private readonly now: () => Date;
 
@@ -70,6 +72,11 @@ export class MailStore {
   reset(): void {
     this.messages = clone(this.seed);
     this.seq = 0;
+    this.resetCount += 1;
+  }
+
+  get generation(): number {
+    return this.resetCount;
   }
 
   list(opts: ListOptions = {}): MailMessage[] {

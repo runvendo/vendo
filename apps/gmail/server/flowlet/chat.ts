@@ -55,7 +55,14 @@ export async function handleChat(req: Request, res: Response, agent: FlowletAgen
   res.status(response.status);
   response.headers.forEach((value, key) => res.setHeader(key, value));
   if (response.body) {
-    Readable.fromWeb(response.body as import("node:stream/web").ReadableStream).pipe(res);
+    const readable = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
+    // handleChat's promise has resolved by the time streaming runs — a late
+    // transport error would otherwise be an unhandled 'error' event.
+    readable.on("error", (error) => {
+      console.error("[flowlet] chat stream error:", error);
+      res.destroy(error);
+    });
+    readable.pipe(res);
   } else {
     res.end();
   }

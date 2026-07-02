@@ -5,13 +5,13 @@
  * API serves, so every action is immediately visible in the app.
  *
  * Gating: `list_unread_messages`/`search_messages` are read-only (policy
- * allow). `delete_message`, `send_reply` and `slack_summary` are writes — the
+ * allow). `delete_email`, `send_reply` and `slack_summary` are writes — the
  * policy answers "approve" (fail-safe name rule) and the action route enforces
  * a server-issued one-time approval token before executing them.
  */
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import type { MailStore } from "../store";
+import type { MailMessage, MailStore } from "../store";
 import { draftReply, summarizeForSlack, type Generate } from "./drafting";
 import type { SlackPoster } from "./slack";
 
@@ -38,6 +38,8 @@ const project = (m: {
 });
 
 export function demoTools({ store, generate, postToSlack }: DemoToolsDeps): ToolSet {
+  // Slack posts already made, scoped to the seed lifetime (cleared by reset).
+  const postedToSlack = new Set<string>();
   return {
     list_unread_messages: tool({
       description:
@@ -66,7 +68,9 @@ export function demoTools({ store, generate, postToSlack }: DemoToolsDeps): Tool
       },
     }),
 
-    delete_message: tool({
+    // Named delete_email (not delete_message) so it can never collide with the
+    // OpenAPI-derived client tool of that name (review finding).
+    delete_email: tool({
       description:
         "Delete one email (moves it to trash) as the signed-in user. Destructive — the user " +
         "approves each call. Input is the message id.",
@@ -91,6 +95,11 @@ export function demoTools({ store, generate, postToSlack }: DemoToolsDeps): Tool
       execute: async ({ messageId, body }) => {
         const original = store.get(messageId);
         if (!original) throw new Error(`unknown message "${messageId}"`);
+        // Idempotency (review finding): a double-gesture or gesture+button on
+        // one card must not fire two real replies.
+        if (store.list({ folder: "sent" }).some((m) => m.inReplyTo === messageId)) {
+          throw new Error(`a reply to "${original.subject}" was already sent`);
+        }
         const replyBody = body?.trim() ? body : await draftReply(original, generate);
         const sent = store.send({ inReplyTo: messageId, body: replyBody });
         store.markRead(messageId, true);
@@ -111,18 +120,72 @@ export function demoTools({ store, generate, postToSlack }: DemoToolsDeps): Tool
       inputSchema: z.object({
         messageId: z.string().describe("The id of the message to summarize."),
         channel: z.string().optional().describe('Slack channel (default "#general").'),
+        text: z
+          .string()
+          .optional()
+          .describe("Exact message to post; omit to have the summary written."),
       }),
-      execute: async ({ messageId, channel }) => {
+      execute: async ({ messageId, channel, text }) => {
         const message = store.get(messageId);
         if (!message) throw new Error(`unknown message "${messageId}"`);
-        const summary = await summarizeForSlack(message, generate);
-        const text = `Inbox, via Vendo — ${message.from.name}: "${message.subject}" — ${summary}`;
-        const result = await postToSlack(channel ?? "#general", text);
+        const dedupeKey = `${store.generation}:${messageId}`;
+        if (postedToSlack.has(dedupeKey)) {
+          throw new Error(`a Slack summary of "${message.subject}" was already posted`);
+        }
+        // The consent-time preview passes `text` through so the user approves the
+        // EXACT line that posts; drafting here is the fallback (agent-direct call).
+        const line = text?.trim() ? text : await slackLine(message, generate);
+        const result = await postToSlack(channel ?? "#general", line);
         if (!result.ok) throw new Error(`Slack post failed: ${result.error}`);
+        postedToSlack.add(dedupeKey);
         store.markRead(messageId, true);
         return { posted: true, channel: result.channel, text: result.text };
       },
     }),
+  };
+}
+
+async function slackLine(message: MailMessage, generate: Generate): Promise<string> {
+  const summary = await summarizeForSlack(message, generate);
+  return `Inbox, via Vendo — ${message.from.name}: "${message.subject}" — ${summary}`;
+}
+
+/**
+ * Consent-time previews (review finding): the approval card must show the
+ * EXACT content a gated action will produce, not just a message id. The action
+ * route calls this while minting the approval token; whatever it returns is
+ * merged into the payload the user approves, bound into the token, and used
+ * verbatim at execute time.
+ */
+export function demoPreviews({ store, generate }: Pick<DemoToolsDeps, "store" | "generate">) {
+  return async (
+    action: string,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> => {
+    const messageId = typeof payload.messageId === "string" ? payload.messageId : "";
+    if (action === "send_reply" && !(typeof payload.body === "string" && payload.body.trim())) {
+      const original = store.get(messageId);
+      if (!original) throw new Error(`unknown message "${messageId}"`);
+      return {
+        replyingTo: `${original.from.name} <${original.from.email}>`,
+        subject: original.subject.startsWith("Re:") ? original.subject : `Re: ${original.subject}`,
+        body: await draftReply(original, generate),
+      };
+    }
+    if (action === "slack_summary" && !(typeof payload.text === "string" && payload.text.trim())) {
+      const message = store.get(messageId);
+      if (!message) throw new Error(`unknown message "${messageId}"`);
+      return {
+        summarizing: `${message.from.name} — "${message.subject}"`,
+        text: await slackLine(message, generate),
+      };
+    }
+    if (action === "delete_email") {
+      const message = store.get(messageId);
+      if (!message) throw new Error(`unknown message "${messageId}"`);
+      return { deleting: `${message.from.name} — "${message.subject}"` };
+    }
+    return null;
   };
 }
 
