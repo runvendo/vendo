@@ -14,7 +14,7 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider, createWebStorage } from "@flowlet/shell";
+import { FlowletShellProvider, createLocalIntegrations, createWebStorage } from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { cadenceBrand } from "@/flowlet/brand";
 import { cadenceHostComponents } from "@/flowlet/host-components/descriptors";
@@ -26,6 +26,15 @@ import { runQuery } from "./run-query";
 // module-scope instance so every surface shares it; it only touches
 // localStorage inside its methods, so importing it stays SSR-safe.
 const store = createWebStorage({ namespace: "cadence-demo" });
+
+// The firm's standing integrations, shown CONNECTED in the shell's in-bar
+// connect tray (ENG-205) because they truly are: the agent ingests both
+// Composio toolkits unconditionally (see agent.ts DEMO_TOOLKITS) — there is no
+// on-screen connect flow in this app.
+const integrations = createLocalIntegrations([
+  { id: "gmail", name: "Gmail", connected: true },
+  { id: "googlecalendar", name: "Google Calendar", connected: true },
+]);
 
 export function FlowletRoot({
   children,
@@ -60,6 +69,7 @@ export function FlowletRoot({
       <FlowletThemeProvider brand={cadenceBrand}>
         <FlowletShellProvider
           renderNode={renderNode}
+          integrations={integrations}
           store={store}
           runQuery={runQuery}
           theme={{ scheme: "light" }}

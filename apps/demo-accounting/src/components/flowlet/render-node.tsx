@@ -9,32 +9,16 @@
  * connect flow).
  */
 import type { ReactNode } from "react";
-import { motion } from "framer-motion";
 import type { UINode } from "@flowlet/core";
 import { SandboxStage } from "./SandboxStage";
-
-/** Tasteful entrance so each generated view "arrives" rather than popping in. */
-function Reveal({ children }: { children: ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10, scale: 0.985 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
-}
 
 export function renderNode(node: UINode): ReactNode {
   // Every UI the agent produces is a "generated" node, rendered untrusted
   // inside the sandbox (host components resolve in the sandbox bundle).
+  // Entrance motion is owned by the shell's FluidReveal (ENG-205) — a host
+  // wrapper here would double-animate.
   if (node.kind === "generated") {
-    return (
-      <Reveal>
-        <SandboxStage node={node} />
-      </Reveal>
-    );
+    return <SandboxStage node={node} />;
   }
 
   // Unexpected: a bare component node slipped through (Cadence host-renders
