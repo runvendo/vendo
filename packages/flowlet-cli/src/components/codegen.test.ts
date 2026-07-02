@@ -34,6 +34,8 @@ describe("codegen", () => {
     const src = implSource(analysis, candidate);
     expect(src).toContain('from "../../../src/components/ui/button"');
     expect(src).toContain("safeParse");
+    // Wrapper name must not collide with the imported host symbol.
+    expect(src).toContain("export function ButtonWrapper(");
     assertParses("impl", src);
   });
 
@@ -74,7 +76,8 @@ describe("codegen", () => {
 
   it("entry source wires the __FLOWLET_HOST__ contract", () => {
     const src = entrySource(["Button"]);
-    expect(src).toContain("window.__FLOWLET_HOST__ = { Button }");
+    expect(src).toContain("window.__FLOWLET_HOST__ = { Button: ButtonWrapper }");
+    expect(src).toContain('import { ButtonWrapper } from "./Button/impl";');
     assertParses("entry", src);
   });
 });
