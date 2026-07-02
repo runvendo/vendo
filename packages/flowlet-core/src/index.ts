@@ -1,5 +1,6 @@
 export * from "./schema";
 export * from "./tool";
+export * from "./host-api";
 export * from "./ui";
 export * from "./protocol";
 export * from "./agent";
