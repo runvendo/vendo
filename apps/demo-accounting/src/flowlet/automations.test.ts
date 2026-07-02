@@ -152,6 +152,27 @@ describe("cadence automations world — the morning document chase", () => {
     expect(events.every((e) => /^\d{4}-\d{2}-\d{2}T14:00:00$/.test(e.start_datetime))).toBe(true);
   });
 
+  it("content idempotency: a second same-day live fire does NOT double-send or double-book", async () => {
+    __reseed(new Date());
+    const gmail = vi.fn(async () => OK);
+    const calendar = vi.fn(async () => OK);
+    // Pin the clock so both fires land on the same send-day.
+    const now = () => "2026-07-02T09:00:00.000Z";
+    const world = createAutomationsWorld({ gmail, calendar, now });
+    const id = await createChase(world);
+
+    const first = await forceFire(world, id, true);
+    expect(first.run!.status).toBe("succeeded");
+    expect(gmail).toHaveBeenCalledTimes(8);
+    expect(calendar).toHaveBeenCalledTimes(2);
+
+    // Rehearsal re-fire: run still succeeds, but no NEW real sends happen.
+    const second = await forceFire(world, id, true);
+    expect(second.run!.status).toBe("succeeded");
+    expect(gmail).toHaveBeenCalledTimes(8);
+    expect(calendar).toHaveBeenCalledTimes(2);
+  });
+
   it("dry run (default): simulates the gated sends without calling Composio", async () => {
     __reseed(new Date());
     const gmail = vi.fn(async () => OK);
