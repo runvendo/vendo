@@ -17,6 +17,17 @@ export interface ShellContextValue {
 
 const ShellContext = createContext<ShellContextValue | null>(null);
 
+/** Fire the no-store dev warning at most once per module lifetime. */
+let warnedNoStore = false;
+function warnNoStoreOnce() {
+  if (warnedNoStore || process.env.NODE_ENV === "production") return;
+  warnedNoStore = true;
+  console.warn(
+    "[flowlet] No `store` prop passed to FlowletShellProvider; using an in-memory " +
+      "store that resets on remount. Saved views will not persist. Pass a `store` (see ENG-183).",
+  );
+}
+
 type ImplMap = Record<string, ComponentType<Record<string, unknown>>>;
 
 /**
@@ -48,6 +59,8 @@ export interface FlowletShellProviderProps {
 export function FlowletShellProvider({
   store, integrations, renderNode, impls, theme, children,
 }: FlowletShellProviderProps) {
+  if (store === undefined) warnNoStoreOnce();
+
   const value = useMemo<ShellContextValue>(() => ({
     store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
