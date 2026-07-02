@@ -55,6 +55,16 @@ describe("stage runtime source", () => {
     expect(STAGE_RUNTIME_SRC).toContain("this.setState({ err: false })");
     expect(STAGE_RUNTIME_SRC).toContain("prevProps.children !== this.props.children");
   });
+  it("mounts the bundle-supplied theme wrapper when an opaque componentTheme is present (TU-3)", () => {
+    // The runtime stays generic: it references only the string global and the
+    // opaque params.componentTheme, never OpenUI/brand shapes. The wrap activates
+    // solely when componentTheme is present AND the bundle exposed the wrapper.
+    expect(STAGE_RUNTIME_SRC).toContain("__FLOWLET_THEME_WRAP__");
+    expect(STAGE_RUNTIME_SRC).toContain("params.componentTheme");
+    expect(STAGE_RUNTIME_SRC).toContain(
+      "if (params.componentTheme && window.__FLOWLET_THEME_WRAP__)",
+    );
+  });
   it("Text/Skeleton primitives read the canonical --flowlet-* theme vars, not --brand-*", () => {
     // TU-2: --brand-* is retired in favor of --flowlet-* (see TU-1's brandToCssVars).
     expect(STAGE_RUNTIME_SRC).toContain("--flowlet-fg");

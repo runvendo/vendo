@@ -174,6 +174,13 @@ export interface StageInitPayload {
   tree: UINode;
   /** Tier 2.5: name → ESM component source, loaded as blob modules in-sandbox. */
   generatedComponents?: Record<string, string>;
+  /**
+   * Opaque theme blob for the in-sandbox component library (OpenUI). Forwarded
+   * unchanged into `ui/initialize`; the runtime hands it to the host bundle's
+   * `__FLOWLET_THEME_WRAP__` without ever inspecting its shape. Typed `unknown`
+   * to keep @flowlet/stage decoupled from @flowlet/components/OpenUI.
+   */
+  componentTheme?: unknown;
 }
 
 /** Payload for `controller.update()`. */

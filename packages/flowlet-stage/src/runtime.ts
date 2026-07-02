@@ -14,7 +14,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
   document.body.appendChild(root);
 
   // ── Module-level state ───────────────────────────────────────────────────────
-  var currentParams = null;   // { theme, state, tree, bundleSource, generatedComponents }
+  var currentParams = null;   // { theme, state, tree, bundleSource, generatedComponents, componentTheme }
   var __pendingActions = {};  // actionId → { resolve, reject } (approval-pending dispatch)
   var currentCapabilityMap = {}; // nodeId → capability token (built from tree on ui/initialize)
   var cachedEB = null; // ErrorBoundary class, built once (see getEB) and reused across renders
@@ -230,7 +230,15 @@ export const STAGE_RUNTIME_SRC = String.raw`
     function wrap(node) {
       return React.createElement(EB, { key: node.id }, toElement(node));
     }
-    return wrap(params.tree);
+    var el = wrap(params.tree);
+    // Mount the OpenUI ThemeProvider (or any bundle-supplied wrapper) around the
+    // rendered tree when the init payload carried an opaque componentTheme AND the
+    // host bundle exposed a wrapper. The runtime stays generic — it never inspects
+    // the theme's shape, only forwards it to the bundle's wrapper.
+    if (params.componentTheme && window.__FLOWLET_THEME_WRAP__) {
+      el = window.__FLOWLET_THEME_WRAP__(params.componentTheme, el);
+    }
+    return el;
   }
 
   // Re-render the current tree into the persistent root.

@@ -105,6 +105,33 @@ describe("connectStage", () => {
     peer.dispose();
   });
 
+  it("forwards an opaque componentTheme unchanged into ui/initialize params (TU-3)", async () => {
+    const { a, b } = makePair();
+    let initParams: any;
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { initParams = params; return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage(
+      { listen: a, post: b },
+      { onAction: async () => ({ result: "ok" }) },
+    );
+
+    const componentTheme = { mode: "dark", theme: { colors: { brand: "#123456" } } };
+    await controller.initialize({
+      theme: {},
+      state: {},
+      bundleSource: "",
+      componentTheme,
+      tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
+    });
+
+    expect(initParams.componentTheme).toEqual(componentTheme);
+
+    controller.dispose();
+    peer.dispose();
+  });
+
   it("tools/call with CORRECT capability token reaches onAction as ActionRequest and returns ActionResult", async () => {
     const { a, b } = makePair();
     const onAction = vi.fn().mockResolvedValue({ result: "confirmed" });
