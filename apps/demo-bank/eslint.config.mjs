@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Built sandbox bundles copied into public/ at build time (git-ignored).
+    "public/flowlet/**",
   ]),
 ]);
 

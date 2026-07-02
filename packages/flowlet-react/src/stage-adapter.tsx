@@ -74,7 +74,7 @@ export function FlowletStage({
   // Mount the stage once into the slot.
   useEffect(() => {
     if (!slotRef.current || ctrlRef.current) return;
-    const { iframe, endpoints } = createStage(
+    const { iframe, endpoints, dispose: disposeStage } = createStage(
       slotRef.current,
       reactSource ? { reactSource } : undefined,
     );
@@ -83,6 +83,7 @@ export function FlowletStage({
     });
     return () => {
       ctrlRef.current?.dispose();
+      disposeStage(); // resize listener does not die with the iframe
       iframe.remove();
       ctrlRef.current = null;
       initedRef.current = false;

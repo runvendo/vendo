@@ -12,7 +12,9 @@
  */
 import { createUIMessageStreamResponse } from "ai";
 import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
+import { hostToolset } from "@flowlet/agent";
 import { DEMO_PRINCIPAL } from "./principal";
+import { mapleHostToolDefs } from "./host-tools";
 
 interface ChatRequestBody {
   messages?: FlowletUIMessage[];
@@ -52,7 +54,10 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
   }
   const stream = agent.run({
     messages,
-    tools: {},
+    // Maple's own API surface enters through the caller seam (ENG-202): no
+    // execute — the policy gates each call and the BROWSER executes approved
+    // ones on the user's session via the SDK's host-tool runner.
+    tools: hostToolset(mapleHostToolDefs),
     principal: DEMO_PRINCIPAL,
     signal: req.signal,
   });

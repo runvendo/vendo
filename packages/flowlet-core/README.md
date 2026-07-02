@@ -33,3 +33,14 @@ flat, id-addressed graph:
 
 Validate with `validateGeneratedPayload(input)` (pure, never throws); `@flowlet/stage`
 resolves the flat graph into the nested `UINode` tree the sandbox renders.
+
+## Contracts
+
+Frozen platform contracts (2026-07-01 architecture):
+
+- `src/manifest/` — the `.flowlet/` manifest schema (theme.json, components, tools.json
+  + host events) as zod schemas; generated JSON Schema artifacts in `schemas/`
+  (`pnpm generate:schemas`, drift fails CI). See [docs/contracts/manifest.md](../../docs/contracts/manifest.md).
+- `src/seams/` — the five runtime seam interfaces (Store, CredentialBroker, Executor,
+  Scheduler, Channels) with the embedded-vs-cloud mapping in TSDoc. See
+  [docs/contracts/seams.md](../../docs/contracts/seams.md).

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "accent": "#0A7CFF",
+  "background": "#FBFBFA",
+  "surface": "#FFFFFF",
+  "text": "#111111",
+  "mutedText": "#908C85",
+  "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+  "radius": "14px",
+  "mode": "light"
+}
