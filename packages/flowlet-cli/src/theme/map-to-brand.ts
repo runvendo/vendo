@@ -1,8 +1,10 @@
-import { brandTokensSchema, defaultBrand, type BrandTokens } from "@flowlet/components/theme";
+import { defaultBrand } from "@flowlet/components/theme";
+import { manifestThemeSchema, type ManifestTheme } from "@flowlet/core";
 import type { CssVarDecl } from "./css-vars.js";
 
 export interface BrandMappingResult {
-  brand: BrandTokens | null;
+  /** Validated against the frozen manifestThemeSchema — the theme.json contract. */
+  brand: ManifestTheme | null;
   /** slot -> winning var name, for the report */
   matched: Record<string, string>;
   /** BrandTokens slots that fell back to defaultBrand values */
@@ -47,6 +49,28 @@ function pick(
   return undefined;
 }
 
+/**
+ * Resolve `var(--x)` / `var(--x, fallback)` references against the collected
+ * declarations (bounded depth). Returns null when a reference cannot be
+ * resolved — theme.json carries fully-resolved primitives only (frozen theme
+ * contract), so an unresolved font falls back to the default stack.
+ */
+export function resolveCssVarRefs(value: string, vars: CssVarDecl[], depth = 3): string | null {
+  if (!value.includes("var(")) return value;
+  if (depth <= 0) return null;
+  const byName = new Map(vars.filter((v) => !v.darkScope).map((v) => [v.name, v.value]));
+  const substituted = value.replace(/var\(\s*(--[\w-]+)\s*(?:,\s*([^()]+))?\)/g, (_m, name: string, fallback?: string) => {
+    return byName.get(name) ?? fallback?.trim() ?? "var()";
+  });
+  if (substituted.includes("var()")) return null; // unresolvable reference
+  return resolveCssVarRefs(substituted, vars, depth - 1);
+}
+
+/** Fully-resolved font stack: no var() refs, no CSS structural characters. */
+function isSafeFontStack(value: string): boolean {
+  return value.length > 0 && !value.includes("var(") && !/[{};\n]/.test(value);
+}
+
 export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
   const light = all.filter((v) => !v.darkScope);
   const hasDarkVariant = all.some((v) => v.darkScope);
@@ -65,11 +89,21 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
   if (radius) { used.add(radius); matched["radius"] = radius.name; draft["radius"] = radius.value; }
   else { defaulted.push("radius"); draft["radius"] = defaultBrand.radius; }
 
-  const font = pick(light, ["font-sans", "font-family", "font"], (val) => val.length > 0);
-  if (font) { used.add(font); matched["fontFamily"] = font.name; draft["fontFamily"] = font.value; }
-  else { defaulted.push("fontFamily"); draft["fontFamily"] = defaultBrand.fontFamily; }
+  const font = pick(
+    light,
+    ["font-sans", "font-family", "font"],
+    (val) => resolveCssVarRefs(val, all) !== null && isSafeFontStack(resolveCssVarRefs(val, all)!),
+  );
+  if (font) {
+    used.add(font);
+    matched["fontFamily"] = font.name;
+    draft["fontFamily"] = resolveCssVarRefs(font.value, all)!;
+  } else {
+    defaulted.push("fontFamily");
+    draft["fontFamily"] = defaultBrand.fontFamily;
+  }
 
-  const parsed = brandTokensSchema.safeParse(draft);
+  const parsed = manifestThemeSchema.safeParse(draft);
   return {
     brand: parsed.success ? parsed.data : null,
     matched,

@@ -30,7 +30,9 @@ export async function generateJson<T>(opts: {
   prompt: string;
 }): Promise<T> {
   const ask = async (prompt: string): Promise<{ value?: T; error: string }> => {
-    const { text } = await generateText({ model: opts.model, prompt });
+    // temperature 0: safety-relevant outputs (annotations, wrappers) must be as
+    // run-to-run stable as the model allows.
+    const { text } = await generateText({ model: opts.model, prompt, temperature: 0 });
     try {
       return { value: opts.schema.parse(JSON.parse(stripFences(text))), error: "" };
     } catch (err) {

@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { flowletHostPreset } from "@flowlet/stage/build";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const base = flowletHostPreset({ entry: "entry.ts", version: "0.0.1" });
+// Absolute entry: the build must work from any cwd (e.g. the host repo root).
+const base = flowletHostPreset({ entry: path.resolve(here, "entry.ts"), version: "0.0.1" });
 
 const config = {
   ...base,

@@ -40,18 +40,53 @@ function buildPrompt(routes: Array<{ urlPath: string; source: string }>): string
   ].join("\n");
 }
 
-export async function scanRoutes(targetDir: string, model: LanguageModel): Promise<ManifestTool[]> {
+/** HTTP verbs a route file actually exports — the deterministic ground truth. */
+export function exportedVerbs(source: string): Set<string> {
+  const verbs = new Set<string>();
+  for (const m of source.matchAll(/export\s+(?:async\s+)?(?:function|const)\s+(GET|POST|PUT|PATCH|DELETE)\b/g)) {
+    verbs.add(m[1]!);
+  }
+  return verbs;
+}
+
+export interface RouteScanResult {
+  tools: ManifestTool[];
+  warnings: string[];
+}
+
+export async function scanRoutes(targetDir: string, model: LanguageModel): Promise<RouteScanResult> {
   const files = await walk(targetDir, (p) => /(^|\/)app\/api\/.*route\.tsx?$/.test(p.replace(/\\/g, "/")), 200);
-  if (files.length === 0) return [];
+  if (files.length === 0) return { tools: [], warnings: [] };
   const routes = await Promise.all(
     files.map(async (f) => ({ urlPath: urlPathFor(f, targetDir), source: await fs.readFile(f, "utf8") })),
   );
+  // The LLM-reported method drives annotations downstream, so it is never
+  // trusted: every (path, method) must match a verb the handler actually exports.
+  const verbsByPath = new Map(routes.map((r) => [r.urlPath, exportedVerbs(r.source)]));
+
   const raw = await generateJson({ model, schema: routeToolsSchema, prompt: buildPrompt(routes) });
-  return raw.map((t) => ({
-    name: t.name,
-    description: t.description,
-    inputSchema: t.inputSchema,
-    annotations: annotationsFor(t.method, t.name),
-    binding: { type: "http" as const, method: t.method.toUpperCase() as HttpMethod, path: t.path },
-  }));
+  const tools: ManifestTool[] = [];
+  const warnings: string[] = [];
+  for (const t of raw) {
+    const method = t.method.toUpperCase() as HttpMethod;
+    const actual = verbsByPath.get(t.path);
+    if (!actual) {
+      warnings.push(`dropped tool ${JSON.stringify(t.name)}: no route file matches path ${t.path}`);
+      continue;
+    }
+    if (!actual.has(method)) {
+      warnings.push(
+        `dropped tool ${JSON.stringify(t.name)}: handler for ${t.path} does not export ${method} (exports: ${[...actual].join(", ") || "none"})`,
+      );
+      continue;
+    }
+    tools.push({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+      annotations: annotationsFor(method, t.name, "route-scan"),
+      binding: { type: "http" as const, method, path: t.path },
+    });
+  }
+  return { tools, warnings };
 }

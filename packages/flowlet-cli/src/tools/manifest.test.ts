@@ -28,12 +28,26 @@ describe("toolsManifestSchema (canonical, re-exported from @flowlet/core)", () =
   });
 });
 
-describe("annotationsFor", () => {
-  it("marks reads non-mutating and deletes dangerous+idempotent", () => {
-    expect(annotationsFor("get", "list_things")).toEqual({ mutating: false, dangerous: false });
-    expect(annotationsFor("delete", "delete_payee")).toEqual({ mutating: true, dangerous: true, idempotent: true });
-    expect(annotationsFor("post", "cancel_order")).toEqual({ mutating: true, dangerous: true });
-    expect(annotationsFor("post", "create_payment")).toEqual({ mutating: true, dangerous: false });
-    expect(annotationsFor("put", "update_profile")).toEqual({ mutating: true, dangerous: false, idempotent: true });
+describe("annotationsFor (fail closed)", () => {
+  it("auto-allows only read-named GETs from a spec", () => {
+    expect(annotationsFor("get", "list_things", "openapi")).toEqual({ mutating: false, dangerous: false });
+    expect(annotationsFor("get", "get_profile", "openapi")).toEqual({ mutating: false, dangerous: false });
+    // side-effect-shaped GETs fail closed (demo-bank's poll GET fires Slack,
+    // its integrations GET calls connect())
+    expect(annotationsFor("get", "poll_flowlet", "openapi")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("get", "connect_integration", "openapi")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("get", "reset_flowlet", "openapi")).toEqual({ mutating: true, dangerous: true });
+  });
+
+  it("never auto-allows a route-scan tool, even read-named GETs", () => {
+    expect(annotationsFor("get", "list_transactions", "route-scan")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("get", "get_profile", "route-scan")).toEqual({ mutating: true, dangerous: false });
+  });
+
+  it("marks writes mutating and deletes/destructive names dangerous", () => {
+    expect(annotationsFor("delete", "delete_payee", "openapi")).toEqual({ mutating: true, dangerous: true, idempotent: true });
+    expect(annotationsFor("post", "cancel_order", "openapi")).toEqual({ mutating: true, dangerous: true });
+    expect(annotationsFor("post", "create_payment", "openapi")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("put", "update_profile", "openapi")).toEqual({ mutating: true, dangerous: false, idempotent: true });
   });
 });

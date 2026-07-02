@@ -24,22 +24,48 @@ const LLM_REPLY = JSON.stringify([{
 }]);
 
 describe("scanRoutes", () => {
-  it("finds route.ts files and converts LLM output to tool entries", async () => {
+  it("finds route.ts files and converts LLM output to fail-closed tool entries", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
     await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE);
-    const tools = await scanRoutes(dir, textModel([LLM_REPLY]));
+    const { tools, warnings } = await scanRoutes(dir, textModel([LLM_REPLY]));
     expect(tools).toHaveLength(1);
+    expect(warnings).toEqual([]);
     expect(tools[0]).toMatchObject({
       name: "list_transactions",
       binding: { type: "http", method: "GET", path: "/api/transactions" },
-      annotations: { mutating: false, dangerous: false },
+      // route-scan tools NEVER auto-allow: the surface is LLM-read code
+      annotations: { mutating: true, dangerous: false },
     });
   });
 
-  it("returns [] when there are no route files (no LLM call)", async () => {
+  it("drops entries whose method is not actually exported by the handler", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
-    const tools = await scanRoutes(dir, textModel(["[]"]));
+    await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
+    await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE); // exports GET only
+    const lied = JSON.stringify([
+      { name: "delete_transactions", description: "x", method: "delete", path: "/api/transactions", inputSchema: {} },
+    ]);
+    const { tools, warnings } = await scanRoutes(dir, textModel([lied]));
+    expect(tools).toEqual([]);
+    expect(warnings[0]).toMatch(/does not export DELETE/);
+  });
+
+  it("drops entries whose path matches no route file", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
+    await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE);
+    const invented = JSON.stringify([
+      { name: "list_admin", description: "x", method: "get", path: "/api/admin", inputSchema: {} },
+    ]);
+    const { tools, warnings } = await scanRoutes(dir, textModel([invented]));
+    expect(tools).toEqual([]);
+    expect(warnings[0]).toMatch(/no route file matches/);
+  });
+
+  it("returns no tools when there are no route files (no LLM call)", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    const { tools } = await scanRoutes(dir, textModel(["[]"]));
     expect(tools).toEqual([]);
   });
 });

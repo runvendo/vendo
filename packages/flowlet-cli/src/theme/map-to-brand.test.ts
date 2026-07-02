@@ -22,7 +22,27 @@ describe("mapVarsToBrand", () => {
     });
     // no accent-ish var exists — defaulted and reported
     expect(result.defaulted).toContain("accent");
+    // var(--font-inter) is unresolvable from CSS (next/font injects it at
+    // runtime) — the frozen theme contract wants fully-resolved primitives,
+    // so the font defaults instead of leaking a var() ref
+    expect(result.defaulted).toContain("fontFamily");
+    expect(result.brand?.fontFamily).not.toContain("var(");
     expect(result.unmapped.map((u) => u.name)).toContain("--color-border");
+  });
+
+  it("resolves var() chains for fonts and rejects unresolvable or unsafe values", () => {
+    const resolved = mapVarsToBrand([
+      v("--color-bg", "#FFFFFF"),
+      v("--font-inter", "Inter, sans-serif"),
+      v("--font-sans", "var(--font-inter)"),
+    ]);
+    expect(resolved.brand?.fontFamily).toBe("Inter, sans-serif");
+
+    const fallback = mapVarsToBrand([v("--color-bg", "#FFFFFF"), v("--font-sans", "var(--missing, Georgia, serif)")]);
+    expect(fallback.brand?.fontFamily).toBe("Georgia, serif");
+
+    const injection = mapVarsToBrand([v("--color-bg", "#FFFFFF"), v("--font-sans", "serif; } body { display:none")]);
+    expect(injection.defaulted).toContain("fontFamily");
   });
 
   it("prefers accent-named vars and rejects non-hex colors", () => {

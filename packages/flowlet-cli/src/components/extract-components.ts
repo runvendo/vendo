@@ -44,8 +44,10 @@ export async function extractComponents(
       try {
         written.push(await writeComponent(targetDir, analysis, candidate, opts));
       } catch (codegenErr) {
-        // One repair round-trip: hand the codegen error back to the model.
         const feedback = codegenErr instanceof Error ? codegenErr.message : String(codegenErr);
+        // Not model-fixable (developer-edited output present) — don't burn a paid call.
+        if (feedback.includes("already exists")) throw codegenErr;
+        // One repair round-trip: hand the codegen error back to the model.
         analysis = await analyzeComponent(candidate, model, feedback);
         if (!analysis.include) {
           excluded.push({ file: candidate.relFile, reason: analysis.reason });

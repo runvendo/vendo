@@ -31,9 +31,16 @@ pass \`--force\`.
   params are top-level properties; a JSON request body is the \`body\` property.
   \`events\` declares host event types usable as automation triggers (empty until you add them).
 - \`components/\` — descriptor + sandbox wrapper pairs around your components, plus an
-  \`entry.ts\`/\`vite.config.ts\` that build them into a sandbox bundle with
-  \`flowletHostPreset\`. Wiring the bundle into a running Flowlet host is separate
-  (see ENG-186/ENG-202).
+  \`entry.ts\`/\`vite.config.mts\` that build them into a sandbox bundle with
+  \`flowletHostPreset\`. Wrapper bodies are LLM-authored code: they execute only
+  inside the egress-jailed sandbox iframe, but review them like any generated
+  code before committing. Wiring the bundle into a running Flowlet host is
+  separate (see ENG-186/ENG-202).
+
+Safety defaults: route-scanned tools are ALL marked \`mutating: true\` (the scan
+is LLM-read code and must not grant auto-allow); GETs with side-effect-shaped
+names are marked mutating even from OpenAPI. Relax annotations here by hand
+after review — this file is the reviewable source of truth.
 
 \`flowlet publish\` uploads tools.json to the Flowlet registry — stubbed until the
 registry ships (ENG-198). Embedded hosts read this directory from disk.

@@ -24,7 +24,7 @@ export async function convertOpenApi(specPath: string): Promise<ManifestTool[]> 
         name,
         description,
         inputSchema: buildInputSchema(doc, item, op),
-        annotations: annotationsFor(method, name),
+        annotations: annotationsFor(method, name, "openapi"),
         binding: { type: "http", method: method.toUpperCase() as HttpMethod, path: route },
       });
     }
