@@ -36,6 +36,36 @@ describe("createRenderViewTool", () => {
     expect((writer.write as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
   });
 
+  it("compiles a JSX component to sandbox-ready ESM before shipping", async () => {
+    const writer = writerMock();
+    const tool = createRenderViewTool(writer);
+    const jsxPayload = {
+      ...VALID,
+      components: {
+        Gauge: "export default function Gauge(p){ return <div>{p.value}</div>; }",
+      },
+    };
+    const result = await tool.execute!(jsxPayload as never, {} as never);
+    expect(result).toBe("rendered");
+    const written = (writer.write as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const compiled = written.data.payload.components.Gauge as string;
+    expect(compiled).toContain("react/jsx-runtime");
+    expect(compiled).not.toContain("<div");
+    expect(compiled).not.toContain("jsxDEV");
+  });
+
+  it("returns a compile error (and writes nothing) for a JSX syntax error", async () => {
+    const writer = writerMock();
+    const tool = createRenderViewTool(writer);
+    const broken = {
+      ...VALID,
+      components: { Gauge: "export default function Gauge(p){ return <div>{p.value</div>; }" },
+    };
+    const result = await tool.execute!(broken as never, {} as never);
+    expect(String(result)).toMatch(/^render_view error \(compile\): component "Gauge":/);
+    expect((writer.write as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+  });
+
   it("mints unique node ids across calls", async () => {
     const writer = writerMock();
     const tool = createRenderViewTool(writer);

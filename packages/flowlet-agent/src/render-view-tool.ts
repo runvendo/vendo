@@ -13,6 +13,7 @@ import {
   type FlowletUIMessage,
   type UINode,
 } from "@flowlet/core";
+import { compileComponentSource } from "./compile-component";
 
 type FlowletWriter = UIMessageStreamWriter<FlowletUIMessage>;
 
@@ -50,10 +51,26 @@ export function createRenderViewTool(writer: FlowletWriter) {
       if (!validation.ok) {
         return `render_view error (${validation.error.code}): ${validation.error.message}`;
       }
+      // Validation ran on the ORIGINAL authored payload (name/cap checks apply
+      // to what the model emitted). Compile each component's JSX/TS to plain ESM
+      // before shipping — the sandbox has no transpiler.
+      let shipped = validation.payload;
+      if (validation.payload.components) {
+        const compiled: Record<string, string> = {};
+        for (const [name, src] of Object.entries(validation.payload.components)) {
+          try {
+            compiled[name] = compileComponentSource(src);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return `render_view error (compile): component "${name}": ${msg}`;
+          }
+        }
+        shipped = { ...validation.payload, components: compiled };
+      }
       const node: UINode = {
         id: `view-${++counter}`,
         kind: "generated",
-        payload: validation.payload,
+        payload: shipped,
       };
       writer.write({ type: "data-ui", id: node.id, data: node });
       return "rendered";

@@ -33,6 +33,9 @@ export type { ToolSourceInput } from "./toolset";
 // Render view tool
 export { createRenderViewTool } from "./render-view-tool";
 
+// Generated-component compiler (JSX/TS → sandbox-ready ESM)
+export { compileComponentSource } from "./compile-component";
+
 // Request connect tool (host-privileged Connect card)
 export { createRequestConnectTool } from "./request-connect-tool";
 
