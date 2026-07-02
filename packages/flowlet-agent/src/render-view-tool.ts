@@ -34,9 +34,11 @@ export function createRenderViewTool(writer: FlowletWriter) {
     description:
       "Renders a composed Flowlet view: a tree of prewired primitives, catalog components, and " +
       "optional novel components you define as code. Use for multi-component layouts, data-bound " +
-      "views, or UI the catalog cannot express. Generated component code is plain-JS ESM (NO JSX): " +
-      "`import React from 'react'` and `export default function MyComp(props) { return React.createElement(...) }`. " +
-      "It runs in a network-jailed sandbox; to perform an app action call `props.flowlet.dispatch({ action, payload })`.",
+      "views, or UI the catalog cannot express. Generated component code is ESM. You MAY write " +
+      "JSX/TSX — it is compiled automatically (automatic React runtime, TS types stripped), so you " +
+      "do NOT need to import React. Example: `export default function MyComp(props) { return <div>{props.label}</div>; }`. " +
+      "Plain `React.createElement` also works. It runs in a network-jailed sandbox; to perform an app " +
+      "action call `props.flowlet.dispatch({ action, payload })`.",
     inputSchema: z.object({
       formatVersion: z.literal("flowlet-genui/v1"),
       root: z.string().describe("Id of the root node."),
