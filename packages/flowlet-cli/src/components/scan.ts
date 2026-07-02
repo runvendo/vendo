@@ -9,10 +9,13 @@ export interface ComponentCandidate {
   relFile: string;
   /** first exported PascalCase symbol (the analysis prompt sees the whole file) */
   exportName: string;
+  /** every exported PascalCase symbol — the safe import universe for codegen */
+  exportNames: string[];
   source: string;
 }
 
 const EXPORT_RE = /export\s+(?:function|const)\s+([A-Z][A-Za-z0-9]*)/;
+const EXPORT_RE_ALL = /export\s+(?:function|const)\s+([A-Z][A-Za-z0-9]*)/g;
 const MAX_CANDIDATES = 25;
 const MAX_FILE_BYTES = 40_000;
 
@@ -39,7 +42,14 @@ export async function scanComponents(targetDir: string): Promise<ComponentCandid
     if (source.length > MAX_FILE_BYTES) continue; // giant files are not reusable primitives
     const m = source.match(EXPORT_RE);
     if (!m || !m[1]) continue;
-    candidates.push({ file, relFile: path.relative(targetDir, file).replace(/\\/g, "/"), exportName: m[1], source });
+    const exportNames = [...source.matchAll(EXPORT_RE_ALL)].map((x) => x[1]!);
+    candidates.push({
+      file,
+      relFile: path.relative(targetDir, file).replace(/\\/g, "/"),
+      exportName: m[1],
+      exportNames,
+      source,
+    });
   }
   return candidates;
 }

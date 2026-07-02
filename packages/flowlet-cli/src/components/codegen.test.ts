@@ -19,6 +19,7 @@ const candidate: ComponentCandidate = {
   file: "/x/src/components/ui/button.tsx",
   relFile: "src/components/ui/button.tsx",
   exportName: "Button",
+  exportNames: ["Button"],
   source: "",
 };
 
@@ -68,6 +69,14 @@ describe("codegen", () => {
       "CardHeader",
     ]);
     expect(normalizeImports(["src/components/charts/bars.tsx"])).toEqual([]);
+  });
+
+  it("derives imports from JSX tags restricted to real exports when the list is unusable", async () => {
+    const { importsFromJsx, implSource } = await import("./codegen.js");
+    expect(importsFromJsx("<Button>{p.label}</Button>", ["Button"])).toEqual(["Button"]);
+    expect(importsFromJsx("<Leaf size={16} />", ["MapleMark"])).toEqual([]);
+    const src = implSource({ ...analysis, imports: ["src/components/ui/button.tsx"] }, candidate);
+    expect(src).toContain('import { Button } from "../../../src/components/ui/button"');
   });
 
   it("rejects broken generated JSX", () => {

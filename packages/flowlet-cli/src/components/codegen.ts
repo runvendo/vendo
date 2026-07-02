@@ -72,10 +72,22 @@ export function normalizeImports(imports: string[]): string[] {
   return [...new Set(names.filter((n) => IDENTIFIER.test(n)))];
 }
 
+/**
+ * Last-resort import derivation when the model returned no usable names
+ * (e.g. file paths): PascalCase JSX tags used in the wrapper body, restricted
+ * to symbols the host file verifiably exports — never invents an import.
+ */
+export function importsFromJsx(jsx: string, exportNames: string[]): string[] {
+  const exported = new Set(exportNames);
+  const tags = [...jsx.matchAll(/<([A-Z][A-Za-z0-9]*)/g)].map((m) => m[1]!);
+  return [...new Set(tags.filter((t) => exported.has(t)))];
+}
+
 export function implSource(analysis: ComponentAnalysis, candidate: ComponentCandidate): string {
   const name = registryName(analysis);
   const c = camel(name);
-  const imports = normalizeImports(analysis.imports);
+  let imports = normalizeImports(analysis.imports);
+  if (imports.length === 0) imports = importsFromJsx(analysis.jsx, candidate.exportNames);
   if (imports.length === 0) {
     throw new Error(`no usable named exports in imports list: ${JSON.stringify(analysis.imports)}`);
   }

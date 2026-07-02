@@ -19,6 +19,7 @@ describe("analyzeComponent", () => {
         file: "/x/badge.tsx",
         relFile: "src/components/ui/badge.tsx",
         exportName: "Badge",
+        exportNames: ["Badge"],
         source: "export const Badge = () => null",
       },
       textModel([REPLY]),
