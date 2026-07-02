@@ -94,6 +94,14 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
   const calendar = opts.calendar ?? realCreateCalendarEvent;
   const store = new InMemoryAutomationStore(opts.now ? { now: opts.now } : {});
 
+  // Content idempotency: a rehearsal re-fire on demo day must not double-send
+  // or double-book. Key each REAL side effect by (recipient/attendee, day) and
+  // skip a repeat. World-scoped, so a demo reset (which recreates the world)
+  // intentionally clears it and lets the next run send fresh. Keys are added
+  // only AFTER a successful send, so a failed send stays retryable.
+  const doneKeys = new Set<string>();
+  const sendDay = (): string => (opts.now ? opts.now() : new Date().toISOString()).slice(0, 10);
+
   const getDeadlines: RegisteredTool = {
     descriptor: {
       name: "get_deadlines",
@@ -143,12 +151,20 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
       body: z.string(),
     }),
     execute: async (input) => {
+      const recipient = String(input["recipient_email"]);
+      const key = `gmail:${recipient}:${sendDay()}`;
+      if (doneKeys.has(key)) {
+        return { ok: true, result: { skipped: true, reason: "already emailed today", recipient } };
+      }
       const result = await gmail({
-        recipient_email: String(input["recipient_email"]),
+        recipient_email: recipient,
         subject: String(input["subject"]),
         body: String(input["body"]),
       });
-      if (result.ok) return { ok: true, result };
+      if (result.ok) {
+        doneKeys.add(key);
+        return { ok: true, result };
+      }
       return {
         ok: false,
         error: { code: "gmail_error", message: result.error ?? "Gmail send failed" },
@@ -195,6 +211,15 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
       timezone: z.string().optional(),
     }),
     execute: async (input) => {
+      // Dedup by (attendee-or-summary, event day) so a re-fire the same day
+      // does not book a second identical event.
+      const attendees = Array.isArray(input["attendees"]) ? (input["attendees"] as string[]) : [];
+      const who = attendees.length > 0 ? attendees.join(",") : String(input["summary"]);
+      const day = String(input["start_datetime"]).slice(0, 10);
+      const key = `cal:${who}:${day}`;
+      if (doneKeys.has(key)) {
+        return { ok: true, result: { skipped: true, reason: "already booked", who, day } };
+      }
       const result = await calendar({
         summary: String(input["summary"]),
         ...(input["description"] !== undefined ? { description: String(input["description"]) } : {}),
@@ -208,7 +233,10 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
         ...(Array.isArray(input["attendees"]) ? { attendees: input["attendees"] as string[] } : {}),
         ...(input["timezone"] !== undefined ? { timezone: String(input["timezone"]) } : {}),
       });
-      if (result.ok) return { ok: true, result };
+      if (result.ok) {
+        doneKeys.add(key);
+        return { ok: true, result };
+      }
       return {
         ok: false,
         error: { code: "calendar_error", message: result.error ?? "Calendar booking failed" },

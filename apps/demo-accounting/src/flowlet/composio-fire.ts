@@ -11,11 +11,22 @@ import { DEMO_USER_ID } from "./principal";
 
 const COMPOSIO_API = "https://backend.composio.dev/api/v3";
 
+/** Hard ceiling on a single real send. If Gmail/Calendar stalls mid-send on
+ *  demo day, this makes the run FAIL LOUD into run history instead of leaving
+ *  the stage spinning forever (post-merge Opus review, PR #27). */
+const SEND_TIMEOUT_MS = 15_000;
+
 export interface ComposioFireResult {
   ok: boolean;
   /** The Composio response payload (or error detail) for run-history display. */
   detail: unknown;
   error?: string;
+}
+
+/** Injectable knobs for tests (a stalling fetch, a short timeout). */
+export interface ExecuteOptions {
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 }
 
 /** The wire-format args the executor sends, exposed for tests. */
@@ -42,14 +53,22 @@ export function calendarArgs(input: CalendarCreateInput): Record<string, unknown
 async function executeComposio(
   slug: string,
   args: Record<string, unknown>,
+  opts: ExecuteOptions = {},
 ): Promise<ComposioFireResult> {
   const apiKey = process.env.COMPOSIO_API_KEY;
   if (!apiKey) return { ok: false, detail: null, error: "COMPOSIO_API_KEY not set" };
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? SEND_TIMEOUT_MS;
+  // Abort the send if it stalls past the ceiling — a hung fetch would spin the
+  // stage forever with no error otherwise.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${COMPOSIO_API}/tools/execute/${slug}`, {
+    const res = await fetchImpl(`${COMPOSIO_API}/tools/execute/${slug}`, {
       method: "POST",
       headers: { "x-api-key": apiKey, "content-type": "application/json" },
       body: JSON.stringify({ user_id: DEMO_USER_ID, arguments: args }),
+      signal: controller.signal,
     });
     const json = (await res.json().catch(() => ({}))) as {
       successful?: boolean;
@@ -59,7 +78,15 @@ async function executeComposio(
     if (json.successful) return { ok: true, detail: json.data ?? null };
     return { ok: false, detail: json.data ?? null, error: json.error ?? `HTTP ${res.status}` };
   } catch (e) {
+    // The timeout aborts the signal, so fetch rejects with an AbortError —
+    // surface it as an explicit timeout so run history reads "timed out",
+    // never a bare AbortError or a silent hang.
+    if (controller.signal.aborted) {
+      return { ok: false, detail: null, error: `Composio ${slug} timed out after ${timeoutMs}ms` };
+    }
     return { ok: false, detail: null, error: String(e) };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -69,12 +96,19 @@ export interface GmailSendInput {
   body: string;
 }
 
-export function sendGmail(input: GmailSendInput): Promise<ComposioFireResult> {
-  return executeComposio("GMAIL_SEND_EMAIL", {
-    recipient_email: input.recipient_email,
-    subject: input.subject,
-    body: input.body,
-  });
+export function sendGmail(
+  input: GmailSendInput,
+  opts?: ExecuteOptions,
+): Promise<ComposioFireResult> {
+  return executeComposio(
+    "GMAIL_SEND_EMAIL",
+    {
+      recipient_email: input.recipient_email,
+      subject: input.subject,
+      body: input.body,
+    },
+    opts,
+  );
 }
 
 export interface CalendarCreateInput {
@@ -89,8 +123,11 @@ export interface CalendarCreateInput {
   timezone?: string;
 }
 
-export function createCalendarEvent(input: CalendarCreateInput): Promise<ComposioFireResult> {
-  return executeComposio("GOOGLECALENDAR_CREATE_EVENT", calendarArgs(input));
+export function createCalendarEvent(
+  input: CalendarCreateInput,
+  opts?: ExecuteOptions,
+): Promise<ComposioFireResult> {
+  return executeComposio("GOOGLECALENDAR_CREATE_EVENT", calendarArgs(input), opts);
 }
 
 /** Injectable seams so the automations world is testable offline. */
