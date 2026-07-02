@@ -1,0 +1,54 @@
+import { describe, expect, it } from "vitest";
+import { descriptorSource, implSource, entrySource, registryName, assertParses } from "./codegen.js";
+import type { ComponentAnalysis } from "./analyze.js";
+import type { ComponentCandidate } from "./scan.js";
+
+const analysis: ComponentAnalysis = {
+  include: true,
+  reason: "reusable primitive",
+  name: "Button",
+  description: "A styled button with variants.",
+  imports: ["Button"],
+  props: [
+    { name: "label", type: "string", optional: false, description: "Button text." },
+    { name: "variant", type: "enum", enumValues: ["primary", "ghost"], optional: true, description: "Visual style." },
+  ],
+  jsx: "<Button variant={p.variant}>{p.label}</Button>",
+};
+const candidate: ComponentCandidate = {
+  file: "/x/src/components/ui/button.tsx",
+  relFile: "src/components/ui/button.tsx",
+  exportName: "Button",
+  source: "",
+};
+
+describe("codegen", () => {
+  it("emits a descriptor matching RegisteredComponent with source host", () => {
+    const src = descriptorSource(analysis);
+    expect(src).toContain('source: "host"');
+    expect(src).toContain('z.enum(["primary", "ghost"])');
+    assertParses("descriptor", src);
+  });
+
+  it("emits a wrapper that imports the host file relatively and safeParses props", () => {
+    const src = implSource(analysis, candidate);
+    expect(src).toContain('from "../../../src/components/ui/button"');
+    expect(src).toContain("safeParse");
+    assertParses("impl", src);
+  });
+
+  it("prefixes names that collide with prewired components", () => {
+    expect(registryName({ ...analysis, name: "Card" })).toBe("HostCard");
+    expect(registryName(analysis)).toBe("Button");
+  });
+
+  it("rejects broken generated JSX", () => {
+    expect(() => assertParses("impl", "const x = <div>")).toThrow(/syntax error/);
+  });
+
+  it("entry source wires the __FLOWLET_HOST__ contract", () => {
+    const src = entrySource(["Button"]);
+    expect(src).toContain("window.__FLOWLET_HOST__ = { Button }");
+    assertParses("entry", src);
+  });
+});
