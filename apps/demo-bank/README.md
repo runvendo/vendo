@@ -75,12 +75,13 @@ Home, Accounts, Transactions, Cards, Payments, Insights, Activity, Settings.
 
 The demo anchors on one transaction: `txn_doordash_87`, an $87.00 DoorDash charge at 1:14 AM on Maple Checking (`amount: -8700`, `category: dining`, descriptor `DOORDASH*ORDER 8742 CA`). It is the most recent transaction in the seed and the thing the Flowlet "$87 Mystery" demo investigates. The seed is deterministic, so the charge and surrounding data are identical on every run.
 
-## Flowlet sandbox and generated views (Tier 2.5)
+## Flowlet sandbox and generated views
 
-The agent can emit novel React views, not just catalog components. The path:
+There is ONE UI tool, `render_view`, and its output always renders in the sandbox. Pre-built catalog components are building blocks placed inside a generated view; even a single component is a one-node generated view rendered in the box. The path:
 
-- The agent calls `render_view` with a `GeneratedPayload` (a `components` map of generated code). That becomes a `kind: "generated"` UI node, which `SandboxStage` mounts into the egress-jailed stage. The stage loads the components host bundle plus the React shim, copied into `public/flowlet/` by the `predev`/`prebuild` hook (`scripts/copy-flowlet-sandbox.mjs`).
-- The demo runs a real guardrail policy (`src/flowlet/policy.ts`), replacing the old allow-all. Render tools plus in-process reads/rules (`render_ui`, `render_view`, `get_transactions`, `set_rule`) and read-shaped Composio tools (FETCH, GET, LIST, SEARCH, FIND, READ) resolve to `allow`. Write-shaped or unknown tools resolve to `approve`.
+- The agent calls `render_view` with a `GeneratedPayload` (a flat `nodes` array plus a `root` id; nodes can be prewired primitives, host catalog components, or novel generated code). That becomes a `kind: "generated"` UI node, which `SandboxStage` mounts into the egress-jailed stage. The stage loads the components host bundle plus the React shim, copied into `public/flowlet/` by the `predev`/`prebuild` hook (`scripts/copy-flowlet-sandbox.mjs`).
+- The one host-rendered exception is the Connect card, emitted by `request_connect`. OAuth needs host privileges, so this card is rendered and trusted directly by the demo host rather than in the sandbox.
+- The demo runs a real guardrail policy (`src/flowlet/policy.ts`), replacing the old allow-all. The UI tools plus in-process reads/rules (`render_view`, `request_connect`, `get_transactions`, `set_rule`) and read-shaped Composio tools (FETCH, GET, LIST, SEARCH, FIND, READ) resolve to `allow`. Write-shaped or unknown tools resolve to `approve`.
 - Actions from a sandbox component (`flowlet.dispatch`) route through `POST /api/flowlet/action`, which runs them through the SAME `demoPolicy` before executing.
 
 ### Known limitations
@@ -88,7 +89,7 @@ The agent can emit novel React views, not just catalog components. The path:
 1. The action route's approval re-POST is trusted: the client sends `approved: true`. Acceptable for this local-only demo; a production build needs a server-side approval token.
 2. Approve-gated actions have no in-process executor in this demo, so clicking "Allow" on the sandbox approval prompt 404s. The approval UI is effectively vestigial for the demo's toolset. The intended sandbox action is `set_rule`, which is allowed and executes directly.
 3. A denied sandbox `dispatch()` resolves `undefined` to the generated component rather than rejecting: the runtime's direct-reply path only propagates `result`, not errors. The server never executes the denied action, so this is a UX/semantics gap, not a security hole.
-4. The loose Tier 2 `HtmlApp` iframe (full-document generated apps) is unchanged and still lacks the egress jail. A documented follow-up, out of scope for Tier 2.5.
+4. Arbitrary interactive apps (e.g. games) are now expressed as novel generated components inside a `render_view` view, so they render in the same egress-jailed sandbox as everything else. Easier JSX authoring for these components is a future follow-up.
 
 ## Out of scope (this issue)
 

@@ -72,6 +72,7 @@ function buildInstructions(): string {
     "HOW render_view WORKS — there is ONE rendering tool. Every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
     "- formatVersion: 'flowlet-genui/v1'.",
+    "- root: the id of the root node.",
     "- nodes: a FLAT array of nodes, each with a unique `id`. One node is the `root`;",
     "  every other node is reached because some node lists its id in `children`.",
     "- Each node: { id, component, source, props, children? }. Pass props as a JSON",

@@ -6,9 +6,9 @@
  * One output model: all AI-generated UI renders through the sandbox
  * (SandboxStage) now that ENG-180 has landed. The one host-rendered exception
  * is the Connect OAuth card, which the demo host owns and trusts directly.
- * Defensive prop coercion: the render_ui tool types props as `unknown`, so
- * the model sometimes sends a JSON *string* instead of an object — parse it
- * so the component gets real props rather than a char-indexed spread.
+ * Defensive prop coercion: host component props (the Connect card) come in as
+ * `unknown`, so the model sometimes sends a JSON *string* instead of an object
+ * — parse it so the component gets real props rather than a char-indexed spread.
  */
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";

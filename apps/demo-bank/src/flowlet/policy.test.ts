@@ -11,7 +11,7 @@ const ctx = (toolName: string): PolicyContext => ({
 
 describe("demoPolicy", () => {
   it("allows the render tools and demo read/rule tools", async () => {
-    for (const name of ["render_ui", "render_view", "request_connect", "get_transactions", "set_rule"]) {
+    for (const name of ["render_view", "request_connect", "get_transactions", "set_rule"]) {
       expect(await demoPolicy.evaluate(ctx(name))).toBe("allow");
     }
   });

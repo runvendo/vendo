@@ -16,7 +16,7 @@ docs/
   superpowers     design and plan docs (plans/, specs/)
 ```
 
-The agent composes novel views with the `render_view` tool: a `components` map of generated React code bound to `$path` data, meshed with catalog and primitive components.
+There is one UI tool, `render_view`, and its output always renders in the egress-jailed sandbox. The agent composes each view as a flat tree of nodes: prewired primitives, host catalog components, and novel generated React code bound to `$path` data. Even a single component is a one-node generated view. The only host-rendered exception is the Connect OAuth card (via `request_connect`), which needs host privileges.
 
 ## Quickstart
 
