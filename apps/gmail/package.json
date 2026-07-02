@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/react": "3.0.30",
+    "@flowlet/components": "workspace:*",
+    "@flowlet/core": "workspace:*",
+    "@flowlet/react": "workspace:*",
+    "@flowlet/runtime": "workspace:*",
+    "@flowlet/shell": "workspace:*",
+    "@flowlet/stage": "workspace:*",
+    "ai": "6.0.28",
+    "express": "^4.21.2",
     "framer-motion": "^3.10.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -14,12 +24,25 @@
     "redux-logger": "^3.0.6",
     "reselect": "^4.0.0",
     "styled-components": "^5.2.1",
-    "web-vitals": "^0.2.4"
+    "web-vitals": "^0.2.4",
+    "zod": "^3.24.0"
   },
   "scripts": {
     "start": "PORT=3199 DISABLE_ESLINT_PLUGIN=true react-scripts start",
     "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
-    "test": "echo \"no tests yet\""
+    "dev": "concurrently -k -n server,web \"pnpm dev:server\" \"pnpm start\"",
+    "dev:server": "tsx watch server/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20",
+    "concurrently": "^9.1.2",
+    "http-proxy-middleware": "^2.0.9",
+    "tsx": "^4.19.2",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   },
   "eslintConfig": {
     "extends": [

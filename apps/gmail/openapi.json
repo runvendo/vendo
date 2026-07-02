@@ -1,0 +1,178 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Gmail Clone Mail API",
+    "description": "The Gmail clone's own REST API. This spec is the host contract Flowlet's agent acts through as the signed-in user (ENG-202): each operation becomes a client-executed agent tool, gated by annotations.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/profile": {
+      "get": {
+        "operationId": "get_profile",
+        "summary": "Returns the signed-in user's identity (name and email address)."
+      }
+    },
+    "/api/messages": {
+      "get": {
+        "operationId": "list_messages",
+        "summary": "Lists messages newest-first. Filter by folder (inbox, sent, trash — default inbox), unread, starred, a free-text search query, and a result limit. Use unread=true to get the user's unread emails.",
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "description": "Which folder to list: inbox (default), sent, or trash.",
+            "schema": { "type": "string", "enum": ["inbox", "sent", "trash"] }
+          },
+          {
+            "name": "unread",
+            "in": "query",
+            "description": "true → only unread messages; false → only read ones.",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "starred",
+            "in": "query",
+            "description": "true → only starred messages.",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive search across sender, subject and body.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of messages to return.",
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ]
+      }
+    },
+    "/api/messages/{id}": {
+      "get": {
+        "operationId": "get_message",
+        "summary": "Reads one message in full (headers and complete body) by id.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The message id, e.g. \"m5\".",
+            "schema": { "type": "string" }
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "delete_message",
+        "summary": "Deletes a message (moves it to trash). Destructive — requires the user's approval.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The message id to delete.",
+            "schema": { "type": "string" }
+          }
+        ]
+      }
+    },
+    "/api/messages/send": {
+      "post": {
+        "operationId": "send_message",
+        "summary": "Sends an email as the signed-in user. For replies pass inReplyTo (the original message id) — recipient and Re: subject then default from the original. Sends on the user's behalf — requires approval.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "description": "Recipient email address. Optional when replying."
+                  },
+                  "subject": {
+                    "type": "string",
+                    "description": "Subject line. Optional when replying (defaults to Re: original)."
+                  },
+                  "body": {
+                    "type": "string",
+                    "description": "Plain-text body of the email."
+                  },
+                  "inReplyTo": {
+                    "type": "string",
+                    "description": "Id of the message being replied to."
+                  }
+                },
+                "required": ["body"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/read": {
+      "post": {
+        "operationId": "mark_message_read",
+        "summary": "Marks a message read (read=true) or unread (read=false).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The message id.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "read": { "type": "boolean", "description": "true = read, false = unread." }
+                },
+                "required": ["read"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{id}/star": {
+      "post": {
+        "operationId": "star_message",
+        "summary": "Stars (starred=true) or unstars (starred=false) a message.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The message id.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "starred": { "type": "boolean", "description": "true = star, false = unstar." }
+                },
+                "required": ["starred"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
