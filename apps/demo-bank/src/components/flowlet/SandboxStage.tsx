@@ -9,7 +9,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { UINode, ActionRequest, ActionResult } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
-import { prewiredComponents } from "@flowlet/components";
+import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@flowlet/components";
+import { mapleBrand } from "@/flowlet/brand";
+
+// Maple's brand drives the sandbox exactly as it drives the host shell — one
+// producer for the --flowlet-* vars, one mapping for the OpenUI component theme.
+const theme = brandToCssVars(mapleBrand);
+const componentTheme = { theme: mapBrandToTheme(mapleBrand), mode: mapleBrand.mode ?? "light" };
 
 interface Sources { react: string; bundle: string }
 let sourcesPromise: Promise<Sources> | null = null;
@@ -83,6 +89,8 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
         reactSource={sources.react}
         bundleSource={sources.bundle}
         onAction={onAction}
+        theme={theme}
+        componentTheme={componentTheme}
       />
       {pending && (
         <div role="alertdialog" aria-label="Approve action" data-testid="stage-approval"
