@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "pnpm --filter @flowlet/stage build:react-shim && vite build -c .flowlet/components/vite.config.mts && node scripts/copy-flowlet-sandbox.mjs",
+    "predev": "pnpm --filter @flowlet/stage build:react-shim && pnpm run build:flowlet-sandbox && node scripts/copy-flowlet-sandbox.mjs",
     "dev": "next dev",
-    "prebuild": "pnpm --filter @flowlet/stage build:react-shim && vite build -c .flowlet/components/vite.config.mts && node scripts/copy-flowlet-sandbox.mjs",
+    "prebuild": "pnpm --filter @flowlet/stage build:react-shim && pnpm run build:flowlet-sandbox && node scripts/copy-flowlet-sandbox.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:flowlet-sandbox": "vite build -c flowlet-sandbox/vite.config.mts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",

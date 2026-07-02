@@ -1,8 +1,7 @@
 /** Copies the sandbox host bundle + React shim into public/ so the client can
  *  fetch them as text and hand them to FlowletStage (bundleSource/reactSource).
- *  Unlike demo-bank (which ships the stock prewired bundle), the bundle here is
- *  the app-owned merged build from .flowlet/components — prewired catalog plus
- *  Cadence's registered host components. */
+ *  The bundle is Cadence's OWN build (flowlet-sandbox/entry.ts): the prewired
+ *  catalog plus the app's registered host components. */
 import { copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -14,7 +13,7 @@ mkdirSync(outDir, { recursive: true });
 
 copyFileSync(
   // flowletHostPreset names the artifact "host-bundle" (no extension).
-  resolve(here, "../.flowlet/components/dist/host-bundle"),
+  resolve(here, "../flowlet-sandbox/dist/host-bundle"),
   resolve(outDir, "components-sandbox.js"),
 );
 copyFileSync(

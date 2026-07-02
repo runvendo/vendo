@@ -19,7 +19,12 @@ function routeFileFor(path: string): string {
   return join(APP_DIR, ...segments, "route.ts")
 }
 
-/** Every route.ts under src/app/api, as an OpenAPI-style path string. */
+/** Every route.ts under src/app/api, as an OpenAPI-style path string.
+ *  `/api/flowlet/**` is excluded on purpose: those are Flowlet's OWN plumbing
+ *  (chat stream, stage actions, scheduler tick), not part of the host API
+ *  contract the agent's tools are derived from — documenting them would hand
+ *  the agent its own transport as tools (the ENG-197 fidelity report flags
+ *  exactly this failure mode). */
 function apiRoutePaths(): string[] {
   return readdirSync(join(APP_DIR, "api"), { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile() && entry.name === "route.ts")
@@ -28,6 +33,7 @@ function apiRoutePaths(): string[] {
       const segments = dir.split(sep).map(s => s.replace(/^\[(.+)\]$/, "{$1}"))
       return `/${segments.join("/")}`
     })
+    .filter(path => !path.startsWith("/api/flowlet/"))
     .sort()
 }
 
