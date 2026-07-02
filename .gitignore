@@ -18,3 +18,6 @@ packages/flowlet-stage/tests/browser/public/components-sandbox.js
 apps/demo-bank/flowlet-sandbox/dist/
 apps/gmail/public/flowlet/
 apps/gmail/flowlet-sandbox/dist/
+
+# Verification screenshots referenced by PR/docs are tracked despite *.png above.
+!docs/superpowers/specs/assets/**/*.png
