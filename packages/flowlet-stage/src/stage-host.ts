@@ -75,10 +75,27 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
       `})();` +
       `<\/script>`;
   }
+  // Baseline document styles: consume the injected --flowlet-* brand vars so
+  // bare generated markup starts from the host brand (font, fg color) instead
+  // of the UA serif default with an 8px body margin. Fallbacks apply when no
+  // theme is injected. Background stays transparent — the host page shows
+  // through, matching the pre-existing behavior.
+  const baselineStyle =
+    `<style>` +
+    `html,body{margin:0;padding:0}` +
+    `body{` +
+    `font-family:var(--flowlet-font,ui-sans-serif,system-ui,sans-serif);` +
+    `color:var(--flowlet-fg,#111418);` +
+    `background:transparent;` +
+    `-webkit-font-smoothing:antialiased;` +
+    `}` +
+    `</style>`;
+
   return (
     `<!doctype html><html lang="en"><head>` +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<title>Flowlet Stage</title>` +
+    baselineStyle +
     `</head><body>${reactSetupScript}` +
     `<script type="module" nonce="${nonce}">${STAGE_RUNTIME_SRC}<\/script>` +
     `</body></html>`

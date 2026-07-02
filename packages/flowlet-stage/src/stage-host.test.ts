@@ -33,6 +33,14 @@ describe("buildSrcdoc", () => {
     expect(html).toContain('lang="en"');
     expect(html).toContain("<title>");
   });
+
+  it("includes a baseline style block that consumes the brand vars (font, fg) and zeroes the body margin", () => {
+    const html = buildSrcdoc();
+    expect(html).toContain("<style>");
+    expect(html).toMatch(/body\s*{[^}]*margin:\s*0/);
+    expect(html).toContain("var(--flowlet-font");
+    expect(html).toContain("var(--flowlet-fg");
+  });
 });
 
 describe("CSP (Tier 2.5 hardening)", () => {
