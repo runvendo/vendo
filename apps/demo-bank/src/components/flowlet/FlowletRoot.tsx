@@ -53,6 +53,7 @@ export function FlowletRoot({
           integrations={integrations}
           theme={{ scheme: "light" }}
           cssVars={brandToCssVars(mapleBrand)}
+          productName="Maple"
         >
           {children}
         </FlowletShellProvider>

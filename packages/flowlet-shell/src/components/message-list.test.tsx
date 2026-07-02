@@ -20,10 +20,12 @@ function renderList(items: ThreadItem[], onApprove = vi.fn()) {
 }
 
 describe("MessageList", () => {
-  it("renders an error item with role alert and message text", () => {
-    renderList([{ kind: "error", key: "e1", message: "Something exploded" } as unknown as ThreadItem]);
-    expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.getByText("Something exploded")).toBeTruthy();
+  it("renders an error item with friendly copy — raw detail only on the title attr", () => {
+    renderList([{ kind: "error", key: "e1", messageId: "m", message: "Something exploded" } as unknown as ThreadItem]);
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toMatch(/try again/i);
+    expect(alert.textContent).not.toContain("Something exploded");
+    expect(alert.getAttribute("title")).toBe("Something exploded");
   });
 
   it("renders text, approval, ui items, groups tool calls into an activity panel, and announces via a log", () => {

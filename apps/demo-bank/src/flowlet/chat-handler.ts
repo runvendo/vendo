@@ -43,6 +43,12 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
   }
   const body = (await req.json().catch(() => ({}))) as ChatRequestBody;
   const messages = body.messages ?? [];
+  // An empty turn is a malformed client request (e.g. a stray regenerate on a
+  // cleared thread). Reject it cleanly — passed through, streamText throws
+  // AI_InvalidPromptError and can take the whole server process down.
+  if (messages.length === 0) {
+    return Response.json({ error: "messages must not be empty" }, { status: 400 });
+  }
   const stream = agent.run({
     messages,
     tools: {},

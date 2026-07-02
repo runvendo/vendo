@@ -9,7 +9,8 @@ export interface ActivityPanelProps {
   working?: boolean;
 }
 
-const isTerminal = (state: string) => state === "output-available" || state === "output-error";
+const isTerminal = (state: string) =>
+  state === "output-available" || state === "output-error" || state === "output-denied";
 
 /**
  * One collapsible panel per turn that narrates its tool calls. Collapsed by
@@ -22,10 +23,15 @@ export function ActivityPanel({ steps, working = false }: ActivityPanelProps) {
   if (steps.length === 0) return null;
 
   const last = steps[steps.length - 1]!;
+  // While the turn runs, lead with the live (non-terminal) step. With every
+  // step settled, fall back to the last SUCCESSFUL one — echoing a denied or
+  // failed step as "Working (…)" would misread as the tool still executing.
   const active = working
-    ? [...steps].reverse().find((s) => !isTerminal(s.state)) ?? last
+    ? [...steps].reverse().find((s) => !isTerminal(s.state)) ??
+      (last.state === "output-available" ? last : undefined)
     : undefined;
   const hasError = steps.some((s) => s.state === "output-error");
+  const hasDenied = steps.some((s) => s.state === "output-denied");
   const more = steps.length - 1;
 
   let header: React.ReactNode;
@@ -38,14 +44,19 @@ export function ActivityPanel({ steps, working = false }: ActivityPanelProps) {
       </>
     );
   } else {
+    // Error wins over denied; a denied step must never read as a success tick.
+    const icon = hasError ? "✕" : hasDenied ? "⊘" : "✓";
+    const label = hasError
+      ? "Ran into an issue"
+      : hasDenied
+        ? "Declined"
+        : toolAction(last.toolName).done;
     header = (
       <>
         <span className={`fl-act-ic ${hasError ? "fl-act-head-err" : ""}`} aria-hidden="true">
-          {hasError ? "✕" : "✓"}
+          {icon}
         </span>
-        <span className="fl-act-head-lbl">
-          {hasError ? "Ran into an issue" : toolAction(last.toolName).done}
-        </span>
+        <span className="fl-act-head-lbl">{label}</span>
         {more > 0 && <span className="fl-act-now">· +{more} more</span>}
       </>
     );

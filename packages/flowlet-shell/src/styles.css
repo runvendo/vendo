@@ -46,6 +46,10 @@
 /* A single short turn rests just above the composer (auto collapses to 0 once the
    thread overflows, so long threads scroll normally) — no dead gap at the bottom. */
 .fl-msglist > :first-child { margin-top: auto; }
+/* The list scrolls; its children must never compress. Without this, any child
+   with overflow:hidden (activity panels, rendered view cards) has a zero flex
+   minimum and gets crushed to its borders the moment the thread overflows. */
+.fl-msglist > * { flex-shrink: 0; }
 .fl-msglist::-webkit-scrollbar { display: none; }
 @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
 /* Visually-hidden live region — announces only the settled assistant turn. */
@@ -154,8 +158,23 @@
 /* ---------- approval / buttons ---------- */
 .fl-approval { align-self: flex-start; border: 1px solid var(--flowlet-border);
   border-radius: var(--flowlet-radius); padding: 14px; box-shadow: var(--flowlet-shadow);
-  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); max-width: 88%; }
-.fl-approval-actions { display: flex; gap: 8px; margin-top: 10px; }
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  max-width: 88%; min-width: min(360px, 88%); }
+.fl-approval-head { display: flex; align-items: flex-start; gap: 10px; }
+.fl-approval-ic { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: 9px; color: var(--flowlet-accent); background: var(--flowlet-accent-soft); }
+.fl-approval-eyebrow { font: 600 10px/1 var(--flowlet-font-mono); letter-spacing: .07em;
+  text-transform: uppercase; color: var(--flowlet-fg-muted); }
+.fl-approval-title { margin-top: 4px; font: 600 13.5px/1.3 var(--flowlet-font); color: var(--flowlet-fg);
+  letter-spacing: -.01em; }
+.fl-approval-fields { margin: 12px 0 0; padding: 10px 0 2px; border-top: 1px solid var(--flowlet-border);
+  display: flex; flex-direction: column; gap: 7px; }
+.fl-approval-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;
+  font-size: 12.5px; line-height: 1.45; }
+.fl-approval-field dt { color: var(--flowlet-fg-muted); }
+.fl-approval-field dd { margin: 0; color: var(--flowlet-fg); overflow-wrap: anywhere; }
+.fl-approval-more { font-size: 11.5px; color: var(--flowlet-fg-muted); }
+.fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; }
 .fl-btn { border: 1px solid var(--flowlet-border); border-radius: 9px; padding: 8px 15px;
   font: 550 12.5px/1 var(--flowlet-font); letter-spacing: -.006em;
   background: var(--flowlet-surface); color: var(--flowlet-fg); cursor: pointer;
@@ -250,6 +269,7 @@
 .fl-act-ic { display: grid; place-items: center; width: 14px; height: 14px; font-size: 11px; flex-shrink: 0; }
 .fl-act-tick { color: var(--flowlet-ok); }
 .fl-act-x { color: var(--flowlet-danger); }
+.fl-act-denied { color: var(--flowlet-fg-muted); }
 .fl-act-spin { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid var(--flowlet-border-strong); border-top-color: var(--flowlet-fg-muted); animation: fl-spin .8s linear infinite; }
 .fl-act-peek { margin: -2px 13px 9px 36px; border: 1px solid var(--flowlet-border); border-radius: 9px; overflow: hidden; }
@@ -301,6 +321,8 @@
   -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
   border-radius: 999px; padding: 8px 14px; font-size: 12.5px; color: var(--flowlet-fg); cursor: pointer; transition: border-color .12s; }
 .fl-chip:hover { border-color: var(--flowlet-border-strong); }
+/* Brand focus ring — the UA default blue halo is off-brand in every host. */
+.fl-chip:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
 .fl-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; max-width: 460px; }
 .fl-flowcard { border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   padding: 13px; text-align: left; background: var(--flowlet-glass-strong);
@@ -511,4 +533,9 @@
 /* ---------- error ---------- */
 .fl-error { margin: 8px 16px; padding: 10px 13px; border-radius: 12px;
   border: 1px solid var(--flowlet-danger-border); background: var(--flowlet-danger-bg);
-  color: var(--flowlet-danger); font-size: 12.5px; }
+  color: var(--flowlet-danger); font-size: 12.5px;
+  display: flex; align-items: center; gap: 10px; }
+.fl-error-retry { margin-left: auto; flex-shrink: 0; padding: 4px 11px; border-radius: 8px;
+  border: 1px solid var(--flowlet-danger-border); background: transparent;
+  color: var(--flowlet-danger); font: 600 12px/1.2 var(--flowlet-font); cursor: pointer; }
+.fl-error-retry:hover { background: var(--flowlet-danger); color: var(--flowlet-bg, #fff); }

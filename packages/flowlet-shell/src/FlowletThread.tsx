@@ -12,6 +12,7 @@ import { ThreadErrorBoundary } from "./components/ThreadErrorBoundary";
 import { Composer } from "./components/Composer";
 import { IntegrationsRail } from "./components/IntegrationsRail";
 import { IntegrationsPicker } from "./components/IntegrationsPicker";
+import { friendlyError, errorDetail } from "./components/error-copy";
 
 export interface FlowletThreadProps {
   greeting?: string;
@@ -98,12 +99,29 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
       )}
       <IntegrationsRail integrations={tools} onConnectClick={() => setPickerOpen(true)} />
       {/* One error surface: skip the banner when the stream already rendered an
-          inline error item as the last turn, so a failure isn't shown twice. */}
-      {chat.status === "error" && chat.items[chat.items.length - 1]?.kind !== "error" && (
-        <div className="fl-error" role="alert">
-          {chat.error?.message ?? "Something went wrong. Try again."}
-        </div>
-      )}
+          inline error item as the last turn (no double-reporting), and when the
+          thread has been reset to empty (a stale banner over the landing is
+          noise). Raw provider text never renders — friendlyError maps it; the
+          raw detail rides the title attribute for debugging. */}
+      {chat.status === "error" &&
+        chat.items.length > 0 &&
+        chat.items[chat.items.length - 1]?.kind !== "error" && (
+          <div className="fl-error" role="alert" title={errorDetail(chat.error)}>
+            <span>{friendlyError(chat.error).message}</span>
+            {friendlyError(chat.error).retryable && (
+              <button
+                type="button"
+                className="fl-error-retry"
+                onClick={() => {
+                  chat.clearError();
+                  void chat.regenerate();
+                }}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
       {onPin && (
         <div className="fl-pinbar">
           <button

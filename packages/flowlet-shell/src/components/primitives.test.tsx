@@ -25,8 +25,8 @@ describe("StreamingText", () => {
     expect(container.querySelectorAll("tbody tr").length).toBe(1);
   });
 
-  it("renders LaTeX math via KaTeX", () => {
-    const { container } = render(<StreamingText text={"Euler: $e^{i\\pi}+1=0$"} />);
+  it("renders LaTeX math via KaTeX ($$ only — single $ stays literal for dollar amounts)", () => {
+    const { container } = render(<StreamingText text={"Euler: $$e^{i\\pi}+1=0$$"} />);
     expect(container.querySelector(".katex")).not.toBeNull();
   });
 });

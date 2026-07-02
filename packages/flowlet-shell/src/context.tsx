@@ -18,6 +18,9 @@ export interface ShellContextValue {
    *  an ancestor's vars would lose to that element-level declaration. The shell is
    *  a dumb applier: it never inspects or produces these, just spreads them. */
   cssVars?: Record<string, string>;
+  /** What the host calls its assistant (e.g. "Maple"). Default copy that names
+   *  the product reads it — the shell package itself ships ZERO brand strings. */
+  productName?: string;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -62,11 +65,13 @@ export interface FlowletShellProviderProps {
   theme?: FlowletTheme;
   /** Opaque `--flowlet-*` var map from the host brand; applied inline on `.flowlet-root`. */
   cssVars?: Record<string, string>;
+  /** What the host calls its assistant; read by default copy that names it. */
+  productName?: string;
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, renderNode, impls, theme, cssVars, children,
+  store, integrations, renderNode, impls, theme, cssVars, productName, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
@@ -76,7 +81,8 @@ export function FlowletShellProvider({
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
     theme,
     cssVars: cssVars ?? {},
-  }), [store, integrations, renderNode, impls, theme, cssVars]);
+    productName,
+  }), [store, integrations, renderNode, impls, theme, cssVars, productName]);
 
   return (
     <ShellContext.Provider value={value}>
