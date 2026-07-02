@@ -87,7 +87,7 @@ describe("demo automations world", () => {
     expect(events[0]).toMatchObject({
       txnId: txn.id,
       merchant: txn.merchant,
-      channel: "#general",
+      channel: "general", // no leading # — the toast renders "#{channel}"
       slack: { ok: true, fallback: false },
     });
     expect(world.drainFireEvents()).toHaveLength(0); // drained

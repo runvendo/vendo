@@ -76,7 +76,7 @@ describe("runPoll (event adapter)", () => {
 
     const fired = await runPoll(world);
     expect(fired).toHaveLength(1);
-    expect(fired[0]!.channel).toBe("#general");
+    expect(fired[0]!.channel).toBe("general"); // toast renders "#{channel}"
     expect(fired[0]!.slack.ok).toBe(true);
     expect(okPoster).toHaveBeenCalledTimes(1);
 

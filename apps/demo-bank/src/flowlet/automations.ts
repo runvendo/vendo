@@ -184,7 +184,8 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): DemoAutom
       merchant: String(payload["merchant"] ?? ""),
       amountDollars: Number(payload["amountDollars"] ?? 0),
       time: String(payload["time"] ?? ""),
-      channel: slack.channel,
+      // The toast renders "#{channel}", so strip any leading # from the input.
+      channel: slack.channel.replace(/^#/, ""),
       description: name,
       slack: { ok: slack.ok, fallback: slack.fallback },
     };
