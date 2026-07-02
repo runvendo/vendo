@@ -14,7 +14,9 @@ export const propSpecSchema = z.object({
 export const componentAnalysisSchema = z.object({
   include: z.boolean(),
   reason: z.string(),
-  name: z.string().regex(/^[A-Z][A-Za-z0-9]*$/),
+  // PascalCase is only enforced at codegen time (writeComponent) — an
+  // include:false reply may carry any placeholder name and must still validate.
+  name: z.string().min(1),
   description: z.string(),
   /** Named exports to import from the host file (e.g. ["Button"]). */
   imports: z.array(z.string()),

@@ -42,6 +42,22 @@ describe("codegen", () => {
     expect(registryName(analysis)).toBe("Button");
   });
 
+  it("analysis schema accepts non-PascalCase names on include:false replies", async () => {
+    const { componentAnalysisSchema } = await import("./analyze.js");
+    expect(() =>
+      componentAnalysisSchema.parse({
+        include: false, reason: "page-level", name: "n/a", description: "", imports: [], props: [], jsx: "",
+      }),
+    ).not.toThrow();
+  });
+
+  it("writeComponent rejects non-PascalCase names for included components", async () => {
+    const { writeComponent } = await import("./codegen.js");
+    await expect(
+      writeComponent("/tmp/nowhere", { ...analysis, name: "bad-name" }, candidate, { force: false }),
+    ).rejects.toThrow(/PascalCase/);
+  });
+
   it("rejects broken generated JSX", () => {
     expect(() => assertParses("impl", "const x = <div>")).toThrow(/syntax error/);
   });

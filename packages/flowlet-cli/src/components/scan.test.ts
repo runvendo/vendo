@@ -18,4 +18,14 @@ describe("scanComponents", () => {
     expect(candidates.map((c) => c.exportName).sort()).toEqual(["Badge", "Button"]);
     expect(candidates[0]!.relFile).toMatch(/^src\/components\/ui\//);
   });
+
+  it("scans components/ui before other component dirs so the cap keeps primitives", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "scan-"));
+    await mkdir(path.join(dir, "src/components/aaa"), { recursive: true });
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(path.join(dir, "src/components/aaa/widget.tsx"), "export const Widget = () => null");
+    await writeFile(path.join(dir, "src/components/ui/button.tsx"), "export const Button = () => null");
+    const candidates = await scanComponents(dir);
+    expect(candidates[0]!.exportName).toBe("Button");
+  });
 });

@@ -126,6 +126,9 @@ export async function writeComponent(
   candidate: ComponentCandidate,
   opts: { force: boolean },
 ): Promise<string> {
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(analysis.name)) {
+    throw new Error(`component name ${JSON.stringify(analysis.name)} is not PascalCase`);
+  }
   const name = registryName(analysis);
   const descriptor = descriptorSource(analysis);
   const impl = implSource(analysis, candidate);

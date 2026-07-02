@@ -29,6 +29,9 @@ export async function scanComponents(targetDir: string): Promise<ComponentCandid
     },
     2_000,
   );
+  // Design-system primitives (components/ui/) are the best wrap candidates —
+  // scan them first so the candidate cap never drops them.
+  files.sort((a, b) => Number(b.includes("/ui/")) - Number(a.includes("/ui/")) || a.localeCompare(b));
   const candidates: ComponentCandidate[] = [];
   for (const file of files) {
     if (candidates.length >= MAX_CANDIDATES) break;
