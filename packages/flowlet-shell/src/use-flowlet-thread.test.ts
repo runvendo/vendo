@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { FlowletUIMessage } from "@flowlet/core";
-import { toThreadItems, groupThreadItems, type ThreadItem } from "./use-flowlet-thread";
+import { toThreadItems, groupThreadItems, originatingPrompt, type ThreadItem } from "./use-flowlet-thread";
 
 const msg = (id: string, role: "user" | "assistant", parts: unknown[]): FlowletUIMessage =>
   ({ id, role, parts } as unknown as FlowletUIMessage);
@@ -105,5 +105,17 @@ describe("groupThreadItems", () => {
     expect(grouped.map((g) => g.kind)).toEqual(["text", "activity", "ui"]);
     const activity = grouped[1] as Extract<ReturnType<typeof groupThreadItems>[number], { kind: "activity" }>;
     expect(activity.steps).toHaveLength(2);
+  });
+});
+
+describe("originatingPrompt", () => {
+  it("finds the nearest preceding user text", () => {
+    const items = [
+      { kind: "text", key: "m1:0", messageId: "m1", role: "user", text: "show my spending" },
+      { kind: "text", key: "m2:0", messageId: "m2", role: "assistant", text: "sure" },
+      { kind: "ui", key: "m2:1", messageId: "m2", node: { id: "v", kind: "generated", payload: {} } },
+    ] as ThreadItem[];
+    expect(originatingPrompt(items, "m2:1")).toBe("show my spending");
+    expect(originatingPrompt(items, "missing")).toBeUndefined();
   });
 });

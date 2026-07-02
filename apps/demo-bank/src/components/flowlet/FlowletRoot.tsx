@@ -16,11 +16,17 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider } from "@flowlet/shell";
+import { FlowletShellProvider, createWebStorage } from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { mapleBrand } from "@/flowlet/brand";
 import { renderNode } from "./render-node";
 import { createComposioIntegrations } from "./integrations";
+import { runQuery } from "./run-query";
+
+// The real embedded-mode store (ENG-183): saved flowlets survive reloads. One
+// module-scope instance so every surface shares it; it only touches
+// localStorage inside its methods, so importing it stays SSR-safe.
+const store = createWebStorage({ namespace: "maple-demo" });
 
 export function FlowletRoot({
   children,
@@ -51,6 +57,8 @@ export function FlowletRoot({
         <FlowletShellProvider
           renderNode={renderNode}
           integrations={integrations}
+          store={store}
+          runQuery={runQuery}
           theme={{ scheme: "light" }}
           cssVars={brandToCssVars(mapleBrand)}
         >
