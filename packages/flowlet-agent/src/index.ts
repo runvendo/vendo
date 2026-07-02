@@ -5,7 +5,7 @@
 export const FLOWLET_AGENT_PACKAGE = "@flowlet/agent";
 
 // Engine
-export { createFlowletAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
+export { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
 export type { FlowletAgentConfig } from "./engine";
 
 // Principal
@@ -32,6 +32,9 @@ export type { ToolSourceInput } from "./toolset";
 
 // Render view tool
 export { createRenderViewTool } from "./render-view-tool";
+
+// Request connect tool (host-privileged Connect card)
+export { createRequestConnectTool } from "./request-connect-tool";
 
 // Composio ingestion
 export {

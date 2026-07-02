@@ -21,11 +21,12 @@ export type ThreadItem =
   | { kind: "error"; key: string; message: string };
 
 /**
- * The built-in render tool name (mirrors `RENDER_VIEW_TOOL_NAME` in
- * `@flowlet/agent`). Its product is a `data-ui` node, so its tool chip is
- * suppressed to avoid a redundant sliver next to the rendered component.
+ * Built-in tools whose product is a `data-ui` node (the rendered view, or the
+ * host-privileged Connect card). Their raw tool chip is suppressed to avoid a
+ * redundant sliver next to the rendered component. Mirrors `RENDER_VIEW_TOOL_NAME`
+ * and `REQUEST_CONNECT_TOOL_NAME` in `@flowlet/agent`.
  */
-const RENDER_TOOLS = new Set(["render_view"]);
+const RENDER_TOOLS = new Set(["render_view", "request_connect"]);
 
 /** Pure normalizer: flattens message parts into ordered render items. */
 export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {

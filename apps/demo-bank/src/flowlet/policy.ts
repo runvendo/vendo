@@ -10,7 +10,7 @@
 import { composePolicy, type ApprovalPolicy } from "@flowlet/agent";
 
 /** In-process tools that are safe by construction. */
-const ALWAYS_ALLOW = new Set(["render_ui", "render_view", "get_transactions", "set_rule"]);
+const ALWAYS_ALLOW = new Set(["render_ui", "render_view", "request_connect", "get_transactions", "set_rule"]);
 
 /** Read-shaped external (Composio) verb segments — safe to run freely. */
 const READ_VERBS = new Set(["FETCH", "GET", "LIST", "SEARCH", "FIND", "READ"]);

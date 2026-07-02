@@ -39,6 +39,19 @@ describe("toThreadItems", () => {
     expect(items[0]).toMatchObject({ kind: "ui", key: "m4:1" });
   });
 
+  it("suppresses the request_connect tool chip (its product is the Connect data-ui node)", () => {
+    // Guards the RENDER_TOOLS set: the host-privileged Connect card is emitted as
+    // a data-ui node, so its raw tool chip must be suppressed too.
+    const items = toThreadItems([
+      msg("m5", "assistant", [
+        { type: "tool-request_connect", state: "output-available" },
+        { type: "data-ui", id: "ui-3", data: { id: "ui-3", kind: "component", source: "host", name: "Connect", props: { toolkit: "gmail" } } },
+      ]),
+    ]);
+    expect(items.some((i) => i.kind === "tool")).toBe(false);
+    expect(items[0]).toMatchObject({ kind: "ui", key: "m5:1" });
+  });
+
   it("emits a tool item for other tool states and a ui item for data-ui", () => {
     const items = toThreadItems([
       msg("m3", "assistant", [

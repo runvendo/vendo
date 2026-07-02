@@ -6,7 +6,7 @@ import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import type { FlowletUIMessage } from "@flowlet/core";
-import { createFlowletAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
+import { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
 import type { ApprovalPolicy } from "./policy";
 import type { ComposioClient } from "./composio";
 
@@ -146,7 +146,7 @@ describe("createFlowletAgent", () => {
     expect(ui.data.payload).toEqual(payload);
   });
 
-  it("registers render_view and not render_ui", async () => {
+  it("registers render_view and request_connect but not render_ui", async () => {
     // Capture the toolset the engine hands to streamText by reading the tools
     // the SDK forwards to the model's doStream (provider-format function tools,
     // each carrying a `name`).
@@ -171,7 +171,8 @@ describe("createFlowletAgent", () => {
     );
 
     const names = (capturedTools ?? []).map((t) => t.name);
-    expect(names).toContain("render_view");
+    expect(names).toContain(RENDER_VIEW_TOOL_NAME);
+    expect(names).toContain(REQUEST_CONNECT_TOOL_NAME);
     expect(names).not.toContain("render_ui");
   });
 

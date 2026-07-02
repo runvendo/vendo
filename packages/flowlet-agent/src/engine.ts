@@ -28,6 +28,7 @@ import type { FlowletAgent, RunInput, FlowletUIMessage } from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
 import { createRenderViewTool } from "./render-view-tool";
+import { createRequestConnectTool } from "./request-connect-tool";
 import {
   ingestComposioTools,
   createComposioClient,
@@ -40,6 +41,13 @@ import type { ToolDescriptor } from "./descriptor";
 
 /** Canonical name of the engine's built-in composed-view tool (Tier 2.5). */
 export const RENDER_VIEW_TOOL_NAME = "render_view";
+
+/**
+ * Canonical name of the engine's host-privileged Connect affordance. Emits a
+ * host-rendered Connect card so the user can authorize a toolkit; the OAuth flow
+ * needs host-page privileges the sandbox denies, so it can't be a render_view.
+ */
+export const REQUEST_CONNECT_TOOL_NAME = "request_connect";
 
 /** Grounded default system prompt used when the caller supplies none. */
 const DEFAULT_INSTRUCTIONS =
@@ -116,8 +124,9 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ? candidate
             : { userId: "" };
 
-        // 2. The render tool, bound to this run's stream writer.
+        // 2. The render + connect tools, bound to this run's stream writer.
         const renderViewTool = createRenderViewTool(writer);
+        const requestConnectTool = createRequestConnectTool(writer);
 
         // 3. Composio ingestion (fail-closed inside ingestComposioTools).
         //    Memoized per principal so the schema round-trip blocks only the
@@ -164,6 +173,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             tools: {
               ...config.tools,
               [RENDER_VIEW_TOOL_NAME]: renderViewTool,
+              [REQUEST_CONNECT_TOOL_NAME]: requestConnectTool,
             },
           },
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
