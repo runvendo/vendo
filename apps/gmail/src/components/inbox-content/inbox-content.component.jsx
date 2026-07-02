@@ -10,8 +10,8 @@ import { InboxSlot } from "../../flowlet/InboxSlot";
 const InboxContent = ({ currentMessages }) => {
   return (
     <InboxContainer>
-      <CategoryBtn />
       <InboxSlot />
+      <CategoryBtn />
       {currentMessages.map((data) => (
         <MessageTemplate key={data.id} data={data} />
       ))}

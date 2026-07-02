@@ -48,7 +48,8 @@
     "vitest": "^3.2.4",
     "vite": "^5.4.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "@craco/craco": "^7.1.0"
+    "@craco/craco": "^7.1.0",
+    "@ai-sdk/provider": "3.0.2"
   },
   "eslintConfig": {
     "extends": [

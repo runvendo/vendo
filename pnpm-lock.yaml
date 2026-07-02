@@ -321,6 +321,9 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
     devDependencies:
+      '@ai-sdk/provider':
+        specifier: 3.0.2
+        version: 3.0.2
       '@craco/craco':
         specifier: ^7.1.0
         version: 7.1.0(@types/node@20.19.43)(postcss@8.5.16)(react-scripts@5.0.1(@babel/plugin-syntax-flow@7.29.7(@babel/core@7.29.7))(@babel/plugin-transform-react-jsx@7.29.7(@babel/core@7.29.7))(@types/babel__core@7.20.5)(eslint@9.39.4(jiti@1.21.7))(lightningcss@1.32.0)(react@18.3.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))(tsx@4.22.4)(type-fest@0.21.3)(typescript@5.9.3)(yaml@2.9.0))(typescript@5.9.3)

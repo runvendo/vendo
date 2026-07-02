@@ -11,11 +11,13 @@
  * governed `slack_summary` in-process tool, not as an agent toolkit.
  */
 import { anthropic } from "@ai-sdk/anthropic";
+import { wrapLanguageModel } from "ai";
 import { createFlowletAgent, buildBrandGuidance } from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
 import { prewiredComponents, brandToCssVars } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
+import { jsonRepairMiddleware } from "./json-repair";
 // Plain-JS module shared with the CRA client (registry + prompt must agree).
 import { gmailHostComponents } from "../../src/flowlet/host-components";
 import { brandTokensSchema } from "@flowlet/components/theme";
@@ -119,6 +121,9 @@ function buildInstructions(): string {
     "- Read shared view data via the node's props bound with { $path } — bind the data you",
     "  need as a prop on the generated node.",
     "- Caps: at most 16 novel components; source capped at 64KB each.",
+    "- STRICT JSON: the whole render_view input must be VALID JSON. Inside `components`",
+    "  source strings, escape every newline as \\n and every double quote as \\\" — never",
+    "  emit raw (unescaped) newlines or tabs inside a JSON string literal.",
     "",
     "GESTURE / SWIPE UIs — when the user asks for swipeable cards (e.g. 'Tinder for my",
     "inbox'), build ONE generated component that owns the whole deck:",
@@ -170,7 +175,11 @@ export interface CreateDemoAgentOptions {
 }
 
 export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent {
-  const model = opts.model ?? anthropic(DEMO_MODEL);
+  // Repair middleware: long generated payloads occasionally stream with raw
+  // control chars inside JSON strings — fix them instead of 400ing the turn.
+  const model =
+    opts.model ??
+    wrapLanguageModel({ model: anthropic(DEMO_MODEL), middleware: jsonRepairMiddleware });
   return createFlowletAgent({
     model,
     policy: demoPolicy,
