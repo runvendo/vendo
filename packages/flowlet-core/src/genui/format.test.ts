@@ -3,6 +3,7 @@ import {
   FLOWLET_GENUI_VERSION,
   MAX_COMPONENT_SOURCE_CHARS,
   MAX_GENERATED_COMPONENTS,
+  MAX_GENUI_QUERIES,
   isPropBinding,
   validateGeneratedPayload,
   type GenNode,
@@ -339,5 +340,39 @@ describe("generated components (Tier 2.5)", () => {
   it("accepts source: 'generated' in the node source union", () => {
     const n: GenNode = { id: "x", component: "Gauge", source: "generated" };
     expect(n.source).toBe("generated");
+  });
+
+  it("accepts a payload with valid queries", () => {
+    const result = validateGeneratedPayload({
+      ...(minimal() as object),
+      data: { tx: [] },
+      queries: [{ path: "/tx", tool: "get_transactions", input: { limit: 40 } }],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.payload.queries).toHaveLength(1);
+  });
+
+  it("accepts an empty-pointer query path and an input-less query", () => {
+    const result = validateGeneratedPayload({
+      ...(minimal() as object),
+      queries: [{ path: "", tool: "get_transactions" }],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects malformed queries with provision", () => {
+    const bads: unknown[] = [
+      "nope", // not an array
+      [{ path: "tx", tool: "t" }], // pointer missing leading /
+      [{ path: "/tx", tool: "" }], // empty tool
+      [{ path: "/tx", tool: "t", input: "x" }], // non-object input
+      [{ path: "/tx" }], // missing tool
+      Array.from({ length: MAX_GENUI_QUERIES + 1 }, () => ({ path: "/t", tool: "t" })), // over cap
+    ];
+    for (const queries of bads) {
+      const result = validateGeneratedPayload({ ...(minimal() as object), queries });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("provision");
+    }
   });
 });

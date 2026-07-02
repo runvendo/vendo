@@ -3,6 +3,7 @@ import type { UINode } from "@flowlet/core";
 import { themeToStyle, type FlowletTheme } from "./theme";
 import { createLocalStore, type FlowletStore } from "./seams/store";
 import { createLocalIntegrations, type FlowletIntegrations } from "./seams/integrations";
+import type { RunQuery } from "./seams/query";
 import "./styles.css";
 
 export type RenderNode = (node: UINode) => ReactNode;
@@ -10,6 +11,12 @@ export type RenderNode = (node: UINode) => ReactNode;
 export interface ShellContextValue {
   store: FlowletStore;
   integrations: FlowletIntegrations;
+  /** Host seam: re-run one declared data query through the policy-governed
+   *  tool path (ENG-183). Absent → reopened views stay snapshots. */
+  runQuery?: RunQuery;
+  /** Live-refresh cadence for OPEN saved views (ms). Ticks only while the tab
+   *  is visible and stop after repeated failures. 0 disables. Default 60s. */
+  refreshIntervalMs: number;
   renderNode: RenderNode;
   /** Host brand theme — so portaled surfaces (the overlay) can re-apply it. */
   theme?: FlowletTheme;
@@ -18,6 +25,9 @@ export interface ShellContextValue {
    *  an ancestor's vars would lose to that element-level declaration. The shell is
    *  a dumb applier: it never inspects or produces these, just spreads them. */
   cssVars?: Record<string, string>;
+  /** What the host calls its assistant (e.g. "Maple"). Default copy that names
+   *  the product reads it — the shell package itself ships ZERO brand strings. */
+  productName?: string;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -54,6 +64,10 @@ function defaultRenderNode(node: UINode, impls: ImplMap): ReactNode {
 export interface FlowletShellProviderProps {
   store?: FlowletStore;
   integrations?: FlowletIntegrations;
+  /** Host seam for reopening saved views with fresh data; see ShellContextValue. */
+  runQuery?: RunQuery;
+  /** Live-refresh cadence for open saved views (ms); 0 disables. Default 60s. */
+  refreshIntervalMs?: number;
   /** Override the render surface. Default is a non-production fallback; wire F3's
    *  sandboxed `FlowletStage` here for real generated UI. */
   renderNode?: RenderNode;
@@ -62,21 +76,26 @@ export interface FlowletShellProviderProps {
   theme?: FlowletTheme;
   /** Opaque `--flowlet-*` var map from the host brand; applied inline on `.flowlet-root`. */
   cssVars?: Record<string, string>;
+  /** What the host calls its assistant; read by default copy that names it. */
+  productName?: string;
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, renderNode, impls, theme, cssVars, children,
+  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
   const value = useMemo<ShellContextValue>(() => ({
     store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
+    runQuery,
+    refreshIntervalMs: refreshIntervalMs ?? 60_000,
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
     theme,
     cssVars: cssVars ?? {},
-  }), [store, integrations, renderNode, impls, theme, cssVars]);
+    productName,
+  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName]);
 
   return (
     <ShellContext.Provider value={value}>

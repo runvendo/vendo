@@ -52,7 +52,13 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingApproval | null>(null);
   const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  // Reset on every (re)mount: StrictMode dev runs mount → cleanup → mount, and
+  // a cleanup-only effect would leave `mounted` false forever, so the sources
+  // `.then` below would never commit and the stage would hang at "loading".
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     loadSources().then(

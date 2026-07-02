@@ -16,11 +16,18 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider } from "@flowlet/shell";
+import { FlowletShellProvider, createWebStorage } from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { mapleBrand } from "@/flowlet/brand";
+import { mapleHostToolDefs } from "@/flowlet/host-tools";
 import { renderNode } from "./render-node";
 import { createComposioIntegrations } from "./integrations";
+import { runQuery } from "./run-query";
+
+// The real embedded-mode store (ENG-183): saved flowlets survive reloads. One
+// module-scope instance so every surface shares it; it only touches
+// localStorage inside its methods, so importing it stays SSR-safe.
+const store = createWebStorage({ namespace: "maple-demo" });
 
 export function FlowletRoot({
   children,
@@ -40,7 +47,15 @@ export function FlowletRoot({
   const integrations = useMemo(() => createComposioIntegrations(), []);
 
   return (
-    <FlowletProvider transport={transport} components={prewiredComponents} threadId={threadId}>
+    <FlowletProvider
+      transport={transport}
+      components={prewiredComponents}
+      threadId={threadId}
+      // Maple's own API tools execute HERE, in the user's browser on their
+      // existing session (ENG-202, topology B) — the same definitions the
+      // server registered, so gated calls run only after the approval card.
+      hostTools={{ definitions: mapleHostToolDefs }}
+    >
       {/* Maple's single brand feeds the host shell. brandToCssVars supplies the
           --flowlet-* colors, applied INLINE on every .flowlet-root by the shell
           (they must win over the vars styles.css declares on that same element).
@@ -51,8 +66,20 @@ export function FlowletRoot({
         <FlowletShellProvider
           renderNode={renderNode}
           integrations={integrations}
+          store={store}
+          runQuery={runQuery}
           theme={{ scheme: "light" }}
-          cssVars={brandToCssVars(mapleBrand)}
+          cssVars={{
+            ...brandToCssVars(mapleBrand),
+            // Host-scope font DELIVERY override: the brand token is a concrete
+            // "Inter, …" stack (it must resolve inside the sandbox, where host
+            // vars don't exist), but next/font registers Inter under a mangled
+            // family name exposed only as --font-inter — defined here on the
+            // host page — so shell chrome keeps rendering real Inter. The
+            // sandbox path (SandboxStage) uses the unmodified token.
+            "--flowlet-font": "var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif",
+          }}
+          productName="Maple"
         >
           {children}
         </FlowletShellProvider>

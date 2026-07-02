@@ -10,6 +10,30 @@ function DemoCard({ title }: { title: string }) {
   return <div data-testid="demo-card">{title}</div>;
 }
 
+describe("FlowletThread composer placement", () => {
+  const mount = (heroComposer: boolean) =>
+    render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider>
+          <FlowletThread heroComposer={heroComposer} />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+
+  it("keeps the composer at the bottom by default (overlay/slot surfaces unchanged)", () => {
+    const { container } = mount(false);
+    expect(container.querySelector(".fl-landing .fl-composer")).toBeNull();
+    expect(container.querySelector(".fl-thread > .fl-composer, .fl-thread .fl-composer")).not.toBeNull();
+  });
+
+  it("hoists the composer into the Landing hero only when heroComposer is set", () => {
+    const { container } = mount(true);
+    expect(container.querySelector(".fl-landing .fl-composer")).not.toBeNull();
+    // exactly one composer — not duplicated at the bottom
+    expect(container.querySelectorAll(".fl-composer")).toHaveLength(1);
+  });
+});
+
 describe("FlowletThread end-to-end", () => {
   it("send -> approval -> approve -> renders the node", async () => {
     render(

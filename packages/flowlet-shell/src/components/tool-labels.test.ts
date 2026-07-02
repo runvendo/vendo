@@ -1,0 +1,61 @@
+import { describe, it, expect } from "vitest";
+import { toolAction, humanize } from "./tool-labels";
+
+describe("toolAction", () => {
+  it("keeps the hand-tuned host tool labels", () => {
+    expect(toolAction("get_transactions")).toEqual({
+      active: "Reading transactions",
+      done: "Read transactions",
+      request: "Read transactions",
+    });
+    expect(toolAction("set_rule")).toEqual({ active: "Setting up rule", done: "Set up rule", request: "Set up rule" });
+  });
+
+  it("keeps the Gmail/Slack specials", () => {
+    expect(toolAction("GMAIL_FETCH_EMAILS").active).toBe("Searching Gmail");
+    expect(toolAction("SLACK_SEND_MESSAGE").done).toBe("Posted to Slack");
+  });
+
+  it("labels any Composio tool via toolkit + verb + object", () => {
+    expect(toolAction("GOOGLECALENDAR_EVENTS_LIST")).toEqual({
+      active: "Listing Google Calendar events",
+      done: "Listed Google Calendar events",
+      request: "List Google Calendar events",
+    });
+    expect(toolAction("GMAIL_CREATE_EMAIL_DRAFT")).toEqual({
+      active: "Creating Gmail email draft",
+      done: "Created Gmail email draft",
+      request: "Create Gmail email draft",
+    });
+    expect(toolAction("NOTION_UPDATE_PAGE")).toEqual({
+      active: "Updating Notion page",
+      done: "Updated Notion page",
+      request: "Update Notion page",
+    });
+    expect(toolAction("LINEAR_DELETE_ISSUE")).toEqual({
+      active: "Deleting Linear issue",
+      done: "Deleted Linear issue",
+      request: "Delete Linear issue",
+    });
+  });
+
+  it("labels a verb-only Composio tool with just the toolkit", () => {
+    expect(toolAction("SLACK_API_TEST").active).toBe("Checking Slack");
+  });
+
+  it("splits camelCase host tools instead of mashing them into one word", () => {
+    expect(toolAction("renderDemoCard").active).toBe("Rendering demo card");
+  });
+
+  it("falls back to readable humanization for anything else", () => {
+    expect(toolAction("my_custom_thing").active).toBe("My Custom Thing");
+  });
+});
+
+describe("humanize", () => {
+  it("splits camelCase as well as snake/kebab", () => {
+    expect(humanize("renderDemoCard")).toBe("Render Demo Card");
+    expect(humanize("set_rule")).toBe("Set Rule");
+    expect(humanize("GMAIL_FETCH")).toBe("Gmail Fetch");
+  });
+});

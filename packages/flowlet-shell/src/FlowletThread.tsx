@@ -12,12 +12,24 @@ import { ThreadErrorBoundary } from "./components/ThreadErrorBoundary";
 import { Composer } from "./components/Composer";
 import { IntegrationsRail } from "./components/IntegrationsRail";
 import { IntegrationsPicker } from "./components/IntegrationsPicker";
+import { friendlyError, logErrorDetail } from "./components/error-copy";
 
 export interface FlowletThreadProps {
   greeting?: string;
   suggestions?: string[];
   flows?: Flowlet[];
   onOpenFlow?: (flow: Flowlet) => void;
+  /** Library management on the empty-state gallery (ENG-183). */
+  onRenameFlow?: (flow: Flowlet, name: string) => void;
+  onPinFlow?: (flow: Flowlet, pinned: boolean) => void;
+  onDeleteFlow?: (flow: Flowlet) => void;
+  /**
+   * Hoist the composer into the Landing hero on the empty state (the library
+   * page layout Yousef approved). OFF by default: the overlay and slot keep
+   * their original bottom composer, and surfaces that opt in accept a one-time
+   * composer remount on the first send (draft is empty at that moment).
+   */
+  heroComposer?: boolean;
   /**
    * When set, shows a "Pin to card" footer that commits the latest rendered view
    * to a host slot. Slot-only seam — other surfaces omit it and render unchanged.
@@ -30,7 +42,10 @@ export interface FlowletThreadProps {
   onFeedback?: (messageId: string, feedback: Feedback) => void;
 }
 
-export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFlow, onPin, onFeedback }: FlowletThreadProps) {
+export function FlowletThread({
+  greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
+  heroComposer = false, onPin, onFeedback,
+}: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
@@ -60,21 +75,34 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
   useEffect(() => {
     if (chat.status === "ready") refresh();
   }, [chat.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Developers get the raw error in the console; the DOM only ever carries the
+  // friendly copy (a title attribute would leak it to hover + the a11y tree).
+  useEffect(() => {
+    if (chat.status === "error") logErrorDetail(chat.error);
+  }, [chat.status, chat.error]);
 
   const send = (text: string, files?: FileUIPart[]) => { void chat.sendMessage({ text, files }); };
   const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
   const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
 
+  const empty = chat.items.length === 0;
+  const composerEl = <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />;
+  const composerInHero = heroComposer && empty;
+
   return (
     <div className="fl-thread">
-      {chat.items.length === 0 ? (
+      {empty ? (
         <Landing
           greeting={greeting}
           suggestions={suggestions}
           flows={flows}
+          composer={composerInHero ? composerEl : undefined}
           onSuggestion={send}
           onOpenFlow={(f) => onOpenFlow?.(f)}
+          onRenameFlow={onRenameFlow}
+          onPinFlow={onPinFlow}
+          onDeleteFlow={onDeleteFlow}
         />
       ) : (
         <ThreadErrorBoundary resetKey={chat.items.length}>
@@ -98,12 +126,30 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
       )}
       <IntegrationsRail integrations={tools} onConnectClick={() => setPickerOpen(true)} />
       {/* One error surface: skip the banner when the stream already rendered an
-          inline error item as the last turn, so a failure isn't shown twice. */}
-      {chat.status === "error" && chat.items[chat.items.length - 1]?.kind !== "error" && (
-        <div className="fl-error" role="alert">
-          {chat.error?.message ?? "Something went wrong. Try again."}
-        </div>
-      )}
+          inline error item as the last turn (no double-reporting), and when the
+          thread has been reset to empty (a stale banner over the landing is
+          noise). Raw provider text never reaches the DOM (not even a title
+          attribute — hover and the a11y tree would expose it); friendlyError
+          maps the copy and the raw detail goes to the console. */}
+      {chat.status === "error" &&
+        chat.items.length > 0 &&
+        chat.items[chat.items.length - 1]?.kind !== "error" && (
+          <div className="fl-error" role="alert">
+            <span>{friendlyError(chat.error).message}</span>
+            {friendlyError(chat.error).retryable && (
+              <button
+                type="button"
+                className="fl-error-retry"
+                onClick={() => {
+                  chat.clearError();
+                  void chat.regenerate();
+                }}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
       {onPin && (
         <div className="fl-pinbar">
           <button
@@ -121,7 +167,9 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
           <span className="fl-pinbar-hint">{latestNode ? "pins the latest view" : "describe a view first"}</span>
         </div>
       )}
-      <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />
+      {/* heroComposer surfaces hoist the composer into the Landing hero while
+          empty; everyone else keeps it here at the bottom, always. */}
+      {!composerInHero && composerEl}
     </div>
   );
 }

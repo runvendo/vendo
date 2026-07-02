@@ -35,6 +35,24 @@ describe("FlowletSlot", () => {
     await waitFor(() => screen.getByRole("dialog"));
   });
 
+  it("brands the default greeting with the host's productName", async () => {
+    render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider impls={{}} productName="Acme">
+          <FlowletSlot flowletId="slot-brand" emptyLabel="Design here" />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    fireEvent.click(screen.getByText("Design here"));
+    await waitFor(() => screen.getByText("What can Acme build here?"));
+  });
+
+  it("stays brand-neutral when no productName is provided", async () => {
+    renderSlot();
+    fireEvent.click(screen.getByText("Design a flowlet here"));
+    await waitFor(() => screen.getByText("What can I build here?"));
+  });
+
   it("renders a saved node when one is provided", () => {
     render(
       <FlowletProvider agent={createStubAgent()} components={[]}>

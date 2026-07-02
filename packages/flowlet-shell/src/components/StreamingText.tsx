@@ -73,7 +73,10 @@ export function StreamingText({ text, streaming = false }: StreamingTextProps) {
   return (
     <div className={`fl-md${streaming ? " fl-md--streaming" : ""}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        // Single-dollar inline math is OFF: in a finance host, "$87 ... $285"
+        // in one paragraph would otherwise render the span between the amounts
+        // as garbled italic math. Display math stays available via $$...$$.
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
         rehypePlugins={[rehypeKatex]}
         urlTransform={safeUrl}
         components={{

@@ -42,4 +42,35 @@ describe("ActivityPanel", () => {
     render(<ActivityPanel steps={[tool("SLACK_POST", "output-error")]} />);
     expect(screen.getByText("Ran into an issue")).toBeTruthy();
   });
+
+  it("shows a declined header for a denied tool call — never a success tick", () => {
+    render(<ActivityPanel steps={[tool("GMAIL_SEND_EMAIL", "output-denied")]} />);
+    expect(screen.getByText("Declined")).toBeTruthy();
+    expect(screen.queryByText("✓")).toBeNull();
+  });
+
+  it("a denied step row is terminal: no spinner, marked declined", () => {
+    render(<ActivityPanel steps={[tool("GMAIL_SEND_EMAIL", "output-denied")]} />);
+    fireEvent.click(screen.getByRole("button", { name: /show activity/i }));
+    const step = screen.getByTestId("activity-step");
+    expect(step.querySelector(".fl-act-spin")).toBeNull();
+    expect(step.textContent).toContain("Sending email");
+    expect(step.textContent).toContain("Declined");
+  });
+
+  it("denied counts as settled — a working turn with only a denied step shows no live header", () => {
+    render(<ActivityPanel steps={[tool("GMAIL_SEND_EMAIL", "output-denied")]} working />);
+    expect(screen.queryByText("Working")).toBeNull();
+    expect(screen.getByText("Declined")).toBeTruthy();
+  });
+
+  it("a mixed turn (success + denied) reads Partly done, not Declined", () => {
+    render(
+      <ActivityPanel
+        steps={[tool("get_transactions", "output-available"), tool("GMAIL_SEND_EMAIL", "output-denied")]}
+      />,
+    );
+    expect(screen.getByText("Partly done")).toBeTruthy();
+    expect(screen.queryByText("Declined")).toBeNull();
+  });
 });

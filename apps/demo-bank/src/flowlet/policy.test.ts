@@ -37,4 +37,47 @@ describe("demoPolicy", () => {
       expect(await demoPolicy.evaluate(ctx(name))).toBe("approve");
     }
   });
+
+  describe("host-API tools (client-executed) are decided by their annotations", () => {
+    const hostCtx = (
+      toolName: string,
+      annotations: Record<string, boolean>,
+    ): PolicyContext => ({
+      toolName,
+      input: {},
+      descriptor: {
+        name: toolName,
+        source: "caller",
+        annotations,
+        hasExecute: false,
+        kind: "function",
+        executor: "client",
+      },
+      principal: { userId: "demo" },
+    });
+
+    it("auto-allows read-only host calls", async () => {
+      expect(
+        await demoPolicy.evaluate(hostCtx("listAccounts", { readOnlyHint: true })),
+      ).toBe("allow");
+    });
+
+    it("gates mutating host calls", async () => {
+      expect(
+        await demoPolicy.evaluate(hostCtx("createOrder", { readOnlyHint: false })),
+      ).toBe("approve");
+    });
+
+    it("gates destructive host calls", async () => {
+      expect(
+        await demoPolicy.evaluate(
+          hostCtx("deletePayee", { readOnlyHint: false, destructiveHint: true }),
+        ),
+      ).toBe("approve");
+    });
+
+    it("gates unhinted host calls (fail-safe)", async () => {
+      expect(await demoPolicy.evaluate(hostCtx("mystery", {}))).toBe("approve");
+    });
+  });
 });

@@ -12,6 +12,10 @@
     "./descriptors": {
       "types": "./dist/descriptors.d.ts",
       "default": "./dist/descriptors.js"
+    },
+    "./theme": {
+      "types": "./dist/theme/brand.d.ts",
+      "default": "./dist/theme/brand.js"
     }
   },
   "scripts": {

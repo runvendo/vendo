@@ -4,6 +4,7 @@ import type { UINode } from "@flowlet/core";
 
 const initialize = vi.fn();
 const update = vi.fn();
+const stageDispose = vi.fn();
 // Keep the real @flowlet/stage exports (notably `createGenUISession`) and only
 // stub the DOM-bound stage mount/controller so generated-node resolution runs
 // against the real host session.
@@ -14,7 +15,7 @@ vi.mock("@flowlet/stage", async (importActual) => {
     createStage: (slot: HTMLElement) => {
       const iframe = document.createElement("iframe");
       slot.appendChild(iframe);
-      return { iframe, endpoints: {} };
+      return { iframe, endpoints: {}, dispose: stageDispose };
     },
     connectStage: () => ({
       initialize,
@@ -62,6 +63,16 @@ describe("FlowletStage", () => {
     const node2 = { ...node, props: { title: "x" } };
     rerender(<FlowletStage node={node2} bundleSource="/*bundle*/" />);
     await waitFor(() => expect(update).toHaveBeenCalled());
+  });
+
+  it("calls the stage's dispose on unmount (deterministic resize-listener teardown)", async () => {
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    stageDispose.mockClear();
+    initialize.mockClear();
+    const { unmount } = render(<FlowletStage node={node} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    unmount();
+    expect(stageDispose).toHaveBeenCalledTimes(1);
   });
 
   it("forwards componentTheme to initialize", async () => {

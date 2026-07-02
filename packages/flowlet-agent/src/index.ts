@@ -21,10 +21,15 @@ export * from "./policy";
 // Tool wrapping
 export { wrapTool } from "./wrap-tool";
 export type { WrapToolArgs } from "./wrap-tool";
+export { wrapClientTool } from "./wrap-client-tool";
+export type { WrapClientToolArgs } from "./wrap-client-tool";
+
+// Host-API tools (client-executed, ENG-202)
+export { hostToolset, CLIENT_EXECUTOR_MARKER } from "./host-toolset";
 
 // Descriptors
 export { buildDescriptor } from "./descriptor";
-export type { ToolDescriptor, ToolSource, ToolAnnotations } from "./descriptor";
+export type { ToolDescriptor, ToolSource, ToolAnnotations, ToolExecutor } from "./descriptor";
 
 // Toolset assembly
 export { buildToolset } from "./toolset";
