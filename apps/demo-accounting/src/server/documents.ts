@@ -79,6 +79,37 @@ export function transitionDocument(
   return doc
 }
 
+/**
+ * Demo choreography: a client "uploads" a file that looks wrong (e.g. a
+ * personal statement instead of the business one). missing -> needs_review
+ * with the file attached and an explanatory note, making needs_review
+ * reachable at runtime rather than only via seed data. Verify/reject apply
+ * from there exactly as for 'received'.
+ */
+export function receiveForReview(
+  docId: string,
+  opts: { fileName?: string; note: string },
+): DocumentRequest {
+  const store = getStore()
+  const doc = store.documents.find(d => d.id === docId)
+  if (!doc) throw new DomainError("not_found", `Unknown document: ${docId}`)
+  if (doc.status !== "missing") throw invalid(doc, "receive")
+  const client = store.clients.find(c => c.id === doc.clientId)
+
+  doc.status = "needs_review"
+  doc.note = opts.note
+  doc.file = {
+    name: opts.fileName ?? `${doc.kind.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
+    uploadedAt: new Date().toISOString(),
+  }
+  recordActivity(
+    "upload_received",
+    `${client?.contactName ?? "Client"} uploaded ${doc.kind} (${doc.file.name}) — flagged for review`,
+    doc.clientId,
+  )
+  return doc
+}
+
 /** "3 of 6 received" — received counts every document that is no longer missing or rejected. */
 export function clientDocProgress(clientId: string): { received: number; total: number } {
   const docs = getStore().documents.filter(d => d.clientId === clientId)

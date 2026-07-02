@@ -3,12 +3,13 @@
 // Document lifecycle (enforced by transitionDocument in documents.ts):
 //
 //   missing --receive(file)--> received                client uploaded, awaiting firm review
+//   missing --receiveForReview(file)--> needs_review   upload looks wrong; note attached (demo choreography)
 //   received | needs_review --verify--> verified       firm confirmed the document is correct
 //   received | needs_review --reject(reason)--> missing wrong document; note recorded, file cleared
 //
-// 'needs_review' is a flagged variant of 'received': an upload that looks off and
-// needs closer inspection (seeded for texture now; later set by the demo's
-// simulated wrong-document uploads). It accepts the same verify/reject
+// 'needs_review' is a flagged variant of 'received': an upload that looks off
+// and needs closer inspection (seeded for texture and set at runtime by the
+// demo's simulated wrong-document uploads). It accepts the same verify/reject
 // transitions as 'received'. 'rejected' is reserved in the union for later API
 // beats that surface a just-rejected upload; the reject transition itself
 // returns the document to 'missing' so it can be re-requested.
