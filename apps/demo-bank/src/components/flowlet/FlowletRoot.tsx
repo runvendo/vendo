@@ -19,6 +19,7 @@ import { FlowletProvider } from "@flowlet/react";
 import { FlowletShellProvider, createWebStorage } from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { mapleBrand } from "@/flowlet/brand";
+import { mapleHostToolDefs } from "@/flowlet/host-tools";
 import { renderNode } from "./render-node";
 import { createComposioIntegrations } from "./integrations";
 import { runQuery } from "./run-query";
@@ -46,7 +47,15 @@ export function FlowletRoot({
   const integrations = useMemo(() => createComposioIntegrations(), []);
 
   return (
-    <FlowletProvider transport={transport} components={prewiredComponents} threadId={threadId}>
+    <FlowletProvider
+      transport={transport}
+      components={prewiredComponents}
+      threadId={threadId}
+      // Maple's own API tools execute HERE, in the user's browser on their
+      // existing session (ENG-202, topology B) — the same definitions the
+      // server registered, so gated calls run only after the approval card.
+      hostTools={{ definitions: mapleHostToolDefs }}
+    >
       {/* Maple's single brand feeds the host shell. brandToCssVars supplies the
           --flowlet-* colors, applied INLINE on every .flowlet-root by the shell
           (they must win over the vars styles.css declares on that same element).
