@@ -30,4 +30,8 @@ describe("manifestThemeSchema", () => {
   it("rejects unknown versions", () => {
     expect(() => manifestThemeSchema.parse({ ...valid, version: 2 })).toThrow();
   });
+
+  it("rejects unknown keys (parity with additionalProperties: false)", () => {
+    expect(() => manifestThemeSchema.parse({ ...valid, extraToken: "#FFFFFF" })).toThrow();
+  });
 });

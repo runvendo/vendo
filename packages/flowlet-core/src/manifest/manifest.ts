@@ -9,11 +9,16 @@ import { manifestComponentSchema } from "./component";
  * host-API tool descriptors plus declared host event types (Decision 3).
  * Developer-editable after extraction.
  */
-export const toolsManifestSchema = z.object({
-  version: z.literal(1),
-  tools: z.array(manifestToolSchema),
-  events: z.array(hostEventSchema).default([]),
-});
+export const toolsManifestSchema = z
+  .object({
+    version: z.literal(1),
+    tools: z.array(manifestToolSchema),
+    /** Optional in the file; zod parse normalizes a missing `events` to `[]`.
+     *  JSON Schema `default` is annotation-only, so raw-JSON consumers must
+     *  treat a missing `events` as empty themselves. */
+    events: z.array(hostEventSchema).default([]),
+  })
+  .strict();
 export type ToolsManifest = z.infer<typeof toolsManifestSchema>;
 
 /**
@@ -25,13 +30,15 @@ export type ToolsManifest = z.infer<typeof toolsManifestSchema>;
  * Embedded mode reads the same shape directly from `.flowlet/` on disk;
  * publish is a no-op there.
  */
-export const flowletManifestSchema = z.object({
-  schemaVersion: z.literal(1),
-  theme: manifestThemeSchema,
-  tools: z.array(manifestToolSchema),
-  events: z.array(hostEventSchema),
-  components: z.array(manifestComponentSchema),
-});
+export const flowletManifestSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    theme: manifestThemeSchema,
+    tools: z.array(manifestToolSchema),
+    events: z.array(hostEventSchema),
+    components: z.array(manifestComponentSchema),
+  })
+  .strict();
 export type FlowletManifest = z.infer<typeof flowletManifestSchema>;
 
 /**

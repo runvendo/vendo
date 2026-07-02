@@ -36,4 +36,38 @@ describe("manifestToolSchema", () => {
     ).toThrow();
     expect(() => manifestToolSchema.parse({ ...listInvoices, name: "1bad name" })).toThrow();
   });
+
+  it("rejects non-host-relative binding paths", () => {
+    for (const path of [
+      "https://evil.example/api",
+      "//evil.example/api",
+      "api/invoices",
+      "/api /invoices",
+    ]) {
+      expect(
+        () =>
+          manifestToolSchema.parse({
+            ...listInvoices,
+            binding: { type: "http", method: "GET", path },
+          }),
+        path,
+      ).toThrow();
+    }
+  });
+
+  it("rejects unknown keys at every level (parity with additionalProperties: false)", () => {
+    expect(() => manifestToolSchema.parse({ ...listInvoices, extra: 1 })).toThrow();
+    expect(() =>
+      manifestToolSchema.parse({
+        ...listInvoices,
+        annotations: { mutating: false, dangerous: false, sneaky: true },
+      }),
+    ).toThrow();
+    expect(() =>
+      manifestToolSchema.parse({
+        ...listInvoices,
+        binding: { type: "http", method: "GET", path: "/api/invoices", extra: 1 },
+      }),
+    ).toThrow();
+  });
 });

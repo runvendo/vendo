@@ -4,6 +4,12 @@ The dev tool (`npx flowlet init`, ENG-197) emits three artifacts into `.flowlet/
 
 Source of truth: zod schemas in `packages/flowlet-core/src/manifest/`. Language-neutral JSON Schema artifacts are generated into `packages/flowlet-core/schemas/` (`pnpm --filter @flowlet/core generate:schemas`; a test fails CI if they drift).
 
+Validation semantics (zod and AJV agree, parity-tested):
+
+- All manifest objects are **strict**: unknown keys are rejected on both sides, never silently stripped.
+- `events` is optional in the `tools.json` file; zod parse normalizes it to `[]`. JSON Schema `default` is annotation-only, so raw-JSON consumers must treat a missing `events` as empty.
+- Nested JSON Schema documents (`inputSchema`, `payloadSchema`, `propsSchema`) are opaque to the contract; the registry validates them against the JSON Schema meta-schema at publish time (ENG-197/198).
+
 ## theme.json
 
 Extracted host design tokens, fully resolved primitives only (the sandbox has no host CSS vars or fonts). Identical in shape to `BrandTokens` v1 in `@flowlet/components`; a conformance test keeps them in sync.
@@ -64,7 +70,7 @@ Required on every tool — a tool with unknown safety cannot be published.
 
 ### Bindings
 
-`binding` says how a call physically reaches the host API. Only `http` is frozen now (method + `{param}` path template, filled from the tool input by name). The discriminated union on `type` is the extension point for trpc/graphql extractors.
+`binding` says how a call physically reaches the host API. Only `http` is frozen now (method + `{param}` path template, filled from the tool input by name). Paths must be host-relative — a single leading `/`, no scheme, no `//authority`, no whitespace — so a manifest can never point a client executor at a foreign origin. The discriminated union on `type` is the extension point for trpc/graphql extractors.
 
 ### Host events
 

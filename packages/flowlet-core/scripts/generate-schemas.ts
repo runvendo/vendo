@@ -5,6 +5,10 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { manifestThemeSchema } from "../src/manifest/theme";
 import { toolsManifestSchema, flowletManifestSchema } from "../src/manifest/manifest";
 
+// CONSTRAINT: zodToJsonSchema cannot serialize .refine()/.transform() logic, so
+// the drift test would silently miss them. Manifest schemas must stay
+// refinement-free (regex/enum/literal only); if a refinement ever becomes
+// necessary, add an explicit AJV-side test asserting the same rejection.
 const opts = { target: "jsonSchema7" as const, $refStrategy: "none" as const };
 
 /** file name -> JSON Schema document. Imported by the sync test; run as a script to write. */

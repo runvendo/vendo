@@ -8,11 +8,13 @@ import { jsonSchemaDocument } from "./tool";
  * the ingest path in-process. Names are dot-namespaced, lower_snake segments:
  * `invoice.paid`, `user.plan_changed`.
  */
-export const hostEventSchema = z.object({
-  name: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/),
-  /** Drives trigger selection when the compiler agent builds an automation. */
-  description: z.string().min(1),
-  /** JSON Schema for the event payload; omitted = opaque payload. */
-  payloadSchema: jsonSchemaDocument.optional(),
-});
+export const hostEventSchema = z
+  .object({
+    name: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/),
+    /** Drives trigger selection when the compiler agent builds an automation. */
+    description: z.string().min(1),
+    /** JSON Schema for the event payload; omitted = opaque payload. */
+    payloadSchema: jsonSchemaDocument.optional(),
+  })
+  .strict();
 export type HostEventDeclaration = z.infer<typeof hostEventSchema>;

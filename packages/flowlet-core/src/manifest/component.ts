@@ -8,11 +8,13 @@ import { jsonSchemaDocument } from "./tool";
  * props schema serialized to JSON Schema. This is the JSON form of
  * `RegisteredComponent` / `PrewiredDescriptor` (name, description, propsSchema).
  */
-export const manifestComponentSchema = z.object({
-  name: z.string().min(1),
-  /** Drives LLM component selection — same field as `RegisteredComponent.description`. */
-  description: z.string().min(1),
-  /** JSON Schema for the component props (zod-serialized at publish time). */
-  propsSchema: jsonSchemaDocument,
-});
+export const manifestComponentSchema = z
+  .object({
+    name: z.string().min(1),
+    /** Drives LLM component selection — same field as `RegisteredComponent.description`. */
+    description: z.string().min(1),
+    /** JSON Schema for the component props (zod-serialized at publish time). */
+    propsSchema: jsonSchemaDocument,
+  })
+  .strict();
 export type ManifestComponent = z.infer<typeof manifestComponentSchema>;

@@ -56,4 +56,19 @@ describe("flowletManifestSchema (published unit)", () => {
       flowletManifestSchema.parse({ schemaVersion: 1, tools: [], events: [], components: [] }),
     ).toThrow();
   });
+
+  it("rejects unknown keys (parity with additionalProperties: false)", () => {
+    expect(() => manifestComponentSchema.parse({ ...component, wrapperPath: "./x" })).toThrow();
+    expect(() => toolsManifestSchema.parse({ version: 1, tools: [], extra: 1 })).toThrow();
+    expect(() =>
+      flowletManifestSchema.parse({
+        schemaVersion: 1,
+        theme,
+        tools: [],
+        events: [],
+        components: [],
+        extra: 1,
+      }),
+    ).toThrow();
+  });
 });

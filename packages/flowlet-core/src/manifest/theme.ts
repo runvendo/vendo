@@ -14,16 +14,18 @@ const hexColor = z
  * (`src/theme/brand.ts`), which is the consuming side of this contract; a
  * reconciliation test there keeps the two in sync until they are folded together.
  */
-export const manifestThemeSchema = z.object({
-  version: z.literal(1),
-  accent: hexColor,
-  background: hexColor,
-  surface: hexColor,
-  text: hexColor,
-  mutedText: hexColor,
-  fontFamily: z.string().min(1),
-  radius: z.union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d+)?px$/)]),
-  mode: z.enum(["light", "dark"]).optional(),
-});
+export const manifestThemeSchema = z
+  .object({
+    version: z.literal(1),
+    accent: hexColor,
+    background: hexColor,
+    surface: hexColor,
+    text: hexColor,
+    mutedText: hexColor,
+    fontFamily: z.string().min(1),
+    radius: z.union([z.number().nonnegative(), z.string().regex(/^\d+(\.\d+)?px$/)]),
+    mode: z.enum(["light", "dark"]).optional(),
+  })
+  .strict();
 
 export type ManifestTheme = z.infer<typeof manifestThemeSchema>;
