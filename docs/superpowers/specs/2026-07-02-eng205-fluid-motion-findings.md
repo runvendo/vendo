@@ -83,6 +83,26 @@ Integration gotcha (Flowlet-side, not an upstream bug): storing a fluidkit compo
 React state requires the `useState(() => C)` initializer form — a bare component function
 passed to `useState`/`setState` is invoked as a lazy initializer/updater and crashes.
 
+## Side-quest — Connect-tools entry point in the chat bar (exploration, Yousef to pick)
+
+- Three treatments live behind `FlowletThread`'s `connectEntry` prop (default `"rail"`, so
+  nothing changes until the pick): `icon-tray` (A), `chip-cluster` (B), `bar-morph` (C).
+  Demo preview: `/flowlet?connect=a|b|c`. Recordings `motion-connect-option-*`.
+- Shared plumbing: `ConnectDock` (in-bar affordance via the Composer's new `accessory`
+  slot), `ConnectTray` (liquid tray, height spring + un-blur open, quick fade-down close,
+  Esc/outside-click), `ConnectBarMorph` (two-face in-place morph, FluidReveal technique),
+  `FluidRipple` (lazy fluidkit Ripple on the dock button). All enhancement-layer: toolkit
+  missing or reduced motion → instant show/hide (live-verified per treatment).
+- Composio flow untouched: the picker still drives `integrations.connect/disconnect`;
+  live-verified — connect flipped the dock badge/coins in ~350 ms with the account ACTIVE.
+- Perf (live): tray open/close p50 8.3 ms / p95 9.1 ms (one >33 ms frame on the picker's
+  first mount — 14 rows of brand icons, pre-existing content cost); bar morph zero long
+  frames.
+- Productization once Yousef picks: winner becomes the default, rail + losing variants
+  deleted, overlay/slot surfaces verified (overlay already inherits via prop spread), and
+  the hero-composer arrangement gets a dedicated pass (the tray currently anchors to the
+  hero composer wrapper).
+
 ## Pre-existing issues noticed (not touched, not mine)
 
 - `pnpm lint` fails on main in demo-bank sources (react-hooks setState-in-effect and

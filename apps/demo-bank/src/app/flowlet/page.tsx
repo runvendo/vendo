@@ -24,11 +24,28 @@ const SUGGESTIONS = [
 
 const CHAT = "chat"
 
+type ConnectEntry = "rail" | "icon-tray" | "chip-cluster" | "bar-morph"
+// ENG-205 exploration switch: ?connect=a|b|c previews the in-bar connect
+// treatments (A icon+tray, B chip cluster, C bar morph); default stays the rail.
+const CONNECT_VARIANTS: Record<string, ConnectEntry> = {
+  a: "icon-tray",
+  b: "chip-cluster",
+  c: "bar-morph",
+}
+
 function PageSurface() {
   const chat = useFlowletThread()
   const { store } = useShell()
   const [active, setActive] = useState<string>(CHAT)
   const [saved, setSaved] = useState<Flowlet[]>([])
+  const [connectEntry, setConnectEntry] = useState<ConnectEntry>("rail")
+
+  // Post-mount read keeps SSR/hydration markup identical (brief rail flash is
+  // fine for a review-only switch).
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("connect")
+    if (v && CONNECT_VARIANTS[v]) setConnectEntry(CONNECT_VARIANTS[v])
+  }, [])
 
   // Hydrate the tab strip from the store (ENG-183): saved flowlets survive
   // reloads. Oldest-first so tabs keep their creation order.
@@ -149,6 +166,7 @@ function PageSurface() {
             greeting="What do you want to build?"
             suggestions={SUGGESTIONS}
             heroComposer
+            connectEntry={connectEntry}
             flows={saved}
             onOpenFlow={(f) => setActive(f.id)}
             onRenameFlow={(f, name) => persistPatch(f, { name })}

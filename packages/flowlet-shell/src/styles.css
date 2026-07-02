@@ -63,6 +63,33 @@
   box-shadow: var(--flowlet-shadow); animation: fl-fade-in .15s ease; transition: border-color .12s; }
 .fl-jump:hover { border-color: var(--flowlet-accent); }
 .fl-jump:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
+/* Connect dock (ENG-205 exploration): the in-bar connect-tools entry. The
+   .fl-dock wrapper hosts the ripple; the anchor positions the liquid tray
+   over the bar. Treatment C's bar morph reuses the picker inside the bar. */
+.fl-dock { display: inline-flex; border-radius: 10px; }
+.fl-dock-btn { position: relative; gap: 3px; }
+.fl-dock-badge { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px;
+  border-radius: 999px; background: var(--flowlet-ok); color: #fff; font-size: 10px;
+  font-weight: 700; line-height: 15px; text-align: center; padding: 0 3px; }
+.fl-dock-cluster { width: auto; padding: 0 7px; }
+.fl-dock-coins { display: inline-flex; align-items: center; }
+.fl-dock-coin { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--flowlet-surface); border: 1px solid var(--flowlet-border);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%); }
+.fl-dock-coin + .fl-dock-coin { margin-left: -7px; }
+.fl-dock-more { font-size: 10.5px; font-weight: 650; color: var(--flowlet-fg-muted); margin-left: 3px; }
+.fl-dock-coin-add { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  border: 1.5px dashed var(--flowlet-border-strong); color: var(--flowlet-fg-muted);
+  font-size: 14px; line-height: 1; }
+.fl-dock-anchor { position: relative; }
+.fl-tray { position: absolute; bottom: 100%; left: 16px; right: 16px; margin-bottom: 8px;
+  z-index: 30; transform-origin: bottom center; overflow: hidden; border-radius: var(--flowlet-radius); }
+.fl-tray .fl-picker { max-height: min(420px, 48vh); }
+.fl-barmorph { margin: 10px 16px 16px; border-radius: var(--flowlet-radius); }
+.fl-barmorph .fl-composer { margin: 0; }
+.fl-barmorph[data-open="true"] .fl-picker { max-height: min(420px, 48vh); }
+.fl-landing-composer .fl-barmorph { margin: 0; }
+
 /* Render slot (ENG-205): the persistent wrapper a skeleton and its replacing
    view share, so the reveal can morph. The column layout + 14px gap mirror the
    message list so wrapping changes nothing about spacing; the exiting overlay

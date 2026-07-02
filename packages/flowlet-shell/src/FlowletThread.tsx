@@ -12,6 +12,9 @@ import { ThreadErrorBoundary } from "./components/ThreadErrorBoundary";
 import { Composer } from "./components/Composer";
 import { IntegrationsRail } from "./components/IntegrationsRail";
 import { IntegrationsPicker } from "./components/IntegrationsPicker";
+import { ConnectDock } from "./components/ConnectDock";
+import { ConnectTray } from "./components/ConnectTray";
+import { ConnectBarMorph } from "./components/ConnectBarMorph";
 import { friendlyError, logErrorDetail } from "./components/error-copy";
 
 export interface FlowletThreadProps {
@@ -40,11 +43,19 @@ export interface FlowletThreadProps {
    * omit to hide the feedback controls entirely.
    */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
+  /**
+   * Where the connect-tools entry lives (ENG-205 exploration). "rail" is the
+   * legacy pill row above the composer; the dock variants move it into the
+   * chat bar: "icon-tray" (tools button + liquid tray), "chip-cluster"
+   * (brand-coin cluster + tray), "bar-morph" (the bar morphs into the picker).
+   * Default stays "rail" until Yousef picks the winner.
+   */
+  connectEntry?: "rail" | "icon-tray" | "chip-cluster" | "bar-morph";
 }
 
 export function FlowletThread({
   greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
-  heroComposer = false, onPin, onFeedback,
+  heroComposer = false, onPin, onFeedback, connectEntry = "rail",
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations } = useShell();
@@ -87,8 +98,47 @@ export function FlowletThread({
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
 
   const empty = chat.items.length === 0;
-  const composerEl = <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} />;
+  const dockActive = connectEntry !== "rail";
+  const pickerEl = (
+    <IntegrationsPicker
+      integrations={tools}
+      onConnect={(id) => integrations.connect(id).then(refresh)}
+      onDisconnect={(id) => integrations.disconnect(id).then(refresh)}
+      onClose={() => setPickerOpen(false)}
+    />
+  );
+  const accessory = dockActive ? (
+    <ConnectDock
+      variant={connectEntry === "chip-cluster" ? "cluster" : "icon"}
+      integrations={tools}
+      open={pickerOpen}
+      onToggle={() => setPickerOpen((v) => !v)}
+    />
+  ) : undefined;
+  const composerEl = (
+    <Composer onSend={send} status={chat.status} onStop={() => chat.stop()} accessory={accessory} />
+  );
   const composerInHero = heroComposer && empty;
+  // The dock variants replace the bottom composer with their own arrangement;
+  // the hero hoist keeps the plain composer (dock productization will revisit).
+  const composerArea =
+    connectEntry === "bar-morph" ? (
+      <ConnectBarMorph
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        bar={composerEl}
+        panel={pickerEl}
+      />
+    ) : dockActive ? (
+      <div className="fl-dock-anchor">
+        <ConnectTray open={pickerOpen} onClose={() => setPickerOpen(false)}>
+          {pickerEl}
+        </ConnectTray>
+        {composerEl}
+      </div>
+    ) : (
+      composerEl
+    );
 
   return (
     <div className="fl-thread">
@@ -97,7 +147,7 @@ export function FlowletThread({
           greeting={greeting}
           suggestions={suggestions}
           flows={flows}
-          composer={composerInHero ? composerEl : undefined}
+          composer={composerInHero ? composerArea : undefined}
           onSuggestion={send}
           onOpenFlow={(f) => onOpenFlow?.(f)}
           onRenameFlow={onRenameFlow}
@@ -116,15 +166,10 @@ export function FlowletThread({
           />
         </ThreadErrorBoundary>
       )}
-      {pickerOpen && (
-        <IntegrationsPicker
-          integrations={tools}
-          onConnect={(id) => integrations.connect(id).then(refresh)}
-          onDisconnect={(id) => integrations.disconnect(id).then(refresh)}
-          onClose={() => setPickerOpen(false)}
-        />
+      {!dockActive && pickerOpen && pickerEl}
+      {!dockActive && (
+        <IntegrationsRail integrations={tools} onConnectClick={() => setPickerOpen(true)} />
       )}
-      <IntegrationsRail integrations={tools} onConnectClick={() => setPickerOpen(true)} />
       {/* One error surface: skip the banner when the stream already rendered an
           inline error item as the last turn (no double-reporting), and when the
           thread has been reset to empty (a stale banner over the landing is
@@ -169,7 +214,7 @@ export function FlowletThread({
       )}
       {/* heroComposer surfaces hoist the composer into the Landing hero while
           empty; everyone else keeps it here at the bottom, always. */}
-      {!composerInHero && composerEl}
+      {!composerInHero && composerArea}
     </div>
   );
 }
