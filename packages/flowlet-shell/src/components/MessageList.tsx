@@ -8,6 +8,7 @@ import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
 import { TurnActions, type Feedback } from "./TurnActions";
 import { FileAttachment } from "./FileAttachment";
+import { FluidThinking } from "./FluidThinking";
 import { friendlyError } from "./error-copy";
 
 export interface MessageListProps {
@@ -199,11 +200,7 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
             }
           }
         })}
-        {working && (
-          <div className="fl-typing" aria-label="Working">
-            <span /><span /><span />
-          </div>
-        )}
+        {working && <FluidThinking label="Working" />}
       </div>
       {!atBottom && (
         <button

@@ -63,6 +63,10 @@
   box-shadow: var(--flowlet-shadow); animation: fl-fade-in .15s ease; transition: border-color .12s; }
 .fl-jump:hover { border-color: var(--flowlet-accent); }
 .fl-jump:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
+/* Working indicator — fluidkit metaball droplets (ENG-205); inherits the muted
+   foreground as the flat-material fill. The .fl-typing dots below are its
+   first-paint and no-fluidkit fallback. */
+.fl-thinking { align-self: flex-start; color: var(--flowlet-fg-muted); padding: 4px 2px; }
 /* Typing indicator — three pulsing dots while the agent is working. */
 .fl-typing { align-self: flex-start; display: flex; align-items: center; gap: 5px; padding: 4px 2px; }
 .fl-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--flowlet-fg-muted);

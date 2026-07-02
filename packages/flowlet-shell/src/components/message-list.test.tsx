@@ -20,6 +20,23 @@ function renderList(items: ThreadItem[], onApprove = vi.fn()) {
 }
 
 describe("MessageList", () => {
+  it("shows an accessible working indicator during dead air after the user sends", () => {
+    const { container } = render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider renderNode={() => <div data-testid="rendered" />}>
+          <MessageList
+            items={[{ kind: "text", key: "u1", messageId: "m1", role: "user", text: "hi" }]}
+            status="submitted"
+            onApprove={vi.fn()}
+          />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    // First paint is the static-dot fallback; the async fluidkit upgrade is
+    // covered by fluid-thinking.test.tsx.
+    expect(container.querySelector('[aria-label="Working"]')).toBeTruthy();
+  });
+
   it("renders an error item with friendly copy — raw detail never reaches the DOM", () => {
     const { container } = renderList([
       { kind: "error", key: "e1", messageId: "m", message: "Something exploded" } as unknown as ThreadItem,
