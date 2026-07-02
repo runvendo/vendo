@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "accent": "#266755",
+  "background": "#f7f5f1",
+  "surface": "#ffffff",
+  "text": "#221e19",
+  "mutedText": "#5c554b",
+  "fontFamily": "Hanken Grotesk, ui-sans-serif, system-ui, sans-serif",
+  "radius": "12px",
+  "mode": "light"
+}
