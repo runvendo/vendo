@@ -58,19 +58,7 @@ body {
   }
 }
 
-/* Flowlet stage approval treatments (brand-tier review scaffolding). The card
-   itself is the shell's approved ApprovalCard; these only shape placement. */
+/* Flowlet stage approval: the shell's approved ApprovalCard materializes
+   in-flow beneath the generated view (brand-tier pick). */
 .maple-approval-inflow .fl-approval { animation: maple-approval-in 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
-.maple-approval-sheet .fl-approval {
-  max-width: 100%;
-  width: 100%;
-  box-sizing: border-box;
-  animation: maple-approval-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.maple-approval-pop .fl-approval {
-  max-width: 100%;
-  box-shadow: 0 24px 80px -24px color-mix(in srgb, var(--flowlet-fg, #111) 35%, transparent);
-  animation: maple-approval-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
 @keyframes maple-approval-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@keyframes maple-approval-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
