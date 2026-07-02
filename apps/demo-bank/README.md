@@ -90,6 +90,7 @@ There is ONE UI tool, `render_view`, and its output always renders in the sandbo
 2. Approve-gated actions have no in-process executor in this demo, so clicking "Allow" on the sandbox approval prompt 404s. The approval UI is effectively vestigial for the demo's toolset. The intended sandbox action is `set_rule`, which is allowed and executes directly.
 3. A denied sandbox `dispatch()` resolves `undefined` to the generated component rather than rejecting: the runtime's direct-reply path only propagates `result`, not errors. The server never executes the denied action, so this is a UX/semantics gap, not a security hole.
 4. Arbitrary interactive apps (e.g. games) are now expressed as novel generated components inside a `render_view` view, so they render in the same egress-jailed sandbox as everything else. Novel components may be authored in JSX/TSX: the source is compiled server-side at the `render_view` boundary with the automatic React runtime (no need to import React), then rendered in the sandbox. `React.createElement` still works.
+5. Images are data-URI-only inside the sandbox. The stage CSP is `img-src data:` (part of the egress jail), so remote/https images are intentionally blocked, both because they render broken and because a remote image src is an exfiltration vector. The component library agrees with this: `allowlistUrl` accepts only safe `data:image` URIs. Re-enabling remote images safely, via a governed image proxy, is a future follow-up.
 
 ## Out of scope (this issue)
 

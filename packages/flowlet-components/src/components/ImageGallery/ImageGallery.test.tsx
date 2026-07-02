@@ -18,12 +18,12 @@ describe("ImageGallery", () => {
     expect(imageGalleryDescriptor.propsSchema.safeParse({}).success).toBe(false);
   });
 
-  it("renders valid https images", () => {
+  it("renders valid data:image images", () => {
     const { container } = renderThemed(
       <ImageGallery
         images={[
-          { src: "https://example.com/a.jpg", alt: "Photo A" },
-          { src: "https://example.com/b.jpg", alt: "Photo B" },
+          { src: "data:image/png;base64,AAA", alt: "Photo A" },
+          { src: "data:image/jpeg;base64,AAA", alt: "Photo B" },
         ]}
       />
     );
@@ -31,18 +31,21 @@ describe("ImageGallery", () => {
     expect(imgs.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("SECURITY: drops javascript: srcs — no img rendered with that src", () => {
+  it("SECURITY: drops javascript: and https srcs — only safe data:image renders", () => {
+    // https is blocked to match the sandbox CSP (`img-src data:`); only data:image renders.
     const { container } = renderThemed(
       <ImageGallery
         images={[
           { src: "javascript:alert(1)", alt: "evil" },
-          { src: "https://example.com/safe.jpg", alt: "safe" },
+          { src: "https://example.com/remote.jpg", alt: "remote" },
+          { src: "data:image/png;base64,AAA", alt: "safe" },
         ]}
       />
     );
     expect(container.querySelector('img[src^="javascript:"]')).toBeNull();
-    // the safe image should still render
-    expect(container.querySelector("img")).not.toBeNull();
+    expect(container.querySelector('img[src^="https:"]')).toBeNull();
+    // the safe data:image should still render
+    expect(container.querySelector('img[src^="data:image"]')).not.toBeNull();
   });
 
   it("SECURITY: drops all images when all srcs are invalid", () => {

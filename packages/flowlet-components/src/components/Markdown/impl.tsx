@@ -10,7 +10,8 @@ import { flowletUrlTransform } from "../../impl-helpers/safe-url";
  *
  * URL policy: `urlTransform` enforces an allowlist on markdown-generated links and images.
  * - Links (href): https and mailto only; javascript:, http:, and bare paths are dropped.
- * - Images (src): https and safe data:image types only via allowlistUrl.
+ * - Images (src): safe data:image types only via allowlistUrl (remote/https dropped to
+ *   match the sandbox CSP `img-src data:`).
  */
 export const Markdown = createPrewiredImpl(markdownSchema, (p) => (
   <MarkDownRenderer

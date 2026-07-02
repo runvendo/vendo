@@ -7,7 +7,10 @@ export const carouselSchema = z.object({
       z.object({
         title: z.string().optional(),
         body: z.string().optional(),
-        imageUrl: z.string().optional(),
+        imageUrl: z
+          .string()
+          .optional()
+          .describe("Image source. Only data:image URIs are supported; remote/https URLs will not load."),
       }),
     )
     .min(1),
