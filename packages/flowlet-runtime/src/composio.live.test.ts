@@ -6,7 +6,7 @@
  *   - ANTHROPIC_API_KEY  (required for the full live-agent path; gated here for parity)
  *
  * To run:
- *   COMPOSIO_API_KEY=... ANTHROPIC_API_KEY=... pnpm -F @flowlet/agent test
+ *   COMPOSIO_API_KEY=... ANTHROPIC_API_KEY=... pnpm -F @flowlet/runtime test
  *
  * Does NOT execute any tool — only fetches the tool manifest (read-only).
  */

@@ -1,8 +1,10 @@
 /**
- * Public API surface for `@flowlet/agent` — Flowlet's F2 agent runtime.
+ * Public API surface for `@flowlet/runtime` — Flowlet's portable agent runtime
+ * (architecture Decision 1: loop, tool calling, policy, UI generation,
+ * automations; depends only on the five frozen seams + @flowlet/core).
  */
 
-export const FLOWLET_AGENT_PACKAGE = "@flowlet/agent";
+export const FLOWLET_RUNTIME_PACKAGE = "@flowlet/runtime";
 
 // Engine
 export { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
