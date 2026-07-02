@@ -119,7 +119,7 @@ describe("AutomationCard (proposal state)", () => {
     expect(onDecline).toHaveBeenCalledOnce();
   });
 
-  it("falls back to the raw JSON dump when the spec is malformed", () => {
+  it("falls back to the generic approval card when the spec is malformed", () => {
     render(
       <AutomationCard
         toolName="create_automation"
@@ -128,7 +128,10 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/approval required/)).toBeTruthy();
-    expect(screen.getByText(/"nonsense": true/)).toBeTruthy();
+    // The generic ApprovalCard (post-#20 redesign): request-tense title +
+    // the input rendered as labelled fields.
+    expect(screen.getByText("Create an automation")).toBeTruthy();
+    expect(screen.getByText("Nonsense")).toBeTruthy();
+    expect(screen.getByText("true")).toBeTruthy();
   });
 });
