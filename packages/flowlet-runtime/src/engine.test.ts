@@ -316,4 +316,70 @@ describe("createFlowletAgent", () => {
 
     expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
   });
+
+  it("repairs history a stale turn would wedge: unanswered approvals become denials, aborted input-* calls are dropped", async () => {
+    // Capture the prompt the model actually receives.
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "Continuing."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createFlowletAgent({ model, policy: allowPolicy });
+
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "set it up" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          // The user typed past this approval card — no response ever recorded.
+          {
+            type: "tool-mutate_thing",
+            toolCallId: "call-stale",
+            state: "approval-requested",
+            input: { a: 1 },
+            approval: { id: "appr-1" },
+          },
+          // An aborted stream left this call with no output.
+          {
+            type: "tool-render_view",
+            toolCallId: "call-aborted",
+            state: "input-available",
+            input: { name: "Card" },
+          },
+        ],
+      },
+      { id: "m3", role: "user", parts: [{ type: "text", text: "actually just tell me a joke" }] },
+    ] as unknown as FlowletUIMessage[];
+
+    const parts = await collect(
+      agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
+    );
+
+    // The run completed rather than erroring on a dangling tool_use…
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+    // …the stale approval reached the model as a completed (denied) call…
+    const toolMessages = seenPrompt.filter((m) => m.role === "tool");
+    const results = toolMessages.flatMap((m) => m.content as { type: string; toolCallId: string }[]);
+    expect(results.some((r) => r.type === "tool-result" && r.toolCallId === "call-stale")).toBe(true);
+    // …and the aborted input-available call was dropped entirely (every
+    // tool-call in the prompt has a matching tool-result).
+    const calls = seenPrompt
+      .filter((m) => m.role === "assistant")
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+      .filter((c): c is { type: string; toolCallId: string } => (c as { type?: string }).type === "tool-call");
+    for (const call of calls) {
+      expect(results.some((r) => r.type === "tool-result" && r.toolCallId === call.toolCallId)).toBe(true);
+    }
+    expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
+  });
 });

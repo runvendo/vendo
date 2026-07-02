@@ -217,8 +217,10 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
 
       <details style={{ marginTop: 10 }}>
         <summary style={{ fontSize: 11, cursor: "pointer", ...muted }}>Show technical details</summary>
+        {/* grantedTools included: friendly labels above can collapse two tool
+            slugs onto one name, so the consent trail needs the raw grants. */}
         <pre style={{ fontSize: 11, margin: "6px 0 0", whiteSpace: "pre-wrap", ...mono }}>
-          {JSON.stringify(spec, null, 2)}
+          {JSON.stringify({ spec, grantedTools }, null, 2)}
         </pre>
       </details>
 

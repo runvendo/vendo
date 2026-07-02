@@ -57,9 +57,11 @@
 @media (prefers-reduced-motion: no-preference) {
   .fl-msglist > :not(.fl-reveal) { animation: fl-item-in .32s cubic-bezier(.22, 1, .36, 1) both; }
 }
+/* Opacity+transform only — blur would force per-element rasterization, and a
+   reopened 200-item thread runs every entrance at once on first paint. */
 @keyframes fl-item-in {
-  from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
-  to   { opacity: 1; transform: none; filter: none; } }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; } }
 @keyframes fl-fade-in { from { opacity: 0; } to { opacity: 1; } }
 /* Visually-hidden live region — announces only the settled assistant turn. */
 .fl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
@@ -264,8 +266,14 @@
   box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-fg) 5%, transparent),
     0 10px 28px color-mix(in srgb, var(--flowlet-fg) 7%, transparent);
   transition: border-color .14s, box-shadow .14s, border-radius .2s ease; }
-/* No focus ring on the bar (Apple/OpenAI-quiet): the caret is the signal.
-   Keyboard :focus-visible outlines on the buttons inside are untouched. */
+/* No focus ring on pointer focus (Apple/OpenAI-quiet): the caret is the
+   signal. KEYBOARD focus still gets a visible ring via :focus-visible —
+   the textarea keeps outline:0, so without this rule Tab-focus would be
+   invisible on the product's primary input. */
+.fl-composer:has(:focus-visible) { border-color: var(--flowlet-border-strong);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-fg) 5%, transparent),
+    0 10px 28px color-mix(in srgb, var(--flowlet-fg) 7%, transparent),
+    0 0 0 3px var(--flowlet-accent-soft); }
 .fl-composer-drag { border-color: var(--flowlet-accent); }
 /* align-items:flex-end so the buttons sit at the bottom as the field grows. */
 .fl-composer-row { display: flex; align-items: flex-end; gap: 10px; }

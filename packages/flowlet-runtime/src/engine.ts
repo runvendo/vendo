@@ -107,6 +107,48 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   type Ingested = { toolset: ToolSet; descriptors: Record<string, ToolDescriptor> };
   const composioCache = new Map<string, Promise<Ingested>>();
 
+  /**
+   * Normalize client-supplied history so a stale turn can't wedge the thread.
+   * A tool part stuck at `approval-requested` with no response (the user typed
+   * past the approval card) converts to a tool_use with NO tool_result — the
+   * provider rejects that request and EVERY later turn of the thread. Treat it
+   * as declined: `output-denied` emits a valid approval-response + denied
+   * tool-result pair. (Parts stuck at input-* from an aborted stream are
+   * handled by `ignoreIncompleteToolCalls` at conversion time.)
+   */
+  function normalizeHistory(messages: FlowletUIMessage[]): FlowletUIMessage[] {
+    return messages.map((message) => {
+      if (message.role !== "assistant") return message;
+      let changed = false;
+      const parts = message.parts.map((rawPart) => {
+        const part = rawPart as {
+          type: string;
+          state?: string;
+          approval?: { id: string; approved?: boolean | null; reason?: string };
+        };
+        if (
+          part.type.startsWith("tool-") &&
+          part.state === "approval-requested" &&
+          part.approval != null &&
+          part.approval.approved == null
+        ) {
+          changed = true;
+          return {
+            ...rawPart,
+            state: "output-denied",
+            approval: {
+              ...part.approval,
+              approved: false,
+              reason: "Not approved — the user moved on without answering.",
+            },
+          } as typeof rawPart;
+        }
+        return rawPart;
+      });
+      return changed ? { ...message, parts } : message;
+    });
+  }
+
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     const ordinal = ++runCounter;
     const runId = `run-${ordinal}`;
@@ -208,7 +250,12 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           model: config.model,
           system: input.system ?? config.instructions ?? DEFAULT_INSTRUCTIONS,
           tools,
-          messages: await convertToModelMessages(input.messages),
+          // `ignoreIncompleteToolCalls` drops tool parts an aborted stream left
+          // at input-streaming/input-available — without it they convert to a
+          // dangling tool_use the provider rejects on every later turn.
+          messages: await convertToModelMessages(normalizeHistory(input.messages), {
+            ignoreIncompleteToolCalls: true,
+          }),
           abortSignal: input.signal,
           stopWhen: stepCountIs(config.maxSteps ?? 8),
         });
