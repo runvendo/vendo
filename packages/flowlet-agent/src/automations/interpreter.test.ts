@@ -452,6 +452,52 @@ describe("agent steps and agentic mode", () => {
     expect(callOutcome.error.message).toMatch(/approval|grant/i);
   });
 
+  it("validates tool inputs inside agent steps against the tool schema (review P1)", async () => {
+    const send = makeTool("send_msg", { inputSchema: z.object({ count: z.number() }) });
+    const spec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Do it", tools: ["send_msg"] }],
+    });
+    let badOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { send_msg: send }),
+      agentRunner: async (req) => {
+        badOutcome = await req.tools["send_msg"]!.execute(
+          { count: "not-a-number" },
+          { idempotencyKey: "k" },
+        );
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(send.calls).toHaveLength(0); // never reached the real execute
+    expect(badOutcome?.ok).toBe(false);
+  });
+
+  it("enforces maxToolCalls as a hard per-call budget inside agent runs (review P2)", async () => {
+    const send = makeTool("send_msg");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        { id: "act", type: "agent", goal: "Do it", tools: ["send_msg"], maxToolCalls: 2 },
+      ],
+    });
+    const outcomes: boolean[] = [];
+    const outcome = await interpret({
+      ...baseInput(spec, { send_msg: send }),
+      agentRunner: async (req) => {
+        for (let i = 0; i < 4; i++) {
+          const result = await req.tools["send_msg"]!.execute({}, { idempotencyKey: `k${i}` });
+          outcomes.push(result.ok);
+        }
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(send.calls).toHaveLength(2); // budget is a hard ceiling
+    expect(outcomes).toEqual([true, true, false, false]);
+  });
+
   it("fails an agent step whose output misses a required field", async () => {
     const spec = specOf({
       mode: "steps",

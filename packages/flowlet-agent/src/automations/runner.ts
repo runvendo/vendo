@@ -243,9 +243,18 @@ export class AutomationRunner {
   /** Resume a waiting_approval run with the user's decision. */
   resume(scope: Principal, runId: string, approved: boolean): Promise<AutomationRun | undefined> {
     return (async () => {
-      const run = await this.config.store.getRun(scope, runId);
-      if (!run || run.outcome !== "waiting_approval" || !run.pendingApproval) return undefined;
-      return this.enqueue(run.automationId, async () => {
+      // The outside read is ONLY for the queue key. The authoritative check
+      // happens inside the per-automation queue: two rapid approvals would
+      // otherwise both pass a pre-queue check and double-execute (review P1;
+      // the concurrent-resume test settles it).
+      const peek = await this.config.store.getRun(scope, runId);
+      if (!peek) return undefined;
+      return this.enqueue(peek.automationId, async () => {
+        const run = await this.config.store.getRun(scope, runId);
+        if (!run || run.outcome !== "waiting_approval" || !run.pendingApproval) {
+          return undefined; // already resumed, cancelled, or finished
+        }
+        const pending = run.pendingApproval;
         const automation = await this.config.store.get(scope, run.automationId);
         const version = automation
           ? await this.config.store.getVersion(scope, run.automationId, run.version)
@@ -253,15 +262,17 @@ export class AutomationRunner {
         if (!automation || !version) return undefined;
 
         // Expired approvals cancel instead of executing stale intent.
-        if (Date.parse(run.pendingApproval!.expiresAt) < this.nowMs()) {
+        if (Date.parse(pending.expiresAt) < this.nowMs()) {
           return this.config.store.finalizeRun(scope, run.id, {
             outcome: "cancelled",
             error: "pending approval expired",
           });
         }
+        // Claim the run before executing so nothing else sees it as pending.
+        await this.config.store.updateRun(scope, run.id, { pendingApproval: undefined });
         const user = await this.claims(scope);
         return this.execute(scope, run, automation, version.spec, version.grants, user, {}, {
-          checkpoint: run.pendingApproval!.checkpoint,
+          checkpoint: pending.checkpoint,
           approved,
         });
       });

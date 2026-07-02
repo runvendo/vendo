@@ -44,15 +44,54 @@ export function hashDescriptor(descriptor: ToolDescriptor): string {
   return fnv1a64(canonicalJson(descriptor));
 }
 
-/** The scope a grant covers: what fires it, when, with which mapping. */
+/**
+ * Ancestor control-flow context on the path to a step: every branch predicate
+ * (with which arm) and every for_each (items + guard) enclosing it. A grant
+ * hashed without these would survive an edit that, say, widens the enclosing
+ * branch condition — a scope change in every sense that matters.
+ */
+function ancestryOf(
+  steps: readonly AutomationStep[],
+  targetId: string,
+): unknown[] | undefined {
+  for (const s of steps) {
+    if (s.id === targetId) return [];
+    if (s.type === "branch") {
+      const thenPath = ancestryOf(s.then, targetId);
+      if (thenPath) return [{ branch: s.id, if: s.if, arm: "then" }, ...thenPath];
+      const elsePath = s.else ? ancestryOf(s.else, targetId) : undefined;
+      if (elsePath) return [{ branch: s.id, if: s.if, arm: "else" }, ...elsePath];
+    } else if (s.type === "for_each") {
+      const childPath = ancestryOf(s.steps, targetId);
+      if (childPath) {
+        return [{ forEach: s.id, items: s.items, if: s.if ?? null }, ...childPath];
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The scope a grant covers — the FULL effective execution context (review
+ * adjudication): trigger + top-level guard, the ancestor control-flow path,
+ * and the granted step's whole definition (its own guard, input mapping, and
+ * for agent steps goal/tools/maxToolCalls). Agentic mode (step = null) hashes
+ * the execution block itself.
+ */
 export function hashScope(spec: AutomationSpec, step: AutomationStep | null): string {
-  const stepInput = step !== null && "input" in step ? (step.input ?? null) : null;
+  const ancestry =
+    step !== null && spec.execution.mode === "steps"
+      ? (ancestryOf(spec.execution.steps, step.id) ?? null)
+      : null;
   return fnv1a64(
     canonicalJson({
       trigger: spec.trigger,
       guard: spec.if ?? null,
-      stepId: step?.id ?? null,
-      input: stepInput,
+      ancestry,
+      // The whole step object: covers tool+input+if for tool steps and
+      // goal+tools+output+maxToolCalls for agent steps.
+      step: step ?? null,
+      execution: step === null && spec.execution.mode === "agent" ? spec.execution : null,
     }),
   );
 }

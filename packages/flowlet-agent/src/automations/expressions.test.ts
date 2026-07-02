@@ -112,6 +112,35 @@ describe("validateExpression (safe profile, creation-time)", () => {
     expect(() => validateExpression("$eval('1+1')")).toThrowError(ExpressionError);
   });
 
+  it("rejects $eval smuggled through an alias binding (review P1)", () => {
+    expect(() => validateExpression("($e := $eval; $e('1+1'))")).toThrowError(
+      ExpressionError,
+    );
+  });
+
+  it("rejects regex literals (synchronous ReDoS beats the async time cap)", () => {
+    expect(() => validateExpression("$contains(trigger.x, /(a+)+$/)")).toThrowError(
+      ExpressionError,
+    );
+    expect(() => validateExpression("trigger.x ~> /a+/")).toThrowError(ExpressionError);
+  });
+
+  it("rejects nondeterministic builtins ($now/$millis/$random/$shuffle)", () => {
+    for (const expr of ["$now()", "$millis()", "$random()", "$shuffle([1,2])"]) {
+      expect(() => validateExpression(expr), expr).toThrowError(ExpressionError);
+    }
+  });
+
+  it("rejects unknown builtins by allowlist, allowing local bindings", () => {
+    expect(() => validateExpression("$definitelyNotABuiltin(1)")).toThrowError(
+      ExpressionError,
+    );
+    // Local bindings introduced with := stay usable.
+    expect(() =>
+      validateExpression('($hay := $lowercase(trigger.m); $contains($hay, "d"))'),
+    ).not.toThrow();
+  });
+
   it("rejects inline function definitions", () => {
     expect(() => validateExpression("(function($x){ $x })(1)")).toThrowError(
       ExpressionError,

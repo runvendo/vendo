@@ -102,7 +102,7 @@ Guards (`if` fields) are bare JSONata predicates without braces, since they are 
 
 No access to secrets, other users, other runs, or anything not listed.
 
-**Safe profile** (not stock JSONata): `$eval` and inline function definitions are rejected at creation time; expression length is capped (1,000 chars); evaluation runs under a timeout and an output-size cap, and a violation at fire time fails the step, never hangs the firing. There is no escape syntax for a literal `{{` in v1; the compiler avoids emitting one.
+**Safe profile** (not stock JSONata; hardened per PR #21 dual review): builtins are ALLOWLISTED, not denylisted — an unknown or aliased reference (`($e := $eval; …)`) is rejected at creation time, as are inline function definitions and regex literals (JS regex is synchronous, so ReDoS would beat the async time cap). The profile is deterministic: `$now`/`$millis`/`$random`/`$shuffle` are excluded and firing time is exposed as `run.firedAt`. Expression length is capped (1,000 chars); evaluation runs under a timeout and an output-size cap, and a violation at fire time fails the step, never hangs the firing. There is no escape syntax for a literal `{{` in v1; the compiler avoids emitting one.
 
 ### Steps
 
@@ -345,7 +345,7 @@ Index: `(tenant_id, user_id)`, `(tenant_id, trigger_kind, trigger_key) where sta
 
 Every edit is a new immutable version; `automations.current_version` moves (the reference is the composite `(automation_id, version)`). Runs reference the exact version they executed, so run history is always interpretable even after edits.
 
-**Grants** are written only by the approval flow, never by the compiler. Each grant covers one tool and is hashed over (tool descriptor, trigger, top-level guard, the granting step's input mapping): at fire time a step is unattended only if a grant exists AND its hashes still match; any drift — a manifest republish changing the tool, or an edit changing the scope — invalidates the grant and the step pauses instead. Since create and update are both approval-gated, every version re-collects grants on its card; grants never carry across versions implicitly.
+**Grants** are written only by the approval flow, never by the compiler. Each grant covers one tool and is hashed over the FULL effective execution context (hardened per PR #21 dual review): tool descriptor, trigger, top-level guard, the ancestor branch/for_each predicates on the path to the granting step, and the step's whole definition (its own guard and input mapping; goal/tools/maxToolCalls for agent steps, or the execution block for agentic mode). At fire time a step is unattended only if a grant exists AND its hashes still match; any drift — a manifest republish changing the tool, or an edit changing any enclosing condition — invalidates the grant and the step pauses instead. Since create and update are both approval-gated, every version re-collects grants on its card; grants never carry across versions implicitly.
 
 ### `automation_runs`
 

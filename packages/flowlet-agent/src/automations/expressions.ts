@@ -65,25 +65,92 @@ function wholeValueExpression(value: string): string | undefined {
   return undefined;
 }
 
-/** Recursively walk a jsonata AST node rejecting unsafe constructs. */
-function assertSafeAst(expression: string, node: unknown): void {
+/**
+ * Builtins an expression may reference — an ALLOWLIST, not a denylist (review
+ * P1: `($e := $eval; $e(...))` walks straight past a denylist that only looks
+ * at call sites). Deliberately excluded:
+ *  - `eval` (dynamic evaluation of untrusted trigger data),
+ *  - `match` and every regex form (JS regex is synchronous, so ReDoS blocks
+ *    the event loop before the async time cap can fire),
+ *  - `now` / `millis` / `random` / `shuffle` (deterministic profile — firing
+ *    time is exposed deterministically as `run.firedAt`).
+ */
+const ALLOWED_BUILTINS = new Set([
+  // strings
+  "string", "length", "substring", "substringBefore", "substringAfter",
+  "uppercase", "lowercase", "trim", "pad", "contains", "split", "join",
+  "replace", "base64encode", "base64decode", "encodeUrlComponent", "encodeUrl",
+  "decodeUrlComponent", "decodeUrl",
+  // numbers
+  "number", "abs", "floor", "ceil", "round", "power", "sqrt", "formatNumber",
+  "formatBase", "formatInteger", "parseInteger",
+  // aggregation
+  "sum", "max", "min", "average",
+  // booleans
+  "boolean", "not", "exists",
+  // arrays
+  "count", "append", "sort", "reverse", "distinct", "zip",
+  // objects
+  "keys", "lookup", "spread", "merge", "each", "sift", "type",
+  // sequences (lambda-taking forms are unusable — lambdas are rejected — but harmless)
+  "map", "filter", "reduce", "single",
+  // date-time conversion (deterministic)
+  "fromMillis", "toMillis",
+  // diagnostics
+  "error", "assert",
+]);
+
+/** Variable names bound locally with `:=` anywhere in the expression. */
+function collectBoundNames(node: unknown, bound: Set<string>): void {
   if (Array.isArray(node)) {
-    for (const child of node) assertSafeAst(expression, child);
+    for (const child of node) collectBoundNames(child, bound);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  const record = node as Record<string, unknown>;
+  if (record["type"] === "bind") {
+    const lhs = record["lhs"] as Record<string, unknown> | undefined;
+    if (lhs?.["type"] === "variable" && typeof lhs["value"] === "string") {
+      bound.add(lhs["value"]);
+    }
+  }
+  for (const value of Object.values(record)) collectBoundNames(value, bound);
+}
+
+/** Recursively walk a jsonata AST node rejecting unsafe constructs. */
+function assertSafeAst(expression: string, node: unknown, bound: Set<string>): void {
+  if (Array.isArray(node)) {
+    for (const child of node) assertSafeAst(expression, child, bound);
     return;
   }
   if (node === null || typeof node !== "object") return;
 
   const record = node as Record<string, unknown>;
-  if (record["type"] === "lambda") {
+  const type = record["type"];
+  if (type === "lambda") {
     throw new ExpressionError(expression, "inline function definitions are not allowed");
   }
-  if (record["type"] === "function") {
-    const procedure = record["procedure"] as Record<string, unknown> | undefined;
-    if (procedure?.["value"] === "eval") {
-      throw new ExpressionError(expression, "$eval is not allowed");
+  if (type === "regex") {
+    throw new ExpressionError(
+      expression,
+      "regular expressions are not allowed (synchronous evaluation defeats the time cap)",
+    );
+  }
+  if (type === "variable" && typeof record["value"] === "string") {
+    const name = record["value"];
+    // "" is `$` (context) and "$" is `$$` (root) — always fine. Forbidden
+    // names are rejected even when locally bound, so no aliasing game works.
+    if (name === "eval" || name === "now" || name === "millis" || name === "random" || name === "shuffle" || name === "match") {
+      throw new ExpressionError(expression, `$${name} is not allowed`);
+    }
+    if (name !== "" && name !== "$" && !ALLOWED_BUILTINS.has(name) && !bound.has(name)) {
+      throw new ExpressionError(
+        expression,
+        `$${name} is not an allowed builtin or local binding`,
+      );
     }
   }
-  for (const value of Object.values(record)) assertSafeAst(expression, value);
+  for (const value of Object.values(record)) assertSafeAst(expression, value, bound);
 }
 
 /**
@@ -103,7 +170,9 @@ export function validateExpression(expression: string): void {
   } catch (err) {
     throw new ExpressionError(expression, errorDetail(err));
   }
-  assertSafeAst(expression, compiled.ast());
+  const bound = new Set<string>();
+  collectBoundNames(compiled.ast(), bound);
+  assertSafeAst(expression, compiled.ast(), bound);
 }
 
 /** Compile + evaluate one expression against the scope, time-boxed. */

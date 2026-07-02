@@ -216,6 +216,25 @@ describe("pause and resume", () => {
     expect((await store.getRun(scope, paused!.id))?.status).toBe("succeeded");
   });
 
+  it("two concurrent approvals of one pending run execute the gated step exactly once (review P1)", async () => {
+    const freeze = makeTool("freeze_card");
+    const send = makeTool("send_msg");
+    const { runner, automation } = await setup({
+      spec: gatedSpec(),
+      tools: { freeze_card: freeze, send_msg: send },
+      policy: approveFor("freeze_card"),
+    });
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    expect(paused?.outcome).toBe("waiting_approval");
+
+    const [a, b] = await Promise.all([
+      runner.resume(scope, paused!.id, true),
+      runner.resume(scope, paused!.id, true),
+    ]);
+    expect(freeze.calls).toHaveLength(1);
+    expect([a, b].filter((r) => r !== undefined)).toHaveLength(1);
+  });
+
   it("fails the run when the approval is declined", async () => {
     const freeze = makeTool("freeze_card");
     const { runner, automation } = await setup({

@@ -329,20 +329,50 @@ async function executeToolStep(ctx: ExecContext, step: ToolStep): Promise<void> 
   }
 }
 
+/** Shared hard budget across every tool handed to one agent run (review P2). */
+interface ToolBudget {
+  remaining: number;
+}
+
 /**
  * Tools handed to an agent run are policy-gated per call: an unattended agent
  * cannot pause for approval, so deny — and approve without a matching grant —
- * reject the call with an error the model sees and can route around.
+ * reject the call with an error the model sees and can route around. Inputs
+ * are validated against the tool's own schema (direct steps already do this),
+ * and the shared budget is a hard ceiling, not just a model stop condition.
  */
 function gateAgentTool(
   ctx: ExecContext,
   name: string,
   tool: RegisteredTool,
   grantStep: AutomationStep | null,
+  budget: ToolBudget,
 ): RegisteredTool {
   return {
     ...tool,
     execute: async (input, execCtx) => {
+      if (budget.remaining <= 0) {
+        return {
+          ok: false,
+          error: {
+            code: "tool_budget_exhausted",
+            message: "this run's maxToolCalls budget is spent — finish with what you have",
+          },
+        };
+      }
+      budget.remaining -= 1;
+      if (tool.inputSchema) {
+        const parsed = tool.inputSchema.safeParse(input);
+        if (!parsed.success) {
+          return {
+            ok: false,
+            error: {
+              code: "invalid_input",
+              message: `input rejected by "${name}" schema: ${errorMessage(parsed.error)}`,
+            },
+          };
+        }
+      }
       const decision = await ctx.input.policy.evaluate({
         toolName: name,
         input,
@@ -396,11 +426,12 @@ async function executeAgentStep(ctx: ExecContext, step: AgentStep): Promise<void
     return;
   }
 
+  const budget: ToolBudget = { remaining: step.maxToolCalls };
   const allowlisted: Record<string, RegisteredTool> = {};
   for (const name of step.tools) {
     const tool = ctx.input.tools[name];
     if (!tool) throw new StepFailure(step.id, `allowlisted tool "${name}" is not registered`);
-    allowlisted[name] = gateAgentTool(ctx, name, tool, step);
+    allowlisted[name] = gateAgentTool(ctx, name, tool, step, budget);
   }
 
   let output: unknown;
@@ -597,12 +628,13 @@ async function executeAgenticMode(ctx: ExecContext, execution: AgentExecution): 
   const runner = ctx.input.agentRunner;
   if (!runner) throw new StepFailure("agent", "no agent runner configured");
 
+  const budget: ToolBudget = { remaining: execution.maxToolCalls };
   const allowlisted: Record<string, RegisteredTool> = {};
   for (const name of execution.tools) {
     const tool = ctx.input.tools[name];
     if (!tool) throw new StepFailure("agent", `allowlisted tool "${name}" is not registered`);
     // Agentic-mode grants are scoped to the spec, not a step (step = null).
-    allowlisted[name] = gateAgentTool(ctx, name, tool, null);
+    allowlisted[name] = gateAgentTool(ctx, name, tool, null, budget);
   }
 
   let output: unknown;
