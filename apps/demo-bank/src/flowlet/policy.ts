@@ -1,16 +1,23 @@
 /**
  * The Maple demo's REAL guardrail policy (replaces the old allow-all).
  *
- * Layered on the @flowlet/agent policy machinery: one deterministic name-based
+ * Layered on the @flowlet/runtime policy machinery: one deterministic name-based
  * layer. Render + in-process demo tools and read-shaped external tools run
- * freely; anything write-shaped or unknown requires approval. Beat 3's Slack
- * post is unaffected: the poller posts server-side under the user's standing
- * natural-language rule, not through an agent tool call.
+ * freely; anything write-shaped or unknown requires approval. The same policy
+ * governs automation firings: the interpreter evaluates it per step, and an
+ * approve-gated step runs unattended only under a scope-hashed grant.
  */
-import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/agent";
+import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/runtime";
 
-/** In-process tools that are safe by construction. */
-const ALWAYS_ALLOW = new Set(["render_view", "request_connect", "get_transactions", "set_rule"]);
+/** In-process tools that are safe by construction (incl. read-shaped
+ *  automation authoring; create/update/delete/pause/run-now stay gated). */
+const ALWAYS_ALLOW = new Set([
+  "render_view",
+  "request_connect",
+  "get_transactions",
+  "list_automations",
+  "get_automation_runs",
+]);
 
 /** Read-shaped external (Composio) verb segments — safe to run freely. */
 const READ_VERBS = new Set(["FETCH", "GET", "LIST", "SEARCH", "FIND", "READ"]);

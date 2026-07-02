@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { UINode } from "@flowlet/core";
 import { useFlowletChat } from "@flowlet/react";
+import { useShell } from "../context";
 import { UINodeView } from "../components/UINodeView";
 import { OverlayPanel } from "../components/OverlayPanel";
 import { FlowletThread } from "../FlowletThread";
@@ -28,9 +29,14 @@ export function FlowletSlot({
   flowletId,
   savedNode,
   emptyLabel = "Design a view",
-  greeting = "What can Vendo build here?",
+  greeting,
   suggestions = [],
 }: FlowletSlotProps) {
+  const { productName } = useShell();
+  // Brand-neutral default: the shell ships no product names of its own; hosts
+  // brand the copy via the `productName` seam (or an explicit `greeting`).
+  const slotGreeting =
+    greeting ?? (productName ? `What can ${productName} build here?` : "What can I build here?");
   const [pinned, setPinned] = useState<UINode | null>(savedNode ?? null);
   const [designing, setDesigning] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -133,7 +139,7 @@ export function FlowletSlot({
         </button>
       )}
       <OverlayPanel open={designing} onClose={() => setDesigning(false)} ariaLabel="Design view">
-        <FlowletThread greeting={greeting} suggestions={suggestions} onPin={pin} />
+        <FlowletThread greeting={slotGreeting} suggestions={suggestions} onPin={pin} />
       </OverlayPanel>
     </div>
   );

@@ -41,6 +41,19 @@ function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolea
   );
 }
 
+/** True when the conversation carries a DENIED tool execution — the resume
+ *  after the user clicks Decline (`tool-result` with `execution-denied`). */
+function promptHasDenial(prompt: { role: string; content: unknown }[]): boolean {
+  return prompt.some(
+    (m) =>
+      Array.isArray(m.content) &&
+      m.content.some((c) => {
+        const part = c as { type?: string; output?: { type?: string } };
+        return part.type === "tool-result" && part.output?.type === "execution-denied";
+      }),
+  );
+}
+
 /**
  * Scripted development fixture (no LLM). Drives the ai SDK's native human-in-the-loop
  * tool approval: turn 1 streams text + a `needsApproval` tool call (the SDK pauses at
@@ -52,7 +65,12 @@ function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolea
 export function createStubAgent(): FlowletAgent {
   const model = new MockLanguageModelV3({
     doStream: async ({ prompt }) => {
-      const chunks: LanguageModelV3StreamPart[] = promptHasToolCall(prompt)
+      const chunks: LanguageModelV3StreamPart[] = promptHasDenial(prompt)
+        ? [
+            ...textChunks("t-denied", "No problem — I won't render the card."),
+            { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+          ]
+        : promptHasToolCall(prompt)
         ? [
             ...textChunks("t-done", "Here is your demo card."),
             { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
@@ -101,9 +119,12 @@ export function createStubAgent(): FlowletAgent {
         });
 
         // Run identity rides as ai SDK message metadata (attached on `start`),
-        // replacing the old custom data-run part.
+        // replacing the old custom data-run part. `originalMessages` mirrors the
+        // real engine: an approval-resume continues the paused assistant message
+        // instead of appending a replayed duplicate.
         writer.merge(
           result.toUIMessageStream({
+            originalMessages: input.messages,
             messageMetadata: ({ part }) =>
               part.type === "start"
                 ? { runId: "run-1", threadId: "thread-1", schemaVersion: SCHEMA_VERSION }

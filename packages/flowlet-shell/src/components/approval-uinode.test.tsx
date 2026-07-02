@@ -17,6 +17,45 @@ describe("ApprovalCard", () => {
     expect(onApprove).toHaveBeenCalledOnce();
     expect(onDecline).toHaveBeenCalledOnce();
   });
+
+  it("shows a friendly request title — never the raw tool slug or raw JSON", () => {
+    const { container } = render(
+      <ApprovalCard
+        toolName="GMAIL_CREATE_EMAIL_DRAFT"
+        input={{ recipient_email: "a@b.com", subject: "Hi", body: "Hello", cc: [], is_html: false }}
+        onApprove={() => {}}
+        onDecline={() => {}}
+      />,
+    );
+    expect(screen.getByText("Needs your approval")).toBeTruthy();
+    expect(screen.getByText("Create Gmail email draft")).toBeTruthy();
+    expect(container.textContent).not.toContain("GMAIL_CREATE_EMAIL_DRAFT");
+    expect(container.textContent).not.toContain("{");
+  });
+
+  it("renders parameters as labelled fields and hides empty ones", () => {
+    render(
+      <ApprovalCard
+        toolName="GMAIL_CREATE_EMAIL_DRAFT"
+        input={{ recipient_email: "a@b.com", subject: "Hi", cc: [], bcc: [], extra_recipients: [] }}
+        onApprove={() => {}}
+        onDecline={() => {}}
+      />,
+    );
+    expect(screen.getByText("Recipient email")).toBeTruthy();
+    expect(screen.getByText("a@b.com")).toBeTruthy();
+    expect(screen.getByText("Subject")).toBeTruthy();
+    expect(screen.queryByText("Cc")).toBeNull();
+    expect(screen.queryByText("Bcc")).toBeNull();
+  });
+
+  it("renders a bare title card for empty input", () => {
+    const { container } = render(
+      <ApprovalCard toolName="SLACK_API_TEST" input={{}} onApprove={() => {}} onDecline={() => {}} />,
+    );
+    expect(screen.getByText("Check Slack")).toBeTruthy();
+    expect(container.querySelector(".fl-approval-fields")).toBeNull();
+  });
 });
 
 describe("UINodeView", () => {

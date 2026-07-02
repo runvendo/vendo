@@ -16,7 +16,7 @@
     "@ai-sdk/react": "3.0.30",
     "@composio/core": "0.4.0",
     "@composio/vercel": "0.4.0",
-    "@flowlet/agent": "workspace:*",
+    "@flowlet/runtime": "workspace:*",
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
     "@flowlet/react": "workspace:*",

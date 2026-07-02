@@ -1,6 +1,6 @@
 # Runtime seam contracts
 
-The portable runtime (architecture Decision 1) never imports a database, queue, or HTTP server — it depends on five injected seams. Interfaces live in `packages/flowlet-core/src/seams/`; demo-bank's in-process implementations keep the embedded guarantee honest in CI.
+The portable runtime (`@flowlet/runtime`, architecture Decision 1) never imports a database, queue, or HTTP server — it depends on five injected seams. Interfaces live in `packages/flowlet-core/src/seams/`; embedded (in-memory/in-process) implementations of all five ship in `@flowlet/runtime`'s `embedded` module, and the runtime's dependency-guard test (`packages/flowlet-runtime/src/dependency-guard.test.ts`) plus demo-bank keep the embedded guarantee honest in CI.
 
 | Seam | Purpose | Embedded impl | Cloud impl |
 |---|---|---|---|

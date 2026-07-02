@@ -12,7 +12,7 @@
  * hidden on this route (see FlowletLayer).
  */
 import { useEffect, useState } from "react"
-import { FlowletThread, useFlowletThread, useShell, useReopenFlowlet, type Flowlet } from "@flowlet/shell"
+import { FlowletThread, FlowletToast, useFlowletThread, useShell, useReopenFlowlet, type Flowlet } from "@flowlet/shell"
 import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
 import { deriveSavedDrafts } from "@/flowlet/saved-flowlets"
 
@@ -57,8 +57,58 @@ function PageSurface() {
   }, [chat.items])
 
   const newChat = () => {
+    // Full reset: abort any in-flight run (a severed stream can leave status
+    // stuck on "streaming") and drop stale error state along with the messages —
+    // otherwise the old error banner haunts the fresh thread.
+    chat.stop()
+    chat.clearError()
     chat.setMessages([])
     setActive(CHAT)
+  }
+
+  // Library management (ENG-183 gate): rename + pin persist through the store;
+  // delete is undoable via a toast (no confirm dialog), never destructive twice.
+  // Deletes QUEUE (FIFO): each deleted view gets its own toast with a full
+  // undo window — a rapid second delete must not orphan the first's undo.
+  const [deleted, setDeleted] = useState<Flowlet[]>([])
+
+  // Read-modify-write against the CURRENT store record: the gallery's `flow`
+  // prop can be stale (the reopen hook writes fresh node data back), and a
+  // rename spread from stale state would overwrite that fresh node.
+  const persistPatch = (flow: Flowlet, patch: Partial<Flowlet>) => {
+    void store
+      .load(flow.id)
+      .then((current) => {
+        const { updatedAt: _prior, ...base } = current ?? flow
+        return store.save({ ...base, ...patch })
+      })
+      .then((record) => setSaved((prev) => prev.map((p) => (p.id === record.id ? record : p))))
+      .catch((error: unknown) => console.error("[flowlet] failed to update saved view", error))
+  }
+
+  const deleteFlow = (flow: Flowlet) => {
+    void store
+      .load(flow.id) // capture the CURRENT record so undo restores fresh data
+      .then(async (current) => {
+        await store.remove(flow.id)
+        setSaved((prev) => prev.filter((p) => p.id !== flow.id))
+        setActive((now) => (now === flow.id ? CHAT : now))
+        setDeleted((queue) => [...queue, current ?? flow])
+      })
+      .catch((error: unknown) => console.error("[flowlet] failed to delete saved view", error))
+  }
+
+  const settleDelete = (flow: Flowlet, restore: boolean) => {
+    setDeleted((queue) => queue.filter((f) => f.id !== flow.id))
+    if (!restore) return
+    void store
+      .save(flow) // full record, original timestamps — restores exactly
+      .then((record) =>
+        setSaved((prev) =>
+          [...prev, record].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)),
+        ),
+      )
+      .catch((error: unknown) => console.error("[flowlet] failed to restore saved view", error))
   }
 
   const activeSaved = saved.find((s) => s.id === active)
@@ -95,10 +145,27 @@ function PageSurface() {
 
       <div className="fl-page-body">
         <div className="fl-page-pane" hidden={active !== CHAT}>
-          <FlowletThread greeting="What do you want to build?" suggestions={SUGGESTIONS} />
+          <FlowletThread
+            greeting="What do you want to build?"
+            suggestions={SUGGESTIONS}
+            heroComposer
+            flows={saved}
+            onOpenFlow={(f) => setActive(f.id)}
+            onRenameFlow={(f, name) => persistPatch(f, { name })}
+            onPinFlow={(f, pinned) => persistPatch(f, { pinned })}
+            onDeleteFlow={deleteFlow}
+          />
         </div>
         {activeSaved ? <SavedPane key={activeSaved.id} flowlet={activeSaved} /> : null}
       </div>
+      {deleted[0] && (
+        <FlowletToast
+          key={deleted[0].id} // per-view countdown: the next queued toast starts fresh
+          message={`Deleted "${deleted[0].name}"`}
+          onAction={() => settleDelete(deleted[0]!, true)}
+          onDismiss={() => settleDelete(deleted[0]!, false)}
+        />
+      )}
     </div>
   )
 }
@@ -112,8 +179,17 @@ function PageSurface() {
  */
 function SavedPane({ flowlet }: { flowlet: Flowlet }) {
   const { renderNode } = useShell()
-  const { node } = useReopenFlowlet(flowlet)
-  return <div className="fl-saved-pane">{renderNode(node)}</div>
+  const { node, status, errors } = useReopenFlowlet(flowlet)
+  return (
+    <div className="fl-saved-pane">
+      {/* Surfaced stale state (ENG-183 gate): quiet mono note when any query
+          could not re-run (reads-only refusal, policy deny, network). */}
+      {errors.length > 0 && status !== "live" && (
+        <div className="fl-stale-note">showing saved data — live refresh unavailable</div>
+      )}
+      {renderNode(node)}
+    </div>
+  )
 }
 
 export default function FlowletTabPage() {
@@ -130,6 +206,7 @@ export default function FlowletTabPage() {
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        position: "relative", // anchors the undo toast
       }}
     >
       <FlowletRoot>

@@ -67,10 +67,12 @@ describe("refreshFlowletNode", () => {
 });
 
 describe("useReopenFlowlet", () => {
-  const wrap = (store: FlowletStore, runQuery?: RunQuery) =>
+  const wrap = (store: FlowletStore, runQuery?: RunQuery, refreshIntervalMs = 0) =>
     function Wrapper({ children }: { children: ReactNode }) {
       return (
-        <FlowletShellProvider store={store} runQuery={runQuery}>{children}</FlowletShellProvider>
+        <FlowletShellProvider store={store} runQuery={runQuery} refreshIntervalMs={refreshIntervalMs}>
+          {children}
+        </FlowletShellProvider>
       );
     };
 
@@ -132,6 +134,114 @@ describe("useReopenFlowlet", () => {
     release2(null);
     await new Promise((r) => setTimeout(r, 50));
     expect(await store.load("f2")).toBeNull();
+  });
+
+  it("live-refreshes on an interval while visible, patching new data in", async () => {
+    const store = createLocalStore();
+    const flowlet = await store.save({
+      id: "f1", name: "Tx",
+      node: genNode({ tx: [0] }, [{ path: "/tx", tool: "get_transactions" }]),
+    });
+    let call = 0;
+    const runQuery = vi.fn(async () => [++call]);
+    const { result } = renderHook(() => useReopenFlowlet(flowlet), {
+      wrapper: wrap(store, runQuery, 40),
+    });
+    await waitFor(() => expect(result.current.status).toBe("live"));
+    await waitFor(() => expect(runQuery.mock.calls.length).toBeGreaterThanOrEqual(3), { timeout: 3000 });
+    await waitFor(() => {
+      const tx = (result.current.node as unknown as GenData).payload.data.tx as number[];
+      expect(tx[0]).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it("pauses live refresh while the document is hidden", async () => {
+    const store = createLocalStore();
+    const flowlet = await store.save({
+      id: "f1", name: "Tx",
+      node: genNode({ tx: [0] }, [{ path: "/tx", tool: "get_transactions" }]),
+    });
+    const runQuery = vi.fn(async () => ["fresh"]);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      const { result } = renderHook(() => useReopenFlowlet(flowlet), {
+        wrapper: wrap(store, runQuery, 30),
+      });
+      await waitFor(() => expect(result.current.status).toBe("live")); // initial refresh still runs
+      const after = runQuery.mock.calls.length;
+      await new Promise((r) => setTimeout(r, 150));
+      expect(runQuery.mock.calls.length).toBe(after); // no ticks while hidden
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it("stops live refresh after repeated full failures", async () => {
+    const store = createLocalStore();
+    const flowlet = await store.save({
+      id: "f1", name: "Tx",
+      node: genNode({ tx: [0] }, [{ path: "/tx", tool: "get_transactions" }]),
+    });
+    let calls = 0;
+    const runQuery = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return ["fresh"]; // initial refresh succeeds
+      throw new Error("down");
+    });
+    renderHook(() => useReopenFlowlet(flowlet), { wrapper: wrap(store, runQuery, 25) });
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(4), { timeout: 3000 }); // 1 ok + 3 failing ticks
+    const settled = calls;
+    await new Promise((r) => setTimeout(r, 150));
+    expect(calls).toBe(settled); // gave up — no further ticks
+  });
+
+  it("ticks patch from the LAST GOOD node — a failed tick never rolls back fresh data", async () => {
+    const store = createLocalStore();
+    const flowlet = await store.save({
+      id: "f1", name: "Tx",
+      node: genNode({ a: "orig", b: "orig" }, [
+        { path: "/a", tool: "ta" },
+        { path: "/b", tool: "tb" },
+      ]),
+    });
+    let phase = 0; // 0: both succeed; 1+: tb fails
+    const runQuery = vi.fn(async (q: { tool: string }) => {
+      if (q.tool === "ta") return `a-fresh-${phase}`;
+      if (phase === 0) return "b-fresh-0";
+      throw new Error("tb down");
+    });
+    const { result } = renderHook(() => useReopenFlowlet(flowlet), {
+      wrapper: wrap(store, runQuery as RunQuery, 40),
+    });
+    await waitFor(() => expect(result.current.status).toBe("live"));
+    phase = 1;
+    await waitFor(() => expect(result.current.status).toBe("partial"), { timeout: 3000 });
+    const data = (result.current.node as unknown as GenData).payload.data;
+    expect(data.b).toBe("b-fresh-0"); // kept from the last GOOD tick, not rolled back to "orig"
+  });
+
+  it("a data-equal recovery tick clears the error state (stale note must not stick)", async () => {
+    const store = createLocalStore();
+    const flowlet = await store.save({
+      id: "f1", name: "Tx",
+      node: genNode({ tx: ["same"] }, [{ path: "/tx", tool: "get_transactions" }]),
+    });
+    let failing = false;
+    const runQuery = vi.fn(async () => {
+      if (failing) throw new Error("blip");
+      return ["same"]; // data never changes — only availability does
+    });
+    const { result } = renderHook(() => useReopenFlowlet(flowlet), {
+      wrapper: wrap(store, runQuery, 40),
+    });
+    await waitFor(() => expect(result.current.status).toBe("live"));
+    failing = true;
+    await waitFor(() => expect(result.current.errors.length).toBeGreaterThan(0), { timeout: 3000 });
+    failing = false;
+    await waitFor(() => {
+      expect(result.current.status).toBe("live");
+      expect(result.current.errors).toHaveLength(0);
+    }, { timeout: 3000 });
   });
 
   it("resets refreshing when a new open has nothing to refresh (cancelled in-flight refresh)", async () => {

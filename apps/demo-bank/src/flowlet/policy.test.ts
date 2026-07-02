@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { demoPolicy } from "./policy";
-import type { PolicyContext } from "@flowlet/agent";
+import type { PolicyContext } from "@flowlet/runtime";
 
 const ctx = (toolName: string): PolicyContext => ({
   toolName,
@@ -10,10 +10,16 @@ const ctx = (toolName: string): PolicyContext => ({
 });
 
 describe("demoPolicy", () => {
-  it("allows the render tools and demo read/rule tools", async () => {
-    for (const name of ["render_view", "request_connect", "get_transactions", "set_rule"]) {
+  it("allows the render tools and demo read tools", async () => {
+    for (const name of ["render_view", "request_connect", "get_transactions"]) {
       expect(await demoPolicy.evaluate(ctx(name))).toBe("allow");
     }
+  });
+  it("gates automation authoring (standing authority is always approval-gated)", async () => {
+    expect(await demoPolicy.evaluate(ctx("create_automation"))).toBe("approve");
+    expect(await demoPolicy.evaluate(ctx("update_automation"))).toBe("approve");
+    expect(await demoPolicy.evaluate(ctx("delete_automation"))).toBe("approve");
+    expect(await demoPolicy.evaluate(ctx("list_automations"))).toBe("allow");
   });
   it("allows read-shaped Composio tools", async () => {
     expect(await demoPolicy.evaluate(ctx("GMAIL_FETCH_EMAILS"))).toBe("allow");

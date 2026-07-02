@@ -2,11 +2,13 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { groupThreadItems, type ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
+import { AutomationCard, isAutomationApproval } from "./AutomationCard";
 import { UINodeView } from "./UINodeView";
 import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
 import { TurnActions, type Feedback } from "./TurnActions";
 import { FileAttachment } from "./FileAttachment";
+import { friendlyError } from "./error-copy";
 
 export interface MessageListProps {
   items: ThreadItem[];
@@ -155,7 +157,17 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                 </Fragment>
               );
             case "approval":
-              return (
+              // Automation authoring approvals get the inspectable card; every
+              // other gated call keeps the generic JSON approval.
+              return isAutomationApproval(item.toolName) ? (
+                <AutomationCard
+                  key={item.key}
+                  toolName={item.toolName}
+                  input={item.input}
+                  onApprove={() => onApprove(item.approvalId)}
+                  onDecline={() => onDecline?.(item.approvalId)}
+                />
+              ) : (
                 <ApprovalCard
                   key={item.key}
                   toolName={item.toolName}
@@ -166,8 +178,25 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
               );
             case "ui":
               return <UINodeView key={item.key} node={item.node} />;
-            case "error":
-              return <div key={item.key} className="fl-error" role="alert">{item.message}</div>;
+            case "error": {
+              // Friendly copy only — no title attribute, which would leak the
+              // raw provider text to hover and the accessibility tree.
+              const friendly = friendlyError(item.message);
+              return (
+                <div key={item.key} className="fl-error" role="alert">
+                  <span>{friendly.message}</span>
+                  {friendly.retryable && onRegenerate && (
+                    <button
+                      type="button"
+                      className="fl-error-retry"
+                      onClick={() => onRegenerate(item.messageId)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              );
+            }
           }
         })}
         {working && (

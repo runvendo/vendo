@@ -20,7 +20,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@29.1.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1)(lightningcss@1.32.0)
 
   apps/demo-accounting:
     dependencies:
@@ -97,9 +97,6 @@ importers:
       '@composio/vercel':
         specifier: 0.4.0
         version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
-      '@flowlet/agent':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-agent
       '@flowlet/components':
         specifier: workspace:*
         version: link:../../packages/flowlet-components
@@ -109,6 +106,9 @@ importers:
       '@flowlet/react':
         specifier: workspace:*
         version: link:../../packages/flowlet-react
+      '@flowlet/runtime':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-runtime
       '@flowlet/shell':
         specifier: workspace:*
         version: link:../../packages/flowlet-shell
@@ -209,15 +209,15 @@ importers:
       '@ai-sdk/provider':
         specifier: 3.0.2
         version: 3.0.2
-      '@flowlet/agent':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-agent
       '@flowlet/core':
         specifier: workspace:*
         version: link:../../packages/flowlet-core
       '@flowlet/react':
         specifier: workspace:*
         version: link:../../packages/flowlet-react
+      '@flowlet/runtime':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-runtime
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -239,13 +239,13 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^4.3.0
-        version: 4.7.0(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))
+        version: 4.7.0(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
       vite:
         specifier: ^5.4.0
-        version: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+        version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
 
   examples/components:
     dependencies:
@@ -273,13 +273,13 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^4.3.0
-        version: 4.7.0(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))
+        version: 4.7.0(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
       vite:
         specifier: ^5.4.0
-        version: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+        version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
 
   examples/shell:
     dependencies:
@@ -310,31 +310,22 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^4.3.0
-        version: 4.7.0(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))
+        version: 4.7.0(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
       vite:
         specifier: ^5.4.0
-        version: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+        version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
 
-  packages/flowlet-agent:
+  packages/flowlet-cli:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
         version: 3.0.12(zod@3.25.76)
-      '@ai-sdk/mcp':
-        specifier: 1.0.6
-        version: 1.0.6(zod@3.25.76)
-      '@ai-sdk/provider':
-        specifier: 3.0.2
-        version: 3.0.2
-      '@composio/core':
-        specifier: 0.4.0
-        version: 0.4.0(ws@8.21.0)(zod@3.25.76)
-      '@composio/vercel':
-        specifier: 0.4.0
-        version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
+      '@flowlet/components':
+        specifier: workspace:*
+        version: link:../flowlet-components
       '@flowlet/core':
         specifier: workspace:*
         version: link:../flowlet-core
@@ -344,40 +335,31 @@ importers:
       sucrase:
         specifier: ^3.35.0
         version: 3.35.1
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
       zod:
         specifier: ^3.24.0
         version: 3.25.76
     devDependencies:
-      '@ai-sdk/react':
-        specifier: 3.0.30
-        version: 3.0.30(react@18.3.1)(zod@3.25.76)
-      '@flowlet/react':
-        specifier: workspace:*
-        version: link:../flowlet-react
-      '@testing-library/react':
-        specifier: ^16.0.0
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@types/react':
-        specifier: ^19.2.0
-        version: 19.2.17
-      '@types/react-dom':
-        specifier: ^19.2.0
-        version: 19.2.3(@types/react@19.2.17)
-      jsdom:
-        specifier: ^25.0.0
-        version: 25.0.1
-      react:
-        specifier: ^18.3.0
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.0
-        version: 18.3.1(react@18.3.1)
+      '@ai-sdk/provider':
+        specifier: 3.0.2
+        version: 3.0.2
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      ajv:
+        specifier: ^8.17.0
+        version: 8.20.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1)(lightningcss@1.32.0)
 
   packages/flowlet-components:
     dependencies:
@@ -420,10 +402,10 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^5.4.0
-        version: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+        version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)
       zod-to-json-schema:
         specifier: ^3.25.2
         version: 3.25.2(zod@3.25.76)
@@ -454,7 +436,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@29.1.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1)(lightningcss@1.32.0)
       zod-to-json-schema:
         specifier: ^3.24.0
         version: 3.25.2(zod@3.25.76)
@@ -497,10 +479,77 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+
+  packages/flowlet-runtime:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 3.0.12
+        version: 3.0.12(zod@3.25.76)
+      '@ai-sdk/mcp':
+        specifier: 1.0.6
+        version: 1.0.6(zod@3.25.76)
+      '@ai-sdk/provider':
+        specifier: 3.0.2
+        version: 3.0.2
+      '@composio/core':
+        specifier: 0.4.0
+        version: 0.4.0(ws@8.21.0)(zod@3.25.76)
+      '@composio/vercel':
+        specifier: 0.4.0
+        version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
+      '@flowlet/core':
+        specifier: workspace:*
+        version: link:../flowlet-core
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
+      croner:
+        specifier: ^10.0.1
+        version: 10.0.1
+      jsonata:
+        specifier: ^2.2.1
+        version: 2.2.1
+      sucrase:
+        specifier: ^3.35.0
+        version: 3.35.1
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@ai-sdk/react':
+        specifier: 3.0.30
+        version: 3.0.30(react@18.3.1)(zod@3.25.76)
+      '@flowlet/react':
+        specifier: workspace:*
+        version: link:../flowlet-react
+      '@testing-library/react':
+        specifier: ^16.0.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.0
+        version: 19.2.3(@types/react@19.2.17)
+      jsdom:
+        specifier: ^25.0.0
+        version: 25.0.1
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)
 
   packages/flowlet-shell:
     dependencies:
@@ -555,7 +604,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -577,7 +626,7 @@ importers:
         version: 1.61.1
       '@vitejs/plugin-react':
         specifier: ^4.3.0
-        version: 4.7.0(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))
+        version: 4.7.0(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))
       axe-core:
         specifier: ^4.12.1
         version: 4.12.1
@@ -592,10 +641,10 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^5.4.0
-        version: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+        version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@20.19.43)(jsdom@29.1.1)(lightningcss@1.32.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1)(lightningcss@1.32.0)
 
 packages:
 
@@ -2389,6 +2438,9 @@ packages:
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
 
+  '@types/node@22.20.0':
+    resolution: {integrity: sha512-QWlFW2wf3nTjC13/DqRnBpR4ZO36VJH/JVBkA/vcnmbTBNQIlnObqyqZE1tUR7+Ni23Lda8R1BxMfbXRpCUx5g==}
+
   '@types/prismjs@1.26.6':
     resolution: {integrity: sha512-vqlvI7qlMvcCBbVe0AKAb4f97//Hy0EBTaiW8AalRnG/xAN5zOiWWyrNqNXeq8+KAuvRewjCVY1+IPxk4RdNYw==}
 
@@ -2890,6 +2942,10 @@ packages:
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
+
+  croner@10.0.1:
+    resolution: {integrity: sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g==}
+    engines: {node: '>=18.0'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -3775,6 +3831,10 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  jsonata@2.2.1:
+    resolution: {integrity: sha512-xd1uwUrKeIcJbsWhaoS3qAX4Ea8m0Mw0G5nlnAQvPT7TbZ5qaPdzBVTQia9KfyuyQm+nenfyjvzUDTRYHsC2sw==}
+    engines: {node: '>= 8'}
 
   jsx-ast-utils@3.3.5:
     resolution: {integrity: sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==}
@@ -5150,6 +5210,11 @@ packages:
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
+
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
@@ -7104,6 +7169,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/node@22.20.0':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/prismjs@1.26.6': {}
 
   '@types/react-dom@19.2.3(@types/react@19.2.17)':
@@ -7297,6 +7366,18 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
+      '@babel/plugin-transform-react-jsx-source': 7.29.7(@babel/core@7.29.7)
+      '@rolldown/pluginutils': 1.0.0-beta.27
+      '@types/babel__core': 7.20.5
+      react-refresh: 0.17.0
+      vite: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
+    transitivePeerDependencies:
+      - supports-color
+
   '@vitest/expect@2.1.9':
     dependencies:
       '@vitest/spy': 2.1.9
@@ -7312,13 +7393,13 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 2.0.0
 
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))':
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))':
     dependencies:
       '@vitest/spy': 2.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+      vite: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
 
   '@vitest/mocker@3.2.6(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))':
     dependencies:
@@ -7632,6 +7713,8 @@ snapshots:
   concat-map@0.0.1: {}
 
   convert-source-map@2.0.0: {}
+
+  croner@10.0.1: {}
 
   cross-spawn@7.0.6:
     dependencies:
@@ -8802,6 +8885,8 @@ snapshots:
       minimist: 1.2.8
 
   json5@2.2.3: {}
+
+  jsonata@2.2.1: {}
 
   jsx-ast-utils@3.3.5:
     dependencies:
@@ -10495,13 +10580,13 @@ snapshots:
       d3-time: 3.1.0
       d3-timer: 3.0.1
 
-  vite-node@2.1.9(@types/node@20.19.43)(lightningcss@1.32.0):
+  vite-node@2.1.9(@types/node@22.20.0)(lightningcss@1.32.0):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 1.1.2
-      vite: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
+      vite: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -10541,10 +10626,20 @@ snapshots:
       fsevents: 2.3.3
       lightningcss: 1.32.0
 
-  vitest@2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(lightningcss@1.32.0):
+  vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0):
+    dependencies:
+      esbuild: 0.21.5
+      postcss: 8.5.16
+      rollup: 4.62.2
+    optionalDependencies:
+      '@types/node': 22.20.0
+      fsevents: 2.3.3
+      lightningcss: 1.32.0
+
+  vitest@2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
@@ -10560,11 +10655,11 @@ snapshots:
       tinyexec: 0.3.2
       tinypool: 1.1.1
       tinyrainbow: 1.2.0
-      vite: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
-      vite-node: 2.1.9(@types/node@20.19.43)(lightningcss@1.32.0)
+      vite: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
+      vite-node: 2.1.9(@types/node@22.20.0)(lightningcss@1.32.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.0
       jsdom: 25.0.1
     transitivePeerDependencies:
       - less
@@ -10577,10 +10672,10 @@ snapshots:
       - supports-color
       - terser
 
-  vitest@2.1.9(@types/node@20.19.43)(jsdom@29.1.1)(lightningcss@1.32.0):
+  vitest@2.1.9(@types/node@22.20.0)(jsdom@29.1.1)(lightningcss@1.32.0):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@20.19.43)(lightningcss@1.32.0))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
@@ -10596,11 +10691,11 @@ snapshots:
       tinyexec: 0.3.2
       tinypool: 1.1.1
       tinyrainbow: 1.2.0
-      vite: 5.4.21(@types/node@20.19.43)(lightningcss@1.32.0)
-      vite-node: 2.1.9(@types/node@20.19.43)(lightningcss@1.32.0)
+      vite: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)
+      vite-node: 2.1.9(@types/node@22.20.0)(lightningcss@1.32.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.0
       jsdom: 29.1.1
     transitivePeerDependencies:
       - less
@@ -10743,6 +10838,8 @@ snapshots:
   xmlchars@2.2.0: {}
 
   yallist@3.1.1: {}
+
+  yaml@2.9.0: {}
 
   yocto-queue@0.1.0: {}
 

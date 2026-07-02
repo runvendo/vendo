@@ -5,7 +5,7 @@
   "scripts": { "dev": "vite", "build": "vite build", "typecheck": "tsc --noEmit" },
   "dependencies": {
     "@ai-sdk/provider": "3.0.2",
-    "@flowlet/agent": "workspace:*",
+    "@flowlet/runtime": "workspace:*",
     "@flowlet/core": "workspace:*",
     "@flowlet/react": "workspace:*",
     "ai": "6.0.28",

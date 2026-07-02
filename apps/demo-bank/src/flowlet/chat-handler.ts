@@ -12,7 +12,7 @@
  */
 import { createUIMessageStreamResponse } from "ai";
 import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
-import { hostToolset } from "@flowlet/agent";
+import { hostToolset } from "@flowlet/runtime";
 import { DEMO_PRINCIPAL } from "./principal";
 import { mapleHostToolDefs } from "./host-tools";
 
@@ -45,6 +45,13 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
   }
   const body = (await req.json().catch(() => ({}))) as ChatRequestBody;
   const messages = body.messages ?? [];
+  // A missing/empty/non-array `messages` is a malformed client request (e.g. a
+  // stray regenerate on a cleared thread, or `{messages: {}}`). Reject it
+  // cleanly — passed through, streamText throws AI_InvalidPromptError and can
+  // take the whole server process down.
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return Response.json({ error: "messages must be a non-empty array" }, { status: 400 });
+  }
   const stream = agent.run({
     messages,
     // Maple's own API surface enters through the caller seam (ENG-202): no
