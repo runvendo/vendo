@@ -38,6 +38,8 @@ Wrapped: `Avatar`, `Badge`, `Button`, `CadenceLogo`, `CardHeader`, `ErrorState`,
 - **Quality notes, repeating demo-bank's:** `Badge.variant` came back as open `z.string()` with the enum in prose (hand-fixed to `z.enum`); `className` escape hatches leaked on 4 wrappers (dropped on the wired `ProgressBar`).
 - **New finding — primitive-name collision not flagged:** the wrapper named `Skeleton` collides with the stage's prewired `Skeleton` primitive. Resolution order happens to keep it functional (`source:"host"` bypasses the primitive table) but the model now sees two Skeletons. The demo-bank run renamed `Card`→`HostCard`; the collision list evidently covers the prewired catalog but not stage primitives.
 
+- **New finding — `outDir` not re-rooted:** `vite.config.mts` re-roots the entry and the `@` alias "so the build works from any cwd", but leaves `outDir: "dist"` cwd-relative — built from the app root (the normal case), the bundle lands in the app's own `dist/`, not `.flowlet/components/dist/`. Hand-fixed alongside the merge wiring.
+
 ## 4. CLI DX findings
 
 - **Unknown flags are silently swallowed and `init` runs anyway:** `flowlet init --help` printed no help — it ran a real extraction against the *current directory* (the monorepo root), writing a junk `.flowlet/` there (framework unknown, 0 tools). A CLI must never treat `--help` as "proceed with defaults".

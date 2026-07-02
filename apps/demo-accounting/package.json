@@ -3,13 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "pnpm --filter @flowlet/stage build:react-shim && vite build -c .flowlet/components/vite.config.mts && node scripts/copy-flowlet-sandbox.mjs",
     "dev": "next dev",
+    "prebuild": "pnpm --filter @flowlet/stage build:react-shim && vite build -c .flowlet/components/vite.config.mts && node scripts/copy-flowlet-sandbox.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/react": "3.0.30",
+    "@flowlet/components": "workspace:*",
+    "@flowlet/core": "workspace:*",
+    "@flowlet/react": "workspace:*",
+    "@flowlet/runtime": "workspace:*",
+    "@flowlet/shell": "workspace:*",
+    "@flowlet/stage": "workspace:*",
+    "@openuidev/react-ui": "^0.12.1",
+    "ai": "6.0.28",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.21.0",
@@ -17,9 +29,11 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "swr": "^2.4.2",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "3.0.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -30,6 +44,7 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vite": "^5.4.0",
     "vitest": "^3.2.4"
   }
 }

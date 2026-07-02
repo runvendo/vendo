@@ -13,6 +13,9 @@ const config = {
   publicDir: false,
   // Host tsconfig path aliases, re-rooted relative to this directory.
   resolve: { alias: { "@": path.resolve(here, "../../src") } },
+  // Hand-fixed after extraction: the generated config re-rooted only the entry,
+  // not outDir — built from the app root, the bundle landed in the app's dist/.
+  build: { ...base.build, outDir: path.resolve(here, "dist") },
 };
 
 export default config;
