@@ -7,6 +7,6 @@
  * Isomorphic on purpose: no Node or React imports.
  */
 import { openApiToHostTools, type HostToolDefinition } from "@flowlet/core";
-import spec from "../../openapi.json";
+import spec from "../../src/openapi.json";
 
 export const gmailHostToolDefs: HostToolDefinition[] = openApiToHostTools(spec);

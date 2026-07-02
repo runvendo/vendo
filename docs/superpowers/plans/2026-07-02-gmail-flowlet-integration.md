@@ -89,9 +89,9 @@ Implications folded into tasks below: the action route must EXECUTE approval-gat
 
 **Files:** `apps/gmail/src/flowlet/{FlowletRoot,SandboxStage,render-node,run-query,brand}.jsx|js`, `apps/gmail/scripts/copy-flowlet-sandbox.mjs`, `predev`/`prebuild` scripts, root `demo:gmail` script.
 
-- [ ] Provider stack (transport → provider → theme → shell) with gmail brand tokens; shell styles imported
-- [ ] Sandbox assets built + copied (react shim + merged bundle); stage renders generated UI; actions hit `/api/flowlet/action`
-- [ ] Commit
+- [x] Provider stack (transport → provider → theme → shell) with gmail brand tokens; shell styles imported
+- [x] Sandbox assets built + copied (react shim + merged bundle); stage renders generated UI; actions hit `/api/flowlet/action`
+- [x] Commit
 
 ### Task 6: Extractor run + fidelity report + host components
 

@@ -16,3 +16,5 @@ dist
 *.png
 packages/flowlet-stage/tests/browser/public/components-sandbox.js
 apps/demo-bank/flowlet-sandbox/dist/
+apps/gmail/public/flowlet/
+apps/gmail/flowlet-sandbox/dist/

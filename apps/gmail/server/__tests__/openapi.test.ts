@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { openApiToHostTools } from "@flowlet/core";
-import spec from "../../openapi.json";
+import spec from "../../src/openapi.json";
 
 /**
  * The spec is the reviewable tool contract — assert the adapter derives the
