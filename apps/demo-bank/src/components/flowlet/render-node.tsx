@@ -3,40 +3,19 @@
 /**
  * The render surface for Flowlet UI nodes in Maple.
  *
- * Looks up the prewired impl by name and renders it. Defensive prop coercion:
- * the render_ui tool types props as `unknown`, so the model sometimes sends a
- * JSON *string* instead of an object — parse it so the component gets real
- * props rather than a char-indexed spread.
- *
- * Prewired components are trusted and render in-process. Generated (untrusted)
- * UI renders through the F3b sandbox (FlowletStage) now that ENG-180 has landed.
- * The scripted demo uses prewired components; the sandbox is the safety net for
- * any genuinely generated node.
+ * One output model: all AI-generated UI renders through the sandbox
+ * (SandboxStage) now that ENG-180 has landed. The one host-rendered exception
+ * is the Connect OAuth card, which the demo host owns and trusts directly.
+ * Defensive prop coercion: the render_ui tool types props as `unknown`, so
+ * the model sometimes sends a JSON *string* instead of an object — parse it
+ * so the component gets real props rather than a char-indexed spread.
  */
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import type { UINode } from "@flowlet/core";
 import { stripEmojiDeep } from "@flowlet/core";
-import { prewiredImpls } from "@flowlet/components";
 import { DemoConnectCard } from "./DemoConnectCard";
-import { HtmlApp } from "./HtmlApp";
 import { SandboxStage } from "./SandboxStage";
-
-const impls = prewiredImpls as Record<string, ComponentType<Record<string, unknown>>>;
-
-/** Parse props WITHOUT emoji/whitespace stripping — for code payloads (the App
- *  html) where collapsing whitespace would corrupt the source. */
-function rawProps(props: unknown): Record<string, unknown> {
-  if (typeof props === "string") {
-    try {
-      const p = JSON.parse(props);
-      return p && typeof p === "object" ? (p as Record<string, unknown>) : {};
-    } catch {
-      return {};
-    }
-  }
-  return props && typeof props === "object" ? (props as Record<string, unknown>) : {};
-}
 
 /** Tasteful entrance so each generated view "arrives" rather than popping in. */
 function Reveal({ children }: { children: ReactNode }) {
@@ -69,45 +48,31 @@ function coerceProps(props: unknown): Record<string, unknown> {
 }
 
 export function renderNode(node: UINode): ReactNode {
-  if (node.kind === "component") {
-    // The agent renders a Connect card (name "Connect") when it needs a toolkit
-    // the user hasn't connected. It's a demo-host component, not a prewired impl.
-    if (node.name === "Connect") {
-      const props = coerceProps(node.props);
-      const toolkit = typeof props.toolkit === "string" ? props.toolkit : "";
-      const reason = typeof props.reason === "string" ? props.reason : undefined;
-      return (
-        <Reveal>
-          <DemoConnectCard toolkit={toolkit} reason={reason} />
-        </Reveal>
-      );
-    }
-    // Runnable app: the agent generates a self-contained HTML document for
-    // anything the prewired components can't express (a game, a calculator, a
-    // custom interactive tool), and we mount it as a live sandboxed app.
-    if (node.name === "App") {
-      const props = rawProps(node.props);
-      return (
-        <Reveal>
-          <HtmlApp
-            html={typeof props.html === "string" ? props.html : ""}
-            height={typeof props.height === "number" ? props.height : undefined}
-            title={typeof props.title === "string" ? props.title : undefined}
-          />
-        </Reveal>
-      );
-    }
-    const Impl = impls[node.name];
-    if (!Impl) return <div data-testid="unimpl-node">{node.name} (no impl)</div>;
+  // The agent renders a Connect card (name "Connect") when it needs a toolkit
+  // the user hasn't connected. It's a host-rendered, trusted component — the
+  // one exception to the sandbox-only rendering model.
+  if (node.kind === "component" && node.name === "Connect") {
+    const props = coerceProps(node.props);
+    const toolkit = typeof props.toolkit === "string" ? props.toolkit : "";
+    const reason = typeof props.reason === "string" ? props.reason : undefined;
     return (
       <Reveal>
-        <Impl {...coerceProps(node.props)} />
+        <DemoConnectCard toolkit={toolkit} reason={reason} />
       </Reveal>
     );
   }
-  return (
-    <Reveal>
-      <SandboxStage node={node} />
-    </Reveal>
-  );
+
+  // Every other UI the agent produces is a "generated" node, rendered
+  // untrusted inside the sandbox.
+  if (node.kind === "generated") {
+    return (
+      <Reveal>
+        <SandboxStage node={node} />
+      </Reveal>
+    );
+  }
+
+  // Unexpected: some other component node slipped through (only "Connect" is
+  // host-rendered). Fail loud but contained rather than rendering blank.
+  return <div data-testid="unexpected-node">{node.name} (not renderable)</div>;
 }
