@@ -119,6 +119,25 @@ export function createStage(
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
 
+  // Auto-size: the runtime posts { flowlet:true, type:"resize", height } from a
+  // ResizeObserver on its documentElement; consume it here so the iframe tracks
+  // its content instead of clipping at the UA default height. Lives in
+  // createStage (the DOM layer) rather than connectStage, which is DOM-free.
+  // Self-cleaning: once the iframe is removed from the document the next
+  // message drops the listener.
+  const onResize = (e: MessageEvent) => {
+    if (!iframe.isConnected) {
+      window.removeEventListener("message", onResize);
+      return;
+    }
+    if (e.source !== iframe.contentWindow) return;
+    const d = e.data as { flowlet?: boolean; type?: string; height?: number } | undefined;
+    if (d?.flowlet === true && d.type === "resize" && typeof d.height === "number") {
+      iframe.style.height = `${d.height}px`;
+    }
+  };
+  window.addEventListener("message", onResize);
+
   // Wrap contentWindow.postMessage to supply the required targetOrigin ("*").
   // The MessageEndpoint interface only takes one argument, but the browser's
   // Window.postMessage requires targetOrigin — without it Chrome throws.

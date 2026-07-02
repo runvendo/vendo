@@ -488,10 +488,6 @@ window.addEventListener("message", async (e) => {
     ensure("init-ack").textContent = "initialized";
   }
 
-  if (d["type"] === "resize") {
-    iframe.style.height = d["height"] + "px";
-  }
-
   if (d["type"] === "egress") {
     ensure("egress-fetch").textContent = String(d["fetchResult"]);
     ensure("egress-img").textContent = String(d["imgResult"]);
