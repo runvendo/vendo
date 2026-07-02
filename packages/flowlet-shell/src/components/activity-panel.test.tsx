@@ -63,4 +63,14 @@ describe("ActivityPanel", () => {
     expect(screen.queryByText("Working")).toBeNull();
     expect(screen.getByText("Declined")).toBeTruthy();
   });
+
+  it("a mixed turn (success + denied) reads Partly done, not Declined", () => {
+    render(
+      <ActivityPanel
+        steps={[tool("get_transactions", "output-available"), tool("GMAIL_SEND_EMAIL", "output-denied")]}
+      />,
+    );
+    expect(screen.getByText("Partly done")).toBeTruthy();
+    expect(screen.queryByText("Declined")).toBeNull();
+  });
 });

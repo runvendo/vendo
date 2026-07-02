@@ -7,7 +7,7 @@ import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
 import { TurnActions, type Feedback } from "./TurnActions";
 import { FileAttachment } from "./FileAttachment";
-import { friendlyError, errorDetail } from "./error-copy";
+import { friendlyError } from "./error-copy";
 
 export interface MessageListProps {
   items: ThreadItem[];
@@ -168,9 +168,11 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
             case "ui":
               return <UINodeView key={item.key} node={item.node} />;
             case "error": {
+              // Friendly copy only — no title attribute, which would leak the
+              // raw provider text to hover and the accessibility tree.
               const friendly = friendlyError(item.message);
               return (
-                <div key={item.key} className="fl-error" role="alert" title={errorDetail(item.message)}>
+                <div key={item.key} className="fl-error" role="alert">
                   <span>{friendly.message}</span>
                   {friendly.retryable && onRegenerate && (
                     <button

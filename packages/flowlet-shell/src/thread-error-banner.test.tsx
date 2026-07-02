@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { FlowletAgent } from "@flowlet/core";
 import { FlowletProvider, useFlowletChat } from "@flowlet/react";
@@ -33,12 +33,12 @@ function ResetButton() {
   );
 }
 
-const RAW =
+const BILLING_RAW =
   "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.";
 
-function renderThread() {
+function renderThread(raw: string) {
   return render(
-    <FlowletProvider agent={failingAgent(RAW)} components={[]}>
+    <FlowletProvider agent={failingAgent(raw)} components={[]}>
       <FlowletShellProvider impls={{}}>
         <ResetButton />
         <FlowletThread suggestions={["hi"]} />
@@ -47,29 +47,53 @@ function renderThread() {
   );
 }
 
+async function firstAlert() {
+  return waitFor(() => {
+    const el = screen.getAllByRole("alert").find((a) => a.textContent?.trim());
+    if (!el) throw new Error("no alert yet");
+    return el;
+  });
+}
+
 describe("thread error banner", () => {
-  it("maps a raw provider error to friendly copy with a Retry action", async () => {
-    renderThread();
+  it("maps a raw provider error to friendly copy — raw text reaches neither text nor attributes", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { container } = renderThread(BILLING_RAW);
     fireEvent.click(screen.getByText("hi"));
-    const alert = await waitFor(() => {
-      const el = screen.getAllByRole("alert").find((a) => a.textContent?.trim());
-      if (!el) throw new Error("no alert yet");
-      return el;
-    });
+    const alert = await firstAlert();
     expect(alert.textContent).not.toMatch(/anthropic|billing|credit/i);
-    expect(alert.textContent).toMatch(/try again/i);
-    // Raw detail survives for debugging on the title attribute.
-    expect(alert.getAttribute("title")).toContain("Anthropic");
+    expect(alert.textContent).toMatch(/service limit/i);
+    // The DOM as a whole must not carry the provider text (title attrs leak to
+    // hover tooltips and the accessibility tree).
+    expect(container.innerHTML).not.toContain("Anthropic");
+    expect(alert.hasAttribute("title")).toBe(false);
+    // Developers still get the raw detail on the console.
+    expect(spy.mock.calls.some((c) => c.join(" ").includes("Anthropic"))).toBe(true);
+    spy.mockRestore();
+  });
+
+  it("billing errors offer no Retry (it would fail again); transport errors do", async () => {
+    renderThread(BILLING_RAW);
+    fireEvent.click(screen.getByText("hi"));
+    await firstAlert();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("a retryable error shows Retry", async () => {
+    renderThread("Failed to fetch");
+    fireEvent.click(screen.getByText("hi"));
+    await firstAlert();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
   it("does not survive a thread reset", async () => {
-    renderThread();
+    renderThread(BILLING_RAW);
     fireEvent.click(screen.getByText("hi"));
-    await waitFor(() => screen.getByRole("button", { name: "Retry" }));
+    await firstAlert();
     fireEvent.click(screen.getByText("reset-thread"));
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+      const alerts = screen.queryAllByRole("alert").filter((a) => a.textContent?.trim());
+      expect(alerts).toHaveLength(0);
     });
   });
 });

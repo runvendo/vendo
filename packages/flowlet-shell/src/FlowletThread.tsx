@@ -12,7 +12,7 @@ import { ThreadErrorBoundary } from "./components/ThreadErrorBoundary";
 import { Composer } from "./components/Composer";
 import { IntegrationsRail } from "./components/IntegrationsRail";
 import { IntegrationsPicker } from "./components/IntegrationsPicker";
-import { friendlyError, errorDetail } from "./components/error-copy";
+import { friendlyError, logErrorDetail } from "./components/error-copy";
 
 export interface FlowletThreadProps {
   greeting?: string;
@@ -61,6 +61,11 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
   useEffect(() => {
     if (chat.status === "ready") refresh();
   }, [chat.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Developers get the raw error in the console; the DOM only ever carries the
+  // friendly copy (a title attribute would leak it to hover + the a11y tree).
+  useEffect(() => {
+    if (chat.status === "error") logErrorDetail(chat.error);
+  }, [chat.status, chat.error]);
 
   const send = (text: string, files?: FileUIPart[]) => { void chat.sendMessage({ text, files }); };
   const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
@@ -101,12 +106,13 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
       {/* One error surface: skip the banner when the stream already rendered an
           inline error item as the last turn (no double-reporting), and when the
           thread has been reset to empty (a stale banner over the landing is
-          noise). Raw provider text never renders — friendlyError maps it; the
-          raw detail rides the title attribute for debugging. */}
+          noise). Raw provider text never reaches the DOM (not even a title
+          attribute — hover and the a11y tree would expose it); friendlyError
+          maps the copy and the raw detail goes to the console. */}
       {chat.status === "error" &&
         chat.items.length > 0 &&
         chat.items[chat.items.length - 1]?.kind !== "error" && (
-          <div className="fl-error" role="alert" title={errorDetail(chat.error)}>
+          <div className="fl-error" role="alert">
             <span>{friendlyError(chat.error).message}</span>
             {friendlyError(chat.error).retryable && (
               <button

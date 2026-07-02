@@ -1,14 +1,14 @@
-import { describe, it, expect } from "vitest";
-import { friendlyError, errorDetail } from "./error-copy";
+import { describe, it, expect, vi } from "vitest";
+import { friendlyError, logErrorDetail } from "./error-copy";
 
 describe("friendlyError", () => {
-  it("maps provider billing text to friendly copy — raw text never passes through", () => {
+  it("maps provider billing text to friendly copy — and marks it non-retryable (an immediate retry would fail again)", () => {
     const raw =
       "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.";
     const out = friendlyError(raw);
     expect(out.message).not.toMatch(/anthropic|billing|credit/i);
     expect(out.message).toMatch(/try again/i);
-    expect(out.retryable).toBe(true);
+    expect(out.retryable).toBe(false);
   });
 
   it("maps rate limiting", () => {
@@ -30,7 +30,10 @@ describe("friendlyError", () => {
     expect(out.retryable).toBe(true);
   });
 
-  it("errorDetail preserves the raw text for debugging surfaces", () => {
-    expect(errorDetail(new Error("raw detail"))).toBe("raw detail");
+  it("logErrorDetail routes the raw text to the console — never to the DOM", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    logErrorDetail(new Error("raw detail"));
+    expect(spy).toHaveBeenCalledWith("[flowlet] chat error:", "raw detail");
+    spy.mockRestore();
   });
 });

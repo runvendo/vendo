@@ -45,11 +45,16 @@ export function ActivityPanel({ steps, working = false }: ActivityPanelProps) {
     );
   } else {
     // Error wins over denied; a denied step must never read as a success tick.
+    // A mixed turn (some steps ran, one was declined) is "Partly done" — plain
+    // "Declined" would erase the work that DID happen.
+    const hasSuccess = steps.some((s) => s.state === "output-available");
     const icon = hasError ? "✕" : hasDenied ? "⊘" : "✓";
     const label = hasError
       ? "Ran into an issue"
       : hasDenied
-        ? "Declined"
+        ? hasSuccess
+          ? "Partly done"
+          : "Declined"
         : toolAction(last.toolName).done;
     header = (
       <>

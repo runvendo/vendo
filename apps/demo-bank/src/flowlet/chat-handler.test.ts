@@ -40,4 +40,21 @@ describe("handleChat", () => {
     const res = await handleChat(req, agent);
     expect(res.status).toBe(400);
   });
+
+  it("rejects a non-array messages payload with 400", async () => {
+    const agent = createDemoAgent({
+      model: mockRenderModel(),
+      composioClient: stubComposioClient,
+    });
+
+    for (const messages of [{}, "hi", 42, null]) {
+      const req = new Request("http://localhost/api/flowlet/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages }),
+      });
+      const res = await handleChat(req, agent);
+      expect(res.status).toBe(400);
+    }
+  });
 });

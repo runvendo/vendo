@@ -1,9 +1,9 @@
 /**
  * Map a raw stream/transport error onto copy fit for the thread. Raw provider
  * text (billing notices, SDK invariants, stack fragments) must never reach the
- * screen — the demo rule is "no raw errors on screen", so everything funnels
- * through this table. The raw message is still available to developers via the
- * element's `title` attribute and the console.
+ * DOM — not visible text, not a title/tooltip, not the accessibility tree; the
+ * demo rule is "no raw errors on screen", so everything funnels through this
+ * table. The raw message goes to the console (`logErrorDetail`) for developers.
  */
 export interface FriendlyError {
   /** Short, human copy shown in the error surface. */
@@ -14,9 +14,11 @@ export interface FriendlyError {
 
 const RULES: { test: RegExp; copy: string; retryable: boolean }[] = [
   {
+    // Billing/quota won't clear on its own — offering Retry would just fail
+    // again in front of the audience, so no Retry affordance here.
     test: /credit balance|billing|quota|payment/i,
-    copy: "The assistant hit a service limit. Please try again in a moment.",
-    retryable: true,
+    copy: "The assistant hit a service limit. Give it a few minutes and try again.",
+    retryable: false,
   },
   {
     test: /rate limit|too many requests|overloaded|429|529/i,
@@ -44,7 +46,9 @@ export function friendlyError(raw: unknown): FriendlyError {
   return { message: "Something went wrong. Please try again.", retryable: true };
 }
 
-/** The raw detail, safe to hang on a `title` attribute for debugging. */
-export function errorDetail(raw: unknown): string {
-  return typeof raw === "string" ? raw : raw instanceof Error ? raw.message : String(raw ?? "");
+/** Console-log the raw detail for developers — the DOM never carries it. */
+export function logErrorDetail(raw: unknown): void {
+  const text =
+    typeof raw === "string" ? raw : raw instanceof Error ? raw.message : String(raw ?? "");
+  if (text) console.error("[flowlet] chat error:", text);
 }
