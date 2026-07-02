@@ -1,42 +1,51 @@
-import i from "react";
-import { createRoot as n } from "react-dom/client";
-import { jsxs as l, jsx as r } from "react/jsx-runtime";
-function c({ title: t, body: o, accountName: d, action: a, __nodeId: e }) {
-  return /* @__PURE__ */ l(
+import r from "react";
+import { createRoot as i } from "react-dom/client";
+import { jsxs as c, jsx as t } from "react/jsx-runtime";
+function s({ title: e, body: a, accountName: l, action: o, __nodeId: d }) {
+  return /* @__PURE__ */ c(
     "div",
     {
       "data-testid": "host-card",
       style: {
-        background: "var(--brand-surface)",
-        color: "var(--brand-text)",
+        background: "var(--flowlet-surface)",
+        color: "var(--flowlet-fg)",
         padding: 16,
         borderRadius: 8
       },
       children: [
-        /* @__PURE__ */ r("h3", { style: { color: "var(--brand-primary)" }, children: t }),
-        /* @__PURE__ */ r("p", { children: o }),
-        d ? /* @__PURE__ */ r("span", { "data-testid": "card-account", children: d }) : null,
-        a ? /* @__PURE__ */ r(
+        /* @__PURE__ */ t("h3", { style: { color: "var(--flowlet-accent)" }, children: e }),
+        /* @__PURE__ */ t("p", { children: a }),
+        l ? /* @__PURE__ */ t("span", { "data-testid": "card-account", children: l }) : null,
+        o ? /* @__PURE__ */ t(
           "button",
           {
             "data-testid": "card-btn",
-            onClick: () => globalThis.__flowletDispatch(a, e),
-            children: a.label
+            onClick: () => globalThis.__flowletDispatch(o, d),
+            children: o.label
           }
         ) : null
       ]
     }
   );
 }
-function s() {
+function u() {
   throw new Error("boom");
 }
-function b({ children: t }) {
-  return /* @__PURE__ */ r("div", { "data-testid": "row", children: t });
+function _({ children: e }) {
+  return /* @__PURE__ */ t("div", { "data-testid": "row", children: e });
 }
-function _({ label: t }) {
-  return /* @__PURE__ */ r("span", { "data-prewired": !0, "data-testid": "badge", children: t || "badge" });
+function h({ label: e }) {
+  return /* @__PURE__ */ t("span", { "data-prewired": !0, "data-testid": "badge", children: e || "badge" });
 }
-globalThis.__React = i;
-globalThis.__createRoot = n;
-globalThis.__FLOWLET_HOST__ = { Card: c, Boom: s, __row: b, __badge: _ };
+const n = r.createContext(null);
+function b() {
+  const e = r.useContext(n);
+  return /* @__PURE__ */ t("span", { "data-theme-marker": !0, children: (e == null ? void 0 : e.marker) ?? "" });
+}
+function f() {
+  globalThis.__FLOWLET_THEME_WRAP__ = (e, a) => r.createElement(n.Provider, { value: e }, a);
+}
+globalThis.__React = r;
+globalThis.__createRoot = i;
+globalThis.__FLOWLET_HOST__ = { Card: s, Boom: u, __row: _, __badge: h, ThemeProbe: b };
+f();

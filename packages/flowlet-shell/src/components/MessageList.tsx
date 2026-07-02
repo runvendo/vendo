@@ -147,7 +147,7 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                 </div>
               );
             case "skeleton":
-              // Shown only while render_ui is in flight; never for text-only turns.
+              // Shown only while render_view is in flight; never for text-only turns.
               return (
                 <Fragment key={item.key}>
                   <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>

@@ -22,7 +22,7 @@ export interface OverlayPanelProps {
  * portal re-applies the host theme via a `flowlet-root` wrapper so CSS vars hold.
  */
 export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPanelProps) {
-  const { theme } = useShell();
+  const { theme, cssVars } = useShell();
   const panelRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -35,7 +35,7 @@ export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPane
   };
 
   return createPortal(
-    <div className="flowlet-root fl-overlay-portal" style={themeToStyle(theme)}>
+    <div className="flowlet-root fl-overlay-portal" style={{ ...themeToStyle(theme), ...cssVars }}>
       <div className="fl-overlay-scrim" onClick={onClose} />
       <div
         className="fl-overlay-panel"

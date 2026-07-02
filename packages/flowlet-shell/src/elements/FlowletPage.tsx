@@ -14,6 +14,8 @@ export interface FlowletPageProps {
   integrations?: FlowletIntegrations;
   impls?: Record<string, ComponentType<Record<string, unknown>>>;
   theme?: FlowletTheme;
+  /** Opaque `--flowlet-*` var map from the host brand; applied inline on `.flowlet-root`. */
+  cssVars?: Record<string, string>;
   greeting?: string;
   suggestions?: string[];
 }
@@ -24,7 +26,7 @@ let tabSeq = 0;
 const newTab = (): Tab => ({ id: `tab-${++tabSeq}`, title: "New flowlet" });
 
 export function FlowletPage(props: FlowletPageProps) {
-  const { agent, components, store, integrations, impls, theme, greeting, suggestions } = props;
+  const { agent, components, store, integrations, impls, theme, cssVars, greeting, suggestions } = props;
   const [tabs, setTabs] = useState<Tab[]>(() => [newTab()]);
   const [activeId, setActiveId] = useState<string>(() => tabs[0]!.id);
 
@@ -35,7 +37,7 @@ export function FlowletPage(props: FlowletPageProps) {
   };
 
   return (
-    <div className="flowlet-root fl-page" style={themeToStyle(theme)}>
+    <div className="flowlet-root fl-page" style={{ ...themeToStyle(theme), ...cssVars }}>
       <div className="fl-tabbar" role="tablist">
         {tabs.map((tab) => (
           <button
@@ -54,7 +56,7 @@ export function FlowletPage(props: FlowletPageProps) {
         {tabs.map((tab) => (
           <div key={tab.id} className="fl-page-pane" hidden={tab.id !== activeId}>
             <FlowletProvider agent={agent} components={components}>
-              <FlowletShellProvider store={store} integrations={integrations} impls={impls} theme={theme}>
+              <FlowletShellProvider store={store} integrations={integrations} impls={impls} theme={theme} cssVars={cssVars}>
                 <FlowletThread greeting={greeting} suggestions={suggestions} />
               </FlowletShellProvider>
             </FlowletProvider>

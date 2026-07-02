@@ -16,29 +16,11 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider, type FlowletTheme } from "@flowlet/shell";
-import { prewiredComponents } from "@flowlet/components";
+import { FlowletShellProvider } from "@flowlet/shell";
+import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
+import { mapleBrand } from "@/flowlet/brand";
 import { renderNode } from "./render-node";
 import { createComposioIntegrations } from "./integrations";
-
-/**
- * Flowlet inherits the host app's brand — it has no color of its own. These are
- * Maple's brand tokens; drop Flowlet into a different app and you pass that app's
- * tokens here instead. Maple's accent is graphite (codex-clean), so Flowlet reads
- * as native, not bolted-on.
- */
-const mapleTheme: FlowletTheme = {
-  accent: "#1B1C22",
-  accentFg: "#FFFFFF",
-  fg: "#14151A",
-  fgMuted: "#8A8B92",
-  bg: "#F4F3F0",
-  surface: "#FFFFFF",
-  border: "#ECEBE8",
-  radius: "16px",
-  shadow: "0 1px 2px rgba(20,21,26,.04), 0 12px 40px rgba(20,21,26,.10)",
-  font: "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
-};
 
 export function FlowletRoot({
   children,
@@ -59,10 +41,22 @@ export function FlowletRoot({
 
   return (
     <FlowletProvider transport={transport} components={prewiredComponents} threadId={threadId}>
-
-      <FlowletShellProvider renderNode={renderNode} integrations={integrations} theme={mapleTheme}>
-        {children}
-      </FlowletShellProvider>
+      {/* Maple's single brand feeds the host shell. brandToCssVars supplies the
+          --flowlet-* colors, applied INLINE on every .flowlet-root by the shell
+          (they must win over the vars styles.css declares on that same element).
+          theme={{scheme:"light"}} pins colorScheme:light so the chrome can't flip
+          under OS dark mode while OpenUI is forced light. FlowletThemeProvider
+          themes any in-process OpenUI. Same mapleBrand feeds the sandbox. */}
+      <FlowletThemeProvider brand={mapleBrand}>
+        <FlowletShellProvider
+          renderNode={renderNode}
+          integrations={integrations}
+          theme={{ scheme: "light" }}
+          cssVars={brandToCssVars(mapleBrand)}
+        >
+          {children}
+        </FlowletShellProvider>
+      </FlowletThemeProvider>
     </FlowletProvider>
   );
 }

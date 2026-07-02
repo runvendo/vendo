@@ -27,6 +27,31 @@ describe("toThreadItems", () => {
     expect(items[0]).toEqual({ kind: "error", key: "m0:0", messageId: "m0", message: "boom" });
   });
 
+  it("suppresses the render_view tool chip (its product is the data-ui node)", () => {
+    // Guards the RENDER_TOOLS set: dropping render_view would regress a chip.
+    const items = toThreadItems([
+      msg("m4", "assistant", [
+        { type: "tool-render_view", state: "output-available" },
+        { type: "data-ui", id: "ui-2", data: { id: "ui-2", kind: "component", source: "generated", name: "View", props: {} } },
+      ]),
+    ]);
+    expect(items.some((i) => i.kind === "tool")).toBe(false);
+    expect(items[0]).toMatchObject({ kind: "ui", key: "m4:1" });
+  });
+
+  it("suppresses the request_connect tool chip (its product is the Connect data-ui node)", () => {
+    // Guards the RENDER_TOOLS set: the host-privileged Connect card is emitted as
+    // a data-ui node, so its raw tool chip must be suppressed too.
+    const items = toThreadItems([
+      msg("m5", "assistant", [
+        { type: "tool-request_connect", state: "output-available" },
+        { type: "data-ui", id: "ui-3", data: { id: "ui-3", kind: "component", source: "host", name: "Connect", props: { toolkit: "gmail" } } },
+      ]),
+    ]);
+    expect(items.some((i) => i.kind === "tool")).toBe(false);
+    expect(items[0]).toMatchObject({ kind: "ui", key: "m5:1" });
+  });
+
   it("emits a tool item for other tool states and a ui item for data-ui", () => {
     const items = toThreadItems([
       msg("m3", "assistant", [
@@ -48,13 +73,23 @@ describe("toThreadItems", () => {
     });
   });
 
-  it("carries the streaming component name on the render_ui skeleton", () => {
+  it("carries the streaming component name on a render tool skeleton when its input has one", () => {
+    // renderName reads a partial input's `name` if present. Real render_view
+    // payloads have no top-level name (→ nameless skeleton), but the machinery
+    // still surfaces one when the streaming input carries it.
     const items = toThreadItems([
       msg("m5", "assistant", [
-        { type: "tool-render_ui", state: "input-streaming", input: { name: "SpendChart" } },
+        { type: "tool-render_view", state: "input-streaming", input: { name: "SpendChart" } },
       ]),
     ]);
     expect(items[0]).toEqual({ kind: "skeleton", key: "m5:0", messageId: "m5", name: "SpendChart" });
+  });
+
+  it("emits a nameless skeleton while a render_view is streaming without a name", () => {
+    const items = toThreadItems([
+      msg("m6", "assistant", [{ type: "tool-render_view", state: "input-available", input: {} }]),
+    ]);
+    expect(items[0]).toEqual({ kind: "skeleton", key: "m6:0", messageId: "m6", name: undefined });
   });
 });
 

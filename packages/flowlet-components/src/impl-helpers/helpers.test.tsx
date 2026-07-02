@@ -6,8 +6,10 @@ import { createPrewiredImpl } from "./create-impl";
 import { resolveIcon } from "./icon";
 
 describe("allowlistUrl", () => {
-  it("passes https and safe data:image types, rejects javascript, data:text/html, and data:image/svg+xml", () => {
-    expect(allowlistUrl("https://x.com/a.png")).toBe("https://x.com/a.png");
+  it("passes safe data:image types, rejects https, javascript, data:text/html, and data:image/svg+xml", () => {
+    // https is rejected: the sandbox CSP is `img-src data:`, so a remote src would
+    // render broken (blocked by CSP) and is also an exfiltration vector.
+    expect(allowlistUrl("https://x.com/a.png")).toBeUndefined();
     expect(allowlistUrl("data:image/png;base64,AAA")).toBe("data:image/png;base64,AAA");
     expect(allowlistUrl("data:image/jpeg;base64,AAA")).toBe("data:image/jpeg;base64,AAA");
     expect(allowlistUrl("data:image/gif;base64,AAA")).toBe("data:image/gif;base64,AAA");

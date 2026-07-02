@@ -50,9 +50,9 @@ test("gate shared-react: two externalized bundles share one React via import map
     const src = await fetch("/host-bundle-ext.js").then((r: Response) => r.text());
     await controller.initialize({
       theme: {
-        "--brand-primary": "#00aa77",
-        "--brand-surface": "#fff",
-        "--brand-text": "#111",
+        "--flowlet-accent": "#00aa77",
+        "--flowlet-surface": "#fff",
+        "--flowlet-fg": "#111",
       },
       state: {},
       bundleSource: src,

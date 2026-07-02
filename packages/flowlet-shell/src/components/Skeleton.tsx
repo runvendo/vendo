@@ -1,9 +1,9 @@
 /**
  * Placeholder shown while the agent is composing a view — holds the space (in
  * roughly the shape of the component being built) so the thread doesn't jump,
- * then the real UI swaps in. The streaming `render_ui` input exposes the
- * component name, which we map to a shape archetype; unknown names fall back to
- * the generic card.
+ * then the real UI swaps in. When a render tool's streaming input exposes a
+ * component name, we map it to a shape archetype; nameless/unknown inputs fall
+ * back to the generic card.
  */
 import type { CSSProperties } from "react";
 

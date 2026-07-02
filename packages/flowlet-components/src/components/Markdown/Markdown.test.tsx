@@ -70,10 +70,19 @@ describe("Markdown", () => {
     }
   });
 
-  it("URL POLICY: https images are rendered", () => {
+  it("URL POLICY: https images are dropped/neutralized (sandbox CSP is img-src data:)", () => {
     const { container } = renderThemed(<Markdown content="![alt](https://ok.test/a.png)" />);
     const img = container.querySelector("img");
+    if (img) {
+      const src = img.getAttribute("src") ?? "";
+      expect(src).not.toMatch(/^https:/i);
+    }
+  });
+
+  it("URL POLICY: data:image images are rendered", () => {
+    const { container } = renderThemed(<Markdown content="![alt](data:image/png;base64,AAA)" />);
+    const img = container.querySelector("img");
     expect(img).not.toBeNull();
-    expect(img?.getAttribute("src")).toBe("https://ok.test/a.png");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,AAA");
   });
 });

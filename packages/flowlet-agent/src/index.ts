@@ -5,7 +5,7 @@
 export const FLOWLET_AGENT_PACKAGE = "@flowlet/agent";
 
 // Engine
-export { createFlowletAgent, RENDER_TOOL_NAME } from "./engine";
+export { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
 export type { FlowletAgentConfig } from "./engine";
 
 // Principal
@@ -30,8 +30,14 @@ export type { ToolDescriptor, ToolSource, ToolAnnotations } from "./descriptor";
 export { buildToolset } from "./toolset";
 export type { ToolSourceInput } from "./toolset";
 
-// Render tool
-export { createRenderTool } from "./render-tool";
+// Render view tool
+export { createRenderViewTool } from "./render-view-tool";
+
+// Generated-component compiler (JSX/TS → sandbox-ready ESM)
+export { compileComponentSource } from "./compile-component";
+
+// Request connect tool (host-privileged Connect card)
+export { createRequestConnectTool } from "./request-connect-tool";
 
 // Composio ingestion
 export {

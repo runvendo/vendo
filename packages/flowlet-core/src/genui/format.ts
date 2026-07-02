@@ -19,7 +19,7 @@ export function isPropBinding(v: unknown): v is PropBinding {
 export interface GenNode {
   id: string;
   component: string;
-  source?: "prewired" | "host";
+  source?: "prewired" | "host" | "generated";
   props?: Record<string, PropValue>;
   children?: string[];
 }
@@ -29,11 +29,25 @@ export interface GeneratedPayload {
   root: string;
   nodes: GenNode[];
   data?: Record<string, unknown>;
+  /** Tier 2.5: name → ESM React component source, evaluated in-sandbox. */
+  components?: Record<string, string>;
 }
 
 /** Hard cap on node count. A payload over this many nodes is rejected as a
  *  provision error — defends against untrusted deep/large graphs (DoS). */
 export const MAX_GENUI_NODES = 5000;
+
+/** Names of the prewired primitives shipped inside the stage runtime. The
+ *  format reserves them: a generated component may not shadow a primitive. */
+export const RESERVED_COMPONENT_NAMES = ["Stack", "Row", "Grid", "Text", "Skeleton"] as const;
+
+/** Caps for generated component code (DoS defense, consistent with MAX_GENUI_NODES). */
+export const MAX_GENERATED_COMPONENTS = 16;
+export const MAX_COMPONENT_SOURCE_CHARS = 65_536; // 64 KB per component
+export const MAX_TOTAL_COMPONENT_CHARS = 262_144; // 256 KB per payload
+
+/** Generated component names: PascalCase identifiers. */
+const COMPONENT_NAME_RE = /^[A-Z][A-Za-z0-9]*$/;
 
 /** Error codes are kept as a local literal union to avoid coupling core to stage. */
 export type GenUIErrorCode = "version" | "provision";
@@ -85,7 +99,12 @@ export function validateGeneratedPayload(input: unknown): GenUIValidation {
     if (typeof node.component !== "string") {
       return fail("provision", `node "${node.id}" must have a string component`);
     }
-    if (node.source !== undefined && node.source !== "prewired" && node.source !== "host") {
+    if (
+      node.source !== undefined &&
+      node.source !== "prewired" &&
+      node.source !== "host" &&
+      node.source !== "generated"
+    ) {
       return fail("provision", `node "${node.id}" has an invalid source`);
     }
     if (node.children !== undefined) {
@@ -100,6 +119,46 @@ export function validateGeneratedPayload(input: unknown): GenUIValidation {
       return fail("provision", `duplicate node id "${node.id}"`);
     }
     ids.add(node.id);
+  }
+
+  // ── Tier 2.5: generated component code map ─────────────────────────────────
+  const components = input.components;
+  if (components !== undefined && !isPlainObject(components)) {
+    return fail("provision", "components must be a plain object");
+  }
+  const componentMap = (components ?? {}) as Record<string, unknown>;
+  const names = Object.keys(componentMap);
+  if (names.length > MAX_GENERATED_COMPONENTS) {
+    return fail("provision", `too many generated components (max ${MAX_GENERATED_COMPONENTS})`);
+  }
+  let totalChars = 0;
+  for (const name of names) {
+    if (!COMPONENT_NAME_RE.test(name)) {
+      return fail("provision", `generated component name "${name}" must be a PascalCase identifier`);
+    }
+    if ((RESERVED_COMPONENT_NAMES as readonly string[]).includes(name)) {
+      return fail("provision", `generated component name "${name}" is reserved (prewired primitive)`);
+    }
+    const src = componentMap[name];
+    if (typeof src !== "string") {
+      return fail("provision", `generated component "${name}" source must be a string`);
+    }
+    if (src.length > MAX_COMPONENT_SOURCE_CHARS) {
+      return fail("provision", `generated component "${name}" source too large (max ${MAX_COMPONENT_SOURCE_CHARS} chars)`);
+    }
+    totalChars += src.length;
+  }
+  if (totalChars > MAX_TOTAL_COMPONENT_CHARS) {
+    return fail("provision", `generated component sources too large in total (max ${MAX_TOTAL_COMPONENT_CHARS} chars)`);
+  }
+  // A generated-source node must have a definition. Deliberately stricter than
+  // dangling child ids (which resolve to Skeleton as a streaming affordance):
+  // a missing child may still arrive; a missing definition never will.
+  // (Every node was shape-validated by the loop above, so the cast is safe.)
+  for (const node of nodes as GenNode[]) {
+    if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(componentMap, node.component)) {
+      return fail("provision", `node "${node.id}" references generated component "${node.component}" with no definition in components`);
+    }
   }
 
   if (!ids.has(root)) {

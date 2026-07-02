@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * In-thread Connect card. The agent renders this (via render_ui name "Connect")
+ * In-thread Connect card. The agent renders this (via the request_connect tool)
  * when a request needs a toolkit the user hasn't connected yet. Clicking Connect
  * runs the REAL Composio OAuth flow: authorize → open the provider consent in a
  * popup → poll until the connection is ACTIVE, at which point the demo store is

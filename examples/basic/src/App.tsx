@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { z } from "zod";
 import {
-  createStubAgent,
   FLOWLET_GENUI_VERSION,
   type FlowletUIMessage,
   type GeneratedPayload,
   type UINode,
 } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { FlowletProvider, useFlowletChat, FlowletStage } from "@flowlet/react";
 import { createExampleAgent } from "./realAgent";
 
@@ -70,7 +70,7 @@ function Chat() {
 }
 
 // ---------------------------------------------------------------------------
-// Real-agent chat (F2 — policy auto-allows the render_ui tool, no prompt)
+// Real-agent chat (F2 — policy auto-allows the render_view tool, no prompt)
 // ---------------------------------------------------------------------------
 
 function RealChat() {

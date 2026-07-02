@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { RESERVED_COMPONENT_NAMES } from "@flowlet/core";
 import { STAGE_RUNTIME_SRC } from "./runtime";
 
 describe("stage runtime source", () => {
@@ -16,6 +17,13 @@ describe("stage runtime source", () => {
       "PRIMITIVES", "Stack", "Row", "Grid", "Text", "Skeleton",
       "data-skeleton", "data-primitive",
     ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
+  });
+  it("implements every name core reserves for prewired primitives (drift guard)", () => {
+    // RESERVED_COMPONENT_NAMES in @flowlet/core blocks generated components from
+    // shadowing these; each must exist as a key in the PRIMITIVES table here.
+    for (const name of RESERVED_COMPONENT_NAMES) {
+      expect(STAGE_RUNTIME_SRC).toContain(`${name}:`);
+    }
   });
   it("resolves prewired names against primitives first, falling back to host", () => {
     expect(STAGE_RUNTIME_SRC).toContain('node.source === "prewired"');
@@ -47,6 +55,24 @@ describe("stage runtime source", () => {
     expect(STAGE_RUNTIME_SRC).toContain("this.setState({ err: false })");
     expect(STAGE_RUNTIME_SRC).toContain("prevProps.children !== this.props.children");
   });
+  it("mounts the bundle-supplied theme wrapper when an opaque componentTheme is present (TU-3)", () => {
+    // The runtime stays generic: it references only the string global and the
+    // opaque params.componentTheme, never OpenUI/brand shapes. The wrap activates
+    // solely when componentTheme is present AND the bundle exposed the wrapper.
+    expect(STAGE_RUNTIME_SRC).toContain("__FLOWLET_THEME_WRAP__");
+    expect(STAGE_RUNTIME_SRC).toContain("params.componentTheme");
+    expect(STAGE_RUNTIME_SRC).toContain(
+      "if (params.componentTheme && window.__FLOWLET_THEME_WRAP__)",
+    );
+  });
+  it("Text/Skeleton primitives read the canonical --flowlet-* theme vars, not --brand-*", () => {
+    // TU-2: --brand-* is retired in favor of --flowlet-* (see TU-1's brandToCssVars).
+    expect(STAGE_RUNTIME_SRC).toContain("--flowlet-fg");
+    expect(STAGE_RUNTIME_SRC).toContain("--flowlet-skeleton");
+    expect(STAGE_RUNTIME_SRC).not.toContain("--brand-text");
+    expect(STAGE_RUNTIME_SRC).not.toContain("--brand-skeleton");
+    expect(STAGE_RUNTIME_SRC).not.toContain("--brand-");
+  });
 });
 
 describe("$state prop binding (bindProps)", () => {
@@ -73,5 +99,27 @@ describe("$state prop binding (bindProps)", () => {
     expect(out.nested).toEqual({ obj: { $state: "acct" } });
     expect(out.arr).toEqual([{ $state: "acct" }]);
     expect(out.plain).toBe("x");
+  });
+});
+
+describe("generated components (Tier 2.5)", () => {
+  it("loads generated component modules per-name with error sentinels", () => {
+    for (const marker of [
+      "function loadGeneratedComponents(",
+      "generatedErrors",
+      "cachedGenerated",
+      'typeof mod.default === "function"',
+    ]) expect(STAGE_RUNTIME_SRC).toContain(marker);
+  });
+  it("resolves source 'generated' against the generated map with contained errors", () => {
+    expect(STAGE_RUNTIME_SRC).toContain('node.source === "generated"');
+    expect(STAGE_RUNTIME_SRC).toContain('"data-error": "generated:"');
+  });
+  it("passes a per-node flowlet.dispatch closure to generated components", () => {
+    expect(STAGE_RUNTIME_SRC).toContain("boundProps.flowlet");
+    expect(STAGE_RUNTIME_SRC).toContain("window.__flowletDispatch(descriptor, node.id)");
+  });
+  it("no longer renders the '[generated]' placeholder branch", () => {
+    expect(STAGE_RUNTIME_SRC).not.toContain('"[generated]"');
   });
 });

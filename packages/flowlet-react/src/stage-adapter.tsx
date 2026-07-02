@@ -16,8 +16,19 @@ import {
   type RegisteredComponent,
 } from "@flowlet/core";
 
-/** Stable structural fingerprint of a payload's node graph (data excluded). */
-const nodesKey = (payload: GeneratedPayload): string => JSON.stringify(payload.nodes);
+/** Stable structural fingerprint of a payload's node graph and generated
+ *  component code (data excluded) — a components-map change (e.g. an LLM
+ *  revising a component's source) must re-initialize just like a nodes change.
+ *  The components map is a Record with no ordering semantics, so its entries are
+ *  sorted by name before stringifying: same content ⇒ same key regardless of key
+ *  insertion order. Node array order is meaningful and preserved as-is. */
+const structureKey = (payload: GeneratedPayload): string => {
+  const components = payload.components ?? {};
+  const sortedComponents = Object.keys(components)
+    .sort()
+    .map((name) => [name, components[name]]);
+  return JSON.stringify([payload.nodes, sortedComponents]);
+};
 
 export interface FlowletStageProps {
   node: UINode | null;
@@ -28,6 +39,9 @@ export interface FlowletStageProps {
   onAction?: OnAction;
   /** F1 component registry; generated host-node props are validated against it. */
   components?: RegisteredComponent[];
+  /** Opaque OpenUI theme the sandbox bundle mounts; @flowlet/react does not
+   *  interpret its shape. */
+  componentTheme?: unknown;
 }
 
 export function FlowletStage({
@@ -38,6 +52,7 @@ export function FlowletStage({
   state = {},
   onAction,
   components,
+  componentTheme,
 }: FlowletStageProps) {
   const slotRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<StageController | null>(null);
@@ -99,7 +114,7 @@ export function FlowletStage({
             prev !== null &&
             prev.formatVersion === payload.formatVersion &&
             prev.root === payload.root &&
-            nodesKey(prev) === nodesKey(payload);
+            structureKey(prev) === structureKey(payload);
 
           if (!sameStructure) {
             const result = createGenUISession(node.payload, { registry: components });
@@ -114,7 +129,7 @@ export function FlowletStage({
                 name: "Text",
                 props: { text: "Failed to render generated UI: " + result.error.message },
               };
-              c.initialize({ theme, state, bundleSource, tree: errorTree });
+              c.initialize({ theme, state, bundleSource, componentTheme, tree: errorTree });
               initedRef.current = true;
               rootIdRef.current = node.id;
               // Drop any prior session so the next valid payload re-initializes
@@ -130,7 +145,14 @@ export function FlowletStage({
             // tree's root id — NOT the wrapper GeneratedNode.id — because that is
             // the id actually mounted in the stage; a later non-generated render
             // reusing the wrapper id would otherwise update an unmounted node.
-            c.initialize({ theme, state, bundleSource, tree: result.session.tree });
+            c.initialize({
+              theme,
+              state,
+              bundleSource,
+              componentTheme,
+              tree: result.session.tree,
+              generatedComponents: payload.components,
+            });
             initedRef.current = true;
             rootIdRef.current = result.session.tree.id;
             return;
@@ -164,14 +186,14 @@ export function FlowletStage({
           payloadRef.current = null;
         }
         if (!initedRef.current) {
-          c.initialize({ theme, state, bundleSource, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, tree: node });
           initedRef.current = true;
           rootIdRef.current = node.id;
         } else if (switchedFromGenerated || node.id !== rootIdRef.current) {
           // New tree (root id changed, or we just switched off a generated tree
           // whose mounted root id differs from this node). Re-initialize — a
           // plain update would target a nodeId that no longer exists and no-op.
-          c.initialize({ theme, state, bundleSource, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, tree: node });
           rootIdRef.current = node.id;
         } else {
           c.update({ replace: { nodeId: node.id, node } });

@@ -14,16 +14,24 @@ describe("Image", () => {
     expect(imageDescriptor.propsSchema.safeParse({}).success).toBe(false);
   });
 
-  it("renders an image with alt text for a valid https src", () => {
-    renderThemed(<Image src="https://example.com/photo.jpg" alt="A photo" />);
+  it("renders an image with alt text for a valid data:image src", () => {
+    renderThemed(<Image src="data:image/png;base64,AAA" alt="A photo" />);
     const img = screen.getByRole("img");
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute("alt", "A photo");
   });
 
   it("renders optional caption", () => {
-    renderThemed(<Image src="https://example.com/photo.jpg" caption="My caption" />);
+    renderThemed(<Image src="data:image/png;base64,AAA" caption="My caption" />);
     expect(screen.getByText("My caption")).toBeInTheDocument();
+  });
+
+  it("SECURITY: blocks https src (sandbox CSP is img-src data:) and renders the blocked fallback", () => {
+    const { container } = renderThemed(
+      <Image src="https://example.com/photo.jpg" alt="remote" />
+    );
+    expect(screen.getByTestId("flowlet-blocked-image")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
   });
 
   it("SECURITY: blocks javascript: src and renders the blocked fallback instead", () => {

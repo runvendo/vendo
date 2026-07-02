@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { createStubAgent } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { FlowletPage } from "./FlowletPage";
 
 function setup() {

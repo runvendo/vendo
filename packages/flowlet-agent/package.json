@@ -23,6 +23,7 @@
     "@composio/vercel": "0.4.0",
     "@flowlet/core": "workspace:*",
     "ai": "6.0.28",
+    "sucrase": "^3.35.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

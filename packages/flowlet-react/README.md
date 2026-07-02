@@ -15,7 +15,7 @@ import { FlowletStage } from "@flowlet/react";
   node={uiNode}
   bundleSource={hostBundleText}
   reactSource={reactShimText}
-  theme={{ "--brand-primary": "#0a7" }}
+  theme={{ "--flowlet-accent": "#0a7" }}
   state={{ balance: 1234.56 }}
   onAction={async (req) => myHandler(req)}
 />
@@ -25,7 +25,7 @@ Props:
 - `node` — the `UINode` to render (from `@flowlet/core`). Pass `null` to render nothing.
 - `bundleSource` — pre-fetched host bundle text (ESM, built with `flowletHostPreset`).
 - `reactSource` — optional React ESM shim text; when provided, the sandbox imports React from a `blob:` URL instead of bundling it, so host bundle and runtime share one React instance.
-- `theme` — CSS variable tokens (`{ "--brand-primary": "#0a7" }`).
+- `theme` — canonical `--flowlet-*` CSS variable tokens (`{ "--flowlet-accent": "#0a7" }`), produced by `brandToCssVars`.
 - `state` — scoped, structured-clone-safe state slice projected into the stage.
 - `onAction` — handler for sandbox action dispatches; returns `ActionResult`.
 

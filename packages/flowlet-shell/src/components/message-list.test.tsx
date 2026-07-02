@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { createStubAgent, type UINode } from "@flowlet/core";
+import { type UINode } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { FlowletProvider } from "@flowlet/react";
 import { FlowletShellProvider } from "../context";
 import { MessageList } from "./MessageList";
@@ -37,7 +38,8 @@ describe("MessageList", () => {
     // so the assistant text appears both in the bubble and (atomically) in the log.
     expect(screen.getByRole("log")).toBeTruthy();
     expect(screen.getAllByText("hello").length).toBeGreaterThan(0);
-    // Non-render_ui tool calls are grouped into one collapsible activity panel.
+    // Non-render tool calls are grouped into one collapsible activity panel
+    // (render_view/request_connect never reach here — they stay a skeleton).
     expect(screen.getByTestId("activity-panel")).toBeTruthy();
     expect(screen.getByTestId("ui-node")).toBeTruthy();
     fireEvent.click(screen.getByText("Approve"));

@@ -1,7 +1,17 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll } from "vitest"
 import { placeOrder } from "./orders"
 import { listTransactions } from "./transactions"
 import { pacificHour } from "@/flowlet/time"
+import { __reseed } from "./store"
+
+// Freeze the store to the same fixed anchor used across the rest of the suite
+// (see __tests__/*.test.ts). This is not a recurring-biller day-of-month (1, 4,
+// 7, 9, 12) and is safely in the past, so no seeded "today" transaction can ever
+// be newer than the late-night charge placeOrder() appends using the real
+// wall-clock date — the test's freshness assertion is otherwise flaky because
+// getStore() seeds relative to real "now" and a recurring charge (e.g. Equinox,
+// dom=1) can land "today" and outrank the ~1 AM charge.
+beforeAll(() => __reseed(new Date("2026-06-29T12:00:00-07:00")))
 
 describe("placeOrder", () => {
   it("appends a late-night DoorDash dining charge that the read API returns", () => {

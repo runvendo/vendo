@@ -5,7 +5,7 @@ export { STAGE_RUNTIME_SRC } from "./runtime";
 export * from "./stage-host";
 export * from "./genui-host";
 
-/** CSS-variable brand tokens, e.g. { "--brand-primary": "#0a7" }. */
+/** CSS-variable brand tokens, e.g. { "--flowlet-accent": "#0a7c..." }. */
 export type ThemeTokens = Record<string, string>;
 
 /** Scoped, structured-clone-safe state slice projected into the stage. */

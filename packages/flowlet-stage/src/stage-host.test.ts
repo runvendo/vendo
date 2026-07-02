@@ -35,6 +35,27 @@ describe("buildSrcdoc", () => {
   });
 });
 
+describe("CSP (Tier 2.5 hardening)", () => {
+  it("does not include 'strict-dynamic' (remote script-load exfil channel)", () => {
+    expect(buildSrcdoc()).not.toContain("strict-dynamic");
+  });
+  it("allows only nonce'd and blob: scripts", () => {
+    const html = buildSrcdoc();
+    expect(html).toMatch(/script-src 'nonce-[a-f0-9]+' blob:;/);
+  });
+  it("keeps connect-src 'none' and default-src 'none'", () => {
+    const html = buildSrcdoc();
+    expect(html).toContain("connect-src 'none'");
+    expect(html).toContain("default-src 'none'");
+  });
+  it("pins the importmap script nonce to the CSP header nonce", () => {
+    const html = buildSrcdoc("shim-src");
+    const cspNonce = html.match(/nonce-([a-f0-9]+)'/)?.[1];
+    expect(cspNonce).toBeTruthy();
+    expect(html).toContain(`_im.nonce=${JSON.stringify(cspNonce)};`);
+  });
+});
+
 // ── connectStage ─────────────────────────────────────────────────────────────
 //
 // Setup convention:
@@ -79,6 +100,33 @@ describe("connectStage", () => {
     expect(initParams.tree.children[0].capability).toBeDefined();
     // Tokens must differ between parent and child
     expect(initParams.tree.capability).not.toBe(initParams.tree.children[0].capability);
+
+    controller.dispose();
+    peer.dispose();
+  });
+
+  it("forwards an opaque componentTheme unchanged into ui/initialize params (TU-3)", async () => {
+    const { a, b } = makePair();
+    let initParams: any;
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { initParams = params; return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage(
+      { listen: a, post: b },
+      { onAction: async () => ({ result: "ok" }) },
+    );
+
+    const componentTheme = { mode: "dark", theme: { colors: { brand: "#123456" } } };
+    await controller.initialize({
+      theme: {},
+      state: {},
+      bundleSource: "",
+      componentTheme,
+      tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
+    });
+
+    expect(initParams.componentTheme).toEqual(componentTheme);
 
     controller.dispose();
     peer.dispose();

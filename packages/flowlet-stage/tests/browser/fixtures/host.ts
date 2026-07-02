@@ -31,10 +31,10 @@ function ensure(id: string): HTMLElement {
 // executes.  For all other cases reactSource is undefined and the existing
 // self-contained bundle path is used unchanged.
 
-const reactSource =
-  caseParam === "shared-react"
-    ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
-    : undefined;
+const NEEDS_REACT_SHIM = new Set(["shared-react", "gen-code", "gen-code-error", "gen-jsx", "mixed"]);
+const reactSource = NEEDS_REACT_SHIM.has(caseParam)
+  ? await fetch("/flowlet-react-runtime.js").then((r) => r.text())
+  : undefined;
 
 const { iframe, endpoints } = createStage(slot, { reactSource });
 
@@ -61,9 +61,9 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
   }
 
   const theme = {
-    "--brand-primary": "#00aa77",
-    "--brand-surface": "#fff",
-    "--brand-text": "#111",
+    "--flowlet-accent": "#00aa77",
+    "--flowlet-surface": "#fff",
+    "--flowlet-fg": "#111",
   };
 
   if (kind === "card") {
@@ -77,6 +77,50 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         source: "host",
         name: "Card",
         props: { title: "Hello", body: "World" },
+      },
+    };
+  }
+
+  if (kind === "theme-vars") {
+    // Regression guard for silent theme-var drop: inject a DISTINCTIVE
+    // --flowlet-accent and render a component that reads it. The spec asserts the
+    // computed color equals the injected brand value (not a hardcoded fallback),
+    // proving injected brand vars actually theme the sandboxed component.
+    return {
+      theme: {
+        "--flowlet-accent": "#ff00aa",
+        "--flowlet-surface": "#fff",
+        "--flowlet-fg": "#111",
+      },
+      state: {},
+      bundleSource: await bundle(),
+      tree: {
+        id: "c1",
+        kind: "component",
+        source: "host",
+        name: "Card",
+        props: { title: "Themed", body: "x" },
+      },
+    };
+  }
+
+  if (kind === "component-theme" || kind === "component-theme-none") {
+    // TU-3 end-to-end (sample wrapper): the runtime mounts the bundle-supplied
+    // __FLOWLET_THEME_WRAP__ around the tree ONLY when the init payload carries a
+    // componentTheme. ThemeProbe reads blob.marker out of that wrap's context.
+    //   - "component-theme":      componentTheme present → probe renders the marker
+    //   - "component-theme-none": componentTheme absent  → wrap is a no-op (empty)
+    return {
+      theme,
+      state: {},
+      bundleSource: await bundle(),
+      ...(kind === "component-theme" ? { componentTheme: { marker: "themed-ok" } } : {}),
+      tree: {
+        id: "root",
+        kind: "component",
+        source: "host",
+        name: "ThemeProbe",
+        props: {},
       },
     };
   }
@@ -140,38 +184,6 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     };
   }
 
-  if (kind === "mixed") {
-    return {
-      theme,
-      state: {},
-      bundleSource: await bundle(),
-      tree: {
-        id: "root",
-        kind: "component",
-        source: "prewired",
-        name: "__row",
-        props: {},
-        children: [
-          {
-            id: "b1",
-            kind: "component",
-            source: "prewired",
-            name: "__badge",
-            props: { label: "New" },
-          },
-          {
-            id: "c1",
-            kind: "component",
-            source: "host",
-            name: "Card",
-            props: { title: "Hello", body: "World" },
-          },
-          { id: "g1", kind: "generated", payload: { note: "placeholder" } },
-        ],
-      },
-    };
-  }
-
   if (kind === "update") {
     return {
       theme,
@@ -210,7 +222,10 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
 
   const VERSION = "flowlet-genui/v1";
 
-  async function gen(payload: GeneratedPayload): Promise<StageInitPayload> {
+  async function gen(
+    payload: GeneratedPayload,
+    opts?: { ext?: boolean },
+  ): Promise<StageInitPayload> {
     const result = createGenUISession(payload);
     if (!result.ok) {
       throw new Error(`createGenUISession failed: ${result.error.code}: ${result.error.message}`);
@@ -220,7 +235,15 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     (window as any).__patchData = (path: string, value: unknown) => {
       session.applyDataPatch(path, value).forEach((r) => controller.update({ replace: r }));
     };
-    return { theme, state: {}, bundleSource: await bundle(), tree: session.tree };
+    return {
+      theme,
+      state: {},
+      // ext: externalized bundle (React from the import-map shim) — required for
+      // cases whose generated code does `import React from "react"`.
+      bundleSource: opts?.ext ? await bundleExt() : await bundle(),
+      tree: session.tree,
+      generatedComponents: payload.components,
+    };
   }
 
   if (kind === "gen-basic") {
@@ -240,6 +263,27 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         },
       ],
     });
+  }
+
+  if (kind === "mixed") {
+    // prewired (__row/__badge) + host (Card) + a REAL generated component
+    // (Badge2) coexist in one stage under the current generated-node model.
+    // Uses the externalized bundle so the generated code's `import React` and
+    // the host components share one React via the import map.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "__row", source: "prewired", children: ["b1", "c1", "g1"] },
+        { id: "b1", component: "__badge", source: "prewired", props: { label: "New" } },
+        { id: "c1", component: "Card", source: "host", props: { title: "Hello", body: "World" } },
+        { id: "g1", component: "Badge2", source: "generated" },
+      ],
+      components: {
+        Badge2:
+          "import React from 'react'; export default function Badge2(){ return React.createElement('div', { 'data-generated-impl': 'Badge2' }, 'gen'); }",
+      },
+    }, { ext: true });
   }
 
   if (kind === "gen-unknown") {
@@ -322,6 +366,69 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
     }
     (window as any).__session = result.session;
     return { theme, state: {}, bundleSource: await bundle(), tree: result.session.tree };
+  }
+
+  if (kind === "gen-code") {
+    // A NOVEL generated component meshed with a prewired Text and a host Card
+    // in one tree — the Tier 2.5 capability gate. It also receives a $path-bound
+    // prop and dispatches through its per-node flowlet closure.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["t1", "g1", "c1"] },
+        { id: "t1", component: "Text", source: "prewired", props: { text: "prewired sibling" } },
+        { id: "g1", component: "Gauge", source: "generated", props: { value: { $path: "/gauge/value" } } },
+        { id: "c1", component: "Card", source: "host", props: { title: "Host sibling", body: "meshed" } },
+      ],
+      data: { gauge: { value: 42 } },
+      components: {
+        Gauge: [
+          "import React from 'react';",
+          "export default function Gauge(props) {",
+          "  return React.createElement('div', { 'data-generated-impl': 'Gauge' },",
+          "    React.createElement('span', { 'data-gauge-value': true }, String(props.value)),",
+          "    React.createElement('button', {",
+          "      onClick: function() { props.flowlet.dispatch({ action: 'gauge_reset', payload: { to: 0 } }); }",
+          "    }, 'Reset'));",
+          "}",
+        ].join("\n"),
+      },
+    }, { ext: true });
+  }
+
+  if (kind === "gen-jsx") {
+    // A generated component whose source is the AUTOMATIC JSX RUNTIME output
+    // (imports { jsx } from "react/jsx-runtime") — proves the automatic-runtime
+    // shape resolves against the React shim in the real box, unlike gen-code's
+    // React.createElement path. Source is hand-written as already-compiled
+    // automatic-runtime output (the stage feeds component source straight in).
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [{ id: "root", component: "JsxComp", source: "generated" }],
+      components: {
+        JsxComp:
+          'import { jsx as _jsx } from "react/jsx-runtime"; export default function JsxComp(){ return _jsx("div", { "data-generated-impl": "JsxComp", children: "jsx works" }); }',
+      },
+    }, { ext: true });
+  }
+
+  if (kind === "gen-code-error") {
+    // One broken module (syntax error) + one good one: per-name containment.
+    return gen({
+      formatVersion: VERSION,
+      root: "root",
+      nodes: [
+        { id: "root", component: "Stack", source: "prewired", children: ["bad", "good"] },
+        { id: "bad", component: "Broken", source: "generated" },
+        { id: "good", component: "Fine", source: "generated" },
+      ],
+      components: {
+        Broken: "this is not (valid javascript",
+        Fine: "import React from 'react'; export default function Fine(){ return React.createElement('div', { 'data-generated-impl': 'Fine' }, 'fine'); }",
+      },
+    }, { ext: true });
   }
 
   // Default: empty stage (used by load + bridge gate)

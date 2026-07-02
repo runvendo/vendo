@@ -39,13 +39,14 @@ export type RenderItem =
   | { kind: "activity"; key: string; messageId: string; steps: ToolItem[] };
 
 /**
- * Built-in render tool name (mirrors `RENDER_TOOL_NAME` in `@flowlet/agent`).
- * Its product is a `data-ui` node, so its tool chip is suppressed to avoid a
- * redundant "render_ui" sliver next to the component it rendered.
+ * Built-in tools whose product is a `data-ui` node (the rendered view, or the
+ * host-privileged Connect card). Their raw tool chip is suppressed to avoid a
+ * redundant sliver next to the rendered component. Mirrors `RENDER_VIEW_TOOL_NAME`
+ * and `REQUEST_CONNECT_TOOL_NAME` in `@flowlet/agent`.
  */
-const RENDER_UI_TOOL = "render_ui";
+const RENDER_TOOLS = new Set(["render_view", "request_connect"]);
 
-/** Reads the streaming component name out of a render_ui tool part's partial input. */
+/** Reads the streaming component name out of a render tool part's partial input (if any). */
 function renderName(input: unknown): string | undefined {
   if (input && typeof input === "object" && "name" in input) {
     const name = (input as { name?: unknown }).name;
@@ -87,8 +88,8 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
         if (part.state === "approval-requested") {
           const approval = part.approval as { id: string };
           items.push({ kind: "approval", key, messageId, approvalId: approval.id, toolName, input: part.input });
-        } else if (toolName === RENDER_UI_TOOL) {
-          // render_ui's finished output is the sibling data-ui node (so no chip).
+        } else if (RENDER_TOOLS.has(toolName)) {
+          // A render tool's finished output is the sibling data-ui node (so no chip).
           // But while it's still streaming/pending, show a skeleton in its place
           // so the user sees a view being built — and ONLY then, never for
           // text-only turns. The partial input carries the component name, which

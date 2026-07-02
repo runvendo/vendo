@@ -64,6 +64,16 @@ describe("FlowletStage", () => {
     await waitFor(() => expect(update).toHaveBeenCalled());
   });
 
+  it("forwards componentTheme to initialize", async () => {
+    const CT = { theme: { background: "#fff" }, mode: "light" as const };
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    update.mockClear();
+    initialize.mockClear();
+    render(<FlowletStage node={node} componentTheme={CT} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    expect(initialize.mock.calls[0][0].componentTheme).toEqual(CT);
+  });
+
   it("calls controller.update when theme prop changes", async () => {
     const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
     update.mockClear();
@@ -210,5 +220,115 @@ describe("FlowletStage", () => {
       "Failed to render generated UI",
     );
     err.mockRestore();
+  });
+
+  // ---- Generated component code (Tier 2.5) ----
+
+  it("re-initializes when only the components map changes (same nodes)", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const theme = {};
+    const state = {};
+    const makeNode = (code: string): UINode => ({
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "r",
+        nodes: [{ id: "r", component: "Gauge", source: "generated" }],
+        components: { Gauge: code },
+      },
+    });
+    const { rerender } = render(
+      <FlowletStage node={makeNode("export default function A(){}")} theme={theme} state={state} />,
+    );
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(
+      <FlowletStage node={makeNode("export default function B(){}")} theme={theme} state={state} />,
+    );
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+  });
+
+  it("passes generatedComponents through to initialize", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const node: UINode = {
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "r",
+        nodes: [{ id: "r", component: "Gauge", source: "generated" }],
+        components: { Gauge: "export default function A(){}" },
+      },
+    };
+    render(<FlowletStage node={node} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    expect(initialize.mock.calls[0][0].generatedComponents).toEqual({
+      Gauge: "export default function A(){}",
+    });
+  });
+
+  it("takes the delta path when only data changes and a components map is present", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const theme = {};
+    const state = {};
+    const makeNode = (title: string): UINode => ({
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "n1",
+        nodes: [
+          { id: "n1", component: "Card", source: "host", props: { title: { $path: "/title" } } },
+        ],
+        components: { Gauge: "export default function A(){}" },
+        data: { title },
+      },
+    });
+    const { rerender } = render(<FlowletStage node={makeNode("Hello")} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={makeNode("World")} theme={theme} state={state} />);
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({ replace: expect.anything() })),
+    );
+    // Same nodes + same components ⇒ data-only change must NOT remount.
+    expect(initialize).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-initialize when the components map key order differs but content is identical", async () => {
+    update.mockClear();
+    initialize.mockClear();
+    const theme = {};
+    const state = {};
+    const nodes = [{ id: "r", component: "Gauge", source: "generated" as const }];
+    const nodeA: UINode = {
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "r",
+        nodes,
+        components: { Gauge: "export default function A(){}", Meter: "export default function M(){}" },
+      },
+    };
+    const nodeB: UINode = {
+      id: "g1",
+      kind: "generated",
+      payload: {
+        formatVersion: "flowlet-genui/v1",
+        root: "r",
+        nodes,
+        // Same content, reversed key insertion order.
+        components: { Meter: "export default function M(){}", Gauge: "export default function A(){}" },
+      },
+    };
+    const { rerender } = render(<FlowletStage node={nodeA} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    rerender(<FlowletStage node={nodeB} theme={theme} state={state} />);
+    // Give any re-init effect a chance to run, then assert it did NOT.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(initialize).toHaveBeenCalledTimes(1);
   });
 });

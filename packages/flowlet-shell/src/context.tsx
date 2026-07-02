@@ -13,9 +13,27 @@ export interface ShellContextValue {
   renderNode: RenderNode;
   /** Host brand theme — so portaled surfaces (the overlay) can re-apply it. */
   theme?: FlowletTheme;
+  /** Opaque `--flowlet-*` var map (from the host's brand). Applied INLINE on every
+   *  `.flowlet-root` element so it overrides the vars styles.css declares there —
+   *  an ancestor's vars would lose to that element-level declaration. The shell is
+   *  a dumb applier: it never inspects or produces these, just spreads them. */
+  cssVars?: Record<string, string>;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
+
+/** Fire the no-store dev warning at most once per module lifetime. */
+let warnedNoStore = false;
+function warnNoStoreOnce() {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+    ?.env;
+  if (warnedNoStore || env?.NODE_ENV === "production") return;
+  warnedNoStore = true;
+  console.warn(
+    "[flowlet] No `store` prop passed to FlowletShellProvider; using an in-memory " +
+      "store that resets on remount. Saved views will not persist. Pass a `store` (see ENG-183).",
+  );
+}
 
 type ImplMap = Record<string, ComponentType<Record<string, unknown>>>;
 
@@ -42,22 +60,27 @@ export interface FlowletShellProviderProps {
   /** Component impls for the default fallback renderNode. */
   impls?: ImplMap;
   theme?: FlowletTheme;
+  /** Opaque `--flowlet-*` var map from the host brand; applied inline on `.flowlet-root`. */
+  cssVars?: Record<string, string>;
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, renderNode, impls, theme, children,
+  store, integrations, renderNode, impls, theme, cssVars, children,
 }: FlowletShellProviderProps) {
+  if (store === undefined) warnNoStoreOnce();
+
   const value = useMemo<ShellContextValue>(() => ({
     store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
     theme,
-  }), [store, integrations, renderNode, impls, theme]);
+    cssVars: cssVars ?? {},
+  }), [store, integrations, renderNode, impls, theme, cssVars]);
 
   return (
     <ShellContext.Provider value={value}>
-      <div className="flowlet-root" style={themeToStyle(theme)}>{children}</div>
+      <div className="flowlet-root" style={{ ...themeToStyle(theme), ...cssVars }}>{children}</div>
     </ShellContext.Provider>
   );
 }

@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# flowlet sandbox assets (build artifacts, copied by scripts/copy-flowlet-sandbox.mjs)
+/public/flowlet/

@@ -2,7 +2,9 @@ import { z } from "zod";
 import { prewired } from "../../descriptor";
 
 export const imageSchema = z.object({
-  src: z.string(),
+  src: z
+    .string()
+    .describe("Image source. Only data:image URIs are supported; remote/https URLs will not load."),
   alt: z.string().optional(),
   caption: z.string().optional(),
 });

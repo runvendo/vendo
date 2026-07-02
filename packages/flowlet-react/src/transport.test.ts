@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { createStubAgent, type FlowletUIMessage } from "@flowlet/core";
+import { type FlowletUIMessage } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { createLocalTransport } from "./transport";
 
 describe("local transport", () => {
