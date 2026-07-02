@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { UINode, ActionRequest, ActionResult } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@flowlet/components";
+import { mapleHostComponents } from "@/flowlet/host-components/descriptors";
 import { mapleBrand } from "@/flowlet/brand";
 
 // Maple's brand drives the sandbox exactly as it drives the host shell — one
@@ -91,7 +92,7 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
     <div>
       <FlowletStage
         node={node}
-        components={prewiredComponents}
+        components={[...prewiredComponents, ...mapleHostComponents]}
         reactSource={sources.react}
         bundleSource={sources.bundle}
         onAction={onAction}

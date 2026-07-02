@@ -19,6 +19,7 @@ import {
 } from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
 import { prewiredComponents, brandToCssVars } from "@flowlet/components/descriptors";
+import { mapleHostComponents } from "./host-components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
 import { mapleBrand } from "./brand";
@@ -40,6 +41,14 @@ function fieldHint(schema: unknown): string {
 
 function componentCatalog(): string {
   return prewiredComponents
+    .map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`)
+    .join("\n");
+}
+
+/** The host app's registered components (source:'host') — data-driven from the
+ *  registry, so newly registered components appear here automatically. */
+function hostComponentCatalog(): string {
+  return mapleHostComponents
     .map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`)
     .join("\n");
 }
@@ -115,6 +124,13 @@ function buildInstructions(): string {
     "  - Skeleton (loading placeholder).",
     "- Catalog components (use a matching name and the exact prop names shown):",
     componentCatalog(),
+    "",
+    "HOST COMPONENTS (source:'host') — the app's OWN components, pixel-identical to the",
+    "product itself. When one fits, PREFER it over both catalog components and novel code",
+    "(nothing is more on-brand than the host's real component). Reference by name with",
+    "source:'host' and the exact props shown:",
+    hostComponentCatalog(),
+    "",
     "Prefer these prewired blocks. Compose them into whatever layout the request needs",
     "— side-by-side panels, a dashboard, a table, a chart, mixed components.",
     "- Images: only data:image URIs render (the sandbox blocks remote image loads); do NOT",

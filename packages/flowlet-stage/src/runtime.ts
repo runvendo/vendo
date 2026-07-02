@@ -282,7 +282,20 @@ export const STAGE_RUNTIME_SRC = String.raw`
           // every other name (incl. prewired __row/__badge) falls back to the host bundle.
           Impl = (node.source === "prewired" && PRIMITIVES[node.name]) ? PRIMITIVES[node.name] : host[node.name];
         }
-        if (!Impl) return React.createElement("div", { "data-error": "unknown:" + node.name });
+        if (!Impl) {
+          // Clear error story: an unregistered name renders a visible, contained
+          // notice (not an invisible empty div) so a bad registration or a
+          // hallucinated component name is diagnosable at a glance.
+          return React.createElement("div", {
+            "data-error": "unknown:" + node.name,
+            style: {
+              padding: "8px 12px", fontSize: "12px",
+              color: "var(--flowlet-fg-muted, rgba(0,0,0,0.55))",
+              border: "1px dashed var(--flowlet-border, rgba(0,0,0,0.2))",
+              borderRadius: "var(--flowlet-radius, 8px)"
+            }
+          }, 'Unknown component "' + node.name + '"');
+        }
         var boundProps = bindProps(node.props, params.state);
         boundProps.__nodeId = node.id;
         if (node.source === "generated") {

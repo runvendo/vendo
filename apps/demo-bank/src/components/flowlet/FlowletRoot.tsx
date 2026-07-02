@@ -19,6 +19,7 @@ import { FlowletProvider } from "@flowlet/react";
 import { FlowletShellProvider, createWebStorage } from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { mapleBrand } from "@/flowlet/brand";
+import { mapleHostComponents } from "@/flowlet/host-components/descriptors";
 import { mapleHostToolDefs } from "@/flowlet/host-tools";
 import { renderNode } from "./render-node";
 import { createComposioIntegrations } from "./integrations";
@@ -49,7 +50,9 @@ export function FlowletRoot({
   return (
     <FlowletProvider
       transport={transport}
-      components={prewiredComponents}
+      // Registry = the pre-wired catalog + Maple's registered host components
+      // (ENG-184 registration path); genui host-node props validate against it.
+      components={[...prewiredComponents, ...mapleHostComponents]}
       threadId={threadId}
       // Maple's own API tools execute HERE, in the user's browser on their
       // existing session (ENG-202, topology B) — the same definitions the

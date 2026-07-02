@@ -13,7 +13,7 @@ mkdirSync(outDir, { recursive: true });
 // flowlet-sandbox/vite.config.ts. The public filename stays the same so
 // SandboxStage needs no change.
 copyFileSync(
-  resolve(here, "../flowlet-sandbox/dist/host-bundle.js"),
+  resolve(here, "../flowlet-sandbox/dist/host-bundle"),
   resolve(outDir, "components-sandbox.js"),
 );
 copyFileSync(

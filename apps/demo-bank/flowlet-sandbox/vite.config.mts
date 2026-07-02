@@ -16,6 +16,9 @@ export default mergeConfig(
     outDir: here + "dist",
   }),
   defineConfig({
+    // Don't mirror the app's public/ into the bundle outDir (circular: the
+    // copy step writes the bundle INTO public/flowlet).
+    publicDir: false,
     resolve: {
       alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) },
     },
