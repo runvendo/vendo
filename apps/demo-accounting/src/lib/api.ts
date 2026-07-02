@@ -24,7 +24,10 @@ export async function fetcher<T>(url: string): Promise<T> {
   if (!res.ok) {
     throw new ApiError(json?.error?.message ?? `Request failed: ${url}`, res.status)
   }
-  return json?.data as T
+  if (json === null || !("data" in json)) {
+    throw new ApiError(`Malformed response (missing data envelope): ${url}`, res.status)
+  }
+  return json.data as T
 }
 
 /** Shape of GET /api/dashboard. */

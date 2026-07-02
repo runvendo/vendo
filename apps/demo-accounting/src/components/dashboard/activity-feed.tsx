@@ -10,20 +10,23 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import useSWR from "swr"
+import { BADGE_VARIANTS } from "@/components/ui/badge"
 import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ErrorState } from "@/components/ui/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetcher, type ActivityEvent } from "@/lib/api"
 import { cn } from "@/lib/cn"
 import { relativeTime } from "@/lib/format"
 import type { ActivityType } from "@/server/types"
 
+// Status events reuse the Badge variant tints; message_sent is brand, not status.
 const EVENT_STYLE: Record<ActivityType, { icon: LucideIcon; chip: string }> = {
-  upload_received: { icon: FileUp, chip: "bg-status-review-bg text-status-review" },
-  document_verified: { icon: FileCheck2, chip: "bg-status-verified-bg text-status-verified" },
-  document_rejected: { icon: FileX2, chip: "bg-status-overdue-bg text-status-overdue" },
+  upload_received: { icon: FileUp, chip: BADGE_VARIANTS.review },
+  document_verified: { icon: FileCheck2, chip: BADGE_VARIANTS.verified },
+  document_rejected: { icon: FileX2, chip: BADGE_VARIANTS.overdue },
   message_sent: { icon: MessageSquare, chip: "bg-evergreen-50 text-evergreen-600" },
-  deadline_approaching: { icon: CalendarClock, chip: "bg-status-missing-bg text-status-missing" },
+  deadline_approaching: { icon: CalendarClock, chip: BADGE_VARIANTS.missing },
 }
 
 function ActivityRow({ event }: { event: ActivityEvent }) {
@@ -47,12 +50,14 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 }
 
 export function ActivityFeed({ className }: { className?: string }) {
-  const { data } = useSWR<ActivityEvent[]>("/api/activity?limit=8", fetcher)
+  const { data, error } = useSWR<ActivityEvent[]>("/api/activity?limit=8", fetcher)
 
   return (
     <Card className={cn("overflow-hidden", className)}>
       <CardHeader title="Recent activity" />
-      {!data ? (
+      {error ? (
+        <ErrorState title="Couldn't load activity" />
+      ) : !data ? (
         <div className="space-y-4 px-5 pt-1 pb-5">
           {Array.from({ length: 6 }, (_, i) => (
             <div key={i} className="flex gap-3">

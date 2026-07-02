@@ -3,12 +3,14 @@ import { cn } from "@/lib/cn"
 
 export function EmptyState({
   icon: Icon,
+  iconClassName,
   title,
   description,
   action,
   className,
 }: {
   icon: LucideIcon
+  iconClassName?: string
   title: string
   description?: string
   action?: React.ReactNode
@@ -16,7 +18,12 @@ export function EmptyState({
 }) {
   return (
     <div className={cn("flex flex-col items-center px-6 py-12 text-center", className)}>
-      <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-surface text-ink-faint">
+      <span
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-surface text-ink-faint",
+          iconClassName,
+        )}
+      >
         <Icon size={18} strokeWidth={1.75} />
       </span>
       <p className="mt-3 text-[13.5px] font-medium">{title}</p>

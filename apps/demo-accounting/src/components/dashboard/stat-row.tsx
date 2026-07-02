@@ -2,7 +2,9 @@
 
 import { CalendarClock, FileStack, FolderCheck } from "lucide-react"
 import useSWR from "swr"
+import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { ErrorState } from "@/components/ui/error-state"
 import { ProgressBar } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatTile } from "@/components/ui/stat-tile"
@@ -34,10 +36,9 @@ function MissingDocsHero({ data }: { data: DashboardData }) {
         <span className="text-[40px] leading-none font-semibold tracking-tight text-white tabular-nums">
           {data.clientsMissingDocs}
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-status-missing-bg px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-status-missing">
-          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+        <Badge variant="missing" dot>
           Action needed
-        </span>
+        </Badge>
       </div>
       <p className="mt-2.5 text-[12px] text-evergreen-100/60">
         of {data.clientsTotal} active clients need chasing
@@ -84,7 +85,14 @@ function DeadlineCountdown({ data }: { data: DashboardData }) {
 }
 
 export function StatRow() {
-  const { data } = useSWR<DashboardData>("/api/dashboard", fetcher)
+  const { data, error } = useSWR<DashboardData>("/api/dashboard", fetcher)
+  if (error) {
+    return (
+      <Card>
+        <ErrorState title="Couldn't load dashboard metrics" />
+      </Card>
+    )
+  }
   if (!data) return <StatRowSkeleton />
 
   return (

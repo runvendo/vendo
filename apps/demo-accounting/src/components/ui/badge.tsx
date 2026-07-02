@@ -2,7 +2,8 @@ import { cn } from "@/lib/cn"
 
 export type BadgeVariant = "missing" | "overdue" | "review" | "verified" | "neutral"
 
-const VARIANTS: Record<BadgeVariant, string> = {
+/** Single source of truth for status tinting; reused by icon chips etc. */
+export const BADGE_VARIANTS: Record<BadgeVariant, string> = {
   missing: "bg-status-missing-bg text-status-missing",
   overdue: "bg-status-overdue-bg text-status-overdue",
   review: "bg-status-review-bg text-status-review",
@@ -25,7 +26,7 @@ export function Badge({
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap",
-        VARIANTS[variant],
+        BADGE_VARIANTS[variant],
         className,
       )}
     >

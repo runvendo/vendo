@@ -6,6 +6,7 @@ import useSWR from "swr"
 import { Badge, type BadgeVariant } from "@/components/ui/badge"
 import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ErrorState } from "@/components/ui/error-state"
 import { ProgressBar } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetcher, type DeadlineEntry } from "@/lib/api"
@@ -70,7 +71,7 @@ function DeadlineRow({ entry }: { entry: DeadlineEntry }) {
 }
 
 export function DeadlineList({ className }: { className?: string }) {
-  const { data } = useSWR<DeadlineEntry[]>("/api/deadlines", fetcher)
+  const { data, error } = useSWR<DeadlineEntry[]>("/api/deadlines", fetcher)
   const entries = data?.slice(0, 5)
 
   return (
@@ -86,7 +87,9 @@ export function DeadlineList({ className }: { className?: string }) {
           </Link>
         }
       />
-      {!entries ? (
+      {error ? (
+        <ErrorState title="Couldn't load deadlines" />
+      ) : !entries ? (
         <div className="space-y-4 px-5 pt-1 pb-5">
           {Array.from({ length: 5 }, (_, i) => (
             <div key={i} className="flex items-center gap-6">

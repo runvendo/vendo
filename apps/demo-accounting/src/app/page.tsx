@@ -1,5 +1,6 @@
 "use client"
 
+import { useSyncExternalStore } from "react"
 import { motion } from "framer-motion"
 import { ActivityFeed } from "@/components/dashboard/activity-feed"
 import { DeadlineList } from "@/components/dashboard/deadline-list"
@@ -18,12 +19,22 @@ function Reveal({ delay, children }: { delay: number; children: React.ReactNode 
   )
 }
 
+const noopSubscribe = () => () => {}
+
+/**
+ * Locale/timezone-dependent, so it must never render during SSR: the server
+ * snapshot is empty and the real date fills in after hydration.
+ */
+function useTodayLabel(): string {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+    () => "",
+  )
+}
+
 export default function DashboardPage() {
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  })
+  const today = useTodayLabel()
 
   return (
     <div className="space-y-6">
