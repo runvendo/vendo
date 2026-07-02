@@ -16,6 +16,7 @@ export function ActivityStep({ step, showPeek = false }: ActivityStepProps) {
   const label = toolAction(step.toolName);
   const done = step.state === "output-available";
   const errored = step.state === "output-error";
+  const denied = step.state === "output-denied";
   const rows = showPeek && done ? peekRows(step.output) : [];
 
   return (
@@ -23,12 +24,15 @@ export function ActivityStep({ step, showPeek = false }: ActivityStepProps) {
       <div className="fl-act-row">
         <span className="fl-act-ic" aria-hidden="true">
           {errored ? <span className="fl-act-x">✕</span>
+            : denied ? <span className="fl-act-denied">⊘</span>
             : done ? <span className="fl-act-tick">✓</span>
             : <span className="fl-act-spin" />}
         </span>
         <span className="fl-act-lbl">{errored ? `${label.done} failed` : done ? label.done : label.active}</span>
         {errored && step.errorText ? (
           <span className="fl-act-sub fl-act-err">{step.errorText}</span>
+        ) : denied ? (
+          <span className="fl-act-sub">Declined — didn&apos;t run</span>
         ) : (
           done && <span className="fl-act-sub">{stepSummary(step.output)}</span>
         )}

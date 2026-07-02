@@ -57,6 +57,11 @@ function PageSurface() {
   }, [chat.items])
 
   const newChat = () => {
+    // Full reset: abort any in-flight run (a severed stream can leave status
+    // stuck on "streaming") and drop stale error state along with the messages —
+    // otherwise the old error banner haunts the fresh thread.
+    chat.stop()
+    chat.clearError()
     chat.setMessages([])
     setActive(CHAT)
   }

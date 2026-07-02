@@ -113,6 +113,13 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
     const threadId = `thread-${ordinal}`;
 
     return createUIMessageStream<FlowletUIMessage>({
+      // Route execute failures (bad prompt, provider/Composio errors) into the
+      // stream as an error part instead of an unhandled rejection — one crashed
+      // run must never take the host process down with it.
+      onError: (error) => {
+        console.error(`[flowlet] run ${runId} failed:`, error);
+        return error instanceof Error ? error.message : "The agent run failed.";
+      },
       execute: async ({ writer }) => {
         // 1. Resolve the principal. A missing/empty userId fails Composio closed
         //    (no external tools) — the safe default.
@@ -208,8 +215,12 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
 
         // 7. Merge the ai SDK UIMessage stream; attach run identity as metadata
         //    on the `start` chunk (replacing the old custom data-run part).
+        //    `originalMessages` makes an approval-resume CONTINUE the paused
+        //    assistant message (same id) instead of appending a replayed copy —
+        //    without it every approve/decline doubles the turn on screen.
         writer.merge(
           result.toUIMessageStream({
+            originalMessages: input.messages,
             messageMetadata: ({ part }) =>
               part.type === "start"
                 ? { runId, threadId, schemaVersion: SCHEMA_VERSION }

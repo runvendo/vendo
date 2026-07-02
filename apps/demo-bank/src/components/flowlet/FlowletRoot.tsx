@@ -79,6 +79,7 @@ export function FlowletRoot({
             // sandbox path (SandboxStage) uses the unmodified token.
             "--flowlet-font": "var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif",
           }}
+          productName="Maple"
         >
           {children}
         </FlowletShellProvider>
