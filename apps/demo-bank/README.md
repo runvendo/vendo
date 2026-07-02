@@ -84,6 +84,15 @@ There is ONE UI tool, `render_view`, and its output always renders in the sandbo
 - The demo runs a real guardrail policy (`src/flowlet/policy.ts`), replacing the old allow-all. The UI tools plus in-process reads/rules (`render_view`, `request_connect`, `get_transactions`, `set_rule`) and read-shaped Composio tools (FETCH, GET, LIST, SEARCH, FIND, READ) resolve to `allow`. Write-shaped or unknown tools resolve to `approve`.
 - Actions from a sandbox component (`flowlet.dispatch`) route through `POST /api/flowlet/action`, which runs them through the SAME `demoPolicy` before executing.
 
+### Theming
+
+One `BrandTokens` object, `mapleBrand` (`src/flowlet/brand.ts`), is the single brand source of truth for both surfaces. Two derivations run off it:
+
+- `brandToCssVars(mapleBrand)` produces the canonical `--flowlet-*` CSS variables (accent, bg, surface, fg, border, shadow, skeleton). These are applied to the host shell chrome (via `FlowletThemeProvider` / `.flowlet-root`) and injected into the sandbox stage as its `theme`.
+- `mapBrandToTheme(mapleBrand)` produces the OpenUI component theme, passed to the sandbox as `componentTheme` and mounted there by the bundle's ThemeProvider wrapper.
+
+So the shell and the generated/sandbox UI render from the same brand and cannot drift. There is no `--brand-*` scope anymore; `--flowlet-*` is the only token namespace.
+
 ### Known limitations
 
 1. The action route's approval re-POST is trusted: the client sends `approved: true`. Acceptable for this local-only demo; a production build needs a server-side approval token.
