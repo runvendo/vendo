@@ -27,6 +27,12 @@ export function FlowletToast({
     return () => clearTimeout(id);
   }, [fire, onDismiss]);
 
+  // A rule matched, but the Slack post itself may have failed. Surface that
+  // truthfully instead of always claiming "posted". (When the staged offline
+  // fallback is on, we intentionally still present it as posted.)
+  const failed = fire ? !fire.slack.ok && !fire.slack.fallback : false;
+  const accent = failed ? "var(--flowlet-danger)" : "var(--flowlet-ok)";
+
   return (
     <AnimatePresence>
       {fire ? (
@@ -67,8 +73,8 @@ export function FlowletToast({
               bottom: 14,
               width: 3,
               borderRadius: 3,
-              background: "var(--flowlet-ok)",
-              boxShadow: "0 0 14px color-mix(in srgb, var(--flowlet-ok) 70%, transparent)",
+              background: accent,
+              boxShadow: `0 0 14px color-mix(in srgb, ${accent} 70%, transparent)`,
             }}
           />
           <span
@@ -79,16 +85,17 @@ export function FlowletToast({
               width: 20,
               height: 20,
               borderRadius: "50%",
-              border: "1.5px solid var(--flowlet-ok)",
+              border: `1.5px solid ${accent}`,
               display: "grid",
               placeItems: "center",
             }}
           >
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--flowlet-ok)" }} />
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: accent }} />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 650, letterSpacing: "-.005em" }}>
-              Rule fired → <span style={{ color: "var(--flowlet-ok)" }}>#{fire.channel}</span>
+              {failed ? "Couldn't post to " : "Rule fired → "}
+              <span style={{ color: accent }}>#{fire.channel}</span>
             </div>
             <div
               style={{
@@ -99,7 +106,7 @@ export function FlowletToast({
               }}
             >
               {fire.merchant} · ${fire.amountDollars.toFixed(2)} · {fire.time}
-              {fire.slack.fallback ? " · offline fallback" : ""}
+              {fire.slack.fallback ? " · offline fallback" : failed ? " · Slack post failed" : ""}
             </div>
             <div style={{ fontSize: 11, color: "var(--flowlet-fg-muted)", marginTop: 9 }}>
               Click to open Maple ›
