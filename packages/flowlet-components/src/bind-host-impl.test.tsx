@@ -31,4 +31,16 @@ describe("bindHostImpl", () => {
     render(<Impl data={[1]} />);
     expect(screen.getByTestId("flowlet-invalid-props")).toBeTruthy();
   });
+
+  it("hands the runtime dispatch capability to the adapter as a second argument (review finding)", () => {
+    const dispatch = async () => ({ ok: true });
+    let seen: unknown = null;
+    const Impl = bindHostImpl(descriptor, (_p, runtime) => {
+      seen = runtime;
+      return <div data-testid="spark" />;
+    });
+    render(<Impl data={[1, 2]} flowlet={{ dispatch }} __nodeId="n1" />);
+    expect((seen as { flowlet?: { dispatch: unknown } })?.flowlet?.dispatch).toBe(dispatch);
+    expect((seen as { nodeId?: string })?.nodeId).toBe("n1");
+  });
 });

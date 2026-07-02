@@ -40,6 +40,9 @@ const { iframe, endpoints } = createStage(slot, { reactSource });
 
 const controller = connectStage(endpoints, {
   onAction: async (req) => {
+    // "deny_me" simulates a policy denial — the bridge must reject the
+    // in-sandbox dispatch promise (gate real-bundle 4).
+    if (req.action === "deny_me") throw new Error("denied by policy");
     ensure("action-log").textContent =
       `origin=${req.originNodeId} action=${req.action} result=ok`;
     return { result: "ok" };
@@ -141,7 +144,10 @@ async function payloadFor(kind: string): Promise<StageInitPayload> {
         kind: "component",
         source: "prewired",
         name: "Actions",
-        props: { actions: [{ label: "Freeze card", action: "freeze_card", payload: { cardId: "c1" } }] },
+        props: { actions: [
+          { label: "Freeze card", action: "freeze_card", payload: { cardId: "c1" } },
+          { label: "Deny me", action: "deny_me" },
+        ] },
       },
     };
   }

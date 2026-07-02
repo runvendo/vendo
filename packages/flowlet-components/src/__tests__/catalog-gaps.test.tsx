@@ -92,6 +92,32 @@ describe("Actions", () => {
   });
 });
 
+describe("Donut single-slice (review finding)", () => {
+  it("renders a full ring for a single 100% slice instead of a degenerate arc", () => {
+    const { container } = render(<Donut slices={[{ label: "Housing", value: 100 }]} />);
+    // A single slice must render as a <circle> (an SVG arc with coincident
+    // endpoints renders NOTHING per spec).
+    expect(container.querySelector("svg circle")).not.toBeNull();
+  });
+});
+
+describe("Actions error surfacing (review finding)", () => {
+  const actions = [{ label: "Freeze card", action: "freeze_card" }];
+  it("shows an inline error when an approved dispatch actually fails", async () => {
+    const dispatch = vi.fn().mockRejectedValue(new Error("action failed (404)"));
+    render(<Actions actions={actions} flowlet={{ dispatch }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Freeze card" }));
+    expect(await screen.findByText(/could not complete/i)).toBeTruthy();
+  });
+  it("stays quiet when the user declines the approval", async () => {
+    const dispatch = vi.fn().mockRejectedValue(new Error("action declined"));
+    render(<Actions actions={actions} flowlet={{ dispatch }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Freeze card" }));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByText(/could not complete/i)).toBeNull();
+  });
+});
+
 describe("EmptyState", () => {
   it("renders empty and error variants", () => {
     const { rerender } = render(<EmptyState variant="empty" title="No transactions yet" message="They will appear here." />);

@@ -71,15 +71,36 @@ function StageApproval({ req, settle }: { req: ActionRequest; settle: (approved:
 export function SandboxStage({ node }: { node: UINode }): ReactNode {
   const [sources, setSources] = useState<Sources | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [pending, setPending] = useState<PendingApproval | null>(null);
+  // Pending approvals keyed by requestId: CONCURRENT gated dispatches each get
+  // their own card (a single slot would orphan the first parked resolver —
+  // review finding). settleOne is idempotent per id.
+  const [pending, setPending] = useState<Map<string, PendingApproval>>(new Map());
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   const mounted = useRef(true);
   // Reset on every (re)mount: StrictMode dev runs mount → cleanup → mount, and
   // a cleanup-only effect would leave `mounted` false forever, so the sources
   // `.then` below would never commit and the stage would hang at "loading".
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      // Unmounting with approvals parked: settle them all as declined so the
+      // host-side dispatch promises never leak (review finding).
+      for (const p of pendingRef.current.values()) p.settle(false);
+    };
   }, []);
+
+  const settleOne = (requestId: string, approved: boolean) => {
+    const entry = pendingRef.current.get(requestId);
+    if (!entry) return; // idempotent: already settled/removed
+    setPending((prev) => {
+      const next = new Map(prev);
+      next.delete(requestId);
+      return next;
+    });
+    entry.settle(approved);
+  };
 
   useEffect(() => {
     loadSources().then(
@@ -101,9 +122,11 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error ?? `action failed (${res.status})`);
     if (json.needsApproval !== true) return { result: json.result };
-    // Approval required: park the dispatch promise on the user's click.
-    const approved = await new Promise<boolean>((settle) => setPending({ req, settle }));
-    setPending(null);
+    // Approval required: park the dispatch promise on the user's click,
+    // keyed by requestId so concurrent approvals coexist.
+    const approved = await new Promise<boolean>((settle) => {
+      setPending((prev) => new Map(prev).set(req.requestId, { req, settle }));
+    });
     if (!approved) throw new Error("action declined");
     return callAction(req.action, req.payload, true);
   };
@@ -119,7 +142,13 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
         theme={theme}
         componentTheme={componentTheme}
       />
-      {pending && <StageApproval req={pending.req} settle={pending.settle} />}
+      {[...pending.entries()].map(([requestId, entry]) => (
+        <StageApproval
+          key={requestId}
+          req={entry.req}
+          settle={(approved) => settleOne(requestId, approved)}
+        />
+      ))}
     </div>
   );
 }

@@ -44,3 +44,14 @@ test("gate real-bundle 3: a catalog Actions component dispatches through the gov
   await button.click();
   await expect(page.locator("#action-log")).toContainText("action=freeze_card");
 });
+
+test("gate real-bundle 4: a denied dispatch REJECTS in-sandbox and the Actions component surfaces it", async ({ page }) => {
+  await page.goto("/fixtures/host.html?case=real-bundle-actions");
+  const frame = page.frameLocator("#flowlet-stage");
+  const button = frame.getByRole("button", { name: "Deny me" });
+  await expect(button).toBeVisible();
+  await button.click();
+  // The bridge error must reject the dispatch promise (not resolve undefined),
+  // and the component must tell the user instead of silently idling.
+  await expect(frame.getByText(/could not complete/i)).toBeVisible();
+});

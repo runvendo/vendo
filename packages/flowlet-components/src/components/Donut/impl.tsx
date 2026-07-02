@@ -23,27 +23,43 @@ export const Donut = createPrewiredImpl(donutSchema, (p) => {
   let cursor = 0;
   const arcs = p.slices.map((slice, i) => {
     const frac = slice.value / total;
+    // An SVG arc whose endpoints coincide renders NOTHING per spec — a slice
+    // covering (nearly) the full turn must draw as a circle instead.
+    const full = frac >= 0.999;
     const start = cursor + gap / 2;
     const end = cursor + Math.max(frac - gap / 2, 0.001);
     cursor += frac;
-    return { slice, i, d: arcPath(size / 2, size / 2, r, start, end) };
+    return { slice, i, full, d: full ? "" : arcPath(size / 2, size / 2, r, start, end) };
   });
 
   return (
     <div data-donut style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
       <div style={{ position: "relative", width: size, height: size, flex: "none" }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
-          {arcs.map(({ slice, i, d }) => (
-            <path
-              key={`${slice.label}-${i}`}
-              d={d}
-              fill="none"
-              stroke={slice.color ?? "var(--flowlet-accent, #111)"}
-              strokeOpacity={slice.color ? 1 : RAMP_OPACITY[i % RAMP_OPACITY.length]}
-              strokeWidth={stroke}
-              strokeLinecap="butt"
-            />
-          ))}
+          {arcs.map(({ slice, i, full, d }) =>
+            full ? (
+              <circle
+                key={`${slice.label}-${i}`}
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                fill="none"
+                stroke={slice.color ?? "var(--flowlet-accent, #111)"}
+                strokeOpacity={slice.color ? 1 : RAMP_OPACITY[i % RAMP_OPACITY.length]}
+                strokeWidth={stroke}
+              />
+            ) : (
+              <path
+                key={`${slice.label}-${i}`}
+                d={d}
+                fill="none"
+                stroke={slice.color ?? "var(--flowlet-accent, #111)"}
+                strokeOpacity={slice.color ? 1 : RAMP_OPACITY[i % RAMP_OPACITY.length]}
+                strokeWidth={stroke}
+                strokeLinecap="butt"
+              />
+            ),
+          )}
         </svg>
         {(p.centerLabel || p.centerValue) && (
           <div

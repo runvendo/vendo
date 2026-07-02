@@ -28,8 +28,10 @@ import { bindHostImpl } from "@flowlet/components";
 import { Sparkline } from "@/components/charts/sparkline";      // your REAL component
 import { sparklineDescriptor } from "./descriptors";
 
-const MapleSparkline = bindHostImpl(sparklineDescriptor, (p) => (
-  <Sparkline data={p.data} stroke="var(--flowlet-fg)" />  // translate host-only inputs here
+const MapleSparkline = bindHostImpl(sparklineDescriptor, (p, runtime) => (
+  // p = schema-validated JSON props; runtime = stage-injected capabilities
+  // ({ flowlet.dispatch, nodeId }) — absent outside the stage.
+  <Sparkline data={p.data} stroke="var(--flowlet-fg)" />
 ));
 
 export const myHostImpls = { MapleSparkline };
@@ -43,8 +45,12 @@ The adapter gets schema-validated props (invalid props render a contained fallba
 // flowlet-sandbox/entry.ts
 import { installFlowletHost } from "@flowlet/components/sandbox";
 import { myHostImpls } from "../src/flowlet/host-components/impls";
-installFlowletHost(myHostImpls);
+// Optional css: rules your components need inside the sandbox (e.g. the
+// Tailwind utilities they use) — manual today, extractor-emitted later.
+installFlowletHost(myHostImpls, { css: MY_HOST_CSS });
 ```
+
+`installFlowletHost` throws on a name collision with the built-in catalog — rename (prefix with your app name) rather than shadow.
 
 ```ts
 // flowlet-sandbox/vite.config.mts  (.mts if your app is not type:module)

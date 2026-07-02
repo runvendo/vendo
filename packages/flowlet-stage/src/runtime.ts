@@ -362,6 +362,13 @@ export const STAGE_RUNTIME_SRC = String.raw`
         if (e.source !== parent) return;
         if (e.data && e.data.flowlet && e.data.id === id) {
           window.removeEventListener("message", handler);
+          // Bridge ERROR replies (policy deny, unknown action, capability
+          // mismatch) must REJECT — resolving undefined would let component
+          // code sail down its success path after a blocked action.
+          if (e.data.error) {
+            reject(Object.assign(new Error(e.data.error.message || "action failed"), { code: e.data.error.code || "bridge" }));
+            return;
+          }
           var result = e.data.result;
           if (result && result.status === "pending") {
             // Two-phase: wait for ui/action-result with this actionId.

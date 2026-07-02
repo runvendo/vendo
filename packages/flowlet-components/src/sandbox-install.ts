@@ -36,10 +36,40 @@ declare global {
   }
 }
 
-export function installFlowletHost(hostImpls: Record<string, ComponentType<Record<string, unknown>>> = {}): void {
+export interface InstallFlowletHostOptions {
+  /**
+   * Host CSS injected into the sandbox document alongside OpenUI's stylesheet.
+   * Registered host components that rely on app classes (Tailwind utilities,
+   * design-system CSS) ship the rules they need here — the manual form of what
+   * the ENG-197 extractor will eventually emit automatically.
+   */
+  css?: string;
+}
+
+export function installFlowletHost(
+  hostImpls: Record<string, ComponentType<Record<string, unknown>>> = {},
+  options: InstallFlowletHostOptions = {},
+): void {
+  // Fail fast on catalog collisions: a host registration silently shadowing a
+  // catalog component would desync the sandbox from the registry/prompt.
+  for (const name of Object.keys(hostImpls)) {
+    if (name in prewiredImpls) {
+      throw new Error(
+        `installFlowletHost: host component "${name}" collides with a catalog component — rename it (e.g. prefix with your app name)`,
+      );
+    }
+  }
+
   window.__React = React;
   window.__createRoot = createRoot;
   window.__FLOWLET_HOST__ = { ...prewiredImpls, ...hostImpls };
+
+  if (options.css) {
+    const hostStyle = document.createElement("style");
+    hostStyle.setAttribute("data-flowlet-host-css", "");
+    hostStyle.textContent = options.css;
+    document.head.appendChild(hostStyle);
+  }
 
   window.__FLOWLET_THEME_WRAP__ = (blob, children) => {
     const b = blob as { mode?: "light" | "dark"; theme?: Record<string, unknown> } | undefined;

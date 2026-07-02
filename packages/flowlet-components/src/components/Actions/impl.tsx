@@ -13,24 +13,29 @@ const withFlowlet = actionsSchema.extend({
 
 function ActionButtons(p: z.infer<typeof withFlowlet>) {
   const [pending, setPending] = useState<number | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const canDispatch = typeof p.flowlet?.dispatch === "function";
 
   const run = async (i: number) => {
     const target = p.actions[i];
     if (!canDispatch || pending !== null || !target) return;
     setPending(i);
+    setFailed(null);
     try {
       await p.flowlet!.dispatch({ action: target.action, payload: target.payload });
-    } catch {
-      // Declines/denials are normal outcomes of the approval flow — the button
-      // simply returns to idle; the policy layer owns messaging.
+    } catch (e) {
+      // A user decline is a normal outcome — return to idle quietly. Anything
+      // else (denied by policy, unknown action, server failure) must be
+      // SURFACED: the user may have just explicitly approved this action.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/declined|cancelled/i.test(msg)) setFailed(target.label);
     } finally {
       setPending(null);
     }
   };
 
   return (
-    <div data-actions style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div data-actions style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
       {p.actions.map((a, i) => {
         const variant = a.variant ?? (i === 0 ? "primary" : "secondary");
         const DANGER = "var(--flowlet-danger, #B42318)";
@@ -59,6 +64,11 @@ function ActionButtons(p: z.infer<typeof withFlowlet>) {
           </button>
         );
       })}
+      {failed ? (
+        <span role="status" style={{ fontSize: 12.5, color: "var(--flowlet-danger, #B42318)" }}>
+          {failed} could not complete — try again or ask in chat.
+        </span>
+      ) : null}
     </div>
   );
 }
