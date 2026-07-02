@@ -7,6 +7,17 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@openuidev/react-ui";
 import { prewiredImpls } from "../src/impls";
+// OpenUI's base stylesheet, inlined as a string (?inline) and injected at
+// module eval. Without it every catalog component renders as bare HTML in the
+// sandbox: the iframe cannot load external stylesheets (CSP default-src
+// 'none'), so the CSS must travel inside the JS artifact. The srcdoc CSP
+// allows style-src 'unsafe-inline'.
+import openuiCss from "@openuidev/react-ui/index.css?inline";
+
+const openuiStyle = document.createElement("style");
+openuiStyle.setAttribute("data-flowlet-openui", "");
+openuiStyle.textContent = openuiCss;
+document.head.appendChild(openuiStyle);
 
 declare global {
   interface Window {
