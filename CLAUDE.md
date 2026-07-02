@@ -31,3 +31,4 @@ Flowlet is a devtool that lets a company's users customize its product: an embed
 
 - `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
 - `pnpm demo` — run the demo-bank host app (secrets via Infisical)
+- `pnpm demo:accounting` — run the Cadence accounting demo app (no secrets needed)
