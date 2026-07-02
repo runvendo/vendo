@@ -179,9 +179,17 @@ function PageSurface() {
  */
 function SavedPane({ flowlet }: { flowlet: Flowlet }) {
   const { renderNode } = useShell()
-  const { node, status, errors } = useReopenFlowlet(flowlet)
+  const { node, status, errors, drift } = useReopenFlowlet(flowlet)
+  const drifted = [...drift.missing, ...drift.changed]
   return (
     <div className="fl-saved-pane">
+      {/* Registry drift (ENG-186): the app's components moved since the save. */}
+      {drifted.length > 0 && (
+        <div className="fl-drift-note">
+          {drifted.join(", ")} {drifted.length === 1 ? "has" : "have"} changed in Maple since this
+          view was saved — parts may render differently
+        </div>
+      )}
       {/* Surfaced stale state (ENG-183 gate): quiet mono note when any query
           could not re-run (reads-only refusal, policy deny, network). */}
       {errors.length > 0 && status !== "live" && (

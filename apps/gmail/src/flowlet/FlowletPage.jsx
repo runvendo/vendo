@@ -12,8 +12,13 @@ import {
   useShell,
   useReopenFlowlet,
   originatingPrompt,
+  stampHostComponents,
 } from "@flowlet/shell";
+import { prewiredComponents } from "@flowlet/components";
+import { gmailHostComponents } from "./host-components";
 import { FlowletRoot } from "./FlowletRoot";
+
+const registry = [...prewiredComponents, ...gmailHostComponents];
 
 const SUGGESTIONS = [
   "Turn my unread emails into Tinder: swipe left to delete, swipe right to reply for me. Swipe up to send it to my team's Slack with a quick summary.",
@@ -38,7 +43,15 @@ const deriveSavedDrafts = (items, knownIds) => {
     const { node } = item;
     if (knownIds.has(node.id) || drafts.some((d) => d.id === node.id)) continue;
     const prompt = originatingPrompt(items, item.key);
-    drafts.push({ id: node.id, name: nameFrom(prompt, "Saved view"), node, prompt, pinned: false });
+    drafts.push({
+      id: node.id,
+      name: nameFrom(prompt, "Saved view"),
+      node,
+      prompt,
+      pinned: false,
+      // Registry-version stamp (ENG-186): reopen diffs it to surface drift.
+      components: stampHostComponents(node, registry),
+    });
   }
   return drafts;
 };
@@ -177,9 +190,17 @@ function PageSurface() {
  *  read-only queries through the governed action route. */
 function SavedPane({ flowlet }) {
   const { renderNode } = useShell();
-  const { node, status, errors } = useReopenFlowlet(flowlet);
+  const { node, status, errors, drift } = useReopenFlowlet(flowlet);
+  const drifted = [...drift.missing, ...drift.changed];
   return (
     <div className="fl-saved-pane">
+      {/* Registry drift (ENG-186): the app's components moved since the save. */}
+      {drifted.length > 0 && (
+        <div className="fl-drift-note">
+          {drifted.join(", ")} {drifted.length === 1 ? "has" : "have"} changed since this view was
+          saved — parts may render differently
+        </div>
+      )}
       {errors.length > 0 && status !== "live" && (
         <div className="fl-stale-note">showing saved data — live refresh unavailable</div>
       )}

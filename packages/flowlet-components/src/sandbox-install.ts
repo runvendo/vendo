@@ -13,8 +13,8 @@
  * What it wires (the stage runtime's loadBundle contract):
  *  - window.__React / window.__createRoot — the shared React instance;
  *  - window.__FLOWLET_HOST__ — the pre-wired catalog merged with the host's
- *    own components (host names win; colliding with the catalog is allowed
- *    and shadows it deliberately);
+ *    own components (a host name colliding with a catalog component THROWS —
+ *    silent shadowing would desync the sandbox from the registry/prompt);
  *  - window.__FLOWLET_THEME_WRAP__ — mounts OpenUI's ThemeProvider around the
  *    tree when the init payload carries a componentTheme;
  *  - OpenUI's base stylesheet, injected inline (the iframe cannot load

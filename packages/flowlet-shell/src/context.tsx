@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
-import type { UINode } from "@flowlet/core";
+import type { RegisteredComponent, UINode } from "@flowlet/core";
 import { themeToStyle, type FlowletTheme } from "./theme";
 import { createLocalStore, type FlowletStore } from "./seams/store";
 import { createLocalIntegrations, type FlowletIntegrations } from "./seams/integrations";
@@ -28,6 +28,9 @@ export interface ShellContextValue {
   /** What the host calls its assistant (e.g. "Maple"). Default copy that names
    *  the product reads it — the shell package itself ships ZERO brand strings. */
   productName?: string;
+  /** F1 component registry (prewired + host). When present, reopened saved
+   *  views diff their stamp against it and surface drift (ENG-186). */
+  components?: RegisteredComponent[];
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -78,11 +81,13 @@ export interface FlowletShellProviderProps {
   cssVars?: Record<string, string>;
   /** What the host calls its assistant; read by default copy that names it. */
   productName?: string;
+  /** F1 component registry; enables drift detection on reopened saved views. */
+  components?: RegisteredComponent[];
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, children,
+  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
@@ -95,7 +100,8 @@ export function FlowletShellProvider({
     theme,
     cssVars: cssVars ?? {},
     productName,
-  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName]);
+    components,
+  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
 
   return (
     <ShellContext.Provider value={value}>

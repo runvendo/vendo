@@ -45,7 +45,7 @@ Exercised, not just read: full `@flowlet/components` (125 tests) and `@flowlet/s
 - Bad registration → throws at module load (build-time). Catalog-name collision → `installFlowletHost` throws with a rename instruction — `packages/flowlet-components/src/sandbox-install.ts:53-61`.
 - Minor: `sandbox-install.ts`'s top docstring stale-claims collisions "shadow deliberately" while the code throws; the unknown-component notice has no unit test pinning it (behavior confirmed by code read + ENG-184 audit).
 
-## Follow-up scope (concrete)
+## Follow-up scope (identified, then BUILT same day — see addendum)
 
 1. **Registry versioning (the real gap):** stamp a registry version (or per-descriptor content hash) into `SavedFlowlet` at save time; on reopen, diff against the live registry and surface renamed/schema-changed components (warn/repair) instead of silent degradation. Additive change to the Store seam.
 2. **Model-visible schema rejection (small):** validate host-node props against the registry server-side in `render_view` (the runtime can receive the registry) so the model gets a correctable error and can repair before render.
@@ -53,4 +53,14 @@ Exercised, not just read: full `@flowlet/components` (125 tests) and `@flowlet/s
 
 ## Linear action taken
 
-Left ENG-186 closed as Duplicate (its state when verification started); did **not** mark Done — item (c) is unshipped. Posted a verification comment on ENG-186 linking this report. Follow-up issue creation left to the orchestrator (recommend one issue for item 1, with items 2–3 as checklist lines).
+Left ENG-186 closed as Duplicate (its state when verification started); did **not** mark Done at verification time — item (c) was unshipped. ENG-186 is archived, so Linear rejects comments; this report is the record.
+
+## Addendum (same day): all three follow-ups implemented
+
+Yousef asked for the follow-ups to be built immediately. What shipped (this branch):
+
+1. **Registry versioning** — `RegisteredComponent.version?` (`flowlet-core/src/registry.ts`) + `hostComponent(..., { version })`; saved flowlets stamp host-component `name → version` at save (`stampHostComponents`, wired in all three apps' draft derivation) into the shell `Flowlet.components` field (+ parity field on core `SavedFlowlet`); `useReopenFlowlet` returns `drift: { missing, changed }` diffed against the `FlowletShellProvider` `components` registry (`flowlet-shell/src/component-drift.ts`); each app's `SavedPane` renders a quiet `.fl-drift-note` naming the drifted components. Versions are host-declared (bump on breaking change; unset = "1"); hashing zod schemas was rejected — zod v3 has no stable serialization, and an explicit version is honest about what "breaking" means. Pre-versioning records diff clean (no retroactive warnings).
+2. **Model-visible schema rejection** — `hostPropIssues(payload, registry)` in `flowlet-core/src/genui/host-props.ts` ($path bindings resolved before validation; $state-bound nodes and async schemas skipped, mirroring the stage); `render_view` returns `render_view error (host): …` per issue when the engine gets `components` (threaded via `FlowletAgentConfig.components`; all three demo agents pass their registries). Unknown host names error server-side too, listing what IS registered.
+3. **Trivia** — `sandbox-install.ts` docstring fixed; unknown-notice marker test added to `runtime.test.ts`; `componentPromptCatalog` added to `@flowlet/components/descriptors` and the three hand-rolled per-app copies deleted.
+
+**Verified:** full workspace suite green (1,125 tests incl. 19 new); typecheck green; lint green on all touched packages (5 pre-existing demo-bank errors reproduced on the clean tree, untouched files — reported, not fixed). Browser-verified in the running Cadence app: a saved view seeded with a drifted stamp shows the note (`verification/eng186-hardening/eng186-drift-note.png`), a matching stamp shows none (`eng186-no-drift.png`); the view itself renders in both cases — drift warns, never blocks.

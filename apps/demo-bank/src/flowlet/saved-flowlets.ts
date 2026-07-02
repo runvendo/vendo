@@ -5,7 +5,11 @@
  * through the FlowletStore seam (ENG-183).
  */
 import type { FlowletDraft, ThreadItem } from "@flowlet/shell";
-import { originatingPrompt } from "@flowlet/shell";
+import { originatingPrompt, stampHostComponents } from "@flowlet/shell";
+import { prewiredComponents } from "@flowlet/components/descriptors";
+import { mapleHostComponents } from "./host-components/descriptors";
+
+const mapleRegistry = [...prewiredComponents, ...mapleHostComponents];
 
 const NAME_MAX = 48;
 
@@ -22,7 +26,15 @@ export function deriveSavedDrafts(items: ThreadItem[], knownIds: ReadonlySet<str
     if (node.kind === "component" && node.name === "Connect") continue; // auth card, not a view
     if (knownIds.has(node.id) || drafts.some((d) => d.id === node.id)) continue;
     const prompt = originatingPrompt(items, item.key);
-    drafts.push({ id: node.id, name: nameFrom(prompt, "Saved view"), node, prompt, pinned: false });
+    drafts.push({
+      id: node.id,
+      name: nameFrom(prompt, "Saved view"),
+      node,
+      prompt,
+      pinned: false,
+      // Registry-version stamp (ENG-186): reopen diffs it to surface drift.
+      components: stampHostComponents(node, mapleRegistry),
+    });
   }
   return drafts;
 }
