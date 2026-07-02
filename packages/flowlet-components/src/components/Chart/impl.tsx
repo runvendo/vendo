@@ -10,10 +10,11 @@ export const Chart = createPrewiredImpl(chartSchema, (p) => {
     return out;
   });
 
+  // No fixed width: the chart fills its container so views adapt to the
+  // thread column. Height stays bounded so charts don't dominate a view.
   const commonProps = {
     data: slim as Record<string, string | number>[],
     categoryKey: p.categoryKey,
-    width: 400,
     height: 300,
     isAnimationActive: false,
   };

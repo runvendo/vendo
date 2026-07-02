@@ -40,6 +40,10 @@ export type { ToolSourceInput } from "./toolset";
 // Render view tool
 export { createRenderViewTool } from "./render-view-tool";
 
+// Brand guidance (data-driven system-prompt section from host theme tokens)
+export { buildBrandGuidance } from "./brand-guidance";
+export type { BrandGuidanceInput, HostBrandNorms } from "./brand-guidance";
+
 // Generated-component compiler (JSX/TS → sandbox-ready ESM)
 export { compileComponentSource } from "./compile-component";
 

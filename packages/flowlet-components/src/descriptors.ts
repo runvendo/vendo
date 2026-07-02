@@ -37,3 +37,10 @@ export const descriptors: PrewiredDescriptor[] = [
 ];
 
 export const prewiredComponents: RegisteredComponent[] = descriptors.map((d) => d.toRegistered());
+
+// Server-safe theme utilities (React-free, no CSS imports) — the descriptors
+// entrypoint is the one server code may import, so the token → CSS-var / chart
+// palette derivations are re-exported here for prompt assembly and manifests.
+export { brandTokensSchema, defaultBrand, type BrandTokens } from "./theme/brand";
+export { brandToCssVars } from "./theme/brand-to-css-vars";
+export { brandToChartPalette } from "./theme/brand-to-chart-palette";

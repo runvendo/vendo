@@ -49,7 +49,11 @@ export function createRenderViewTool(writer: FlowletWriter) {
       "JSX/TSX — it is compiled automatically (automatic React runtime, TS types stripped), so you " +
       "do NOT need to import React. Example: `export default function MyComp(props) { return <div>{props.label}</div>; }`. " +
       "Plain `React.createElement` also works. It runs in a network-jailed sandbox; to perform an app " +
-      "action call `props.flowlet.dispatch({ action, payload })`.",
+      "action call `props.flowlet.dispatch({ action, payload })`. " +
+      "BRAND: style novel components with the host's injected CSS variables — var(--flowlet-accent), " +
+      "var(--flowlet-surface), var(--flowlet-fg), var(--flowlet-fg-muted), var(--flowlet-border), " +
+      "var(--flowlet-radius) — never a hardcoded palette, never gradients; typography is inherited " +
+      "(do not set font families). Catalog components are pre-themed; prefer them.",
     inputSchema: z.object({
       formatVersion: z.literal("flowlet-genui/v1"),
       root: z.string().describe("Id of the root node."),

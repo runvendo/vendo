@@ -14,12 +14,14 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import {
   createFlowletAgent,
+  buildBrandGuidance,
   type ComposioClient,
 } from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
-import { prewiredComponents } from "@flowlet/components/descriptors";
+import { prewiredComponents, brandToCssVars } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
+import { mapleBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
 
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
@@ -69,6 +71,18 @@ function buildInstructions(): string {
     "rendered content: titles, subtitles, labels, tags, body copy, or any prop you",
     "pass to render_view. Plain text only. You may use light Markdown (bold, lists) in",
     "prose, but no emoji or decorative symbols. Write titles in plain Title Case.",
+    "",
+    // Data-driven brand section: rendered from the SAME tokens the sandbox
+    // injects (one source of truth), plus Maple's host-authored style norms.
+    buildBrandGuidance({
+      tokens: brandToCssVars(mapleBrand),
+      norms: {
+        density: "calm and generous — one idea per card, clear hierarchy, no cramming",
+        tone: "quiet financial confidence; plain sentences, no exclamation marks, no hype",
+        spacing: "roomy card padding (about 20px), 12-16px between rows, aligned numerals",
+        charts: "restrained near-monochrome series, minimal gridlines, let the data speak",
+      },
+    }),
     "",
     "HOW render_view WORKS — there is ONE rendering tool. Every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
