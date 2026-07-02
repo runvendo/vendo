@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { z } from "zod";
-import { createStubAgent, type UINode } from "@flowlet/core";
+import { type UINode } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { FlowletProvider } from "@flowlet/react";
 import {
   FlowletShellProvider,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { createStubAgent, type UINode } from "@flowlet/core";
+import { type UINode } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { FlowletProvider } from "@flowlet/react";
 import { FlowletShellProvider } from "../context";
 import { ApprovalCard } from "./ApprovalCard";

@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/stub-agent.d.ts",
+      "default": "./dist/stub-agent.js"
     }
   },
   "scripts": {

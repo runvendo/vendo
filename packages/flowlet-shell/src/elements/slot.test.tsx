@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { z } from "zod";
-import { createStubAgent, type UINode } from "@flowlet/core";
+import { type UINode } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { FlowletProvider } from "@flowlet/react";
 import { FlowletShellProvider } from "../context";
 import { FlowletSlot } from "./FlowletSlot";

@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { z } from "zod";
 import {
-  createStubAgent,
   FLOWLET_GENUI_VERSION,
   type FlowletUIMessage,
   type GeneratedPayload,
   type UINode,
 } from "@flowlet/core";
+import { createStubAgent } from "@flowlet/core/testing";
 import { FlowletProvider, useFlowletChat, FlowletStage } from "@flowlet/react";
 import { createExampleAgent } from "./realAgent";
 
