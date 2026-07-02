@@ -13,7 +13,7 @@
  */
 import { useState } from "react";
 import { useFlowletChat } from "@flowlet/react";
-import { ConnectCard, type Integration } from "@flowlet/shell";
+import { BrandIcon, ConnectCard, type Integration } from "@flowlet/shell";
 import { runConnectFlow } from "./connect-flow";
 
 const NAMES: Record<string, string> = {
@@ -72,14 +72,12 @@ export function DemoConnectCard({ toolkit, reason }: { toolkit: string; reason?:
   }
 
   if (status === "connected") {
+    // Quiet status pill: the flow auto-continues, so no instructions needed.
     return (
-      <div className="fl-connect" role="status" aria-label={`${name} connected`}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
-          {name} connected
-        </div>
-        <div style={{ fontSize: 12, marginTop: 6 }}>
-          Ask again and I can use {name}.
-        </div>
+      <div className="fl-connect-done" role="status" aria-label={`${name} connected`}>
+        <BrandIcon id={toolkit} size={15} />
+        {name} connected
+        <span className="fl-connect-done-dot" aria-hidden />
       </div>
     );
   }

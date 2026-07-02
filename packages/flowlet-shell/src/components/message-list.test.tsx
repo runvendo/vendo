@@ -7,7 +7,9 @@ import { FlowletShellProvider } from "../context";
 import { MessageList } from "./MessageList";
 import type { ThreadItem } from "../use-flowlet-thread";
 
-const node: UINode = { id: "ui-1", kind: "component", source: "prewired", name: "Card", props: {} };
+// A GENERATED node: the render_view product that pairs with a skeleton in the
+// reveal slot. (Host component nodes now bypass the reveal on purpose.)
+const node: UINode = { id: "ui-1", kind: "generated", payload: {} };
 
 function renderList(items: ThreadItem[], onApprove = vi.fn()) {
   return render(

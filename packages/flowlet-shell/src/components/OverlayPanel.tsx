@@ -46,6 +46,10 @@ export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPane
         ref={panelRef}
         onKeyDown={onKeyDown}
       >
+        <button type="button" className="fl-overlay-close" aria-label="Close" onClick={onClose}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
         {children}
       </div>
     </div>,

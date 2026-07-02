@@ -33,7 +33,10 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
     const keys = new Map<string, string>();
     const counters = new Map<string, number>();
     for (const item of rendered) {
-      if (item.kind !== "skeleton" && item.kind !== "ui") continue;
+      // Only GENERATED views pair with skeletons — host-component nodes (the
+      // Connect card) are their own thread items with no skeleton phase, so
+      // counting them here would misalign the skeleton↔view pairing.
+      if (item.kind !== "skeleton" && (item.kind !== "ui" || item.node.kind !== "generated")) continue;
       const n = counters.get(item.messageId) ?? 0;
       counters.set(item.messageId, n + 1);
       keys.set(item.key, `reveal:${item.messageId}:${n}`);
@@ -194,6 +197,17 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                 />
               );
             case "ui":
+              // Host-component nodes (the Connect card) are utility affordances,
+              // not built views: they mount directly like any other thread item
+              // (the shared entrance animation covers them) instead of going
+              // through the skeleton→view reveal morph.
+              if (item.node.kind !== "generated") {
+                return (
+                  <div key={item.key} className="fl-uihost">
+                    <UINodeView node={item.node} />
+                  </div>
+                );
+              }
               return (
                 <FluidReveal key={slotKeys.get(item.key)} phase="view">
                   <UINodeView node={item.node} />
