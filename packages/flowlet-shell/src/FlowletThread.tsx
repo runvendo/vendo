@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import type { FileUIPart } from "ai";
 import type { UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
+import type { Feedback } from "./components/TurnActions";
 import { useShell } from "./context";
 import type { Flowlet } from "./seams/store";
 import type { Integration } from "./seams/integrations";
@@ -21,9 +23,14 @@ export interface FlowletThreadProps {
    * to a host slot. Slot-only seam — other surfaces omit it and render unchanged.
    */
   onPin?: (node: UINode) => void;
+  /**
+   * Host sink for a turn's thumbs up/down. The shell stores no feedback itself;
+   * omit to hide the feedback controls entirely.
+   */
+  onFeedback?: (messageId: string, feedback: Feedback) => void;
 }
 
-export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFlow, onPin }: FlowletThreadProps) {
+export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFlow, onPin, onFeedback }: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
@@ -54,9 +61,10 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
     if (chat.status === "ready") refresh();
   }, [chat.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const send = (text: string) => { void chat.sendMessage({ text }); };
+  const send = (text: string, files?: FileUIPart[]) => { void chat.sendMessage({ text, files }); };
   const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
   const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
+  const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
 
   return (
     <div className="fl-thread">
@@ -70,7 +78,14 @@ export function FlowletThread({ greeting, suggestions = [], flows = [], onOpenFl
         />
       ) : (
         <ThreadErrorBoundary resetKey={chat.items.length}>
-          <MessageList items={chat.items} status={chat.status} onApprove={approve} onDecline={decline} />
+          <MessageList
+            items={chat.items}
+            status={chat.status}
+            onApprove={approve}
+            onDecline={decline}
+            onRegenerate={regenerate}
+            onFeedback={onFeedback}
+          />
         </ThreadErrorBoundary>
       )}
       {pickerOpen && (

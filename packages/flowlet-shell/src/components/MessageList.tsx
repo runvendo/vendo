@@ -1,19 +1,26 @@
-import { Fragment, useEffect, useRef, useState } from "react";
-import type { ThreadItem } from "../use-flowlet-thread";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { groupThreadItems, type ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
 import { UINodeView } from "./UINodeView";
 import { Skeleton } from "./Skeleton";
-import { ToolCall } from "./ToolCall";
+import { ActivityPanel } from "./ActivityPanel";
+import { TurnActions, type Feedback } from "./TurnActions";
+import { FileAttachment } from "./FileAttachment";
 
 export interface MessageListProps {
   items: ThreadItem[];
   status?: string;
   onApprove: (approvalId: string) => void;
   onDecline?: (approvalId: string) => void;
+  /** Regenerate a specific assistant turn (SDK `regenerate`). */
+  onRegenerate?: (messageId: string) => void;
+  /** Host feedback sink for a turn's thumbs up/down. */
+  onFeedback?: (messageId: string, feedback: Feedback) => void;
 }
 
-export function MessageList({ items, status, onApprove, onDecline }: MessageListProps) {
+export function MessageList({ items, status, onApprove, onDecline, onRegenerate, onFeedback }: MessageListProps) {
+  const rendered = useMemo(() => groupThreadItems(items), [items]);
   const lastTextKey = [...items].reverse().find((i) => i.kind === "text")?.key;
   const listRef = useRef<HTMLDivElement>(null);
   // Whether the user is pinned to the bottom. A ref drives the auto-scroll
@@ -26,6 +33,9 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
   // "jump to latest" click would unpin itself mid-animation (every tick is still
   // >80px from bottom). We ignore those ticks until the animation lands.
   const programmatic = useRef(false);
+  // First-seen wall-clock per assistant message, for the hover timestamp. A ref
+  // so re-renders don't reset it and the pure item list stays timestamp-free.
+  const seenAt = useRef(new Map<string, number>());
 
   const onScroll = () => {
     const el = listRef.current;
@@ -79,18 +89,37 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
 
   // Dead-air guard: show the working dots while the request is in flight, and
   // while streaming has begun but nothing readable has arrived yet — right after
-  // sending (last item is the user's own turn) or during a tool round-trip.
+  // sending (last item is the user's own turn). Once a tool part exists, the
+  // activity panel carries the working state, so the dots stand down.
   const last = items[items.length - 1];
   const lastIsUser = last?.kind === "text" && last.role === "user";
-  const working =
-    status === "submitted" ||
-    (status === "streaming" && (!last || lastIsUser || last.kind === "tool"));
+  const working = status === "submitted" || (status === "streaming" && (!last || lastIsUser || last.kind === "file"));
+
+  const timestampFor = (messageId: string): number => {
+    const map = seenAt.current;
+    let t = map.get(messageId);
+    if (t === undefined) {
+      t = Date.now();
+      map.set(messageId, t);
+    }
+    return t;
+  };
 
   return (
     <div className="fl-msglist-wrap">
       <div className="fl-msglist" ref={listRef} onScroll={onScroll}>
-        {items.map((item) => {
+        {rendered.map((item) => {
           switch (item.kind) {
+            case "activity":
+              // A turn is still working if this is the last render unit and the
+              // thread hasn't settled — the panel then shows its live header.
+              return (
+                <ActivityPanel
+                  key={item.key}
+                  steps={item.steps}
+                  working={status !== "ready" && status !== "error" && item === rendered[rendered.length - 1]}
+                />
+              );
             case "text":
               if (item.role === "user")
                 return (
@@ -101,18 +130,28 @@ export function MessageList({ items, status, onApprove, onDecline }: MessageList
               return (
                 <div key={item.key} className="fl-turn-assistant">
                   <StreamingText text={item.text} streaming={status === "streaming" && item.key === lastTextKey} />
+                  {status !== "streaming" || item.key !== lastTextKey ? (
+                    <TurnActions
+                      text={item.text}
+                      timestamp={timestampFor(item.messageId)}
+                      onRegenerate={onRegenerate ? () => onRegenerate(item.messageId) : undefined}
+                      onFeedback={onFeedback ? (fb) => onFeedback(item.messageId, fb) : undefined}
+                    />
+                  ) : null}
                 </div>
               );
-            case "tool":
-              // Quiet, stateful chip ("Searching Gmail…" → ✓). render_view never
-              // reaches here — its turn is carried by the skeleton + data-ui node.
-              return <ToolCall key={item.key} toolName={item.toolName} state={item.state} errorText={item.errorText} />;
+            case "file":
+              return (
+                <div key={item.key} className={item.role === "user" ? "fl-turn-user-att" : "fl-turn-assistant"}>
+                  <FileAttachment mediaType={item.mediaType} filename={item.filename} url={item.url} />
+                </div>
+              );
             case "skeleton":
               // Shown only while render_view is in flight; never for text-only turns.
               return (
                 <Fragment key={item.key}>
                   <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
-                  <Skeleton />
+                  <Skeleton name={item.name} />
                 </Fragment>
               );
             case "approval":

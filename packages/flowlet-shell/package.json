@@ -20,8 +20,11 @@
     "@flowlet/core": "workspace:*",
     "@flowlet/react": "workspace:*",
     "ai": "6.0.28",
+    "katex": "^0.16.11",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",

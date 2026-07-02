@@ -18,7 +18,8 @@ describe("Composer", () => {
     const input = screen.getByPlaceholderText("Ask anything") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "show my spending" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onSend).toHaveBeenCalledWith("show my spending");
+    // onSend now carries optional attachment parts (undefined when none attached).
+    expect(onSend).toHaveBeenCalledWith("show my spending", undefined);
     expect(input.value).toBe("");
   });
 
