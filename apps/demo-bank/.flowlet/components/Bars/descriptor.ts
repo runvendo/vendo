@@ -5,13 +5,12 @@ import { z } from "zod";
 import type { RegisteredComponent, FlowletSchema } from "@flowlet/core";
 
 export const barsSchema = z.object({
-  items: z.string().describe("JSON string of BarItem array: [{label, value, color?, max?}]"),
-  className: z.string().optional().describe("Additional CSS classes for the container"),
+  items: z.string().describe("JSON string of BarItem array: [{label, value, color?, max?}] where value is a number and color is an optional CSS color string."),
 });
 
 export const barsDescriptor: RegisteredComponent = {
   name: "Bars",
-  description: "Renders a vertical list of labeled horizontal bars with USD values. Use for visualizing ranked category spend or budget comparisons.",
+  description: "Renders a vertical list of horizontal progress bars with a label and USD-formatted value for each item. Use for visualizing category spend, budgets, or any ranked numeric data.",
   propsSchema: barsSchema as FlowletSchema<unknown>,
   source: "host",
 };

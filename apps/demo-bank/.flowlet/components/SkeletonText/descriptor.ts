@@ -5,13 +5,13 @@ import { z } from "zod";
 import type { RegisteredComponent, FlowletSchema } from "@flowlet/core";
 
 export const skeletonTextSchema = z.object({
-  lines: z.number().optional().describe("Number of skeleton lines to render. Defaults to 3."),
+  lines: z.number().optional().describe("Number of placeholder lines to render. Defaults to 3."),
   className: z.string().optional().describe("Additional CSS classes to apply to the container."),
 });
 
 export const skeletonTextDescriptor: RegisteredComponent = {
   name: "SkeletonText",
-  description: "Displays an animated pulsing text placeholder with a configurable number of lines, useful for indicating loading states where text content is expected. The last line is shorter to mimic natural text endings.",
+  description: "Displays animated pulsing placeholder lines to indicate loading state. Use when content is being fetched and you want to show a text-shaped skeleton loader.",
   propsSchema: skeletonTextSchema as FlowletSchema<unknown>,
   source: "host",
 };

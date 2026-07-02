@@ -6,15 +6,27 @@ import { scanComponents } from "./scan.js";
 import { analyzeComponent } from "./analyze.js";
 import { writeComponent, entrySource, viteConfigSource, aliasesFromTsconfigPaths } from "./codegen.js";
 
-/** Best-effort read of the host tsconfig `paths` (comments tolerated). */
+/**
+ * Best-effort read of the host tsconfig `paths`. Plain JSON.parse first —
+ * comment-stripping regexes corrupt glob strings like "@/*" and "**\/*.ts",
+ * so stripping is only a fallback for genuinely commented tsconfigs.
+ */
 async function hostAliases(targetDir: string): Promise<Record<string, string>> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(path.join(targetDir, "tsconfig.json"), "utf8");
-    const json = JSON.parse(raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""));
-    return aliasesFromTsconfigPaths(json?.compilerOptions?.paths ?? {});
+    raw = await fs.readFile(path.join(targetDir, "tsconfig.json"), "utf8");
   } catch {
     return {};
   }
+  for (const text of [raw, raw.replace(/^\s*\/\/.*$/gm, "")]) {
+    try {
+      const json = JSON.parse(text);
+      return aliasesFromTsconfigPaths(json?.compilerOptions?.paths ?? {});
+    } catch {
+      // try the next variant
+    }
+  }
+  return {};
 }
 
 export interface ComponentsSummary {

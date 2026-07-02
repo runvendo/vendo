@@ -155,6 +155,8 @@ const base = flowletHostPreset({ entry: path.resolve(here, "entry.ts"), version:
 
 const config = {
   ...base,
+  // This build produces only the sandbox bundle — never copy the host's public/.
+  publicDir: false,
   // Host tsconfig path aliases, re-rooted relative to this directory.
   resolve: { alias: { ${aliasEntries} } },
 };

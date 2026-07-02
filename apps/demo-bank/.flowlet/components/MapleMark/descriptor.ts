@@ -5,12 +5,12 @@ import { z } from "zod";
 import type { RegisteredComponent, FlowletSchema } from "@flowlet/core";
 
 export const mapleMarkSchema = z.object({
-  className: z.string().optional().describe("Tailwind or CSS class names to control size, color, and spacing of the leaf icon."),
+  className: z.string().optional().describe("Tailwind or CSS class names to control the icon size, color, and spacing."),
 });
 
 export const mapleMarkDescriptor: RegisteredComponent = {
   name: "MapleMark",
-  description: "Renders a maple leaf brand mark icon using the Lucide Leaf glyph. Displays in the current text color and accepts a Tailwind className for sizing and color overrides.",
+  description: "Renders a maple leaf brand mark icon using the Lucide Leaf glyph. Displays in the current text color and accepts a Tailwind/CSS className for sizing and color overrides.",
   propsSchema: mapleMarkSchema as FlowletSchema<unknown>,
   source: "host",
 };

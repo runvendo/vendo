@@ -6,12 +6,12 @@ import type { RegisteredComponent, FlowletSchema } from "@flowlet/core";
 
 export const badgeSchema = z.object({
   text: z.string().describe("The text content displayed inside the badge."),
-  tone: z.string().optional().describe("Visual tone of the badge: 'neutral', 'positive', or 'negative'."),
+  tone: z.string().optional().describe("Visual tone of the badge: 'neutral', 'positive', or 'negative'. Defaults to 'neutral'."),
 });
 
 export const badgeDescriptor: RegisteredComponent = {
   name: "Badge",
-  description: "A small pill-shaped label used to highlight status, categories, or counts with semantic tone styling (neutral, positive, or negative). Use it to draw attention to metadata like tags, states, or counts inline with text.",
+  description: "A small pill-shaped label used to highlight status or categorical information. Supports neutral, positive, and negative tones for semantic coloring.",
   propsSchema: badgeSchema as FlowletSchema<unknown>,
   source: "host",
 };

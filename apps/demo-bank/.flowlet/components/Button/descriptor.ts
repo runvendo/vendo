@@ -6,14 +6,14 @@ import type { RegisteredComponent, FlowletSchema } from "@flowlet/core";
 
 export const buttonSchema = z.object({
   label: z.string().describe("The text content displayed inside the button."),
-  variant: z.enum([]).optional().describe("Visual style of the button: primary, secondary, ghost, or danger."),
-  size: z.enum([]).optional().describe("Size of the button: sm or md."),
-  disabled: z.boolean().optional().describe("Whether the button is disabled."),
+  variant: z.string().optional().describe("Visual style of the button: 'primary', 'secondary', 'ghost', or 'danger'."),
+  size: z.string().optional().describe("Size of the button: 'sm' or 'md'."),
+  disabled: z.boolean().optional().describe("Whether the button is disabled and non-interactive."),
 });
 
 export const buttonDescriptor: RegisteredComponent = {
   name: "Button",
-  description: "A styled button component supporting multiple visual variants and sizes. Use for primary actions, secondary actions, ghost buttons, or destructive/danger actions.",
+  description: "A styled button supporting multiple visual variants and sizes. Use for primary actions, secondary options, ghost links, or destructive danger actions.",
   propsSchema: buttonSchema as FlowletSchema<unknown>,
   source: "host",
 };

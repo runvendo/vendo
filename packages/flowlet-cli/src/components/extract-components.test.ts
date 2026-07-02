@@ -22,6 +22,11 @@ describe("extractComponents", () => {
   it("writes descriptor/impl pairs for included components plus entry + vite config", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "comp-"));
     await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    // Realistic tsconfig: glob strings must not defeat the paths read
+    await writeFile(
+      path.join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { paths: { "@/*": ["./src/*"] } }, include: ["**/*.ts", "**/*.tsx"] }),
+    );
     await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
     await writeFile(path.join(dir, "src/components/ui/panel.tsx"), "export const Panel = () => null");
     const summary = await extractComponents(dir, textModel([INCLUDE, EXCLUDE]), { force: false });
@@ -30,7 +35,8 @@ describe("extractComponents", () => {
     await readFile(path.join(dir, ".flowlet/components/Badge/descriptor.ts"), "utf8");
     await readFile(path.join(dir, ".flowlet/components/Badge/impl.tsx"), "utf8");
     await readFile(path.join(dir, ".flowlet/components/entry.ts"), "utf8");
-    await readFile(path.join(dir, ".flowlet/components/vite.config.mts"), "utf8");
+    const viteConfig = await readFile(path.join(dir, ".flowlet/components/vite.config.mts"), "utf8");
+    expect(viteConfig).toContain('"@": path.resolve(here, "../../src")');
   });
 
   it("repairs a broken wrapper once by feeding the codegen error back", async () => {

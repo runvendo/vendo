@@ -5,14 +5,14 @@ import { z } from "zod";
 import type { RegisteredComponent, FlowletSchema } from "@flowlet/core";
 
 export const hostCardSchema = z.object({
-  title: z.string().optional().describe("Label rendered in the card header using the small uppercase muted style."),
-  content: z.string().optional().describe("Main body text rendered inside the card content area."),
-  hover: z.boolean().optional().describe("When true, adds a subtle shadow on hover to indicate interactivity."),
+  title: z.string().optional().describe("Label displayed in the card header in small uppercase muted text."),
+  content: z.string().describe("Main body text rendered inside the card content area."),
+  hover: z.boolean().optional().describe("When true, adds a subtle drop shadow on hover to indicate interactivity."),
 });
 
 export const hostCardDescriptor: RegisteredComponent = {
   name: "HostCard",
-  description: "A styled surface container with an optional hover shadow effect. Use it to group related content into a visually distinct card panel.",
+  description: "A styled surface container with an optional header title and content area. Use it to group related information into a visually distinct card panel.",
   propsSchema: hostCardSchema as FlowletSchema<unknown>,
   source: "host",
 };

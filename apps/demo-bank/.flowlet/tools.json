@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "get_account",
-      "description": "Retrieves a single account by its ID. Returns the account object or a 404 if not found.",
+      "description": "Retrieves a single account by its ID. Returns the account object if found, or a 404 error if not found.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -17,7 +17,7 @@
         ]
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -27,8 +27,8 @@
       }
     },
     {
-      "name": "list_account_transactions",
-      "description": "Returns all transactions associated with a specific account ID.",
+      "name": "get_account_transactions",
+      "description": "Retrieves all transactions associated with a specific account ID. Returns a list of transactions for that account.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -42,7 +42,7 @@
         ]
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -53,13 +53,13 @@
     },
     {
       "name": "list_accounts",
-      "description": "Returns the full list of all accounts in the demo store.",
+      "description": "Returns a list of all accounts in the system. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -69,8 +69,8 @@
       }
     },
     {
-      "name": "list_card_transactions",
-      "description": "Returns all transactions associated with a specific card ID.",
+      "name": "get_card_transactions",
+      "description": "Retrieves all transactions associated with a specific card ID. Returns a list of transactions for that card.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -84,7 +84,7 @@
         ]
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -95,13 +95,13 @@
     },
     {
       "name": "list_cards",
-      "description": "Returns the full list of all cards in the demo store.",
+      "description": "Returns a list of all cards in the system. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -112,11 +112,11 @@
     },
     {
       "name": "dispatch_flowlet_action",
-      "description": "Accepts a stage action dispatched by a generated sandbox component and routes it through the demo policy handler. Write actions require approval per the governing policy.",
+      "description": "Handles a Flowlet stage action dispatched from a sandbox component. Runs the action through the demo policy, executing allowed actions against in-process demo tools; writes require approval per policy.",
       "inputSchema": {
         "type": "object",
         "properties": {},
-        "additionalProperties": true
+        "description": "Request body is forwarded directly to handleStageAction; schema is defined by the action handler."
       },
       "annotations": {
         "mutating": true,
@@ -129,12 +129,12 @@
       }
     },
     {
-      "name": "send_flowlet_chat",
-      "description": "Streams a Flowlet agent response over HTTP for a chat message. The agent is keyed by the current set of connected toolkits so newly connected integrations are picked up automatically.",
+      "name": "chat_flowlet",
+      "description": "Streams a Flowlet agent response over HTTP for a given chat message. The agent is keyed by the current set of connected toolkits, so newly connected tools are automatically picked up on the next request.",
       "inputSchema": {
         "type": "object",
         "properties": {},
-        "additionalProperties": true
+        "description": "Request body is forwarded directly to handleChat; schema is defined by the chat handler."
       },
       "annotations": {
         "mutating": true,
@@ -147,27 +147,27 @@
       }
     },
     {
-      "name": "list_flowlet_integrations",
-      "description": "Returns the integration catalog with live connected flags for each toolkit. Optionally polls Composio for a specific connection's status by passing the status, id, and account query parameters; marks the toolkit connected in the demo store when Composio reports it as active.",
+      "name": "list_integrations",
+      "description": "Returns the catalog of available integrations with live connected flags. Optionally polls Composio for a specific toolkit's connection status by passing the 'status' query param along with 'id' and 'account'; marks the toolkit as connected in the demo store when the status is ACTIVE.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "status": {
-            "type": "boolean",
-            "description": "Presence of this parameter switches the endpoint to status-polling mode."
+            "type": "string",
+            "description": "Presence of this parameter triggers a status poll instead of listing integrations."
           },
           "id": {
             "type": "string",
-            "description": "The toolkit ID to poll status for (required when status is present)."
+            "description": "The toolkit ID to poll status for (required when 'status' is present)."
           },
           "account": {
             "type": "string",
-            "description": "The Composio connectedAccountId to poll (required when status is present)."
+            "description": "The Composio connectedAccountId to poll (required when 'status' is present)."
           }
         }
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -177,8 +177,8 @@
       }
     },
     {
-      "name": "manage_flowlet_integration",
-      "description": "Manages toolkit integrations: 'authorize' begins/resumes OAuth and returns a redirectUrl and connectedAccountId; 'connect' fast-paths if already authorized or else starts OAuth; 'disconnect' removes the toolkit from the demo store.",
+      "name": "manage_integration",
+      "description": "Manages toolkit integrations: 'authorize' begins/resumes OAuth and returns a redirectUrl and connectedAccountId; 'connect' fast-paths if already authorized or starts OAuth; 'disconnect' removes the toolkit from the demo store without deleting the real Composio account.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -213,24 +213,7 @@
     },
     {
       "name": "poll_flowlet",
-      "description": "Runs a detector tick that reads current transactions, matches active rules against any new charges, and fires configured actions (e.g. Slack notifications). Returns fired events so the client can surface confirmations.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      },
-      "annotations": {
-        "mutating": false,
-        "dangerous": false
-      },
-      "binding": {
-        "type": "http",
-        "method": "GET",
-        "path": "/api/flowlet/poll"
-      }
-    },
-    {
-      "name": "reset_flowlet",
-      "description": "Resets the entire demo to its pristine starting state by re-seeding data, clearing rules, resetting the poller baseline, and resetting connections. Returns { reset: true } on success.",
+      "description": "Runs a Flowlet detector tick: reads current transactions, matches active rules against new charges, and fires the Slack snitch. Returns fired events so the client can surface confirmations.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -241,19 +224,36 @@
       },
       "binding": {
         "type": "http",
+        "method": "GET",
+        "path": "/api/flowlet/poll"
+      }
+    },
+    {
+      "name": "reset_flowlet",
+      "description": "Resets the demo to its pristine starting state by re-seeding data, clearing active rules, resetting the poller baseline, and resetting connections. Returns { reset: true } on success.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "mutating": true,
+        "dangerous": true
+      },
+      "binding": {
+        "type": "http",
         "method": "POST",
         "path": "/api/flowlet/reset"
       }
     },
     {
       "name": "list_goals",
-      "description": "Returns the full list of financial goals from the demo store.",
+      "description": "Returns a list of all financial goals. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -264,13 +264,13 @@
     },
     {
       "name": "get_budgets",
-      "description": "Returns budget insight data including category-level budget vs. spend summaries.",
+      "description": "Returns budget insight data for all categories. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -281,13 +281,13 @@
     },
     {
       "name": "get_cashflow",
-      "description": "Returns cashflow insight data showing income versus expenses over time.",
+      "description": "Returns cashflow insight data (income vs. expenses over time). No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -298,13 +298,13 @@
     },
     {
       "name": "get_recurring",
-      "description": "Returns recurring transaction insight data identifying regular charges and subscriptions.",
+      "description": "Returns data on recurring transactions and subscriptions. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -315,13 +315,13 @@
     },
     {
       "name": "get_spending_by_category",
-      "description": "Returns spending breakdown data grouped by transaction category.",
+      "description": "Returns spending broken down by category. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -332,13 +332,13 @@
     },
     {
       "name": "list_notifications",
-      "description": "Returns all notifications from the demo notification store.",
+      "description": "Returns a list of all notifications for the user. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -353,7 +353,7 @@
       "inputSchema": {
         "type": "object",
         "properties": {},
-        "additionalProperties": true
+        "description": "Request body should conform to PlaceOrderInput as defined by the orders server module."
       },
       "annotations": {
         "mutating": true,
@@ -367,13 +367,13 @@
     },
     {
       "name": "list_payees",
-      "description": "Returns the full list of payees available for payments.",
+      "description": "Returns a list of all payees available for payments. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -384,13 +384,13 @@
     },
     {
       "name": "list_scheduled_payments",
-      "description": "Returns all scheduled (upcoming) payments from the demo store.",
+      "description": "Returns a list of all scheduled payments. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -401,13 +401,13 @@
     },
     {
       "name": "get_profile",
-      "description": "Returns the current user's profile information from the demo store.",
+      "description": "Returns the current user's profile information. No input parameters required.",
       "inputSchema": {
         "type": "object",
         "properties": {}
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -418,7 +418,7 @@
     },
     {
       "name": "get_transaction",
-      "description": "Retrieves a single transaction by its ID. Returns the transaction object or a 404 if not found.",
+      "description": "Retrieves a single transaction by its ID. Returns the transaction object if found, or a 404 error if not found.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -432,7 +432,7 @@
         ]
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
@@ -443,7 +443,7 @@
     },
     {
       "name": "list_transactions",
-      "description": "Returns a filtered, sorted, paginated list of transactions. Supports filtering by search text, category, accountId, status, date range (from/to), and amount range (min/max), with sort and cursor-based pagination via limit and cursor.",
+      "description": "Returns a paginated, filterable list of transactions. Supports filtering by search text, category, accountId, status, date range (from/to), amount range (min/max), sorting, and cursor-based pagination via limit and cursor.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -489,12 +489,12 @@
           },
           "cursor": {
             "type": "string",
-            "description": "Pagination cursor for the next page of results."
+            "description": "Pagination cursor for fetching the next page."
           }
         }
       },
       "annotations": {
-        "mutating": false,
+        "mutating": true,
         "dangerous": false
       },
       "binding": {
