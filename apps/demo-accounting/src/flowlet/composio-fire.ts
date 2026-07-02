@@ -18,6 +18,27 @@ export interface ComposioFireResult {
   error?: string;
 }
 
+/** The wire-format args the executor sends, exposed for tests. */
+export function calendarArgs(input: CalendarCreateInput): Record<string, unknown> {
+  // Normalize duration to Composio's contract: it rejects minutes >= 60, so
+  // carry the overflow into hours. Without this, an approved "1-hour call"
+  // automation sends its chase emails and THEN fails on the calendar step
+  // (partial side effects) — dual-review PR #27.
+  const rawHours = input.event_duration_hour ?? 0;
+  const rawMinutes = input.event_duration_minutes ?? (rawHours > 0 ? 0 : 30);
+  const totalMinutes = rawHours * 60 + rawMinutes;
+  return {
+    calendar_id: "primary",
+    summary: input.summary,
+    ...(input.description !== undefined ? { description: input.description } : {}),
+    start_datetime: input.start_datetime,
+    event_duration_hour: Math.floor(totalMinutes / 60),
+    event_duration_minutes: totalMinutes % 60,
+    ...(input.attendees !== undefined ? { attendees: input.attendees } : {}),
+    timezone: input.timezone ?? "America/Los_Angeles",
+  };
+}
+
 async function executeComposio(
   slug: string,
   args: Record<string, unknown>,
@@ -69,16 +90,7 @@ export interface CalendarCreateInput {
 }
 
 export function createCalendarEvent(input: CalendarCreateInput): Promise<ComposioFireResult> {
-  return executeComposio("GOOGLECALENDAR_CREATE_EVENT", {
-    calendar_id: "primary",
-    summary: input.summary,
-    ...(input.description !== undefined ? { description: input.description } : {}),
-    start_datetime: input.start_datetime,
-    event_duration_hour: input.event_duration_hour ?? 0,
-    event_duration_minutes: input.event_duration_minutes ?? 30,
-    ...(input.attendees !== undefined ? { attendees: input.attendees } : {}),
-    timezone: input.timezone ?? "America/Los_Angeles",
-  });
+  return executeComposio("GOOGLECALENDAR_CREATE_EVENT", calendarArgs(input));
 }
 
 /** Injectable seams so the automations world is testable offline. */

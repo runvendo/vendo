@@ -14,31 +14,15 @@ import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
 import { hostToolset } from "@flowlet/runtime";
 import { DEMO_PRINCIPAL } from "./principal";
 import { cadenceHostToolDefs } from "./host-tools";
+import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";
 
 interface ChatRequestBody {
   messages?: FlowletUIMessage[];
 }
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
-
-/** Only expose the real Composio identity to local requests, unless an operator
- *  has explicitly opted a deployment in via FLOWLET_DEMO_PUBLIC=1. */
-function principalAllowed(req: Request): boolean {
-  if (process.env.FLOWLET_DEMO_PUBLIC === "1") return true;
-  const host = req.headers.get("host");
-  let hostname = host ? host.split(":")[0] : "";
-  if (!hostname) {
-    try { hostname = new URL(req.url).hostname; } catch { hostname = ""; }
-  }
-  return LOCAL_HOSTS.has(hostname!.toLowerCase());
-}
-
 export async function handleChat(req: Request, agent: FlowletAgent): Promise<Response> {
-  if (!principalAllowed(req)) {
-    return Response.json(
-      { error: "Flowlet demo agent is restricted to local runs. Set FLOWLET_DEMO_PUBLIC=1 to enable on a deployment." },
-      { status: 403 },
-    );
+  if (!demoPrincipalAllowed(req)) {
+    return Response.json({ error: LOCAL_ONLY_MESSAGE }, { status: 403 });
   }
   const body = (await req.json().catch(() => ({}))) as ChatRequestBody;
   const messages = body.messages ?? [];

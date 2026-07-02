@@ -15,18 +15,23 @@ import type { FlowletAgent } from "@flowlet/core";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const agents = new Map<number, FlowletAgent>();
+// Single-slot cache rebuilt when the automations world changes (a demo reset
+// bumps the generation). Keeping only the CURRENT agent — not a keyed Map —
+// means a reset drops the old world's agent (and its Composio cache) instead
+// of leaking one per reset, and no stale-world agent lingers (dual-review #27).
+let cached: { gen: number; agent: FlowletAgent } | null = null;
 
 function getAgent(): FlowletAgent {
-  const key = automationsGeneration();
-  let agent = agents.get(key);
-  if (!agent) {
-    agent = createDemoAgent({
-      extraTools: { ...demoTools(), ...automationsWorld().authoringTools() },
-    });
-    agents.set(key, agent);
+  const gen = automationsGeneration();
+  if (!cached || cached.gen !== gen) {
+    cached = {
+      gen,
+      agent: createDemoAgent({
+        extraTools: { ...demoTools(), ...automationsWorld().authoringTools() },
+      }),
+    };
   }
-  return agent;
+  return cached.agent;
 }
 
 export async function POST(req: Request): Promise<Response> {
