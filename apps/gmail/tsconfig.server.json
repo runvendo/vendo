@@ -7,7 +7,9 @@
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["node"],
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "allowJs": true
   },
-  "include": ["server/**/*.ts"]
+  "include": ["server/**/*.ts", "src/flowlet/host-components.js"]
 }

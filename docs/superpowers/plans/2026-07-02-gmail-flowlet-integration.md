@@ -79,11 +79,11 @@ Implications folded into tasks below: the action route must EXECUTE approval-gat
 
 **Files:** `apps/gmail/server/flowlet/{agent,policy,host-tools,tools,principal,chat,action}.ts`, route wiring in `server/index.ts`, tests.
 
-- [ ] Agent factory: anthropic model + instructions (component catalog + mail capabilities + render_view guidance, adapted from demo-bank), no Composio
-- [ ] Policy: annotation-driven for client host tools; allow-list for `render_view`/in-process reads; fail-safe approve
-- [ ] `/api/flowlet/chat` (UIMessage stream over Express) + `/api/flowlet/action` (stage dispatch, approval handshake) with the local-only guard
-- [ ] Tests with a mock model; vitest green
-- [ ] Commit
+- [x] Agent factory: anthropic model + instructions (component catalog + mail capabilities + render_view guidance, adapted from demo-bank), no Composio
+- [x] Policy: annotation-driven for client host tools; allow-list for `render_view`/in-process reads; fail-safe approve
+- [x] `/api/flowlet/chat` (UIMessage stream over Express) + `/api/flowlet/action` (stage dispatch, approval handshake) with the local-only guard
+- [x] Tests with a mock model; vitest green
+- [x] Commit
 
 ### Task 5: Flowlet client root + sandbox pipeline
 
