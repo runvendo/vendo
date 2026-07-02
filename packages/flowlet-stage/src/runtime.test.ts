@@ -55,6 +55,14 @@ describe("stage runtime source", () => {
     expect(STAGE_RUNTIME_SRC).toContain("this.setState({ err: false })");
     expect(STAGE_RUNTIME_SRC).toContain("prevProps.children !== this.props.children");
   });
+  it("Text/Skeleton primitives read the canonical --flowlet-* theme vars, not --brand-*", () => {
+    // TU-2: --brand-* is retired in favor of --flowlet-* (see TU-1's brandToCssVars).
+    expect(STAGE_RUNTIME_SRC).toContain("--flowlet-fg");
+    expect(STAGE_RUNTIME_SRC).toContain("--flowlet-skeleton");
+    expect(STAGE_RUNTIME_SRC).not.toContain("--brand-text");
+    expect(STAGE_RUNTIME_SRC).not.toContain("--brand-skeleton");
+    expect(STAGE_RUNTIME_SRC).not.toContain("--brand-");
+  });
 });
 
 describe("$state prop binding (bindProps)", () => {

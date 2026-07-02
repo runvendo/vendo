@@ -169,7 +169,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
       var tag = (props.as && TEXT_TAGS[props.as]) ? props.as : "span";
       return R.createElement(tag, {
         "data-primitive": "Text",
-        style: { color: "var(--brand-text, inherit)" }
+        style: { color: "var(--flowlet-fg, inherit)" }
       }, props.text != null ? props.text : props.children);
     },
     Skeleton: function(props) {
@@ -179,7 +179,7 @@ export const STAGE_RUNTIME_SRC = String.raw`
         "data-skeleton": "true",
         "aria-hidden": "true",
         style: {
-          background: "var(--brand-skeleton, rgba(0,0,0,0.08))",
+          background: "var(--flowlet-skeleton, rgba(0,0,0,0.08))",
           minHeight: props.height || "16px",
           width: props.width || "100%",
           borderRadius: "4px"
