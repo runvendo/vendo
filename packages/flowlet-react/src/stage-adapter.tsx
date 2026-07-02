@@ -39,6 +39,9 @@ export interface FlowletStageProps {
   onAction?: OnAction;
   /** F1 component registry; generated host-node props are validated against it. */
   components?: RegisteredComponent[];
+  /** Opaque OpenUI theme the sandbox bundle mounts; @flowlet/react does not
+   *  interpret its shape. */
+  componentTheme?: unknown;
 }
 
 export function FlowletStage({
@@ -49,6 +52,7 @@ export function FlowletStage({
   state = {},
   onAction,
   components,
+  componentTheme,
 }: FlowletStageProps) {
   const slotRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<StageController | null>(null);
@@ -125,7 +129,7 @@ export function FlowletStage({
                 name: "Text",
                 props: { text: "Failed to render generated UI: " + result.error.message },
               };
-              c.initialize({ theme, state, bundleSource, tree: errorTree });
+              c.initialize({ theme, state, bundleSource, componentTheme, tree: errorTree });
               initedRef.current = true;
               rootIdRef.current = node.id;
               // Drop any prior session so the next valid payload re-initializes
@@ -145,6 +149,7 @@ export function FlowletStage({
               theme,
               state,
               bundleSource,
+              componentTheme,
               tree: result.session.tree,
               generatedComponents: payload.components,
             });
@@ -181,14 +186,14 @@ export function FlowletStage({
           payloadRef.current = null;
         }
         if (!initedRef.current) {
-          c.initialize({ theme, state, bundleSource, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, tree: node });
           initedRef.current = true;
           rootIdRef.current = node.id;
         } else if (switchedFromGenerated || node.id !== rootIdRef.current) {
           // New tree (root id changed, or we just switched off a generated tree
           // whose mounted root id differs from this node). Re-initialize — a
           // plain update would target a nodeId that no longer exists and no-op.
-          c.initialize({ theme, state, bundleSource, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, tree: node });
           rootIdRef.current = node.id;
         } else {
           c.update({ replace: { nodeId: node.id, node } });

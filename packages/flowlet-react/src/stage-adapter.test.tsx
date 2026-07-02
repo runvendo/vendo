@@ -64,6 +64,16 @@ describe("FlowletStage", () => {
     await waitFor(() => expect(update).toHaveBeenCalled());
   });
 
+  it("forwards componentTheme to initialize", async () => {
+    const CT = { theme: { background: "#fff" }, mode: "light" as const };
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    update.mockClear();
+    initialize.mockClear();
+    render(<FlowletStage node={node} componentTheme={CT} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+    expect(initialize.mock.calls[0][0].componentTheme).toEqual(CT);
+  });
+
   it("calls controller.update when theme prop changes", async () => {
     const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
     update.mockClear();
