@@ -32,4 +32,4 @@ Flowlet is a devtool that lets a company's users customize its product: an embed
 - `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
 - `pnpm demo` — run the demo-bank host app (secrets via Infisical)
 - `pnpm demo:accounting` — run the Cadence accounting demo app (secrets via Infisical: the embedded Flowlet agent needs `ANTHROPIC_API_KEY`)
-- `node packages/flowlet-cli/dist/cli.js init <dir>` — one-click extractor (ENG-197); LLM steps need `ANTHROPIC_API_KEY`; `publish` is stubbed until ENG-198
+- `node packages/flowlet-cli/dist/cli.js init <dir>` — one-command install: extractor (ENG-197) + Next.js App Router codemod (route handler, provider wrap, .env.example, sandbox assets); LLM steps need `ANTHROPIC_API_KEY`; `publish` is stubbed until ENG-198. Install story: [`docs/quickstart.md`](docs/quickstart.md)
