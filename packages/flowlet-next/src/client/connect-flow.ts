@@ -1,16 +1,10 @@
 "use client";
 
 /**
- * Client-side connect flow, used by the in-thread DemoConnectCard and the
- * "+ Connect tools" selector.
- *
- * It asks the server to connect a toolkit:
- *   - Already authorized in Composio (the demo case: Gmail/Slack) -> the server
- *     verifies the live connection and returns connected:true. Fast + reliable,
- *     no popup, no flaky OAuth.
- *   - Not yet authorized -> the server returns the real OAuth redirectUrl; we
- *     open it in a popup and poll until the connection is ACTIVE. If the browser
- *     blocks the popup we hand the URL back so the card can show an Authorize link.
+ * Client-side Composio connect flow against `createFlowletHandler()`'s
+ * integrations endpoints: connect → (fast path | OAuth popup) → status poll.
+ * The status route marks the toolkit connected server-side once ACTIVE, which
+ * rebuilds the agent with the new toolkit on its next turn.
  */
 
 const POLL_MS = 1500;
@@ -31,8 +25,8 @@ interface ConnectResponse {
   connectedAccountId?: string;
 }
 
-async function postConnect(toolkit: string): Promise<ConnectResponse> {
-  const res = await fetch("/api/flowlet/integrations", {
+async function postConnect(basePath: string, toolkit: string): Promise<ConnectResponse> {
+  const res = await fetch(`${basePath}/integrations`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id: toolkit, action: "connect" }),
@@ -42,9 +36,13 @@ async function postConnect(toolkit: string): Promise<ConnectResponse> {
   return (await res.json()) as ConnectResponse;
 }
 
-async function pollStatus(toolkit: string, account: string): Promise<"active" | "pending" | "failed"> {
+async function pollStatus(
+  basePath: string,
+  toolkit: string,
+  account: string,
+): Promise<"active" | "pending" | "failed"> {
   const res = await fetch(
-    `/api/flowlet/integrations?status&id=${encodeURIComponent(toolkit)}&account=${encodeURIComponent(account)}`,
+    `${basePath}/integrations?status&id=${encodeURIComponent(toolkit)}&account=${encodeURIComponent(account)}`,
     { cache: "no-store" },
   );
   if (!res.ok) return "failed";
@@ -52,10 +50,10 @@ async function pollStatus(toolkit: string, account: string): Promise<"active" | 
   return json.status === "active" || json.status === "failed" ? json.status : "pending";
 }
 
-export async function runConnectFlow(toolkit: string): Promise<ConnectOutcome> {
-  const res = await postConnect(toolkit);
+export async function runConnectFlow(basePath: string, toolkit: string): Promise<ConnectOutcome> {
+  const res = await postConnect(basePath, toolkit);
 
-  // Fast path: already authorized -> the store is now marked connected.
+  // Fast path: already authorized → the store is now marked connected.
   if (res.connected) return { result: "active" };
 
   const redirectUrl = res.redirectUrl ?? null;
@@ -69,7 +67,7 @@ export async function runConnectFlow(toolkit: string): Promise<ConnectOutcome> {
   const deadline = Date.now() + TIMEOUT_MS;
   while (Date.now() < deadline) {
     await wait(POLL_MS);
-    const status = await pollStatus(toolkit, account);
+    const status = await pollStatus(basePath, toolkit, account);
     if (status === "active") {
       popup.close();
       return { result: "active" };
@@ -79,8 +77,8 @@ export async function runConnectFlow(toolkit: string): Promise<ConnectOutcome> {
       return { result: "failed" };
     }
     if (popup.closed) {
-      // User closed the window — do one final status check before giving up.
-      const final = await pollStatus(toolkit, account);
+      // User closed the window — one final status check before giving up.
+      const final = await pollStatus(basePath, toolkit, account);
       return { result: final === "active" ? "active" : "failed" };
     }
   }

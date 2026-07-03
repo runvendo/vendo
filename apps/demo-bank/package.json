@@ -19,6 +19,7 @@
     "@composio/vercel": "0.4.0",
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
+    "@flowlet/next": "workspace:*",
     "@flowlet/react": "workspace:*",
     "@flowlet/runtime": "workspace:*",
     "@flowlet/shell": "workspace:*",

@@ -43,8 +43,8 @@ export function createComposioIntegrations(): FlowletIntegrations {
     try {
       const res = await fetch("/api/flowlet/integrations", { cache: "no-store" });
       if (res.ok) {
-        const json = (await res.json()) as { data?: { integrations?: Integration[] } };
-        if (json.data?.integrations) cache = json.data.integrations;
+        const json = (await res.json()) as { integrations?: Integration[] };
+        if (json.integrations) cache = json.integrations;
       }
     } catch {
       /* keep last-known cache */
@@ -76,8 +76,8 @@ export function createComposioIntegrations(): FlowletIntegrations {
           cache: "no-store",
         });
         if (res.ok) {
-          const json = (await res.json()) as { data?: { integrations?: Integration[] } };
-          if (json.data?.integrations) cache = json.data.integrations;
+          const json = (await res.json()) as { integrations?: Integration[] };
+          if (json.integrations) cache = json.integrations;
         }
       } catch {
         /* keep last-known cache */

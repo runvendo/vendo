@@ -38,7 +38,9 @@ function hostComponentCatalog(): string {
   return componentPromptCatalog(mapleHostComponents);
 }
 
-function buildInstructions(): string {
+/** Maple's full system prompt — consumed by the demo agent factory below and
+ *  by the @flowlet/next catch-all route (`instructions` option). */
+export function buildInstructions(): string {
   return [
     "You are Maple's assistant, an agent embedded in Maple (a consumer bank app). You can answer",
     "in plain text AND, when it helps, generate bespoke UI on demand via render_view.",
