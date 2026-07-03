@@ -100,10 +100,21 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
             ? "Muted"
             : STATUS_COPY[status]}
         </div>
+        {/* The conversation lives with the blob (Yousef): the current utterance
+            streams right under the presence, not in a far-away footer strip. */}
+        <div className="fl-voice-caption" aria-live="off">
+          {live && (
+            <span className={live.role === "user" ? "is-user" : "is-agent"}>
+              {live.text}
+              {live.interrupted && <em> — interrupted</em>}
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="fl-voice-feed" ref={feedRef}>
-        {feed.map((entry, index) => {
+      <div className="fl-voice-feedwrap">
+        <div className="fl-voice-feed" ref={feedRef}>
+          {feed.map((entry, index) => {
           if (entry.kind === "pending-view") {
             return (
               <div key={entry.id} className="fl-voice-card is-pending">
@@ -133,17 +144,8 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
               />
             </div>
           );
-        })}
-      </div>
-
-      {/* Live caption — the current utterance/narration, word by word. */}
-      <div className="fl-voice-caption" aria-live="off">
-        {live && (
-          <span className={live.role === "user" ? "is-user" : "is-agent"}>
-            {live.text}
-            {live.interrupted && <em> — interrupted</em>}
-          </span>
-        )}
+          })}
+        </div>
       </div>
 
       {(status === "reconnecting" || status === "error") && (

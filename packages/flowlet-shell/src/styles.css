@@ -704,10 +704,23 @@
   letter-spacing: .01em; min-height: 12px; }
 .fl-voice-stage.is-speaking .fl-voice-status { color: var(--flowlet-fg); }
 
+/* The scroll edges blur out: content dissolves under the blob and above the
+   caption. A soft alpha mask on the scroller + frosted strips (backdrop blur,
+   themselves mask-faded so the blur tapers instead of ending on a hard line). */
+.fl-voice-feedwrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fl-voice-feedwrap::before, .fl-voice-feedwrap::after { content: ""; position: absolute; left: 0; right: 0;
+  height: 40px; z-index: 1; pointer-events: none;
+  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); }
+.fl-voice-feedwrap::before { top: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
+  mask-image: linear-gradient(180deg, #000 30%, transparent); }
+.fl-voice-feedwrap::after { bottom: 0;
+  -webkit-mask-image: linear-gradient(0deg, #000 30%, transparent);
+  mask-image: linear-gradient(0deg, #000 30%, transparent); }
 .fl-voice-feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
-  display: flex; flex-direction: column; gap: 12px; padding: 6px 18px 12px; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 16px);
-  mask-image: linear-gradient(180deg, transparent 0, #000 16px); }
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 20px; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 30px), transparent);
+  mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 30px), transparent); }
 .fl-voice-feed::-webkit-scrollbar { display: none; }
 .fl-voice-feed > :first-child { margin-top: auto; }
 .fl-voice-feed > * { flex-shrink: 0; }
@@ -725,8 +738,13 @@
 .fl-voice-approval { display: flex; }
 .fl-voice-approval .fl-approval { align-self: stretch; width: 100%; }
 
-.fl-voice-caption { min-height: 34px; padding: 4px 22px 6px; text-align: center;
-  font-size: 13.5px; line-height: 1.45; flex-shrink: 0; }
+/* Lives in the head, right under the blob + status — the words stay with the
+   presence. Fixed height (~2 lines) so the feed doesn't jump as lines stream. */
+.fl-voice-caption { height: 42px; padding: 0 22px; text-align: center; max-width: 560px;
+  font-size: 13.5px; line-height: 1.45; flex-shrink: 0; overflow: hidden;
+  /* Bottom-anchored: a long streaming line scrolls up through the box, so the
+     newest words are always the visible ones. */
+  display: flex; align-items: flex-end; justify-content: center; }
 .fl-voice-caption .is-user { color: var(--flowlet-fg-muted); }
 .fl-voice-caption .is-user::before { content: "“"; }
 .fl-voice-caption .is-user::after { content: "”"; }
