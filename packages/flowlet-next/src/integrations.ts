@@ -18,22 +18,7 @@ import { createComposioClient, type ComposioClient } from "@flowlet/runtime";
 import { resolvePrincipal } from "./guard";
 import type { FlowletHandlerOptions, IntegrationCatalogEntry } from "./options";
 
-export const DEFAULT_INTEGRATION_CATALOG: IntegrationCatalogEntry[] = [
-  { id: "gmail", name: "Gmail" },
-  { id: "slack", name: "Slack" },
-  { id: "notion", name: "Notion" },
-  { id: "github", name: "GitHub" },
-  { id: "googlecalendar", name: "Google Calendar" },
-  { id: "linear", name: "Linear" },
-  { id: "googledrive", name: "Google Drive" },
-  { id: "discord", name: "Discord" },
-  { id: "googlesheets", name: "Google Sheets" },
-  { id: "stripe", name: "Stripe" },
-  { id: "jira", name: "Jira" },
-  { id: "asana", name: "Asana" },
-  { id: "hubspot", name: "HubSpot" },
-  { id: "airtable", name: "Airtable" },
-];
+export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
 
 export interface ConnectionsStore {
   list(): Array<IntegrationCatalogEntry & { connected: boolean }>;
