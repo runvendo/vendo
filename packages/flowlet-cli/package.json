@@ -4,7 +4,7 @@
   "type": "module",
   "bin": { "flowlet": "./dist/cli.js" },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && node scripts/bundle-assets.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

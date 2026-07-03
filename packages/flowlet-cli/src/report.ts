@@ -31,6 +31,6 @@ export function renderReport(r: InitReport): string {
     for (const f of r.components.failed) lines.push(`  FAILED ${f.file}: ${f.error}`);
   }
   if (r.llmSkipped) lines.push("LLM steps skipped (no ANTHROPIC_API_KEY or --skip-llm): route-scan fallback, component discovery");
-  lines.push("All output is in .flowlet/ — review and edit it; nothing else in your repo was touched.");
+  lines.push("Extraction output is in .flowlet/ — review and edit it (any wiring changes are listed below).");
   return lines.join("\n");
 }
