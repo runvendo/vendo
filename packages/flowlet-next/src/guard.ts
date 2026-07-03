@@ -9,9 +9,11 @@
  * entirely — the host's auth becomes the gate, and `null` means 403.
  *
  * IMPORTANT: the local-only check keys off the `Host` header, which is
- * client-controlled (spoofable by a direct caller, rewritable by a proxy). It
- * is a DEV CONVENIENCE, not a production auth control. Anything reachable from
- * the internet MUST pass a `principal` resolver — that is the real gate.
+ * client-controlled (spoofable by a direct caller, rewritable by a proxy), so
+ * it is NOT trusted in production. When `NODE_ENV === "production"` (i.e.
+ * `next build && next start`) the default identity is disabled entirely: the
+ * handler fails closed unless a `principal` resolver or FLOWLET_ALLOW_REMOTE=1
+ * is set. The Host check only relaxes things in development.
  * (See docs/quickstart.md → Deploying.)
  */
 import type { FlowletPrincipal } from "@flowlet/runtime";
@@ -23,8 +25,9 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"
 export const DEFAULT_PRINCIPAL: FlowletPrincipal = { userId: "flowlet-default-user" };
 
 export const REMOTE_BLOCKED_MESSAGE =
-  "Flowlet is restricted to local requests. Pass a `principal` resolver to " +
-  "createFlowletHandler (recommended) or set FLOWLET_ALLOW_REMOTE=1 to serve remote traffic.";
+  "Flowlet is not serving this request. In production you MUST pass a `principal` " +
+  "resolver to createFlowletHandler (recommended) or set FLOWLET_ALLOW_REMOTE=1. " +
+  "The default identity is available only to local requests in development.";
 
 function isLocalRequest(req: Request): boolean {
   // Prefer the Host header (authoritative for the served origin); fall back
@@ -57,7 +60,24 @@ export async function resolvePrincipal(
     }
     return { ok: true, principal };
   }
-  if (env["FLOWLET_ALLOW_REMOTE"] === "1" || isLocalRequest(req)) {
+  // Explicit opt-in wins in any environment.
+  if (env["FLOWLET_ALLOW_REMOTE"] === "1") {
+    return { ok: true, principal: DEFAULT_PRINCIPAL };
+  }
+  // FAIL CLOSED in production. `next build && next start` sets NODE_ENV to
+  // "production"; a real deployment therefore gets NO default principal and
+  // MUST configure `principal` (or FLOWLET_ALLOW_REMOTE=1). This makes the
+  // spoofable Host-header check a DEV-ONLY convenience — it can never be the
+  // control on a deployed app, closing the "Host: localhost" bypass.
+  if (env["NODE_ENV"] === "production") {
+    return {
+      ok: false,
+      response: Response.json({ error: REMOTE_BLOCKED_MESSAGE }, { status: 403 }),
+    };
+  }
+  // Development only: serve local requests with the default identity so
+  // zero-config `next dev` just works.
+  if (isLocalRequest(req)) {
     return { ok: true, principal: DEFAULT_PRINCIPAL };
   }
   return {

@@ -19,9 +19,21 @@ export interface ChatDeps {
   getAgent: () => FlowletAgent;
   hostTools: HostToolDefinition[];
   options: FlowletHandlerOptions;
+  /** False when no model key is configured → chat answers 503 instead of streaming a provider error. */
+  chatEnabled: boolean;
 }
 
 export async function handleChat(req: Request, deps: ChatDeps): Promise<Response> {
+  // Capability-additive: without a model key, chat is DISABLED. Answer cleanly
+  // instead of letting the provider throw mid-stream. A host that injects its
+  // own `model` (which may key off something else) opts out by setting
+  // chatEnabled true.
+  if (!deps.chatEnabled) {
+    return Response.json(
+      { error: "chat is unavailable — set ANTHROPIC_API_KEY" },
+      { status: 503 },
+    );
+  }
   const guard = await resolvePrincipal(req, deps.options);
   if (!guard.ok) return guard.response;
 

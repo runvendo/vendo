@@ -7,8 +7,18 @@
  * Approval flow: an `approve` decision returns `{ needsApproval, approvalToken }`
  * WITHOUT executing. The client shows the approval card and re-POSTs with the
  * token. Tokens are single-use, short-lived, and bound to the exact
- * (action, payload) pair — unlike a trusted `approved: true` re-POST, a forged
- * or replayed confirmation cannot execute a gated action.
+ * (action, payload, user) triple — unlike a trusted `approved: true` re-POST, a
+ * forged or replayed confirmation cannot execute a gated action.
+ *
+ * SCOPE — what the token is and isn't: it is a HUMAN-CONSENT binding (this
+ * exact action+payload was shown to, and confirmed by, the user), not an
+ * authorization gate. The authorization gate is upstream — `resolvePrincipal`
+ * (who may call at all) plus the policy (what needs consent). An already-
+ * authorized caller can, of course, script the two-step approve+execute for
+ * their OWN actions; that is inherent to any endpoint that lets an authorized
+ * user act, and topology B means they could hit the host API directly anyway.
+ * The token exists to stop a DIFFERENT or REPLAYED payload from riding a
+ * consent the user gave for something else.
  */
 import { randomUUID } from "node:crypto";
 import { buildDescriptor } from "@flowlet/runtime";

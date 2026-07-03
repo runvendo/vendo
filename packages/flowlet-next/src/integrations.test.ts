@@ -88,9 +88,33 @@ describe("integrations endpoints", () => {
     await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=gmail&account=acc-1"), d);
     expect(d.store.connectedToolkits()).toEqual([]);
 
-    const active = deps();
+    const active = deps({ client: stubClient({ hasActiveConnection: async () => true }) });
     await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=gmail&account=acc-1"), active);
     expect(active.store.connectedToolkits()).toEqual(["gmail"]);
+  });
+
+  it("status poll does NOT flip a toolkit the user has no active connection for (review P1)", async () => {
+    // Active account, but hasActiveConnection(gmail) is false → must not connect.
+    const d = deps({
+      client: stubClient({ connectionStatus: async () => "active" as const, hasActiveConnection: async () => false }),
+    });
+    await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=slack&account=someones-gmail-acct"), d);
+    expect(d.store.connectedToolkits()).toEqual([]);
+  });
+
+  it("rejects an unknown toolkit id before spending the Composio key (review P1)", async () => {
+    let authorizeCalls = 0;
+    const d = deps({
+      client: stubClient({
+        authorize: async () => {
+          authorizeCalls++;
+          return { redirectUrl: "x", connectedAccountId: "y" };
+        },
+      }),
+    });
+    const res = await handleIntegrationsPost(post({ id: "evilcorp", action: "connect" }), d);
+    expect(res.status).toBe(400);
+    expect(authorizeCalls).toBe(0);
   });
 
   it("disconnect flips the store off; unknown ids never connect", async () => {

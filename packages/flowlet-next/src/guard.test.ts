@@ -20,8 +20,18 @@ describe("resolvePrincipal", () => {
     if (!result.ok) expect(result.response.status).toBe(403);
   });
 
-  it("serves remote traffic when FLOWLET_ALLOW_REMOTE=1", async () => {
-    const result = await resolvePrincipal(req("myapp.vercel.app"), {}, { FLOWLET_ALLOW_REMOTE: "1" });
+  it("fails closed in production even for a spoofed local Host (review P0)", async () => {
+    const spoofed = await resolvePrincipal(req("localhost:3000"), {}, { NODE_ENV: "production" });
+    expect(spoofed.ok).toBe(false);
+    if (!spoofed.ok) expect(spoofed.response.status).toBe(403);
+  });
+
+  it("serves remote traffic when FLOWLET_ALLOW_REMOTE=1 (even in production)", async () => {
+    const result = await resolvePrincipal(
+      req("myapp.vercel.app"),
+      {},
+      { FLOWLET_ALLOW_REMOTE: "1", NODE_ENV: "production" },
+    );
     expect(result.ok).toBe(true);
   });
 

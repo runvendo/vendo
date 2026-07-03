@@ -41,6 +41,11 @@ function getClient(deps: IntegrationsDeps): ComposioClient {
   return realClient;
 }
 
+/** True iff `id` is a toolkit in the handler's catalog. */
+function isKnownToolkit(deps: IntegrationsDeps, id: string): boolean {
+  return deps.store.list().some((i) => i.id === id);
+}
+
 export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps): Promise<Response> {
   const guard = await resolvePrincipal(req, deps.options);
   if (!guard.ok) return guard.response;
@@ -53,10 +58,18 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
     if (!id || !account) {
       return Response.json({ error: "status requires id and account" }, { status: 400 });
     }
+    if (!isKnownToolkit(deps, id)) {
+      return Response.json({ error: "unknown integration id" }, { status: 400 });
+    }
     try {
       const status = await getClient(deps).connectionStatus(account);
-      // The store is the agent gate: only mark connected once Composio is ACTIVE.
-      if (status === "active") deps.store.connect(id);
+      // The store is the agent gate. Marking a toolkit connected requires TWO
+      // facts: the polled account is ACTIVE *and* this user genuinely has an
+      // active connection for THIS toolkit — otherwise a caller could pass any
+      // active account id against any toolkit id and flip it on without OAuth.
+      if (status === "active" && (await getClient(deps).hasActiveConnection(guard.principal.userId, id))) {
+        deps.store.connect(id);
+      }
       return Response.json({ status });
     } catch {
       return Response.json({ status: "failed" as const });
@@ -83,6 +96,11 @@ export async function handleIntegrationsPost(req: Request, deps: IntegrationsDep
   }
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return Response.json({ error: "missing integration id" }, { status: 400 });
+  // Validate against the catalog BEFORE touching Composio, so a caller can't
+  // spend the server's Composio key initiating OAuth for arbitrary slugs.
+  if (!isKnownToolkit(deps, id)) {
+    return Response.json({ error: "unknown integration id" }, { status: 400 });
+  }
   const userId = guard.principal.userId;
 
   if (body.action === "connect") {

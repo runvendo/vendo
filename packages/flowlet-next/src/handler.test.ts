@@ -62,7 +62,17 @@ describe("createFlowletHandler", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it("400s a chat request with no messages (zero-config, no key needed)", async () => {
+  it("503s a chat request when no model key is configured", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ messages: [{ role: "user" }] }) }),
+    );
+    expect(res.status).toBe(503);
+  });
+
+  it("400s a chat request with no messages once a key is present", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
     const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
     const res = await POST(
       req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ messages: [] }) }),
@@ -71,6 +81,10 @@ describe("createFlowletHandler", () => {
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {
+    // A key so chat reaches the guard rather than short-circuiting on 503.
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("COMPOSIO_API_KEY", "ck_x");
+    vi.stubEnv("NODE_ENV", "production"); // fail-closed in prod even for spoofed Host
     const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
     for (const p of ["chat", "action", "tick", "integrations"]) {
       const res = await POST(

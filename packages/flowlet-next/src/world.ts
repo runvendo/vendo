@@ -8,6 +8,13 @@
  * executed (they ride the user's browser session) and therefore cannot run
  * unattended — so they are deliberately NOT registered here. An automation
  * step can only call tools the host registered server-side.
+ *
+ * SINGLE-TENANT: the world is created once per handler with a fixed scope
+ * (`DEFAULT_PRINCIPAL`), and its store lives in memory. A `principal` resolver
+ * gates who may reach the endpoints, but does NOT partition automations per
+ * user — every caller shares one automation store. Multi-tenant installs must
+ * front their own per-user store/world. (Documented in docs/quickstart.md →
+ * Deploying.)
  */
 import { anthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel, ToolSet } from "ai";

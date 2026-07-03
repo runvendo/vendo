@@ -126,6 +126,25 @@ export default function RootLayout({ children }) {
     const out = wrapLayoutChildren(layout)!;
     expect(out.startsWith(`"use client";\nimport { AppFlowletRoot } from "./flowlet-root";`)).toBe(true);
   });
+
+  it("keeps the import BELOW a use-client directive that has a leading comment (review P1)", () => {
+    const layout = `// Copyright 2026 Acme
+"use client";
+import { useState } from "react";
+export default function RootLayout({ children }) {
+  return <html><body>{children}</body></html>;
+}
+`;
+    const out = wrapLayoutChildren(layout)!;
+    // directive must remain the first STATEMENT (import inserted after it),
+    // else Next demotes the file to a server component and hooks break.
+    const dirIdx = out.indexOf('"use client";');
+    const impIdx = out.indexOf('import { AppFlowletRoot }');
+    expect(dirIdx).toBeGreaterThanOrEqual(0);
+    expect(impIdx).toBeGreaterThan(dirIdx);
+    // nothing but the comment + whitespace precedes the directive
+    expect(out.slice(0, dirIdx).trim()).toBe("// Copyright 2026 Acme");
+  });
 });
 
 describe("addDependency", () => {

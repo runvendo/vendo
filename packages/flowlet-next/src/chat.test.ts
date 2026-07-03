@@ -36,6 +36,7 @@ describe("handleChat", () => {
       getAgent: () => agent,
       hostTools: HOST_TOOLS,
       options: {},
+      chatEnabled: true,
     });
     expect(res.status).toBe(200);
     expect(run).toHaveBeenCalledOnce();
@@ -52,6 +53,7 @@ describe("handleChat", () => {
       getAgent: () => agent,
       hostTools: [],
       options: {},
+      chatEnabled: true,
     });
     const input = run.mock.calls[0]![0] as Record<string, unknown>;
     expect(input["tools"]).toEqual({});
@@ -59,7 +61,7 @@ describe("handleChat", () => {
 
   it("rejects an empty or malformed messages array with 400", async () => {
     const { agent } = stubAgent();
-    const deps = { getAgent: () => agent, hostTools: [], options: {} };
+    const deps = { getAgent: () => agent, hostTools: [], options: {}, chatEnabled: true };
     expect((await handleChat(chatReq({ messages: [] }), deps)).status).toBe(400);
     expect((await handleChat(chatReq({ messages: {} }), deps)).status).toBe(400);
     expect((await handleChat(chatReq("not json"), deps)).status).toBe(400);
@@ -71,8 +73,21 @@ describe("handleChat", () => {
       getAgent: () => agent,
       hostTools: [],
       options: {},
+      chatEnabled: true,
     });
     expect(res.status).toBe(403);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 (not a mid-stream error) when chat is disabled — no model key", async () => {
+    const { agent, run } = stubAgent();
+    const res = await handleChat(chatReq({ messages: MESSAGES }), {
+      getAgent: () => agent,
+      hostTools: [],
+      options: {},
+      chatEnabled: false,
+    });
+    expect(res.status).toBe(503);
     expect(run).not.toHaveBeenCalled();
   });
 });

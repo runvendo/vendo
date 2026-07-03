@@ -46,12 +46,16 @@ const layer: ApprovalPolicy = {
       return annotations.evaluate(ctx);
     }
     // Composio names are underscore-delimited segments (TOOLKIT_VERB_OBJECT).
-    // Match verbs as whole segments; any write-verb segment takes precedence
-    // (GOOGLEDOCS_FIND_AND_REPLACE gates despite FIND). An unanchored
-    // substring test would auto-allow BUDGET_CREATE via its embedded "GET".
+    // 1) Any write-verb segment ANYWHERE gates it (GOOGLEDOCS_FIND_AND_REPLACE
+    //    stays gated despite the leading read verb FIND).
+    // 2) Auto-allow ONLY when the VERB position (segment 1, right after the
+    //    toolkit) is a read verb. Requiring the read intent to be the verb —
+    //    not merely present somewhere — stops mutating tools whose OBJECT reads
+    //    like a read from slipping through (e.g. GMAIL_MARK_AS_READ: verb=MARK,
+    //    not a read verb, so it falls through to the fail-safe).
     const segments = toolName.split("_");
     if (segments.some((s) => WRITE_VERBS.has(s))) return "approve";
-    if (segments.some((s) => READ_VERBS.has(s))) return "allow";
+    if (segments.length >= 2 && READ_VERBS.has(segments[1]!)) return "allow";
     return "approve"; // fail-safe: gate the unknown
   },
 };

@@ -60,6 +60,10 @@ describe("defaultFlowletPolicy", () => {
     expect(await evaluate("GOOGLEDOCS_FIND_AND_REPLACE")).toBe("approve");
     // "GET" inside a word is NOT a read signal.
     expect(await evaluate("BUDGET_CREATE")).toBe("approve");
+    // A read verb only counts in the VERB position: GMAIL_MARK_AS_READ mutates
+    // (verb MARK), so the trailing READ must NOT auto-allow it.
+    expect(await evaluate("GMAIL_MARK_AS_READ")).toBe("approve");
+    expect(await evaluate("SLACK_ARCHIVE_CHANNEL")).toBe("approve");
   });
 
   it("fail-safe: unknown tools require approval", async () => {

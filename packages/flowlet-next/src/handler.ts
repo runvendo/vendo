@@ -140,7 +140,14 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const s = state();
     switch (subPath(req)) {
       case "chat":
-        return handleChat(req, { getAgent: s.getAgent, hostTools: s.hostTools, options });
+        return handleChat(req, {
+          getAgent: s.getAgent,
+          hostTools: s.hostTools,
+          options,
+          // A host that injects its own `model` owns the key; otherwise chat
+          // needs ANTHROPIC_API_KEY (capabilities.chat).
+          chatEnabled: options.model !== undefined || s.capabilities.chat,
+        });
       case "action":
         return handleAction(req, {
           getTools: s.serverTools,

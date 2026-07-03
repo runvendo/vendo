@@ -123,6 +123,13 @@ OPENAI_API_KEY=
  * Wrap the single `{children}` expression of the root layout with the
  * generated provider. Returns the edited source, or null when the file cannot
  * be edited with certainty (caller falls back to manual instructions).
+ *
+ * Targets the standard layout shape (one JSX `{children}` in child position).
+ * Known limitation: a `{children}` nested inside a JSX ATTRIBUTE expression
+ * (e.g. `<Chrome slot={<b>{children}</b>}>...`) is indistinguishable from a
+ * real child by this heuristic and would be wrapped in the wrong place — such
+ * exotic layouts should be wired by hand (the whole edit is one reviewable
+ * diff). create-next-app and typical provider layouts are handled correctly.
  */
 /**
  * Return a copy of `source` with the CONTENTS of string/template literals and
@@ -201,10 +208,19 @@ export function wrapLayoutChildren(source: string, componentName = "AppFlowletRo
   // "use client"/"use server" directive if present, else at the very top.
   // (Anchoring after "the last import" is unsafe — a Prettier-wrapped
   //  multi-line import would land the new line INSIDE the brace block.)
+  //
+  // A directive must remain the FIRST statement, but Next allows comments above
+  // it — so skip leading comments/whitespace (found on the masked copy, which
+  // has comment CONTENT blanked but delimiters/offsets intact) before checking.
   const importStmt = `import { ${componentName} } from "./flowlet-root";\n`;
-  const directive = wrapped.match(/^\s*(['"]use [a-z ]+['"];?[^\n]*\n)/);
+  // maskLiterals blanks comment bodies AND their delimiters to spaces, so the
+  // leading `\s*` on the masked copy skips whitespace and header comments in
+  // one go. Detect the directive on the ORIGINAL at that offset, though — the
+  // mask also blanks the "use client" string interior.
+  const headerLen = maskLiterals(wrapped).match(/^\s*/)?.[0].length ?? 0;
+  const directive = wrapped.slice(headerLen).match(/^(['"]use [a-z ]+['"];?[^\n]*\n)/);
   if (directive) {
-    const end = directive[0].length;
+    const end = headerLen + directive[0].length;
     return wrapped.slice(0, end) + importStmt + wrapped.slice(end);
   }
   return importStmt + wrapped;
@@ -248,7 +264,11 @@ export async function wireNextApp(
   if (!found) {
     summary.skipped.push({
       step: "next-wiring",
-      reason: "no App Router root layout found (app/layout.* or src/app/layout.*) — Pages Router is not supported yet",
+      reason:
+        "no App Router root layout at app/layout.* or src/app/layout.*. " +
+        "Pages Router and route-group-only roots (app/(group)/layout.*) aren't " +
+        "auto-wired yet — add app/api/flowlet/[...path]/route.ts and wrap your " +
+        "root layout with <AppFlowletRoot> by hand (see @flowlet/next).",
     });
     return summary;
   }
