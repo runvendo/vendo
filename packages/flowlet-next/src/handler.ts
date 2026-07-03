@@ -22,6 +22,7 @@
  * gives working chat + generated UI.
  */
 import type { ToolSet } from "ai";
+import { prewiredComponents } from "@flowlet/components/descriptors";
 import { handleChat } from "./chat";
 import { handleAction, createApprovalStore } from "./action";
 import {
@@ -64,7 +65,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const model = options.model ?? defaultModel();
     const policy = options.policy ?? defaultFlowletPolicy;
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
-    const connections = createConnectionsStore(catalog);
+    const connections = options.connections ?? createConnectionsStore(catalog);
 
     const world: FlowletAutomationsWorld | null =
       options.automations === false
@@ -97,7 +98,9 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       model,
       policy,
       instructions,
-      components: options.components ?? [],
+      // The engine's render_view registry must know the prewired catalog too —
+      // host-node validation rejects any name it can't find (ENG-186).
+      components: [...prewiredComponents, ...(options.components ?? [])],
       tools: serverTools,
       ...(capabilities.integrations ? { toolkits: () => connections.connectedToolkits() } : {}),
       ...(options.cacheKey ? { cacheKey: options.cacheKey } : {}),

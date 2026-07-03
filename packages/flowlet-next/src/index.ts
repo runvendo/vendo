@@ -16,4 +16,6 @@ export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
 export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
 export { manifestToolsToHostTools } from "./manifest-tools";
 export { defaultFlowletPolicy } from "./default-policy";
+export { createConnectionsStore, type ConnectionsStore } from "./connections";
+export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
 export { buildInstructions, type BuildInstructionsInput } from "./agent";

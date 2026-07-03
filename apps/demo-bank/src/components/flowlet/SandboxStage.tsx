@@ -38,15 +38,22 @@ interface PendingApproval {
   settle: (approved: boolean) => void;
 }
 
-async function callAction(action: string, payload: unknown, approved: boolean): Promise<ActionResult> {
+interface ActionResponse {
+  result?: unknown;
+  needsApproval?: boolean;
+  approvalToken?: string;
+  error?: string;
+}
+
+async function callAction(action: string, payload: unknown, approvalToken?: string): Promise<ActionResponse> {
   const res = await fetch("/api/flowlet/action", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action, payload, approved }),
+    body: JSON.stringify({ action, payload, ...(approvalToken ? { approvalToken } : {}) }),
   });
-  const json = await res.json();
+  const json = (await res.json()) as ActionResponse;
   if (!res.ok) throw new Error(json.error ?? `action failed (${res.status})`);
-  return { result: json.result };
+  return json;
 }
 
 /**
@@ -113,22 +120,20 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
   if (!sources) return <div data-testid="stage-loading" aria-busy="true" />;
 
   const onAction = async (req: ActionRequest): Promise<ActionResult> => {
-    // First pass: let the policy decide.
-    const res = await fetch("/api/flowlet/action", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: req.action, payload: req.payload }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? `action failed (${res.status})`);
-    if (json.needsApproval !== true) return { result: json.result };
+    // First pass: let the policy decide. An "approve" answer carries a
+    // single-use token bound to this exact (action, payload) — the re-POST
+    // must present it (the old trusted `approved:true` re-POST is gone).
+    const first = await callAction(req.action, req.payload);
+    if (first.needsApproval !== true) return { result: first.result };
     // Approval required: park the dispatch promise on the user's click,
     // keyed by requestId so concurrent approvals coexist.
     const approved = await new Promise<boolean>((settle) => {
       setPending((prev) => new Map(prev).set(req.requestId, { req, settle }));
     });
     if (!approved) throw new Error("action declined");
-    return callAction(req.action, req.payload, true);
+    const second = await callAction(req.action, req.payload, first.approvalToken);
+    if (second.needsApproval === true) throw new Error("approval expired — try again");
+    return { result: second.result };
   };
 
   return (

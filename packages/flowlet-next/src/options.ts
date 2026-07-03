@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
 import type { HostToolDefinition, RegisteredComponent } from "@flowlet/core";
 import type { ApprovalPolicy, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
+import type { ConnectionsStore } from "./connections";
 
 export interface IntegrationCatalogEntry {
   /** Composio toolkit id (must match the shell's BrandIcon ids). */
@@ -45,6 +46,12 @@ export interface FlowletHandlerOptions {
   /** Integrations catalog shown by the connect UI. Default: the standard set. */
   integrations?: IntegrationCatalogEntry[];
   /**
+   * Bring-your-own connections store (which toolkits are connected → what the
+   * agent ingests). Default: a fresh in-memory store. Inject when the host
+   * owns connection state elsewhere (e.g. a demo reset that clears it).
+   */
+  connections?: ConnectionsStore;
+  /**
    * Automations world. `false` disables it (no authoring tools, tick 404s);
    * `tools` registers server-executed tools automation steps may call.
    */
@@ -69,6 +76,14 @@ const optionsSchema = z
     principal: fn<NonNullable<FlowletHandlerOptions["principal"]>>().optional(),
     cacheKey: fn<() => string>().optional(),
     integrations: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) }).strict()).optional(),
+    connections: z
+      .custom<ConnectionsStore>(
+        (v) =>
+          typeof v === "object" && v !== null &&
+          typeof (v as ConnectionsStore).connectedToolkits === "function" &&
+          typeof (v as ConnectionsStore).list === "function",
+      )
+      .optional(),
     automations: z
       .union([z.literal(false), z.object({ tools: z.record(z.custom<RegisteredTool>()).optional() }).strict()])
       .optional(),

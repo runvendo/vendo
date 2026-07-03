@@ -16,33 +16,12 @@
  */
 import { createComposioClient, type ComposioClient } from "@flowlet/runtime";
 import { resolvePrincipal } from "./guard";
-import type { FlowletHandlerOptions, IntegrationCatalogEntry } from "./options";
+import type { FlowletHandlerOptions } from "./options";
+import type { ConnectionsStore } from "./connections";
 
 export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
-
-export interface ConnectionsStore {
-  list(): Array<IntegrationCatalogEntry & { connected: boolean }>;
-  connect(id: string): void;
-  disconnect(id: string): void;
-  connectedToolkits(): string[];
-}
-
-/** In-memory connected-toolkit set — the single source of truth for what the
- *  agent ingests. Everything starts DISCONNECTED on boot. */
-export function createConnectionsStore(catalog: IntegrationCatalogEntry[]): ConnectionsStore {
-  const validIds = new Set(catalog.map((c) => c.id));
-  const connected = new Set<string>();
-  return {
-    list: () => catalog.map((c) => ({ ...c, connected: connected.has(c.id) })),
-    connect: (id) => {
-      if (validIds.has(id)) connected.add(id);
-    },
-    disconnect: (id) => {
-      connected.delete(id);
-    },
-    connectedToolkits: () => catalog.filter((c) => connected.has(c.id)).map((c) => c.id),
-  };
-}
+export { createConnectionsStore } from "./connections";
+export type { ConnectionsStore } from "./connections";
 
 export interface IntegrationsDeps {
   store: ConnectionsStore;
