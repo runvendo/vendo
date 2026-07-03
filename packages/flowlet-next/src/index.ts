@@ -9,3 +9,7 @@
  */
 
 export const FLOWLET_NEXT_PACKAGE = "@flowlet/next";
+
+export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
+export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
+export { manifestToolsToHostTools } from "./manifest-tools";
