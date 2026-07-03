@@ -10,6 +10,10 @@
 
 export const FLOWLET_NEXT_PACKAGE = "@flowlet/next";
 
+export { createFlowletHandler, type FlowletRouteHandlers } from "./handler";
+export type { FlowletHandlerOptions, IntegrationCatalogEntry } from "./options";
 export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
 export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
 export { manifestToolsToHostTools } from "./manifest-tools";
+export { defaultFlowletPolicy } from "./default-policy";
+export { buildInstructions, type BuildInstructionsInput } from "./agent";
