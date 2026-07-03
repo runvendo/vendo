@@ -1,226 +1,213 @@
-# ENG-193 — Safeguards & permissions hardening: design proposals
+# ENG-193 — Safeguards & permissions: design (v2, post-brainstorm)
 
-> **Status: PHASE 1 — proposals for Yousef's brainstorm. Nothing here is decided; nothing gets built until he directs.**
-> Companion to the locked platform architecture (2026-07-01). Everything proposed is additive to the frozen contracts.
+> **Status: brainstormed with Yousef 2026-07-02; this v2 reflects that session + a verified deep-research pass. Awaiting his review of this doc before any build.**
+> Additive to the frozen contracts and the locked platform architecture (2026-07-01).
 
 ## 1. The problem
 
-Today every dangerous action shows an approval card, every time, forever. Three failures:
+Today every dangerous action shows an approval card, every time, forever. That is repetitive (10 reminder emails = 10 cards), has no memory a user can see or manage, and trains click-through — and habituated approval is worse than no approval. The PRD bar stands: *bank-grade — the agent can be authenticated to do something and still not allowed to.*
 
-1. **Repetitive** — approving "read run history" for the fifth time teaches users to click without reading. Habituated approval is worse than no approval.
-2. **No memory** — the one memoisation layer that exists (`rememberDecisions`) is in-memory, exact-args-only, and invisible. The user can't see it, scope it, or revoke it.
-3. **No management surface** — there is nowhere to answer "what is this agent allowed to do on my behalf?" Automations have per-tool pre-auth grants (ENG-188), chat has nothing, and the two don't know about each other.
+## 2. Design principles (agreed in the brainstorm)
 
-The PRD bar: *bank-grade — the agent can be authenticated to do something and still not allowed to.*
+1. **Attention is the safety budget.** Every ask spends it. Ask only where `risk × intent-uncertainty` clears a bar; make every ask worth reading. (Empirical: 13/16 users in an MCP-consent study clicked "Always Allow" just to dismiss prompts; fMRI shows warning response collapses by the second exposure.)
+2. **Asks scale with user decisions, not agent actions.** One explicit, enforceable decision may cover N actions (a batch, a task, an automation's lifetime, an envelope).
+3. **Deterministic enforcement; LLM judgment only tightens.** OpenAI *trains* toward confirmation (91–100% recall by tier) because a browser is all they have. We act through a typed API — every gate is enforceable in the policy layer. Judges and classifiers may escalate a call to a card or deny it; they can never loosen anything.
+4. **Everything remembered is an explicit, visible, revocable grant.** Nothing is memoised as a side effect. Invisible suppression (today's `rememberDecisions`) is retired.
+5. **The permission system protects itself.** Tools that change permissions (create/edit automations, create grants) are themselves critical-tier. (Both Anthropic and OpenAI ship this.)
+6. **Legibility over interrogation.** Trust comes from seeing what happened — activity feed, audit, undo — not from being asked constantly. (Chrome's quiet-chip A/B: ~30% less prompt friction, <5% fewer grants; Android's Privacy Dashboard.)
 
-## 2. What already exists (the raw material)
+## 3. Danger tiers (four)
 
-| Piece | Where | What it gives us |
+Derived from the `{mutating, dangerous}` annotations already required on every manifest tool; MCP hints map for Composio/MCP tools.
+
+| Tier | Derivation | Behavior |
 |---|---|---|
-| Policy engine | `flowlet-runtime/src/policy/` | Composable `ApprovalPolicy` layers; most-restrictive-wins (`allow` < `approve` < `deny`); `onExecuted` post-execution hook |
-| Tool annotations | `flowlet-core/src/manifest/tool.ts` | `{mutating, dangerous, idempotent?}` **required** on every manifest tool; MCP-hint mapping for Composio/MCP tools |
-| Ask-once memo | `policy/remember.ts` | Exact-args suppression, fail-closed invariants (record only on human-approved execute; deny always wins) |
-| Automation grants | `automations/grants.ts` + `store.ts` | Scope-hashed per-tool pre-authorization: `{tool, descriptorHash, scopeHash, grantedAt}`; hash drift ⇒ re-approve; grants version-bound, never carried across edits |
-| Approval card | `flowlet-shell/.../ApprovalCard.tsx` | Inline in-thread consent card, friendly action labels, Approve/Decline |
-| Audit log | `core/src/seams/store.ts` | Append-only `AuditEvent` union already covering tool executions, approvals, grant exchanges, firings |
-| Async approvals | `automations/store.ts` | `PendingApproval` + `waiting_approval` runs — automations already pause mid-run for consent |
+| **read** | `mutating: false` | Auto, audited |
+| **act** | `mutating: true, dangerous: false` | Consent via register (below); grantable |
+| **critical** | `dangerous: true` — money, irreversible deletes, and **permission-changing tools** | Always confirm, named-action button, `stepUp` seam; **never grantable, in every posture** |
+| **forbidden** | tenant/host config (ENG-194 lever) | Tool not in the toolset at all |
 
-The opportunity: the ENG-188 grant is the right primitive, but it's trapped inside automations and stored as opaque hashes. Generalize it into one user-visible permission system that chat and automations both consume.
+Invariants (stolen from Claude Code, kept from `remember.ts`): deny beats any grant in every posture; no user configuration, grant, or conversational instruction can loosen the critical tier; unknown-annotation tools fail safe into **act** with an "unverified" flag (open question 5). Optional manifest annotation `stepUp: true` marks critical tools needing host re-auth (seam: `requestStepUp(principal, action)`; demo fallback = typed confirmation).
 
-## 3. Goals / non-goals
+## 4. Three consent registers (how the act tier actually feels)
 
-**Goals**
-- One danger-level taxonomy driving default behavior for every tool, from annotations already required at publish.
-- "Remember this decision" from the approval card, producing a scoped, revocable, *visible* grant.
-- A Permission Center where the user sees and manages everything standing: chat grants, automation pre-auth, pending approvals.
-- Grants persist per user behind the Store seam; deny always beats a grant.
+The key brainstorm outcome: consequence class picks a *register*, not just a card frequency.
 
-**Non-goals (this epic)**
-- Tenant-admin governance, approval routing, org policy (ENG-194 — but the data model must feed it).
-- Real step-up authentication implementations (we define the seam; hosts own the mechanism).
-- Cross-user / shared grants.
+| Register | Actions | Feel |
+|---|---|---|
+| **Invisible** | reads; (v2) reversible internal mutations with a host undo contract | Just happens. Activity feed + audit. |
+| **Collaborative** | outbound content (email/Slack/posts), drafts, batches | "Here's my work — send it?" One tap. Grantable to silent. |
+| **Ceremonial** | critical tier + first contact with unknown tools | "Stop and look." Every time for critical; never grantable. |
 
-## 4. (a) Danger-level taxonomy
+**Collaborative register — drafts, not approval cards.** Outbound comms never show a "Needs your approval" card. The agent does the reversible work freely (writes the drafts) and presents the artifact with a Send affordance — collaboration, not permission:
 
-Three tiers, derived from the annotations every tool already carries. No new required manifest fields.
+```
+│ Here's the message for Jim:                    │
+│ ┌────────────────────────────────────┐         │
+│ │ #eng-standup                       │         │
+│ │ Running 15 late, start without me  │  ✎ edit │
+│ └────────────────────────────────────┘         │
+│ [Send]                                   ⋯     │
+```
 
-| Tier | Derivation | Default behavior | Grantable? |
-|---|---|---|---|
-| **read** | `mutating: false` (MCP: `readOnlyHint`) | Auto-allow, audited | n/a (already free) |
-| **act** | `mutating: true, dangerous: false` | Confirm first use → **rememberable** | Yes — tool-wide or constrained |
-| **critical** | `dangerous: true` (MCP: `destructiveHint`) | **Always confirm**, optional step-up | No in v1 (see open question 2) |
+Batch-native — 10 messages is one decision, not ten:
 
-Rules on top of the table:
+```
+│ Drafted 10 replies:                            │
+│ ▸ Jim — "running late"          ✎              │
+│ ▸ Acme billing — "invoice…"     ✎              │
+│ ▸ …8 more (tap to review)                      │
+│ [Send all 10]  [Send some…]  [Don't send]      │
+```
 
-- **Unknown stays gated.** Tools with no informative hints (some Composio/MCP tools) keep today's fail-safe `approve` and sit in the **act** tier — grantable, but the card and Permission Center mark them "safety unverified" so granting is an informed choice. (Alternative: treat unknown as critical — safest but makes half of Composio permanently nag; see open question 6.)
-- **Financial/irreversible = critical.** The extractor and manifest authors already express this with `dangerous: true`. We add one *optional* manifest annotation, `stepUp: true`, for the subset of critical tools where confirming in-chat isn't enough (move money, delete account) and the host wants re-authentication.
-- **Tier is advisory defaulting, not the whole policy.** Principal rules (`roleRule`, `thresholdRule`), the natural-language judge, and future tenant rules still compose on top; any of them can escalate or deny. A grant can never override a `deny` — that's the "authenticated but still not allowed" invariant, and it's already how `remember.ts` behaves.
+Why not fully silent by default: outbound messages are *the* prompt-injection exfiltration channel (hostile content read by the agent → instructions to forward data out). The draft-tap is the one deliberate glance that closes it, and it doubles as edit-before-approve (LangChain's `edit` decision, done safely on the artifact). Silence is a user-granted upgrade ("always send without showing me" — a standing grant from the draft's overflow menu), never a host default.
 
-## 5. (b) The generalized grant
+**Ceremonial register.** Amber register, consequence line restated ("This can't be undone." / the amount), primary button names the action ("Confirm transfer" — never generic "Approve"), no remember affordance, `stepUp` inserts host re-auth between click and execution.
 
-One record type for every standing permission, whatever surface created it:
+**Gesture-as-consent.** Because Flowlet renders real UI, a generated surface can *be* the consent moment: a swipe (the Gmail beat), a checked row, a slider setting an envelope. Policy accepts a signed user gesture from the sandbox as satisfying `approve`; the card is the fallback surface, not the only one.
+
+## 5. One grant primitive
+
+Every remembered decision — including "allow once" — is a `PermissionGrant`:
 
 ```
 PermissionGrant
-  id              store-assigned
-  tenantId        Principal scoping (same as every store row)
-  subject
-  tool            canonical tool name
-  descriptorHash  FNV-1a over the tool descriptor (reuses automations/grants.ts);
-                  manifest republish that changes the tool ⇒ grant silently lapses
-                  and the next call re-prompts (fail-closed drift, proven in ENG-188)
-  scope           STRUCTURED, renderable — not just a hash:
-                    { kind: "tool" }                              — any input
-                    { kind: "exact", inputHash, inputPreview }    — this exact call
-                    { kind: "constrained", constraints: [...] }   — field predicates,
-                      e.g. { path: "amount", op: "lte", value: 500 }
-                           { path: "recipient", op: "matches", value: "*@vendo.run" }
-  duration        "standing" | "session"
-  source          { kind: "chat" } | { kind: "automation", automationId, version }
+  id / tenantId / subject           store-assigned; Principal-scoped
+  tool                              canonical name
+  descriptorHash                    reuses automations/grants.ts hashing; manifest
+                                    republish that changes the tool ⇒ grant lapses,
+                                    next call re-asks (fail-closed drift, ENG-188-proven)
+  scope                             STRUCTURED and renderable:
+                                      { kind: "tool" }
+                                      { kind: "exact", inputHash, inputPreview }
+                                      { kind: "constrained", constraints: [...] }
+                                        e.g. { path: "amount", op: "lte", value: 500 }
+                                             { path: "to", op: "matches", value: "*@vendo.run" }
+                                      { kind: "envelope", path, limit, window }   (v2)
+  duration                          "standing" | "session" | "task"
+  source                            { kind: "chat" } | { kind: "automation", id, version }
+                                    | { kind: "compiled-rule" }   (from NL customization, §7)
   grantedAt / revokedAt? / expiresAt?
 ```
 
-Design points:
+- Structured scope (not just a hash) so the Permission Center can render it; a hash is computed *from* it for fast deterministic matching (`canonicalJson`/`fnv1a64`). Constraint predicates are structural checks — no LLM at enforcement.
+- **"Allow once" = a session-scoped exact grant** — same UX cost as today's ask-once, now visible and killable. `rememberDecisions` retires; its fail-closed invariants (record only on executed human approval; deny always wins) carry into the new `grantPolicy` layer.
+- **"Allow for this task" = a task-scoped tool grant** — covers sequential loops ("handle my inbox") with one upfront decision; dies when the run ends.
+- **Automation grants stay version-bound where they are** (their death-on-edit lifecycle is a safety feature); the Permission Center federates both stores into one list. Physical merge only if duplication ever hurts.
+- OAuth's own authors concluded static scopes fail for payments — per-transaction structure (amount, recipient) is required. That is the argument for constrained scopes and envelopes over any blanket "always allow transfers" (which the critical tier forbids anyway).
 
-- **Structured scope is the difference from ENG-188.** Automation grants hash the scope because the automation version *is* the renderable context. A chat grant has no such home, so the scope must be readable in the Permission Center ("Send email — only to `*@vendo.run`"). We still compute a hash *from* the structured scope for fast, deterministic matching — same `canonicalJson`/`fnv1a64` helpers.
-- **Constraint evaluation is deterministic.** Predicates are structural checks against the tool input (`eq`, `lte`, `gte`, `matches` on a dot-path). No LLM at enforcement time — the judge stays its own layer.
-- **Grants are explicit, never inferred.** Unlike `rememberDecisions`, nothing is remembered as a side effect of approving. A grant exists only because the user picked a "always allow …" affordance. This retires invisible memoisation: **"Allow once" becomes a session-scoped exact grant** (same UX as today's ask-once, but now visible and revocable in the Permission Center under "This session").
-- **Enforcement layer.** A new `grantPolicy(grantStore)` wraps the annotation layer: if a live, unexpired, hash-valid grant matches the call *and* the inner decision isn't `deny` *and* the tier isn't critical → downgrade `approve` → `allow`. Deny-capable layers (roles, thresholds, NL judge, future tenant rules) compose *outside* it and are never suppressed. `rememberDecisions` is retired, its invariants inherited.
-- **Automations unification (v1 = federate, later = merge).** Automation grants stay version-bound where they live — that coupling (grants die with the version) is a safety feature we shouldn't disturb. The Permission Center *reads* both stores and presents one list; chat grants live in the new `GrantStore`. A follow-up can migrate automation grants into the same table with `source.automation` if we want one physical store. Recommendation: federate now, merge only if a real need appears.
+## 6. Volume guardrails and circuit breakers
 
-## 6. (c) The Permission Center
+Volume is its own risk axis: a "send freely" grant is fine at 10 and alarming at 500 — same permission, different blast radius. Silence is granted; *unbounded* silence never is.
 
-One surface answering "what may the agent do without asking me?" — reachable from a persistent, quiet affordance in the shell (shield icon in the thread header / page chrome), opening as a Flowlet overlay section, sibling to the saved-flowlet library.
+- **Anomaly breaker:** a granted act-tier tool trips back to asking on unusual volume ("about to send 47 emails — that's unusual, look first"). Deterministic thresholds v1 (per-tool count per task/day), judge-informed later.
+- **Auto-posture breaker** (§8): N judge escalations in a window → posture drops back to Standard, mirroring Claude Code's 3-consecutive/20-total fallback and automations' consecutive-failure self-disable.
+- **Envelopes (v2):** quantity and money budgets as grant scopes ("≤ $500/day to approved vendors", "≤ 20 sends/day") — the Brex/banking primitive, unshipped for agents anywhere.
+
+## 7. Agentic customization (NL in, deterministic out)
+
+Users tune the whole system conversationally — *"never ask about Slack drafts, always ask before anything touching Acme, cap sends at 20/day"* — and the agent **compiles it to the artifacts above**: grants, ask/deny rules, envelopes. Same philosophy as automations (NL → inspectable DSL, never NL → vibes), and the exact pattern Decagon ships as Agent Operating Procedures (business users author in NL; critical operations stay under code-enforced validation regardless).
+
+- Compiled rules appear in the Permission Center as first-class rows (`source: compiled-rule`), editable/revocable like any grant.
+- Compilation is itself a permission-changing act → **critical tier**: the compiled rule is shown for explicit confirmation before it takes effect.
+- Tighten anything; loosen only within tier bounds. No phrasing talks the agent out of the ceremonial register.
+- The existing `naturalLanguagePolicy` judge remains as a *runtime* tightening layer; compiled rules are its fast, auditable, deterministic sibling.
+
+## 8. Postures (the autonomy dial, done safely)
+
+Three postures, settable per session or per task. Registers, tiers, and grants do not change between postures — only the default friction of the *middle* register does. Critical is identical everywhere.
+
+| Posture | Middle-register behavior |
+|---|---|
+| **Careful** | every act-tier decision asks (today's behavior) |
+| **Standard** (default) | the three registers as designed |
+| **Auto** | act tier flows without taps, **watched**: the judge supervises every call against stated boundaries + conversation context and can escalate any call back to a card; volume breakers armed; activity feed is the review surface; breaker drops posture back to Standard |
+
+Auto is "act without asking, watched" (Claude Code auto mode, Sierra's supervisor panel) — never Copilot's one-way `--yolo`, which is the documented anti-pattern (all-or-nothing grant offered as "(recommended)" exactly when autonomy rises). "Just handle my inbox — don't ask" ≈ temporary Auto scoped to one task, which is the same thing as a task grant plus the watcher.
+
+## 9. The Permission Center
+
+One overlay surface, reachable from a persistent quiet affordance (shield in page/thread chrome — placement is Yousef's call):
 
 ```
 ┌─ Permissions ────────────────────────────────────────────┐
 │  Vendo acts with your account. You decide what it may    │
-│  do without asking.                                      │
+│  do without asking.                    Posture: Standard ▾│
 │                                                          │
 │  ALWAYS ALLOWED                                          │
 │  ✓ Create invoice drafts               since Jul 2   [⋯] │
 │  ✓ Send email — only to *@vendo.run    since Jul 2   [⋯] │
-│  ✓ Update customer notes               since Jul 1   [⋯] │
+│  ✓ Rule: "never ask about Slack drafts"  Jul 2       [⋯] │
 │      [⋯] → Revoke · View activity                        │
 │                                                          │
-│  THIS SESSION                                            │
+│  THIS SESSION / TASK                                     │
 │  ✓ Read run history (this exact request)            [×]  │
+│                                                          │
+│  LIMITS                                                  │
+│  ▸ Sends: 20/day (12 used) · Vendors: $500/day      [⋯]  │
 │                                                          │
 │  AUTOMATIONS — pre-authorized                            │
 │  ⚡ Morning chase · Send reminder email   v3         [→]  │
-│      runs without asking · manage in automation          │
 │                                                          │
-│  ALWAYS ASKS  (can't be remembered)                      │
-│  🛡  Transfer money · Cancel invoice · Delete customer   │
+│  ALWAYS ASKS  (can't be changed)                         │
+│  🛡  Transfer money · Delete customer · Change permissions│
 │                                                          │
 │  WAITING ON YOU (1)                                      │
-│  ⏳ "Chase overdue" wants to send 3 reminder emails [Review] │
+│  ⏳ "Chase overdue" wants to send 3 emails      [Review] │
+│                                                          │
+│  ACTIVITY — 34 actions this week                    [→]  │
 └──────────────────────────────────────────────────────────┘
 ```
 
-- **Always allowed** — standing chat grants: friendly action label (existing `tool-labels` machinery), scope qualifier, grant date, revoke. Revoke is immediate: next matching call re-prompts.
-- **This session** — the "allow once" exact grants; they expire with the session and can be killed early.
-- **Automations** — read-only federation of `AutomationVersion.grants`, linking into the automation's own management card (source of truth for editing stays there; a revoke here pauses that step's unattended run, i.e. removes the grant from the live version).
-- **Always asks** — the critical tier, shown deliberately: seeing what *can't* be granted is what makes the rest trustworthy. This row is also where enterprise policy (ENG-194) will surface tenant-forced entries later.
-- **Waiting on you** — the async approval inbox: automation runs in `waiting_approval`, and (later) approvals routed from other channels (SMS/voice per PRD). Chat approvals stay in-thread; this section is for consent requested while the user was absent.
-- **ENG-194 relation:** the Center is the *per-user, self-serve* view over grant + audit data we already write. The enterprise console is a *tenant-admin* view over the same rows (all grants carry `tenantId`) plus org policy that composes as another deny-capable layer. Nothing in the Center's data model is per-user-only.
+Sections: standing grants + compiled rules (revoke, activity), session/task grants, envelopes with usage, automation federation (manage in the automation; revoking here removes the grant from the live version), the deliberately-shown "always asks" list (seeing what *can't* be granted is what makes the rest trustable; ENG-194 tenant-forced entries surface here later), the async approval inbox (automation `waiting_approval` runs; later SMS/voice-routed consent), and the activity feed (the retrospective trust engine).
 
-## 7. (d) Approval-card UX — three directions
+**ENG-194 relation:** the Center is the per-user self-serve view over grant + audit rows that all carry `tenantId`; the enterprise console is the tenant-admin view over the same data plus org policy composing as another deny-capable layer. Decagon/Sierra ship only the admin half — Flowlet needs both because end users are the ones customizing.
 
-Common to all: cards stay **inline in the thread** (the conversation is the consent context; a modal would break the sandbox-render flow and over-dramatize act-tier calls). Danger tier changes the card's visual register:
+## 10. Persistence & enforcement
 
-- **act** — current quiet shield, neutral chrome.
-- **act, safety-unverified** — same plus a subtle "unverified tool" tag.
-- **critical** — amber accent, explicit consequence line ("This can't be undone." / amount restated), primary button names the action ("Confirm transfer", never generic "Approve"), and `stepUp` tools insert the host's re-auth between click and execution.
-
-### Direction A — remember checkbox
-
-```
-┌ Needs your approval ────────────────┐
-│ Create invoice draft                │
-│   Customer   Acme Co                │
-│   Amount     $1,200                 │
-│                                     │
-│ ☐ Always allow creating drafts      │
-│                                     │
-│ [Approve]            [Decline]      │
-└─────────────────────────────────────┘
-```
-
-One glance, zero extra taps. But the checkbox sits there on *every* card inviting reflexive tool-wide grants (habituation transfers from the button to the checkbox), and a checkbox can't express scope — it's all-or-nothing per tool.
-
-### Direction B — split approve with scoped menu  ← recommended
-
-```
-┌ Needs your approval ────────────────┐
-│ Send email                          │
-│   To        billing@acme.co         │
-│   Subject   Overdue invoice #1042   │
-│                                     │
-│ [Allow once ▾]           [Decline]  │
-│    ├ Allow once                     │
-│    ├ Always allow sending email     │
-│    └ Always allow — to acme.co only │
-└─────────────────────────────────────┘
-```
-
-Default tap = "Allow once" (session-exact grant), identical cost to today. The broader grant is one deliberate extra gesture, and the menu is where **constraint chips** live — scope options derived from the actual input (recipient domain, amount ceiling, account), so "always allow" is specific by construction. Critical-tier cards render the same card with *no menu* — only the named confirm + decline.
-
-### Direction C — earn the offer (trust escalation)
-
-```
-   (3rd approval of the same action, after approving:)
-┌──────────────────────────────────────────────┐
-│ ✓ Sent email                                 │
-│ You've approved this 3 times.                │
-│ [Always allow sending email]  [Keep asking]  │
-└──────────────────────────────────────────────┘
-```
-
-Approve stays a single button; the remember offer appears only once a pattern exists, so no card ever tempts a premature broad grant. Downside: relief is delayed exactly where the pain is (the repetition), and the offer-moment heuristic is one more thing to tune.
-
-**Recommendation: B as the core, with C's nudge layered on later.** B solves the repetition at first contact, keeps "allow once" as the frictionless default, and is the only direction with a natural home for constraint scopes. A's checkbox is the classic dark-pattern-adjacent shape we should avoid in a bank-grade product. C is a lovely v1.1 addition on top of B (the nudge just deep-links the same grant creation).
-
-## 8. (e) Persistence behind the Store seam
-
-- Add a `grants: GrantStore` member to the core `Store` seam — the same additive move the architecture reserved for memory. Surface: `create / list / revoke / findForTool`, all Principal-scoped, store-assigned ids and timestamps (house authorship rule).
-- **Truth is server-side** (wherever the runtime enforces policy): embedded hosts choose the backing (in-memory/SQLite in demo), cloud is Postgres behind the same interface. The shell never holds grant truth — the Permission Center reads through a small client seam the SDK wires to the runtime (like the saved-flowlet gallery pattern), so a tampered client can at most *render* wrong, never *authorize* wrong.
-- Session-duration grants live in the same store with `duration: "session"`, keyed to the thread/session id and garbage-collected on expiry — visible while alive.
-- **Audit**: additive `AuditEvent` kinds `grant_created` / `grant_revoked` (with scope snapshot). Together with the existing `approval` and `tool_execution` events, ENG-194's console becomes a query, not new plumbing.
-- **Carrying the grant choice on the wire**: the approval response today is boolean approve/decline (ai SDK native). The scoped-grant gesture needs one additive channel — either metadata on the approval response or a separate grants endpoint called before approving. Decide at implementation; the seam design doesn't depend on which.
-
-## 9. Policy composition after this epic
+- **Store seam:** additive `grants: GrantStore` member on the frozen core `Store` (`create/list/revoke/findForTool`, Principal-scoped, store-assigned identity — house rules). Embedded hosts pick the backing; cloud is Postgres behind the same interface. Truth is server-side where policy enforces; the shell reads through a client seam (gallery pattern) — a tampered client can render wrong, never authorize wrong.
+- **Policy composition:**
 
 ```
 composePolicy(
-  roleRule / thresholdRule            — deny/escalate, never suppressed
-  naturalLanguagePolicy (judge)       — deny/escalate, never suppressed
-  [ENG-194 tenant policy — future]    — deny/escalate, never suppressed
-  grantPolicy(grantStore,             — may downgrade approve→allow for
-    annotationTierPolicy())             act-tier calls with a live grant
+  roleRule / thresholdRule               deny/escalate, never suppressed
+  compiledRules (from §7)                deny/escalate, never suppressed
+  naturalLanguagePolicy (judge)          deny/escalate; supervises Auto posture
+  [ENG-194 tenant policy — future]       deny/escalate, never suppressed
+  volumeGuardrails (§6)                  escalate on anomaly
+  grantPolicy(grantStore,                downgrades approve→allow for act-tier
+    annotationTierPolicy())              calls with a live matching grant
 )
 ```
 
-Invariants (all inherited from proven code): deny always wins; grants suppress only the annotation tier's `approve`; critical tier is never downgraded; descriptor drift lapses the grant; nothing is remembered without an explicit user gesture.
+- **Audit:** additive `AuditEvent` kinds `grant_created` / `grant_revoked` (scope snapshot) alongside existing `approval`/`tool_execution`/`grant_exchange` — ENG-194 becomes a query, not new plumbing.
+- **Wire:** the grant gesture needs one additive channel (approval-response metadata or a grants endpoint called before approving) — implementation-time choice; nothing depends on which. Signed sandbox gestures (§4) ride the existing approval-token path from the Gmail-beat work.
 
-## 10. Open questions for the brainstorm
+## 11. Prior art (deep-research pass, 2026-07-02; 25 claims verified 3-0 against live primary sources)
 
-1. **Card direction** — A (checkbox), B (split scoped menu), or C (earned nudge)? **Recommend B**, C added later as a nudge on repeat approvals.
-2. **Is the critical tier ever grantable?** E.g. "always allow transfers under $100 to this saved payee." **Recommend: not in v1.** Always-ask is the trust anchor the whole system leans on; constrained critical grants are a deliberate later step, likely gated on ENG-194 so tenants can forbid it.
-3. **Constraint scopes in v1 or v2?** The menu shape supports launching with just `tool` + `exact` scopes. **Recommend: ship the constrained scope shape in the data model from day 1, expose 1–2 heuristic constraint chips (recipient/domain, amount ceiling) in v1** — it's the memorable half of the UX and the model cost is already paid.
-4. **How are constraint chips derived?** Deterministic heuristics per input field (email → domain chip, number → ceiling chip) vs. asking the LLM to propose scopes. **Recommend heuristics** — enforcement and offer should both be deterministic; LLM-proposed scopes can come later as *suggestions* that compile to the same predicates.
-5. **Where does the Permission Center live?** Overlay section from a persistent shield affordance (recommended), a FlowletPage tab, or inside the library gallery. **Recommend the overlay + shield**: permissions deserve a stable, always-reachable home that doesn't compete with the creation surfaces. (UI placement is Yousef's call outright.)
-6. **Unknown-annotation Composio/MCP tools** — act-tier-but-flagged (recommended) or critical-until-verified? Fail-closed purism says critical; pragmatics say a permanently nagging Gmail integration erodes the very attention we're protecting.
-7. **Step-up mechanism** — define a host seam (`requestStepUp(principal, action)` → host shows passkey/password/OTP) and ship a typed-confirmation fallback in the demo? **Recommend yes**: seam now, host-owned mechanism, never Flowlet-owned credentials.
-8. **Remembered declines ("never allow")?** **Recommend no for v1** — a decline stays one-shot; persistent blocks belong to deny-layer rules and ENG-194. Keeps the card binary and the mental model simple.
-9. **Grant expiry** — no default expiry (recommended, matches "standing" semantics; `expiresAt` exists in the model for enterprise policy later) vs. e.g. 90-day auto-expiry for hygiene.
-10. **Automation grants: federate or physically merge?** **Recommend federate in v1** (Center reads both; automation grants keep their version-bound lifecycle). Merge later only if duplication actually hurts.
+- **Claude Code**: six permission modes; **auto mode** = background classifier replaces prompts, conversational boundaries are block signals, deterministic 3-consecutive/20-total fallback to prompting. Deny/ask rules apply in *every* mode; protected paths can't be pre-approved even by explicit allow rules (safety check runs before allow evaluation).
+- **Claude in Chrome**: allow-once / always-allow-on-site / decline (Direction B, shipped); Settings→Permissions center with history + revoke; plan-level approval in "Ask before acting"; danger tier (purchases, deletion, **modifying permission settings**…) prompts regardless of mode or grant.
+- **OpenAI Operator/ChatGPT Agent**: trained confirmation (91% recall; 100% on financial/permission actions); **Watch Mode** (sensitive contexts require live supervision — pauses if you look away); **takeover mode** (credentials structurally never seen by the model); hard refusal ceiling above approval (bank transfers refused even with consent — but only ~89% reliably, being training not architecture; our API position makes the same ceiling deterministic).
+- **Copilot CLI** (anti-pattern): autopilot offers "Enable all permissions (recommended)" / a limited mode that auto-denies everything / one-way `--yolo`. No middle tier — the middle is this design.
+- **Decagon** (closest structural analog): AOPs — business users author agent policy in natural language, compiled against code-enforced guardrails; refunds/identity verification under strict validation regardless of NL rules. **Sierra**: supervisor-agent panel (input filter, per-action output audit, individually-controlled agency, per-task LLMs). Both admin-only — no end-user permission surface.
+- **Adjacent systems** (extracted, not triple-verified): MCP consent-fatigue study (13/16 clicked Always Allow to dismiss; 3/16 read prompts); fMRI habituation by second exposure; Chrome geolocation prompts 85% ignored/dismissed → quiet-chip A/B (40M users, −30% friction, <5% grant loss); Android 12 Privacy Dashboard (post-hoc audit timeline); OAuth Rich Authorization Requests (static scopes can't carry amount/recipient); Brex spend envelopes (shared pool / per-user recurring); LangChain HITL decisions (approve/**edit**/reject/respond); Replit production-DB deletion during an explicit freeze (why enforcement lives in the execution layer, not the prompt).
+- **Industry gap = our opportunity**: nobody ships act-then-undo as a primary mechanism (browser agents can't undo third-party side effects; hosts behind a typed API can expose drafts and inverse endpoints), and nobody ships envelopes for agents.
 
-## 11. Rough shipping shape (post-brainstorm, for scale only)
+## 12. Open questions for Yousef's review
 
-1. Taxonomy + `grantPolicy` + `GrantStore` seam (runtime, no UI) — retires `rememberDecisions`.
-2. Approval card v2 (chosen direction, danger tiers, session grants).
-3. Permission Center surface (grants list, revoke, automation federation, waiting-on-you).
-4. Step-up seam + demo fallback; constraint chips if not in (2).
+1. **Posture surface** — is the posture switcher a v1 feature (Center + per-task offer) or does v1 ship Standard-only with task grants, postures later? Recommend: **Standard-only v1**, posture dial v1.1 — the registers already remove most friction.
+2. **Auto posture's judge cost/latency** — every act-tier call in Auto passes the judge. Acceptable (calls are seconds-scale anyway) or needs a fast-path? Recommend: accept in v1 of Auto; it's the safety story.
+3. **Draft-tap floor** — may hosts mark specific comms tools silent-from-day-one, or is silence always user-granted? Recommend: **always user-granted** — even one reflexive tap builds the right mental model.
+4. **Constraint chips v1** — ship `tool`+`exact`+1–2 heuristic constrained scopes (recipient/domain, amount ceiling) in v1? Recommend yes; it's the memorable half of the UX.
+5. **Unknown-annotation Composio/MCP tools** — act-but-flagged (recommended) vs critical-until-verified.
+6. **Remembered declines** — recommend no for v1; persistent blocks belong to compiled deny rules (§7), which cover the need explicitly.
+7. **Volume thresholds** — fixed per-tool defaults vs host-declared in the manifest? Recommend host-declarable with sane defaults.
+8. **Undo contract shape (v2)** — manifest carries an inverse binding per undoable tool vs host-level undo endpoint. Park until v2, but the manifest extension point exists.
 
-Each lands as its own PR with browser screenshots; card and Center pause for Yousef's UI review before build *and* before merge, per standing rules.
+## 13. Shipping shape (each lands as its own PR; card + Center pause for Yousef's UI review before build and before merge)
+
+1. Tiers + `grantPolicy` + `GrantStore` seam + audit kinds (runtime, no UI) — retires `rememberDecisions`.
+2. Card v2 + collaborative register: draft/batch surfaces for comms, "allow once ▾ / for this task / always allow (scoped)", ceremonial register styling, session/task grants.
+3. Permission Center (grants, rules, limits, automation federation, waiting-on-you, activity).
+4. Volume guardrails + NL rule compilation (§6, §7).
+5. v2 track: envelopes, act-then-undo (host undo contract), Auto posture + judge supervision, "approved 3×" nudge, step-up seam + demo fallback.
