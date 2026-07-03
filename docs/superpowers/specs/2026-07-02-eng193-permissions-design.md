@@ -23,48 +23,51 @@ Derived from the `{mutating, dangerous}` annotations already required on every m
 | Tier | Derivation | Behavior |
 |---|---|---|
 | **read** | `mutating: false` | Auto, audited |
-| **act** | `mutating: true, dangerous: false` | Consent via register (below); grantable |
+| **act** | `mutating: true, dangerous: false` | Approval card on first contact; grantable |
 | **critical** | `dangerous: true` — money, irreversible deletes, and **permission-changing tools** | Always confirm, named-action button, `stepUp` seam; **never grantable, in every posture** |
 | **forbidden** | tenant/host config (ENG-194 lever) | Tool not in the toolset at all |
 
 Invariants (stolen from Claude Code, kept from `remember.ts`): deny beats any grant in every posture; no user configuration, grant, or conversational instruction can loosen the critical tier; unknown-annotation tools fail safe into **act** with an "unverified" flag (open question 5). Optional manifest annotation `stepUp: true` marks critical tools needing host re-auth (seam: `requestStepUp(principal, action)`; demo fallback = typed confirmation).
 
-## 4. Three consent registers (how the act tier actually feels)
+## 4. The approval card (one card, all act-tier actions)
 
-The key brainstorm outcome: consequence class picks a *register*, not just a card frequency.
+Brainstorm ruling (Yousef): no separate consent surfaces per action class — **one approval card system**, kept simple. Comms (email/Slack) are ordinary act-tier tools: the card already renders the tool input as labelled fields (recipient, subject, body), so reviewing what goes out needs no special draft surface.
 
-| Register | Actions | Feel |
-|---|---|---|
-| **Invisible** | reads; (v2) reversible internal mutations with a host undo contract | Just happens. Activity feed + audit. |
-| **Collaborative** | outbound content (email/Slack/posts), drafts, batches | "Here's my work — send it?" One tap. Grantable to silent. |
-| **Ceremonial** | critical tier + first contact with unknown tools | "Stop and look." Every time for critical; never grantable. |
-
-**Collaborative register — drafts, not approval cards.** Outbound comms never show a "Needs your approval" card. The agent does the reversible work freely (writes the drafts) and presents the artifact with a Send affordance — collaboration, not permission:
+**Act tier** — quiet chrome, split approve (Direction B, shipped verbatim by Claude in Chrome):
 
 ```
-│ Here's the message for Jim:                    │
-│ ┌────────────────────────────────────┐         │
-│ │ #eng-standup                       │         │
-│ │ Running 15 late, start without me  │  ✎ edit │
-│ └────────────────────────────────────┘         │
-│ [Send]                                   ⋯     │
+┌ Needs your approval ────────────────┐
+│ Send email                          │
+│   To        billing@acme.co         │
+│   Subject   Overdue invoice #1042   │
+│                                     │
+│ [Allow once ▾]           [Decline]  │
+│    ├ Allow once                     │
+│    ├ Allow for this task            │
+│    └ Always allow sending email     │
+│      (scoped chips when derivable)  │
+└─────────────────────────────────────┘
 ```
 
-Batch-native — 10 messages is one decision, not ten:
+**Batches** — parallel same-tool calls group into one card, one decision for N actions:
 
 ```
-│ Drafted 10 replies:                            │
-│ ▸ Jim — "running late"          ✎              │
-│ ▸ Acme billing — "invoice…"     ✎              │
-│ ▸ …8 more (tap to review)                      │
-│ [Send all 10]  [Send some…]  [Don't send]      │
+┌ Needs your approval ────────────────┐
+│ Send 10 emails                      │
+│  ▸ Jim — "running late"             │
+│  ▸ Acme billing — "invoice…"        │
+│  ▸ …8 more (tap to review)          │
+│ [Approve all 10] [Review each] [Decline] │
+└─────────────────────────────────────┘
 ```
 
-Why not fully silent by default: outbound messages are *the* prompt-injection exfiltration channel (hostile content read by the agent → instructions to forward data out). The draft-tap is the one deliberate glance that closes it, and it doubles as edit-before-approve (LangChain's `edit` decision, done safely on the artifact). Silence is a user-granted upgrade ("always send without showing me" — a standing grant from the draft's overflow menu), never a host default.
+Sequential loops are covered by "Allow for this task" on the first card.
 
-**Ceremonial register.** Amber register, consequence line restated ("This can't be undone." / the amount), primary button names the action ("Confirm transfer" — never generic "Approve"), no remember affordance, `stepUp` inserts host re-auth between click and execution.
+**Critical tier** — same card component, escalated register: amber accent, consequence line restated ("This can't be undone." / the amount), primary button names the action ("Confirm transfer" — never generic "Approve"), **no remember menu**, `stepUp` inserts host re-auth between click and execution.
 
-**Gesture-as-consent.** Because Flowlet renders real UI, a generated surface can *be* the consent moment: a swipe (the Gmail beat), a checked row, a slider setting an envelope. Policy accepts a signed user gesture from the sandbox as satisfying `approve`; the card is the fallback surface, not the only one.
+Note: outbound comms are the prompt-injection exfiltration channel (hostile content read by the agent → instructions to forward data out), which is why sends default to asking rather than silent — but silence is one "Always allow" tap away, user-granted, visible in the Center.
+
+One Flowlet-native extension kept as a note, not a pillar: a generated UI gesture (the Gmail swipe beat) can satisfy an approval via the existing signed approval-token path — the card is the default consent surface, not the only possible one.
 
 ## 5. One grant primitive
 
@@ -110,17 +113,17 @@ Users tune the whole system conversationally — *"never ask about Slack drafts,
 
 - Compiled rules appear in the Permission Center as first-class rows (`source: compiled-rule`), editable/revocable like any grant.
 - Compilation is itself a permission-changing act → **critical tier**: the compiled rule is shown for explicit confirmation before it takes effect.
-- Tighten anything; loosen only within tier bounds. No phrasing talks the agent out of the ceremonial register.
+- Tighten anything; loosen only within tier bounds. No phrasing talks the agent out of the critical tier.
 - The existing `naturalLanguagePolicy` judge remains as a *runtime* tightening layer; compiled rules are its fast, auditable, deterministic sibling.
 
 ## 8. Postures (the autonomy dial, done safely)
 
-Three postures, settable per session or per task. Registers, tiers, and grants do not change between postures — only the default friction of the *middle* register does. Critical is identical everywhere.
+Three postures, settable per session or per task. Tiers and grants do not change between postures — only the default friction of the *act tier* does. Critical is identical everywhere.
 
-| Posture | Middle-register behavior |
+| Posture | Act-tier behavior |
 |---|---|
-| **Careful** | every act-tier decision asks (today's behavior) |
-| **Standard** (default) | the three registers as designed |
+| **Careful** | every act-tier call asks, grants ignored (temporary paranoia switch) |
+| **Standard** (default) | cards + grants as designed |
 | **Auto** | act tier flows without taps, **watched**: the judge supervises every call against stated boundaries + conversation context and can escalate any call back to a card; volume breakers armed; activity feed is the review surface; breaker drops posture back to Standard |
 
 Auto is "act without asking, watched" (Claude Code auto mode, Sierra's supervisor panel) — never Copilot's one-way `--yolo`, which is the documented anti-pattern (all-or-nothing grant offered as "(recommended)" exactly when autonomy rises). "Just handle my inbox — don't ask" ≈ temporary Auto scoped to one task, which is the same thing as a task grant plus the watcher.
@@ -195,9 +198,9 @@ composePolicy(
 
 ## 12. Open questions for Yousef's review
 
-1. **Posture surface** — is the posture switcher a v1 feature (Center + per-task offer) or does v1 ship Standard-only with task grants, postures later? Recommend: **Standard-only v1**, posture dial v1.1 — the registers already remove most friction.
+1. **Posture surface** — is the posture switcher a v1 feature (Center + per-task offer) or does v1 ship Standard-only with task grants, postures later? Recommend: **Standard-only v1**, posture dial v1.1 — grants already remove most friction.
 2. **Auto posture's judge cost/latency** — every act-tier call in Auto passes the judge. Acceptable (calls are seconds-scale anyway) or needs a fast-path? Recommend: accept in v1 of Auto; it's the safety story.
-3. **Draft-tap floor** — may hosts mark specific comms tools silent-from-day-one, or is silence always user-granted? Recommend: **always user-granted** — even one reflexive tap builds the right mental model.
+3. **Silent-by-default comms** — may hosts mark specific act-tier tools auto-allowed from day one (no first ask ever), or is silence always a user-granted upgrade? Recommend: **always user-granted** — even one approval builds the right mental model, and sends are the exfiltration channel.
 4. **Constraint chips v1** — ship `tool`+`exact`+1–2 heuristic constrained scopes (recipient/domain, amount ceiling) in v1? Recommend yes; it's the memorable half of the UX.
 5. **Unknown-annotation Composio/MCP tools** — act-but-flagged (recommended) vs critical-until-verified.
 6. **Remembered declines** — recommend no for v1; persistent blocks belong to compiled deny rules (§7), which cover the need explicitly.
@@ -207,7 +210,7 @@ composePolicy(
 ## 13. Shipping shape (each lands as its own PR; card + Center pause for Yousef's UI review before build and before merge)
 
 1. Tiers + `grantPolicy` + `GrantStore` seam + audit kinds (runtime, no UI) — retires `rememberDecisions`.
-2. Card v2 + collaborative register: draft/batch surfaces for comms, "allow once ▾ / for this task / always allow (scoped)", ceremonial register styling, session/task grants.
+2. Card v2: split approve ("allow once ▾ / for this task / always allow (scoped)"), batch grouping, critical-tier styling, session/task grants.
 3. Permission Center (grants, rules, limits, automation federation, waiting-on-you, activity).
 4. Volume guardrails + NL rule compilation (§6, §7).
 5. v2 track: envelopes, act-then-undo (host undo contract), Auto posture + judge supervision, "approved 3×" nudge, step-up seam + demo fallback.
