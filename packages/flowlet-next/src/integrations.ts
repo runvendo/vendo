@@ -95,10 +95,10 @@ export async function handleIntegrationsPost(req: Request, deps: IntegrationsDep
       const { redirectUrl, connectedAccountId } = await getClient(deps).authorize(userId, id);
       return Response.json({ connected: false, redirectUrl, connectedAccountId });
     } catch (err) {
-      return Response.json(
-        { error: `connect failed: ${err instanceof Error ? err.message : "unknown error"}` },
-        { status: 400 },
-      );
+      // Log the detail server-side; don't echo the SDK's message (it can carry
+      // internal URLs/ids) back to the caller.
+      console.error("[flowlet] integrations connect failed:", err);
+      return Response.json({ error: "connect failed" }, { status: 400 });
     }
   }
 

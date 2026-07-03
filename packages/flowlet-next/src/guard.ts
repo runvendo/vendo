@@ -7,6 +7,12 @@
  * `FLOWLET_ALLOW_REMOTE=1` opts a deployment in explicitly (same escape hatch
  * shape the demo uses). Passing a `principal` resolver replaces the guard
  * entirely — the host's auth becomes the gate, and `null` means 403.
+ *
+ * IMPORTANT: the local-only check keys off the `Host` header, which is
+ * client-controlled (spoofable by a direct caller, rewritable by a proxy). It
+ * is a DEV CONVENIENCE, not a production auth control. Anything reachable from
+ * the internet MUST pass a `principal` resolver — that is the real gate.
+ * (See docs/quickstart.md → Deploying.)
  */
 import type { FlowletPrincipal } from "@flowlet/runtime";
 import type { FlowletHandlerOptions } from "./options";

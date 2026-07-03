@@ -41,14 +41,14 @@ export default function RootLayout({
 `;
 
 describe("wrapLayoutChildren", () => {
-  it("wraps the create-next-app layout and inserts the import after the last import", () => {
+  it("wraps the create-next-app layout and inserts a valid top-level import", () => {
     const out = wrapLayoutChildren(CREATE_NEXT_APP_LAYOUT);
     expect(out).not.toBeNull();
-    expect(out).toContain('import { AppFlowletRoot } from "./flowlet-root";');
+    // import is at the very top (no directive here) and syntactically valid
+    expect(out!.startsWith('import { AppFlowletRoot } from "./flowlet-root";\n')).toBe(true);
     expect(out).toContain("<AppFlowletRoot>{children}</AppFlowletRoot>");
-    // import goes after "./globals.css", before the font const
-    expect(out!.indexOf("AppFlowletRoot } from")).toBeGreaterThan(out!.indexOf("globals.css"));
-    expect(out!.indexOf("AppFlowletRoot } from")).toBeLessThan(out!.indexOf("const geistSans"));
+    // the app's own imports survive intact
+    expect(out).toContain('import { Geist, Geist_Mono } from "next/font/google";');
     // destructured prop `children,` in the signature must NOT be touched
     expect(out).toContain("children,\n}: Readonly<{");
   });
@@ -74,6 +74,47 @@ export default function RootLayout({ children }) {
     expect(wrapLayoutChildren("export default function L() { return null }")).toBeNull();
     const two = `export default function L({children}) { return <a><b>{children}</b><c>{children}</c></a> }`;
     expect(wrapLayoutChildren(two)).toBeNull();
+  });
+
+  it("does not corrupt a Prettier-wrapped multi-line last import (review P0)", () => {
+    const layout = `import type { Metadata } from "next";
+import {
+  ThemeProvider,
+  AnalyticsProvider,
+} from "@/components/providers";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <html><body><ThemeProvider>{children}</ThemeProvider></body></html>;
+}
+`;
+    const out = wrapLayoutChildren(layout)!;
+    // import lands on its own line at the top, never inside the brace block
+    expect(out).toContain('import { AppFlowletRoot } from "./flowlet-root";\n');
+    expect(out).not.toMatch(/import \{\nimport \{ AppFlowletRoot/);
+    expect(out).toContain("<ThemeProvider><AppFlowletRoot>{children}</AppFlowletRoot></ThemeProvider>");
+    // the original multi-line import survives intact
+    expect(out).toContain("  ThemeProvider,\n  AnalyticsProvider,\n} from");
+  });
+
+  it("ignores a {children} that lives inside a string literal (review P1)", () => {
+    const layout = `export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const example = "<body>{children}</body>";
+  return <html><body>{props.notChildren}</body></html>;
+}
+`;
+    // the only >{children} is inside a string → no real JSX child match → fail open
+    expect(wrapLayoutChildren(layout)).toBeNull();
+  });
+
+  it("does not false-positive idempotence on a comment mentioning the component (review P2)", () => {
+    const layout = `// TODO: rename AppFlowletRoot someday
+export default function RootLayout({ children }) {
+  return <html><body>{children}</body></html>;
+}
+`;
+    const out = wrapLayoutChildren(layout);
+    expect(out).not.toBeNull();
+    expect(out).toContain("<AppFlowletRoot>{children}</AppFlowletRoot>");
   });
 
   it("places the import after a use-client directive when there are no imports", () => {

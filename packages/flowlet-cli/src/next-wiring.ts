@@ -124,40 +124,85 @@ OPENAI_API_KEY=
  * generated provider. Returns the edited source, or null when the file cannot
  * be edited with certainty (caller falls back to manual instructions).
  */
-export function wrapLayoutChildren(source: string, componentName = "AppFlowletRoot"): string | null {
-  // Idempotence: already wired (by us or by hand).
-  if (source.includes("@flowlet/next/client") || source.includes(componentName)) return source;
+/**
+ * Return a copy of `source` with the CONTENTS of string/template literals and
+ * comments blanked to spaces (quotes/delimiters kept, lengths and offsets
+ * preserved). We locate `{children}` and detect idempotence against THIS
+ * masked view so a `{children}` sitting inside a string (`"<b>{children}</b>"`)
+ * or a comment (`// rename AppFlowletRoot`) can never be matched or mistaken
+ * for existing wiring — then splice edits back into the ORIGINAL by offset.
+ */
+function maskLiterals(source: string): string {
+  const out = source.split("");
+  let i = 0;
+  const n = source.length;
+  const blank = (from: number, to: number) => {
+    for (let k = from; k < to && k < n; k++) if (source[k] !== "\n") out[k] = " ";
+  };
+  while (i < n) {
+    const c = source[i];
+    const next = source[i + 1];
+    if (c === "/" && next === "/") {
+      let j = i + 2;
+      while (j < n && source[j] !== "\n") j++;
+      blank(i, j);
+      i = j;
+    } else if (c === "/" && next === "*") {
+      let j = i + 2;
+      while (j < n && !(source[j] === "*" && source[j + 1] === "/")) j++;
+      blank(i, Math.min(j + 2, n));
+      i = j + 2;
+    } else if (c === '"' || c === "'" || c === "`") {
+      const quote = c;
+      let j = i + 1;
+      while (j < n) {
+        if (source[j] === "\\") { j += 2; continue; }
+        if (source[j] === quote) break;
+        j++;
+      }
+      blank(i + 1, j); // keep the delimiters, blank the interior
+      i = j + 1;
+    } else {
+      i++;
+    }
+  }
+  return out.join("");
+}
 
-  // Candidate `{children}` expressions, filtered to JSX child position: the
-  // preceding non-whitespace char must be `>` (end of an opening tag). This
-  // excludes destructured parameters `({ children })` and type annotations.
-  const matches = [...source.matchAll(/\{\s*children\s*\}/g)].filter((m) => {
-    const before = source.slice(0, m.index).trimEnd();
+export function wrapLayoutChildren(source: string, componentName = "AppFlowletRoot"): string | null {
+  const masked = maskLiterals(source);
+  // Idempotence: already wired (by us or by hand). Checked against the masked
+  // view so an incidental mention in a comment/string doesn't false-positive.
+  if (masked.includes('from "./flowlet-root"') || masked.includes(`<${componentName}>`)) {
+    return source;
+  }
+
+  // Candidate `{children}` expressions in real code (not strings/comments),
+  // filtered to JSX child position: the preceding non-whitespace char must be
+  // `>` (end of an opening tag). This excludes destructured parameters
+  // `({ children })` and type annotations.
+  const matches = [...masked.matchAll(/\{\s*children\s*\}/g)].filter((m) => {
+    const before = masked.slice(0, m.index).trimEnd();
     return before.endsWith(">");
   });
   if (matches.length !== 1) return null; // zero or ambiguous — do not guess
 
   const match = matches[0]!;
   const start = match.index;
+  const original = source.slice(start, start + match[0].length); // exact orig text
   const wrapped =
     source.slice(0, start) +
     `<${componentName}>` +
-    match[0] +
+    original +
     `</${componentName}>` +
     source.slice(start + match[0].length);
 
-  // Insert the import after the last top-level import line; if the file has
-  // none, after a leading directive; else at the very top.
+  // Insert the import at an ALWAYS-VALID position: immediately after a leading
+  // "use client"/"use server" directive if present, else at the very top.
+  // (Anchoring after "the last import" is unsafe — a Prettier-wrapped
+  //  multi-line import would land the new line INSIDE the brace block.)
   const importStmt = `import { ${componentName} } from "./flowlet-root";\n`;
-  const importRe = /^import\s[^\n]*\n/gm;
-  let lastImportEnd = -1;
-  for (const m of wrapped.matchAll(importRe)) {
-    lastImportEnd = m.index + m[0].length;
-  }
-  if (lastImportEnd >= 0) {
-    return wrapped.slice(0, lastImportEnd) + importStmt + wrapped.slice(lastImportEnd);
-  }
-  const directive = wrapped.match(/^(['"]use [a-z ]+['"];?\s*\n)/);
+  const directive = wrapped.match(/^\s*(['"]use [a-z ]+['"];?[^\n]*\n)/);
   if (directive) {
     const end = directive[0].length;
     return wrapped.slice(0, end) + importStmt + wrapped.slice(end);

@@ -163,6 +163,12 @@ export function FlowletRoot({
     return render;
   }, [basePath, brand]);
 
+  // Capability-additive contract: with no ANTHROPIC_API_KEY the server reports
+  // chat:false, and asking would 401 inside the stream. Hide the assistant
+  // surface entirely in that case rather than degrading into a runtime error.
+  // `null` (not yet fetched) renders optimistically so there is no flicker.
+  const chatEnabled = capabilities === null || capabilities.chat;
+
   return (
     <FlowletProvider
       transport={transport}
@@ -182,14 +188,16 @@ export function FlowletRoot({
           productName={productName}
         >
           {children}
-          <FlowletOverlay
-            launcherLabel={`Ask ${productName}`}
-            open={open}
-            onOpenChange={setOpen}
-            {...(greeting !== undefined ? { greeting } : {})}
-            {...(suggestions !== undefined ? { suggestions } : {})}
-          />
-          {launcher === "pill" && !open && (
+          {chatEnabled && (
+            <FlowletOverlay
+              launcherLabel={`Ask ${productName}`}
+              open={open}
+              onOpenChange={setOpen}
+              {...(greeting !== undefined ? { greeting } : {})}
+              {...(suggestions !== undefined ? { suggestions } : {})}
+            />
+          )}
+          {chatEnabled && launcher === "pill" && !open && (
             /* Provisional default launcher (flagged for design review): built
                from shell tokens only, replaceable via launcher="none". */
             <button type="button" style={LAUNCHER_STYLE} onClick={() => setOpen(true)}>

@@ -98,13 +98,31 @@ and demo world injected through those options.
 
 Zero-config serves **local requests only** — the handler holds your keys and
 its default policy auto-runs read tools, so a bare deployment answering
-anonymous internet traffic would be wrong. Two ways to go live:
+anonymous internet traffic would be wrong. Going live safely:
 
-- **Recommended:** pass a `principal` resolver:
-  `createFlowletHandler({ principal: async (req) => yourAuth(req) ?? null })` —
-  your auth becomes the gate (return `null` to reject).
-- **Escape hatch:** set `FLOWLET_ALLOW_REMOTE=1` if you understand the
-  exposure (e.g. an internal preview).
+- **Recommended — gate with a `principal` resolver:**
+  `createFlowletHandler({ principal: async (req) => yourAuth(req) ?? null })`.
+  Your app's auth becomes the gate (return `null` → 403). **Do this for
+  anything internet-reachable.** The built-in local-only fallback keys off the
+  `Host` header, which a client can spoof and a reverse proxy can rewrite — it
+  is a dev convenience, not a production control. A real `principal` resolver
+  replaces it entirely.
+- **Escape hatch:** `FLOWLET_ALLOW_REMOTE=1` disables the local guard with no
+  replacement — use only for a throwaway internal preview you trust.
+
+**Single-tenant, single-process by default.** The built-in connections store,
+approval-token store, and automations world are in-memory and **not** keyed by
+user, so:
+
+- Run the handler as **one long-lived Node process**, not on a serverless
+  platform that spreads requests across cold instances — otherwise an approval
+  token issued on one instance won't be found on another (the sandbox will loop
+  on "approval expired") and connection state won't be shared.
+- Treat it as **one tenant**. A `principal` resolver is an access *gate*, not
+  tenant *isolation*: connected toolkits and cached agents are process-global,
+  so don't rely on it to separate two users' integrations. Multi-tenant
+  installs must inject their own per-user `connections` store (and will want
+  host-provided approval/automation stores).
 
 ## Troubleshooting
 

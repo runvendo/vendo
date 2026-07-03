@@ -46,6 +46,20 @@ describe("FlowletRoot", () => {
     expect(screen.queryByRole("button", { name: /ask acme/i })).toBeNull();
   });
 
+  it("hides the assistant surface when the server reports chat is unavailable", async () => {
+    vi.stubGlobal("fetch", stubFetch({ chat: false, integrations: false, voice: false }));
+    render(
+      <FlowletRoot productName="Acme">
+        <div data-testid="app3" />
+      </FlowletRoot>,
+    );
+    // still renders children, but the launcher disappears once chat:false lands
+    expect(screen.getByTestId("app3")).toBeDefined();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /ask acme/i })).toBeNull(),
+    );
+  });
+
   it("tolerates an invalid theme by falling back to the default brand", () => {
     vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false }));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
