@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { FlowletOverlay } from "@flowlet/shell";
 import { FlowletRoot } from "./FlowletRoot";
+import { mapleVoiceDriver } from "./voice-demo";
 import { FlowletPoller, type FireEvent } from "./FlowletPoller";
 import { FlowletToast } from "./FlowletToast";
 import { resetDemo } from "./reset";
@@ -65,6 +66,7 @@ export function FlowletLayer() {
         launcherLabel="Ask Maple"
         greeting="Ask Maple anything"
         suggestions={SUGGESTIONS}
+        voice={mapleVoiceDriver}
         open={overlayOpen}
         onOpenChange={setOverlayOpen}
       />

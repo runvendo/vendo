@@ -1,18 +1,14 @@
-import type { VoiceState } from "../use-voice-input";
-
 export interface VoiceButtonProps {
-  state?: VoiceState;
   onClick?: () => void;
 }
 
-export function VoiceButton({ state = "disabled", onClick }: VoiceButtonProps) {
+/** The mic affordance — one tap opens a realtime voice session (ENG-185). */
+export function VoiceButton({ onClick }: VoiceButtonProps) {
   return (
     <button
       type="button"
-      className="fl-icon-btn"
-      aria-label="Voice input"
-      disabled={state === "disabled"}
-      aria-pressed={state === "recording"}
+      className="fl-icon-btn fl-voice-btn"
+      aria-label="Start voice session"
       onClick={onClick}
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"

@@ -678,3 +678,111 @@
   border: 1px solid var(--flowlet-danger-border); background: transparent;
   color: var(--flowlet-danger); font: 600 12px/1.2 var(--flowlet-font); cursor: pointer; }
 .fl-error-retry:hover { background: var(--flowlet-danger); color: var(--flowlet-bg, #fff); }
+
+/* ---------- realtime voice stage (ENG-185) ---------- */
+/* The stage fills the surface that launched it. The blob head is pinned; the
+   feed scrolls beneath it; the caption + footer stay anchored at the bottom. */
+.fl-voice-stage { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
+  animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fl-voice-rise { from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: none; } }
+.fl-voice-stage.is-ended { animation: fl-voice-settle .5s ease both; }
+@keyframes fl-voice-settle { from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(14px) scale(.99); } }
+
+.fl-voice-head { display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 30px 0 16px; flex-shrink: 0; }
+.fl-voice-blob { position: relative; display: grid; place-items: center; border-radius: 50%;
+  transition: transform .12s ease; }
+.fl-voice-blob .fl-voice-disc { width: 46%; height: 46%; border-radius: 50%;
+  background: var(--flowlet-accent); transition: background .2s, opacity .2s; }
+.fl-voice-blob.is-muted .fl-voice-disc, .fl-voice-blob.is-error .fl-voice-disc { opacity: .38; }
+.fl-voice-blob.is-error .fl-voice-disc { background: var(--flowlet-fg-muted); }
+.fl-voice-glyph { position: absolute; display: grid; place-items: center; color: var(--flowlet-fg);
+  opacity: .85; }
+.fl-voice-status { font: 500 12px/1 var(--flowlet-font); color: var(--flowlet-fg-muted);
+  letter-spacing: .01em; min-height: 12px; }
+.fl-voice-stage.is-speaking .fl-voice-status { color: var(--flowlet-fg); }
+
+.fl-voice-feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 12px; padding: 6px 18px 12px; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 16px);
+  mask-image: linear-gradient(180deg, transparent 0, #000 16px); }
+.fl-voice-feed::-webkit-scrollbar { display: none; }
+.fl-voice-feed > :first-child { margin-top: auto; }
+.fl-voice-feed > * { flex-shrink: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-voice-feed > * { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) both; }
+}
+.fl-voice-card { align-self: center; width: min(560px, 100%); border-radius: var(--flowlet-radius);
+  transition: opacity .35s ease, transform .35s ease; }
+/* Older views recede — attention stays on the newest thing (the decided
+   stacked-feed register: scrollable history, one thing in focus). */
+.fl-voice-card.is-past { opacity: .55; transform: scale(.985); }
+.fl-voice-card.is-past:hover { opacity: 1; transform: none; }
+.fl-voice-card.is-pending { border: 1px solid var(--flowlet-border); padding: 12px;
+  background: var(--flowlet-glass-strong); }
+.fl-voice-approval { display: flex; }
+.fl-voice-approval .fl-approval { align-self: stretch; width: 100%; }
+
+.fl-voice-caption { min-height: 34px; padding: 4px 22px 6px; text-align: center;
+  font-size: 13.5px; line-height: 1.45; flex-shrink: 0; }
+.fl-voice-caption .is-user { color: var(--flowlet-fg-muted); }
+.fl-voice-caption .is-user::before { content: "“"; }
+.fl-voice-caption .is-user::after { content: "”"; }
+.fl-voice-caption .is-agent { color: var(--flowlet-fg); }
+.fl-voice-caption em { font-style: italic; color: var(--flowlet-fg-muted); }
+
+.fl-voice-banner { margin: 0 18px 8px; padding: 9px 13px; border-radius: 12px; flex-shrink: 0;
+  border: 1px solid var(--flowlet-danger-border); background: var(--flowlet-danger-bg);
+  color: var(--flowlet-danger); font-size: 12.5px; display: flex; align-items: center; gap: 10px; }
+.fl-voice-stage.is-reconnecting .fl-voice-banner { border-color: var(--flowlet-border-strong);
+  background: var(--flowlet-glass-strong); color: var(--flowlet-fg-muted); }
+
+.fl-voice-foot { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 14px 12px; flex-shrink: 0; }
+.fl-voice-drawer-btn { border: 0; background: transparent; color: var(--flowlet-fg-muted);
+  font: 500 11.5px/1 var(--flowlet-font); letter-spacing: .02em; cursor: pointer; padding: 6px 4px; }
+.fl-voice-drawer-btn:hover { color: var(--flowlet-fg); }
+.fl-voice-controls { display: flex; align-items: center; gap: 6px; }
+.fl-voice-controls .fl-icon-btn.is-active { color: var(--flowlet-danger); }
+
+.fl-voice-drawer { position: absolute; left: 10px; right: 10px; bottom: 46px; max-height: 46%;
+  overflow: auto; z-index: 4; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--flowlet-border-strong); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); display: flex; flex-direction: column; gap: 8px;
+  animation: fl-fade-in .16s ease; }
+.fl-voice-drawer-empty { font-size: 12px; color: var(--flowlet-fg-muted); text-align: center; padding: 8px; }
+.fl-voice-line { display: grid; grid-template-columns: 44px 1fr; gap: 10px; font-size: 12.5px; line-height: 1.45; }
+.fl-voice-line-role { color: var(--flowlet-fg-muted); font-weight: 600; font-size: 11px; padding-top: 1px; }
+.fl-voice-line.is-user span:last-child { color: var(--flowlet-fg-muted); }
+.fl-voice-line.is-agent span:last-child { color: var(--flowlet-fg); }
+.fl-voice-line em { font-style: italic; color: var(--flowlet-fg-muted); }
+
+/* ---- approval card voice/tier registers (ENG-185 × ENG-193) ---- */
+/* Act-tier while a spoken yes is acceptable: a soft breathing ring. */
+.fl-approval-listening { animation: fl-voice-ring 2.2s ease-in-out infinite; }
+@keyframes fl-voice-ring {
+  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 34%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--flowlet-accent) 12%, transparent); } }
+/* Critical: amber always-confirm register — voice announces, the hand confirms. */
+.fl-approval-critical { border-color: color-mix(in srgb, #b3822f 55%, var(--flowlet-border)); }
+.fl-approval-critical .fl-approval-eyebrow { color: light-dark(#8a6a2e, #d9a94e); }
+.fl-approval-consequence { margin-top: 10px; font-size: 12px; font-weight: 500;
+  color: light-dark(#8a6a2e, #d9a94e); }
+.fl-btn-critical { background: light-dark(#a97e2f, #b3822f); border-color: transparent; color: #fff; }
+/* Settled: the card becomes a receipt. */
+.fl-approval-approved { border-color: color-mix(in srgb, var(--flowlet-ok) 45%, var(--flowlet-border)); }
+.fl-approval-declined { opacity: .7; }
+.fl-approval-outcome { margin-top: 12px; font: 600 12.5px/1.2 var(--flowlet-font); }
+.fl-approval-outcome.is-approved { color: var(--flowlet-ok); }
+.fl-approval-outcome.is-declined { color: var(--flowlet-fg-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fl-voice-stage, .fl-voice-stage.is-ended, .fl-voice-feed > * { animation: none; opacity: 1; }
+  .fl-voice-blob { transition: none; transform: none !important; }
+  .fl-approval-listening { animation: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
+  .fl-voice-card, .fl-voice-card.is-past { transition: none; }
+}

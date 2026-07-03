@@ -5,6 +5,16 @@ export interface ApprovalCardProps {
   input: unknown;
   onApprove: () => void;
   onDecline: () => void;
+  /** ENG-193 danger register. "critical" renders the amber always-confirm
+   *  treatment: consequence line + a button named after the action. */
+  tier?: "act" | "critical";
+  /** Voice sessions (ENG-185): a soft listening ring while a spoken yes is
+   *  acceptable. Critical-tier cards never listen — voice only announces. */
+  listening?: boolean;
+  /** Settled state — the card becomes a receipt of how consent was given. */
+  resolution?: "voice" | "tap" | "declined";
+  /** Consequence line for critical-tier cards ("This can't be undone."). */
+  consequence?: string;
 }
 
 const MAX_ROWS = 8;
@@ -54,12 +64,25 @@ function approvalRows(input: unknown): { rows: FieldRow[]; more: number } {
  * first. Reads as a plain-language request — friendly action title + the
  * parameters as labelled fields — never a tool slug and never raw JSON.
  */
-export function ApprovalCard({ toolName, input, onApprove, onDecline }: ApprovalCardProps) {
-  const title = toolAction(toolName).request;
+export function ApprovalCard({
+  toolName, input, onApprove, onDecline, tier = "act", listening = false, resolution, consequence,
+}: ApprovalCardProps) {
+  const action = toolAction(toolName);
+  const title = action.request;
   const { rows, more } = approvalRows(input);
+  const critical = tier === "critical";
+  const settled = resolution !== undefined;
+  const classes = [
+    "fl-approval",
+    critical && "fl-approval-critical",
+    listening && !settled && "fl-approval-listening",
+    settled && (resolution === "declined" ? "fl-approval-declined" : "fl-approval-approved"),
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div className="fl-approval" role="group" aria-label={`Approval request: ${title}`}>
+    <div className={classes} role="group" aria-label={`Approval request: ${title}`}>
       <div className="fl-approval-head">
         <span className="fl-approval-ic" aria-hidden="true">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -68,10 +91,13 @@ export function ApprovalCard({ toolName, input, onApprove, onDecline }: Approval
           </svg>
         </span>
         <div className="fl-approval-heading">
-          <div className="fl-approval-eyebrow">Needs your approval</div>
+          <div className="fl-approval-eyebrow">{critical ? "Confirm on screen" : "Needs your approval"}</div>
           <div className="fl-approval-title">{title}</div>
         </div>
       </div>
+      {critical && !settled && (
+        <div className="fl-approval-consequence">{consequence ?? "This needs your explicit confirmation."}</div>
+      )}
       {rows.length > 0 && (
         <dl className="fl-approval-fields">
           {rows.map((row) => (
@@ -83,10 +109,24 @@ export function ApprovalCard({ toolName, input, onApprove, onDecline }: Approval
           {more > 0 && <div className="fl-approval-more">+{more} more</div>}
         </dl>
       )}
-      <div className="fl-approval-actions">
-        <button type="button" className="fl-btn fl-btn-primary" onClick={onApprove}>Approve</button>
-        <button type="button" className="fl-btn" onClick={onDecline}>Decline</button>
-      </div>
+      {settled ? (
+        <div className={`fl-approval-outcome ${resolution === "declined" ? "is-declined" : "is-approved"}`} role="status">
+          {resolution === "declined"
+            ? "Declined"
+            : `${action.done} — approved ${resolution === "voice" ? "by voice" : "on screen"} ✓`}
+        </div>
+      ) : (
+        <div className="fl-approval-actions">
+          <button
+            type="button"
+            className={`fl-btn fl-btn-primary ${critical ? "fl-btn-critical" : ""}`}
+            onClick={onApprove}
+          >
+            {critical ? `Confirm — ${title.toLowerCase()}` : "Approve"}
+          </button>
+          <button type="button" className="fl-btn" onClick={onDecline}>Decline</button>
+        </div>
+      )}
     </div>
   );
 }
