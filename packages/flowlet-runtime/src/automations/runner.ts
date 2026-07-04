@@ -263,6 +263,14 @@ export class AutomationRunner {
     const { store } = this.config;
     const finalized = await store.finalizeRun(scope, runId, input);
 
+    await this.config.audit?.append({
+      at: this.now(),
+      principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+      kind: "automation_firing",
+      automationId: automation.id,
+      runId: finalized.id,
+    });
+
     if (input.status === "failed") {
       const limit = this.config.consecutiveFailureLimit ?? CONSECUTIVE_FAILURE_LIMIT;
       const fresh = await store.get(scope, automation.id);
@@ -445,6 +453,17 @@ export class AutomationRunner {
       const idempotencyKey = `${action.runId}/${action.stepId}/parked-${action.id}`;
       const outcome = await tool.execute(action.input as Record<string, unknown>, { idempotencyKey });
       if (!outcome.ok) return { ok: false, error: outcome.error.message };
+
+      await this.config.audit?.append({
+        at: this.now(),
+        principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+        kind: "tool_execution",
+        toolName: action.tool,
+        toolCallId: `parked-${action.id}`,
+        mutating: true, // every parked action is a gated, non-read tool by construction
+        dangerous: action.tier === "critical",
+        outcome: "ok",
+      });
 
       await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
       await this.appendConsentAudit(scope, actionId, "yes");

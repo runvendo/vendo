@@ -680,6 +680,193 @@ describe("ENG-193 §4.6 — resolveParkedAction fail-closed + ordering (review f
   });
 });
 
+describe("ENG-193 §6.2 — automation audit completeness (diary prerequisite)", () => {
+  it("finalize() appends ONE automation_firing event per completed run (succeeded or failed)", async () => {
+    const send = makeTool("send_msg");
+    const okStore = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation: okAutomation } = await okStore.create(scope, { spec: spec(), grants: [] });
+    const audit = new InMemoryAuditLog();
+    const okRunner = new AutomationRunner({
+      store: okStore,
+      tools: async () => ({ send_msg: send }),
+      policy: allowAll,
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    const okRun = await okRunner.fire(scope, okAutomation.id, envelope("e1"));
+    expect(okRun?.status).toBe("succeeded");
+
+    const failSend = makeTool("send_msg", { failTimes: 1 });
+    const failStore = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation: failAutomation } = await failStore.create(scope, { spec: spec(), grants: [] });
+    const failRunner = new AutomationRunner({
+      store: failStore,
+      tools: async () => ({ send_msg: failSend }),
+      policy: allowAll,
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    const failRun = await failRunner.fire(scope, failAutomation.id, envelope("e2"));
+    expect(failRun?.status).toBe("failed");
+
+    const events = await audit.query(scope, { kinds: ["automation_firing"] });
+    expect(events).toHaveLength(2);
+    const byRunId = Object.fromEntries(
+      events.map((e) => [(e as { runId: string }).runId, e]),
+    );
+    expect(byRunId[okRun!.id]).toMatchObject({ automationId: okAutomation.id, runId: okRun!.id });
+    expect(byRunId[failRun!.id]).toMatchObject({ automationId: failAutomation.id, runId: failRun!.id });
+  });
+
+  it("a skipped (guard=false) or cancelled (rate-capped) firing appends NO automation_firing event", async () => {
+    const send = makeTool("send_msg");
+    const audit = new InMemoryAuditLog();
+
+    const skipStore = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation: skipAutomation } = await skipStore.create(scope, {
+      spec: spec({ if: "trigger.amountDollars > 500" }),
+      grants: [],
+    });
+    const skipRunner = new AutomationRunner({
+      store: skipStore,
+      tools: async () => ({ send_msg: send }),
+      policy: allowAll,
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    const skipRun = await skipRunner.fire(scope, skipAutomation.id, envelope("e1"));
+    expect(skipRun?.outcome).toBe("skipped");
+
+    const capStore = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation: capAutomation } = await capStore.create(scope, {
+      spec: spec({ limits: { maxFiringsPerHour: 1 } }),
+      grants: [],
+    });
+    const capRunner = new AutomationRunner({
+      store: capStore,
+      tools: async () => ({ send_msg: send }),
+      policy: allowAll,
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    await capRunner.fire(scope, capAutomation.id, envelope("e2"));
+    const cancelledRun = await capRunner.fire(scope, capAutomation.id, envelope("e3"));
+    expect(cancelledRun?.outcome).toBe("cancelled");
+
+    // The one successful capped firing DOES get an automation_firing event —
+    // only the skipped and cancelled runs must produce none.
+    const events = await audit.query(scope, { kinds: ["automation_firing"] });
+    const runIds = events.map((e) => (e as { runId: string }).runId);
+    expect(runIds).not.toContain(skipRun!.id);
+    expect(runIds).not.toContain(cancelledRun!.id);
+  });
+
+  it("resolveParkedAction appends a tool_execution event on a successful execute", async () => {
+    const notify = makeTool("notify_act");
+    const store = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation } = await store.create(scope, { spec: forEachSpec(), grants: [] });
+    const audit = new InMemoryAuditLog();
+    const runner = new AutomationRunner({
+      store,
+      tools: async () => ({ notify_act: notify }),
+      policy: approveFor("notify_act"),
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    const run = await runner.fire(scope, automation.id, forEachEnvelope("e1", ["a"]));
+    const [action] = await store.listParkedActions(scope, { runId: run!.id });
+
+    const result = await runner.resolveParkedAction(scope, action!.id, "approved");
+    expect(result).toEqual({ ok: true, executed: true });
+
+    const events = await audit.query(scope, { kinds: ["tool_execution"] });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      kind: "tool_execution",
+      toolName: "notify_act",
+      toolCallId: `parked-${action!.id}`,
+      mutating: true,
+      dangerous: false,
+      outcome: "ok",
+    });
+  });
+
+  it("a critical parked action's resolved tool_execution is flagged dangerous: true", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const criticalNotify: RegisteredTool = {
+      descriptor: {
+        name: "notify_act",
+        source: "caller",
+        annotations: { destructiveHint: true },
+        hasExecute: true,
+        kind: "function",
+      },
+      execute: async (input) => {
+        calls.push(input);
+        return { ok: true, result: { done: true } };
+      },
+    };
+    const store = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation } = await store.create(scope, { spec: forEachSpec(), grants: [] });
+    const audit = new InMemoryAuditLog();
+    const runner = new AutomationRunner({
+      store,
+      tools: async () => ({ notify_act: criticalNotify }),
+      policy: approveFor("notify_act"),
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    const run = await runner.fire(scope, automation.id, forEachEnvelope("e1", ["a"]));
+    const [action] = await store.listParkedActions(scope, { runId: run!.id });
+    expect(action?.tier).toBe("critical");
+
+    const result = await runner.resolveParkedAction(scope, action!.id, "approved");
+    expect(result).toEqual({ ok: true, executed: true });
+
+    const events = await audit.query(scope, { kinds: ["tool_execution"] });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ dangerous: true, outcome: "ok" });
+  });
+
+  it("a FAILED parked-action execute appends NO tool_execution event (still unresolved, re-askable)", async () => {
+    const notify: RegisteredTool = {
+      descriptor: { name: "notify_act", source: "caller", annotations: {}, hasExecute: true, kind: "function" },
+      execute: async () => ({ ok: false, error: { code: "boom", message: "gmail down" } }),
+    };
+    const store = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation } = await store.create(scope, { spec: forEachSpec(), grants: [] });
+    const audit = new InMemoryAuditLog();
+    const runner = new AutomationRunner({
+      store,
+      tools: async () => ({ notify_act: notify }),
+      policy: approveFor("notify_act"),
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    const run = await runner.fire(scope, automation.id, forEachEnvelope("e1", ["a"]));
+    const [action] = await store.listParkedActions(scope, { runId: run!.id });
+
+    const result = await runner.resolveParkedAction(scope, action!.id, "approved");
+    expect(result).toEqual({ ok: false, error: "gmail down" });
+    expect((await store.getParkedAction(scope, action!.id))?.resolution).toBeUndefined();
+    expect(await audit.query(scope, { kinds: ["tool_execution"] })).toHaveLength(0);
+  });
+});
+
 describe("ENG-193 §6.2 — audit trail for parked-action resolutions", () => {
   it("resolveParkedAction appends a 'consent' audit event on both approve and decline", async () => {
     const notify = makeTool("notify_act");
