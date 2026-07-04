@@ -5,6 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Principal } from "@flowlet/core";
+import { MockLanguageModelV3 } from "ai/test";
+import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import { buildDescriptor, type ToolDescriptor } from "../descriptor";
 import { createInMemoryGrantStore } from "../grant-store";
 import { createGrantManager } from "../grant-manager";
@@ -19,6 +21,9 @@ import { grantPolicy } from "./grant-policy";
 import { roleRule } from "./principal-rules";
 import { dangerTier } from "./tier";
 import type { PolicyContext } from "./types";
+import { judgePolicy } from "./judge-policy";
+import { cautionBreaker, createBreakerState, volumeBreaker } from "./breakers";
+import { setEscalationReason } from "./escalation";
 
 const scope: Principal = { tenantId: "t", subject: "u" };
 
@@ -122,5 +127,72 @@ describe("ENG-193 §8 permanent invariants", () => {
         criticalDesc,
       ),
     ).rejects.toThrow(/critical/);
+  });
+});
+
+const ZERO_USAGE: LanguageModelV3GenerateResult["usage"] = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+};
+function judgeReturning(text: string): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doGenerate: async (): Promise<LanguageModelV3GenerateResult> => ({
+      content: [{ type: "text", text }], finishReason: { unified: "stop", raw: undefined }, usage: ZERO_USAGE, warnings: [],
+    }),
+  });
+}
+
+describe("ENG-193 item 3 — judge + breaker invariants", () => {
+  it("INVARIANT: the judge never downgrades critical, even with a matching grant and a 'match' verdict", async () => {
+    const store = createInMemoryGrantStore();
+    await seedToolGrant(store, criticalDesc);
+    const policy = judgePolicy(
+      grantPolicy(annotationPolicy(), store, { principalScope: () => scope }),
+      { model: judgeReturning("match") },
+    );
+    expect(await policy.evaluate({ ...ctxFor(criticalDesc, { amount: 5 }), threadId: "th-1" })).toBe("approve");
+  });
+
+  it("INVARIANT: the judge never overrides deny, at any verdict", async () => {
+    const denyThenJudge = composePolicy(
+      roleRule({ requiredRole: "admin" }), // the principal below holds no roles -> deny
+      judgePolicy(annotationPolicy(), { model: judgeReturning("match") }),
+    );
+    expect(await denyThenJudge.evaluate({ ...ctxFor(actDesc), threadId: "th-1" })).toBe("deny");
+  });
+
+  it("INVARIANT: breakers never loosen — a volumeBreaker/cautionBreaker wrapping a deny stays deny", async () => {
+    const state = createBreakerState();
+    const denyPolicy = { evaluate: () => "deny" as const };
+    expect(await volumeBreaker(denyPolicy, state).evaluate({ ...ctxFor(actDesc), threadId: "th-1" })).toBe("deny");
+    expect(await cautionBreaker(denyPolicy, state).evaluate({ ...ctxFor(actDesc), threadId: "th-1" })).toBe("deny");
+  });
+
+  it("INVARIANT: caution state cannot suppress critical's ceremony", async () => {
+    const state = createBreakerState();
+    // Trip caution with 3 consecutive escalations on an ACT tool.
+    for (let i = 0; i < 3; i++) {
+      const escalating = { evaluate: (ctx: PolicyContext) => { setEscalationReason(ctx, "x"); return "approve" as const; } };
+      const wrapped = cautionBreaker(escalating, state, { consecutiveThreshold: 3 });
+      const ctx = { ...ctxFor(actDesc), threadId: "th-1" };
+      await wrapped.evaluate(ctx);
+      await wrapped.onExecuted!(ctx, "approve");
+    }
+    // A critical call, even one the inner layer said "approve" for (as
+    // critical always does), is untouched by the now-active caution state.
+    const policy = cautionBreaker(annotationPolicy(), state);
+    expect(await policy.evaluate({ ...ctxFor(criticalDesc), threadId: "th-1" })).toBe("approve");
+  });
+
+  it("INVARIANT: no judge configured -> the stack is IDENTICAL to item-2 behavior across every tier/decision", async () => {
+    const store = createInMemoryGrantStore();
+    await seedToolGrant(store, actDesc);
+    const withoutJudge = grantPolicy(annotationPolicy(), store, { principalScope: () => scope });
+    const wrappedInJudge = judgePolicy(withoutJudge, {}); // no model
+    for (const descriptor of [actDesc, criticalDesc]) {
+      const ctx = { ...ctxFor(descriptor), threadId: "th-1" };
+      const ctxCopy = { ...ctxFor(descriptor), threadId: "th-1" };
+      expect(await wrappedInJudge.evaluate(ctx)).toBe(await withoutJudge.evaluate(ctxCopy));
+    }
   });
 });
