@@ -8,7 +8,6 @@
  * when the policy answers "approve".
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
 import type { UINode, ActionRequest, ActionResult, RegisteredComponent } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
 import { ApprovalCard } from "@flowlet/shell";
@@ -75,10 +74,14 @@ export interface SandboxStageProps {
   brand: BrandTokens;
   components: RegisteredComponent[];
   basePath: string;
+  /** Host router navigation for the reserved flowlet.navigate action (from the
+   *  link/router shims). Kept as a prop so this package stays framework-
+   *  version-agnostic; FlowletRoot wires `useRouter().push`. Default:
+   *  `location.assign`, still validated same-app first. */
+  onNavigate?: (href: string) => void;
 }
 
-export function SandboxStage({ node, brand, components, basePath }: SandboxStageProps): ReactNode {
-  const router = useRouter();
+export function SandboxStage({ node, brand, components, basePath, onNavigate }: SandboxStageProps): ReactNode {
   const [sources, setSources] = useState<Sources | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Pending approvals keyed by requestId: concurrent gated dispatches each get
@@ -131,7 +134,8 @@ export function SandboxStage({ node, brand, components, basePath }: SandboxStage
     if (req.action === NAVIGATE_ACTION) {
       const href = (req.payload as { href?: unknown } | undefined)?.href;
       if (isSafeAppPath(href)) {
-        router.push(href);
+        if (onNavigate) onNavigate(href);
+        else if (typeof location !== "undefined") location.assign(href);
         return { result: { navigated: href } };
       }
       return { error: { code: "unsafe_navigation", message: `blocked navigation to ${String(href)}` } };
