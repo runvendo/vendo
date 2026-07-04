@@ -141,3 +141,90 @@ export async function ingestMcpTools(args: {
 
   return { toolset, descriptors, failures };
 }
+
+/**
+ * The shape of the raw `tools/list` result we need from the SDK's runtime
+ * `listTools()` method. In `@ai-sdk/mcp@1.0.6` this method exists on the
+ * MCPClient class but is missing from the public interface (it became public
+ * in 2.x, which we can't take yet — it targets @ai-sdk/provider@4). The
+ * structural cast below is contract-tested in mcp.contract.test.ts.
+ */
+interface RawListToolsResult {
+  tools: Array<{ name: string; annotations?: ToolAnnotations & { title?: string } }>;
+}
+
+/**
+ * Build the REAL MCP tool source on `@ai-sdk/mcp@1.0.6` (Streamable HTTP
+ * transport, static headers — the approved v1 scope).
+ *
+ * Client lifecycle: one client per server name, created lazily on first fetch
+ * and kept open for reuse. A fetch failure closes + evicts that server's
+ * client so the next fetch rebuilds the connection, then rethrows so
+ * `ingestMcpTools` can skip the server.
+ *
+ * The public `tools()` gives executable ai-SDK tools but DISCARDS MCP
+ * `annotations`; the runtime `listTools()` recovers them. If a future SDK
+ * removes `listTools`, we degrade to empty annotations (tools still ingest;
+ * the annotation policy then fail-safes every call to "approve").
+ */
+export function createMcpToolSource(): McpToolSource {
+  type Client = {
+    tools(): Promise<ToolSet>;
+    close(): Promise<void>;
+  };
+  const clients = new Map<string, Promise<Client>>();
+
+  async function getClient(config: McpServerConfig): Promise<Client> {
+    let client = clients.get(config.name);
+    if (!client) {
+      client = import("@ai-sdk/mcp").then(({ createMCPClient }) =>
+        createMCPClient({
+          transport: {
+            type: "http",
+            url: config.url,
+            ...(config.headers ? { headers: config.headers } : {}),
+          },
+        }),
+      ) as Promise<Client>;
+      clients.set(config.name, client);
+    }
+    return client;
+  }
+
+  return {
+    async fetchTools(config) {
+      try {
+        const client = await getClient(config);
+        const tools = await client.tools();
+
+        // Recover the annotations the public API drops (see docstring).
+        let annotations: Record<string, ToolAnnotations> = {};
+        const maybeListTools = (
+          client as unknown as { listTools?: () => Promise<RawListToolsResult> }
+        ).listTools;
+        if (typeof maybeListTools === "function") {
+          const listed = await maybeListTools.call(client);
+          annotations = Object.fromEntries(
+            listed.tools.map((t) => {
+              const { title: _title, ...hints } = t.annotations ?? {};
+              return [t.name, hints];
+            }),
+          );
+        } else {
+          console.warn(
+            `[flowlet] MCP server "${config.name}": SDK listTools() unavailable — ` +
+              "annotations unknown, all its tools will require approval.",
+          );
+        }
+
+        return { tools, annotations };
+      } catch (err) {
+        // Drop the (possibly dead) client so the next fetch reconnects.
+        const stale = clients.get(config.name);
+        clients.delete(config.name);
+        if (stale) void stale.then((c) => c.close()).catch(() => {});
+        throw err;
+      }
+    },
+  };
+}
