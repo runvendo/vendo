@@ -7,7 +7,7 @@ import { z } from "zod";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
-import type { ApprovalPolicy } from "./policy";
+import type { ApprovalPolicy, PolicyContext } from "./policy";
 import type { ComposioClient } from "./composio";
 
 // Replace `createComposioClient` with a spy so we can assert the engine builds
@@ -513,5 +513,63 @@ describe("createFlowletAgent", () => {
     );
 
     expect(seenThreadIds.some((id) => /^thread-\d+$/.test(id ?? ""))).toBe(true);
+  });
+
+  it("assembles PolicyContext.request from the latest user message", async () => {
+    const seen: PolicyContext[] = [];
+    const spyPolicy: ApprovalPolicy = { evaluate: (ctx) => { seen.push(ctx); return "allow"; } };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: "some_tool", input: {} }),
+      policy: spyPolicy,
+      tools: { some_tool: tool({ inputSchema: z.object({}), execute: async () => "ok" }) },
+    });
+    await collect(agent.run({
+      messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "email Jim that I'm running late" }] }],
+      tools: {},
+      signal: new AbortController().signal,
+    }));
+    const seenWithRequest = seen.find((ctx) => ctx.toolName === "some_tool");
+    expect(seenWithRequest?.request).toEqual({ text: "email Jim that I'm running late", messageId: "m1" });
+  });
+
+  it("counters increment across multiple tool calls within the SAME run", async () => {
+    // Mock model: turn 1 calls tool A, turn 2 (prompt now carries A's tool-call)
+    // calls tool B, turn 3 finishes. Reuses this file's mockModel shape but
+    // needs a two-call sequence — write a small dedicated mock inline here
+    // rather than extending the shared `mockModel` (it only supports one call).
+    const counts: Record<string, number>[] = [];
+    const spyPolicy: ApprovalPolicy = {
+      evaluate: (ctx) => { counts.push({ ...ctx.counters!.perTool }); return "allow"; },
+    };
+    const twoStepModel = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        const calls = prompt.filter(
+          (m) => m.role === "assistant" && Array.isArray(m.content) &&
+            m.content.some((c) => (c as { type?: string }).type === "tool-call"),
+        ).length;
+        const chunks: LanguageModelV3StreamPart[] =
+          calls === 0
+            ? [{ type: "tool-call", toolCallId: "c1", toolName: "tool_a", input: "{}" },
+               { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } }]
+            : calls === 1
+              ? [{ type: "tool-call", toolCallId: "c2", toolName: "tool_b", input: "{}" },
+                 { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } }]
+              : [...textChunks("t", "done"), { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } }];
+        return { stream: simulateReadableStream({ chunks }) };
+      },
+    });
+    const agent = createFlowletAgent({
+      model: twoStepModel,
+      policy: spyPolicy,
+      tools: {
+        tool_a: tool({ inputSchema: z.object({}), execute: async () => "a" }),
+        tool_b: tool({ inputSchema: z.object({}), execute: async () => "b" }),
+      },
+    });
+    await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+    // tool_a's needsApproval sees {tool_a:1}; tool_b's sees {tool_a:1, tool_b:1}
+    // (both counted once via recordCall, needsApproval-only — see run-context.ts).
+    expect(counts.some((c) => c["tool_a"] === 1 && c["tool_b"] === undefined)).toBe(true);
+    expect(counts.some((c) => c["tool_a"] === 1 && c["tool_b"] === 1)).toBe(true);
   });
 });

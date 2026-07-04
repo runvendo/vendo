@@ -8,6 +8,7 @@
  */
 import type { AuditLog, Principal } from "@flowlet/core";
 import type { ApprovalPolicy, PolicyContext } from "./types";
+import { getEscalationReason } from "./escalation";
 
 export function auditPolicy(
   audit: AuditLog,
@@ -28,6 +29,20 @@ export function auditPolicy(
           dangerous: ctx.descriptor.annotations.destructiveHint === true,
           outcome: "ok",
         });
+        // ENG-193 §4.2/§6: a call this policy stack escalated leaves its own
+        // audit trail entry (the AuditEvent kind was declared in item 1,
+        // never written until now — the judge is the first thing that
+        // produces this signal).
+        const reason = getEscalationReason(ctx);
+        if (reason !== undefined) {
+          await audit.append({
+            at: clock(),
+            principal: opts.principalScope(ctx),
+            kind: "judge_escalation",
+            toolName: ctx.toolName,
+            reason,
+          });
+        }
       } catch {
         /* audit is a trail, not a gate */
       }

@@ -29,6 +29,8 @@ import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError } from "./errors";
 import { dangerTier, isUnverified } from "./policy/tier";
+import { getEscalationReason } from "./policy/escalation";
+import type { RunPolicyContext } from "./policy/run-context";
 
 /** Arguments to {@link wrapClientTool}. Mirrors `WrapToolArgs`. */
 export interface WrapClientToolArgs {
@@ -44,10 +46,15 @@ export interface WrapClientToolArgs {
    * same contract, mirrored here for client-executed tools.
    */
   writer?: UIMessageStreamWriter<FlowletUIMessage>;
+  /** See `WrapToolArgs.runContext` — same contract, mirrored for
+   *  client-executed tools. NOTE: client tools have no server-side `execute`,
+   *  so `recordResult` is never called for them — their results can never
+   *  taint provenance in v1 (documented limitation, run-context.ts). */
+  runContext?: RunPolicyContext;
 }
 
 export function wrapClientTool(args: WrapClientToolArgs): Tool {
-  const { name, tool, descriptor, policy, principal, threadId, writer } = args;
+  const { name, tool, descriptor, policy, principal, threadId, writer, runContext } = args;
 
   // A client-executed tool with a server execute is contradictory: the SDK
   // would run it in-process and the browser executor would never see it.
@@ -58,11 +65,21 @@ export function wrapClientTool(args: WrapClientToolArgs): Tool {
     );
   }
 
-  function buildCtx(input: unknown): PolicyContext {
-    return { toolName: name, input, descriptor, principal, threadId };
+  function buildCtx(input: unknown, toolCallId?: string): PolicyContext {
+    return {
+      toolName: name,
+      input,
+      descriptor,
+      principal,
+      threadId,
+      toolCallId,
+      request: runContext?.request,
+      provenance: runContext?.snapshotProvenance(),
+      counters: runContext?.snapshotCounters(),
+    };
   }
 
-  function writeConsentPart(toolCallId: string): void {
+  function writeConsentPart(toolCallId: string, reason: string | undefined): void {
     if (!writer) return;
     const tier = dangerTier(descriptor);
     if (tier === "read") return; // cards/receipts are for mutating calls only
@@ -74,7 +91,7 @@ export function wrapClientTool(args: WrapClientToolArgs): Tool {
       writer.write({
         type: "data-consent",
         id: `consent-${toolCallId}`,
-        data: { toolCallId, tier, unverified: isUnverified(descriptor) },
+        data: { toolCallId, tier, unverified: isUnverified(descriptor), ...(reason ? { reason } : {}) },
       });
     } catch (err) {
       console.error(`[flowlet] failed to write data-consent part for "${toolCallId}":`, err);
@@ -84,14 +101,16 @@ export function wrapClientTool(args: WrapClientToolArgs): Tool {
   return {
     ...tool,
     needsApproval: async (input: unknown, options: { toolCallId: string }): Promise<boolean> => {
-      const decision = await policy.evaluate(buildCtx(input));
+      runContext?.recordCall(name);
+      const ctx = buildCtx(input, options.toolCallId);
+      const decision = await policy.evaluate(ctx);
       if (decision === "deny") {
         throw new FlowletError(
           "policy",
           `tool "${name}" denied by approval policy`,
         );
       }
-      writeConsentPart(options.toolCallId);
+      writeConsentPart(options.toolCallId, getEscalationReason(ctx));
       return decision === "approve";
     },
   };

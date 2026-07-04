@@ -46,7 +46,8 @@ export interface ConsentTierPart {
   toolCallId: string;
   tier: "act" | "critical";
   unverified: boolean;
-  /** Reserved for the judge's escalation reason (item 3). Empty/absent today. */
+  /** The judge/breaker's plain-language escalation reason (ENG-193 §4.2/§4.7).
+   *  Absent for an ordinary (non-escalated) act-tier call. */
   reason?: string;
 }
 

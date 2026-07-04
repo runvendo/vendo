@@ -2,10 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import { tool, type Tool, type ToolExecutionOptions } from "ai";
 import { wrapTool } from "./wrap-tool";
-import type { ApprovalDecision, ApprovalPolicy } from "./policy";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy";
 import { grantPolicy, hashInput } from "./policy";
 import { createInMemoryGrantStore } from "./grant-store";
 import { hashDescriptor } from "./automations/grants";
+import { createRunPolicyContext } from "./policy/run-context";
+import { setEscalationReason } from "./policy/escalation";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError } from "./errors";
@@ -559,5 +561,56 @@ describe("wrapTool", () => {
     await expect(
       wrapped.needsApproval!({}, { toolCallId: "call-5", messages: [] } as never),
     ).resolves.toBe(true);
+  });
+
+  it("threads request/provenance/counters from a RunPolicyContext into evaluate", async () => {
+    const seen: PolicyContext[] = [];
+    const spyPolicy: ApprovalPolicy = { evaluate: (ctx) => { seen.push(ctx); return "allow"; } };
+    const runContext = createRunPolicyContext({ text: "email jim", messageId: "m1" });
+    const original = tool({ inputSchema: z.object({}), execute: async () => "ok" });
+    const w = wrapTool({
+      name: "send_email",
+      tool: original,
+      descriptor: { name: "send_email", source: "caller", annotations: { readOnlyHint: false }, hasExecute: true, kind: "function" },
+      policy: spyPolicy,
+      principal,
+      runContext,
+    });
+    await callNeedsApproval(w, {});
+    expect(seen[0]!.request).toEqual({ text: "email jim", messageId: "m1" });
+    expect(seen[0]!.counters).toEqual({ toolCallsThisTurn: 1, perTool: { send_email: 1 } });
+    expect(seen[0]!.provenance).toEqual({ taintedSources: [] });
+  });
+
+  it("recordResult taints the run AFTER a genuine execute (not before, not on deny)", async () => {
+    const runContext = createRunPolicyContext();
+    const openWorldDesc: ToolDescriptor = {
+      name: "GMAIL_FETCH", source: "composio", annotations: { openWorldHint: true }, hasExecute: true, kind: "function",
+    };
+    const original = tool({ inputSchema: z.object({}), execute: async () => "results" });
+    const w = wrapTool({ name: "GMAIL_FETCH", tool: original, descriptor: openWorldDesc, policy: fixedPolicy("allow"), principal, runContext });
+    expect(runContext.snapshotProvenance()).toEqual({ taintedSources: [] });
+    await callExecute(w, {}, opts);
+    expect(runContext.snapshotProvenance()).toEqual({ taintedSources: ["GMAIL_FETCH"] });
+  });
+
+  it("writes the escalation reason onto the data-consent part when the policy stamped one", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const descriptor: ToolDescriptor = {
+      name: "send_email", source: "caller", annotations: { readOnlyHint: false }, hasExecute: true, kind: "function",
+    };
+    // A policy that BOTH decides "approve" AND stamps a reason on the ctx it received.
+    const reasonPolicy: ApprovalPolicy = {
+      evaluate(ctx) {
+        setEscalationReason(ctx, "an email I read asked for this");
+        return "approve";
+      },
+    };
+    const w = wrapTool({ name: "send_email", tool: { execute: async () => "ok" } as unknown as Tool, descriptor, policy: reasonPolicy, principal, writer });
+    await callNeedsApproval(w, {});
+    expect(writes).toEqual([
+      { type: "data-consent", id: "consent-na", data: { toolCallId: "na", tier: "act", unverified: false, reason: "an email I read asked for this" } },
+    ]);
   });
 });

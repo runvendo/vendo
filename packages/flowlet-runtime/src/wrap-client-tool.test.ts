@@ -4,9 +4,11 @@ import { wrapClientTool } from "./wrap-client-tool";
 import { buildToolset } from "./toolset";
 import { hostToolset } from "./host-toolset";
 import type { HostToolDefinition } from "@flowlet/core";
-import type { ApprovalPolicy, ApprovalDecision } from "./policy";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy";
 import type { ToolDescriptor } from "./descriptor";
 import { FlowletError } from "./errors";
+import { createRunPolicyContext } from "./policy/run-context";
+import { setEscalationReason } from "./policy/escalation";
 
 const PRINCIPAL = { userId: "user-1" };
 
@@ -181,6 +183,47 @@ describe("wrapClientTool", () => {
     await expect(
       wrapped.needsApproval!({}, { toolCallId: "call-5", messages: [] } as never),
     ).resolves.toBe(true);
+  });
+
+  it("threads request/provenance/counters from a RunPolicyContext into evaluate", async () => {
+    const seen: PolicyContext[] = [];
+    const spyPolicy: ApprovalPolicy = { evaluate: (ctx) => { seen.push(ctx); return "allow"; } };
+    const runContext = createRunPolicyContext({ text: "email jim", messageId: "m1" });
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: spyPolicy,
+      principal: PRINCIPAL,
+      runContext,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-6", messages: [] } as never);
+    expect(seen[0]!.request).toEqual({ text: "email jim", messageId: "m1" });
+    expect(seen[0]!.counters).toEqual({ toolCallsThisTurn: 1, perTool: { send_email: 1 } });
+    expect(seen[0]!.provenance).toEqual({ taintedSources: [] });
+  });
+
+  it("writes the escalation reason onto the data-consent part when the policy stamped one", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const reasonPolicy: ApprovalPolicy = {
+      evaluate(ctx) {
+        setEscalationReason(ctx, "an email I read asked for this");
+        return "approve";
+      },
+    };
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: reasonPolicy,
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-7", messages: [] } as never);
+    expect(writes).toEqual([
+      { type: "data-consent", id: "consent-call-7", data: { toolCallId: "call-7", tier: "act", unverified: false, reason: "an email I read asked for this" } },
+    ]);
   });
 });
 

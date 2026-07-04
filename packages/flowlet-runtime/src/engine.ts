@@ -38,6 +38,7 @@ import {
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 import type { ToolDescriptor } from "./descriptor";
+import { createRunPolicyContext } from "./policy/run-context";
 
 /** Canonical name of the engine's built-in composed-view tool (Tier 2.5). */
 export const RENDER_VIEW_TOOL_NAME = "render_view";
@@ -173,6 +174,24 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
     });
   }
 
+  /** The latest user message's text, for the judge's PolicyContext.request
+   *  (ENG-193 §4.2). Absent when there is no user message yet (shouldn't
+   *  happen in practice — every turn starts from a user message — but a
+   *  missing request degrades to "no signal", never a crash). */
+  function latestUserRequest(messages: FlowletUIMessage[]): { text: string; messageId: string } | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i]!;
+      if (message.role !== "user") continue;
+      const text = message.parts
+        .filter((p): p is { type: "text"; text: string } => (p as { type: string }).type === "text")
+        .map((p) => p.text)
+        .join("\n")
+        .trim();
+      if (text.length > 0) return { text, messageId: message.id };
+    }
+    return undefined;
+  }
+
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     const ordinal = ++runCounter;
     const runId = `run-${ordinal}`;
@@ -222,6 +241,11 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ? candidate
             : { userId: "" };
         settledPrincipal = principal;
+
+        // 1b. One judge-context instance for this ENTIRE run (ENG-193 §4.2) —
+        // provenance/counters accumulate across every tool call the run
+        // makes, across however many model->tool steps it takes.
+        const runPolicyContext = createRunPolicyContext(latestUserRequest(input.messages));
 
         // 2. The render + connect tools, bound to this run's stream writer.
         const renderViewTool = createRenderViewTool(writer, { components: config.components });
@@ -285,6 +309,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           principal,
           threadId,
           writer,
+          runContext: runPolicyContext,
           // Surface dropped tools rather than discarding them silently.
           onCollision: (name, kept, dropped) =>
             console.warn(

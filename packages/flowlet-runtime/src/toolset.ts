@@ -20,6 +20,7 @@ import { wrapTool } from "./wrap-tool";
 import { wrapClientTool } from "./wrap-client-tool";
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
+import type { RunPolicyContext } from "./policy/run-context";
 
 /** A single source of tools provided to `buildToolset`. */
 export interface ToolSourceInput {
@@ -52,10 +53,12 @@ export function buildToolset(args: {
   threadId?: string;
   /** The run's stream writer, threaded into every wrapped tool (ENG-193 §4.5). */
   writer?: UIMessageStreamWriter<FlowletUIMessage>;
+  /** The run's judge context, threaded into every wrapped tool (ENG-193 §4.2). */
+  runContext?: RunPolicyContext;
   onCollision?: (name: string, kept: ToolSource, dropped: ToolSource) => void;
   onSkip?: (name: string, source: ToolSource, reason: string) => void;
 }): ToolSet {
-  const { sources, policy, principal, threadId, writer, onCollision, onSkip } = args;
+  const { sources, policy, principal, threadId, writer, runContext, onCollision, onSkip } = args;
 
   const result: ToolSet = {};
   // Track which source has already claimed each tool name.
@@ -90,6 +93,7 @@ export function buildToolset(args: {
           principal,
           threadId,
           writer,
+          runContext,
         });
         result[name] = wrapped;
         claimed.set(name, source);

@@ -2,9 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import { tool } from "ai";
 import { buildToolset } from "./toolset";
-import type { ApprovalPolicy } from "./policy";
+import type { ApprovalPolicy, PolicyContext } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 import type { ToolDescriptor } from "./descriptor";
+import { createRunPolicyContext } from "./policy/run-context";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -156,5 +157,36 @@ describe("buildToolset", () => {
       { toolCallId: "call-1", messages: [] },
     );
     expect(writes).toHaveLength(1);
+  });
+
+  it("threads runContext through to wrapTool: needsApproval's evaluate sees the request", async () => {
+    const seen: PolicyContext[] = [];
+    const spyPolicy: ApprovalPolicy = { evaluate: (ctx) => { seen.push(ctx); return "allow"; } };
+    const raw = tool({
+      description: "mutating",
+      inputSchema: z.object({}),
+      execute: async () => "ok",
+    });
+    const descriptor: ToolDescriptor = {
+      name: "mutate", source: "caller",
+      annotations: { destructiveHint: false }, hasExecute: true, kind: "function",
+    };
+    const runContext = createRunPolicyContext({ text: "email jim", messageId: "m1" });
+
+    const result = buildToolset({
+      sources: [
+        { source: "caller", tools: { mutate: raw }, descriptors: { mutate: descriptor } },
+      ],
+      policy: spyPolicy,
+      principal,
+      runContext,
+    });
+
+    const wrapped = result.mutate!;
+    await (wrapped.needsApproval as (input: unknown, options: unknown) => Promise<boolean>)(
+      {},
+      { toolCallId: "call-1", messages: [] },
+    );
+    expect(seen[0]!.request).toEqual({ text: "email jim", messageId: "m1" });
   });
 });

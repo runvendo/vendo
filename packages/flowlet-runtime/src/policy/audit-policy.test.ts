@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { auditPolicy } from "./audit-policy";
 import { InMemoryAuditLog } from "../embedded/in-memory-store";
+import { setEscalationReason } from "./escalation";
 import type { PolicyContext } from "./types";
 import type { ToolDescriptor } from "../descriptor";
 
@@ -23,5 +24,29 @@ describe("auditPolicy", () => {
       kind: "tool_execution", toolName: "send_email", toolCallId: "call-1",
       mutating: true, dangerous: false, outcome: "ok",
     });
+  });
+
+  it("also records a judge_escalation event when the ctx carries a stamped reason", async () => {
+    const audit = new InMemoryAuditLog();
+    const p = auditPolicy(audit, { principalScope: () => scope, now: () => "2026-07-04T00:00:00Z" });
+    const escalatedCtx: PolicyContext = { ...ctx };
+    setEscalationReason(escalatedCtx, "an email I read asked for this");
+    await p.onExecuted!(escalatedCtx, "approve");
+    const rows = await audit.query(scope, {});
+    expect(rows).toHaveLength(2);
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        kind: "judge_escalation", toolName: "send_email", reason: "an email I read asked for this",
+      }),
+    );
+  });
+
+  it("records only tool_execution when the ctx carries no escalation reason", async () => {
+    const audit = new InMemoryAuditLog();
+    const p = auditPolicy(audit, { principalScope: () => scope, now: () => "2026-07-04T00:00:00Z" });
+    await p.onExecuted!({ ...ctx }, "allow");
+    const rows = await audit.query(scope, {});
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "tool_execution" });
   });
 });

@@ -21,6 +21,8 @@ import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError, policyDenied } from "./errors";
 import { dangerTier, isUnverified } from "./policy/tier";
+import { getEscalationReason } from "./policy/escalation";
+import type { RunPolicyContext } from "./policy/run-context";
 
 /** Arguments to {@link wrapTool}. */
 export interface WrapToolArgs {
@@ -49,6 +51,13 @@ export interface WrapToolArgs {
    * call site both cases need.
    */
   writer?: UIMessageStreamWriter<FlowletUIMessage>;
+  /**
+   * The run's mutable judge context (ENG-193 §4.2) — request text, running
+   * provenance/counters. Optional: a caller with no judge configured (or a
+   * bare unit test) simply gets a PolicyContext missing these fields, which
+   * every layer treats as "no signal available", never a crash.
+   */
+  runContext?: RunPolicyContext;
 }
 
 /**
@@ -62,7 +71,7 @@ export interface WrapToolArgs {
  * is the fail-closed choice.
  */
 export function wrapTool(args: WrapToolArgs): Tool {
-  const { name, tool, descriptor, policy, principal, threadId, writer } = args;
+  const { name, tool, descriptor, policy, principal, threadId, writer, runContext } = args;
 
   // Fail-closed: without an `execute` to short-circuit, a `deny` cannot be
   // enforced. Refuse to wrap rather than silently let denied calls through.
@@ -76,10 +85,20 @@ export function wrapTool(args: WrapToolArgs): Tool {
   const boundExecute = originalExecute.bind(tool);
 
   function buildCtx(input: unknown, toolCallId?: string): PolicyContext {
-    return { toolName: name, input, descriptor, principal, toolCallId, threadId };
+    return {
+      toolName: name,
+      input,
+      descriptor,
+      principal,
+      toolCallId,
+      threadId,
+      request: runContext?.request,
+      provenance: runContext?.snapshotProvenance(),
+      counters: runContext?.snapshotCounters(),
+    };
   }
 
-  function writeConsentPart(toolCallId: string): void {
+  function writeConsentPart(toolCallId: string, reason: string | undefined): void {
     if (!writer) return;
     const tier = dangerTier(descriptor);
     if (tier === "read") return; // cards/receipts are for mutating calls only
@@ -91,24 +110,16 @@ export function wrapTool(args: WrapToolArgs): Tool {
       writer.write({
         type: "data-consent",
         id: `consent-${toolCallId}`,
-        data: { toolCallId, tier, unverified: isUnverified(descriptor) },
+        data: {
+          toolCallId,
+          tier,
+          unverified: isUnverified(descriptor),
+          ...(reason ? { reason } : {}),
+        },
       });
     } catch (err) {
       console.error(`[flowlet] failed to write data-consent part for "${toolCallId}":`, err);
     }
-  }
-
-  /**
-   * Evaluate the composed policy for this input — ALWAYS fresh, never cached.
-   * Both `needsApproval` (preflight) and `execute` (the later approval turn)
-   * call this, so each re-runs the full composed policy. That is the fail-closed
-   * guarantee: a policy whose state changed between the two callbacks (role
-   * revoked, threshold lowered) is re-evaluated at execute time and enforced.
-   * The expensive NL judge memoises its own result internally, so re-evaluation
-   * is cheap without weakening freshness of the deterministic layers.
-   */
-  async function evaluate(input: unknown): Promise<ApprovalDecision> {
-    return policy.evaluate(buildCtx(input));
   }
 
   // Preserve any caller-supplied output transform so we can delegate normal
@@ -121,14 +132,20 @@ export function wrapTool(args: WrapToolArgs): Tool {
     // `"approve"` pauses for a human; `"allow"` and `"deny"` do not (deny is
     // enforced in `execute`, not by asking the user).
     needsApproval: async (input: unknown, options: { toolCallId: string }): Promise<boolean> => {
-      const decision = await evaluate(input);
-      writeConsentPart(options.toolCallId);
+      // recordCall ONCE per generated call — the SDK calls needsApproval
+      // exactly once per call regardless of the eventual decision, unlike
+      // evaluate (called again in execute); see run-context.ts's docstring.
+      runContext?.recordCall(name);
+      const ctx = buildCtx(input, options.toolCallId);
+      const decision = await policy.evaluate(ctx);
+      writeConsentPart(options.toolCallId, getEscalationReason(ctx));
       return decision === "approve";
     },
     // Authoritative, fail-closed gate. ALWAYS re-evaluates the composed policy
     // fresh; a `deny` short-circuits the original execute.
     execute: async (input: unknown, options: ToolExecutionOptions) => {
-      const decision = await evaluate(input);
+      const ctx = buildCtx(input, options.toolCallId);
+      const decision: ApprovalDecision = await policy.evaluate(ctx);
       if (decision === "deny") {
         // Return the structured deny payload as the tool result so the model
         // sees the refusal. Verified against ai@6.0.28: the live run path
@@ -140,12 +157,16 @@ export function wrapTool(args: WrapToolArgs): Tool {
         return policyDenied(name, "denied by approval policy");
       }
       const result = await boundExecute(input, options);
+      // A result genuinely entered context — record it for taint tracking
+      // BEFORE onExecuted, so any audit/breaker layer reacting to onExecuted
+      // sees provenance that already reflects this call.
+      runContext?.recordResult(name, descriptor);
       // Signal a genuine, successful execute, threading the FRESH execute-time
       // decision (`"allow"` or `"approve"`) so layers can distinguish an
       // auto-allowed call from a human-approved one. Only reached for non-deny
       // decisions and only after `boundExecute` resolves (a throw propagates
       // before this line, so a failed call is never recorded as executed).
-      await policy.onExecuted?.(buildCtx(input, options.toolCallId), decision);
+      await policy.onExecuted?.(ctx, decision);
       return result;
     },
     // Guard the model-output transform against the deny payload. When `execute`
