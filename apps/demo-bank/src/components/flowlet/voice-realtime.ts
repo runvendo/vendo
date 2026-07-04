@@ -121,36 +121,10 @@ const displayTools: VoiceToolDef[] = [
   },
 ];
 
-/** Demo-fiction critical action: Maple's API has no money movement, but the
- *  critical consent register needs a live representative. */
-const demoTransferTool: VoiceToolDef = {
-  name: "transfer_funds",
-  description:
-    "Move money between the user's accounts. Requires the user's ON-SCREEN confirmation — never a spoken yes.",
-  parameters: {
-    type: "object",
-    properties: {
-      from: { type: "string" },
-      to: { type: "string" },
-      amount: { type: "string", description: "e.g. $87.00" },
-    },
-    required: ["from", "to", "amount"],
-  },
-  tier: "critical",
-  execute: async (input) => ({ transferred: true, ...(input as Record<string, unknown>) }),
-  toView: (input) => {
-    const { from, to, amount } = (input ?? {}) as Record<string, string>;
-    return keyValueView({
-      title: "Transfer complete",
-      rows: [
-        { label: "From", value: from ?? "—" },
-        { label: "To", value: to ?? "—" },
-        { label: "Amount", value: amount ?? "—", emphasis: true },
-        { label: "When", value: "Instant" },
-      ],
-    });
-  },
-};
+// (A demo-fiction `transfer_funds` critical tool lived here briefly — removed:
+// the model wove imaginary transfers into real conversations, and a stale
+// pending transfer approval then swallowed the user's "yes" meant for another
+// tool. Critical-tier coverage comes from real host annotations, not fiction.)
 
 /** Integrations by voice: listing is a plain read; CONNECTING renders the
  *  same host Connect card chat uses — the card is the consent, and clicking
@@ -207,6 +181,7 @@ const INSTRUCTIONS = [
   "Money amounts in the API are integer CENTS — always convert and display as dollars (941220 → $9,412.20), on screen and aloud.",
   "When data is worth seeing, put it on screen with show_table or show_key_value and speak only the headline (totals, the outlier, what to do next). Never read rows aloud.",
   "Integrations: if a toolkit's tools (GMAIL_*, SLACK_*, …) appear in your tool list, that integration IS connected — call them directly. Only when a requested toolkit has no tools in your list do you use request_connect to put a Connect card on screen. Gated actions ask the user's permission like everything else.",
+  "A spoken yes always refers to your MOST RECENT permission request. If an older request is still unanswered, treat it as declined and mention you dropped it — never apply a yes to it.",
   "Keep spoken turns to one or two sentences.",
 ].join(" ");
 
@@ -279,7 +254,7 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
         if (stopped) return;
         const driver = createRealtimeVoiceDriver({
           getSession: async () => grant,
-          tools: [...displayTools, ...integrationTools, ...composioTools, demoTransferTool, ...hostVoiceTools],
+          tools: [...displayTools, ...integrationTools, ...composioTools, ...hostVoiceTools],
           instructions: INSTRUCTIONS,
           greeting: GREETING,
         });

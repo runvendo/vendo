@@ -280,6 +280,12 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
           void completeToolCall(callId, def, input);
           return;
         }
+        // Single-pending invariant: the consent bar shows ONE request, so a
+        // stale unanswered approval must never linger to swallow a later
+        // "yes" meant for something else (observed live: an ignored transfer
+        // request captured the yes for a Gmail fetch). New consent auto-
+        // declines the old.
+        for (const stale of [...pending.keys()]) resolveApproval(stale, false, "tap");
         // Gated: surface the consent moment and prompt the agent to ask aloud.
         pending.set(callId, { def, input, callId });
         send({ type: "approval", id: callId, toolName: def.name, input, tier: def.tier });

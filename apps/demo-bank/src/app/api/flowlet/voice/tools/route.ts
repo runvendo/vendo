@@ -50,9 +50,19 @@ async function ingested(): Promise<Ingested> {
   return entry;
 }
 
-function tierOf(annotations: { readOnlyHint?: boolean; destructiveHint?: boolean }): string {
+/** Composio tools mostly ship WITHOUT annotation hints, which fail-closed
+ *  gates every inbox READ behind a consent bar — safe but so naggy that users
+ *  drown in permission asks (observed live). Name-based enrichment fills the
+ *  gap: unmistakable read verbs auto-allow, destructive verbs escalate, and
+ *  anything ambiguous stays gated at act. */
+const READ_NAME = /(FETCH|GET|LIST|SEARCH|READ|FIND|LOOKUP|RETRIEVE|HISTORY)/;
+const DESTRUCTIVE_NAME = /(DELETE|REMOVE|DESTROY|PURGE|TRASH)/;
+
+function tierOf(name: string, annotations: { readOnlyHint?: boolean; destructiveHint?: boolean }): string {
   if (annotations.readOnlyHint) return "read";
   if (annotations.destructiveHint) return "critical";
+  if (DESTRUCTIVE_NAME.test(name)) return "critical";
+  if (READ_NAME.test(name)) return "read";
   return "act";
 }
 
@@ -76,7 +86,7 @@ export async function GET(req: Request): Promise<Response> {
         name,
         description: String((tool as { description?: string }).description ?? name),
         parameters: schemaOf(tool),
-        tier: tierOf(byName.get(name)?.annotations ?? {}),
+        tier: tierOf(name, byName.get(name)?.annotations ?? {}),
       }));
     return Response.json({ tools, truncated: Object.keys(toolset).length > MAX_TOOLS });
   } catch (error) {
