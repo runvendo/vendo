@@ -1,5 +1,6 @@
 import type { FlowletUIMessage } from "../protocol";
 import type { UINode } from "../ui";
+import type { GrantStore } from "./grants";
 import type { Principal } from "./principal";
 
 /**
@@ -22,6 +23,9 @@ export interface Store {
   flowlets: SavedFlowletStore;
   automations: AutomationStore;
   audit: AuditLog;
+  /** ENG-193: standing user permission grants. Optional — additive to the
+   *  frozen seam (same pattern as the reserved memory member). */
+  grants?: GrantStore;
 }
 
 export interface ThreadRecord {
