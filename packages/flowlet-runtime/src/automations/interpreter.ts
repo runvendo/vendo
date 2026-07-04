@@ -446,19 +446,28 @@ function gateAgentTool(
           // ENG-193 §4.6(b): park the action — the run's summary can say
           // what's waiting — and tell the model plainly to continue without
           // it (never a dead error it might retry into a loop).
-          ctx.parkedActions.push({
-            stepId: grantStep?.id ?? "agent",
-            tool: name,
-            input: input as Record<string, unknown>,
-            ...(grantStep && grantStep.type !== "branch" && grantStep.type !== "for_each" && grantStep.if !== undefined
-              ? { guardExpr: grantStep.if }
-              : {}),
-            ...(Object.keys(ctx.bindings).length > 0 ? { guardBindings: { ...ctx.bindings } } : {}),
-            reason: critical ? "critical" : "ungranted",
-            tier: critical ? "critical" : "act",
-            descriptorHash: hashDescriptor(tool.descriptor),
-            requestedAt: ctx.now(),
-          });
+          // Dedup within the run (review follow-up): a model that retries the
+          // SAME refused call must not stack duplicate parked rows — one row
+          // per distinct (tool, input) pair.
+          const inputKey = canonicalJson(input);
+          const alreadyParked = ctx.parkedActions.some(
+            (p) => p.tool === name && canonicalJson(p.input) === inputKey,
+          );
+          if (!alreadyParked) {
+            ctx.parkedActions.push({
+              stepId: grantStep?.id ?? "agent",
+              tool: name,
+              input: input as Record<string, unknown>,
+              ...(grantStep && grantStep.type !== "branch" && grantStep.type !== "for_each" && grantStep.if !== undefined
+                ? { guardExpr: grantStep.if }
+                : {}),
+              ...(Object.keys(ctx.bindings).length > 0 ? { guardBindings: { ...ctx.bindings } } : {}),
+              reason: critical ? "critical" : "ungranted",
+              tier: critical ? "critical" : "act",
+              descriptorHash: hashDescriptor(tool.descriptor),
+              requestedAt: ctx.now(),
+            });
+          }
           return {
             ok: false,
             error: {

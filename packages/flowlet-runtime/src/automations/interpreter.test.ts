@@ -780,6 +780,32 @@ describe("ENG-193 §4.6(b) — agent-step tool calls park too", () => {
     expect(callOutcome.error.message).toMatch(/approval requested from the user.*continue without it/i);
   });
 
+  it("a model retrying the SAME refused call parks ONCE — one row per distinct (tool, input) pair (review follow-up)", async () => {
+    const sendEmail = makeTool("send_email");
+    const spec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Send it", tools: ["send_email"] }],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        // Retry loop on the identical call, then one genuinely new call.
+        await req.tools["send_email"]!.execute({ to: "acme@example.com" }, { idempotencyKey: "k1" });
+        await req.tools["send_email"]!.execute({ to: "acme@example.com" }, { idempotencyKey: "k2" });
+        await req.tools["send_email"]!.execute({ to: "other@example.com" }, { idempotencyKey: "k3" });
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(sendEmail.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(2);
+    expect(outcome.parkedActions.map((p) => p.input)).toEqual([
+      { to: "acme@example.com" },
+      { to: "other@example.com" },
+    ]);
+  });
+
   it("§4.6(b): a top-level agentic-mode tool call (stepId 'agent') also parks", async () => {
     const sendEmail = makeTool("send_email");
     const spec = specOf({ mode: "agent", goal: "Handle it", tools: ["send_email"], maxToolCalls: 5 });

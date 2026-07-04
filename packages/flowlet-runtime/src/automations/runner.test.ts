@@ -9,9 +9,10 @@ import type { Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import { InMemoryAuditLog } from "../embedded/in-memory-store";
 import { AutomationRunner } from "./runner";
+import { hashDescriptor } from "./grants";
 import { automationSpecSchema, type AutomationSpec } from "./schema";
 import type { RegisteredTool } from "./interpreter";
-import { InMemoryAutomationStore, type TriggerEnvelope } from "./store";
+import { InMemoryAutomationStore, MAX_STEP_OUTPUT_BYTES, type TriggerEnvelope } from "./store";
 
 const NOW = "2026-07-01T08:00:00.000Z";
 const scope: Principal = { tenantId: "tenant-1", subject: "user-1" };
@@ -567,6 +568,115 @@ describe("ENG-193 §4.6 — parked-action persistence + resolveParkedAction", ()
     expect(notify.calls).toHaveLength(1);
     expect(notify.calls[0]).toEqual({ row: "a" });
     expect(result).toMatchObject({ ok: true, executed: true, guardStale: true });
+  });
+});
+
+describe("ENG-193 §4.6 — resolveParkedAction fail-closed + ordering (review follow-up)", () => {
+  it("a TRUNCATED frozen input refuses to execute and leaves the row unresolved (re-askable)", async () => {
+    const notify = makeTool("notify_act");
+    const { store, automation, runner } = await setup({
+      spec: forEachSpec(),
+      tools: { notify_act: notify },
+      policy: approveFor("notify_act"),
+    });
+    // A park whose input exceeds the storage cap — capParkedInput truncates
+    // it and stamps inputTruncated at create (store.test.ts covers the
+    // stamping; here we assert the resolve side fails closed on it). Seeded
+    // directly: the trigger payload has its OWN 32KB cap, so an oversized
+    // loop input can't be driven through fire() from the envelope.
+    const action = await store.createParkedAction(scope, {
+      automationId: automation.id,
+      runId: "run-x",
+      stepId: "notify",
+      tool: "notify_act",
+      input: { row: "x".repeat(MAX_STEP_OUTPUT_BYTES + 500) },
+      reason: "ungranted",
+      tier: "act",
+      descriptorHash: hashDescriptor(notify.descriptor),
+      requestedAt: NOW,
+    });
+    expect(action.inputTruncated).toBe(true);
+
+    const result = await runner.resolveParkedAction(scope, action.id, "approved");
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toMatch(/truncated/i);
+    expect(notify.calls).toHaveLength(0);
+    // Still unresolved — re-askable, never silently declined.
+    expect((await store.getParkedAction(scope, action.id))?.resolution).toBeUndefined();
+  });
+
+  it("a FAILED execute leaves the row unresolved with NO consent event; a retry reuses the same idempotency key and succeeds", async () => {
+    const calls: Array<{ input: Record<string, unknown>; idempotencyKey: string }> = [];
+    let failuresLeft = 1;
+    const notify: RegisteredTool = {
+      descriptor: { name: "notify_act", source: "caller", annotations: {}, hasExecute: true, kind: "function" },
+      execute: async (input, ctx) => {
+        calls.push({ input, idempotencyKey: ctx.idempotencyKey });
+        if (failuresLeft > 0) {
+          failuresLeft -= 1;
+          return { ok: false, error: { code: "boom", message: "gmail down" } };
+        }
+        return { ok: true, result: { sent: true } };
+      },
+    };
+    const store = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation } = await store.create(scope, { spec: forEachSpec(), grants: [] });
+    const audit = new InMemoryAuditLog();
+    const runner = new AutomationRunner({
+      store,
+      tools: async () => ({ notify_act: notify }),
+      policy: approveFor("notify_act"),
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+    const run = await runner.fire(scope, automation.id, forEachEnvelope("e1", ["a"]));
+    const [action] = await store.listParkedActions(scope, { runId: run!.id });
+
+    const failed = await runner.resolveParkedAction(scope, action!.id, "approved");
+    expect(failed).toEqual({ ok: false, error: "gmail down" });
+    // Unresolved (re-askable) and NO consent event claiming a success.
+    expect((await store.getParkedAction(scope, action!.id))?.resolution).toBeUndefined();
+    expect(await audit.query(scope, { kinds: ["consent"] })).toHaveLength(0);
+
+    const retried = await runner.resolveParkedAction(scope, action!.id, "approved");
+    expect(retried).toMatchObject({ ok: true, executed: true });
+    expect(calls).toHaveLength(2);
+    // Both attempts carried the SAME key — a key-deduping executor cannot
+    // double-fire across the retry.
+    expect(calls[0]!.idempotencyKey).toBe(calls[1]!.idempotencyKey);
+    expect((await store.getParkedAction(scope, action!.id))?.resolution).toBe("approved");
+    expect(await audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+  });
+
+  it("a guard referencing steps via BRACKET access is treated as steps-referencing (guardStale, frozen input executes)", async () => {
+    const notify = makeTool("notify_act");
+    const { store, automation, runner } = await setup({
+      spec: forEachSpec(),
+      tools: { notify_act: notify },
+      policy: approveFor("notify_act"),
+    });
+    // Seeded directly: the boundary is a property of the STORED guardExpr,
+    // however it was authored. If the regex missed the bracket form, the
+    // re-check would evaluate against steps:{} -> false -> skipped, and the
+    // executed:true assertion below would fail.
+    const action = await store.createParkedAction(scope, {
+      automationId: automation.id,
+      runId: "run-x",
+      stepId: "notify",
+      tool: "notify_act",
+      input: { row: "a" },
+      guardExpr: 'steps["fetch"].output.count > 0',
+      reason: "ungranted",
+      tier: "act",
+      descriptorHash: hashDescriptor(notify.descriptor),
+      requestedAt: NOW,
+    });
+
+    const result = await runner.resolveParkedAction(scope, action.id, "approved");
+    expect(result).toMatchObject({ ok: true, executed: true, guardStale: true });
+    expect(notify.calls).toEqual([{ row: "a" }]);
   });
 });
 

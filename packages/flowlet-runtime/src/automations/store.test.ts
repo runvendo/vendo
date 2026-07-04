@@ -370,4 +370,22 @@ describe("parked actions", () => {
     expect(await store.getParkedAction(scope, action.id)).toBeDefined();
     expect(await store.getParkedAction({ tenantId: "t", subject: "other" }, action.id)).toBeUndefined();
   });
+
+  it("list sweeps unresolved rows past the 7-day TTL to 'expired' — matching PendingApproval's TTL (review follow-up)", async () => {
+    const now = "2026-07-11T00:00:01Z"; // 7 days + 1s after requestedAt
+    const store = new InMemoryAutomationStore({ now: () => now });
+    const stale = await store.createParkedAction(scope, draft({ requestedAt: "2026-07-04T00:00:00Z" }));
+    const fresh = await store.createParkedAction(scope, draft({ requestedAt: "2026-07-10T00:00:00Z" }));
+
+    const unresolved = await store.listParkedActions(scope, { unresolvedOnly: true });
+    expect(unresolved.map((a) => a.id)).toEqual([fresh.id]);
+
+    const swept = await store.getParkedAction(scope, stale.id);
+    expect(swept?.resolution).toBe("expired");
+    expect(swept?.resolvedAt).toBe(now);
+    // An expired row is settled — a late human gesture cannot revive it.
+    await expect(store.resolveParkedAction(scope, stale.id, "approved", now)).rejects.toThrow(
+      /already resolved \(expired\)/,
+    );
+  });
 });

@@ -150,6 +150,11 @@ export interface AutomationRun extends CoreAutomationRun {
  *  by `AutomationRunner.resolveParkedAction` (runner.ts) — never by re-running
  *  the interpreter. */
 export type ParkedActionReason = "ungranted" | "critical";
+/** Parked actions expire after the SAME 7-day TTL as `PendingApproval`
+ *  (interpreter.ts `PENDING_APPROVAL_TTL_MS`) — week-old frozen intent is
+ *  never executable. Swept lazily by `listParkedActions` (every surface reads
+ *  through list), stamped `resolution: "expired"`. */
+export const PARKED_ACTION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export type ParkedActionResolution = "approved" | "declined" | "expired";
 
 export interface ParkedAction {
@@ -691,6 +696,17 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
   }
 
   async listParkedActions(scope: Principal, filter: ListParkedActionsFilter): Promise<ParkedAction[]> {
+    // Lazy expiry sweep (review follow-up): stale parked intent must never
+    // surface as approvable — 7-day TTL matching PendingApproval's.
+    const nowMs = Date.parse(this.clock());
+    for (const [id, action] of this.parkedActions) {
+      if (
+        action.resolution === undefined &&
+        Date.parse(action.requestedAt) + PARKED_ACTION_TTL_MS <= nowMs
+      ) {
+        this.parkedActions.set(id, { ...action, resolution: "expired", resolvedAt: this.clock() });
+      }
+    }
     return [...this.parkedActions.values()].filter(
       (a) =>
         a.tenantId === scope.tenantId &&

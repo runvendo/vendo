@@ -345,14 +345,10 @@ export class AutomationRunner {
       }
 
       if (decision === "declined") {
+        // A decline claims immediately — there is no execution whose outcome
+        // the resolution could misrepresent.
         await this.config.store.resolveParkedAction(scope, actionId, "declined", this.now());
-        await this.config.audit?.append({
-          at: this.now(),
-          principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
-          kind: "consent",
-          consentId: actionId,
-          decision: "no",
-        });
+        await this.appendConsentAudit(scope, actionId, "no");
         return { ok: true, executed: false };
       }
 
@@ -373,6 +369,19 @@ export class AutomationRunner {
         };
       }
 
+      // Frozen-input integrity (review follow-up): an input cut at the storage
+      // cap can never be executed faithfully — executing the truncated remnant
+      // would silently do something OTHER than what the card showed. Fail
+      // closed like descriptor drift: refuse, leave the row unresolved.
+      if (action.inputTruncated === true) {
+        return {
+          ok: false,
+          error:
+            `the parked input for "${action.tool}" was truncated at park time and cannot be ` +
+            "executed safely — the action must be requested again",
+        };
+      }
+
       // Policy is consulted at resolve time too (mirrors executeToolStep's
       // own "deny" branch): a tenant/role deny always wins over the human's
       // "approved" decision. Left UNRESOLVED like descriptor drift — a
@@ -387,21 +396,11 @@ export class AutomationRunner {
         return { ok: false, error: `policy denied tool "${action.tool}"` };
       }
 
-      // CLAIM before executing (the resume() pattern): a retry after this
-      // point sees "already resolved" and 409s instead of double-executing.
-      await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
-      await this.config.audit?.append({
-        at: this.now(),
-        principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
-        kind: "consent",
-        consentId: actionId,
-        decision: "yes",
-      });
-
       // Guard re-check (deviation #2): only when it's provably self-contained
-      // (no steps.* reference) — otherwise flagged stale, never re-evaluated.
+      // (no steps reference, dot OR bracket form) — otherwise flagged stale,
+      // never re-evaluated.
       let guardStale = false;
-      if (action.guardExpr !== undefined && !/\bsteps\s*\./.test(action.guardExpr)) {
+      if (action.guardExpr !== undefined && !/\bsteps\s*[.[]/.test(action.guardExpr)) {
         const run = await this.config.store.getRun(scope, action.runId);
         const scopeForGuard = {
           trigger: run?.trigger.payload,
@@ -412,19 +411,49 @@ export class AutomationRunner {
         };
         const stillHolds = await evaluateGuard(action.guardExpr, scopeForGuard);
         if (!stillHolds) {
+          // The human still said yes — the resolution is "approved"; only the
+          // execution is skipped (the design's own worked example: "the
+          // invoice may have been paid since").
+          await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
+          await this.appendConsentAudit(scope, actionId, "yes");
           return { ok: true, executed: false, skipped: true, reason: "guard no longer holds" };
         }
       } else if (action.guardExpr !== undefined) {
-        // References steps.* — never re-checked (deviation #2). Executes
-        // with the frozen input; the WaitingList/ceremony copy is
-        // responsible for saying so ("reviewed Xh after the run").
+        // References steps — never re-checked (deviation #2). Executes with
+        // the frozen input; the WaitingList copy is responsible for saying
+        // its conditions can't be re-verified.
         guardStale = true;
       }
 
+      // Execute FIRST, claim AFTER (review follow-up): the per-automation
+      // queue already serializes resolves, so nothing can double-execute
+      // before the claim lands — and a FAILED execute must leave the row
+      // UNRESOLVED (re-askable) with no consent event claiming success. A
+      // retry reuses the SAME `parked-<id>` idempotency key, so an executor
+      // that dedupes by key cannot double-fire across retries either.
       const idempotencyKey = `${action.runId}/${action.stepId}/parked-${action.id}`;
       const outcome = await tool.execute(action.input as Record<string, unknown>, { idempotencyKey });
       if (!outcome.ok) return { ok: false, error: outcome.error.message };
+
+      await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
+      await this.appendConsentAudit(scope, actionId, "yes");
       return { ok: true, executed: true, ...(guardStale ? { guardStale: true } : {}) };
+    });
+  }
+
+  /** One consent audit event per RESOLUTION (never before the outcome is
+   *  known — the trail must not claim an execution that then failed). */
+  private async appendConsentAudit(
+    scope: Principal,
+    actionId: string,
+    decision: "yes" | "no",
+  ): Promise<void> {
+    await this.config.audit?.append({
+      at: this.now(),
+      principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+      kind: "consent",
+      consentId: actionId,
+      decision,
     });
   }
 }

@@ -36,7 +36,7 @@ function toRow(action: RawParkedAction): ParkedActionRow {
     tier: action.tier,
     inputPreview: fieldValue(action.input, MAX_PREVIEW_CHARS),
     requestedAt: action.requestedAt,
-    guardStale: action.guardExpr !== undefined && /\bsteps\s*\./.test(action.guardExpr),
+    guardStale: action.guardExpr !== undefined && /\bsteps\s*[.[]/.test(action.guardExpr),
   };
 }
 
