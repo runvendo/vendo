@@ -12,7 +12,12 @@
  */
 import type { LanguageModel, ToolSet } from "ai";
 import type { FlowletAgent, RegisteredComponent } from "@flowlet/core";
-import { createFlowletAgent, buildBrandGuidance, type ApprovalPolicy } from "@flowlet/runtime";
+import {
+  createFlowletAgent,
+  buildBrandGuidance,
+  type ApprovalPolicy,
+  type FlowletAgentConfig,
+} from "@flowlet/runtime";
 import type { BrandTokens } from "@flowlet/components/theme";
 import {
   prewiredComponents,
@@ -180,6 +185,12 @@ export interface AgentFactoryConfig {
   /** Extra cache-key material from the host (e.g. store generation). */
   cacheKey?: () => string;
   maxSteps?: number;
+  /**
+   * Settled-run persistence hook (ENG-193 §6.2), passed straight to every
+   * cached agent. It receives the run's threadId, so one fixed hook can
+   * attribute each settled message list to the right conversation.
+   */
+  onSettled?: FlowletAgentConfig["onSettled"];
 }
 
 /**
@@ -203,6 +214,7 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         ...(config.toolkits ? { composio: { config: { toolkits } } } : {}),
         ...(config.tools ? { tools: config.tools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
+        ...(config.onSettled ? { onSettled: config.onSettled } : {}),
         components: config.components,
       });
       agents.set(key, agent);

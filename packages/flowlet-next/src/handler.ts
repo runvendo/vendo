@@ -124,6 +124,33 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       ...(capabilities.integrations ? { toolkits: () => connections.connectedToolkits() } : {}),
       ...(options.cacheKey ? { cacheKey: options.cacheKey } : {}),
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+      // ENG-193 §6.2: persist each SETTLED run's full message list to the
+      // thread store. This is the single writer for thread messages (chat.ts
+      // deliberately does NOT persist the request body) — the streamed
+      // assistant turn, with any approval-requested parts, must be in the
+      // store BEFORE the client's consent POST arrives, which happens before
+      // any next chat turn. The engine hands back the same threadId chat.ts
+      // resolved and passed into run(), so the fixed hook can attribute each
+      // settled list to the right thread.
+      //
+      // Delta-append prefix assumption (single-client v1): the settled list is
+      // treated as a strict extension of what's stored — we append only
+      // `messages.slice(storedCount)` because ThreadStore.appendMessages is
+      // append-only by the frozen seam. Two clients interleaving turns on one
+      // thread could violate the prefix assumption; revisit alongside a
+      // replace/compact API when multi-client threads become real.
+      onSettled: async ({ messages, threadId, principal }) => {
+        const scope = { tenantId: EMBEDDED_TENANT, subject: principal.userId };
+        // Skip runs whose threadId isn't a store-assigned thread (a direct
+        // getAgent().run caller with no resolved thread) — appendMessages
+        // throws on unknown ids and the engine would just log the noise.
+        if (!(await threads.get(scope, threadId))) return;
+        const existing = await threads.getMessages(scope, threadId);
+        const toAppend = messages.slice(existing.length);
+        if (toAppend.length > 0) {
+          await threads.appendMessages(scope, threadId, toAppend);
+        }
+      },
     });
 
     // Static tool-descriptor resolver for the consent endpoint (ENG-193 §4.5
@@ -188,7 +215,6 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           // A host that injects its own `model` owns the key; otherwise chat
           // needs ANTHROPIC_API_KEY (capabilities.chat).
           chatEnabled: options.model !== undefined || s.capabilities.chat,
-          threads: s.threads,
           threadIndex: s.threadIndex,
         });
       case "action":

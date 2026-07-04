@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { z } from "zod";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
 import { createFlowletHandler } from "./handler";
 
 function req(pathname: string, init?: RequestInit): Request {
@@ -78,6 +81,89 @@ describe("createFlowletHandler", () => {
       req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ messages: [] }) }),
     );
     expect(res.status).toBe(400);
+  });
+
+  it("REGRESSION: a consent POST for a just-streamed approval mints a grant (streamed turn persisted before consent)", async () => {
+    // The failing sequence this guards against (review 2026-07-04): POST /chat
+    // streams an assistant message with an approval-requested tool part; the
+    // client POSTs /consent for that toolCallId BEFORE any next chat turn.
+    // If only the client-SENT messages were persisted, the approval part is
+    // missing from the ThreadStore and consent 404s on the happy path.
+    const grants = createInMemoryGrantStore();
+    const threads = new InMemoryThreadStore(() => new Date().toISOString());
+    const zeroUsage = {
+      inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 0, text: 0, reasoning: 0 },
+    };
+    // One turn: the model requests a gated (act-tier, mutating) tool call and
+    // stops; the SDK pauses at approval-requested and the stream settles.
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "t1" },
+            { type: "text-delta", id: "t1", delta: "Sending." },
+            { type: "text-end", id: "t1" },
+            { type: "tool-call", toolCallId: "call-1", toolName: "send_email", input: "{}" },
+            { type: "finish", usage: zeroUsage, finishReason: { unified: "tool-calls", raw: undefined } },
+          ],
+        }),
+      }),
+    });
+    const { POST } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      automations: false,
+      model: model as never,
+      tools: {
+        send_email: {
+          description: "send an email",
+          inputSchema: z.object({}),
+          annotations: { destructiveHint: false },
+          execute: async () => "ok",
+        } as never,
+      },
+      store: { grants, threads },
+    });
+
+    const chatRes = await POST(
+      req("/api/flowlet/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          id: "chat-1",
+          messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "send it" }] }],
+        }),
+      }),
+    );
+    expect(chatRes.status).toBe(200);
+    await chatRes.text(); // drain the stream so the run settles
+
+    // Persistence is fire-and-forget off the engine's onSettled — wait until
+    // the streamed assistant turn (with the approval part) lands in the store.
+    const scope = { tenantId: "flowlet-embedded", subject: "flowlet-default-user" };
+    await vi.waitFor(async () => {
+      const records = await threads.list(scope);
+      expect(records).toHaveLength(1);
+      const stored = await threads.getMessages(scope, records[0]!.id);
+      expect(stored.length).toBeGreaterThanOrEqual(2); // user turn + streamed assistant turn
+    });
+
+    const consentRes = await POST(
+      req("/api/flowlet/consent", {
+        method: "POST",
+        body: JSON.stringify({
+          id: "chat-1",
+          toolCallId: "call-1",
+          toolName: "send_email",
+          response: {
+            id: "call-1",
+            decision: "yes",
+            grant: { tool: "send_email", scope: { kind: "tool" }, duration: "standing" },
+          },
+        }),
+      }),
+    );
+    expect(consentRes.status).toBe(200);
+    expect(await grants.findForTool(scope, "send_email")).toHaveLength(1);
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {

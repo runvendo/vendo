@@ -68,7 +68,7 @@ describe("handleConsent", () => {
     expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
   });
 
-  it("400s when the tool name doesn't match the pending part's tool", async () => {
+  it("400s when the tool name doesn't match the pending part's tool (and still audits the decision)", async () => {
     const d = deps(threadWith({}));
     const result = await handleConsent(d, scope, {
       threadId: "th-1", toolCallId: "call-1", toolName: "some_other_tool",
@@ -76,9 +76,10 @@ describe("handleConsent", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.status).toBe(400);
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
   });
 
-  it("404s when no approval-requested part with that toolCallId exists", async () => {
+  it("404s when no approval-requested part with that toolCallId exists (and still audits the decision)", async () => {
     const d = deps([]);
     const result = await handleConsent(d, scope, {
       threadId: "th-1", toolCallId: "call-missing", toolName: "GMAIL_SEND_EMAIL",
@@ -86,6 +87,33 @@ describe("handleConsent", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.status).toBe(404);
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+  });
+
+  it("400s a grant draft whose tool differs from the consented tool — grant.tool is bound server-side", async () => {
+    const d = deps(threadWith({}));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "transfer_money", scope: { kind: "tool" }, duration: "standing" } },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(400);
+    expect(await d.grants.findForTool(scope, "transfer_money")).toHaveLength(0);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+  });
+
+  it("404s an unknown tool (unresolvable descriptor) and still audits the decision", async () => {
+    const d = deps(threadWith({ type: "tool-not_a_real_tool" }));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "not_a_real_tool",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "not_a_real_tool", scope: { kind: "tool" }, duration: "standing" } },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(404);
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
   });
 
   it("no grant is created without a response.grant even on 'yes' — approving once doesn't imply remembering", async () => {

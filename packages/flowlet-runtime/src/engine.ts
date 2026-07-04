@@ -79,10 +79,18 @@ export interface FlowletAgentConfig {
   /**
    * Called once the run's stream settles with the FULL updated message list
    * (ENG-193 §6.2 — persistence for the consent endpoint's "load the thread's
-   * messages" step, Task 4). Errors thrown here are logged, never surfaced to
-   * the model or the client — persistence must not take down a finished run.
+   * messages" step). `threadId` is the same id `run()` resolved for the turn
+   * (the caller-supplied `RunInput.threadId`, or the engine's minted fallback
+   * when none was supplied) — this hook is fixed once at agent construction,
+   * so the threadId is how a host attributes the settled list to the right
+   * conversation. Errors thrown here are logged, never surfaced to the model
+   * or the client — persistence must not take down a finished run.
    */
-  onSettled?: (messages: FlowletUIMessage[], principal: FlowletPrincipal) => void | Promise<void>;
+  onSettled?: (settled: {
+    messages: FlowletUIMessage[];
+    threadId: string;
+    principal: FlowletPrincipal;
+  }) => void | Promise<void>;
   /**
    * F1 component registry (prewired + host). When provided, `render_view`
    * validates `source:"host"` nodes server-side — unknown names and
@@ -196,7 +204,9 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
       // the caller supplied `onSettled` — no behavior change when it's omitted.
       onFinish: config.onSettled
         ? ({ messages }) => {
-            Promise.resolve(config.onSettled!(messages, settledPrincipal)).catch((err) =>
+            Promise.resolve(
+              config.onSettled!({ messages, threadId, principal: settledPrincipal }),
+            ).catch((err) =>
               console.error(`[flowlet] onSettled failed for run ${runId}:`, err),
             );
           }

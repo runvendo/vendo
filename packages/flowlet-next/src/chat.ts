@@ -5,7 +5,7 @@
  * resolves the principal, and streams.
  */
 import { createUIMessageStreamResponse } from "ai";
-import type { FlowletUIMessage, Principal, ThreadStore } from "@flowlet/core";
+import type { FlowletUIMessage, Principal } from "@flowlet/core";
 import type { FlowletAgent } from "@flowlet/core";
 import { hostToolset } from "@flowlet/runtime";
 import type { HostToolDefinition } from "@flowlet/core";
@@ -28,8 +28,7 @@ export interface ChatDeps {
   options: FlowletHandlerOptions;
   /** False when no model key is configured → chat answers 503 instead of streaming a provider error. */
   chatEnabled: boolean;
-  /** Store seam wiring for thread persistence (ENG-193 §6.2). */
-  threads: ThreadStore;
+  /** Maps the client's chat id to a store thread id (ENG-193 §6.2). */
   threadIndex: ThreadIndex;
 }
 
@@ -60,6 +59,16 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   const scope: Principal = { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId };
   const threadRecordId = await deps.threadIndex.resolve(scope, clientThreadId);
 
+  // NO persistence here — the SINGLE writer for thread messages is the
+  // engine's onSettled hook (registered in handler.ts's createAgentCache
+  // call). It fires with the FULL settled message list — including the
+  // streamed assistant turn and any approval-requested parts — keyed by the
+  // threadId below, so the consent endpoint can read this turn's approval
+  // part BEFORE the client's next chat turn. Persisting the request body
+  // here as well would double-append (and, alone, it misses the streamed
+  // turn entirely — review 2026-07-04). The onSettled writer delta-appends
+  // on a prefix assumption (single-client v1): the settled list strictly
+  // extends what's stored.
   const stream = deps.getAgent().run({
     messages,
     // The app's own API surface enters through the caller seam: no execute —
@@ -70,38 +79,6 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     signal: req.signal,
     threadId: threadRecordId,
   });
-
-  // Persist the received turn to the Store seam, keyed by the client's chat
-  // id (ENG-193 §6.2 — the consent endpoint's "load the thread's messages"
-  // step reads this). Persisting what the client SENT — not the streamed
-  // reply — is deliberate and sufficient: the client resends the FULL history
-  // every turn (deviation #2), so by the time a consent POST for this turn's
-  // approval card arrives, the card's own approval-requested part has
-  // already been received in the /chat body that produced its stream.
-  //
-  // Adaptation note (review follow-up): the engine's onSettled/onFinish hook
-  // now carries the FULL updated message list (not just the new turn) once a
-  // caller supplies `originalMessages` — but that hook is fixed once per
-  // cached agent (createAgentCache), with no per-request threadId to key
-  // persistence by, so it isn't the right seam for this. Persisting the
-  // client-sent `messages` (already the full stateless history by the
-  // transport's own contract) is the simplest correct form here. Because
-  // ThreadStore.appendMessages is append-only (no replace, by the frozen Store
-  // seam), "wholesale replace" is expressed as append-the-new-suffix: read
-  // what's already stored and append only what's beyond it, which — given the
-  // client always resends the same prior messages verbatim — is equivalent to
-  // a full overwrite without ever duplicating a prior turn.
-  void (async () => {
-    try {
-      const existing = await deps.threads.getMessages(scope, threadRecordId);
-      const toAppend = messages.slice(existing.length);
-      if (toAppend.length > 0) {
-        await deps.threads.appendMessages(scope, threadRecordId, toAppend);
-      }
-    } catch (err) {
-      console.error("[flowlet] thread persistence failed:", err);
-    }
-  })();
 
   return createUIMessageStreamResponse({ stream });
 }

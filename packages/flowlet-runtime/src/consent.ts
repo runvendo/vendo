@@ -73,27 +73,49 @@ export async function handleConsent(
   principal: Principal,
   req: HandleConsentRequest,
 ): Promise<HandleConsentResult> {
+  const clock = deps.now ?? (() => new Date().toISOString());
+  // Every decision — accepted OR rejected past body validation — leaves one
+  // consent audit event (the module docstring's "records EVERY decision"
+  // contract covers the rejected outcomes too).
+  async function audited(result: HandleConsentResult): Promise<HandleConsentResult> {
+    await deps.audit.append({
+      at: clock(), principal, kind: "consent",
+      consentId: req.response.id, decision: req.response.decision,
+    });
+    return result;
+  }
+
   const messages = await deps.getMessages(principal, req.threadId);
   const part = findApprovalPart(messages, req.toolCallId);
   if (!part) {
-    return { ok: false, status: 404, error: `no pending approval for toolCallId "${req.toolCallId}"` };
+    return audited({
+      ok: false, status: 404,
+      error: `no pending approval for toolCallId "${req.toolCallId}"`,
+    });
   }
   const partToolName = part.type.slice("tool-".length);
   if (partToolName !== req.toolName) {
-    return {
+    return audited({
       ok: false, status: 400,
       error: `toolName "${req.toolName}" does not match the pending part's tool "${partToolName}"`,
-    };
+    });
   }
 
-  const clock = deps.now ?? (() => new Date().toISOString());
-  const manager = createGrantManager({ store: deps.grants, audit: deps.audit, now: clock });
-
   if (req.response.decision === "yes" && req.response.grant) {
+    // Bind the grant to the consented tool SERVER-SIDE: `grant.tool` is
+    // client-authored, and without this check a consent gesture shown for one
+    // tool could mint a standing grant for a different one.
+    if (req.response.grant.tool !== req.toolName) {
+      return audited({
+        ok: false, status: 400,
+        error: `grant.tool "${req.response.grant.tool}" does not match the consented tool "${req.toolName}"`,
+      });
+    }
     const descriptor = deps.resolveDescriptor(req.toolName);
     if (!descriptor) {
-      return { ok: false, status: 404, error: `unknown tool "${req.toolName}"` };
+      return audited({ ok: false, status: 404, error: `unknown tool "${req.toolName}"` });
     }
+    const manager = createGrantManager({ store: deps.grants, audit: deps.audit, now: clock });
     try {
       await manager.create(
         principal,
@@ -106,18 +128,10 @@ export async function handleConsent(
         descriptor,
       );
     } catch (err) {
-      await deps.audit.append({
-        at: clock(), principal, kind: "consent",
-        consentId: req.response.id, decision: req.response.decision,
-      });
       const message = err instanceof Error ? err.message : String(err);
-      return { ok: false, status: 403, error: message };
+      return audited({ ok: false, status: 403, error: message });
     }
   }
 
-  await deps.audit.append({
-    at: clock(), principal, kind: "consent",
-    consentId: req.response.id, decision: req.response.decision,
-  });
-  return { ok: true };
+  return audited({ ok: true });
 }

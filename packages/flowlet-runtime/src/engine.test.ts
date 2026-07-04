@@ -405,7 +405,45 @@ describe("createFlowletAgent", () => {
     expect(consentParts).toHaveLength(1);
   });
 
-  it("calls onSettled with the run's final messages once the stream finishes", async () => {
+  it("calls onSettled with the run's final messages and threadId once the stream finishes", async () => {
+    const onSettled = vi.fn();
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      onSettled,
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        signal: new AbortController().signal,
+        threadId: "conv-42",
+      }),
+    );
+
+    expect(onSettled).toHaveBeenCalledOnce();
+    const settled = onSettled.mock.calls[0]![0] as {
+      messages: FlowletUIMessage[];
+      threadId: string;
+    };
+    // The hook receives the SAME threadId run() resolved — the caller's id
+    // when supplied — so a host can attribute persistence per conversation.
+    expect(settled.threadId).toBe("conv-42");
+    // ai@6.0.28's handleUIMessageStreamFinish returns [...originalMessages,
+    // state.message] — the FULL updated list, not just the new turn. Assert
+    // the prior user message survives alongside the new assistant reply.
+    expect(settled.messages).toContainEqual(userTurn[0]);
+    expect(
+      settled.messages.some(
+        (m) =>
+          m.role === "assistant" &&
+          m.parts.some((p) => (p as { type: string; text?: string }).type === "text" && (p as { text?: string }).text === "All done."),
+      ),
+    ).toBe(true);
+  });
+
+  it("onSettled receives the engine's minted threadId when the caller supplies none", async () => {
     const onSettled = vi.fn();
     const agent = createFlowletAgent({
       model: mockModel(),
@@ -418,18 +456,8 @@ describe("createFlowletAgent", () => {
     );
 
     expect(onSettled).toHaveBeenCalledOnce();
-    const messages = onSettled.mock.calls[0]![0] as FlowletUIMessage[];
-    // ai@6.0.28's handleUIMessageStreamFinish returns [...originalMessages,
-    // state.message] — the FULL updated list, not just the new turn. Assert
-    // the prior user message survives alongside the new assistant reply.
-    expect(messages).toContainEqual(userTurn[0]);
-    expect(
-      messages.some(
-        (m) =>
-          m.role === "assistant" &&
-          m.parts.some((p) => (p as { type: string; text?: string }).type === "text" && (p as { text?: string }).text === "All done."),
-      ),
-    ).toBe(true);
+    const settled = onSettled.mock.calls[0]![0] as { threadId: string };
+    expect(settled.threadId).toMatch(/^thread-\d+$/);
   });
 
   it("threads a caller-supplied threadId into PolicyContext (contextKey)", async () => {

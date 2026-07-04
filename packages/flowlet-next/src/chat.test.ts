@@ -11,13 +11,6 @@ function stubAgent() {
   return { agent: { run } as unknown as FlowletAgent, run };
 }
 
-/** A stub agent whose stream closes immediately — for tests that need to
- *  drain the response body (persistence races the response, fire-and-forget). */
-function closingStubAgent() {
-  const run = vi.fn(() => new ReadableStream({ start: (controller) => controller.close() }));
-  return { agent: { run } as unknown as FlowletAgent, run };
-}
-
 function chatReq(body: unknown, host = "localhost:3000"): Request {
   return new Request(`http://${host}/api/flowlet/chat`, {
     method: "POST",
@@ -26,7 +19,10 @@ function chatReq(body: unknown, host = "localhost:3000"): Request {
   });
 }
 
-/** Fresh Store-seam wiring for a test — mirrors what handler.ts assembles. */
+/** Fresh thread-index wiring for a test — mirrors what handler.ts assembles.
+ *  Note: chat.ts does NOT persist messages itself (the engine's onSettled
+ *  hook, registered in handler.ts, is the single writer — see the handler
+ *  regression test); chat only resolves the thread id. */
 function storeDeps() {
   const threads = new InMemoryThreadStore(() => "2026-07-04T00:00:00Z");
   const threadIndex = createThreadIndex(threads);
@@ -48,12 +44,13 @@ const MESSAGES = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }
 describe("handleChat", () => {
   it("streams a run with host tools, principal and abort signal", async () => {
     const { agent, run } = stubAgent();
+    const { threadIndex } = storeDeps();
     const res = await handleChat(chatReq({ messages: MESSAGES }), {
       getAgent: () => agent,
       hostTools: HOST_TOOLS,
       options: {},
       chatEnabled: true,
-      ...storeDeps(),
+      threadIndex,
     });
     expect(res.status).toBe(200);
     expect(run).toHaveBeenCalledOnce();
@@ -66,12 +63,13 @@ describe("handleChat", () => {
 
   it("passes an empty caller toolset when the manifest has no tools", async () => {
     const { agent, run } = stubAgent();
+    const { threadIndex } = storeDeps();
     await handleChat(chatReq({ messages: MESSAGES }), {
       getAgent: () => agent,
       hostTools: [],
       options: {},
       chatEnabled: true,
-      ...storeDeps(),
+      threadIndex,
     });
     const input = run.mock.calls[0]![0] as Record<string, unknown>;
     expect(input["tools"]).toEqual({});
@@ -79,7 +77,8 @@ describe("handleChat", () => {
 
   it("rejects an empty or malformed messages array with 400", async () => {
     const { agent } = stubAgent();
-    const deps = { getAgent: () => agent, hostTools: [], options: {}, chatEnabled: true, ...storeDeps() };
+    const { threadIndex } = storeDeps();
+    const deps = { getAgent: () => agent, hostTools: [], options: {}, chatEnabled: true, threadIndex };
     expect((await handleChat(chatReq({ messages: [] }), deps)).status).toBe(400);
     expect((await handleChat(chatReq({ messages: {} }), deps)).status).toBe(400);
     expect((await handleChat(chatReq("not json"), deps)).status).toBe(400);
@@ -87,12 +86,13 @@ describe("handleChat", () => {
 
   it("blocks remote requests before touching the body", async () => {
     const { agent, run } = stubAgent();
+    const { threadIndex } = storeDeps();
     const res = await handleChat(chatReq({ messages: MESSAGES }, "myapp.example.com"), {
       getAgent: () => agent,
       hostTools: [],
       options: {},
       chatEnabled: true,
-      ...storeDeps(),
+      threadIndex,
     });
     expect(res.status).toBe(403);
     expect(run).not.toHaveBeenCalled();
@@ -100,46 +100,45 @@ describe("handleChat", () => {
 
   it("returns 503 (not a mid-stream error) when chat is disabled — no model key", async () => {
     const { agent, run } = stubAgent();
+    const { threadIndex } = storeDeps();
     const res = await handleChat(chatReq({ messages: MESSAGES }), {
       getAgent: () => agent,
       hostTools: [],
       options: {},
       chatEnabled: false,
-      ...storeDeps(),
+      threadIndex,
     });
     expect(res.status).toBe(503);
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("persists the received turn to the threads store keyed by the client's chat id", async () => {
-    const { agent } = closingStubAgent();
-    const { threads, threadIndex } = storeDeps();
-    const res = await handleChat(chatReq({ id: "chat-9", messages: MESSAGES }), {
-      getAgent: () => agent,
-      hostTools: [],
-      options: {},
-      chatEnabled: true,
-      threads,
-      threadIndex,
-    });
-    // Drain the response body fully so the fire-and-forget persistence (which
-    // races the response) has settled.
-    await res.text();
-    const scope = { tenantId: EMBEDDED_TENANT, subject: "flowlet-default-user" };
-    const threadId = await threadIndex.resolve(scope, "chat-9");
-    const stored = await threads.getMessages(scope, threadId);
-    expect(stored).toEqual(MESSAGES);
-  });
-
-  it("passes the resolved store thread id into agent.run as threadId", async () => {
-    const { agent, run } = stubAgent();
+  it("does NOT persist the request body itself — the engine's onSettled hook is the single writer", async () => {
+    // The old design persisted the client-sent messages here, which meant the
+    // STREAMED assistant turn (carrying approval-requested parts) was missing
+    // from the store when a consent POST arrived (review 2026-07-04). Chat now
+    // only resolves the thread id; the settled-run hook in handler.ts writes.
+    const { agent } = stubAgent();
     const { threads, threadIndex } = storeDeps();
     await handleChat(chatReq({ id: "chat-9", messages: MESSAGES }), {
       getAgent: () => agent,
       hostTools: [],
       options: {},
       chatEnabled: true,
-      threads,
+      threadIndex,
+    });
+    const scope = { tenantId: EMBEDDED_TENANT, subject: "flowlet-default-user" };
+    const threadId = await threadIndex.resolve(scope, "chat-9");
+    expect(await threads.getMessages(scope, threadId)).toEqual([]);
+  });
+
+  it("passes the resolved store thread id into agent.run as threadId", async () => {
+    const { agent, run } = stubAgent();
+    const { threadIndex } = storeDeps();
+    await handleChat(chatReq({ id: "chat-9", messages: MESSAGES }), {
+      getAgent: () => agent,
+      hostTools: [],
+      options: {},
+      chatEnabled: true,
       threadIndex,
     });
     const scope = { tenantId: EMBEDDED_TENANT, subject: "flowlet-default-user" };
