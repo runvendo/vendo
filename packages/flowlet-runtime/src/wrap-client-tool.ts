@@ -22,11 +22,13 @@
  * the real security boundary for the user.
  */
 
-import type { Tool } from "ai";
+import type { Tool, UIMessageStreamWriter } from "ai";
+import type { FlowletUIMessage } from "@flowlet/core";
 import type { ApprovalPolicy, PolicyContext } from "./policy";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError } from "./errors";
+import { dangerTier, isUnverified } from "./policy/tier";
 
 /** Arguments to {@link wrapClientTool}. Mirrors `WrapToolArgs`. */
 export interface WrapClientToolArgs {
@@ -35,10 +37,17 @@ export interface WrapClientToolArgs {
   descriptor: ToolDescriptor;
   policy: ApprovalPolicy;
   principal: FlowletPrincipal;
+  /** Stable per-conversation id threaded into PolicyContext (ENG-193 §4.3). */
+  threadId?: string;
+  /**
+   * The run's stream writer (ENG-193 §4.5/§6.5). See `WrapToolArgs.writer` —
+   * same contract, mirrored here for client-executed tools.
+   */
+  writer?: UIMessageStreamWriter<FlowletUIMessage>;
 }
 
 export function wrapClientTool(args: WrapClientToolArgs): Tool {
-  const { name, tool, descriptor, policy, principal } = args;
+  const { name, tool, descriptor, policy, principal, threadId, writer } = args;
 
   // A client-executed tool with a server execute is contradictory: the SDK
   // would run it in-process and the browser executor would never see it.
@@ -50,12 +59,23 @@ export function wrapClientTool(args: WrapClientToolArgs): Tool {
   }
 
   function buildCtx(input: unknown): PolicyContext {
-    return { toolName: name, input, descriptor, principal };
+    return { toolName: name, input, descriptor, principal, threadId };
+  }
+
+  function writeConsentPart(toolCallId: string): void {
+    if (!writer) return;
+    const tier = dangerTier(descriptor);
+    if (tier === "read") return; // cards/receipts are for mutating calls only
+    writer.write({
+      type: "data-consent",
+      id: `consent-${toolCallId}`,
+      data: { toolCallId, tier, unverified: isUnverified(descriptor) },
+    });
   }
 
   return {
     ...tool,
-    needsApproval: async (input: unknown): Promise<boolean> => {
+    needsApproval: async (input: unknown, options: { toolCallId: string }): Promise<boolean> => {
       const decision = await policy.evaluate(buildCtx(input));
       if (decision === "deny") {
         throw new FlowletError(
@@ -63,6 +83,7 @@ export function wrapClientTool(args: WrapClientToolArgs): Tool {
           `tool "${name}" denied by approval policy`,
         );
       }
+      writeConsentPart(options.toolCallId);
       return decision === "approve";
     },
   };

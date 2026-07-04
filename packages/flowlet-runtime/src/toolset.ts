@@ -12,7 +12,8 @@
  * - Normal path: resolve descriptor, wrap, register.
  */
 
-import type { ToolSet } from "ai";
+import type { ToolSet, UIMessageStreamWriter } from "ai";
+import type { FlowletUIMessage } from "@flowlet/core";
 import type { ToolSource, ToolDescriptor } from "./descriptor";
 import { buildDescriptor } from "./descriptor";
 import { wrapTool } from "./wrap-tool";
@@ -47,10 +48,14 @@ export function buildToolset(args: {
   sources: ToolSourceInput[];
   policy: ApprovalPolicy;
   principal: FlowletPrincipal;
+  /** Stable per-conversation id threaded into every wrapped tool (ENG-193 §4.3). */
+  threadId?: string;
+  /** The run's stream writer, threaded into every wrapped tool (ENG-193 §4.5). */
+  writer?: UIMessageStreamWriter<FlowletUIMessage>;
   onCollision?: (name: string, kept: ToolSource, dropped: ToolSource) => void;
   onSkip?: (name: string, source: ToolSource, reason: string) => void;
 }): ToolSet {
-  const { sources, policy, principal, onCollision, onSkip } = args;
+  const { sources, policy, principal, threadId, writer, onCollision, onSkip } = args;
 
   const result: ToolSet = {};
   // Track which source has already claimed each tool name.
@@ -83,6 +88,8 @@ export function buildToolset(args: {
           descriptor,
           policy,
           principal,
+          threadId,
+          writer,
         });
         result[name] = wrapped;
         claimed.set(name, source);

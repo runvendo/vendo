@@ -36,8 +36,11 @@ describe("wrapClientTool", () => {
       policy: fixedPolicy("approve"),
       principal: PRINCIPAL,
     });
-    const needsApproval = wrapped.needsApproval as (input: unknown) => Promise<boolean>;
-    await expect(needsApproval({})).resolves.toBe(true);
+    const needsApproval = wrapped.needsApproval as (
+      input: unknown,
+      options: { toolCallId: string },
+    ) => Promise<boolean>;
+    await expect(needsApproval({}, { toolCallId: "call-test" })).resolves.toBe(true);
   });
 
   it("maps policy 'allow' to needsApproval=false", async () => {
@@ -48,8 +51,11 @@ describe("wrapClientTool", () => {
       policy: fixedPolicy("allow"),
       principal: PRINCIPAL,
     });
-    const needsApproval = wrapped.needsApproval as (input: unknown) => Promise<boolean>;
-    await expect(needsApproval({})).resolves.toBe(false);
+    const needsApproval = wrapped.needsApproval as (
+      input: unknown,
+      options: { toolCallId: string },
+    ) => Promise<boolean>;
+    await expect(needsApproval({}, { toolCallId: "call-test" })).resolves.toBe(false);
   });
 
   it("fails closed on policy 'deny': needsApproval throws a policy error", async () => {
@@ -60,9 +66,12 @@ describe("wrapClientTool", () => {
       policy: fixedPolicy("deny"),
       principal: PRINCIPAL,
     });
-    const needsApproval = wrapped.needsApproval as (input: unknown) => Promise<boolean>;
-    await expect(needsApproval({})).rejects.toThrow(FlowletError);
-    await expect(needsApproval({})).rejects.toThrow(/denied/);
+    const needsApproval = wrapped.needsApproval as (
+      input: unknown,
+      options: { toolCallId: string },
+    ) => Promise<boolean>;
+    await expect(needsApproval({}, { toolCallId: "call-test" })).rejects.toThrow(FlowletError);
+    await expect(needsApproval({}, { toolCallId: "call-test" })).rejects.toThrow(/denied/);
   });
 
   it("never adds an execute (the browser owns execution)", () => {
@@ -90,6 +99,69 @@ describe("wrapClientTool", () => {
         principal: PRINCIPAL,
       }),
     ).toThrow(/execute/);
+  });
+
+  it("writes ONE data-consent part at needsApproval time for a non-read tool, decision 'approve'", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("approve"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-1", messages: [] } as never);
+    expect(writes).toEqual([
+      { type: "data-consent", id: "consent-call-1", data: { toolCallId: "call-1", tier: "act", unverified: false } },
+    ]);
+  });
+
+  it("writes the data-consent part even when the decision is 'allow' (receipts, Moment 2)", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("allow"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-2", messages: [] } as never);
+    expect(writes).toHaveLength(1);
+    expect((writes[0] as { data: { tier: string } }).data.tier).toBe("act");
+  });
+
+  it("writes NOTHING for a read-tier tool", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const readDescriptor: ToolDescriptor = {
+      ...clientDescriptor("get_x"),
+      annotations: { readOnlyHint: true },
+    };
+    const wrapped = wrapClientTool({
+      name: "get_x",
+      tool: bareTool,
+      descriptor: readDescriptor,
+      policy: fixedPolicy("allow"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-3", messages: [] } as never);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("works with no writer at all (no card client, no crash)", async () => {
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("approve"),
+      principal: PRINCIPAL,
+    });
+    await expect(wrapped.needsApproval!({}, { toolCallId: "call-4", messages: [] } as never)).resolves.toBe(true);
   });
 });
 

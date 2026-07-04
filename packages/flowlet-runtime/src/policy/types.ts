@@ -31,6 +31,12 @@ export interface PolicyContext {
    * (`needsApproval` has no `toolCallId` to thread).
    */
   toolCallId?: string;
+  /**
+   * Stable per-conversation id (ENG-193 §4.3 contextKey — enables
+   * session/task-duration grants). Absent when the caller supplied none; the
+   * engine falls back to its own minted run id (see engine.ts).
+   */
+  threadId?: string;
 }
 
 /** A single guardrail layer. Evaluation may be async (e.g. LLM judge). */

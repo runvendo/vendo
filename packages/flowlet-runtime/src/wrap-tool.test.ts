@@ -479,4 +479,66 @@ describe("wrapTool", () => {
     expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it("writes ONE data-consent part at needsApproval time for a non-read tool, decision 'approve'", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const descriptor: ToolDescriptor = {
+      name: "send_email", source: "caller",
+      annotations: { readOnlyHint: false }, hasExecute: true, kind: "function",
+    };
+    const wrapped = wrapTool({
+      name: "send_email",
+      tool: { execute: async () => "ok" } as unknown as Tool,
+      descriptor, policy: fixedPolicy("approve"), principal, writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-1", messages: [] } as never);
+    expect(writes).toEqual([
+      { type: "data-consent", id: "consent-call-1", data: { toolCallId: "call-1", tier: "act", unverified: false } },
+    ]);
+  });
+
+  it("writes the data-consent part even when the decision is 'allow' (receipts, Moment 2)", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const descriptor: ToolDescriptor = {
+      name: "send_email", source: "caller",
+      annotations: { readOnlyHint: false }, hasExecute: true, kind: "function",
+    };
+    const wrapped = wrapTool({
+      name: "send_email",
+      tool: { execute: async () => "ok" } as unknown as Tool,
+      descriptor, policy: fixedPolicy("allow"), principal, writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-2", messages: [] } as never);
+    expect(writes).toHaveLength(1);
+    expect((writes[0] as { data: { tier: string } }).data.tier).toBe("act");
+  });
+
+  it("writes NOTHING for a read-tier tool", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const descriptor: ToolDescriptor = {
+      name: "get_x", source: "caller",
+      annotations: { readOnlyHint: true }, hasExecute: true, kind: "function",
+    };
+    const wrapped = wrapTool({
+      name: "get_x", tool: { execute: async () => "ok" } as unknown as Tool,
+      descriptor, policy: fixedPolicy("allow"), principal, writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-3", messages: [] } as never);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("works with no writer at all (no card client, no crash)", async () => {
+    const descriptor: ToolDescriptor = {
+      name: "send_email", source: "caller",
+      annotations: { readOnlyHint: false }, hasExecute: true, kind: "function",
+    };
+    const wrapped = wrapTool({
+      name: "send_email", tool: { execute: async () => "ok" } as unknown as Tool,
+      descriptor, policy: fixedPolicy("approve"), principal,
+    });
+    await expect(wrapped.needsApproval!({}, { toolCallId: "call-4", messages: [] } as never)).resolves.toBe(true);
+  });
 });

@@ -127,4 +127,34 @@ describe("buildToolset", () => {
     expect(onSkip).toHaveBeenCalledOnce();
     expect(onSkip).toHaveBeenCalledWith("bad", "engine", expect.any(String));
   });
+
+  it("threads writer through to wrapTool: needsApproval writes a data-consent part", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const raw = tool({
+      description: "mutating",
+      inputSchema: z.object({}),
+      execute: async () => "ok",
+    });
+    const descriptor: ToolDescriptor = {
+      name: "mutate", source: "caller",
+      annotations: { destructiveHint: false }, hasExecute: true, kind: "function",
+    };
+
+    const result = buildToolset({
+      sources: [
+        { source: "caller", tools: { mutate: raw }, descriptors: { mutate: descriptor } },
+      ],
+      policy: allowPolicy,
+      principal,
+      writer,
+    });
+
+    const wrapped = result.mutate!;
+    await (wrapped.needsApproval as (input: unknown, options: unknown) => Promise<boolean>)(
+      {},
+      { toolCallId: "call-1", messages: [] },
+    );
+    expect(writes).toHaveLength(1);
+  });
 });

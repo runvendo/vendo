@@ -14,11 +14,13 @@
  * what it decided.
  */
 
-import type { Tool, ToolExecutionOptions } from "ai";
+import type { Tool, ToolExecutionOptions, UIMessageStreamWriter } from "ai";
+import type { FlowletUIMessage } from "@flowlet/core";
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError, policyDenied } from "./errors";
+import { dangerTier, isUnverified } from "./policy/tier";
 
 /** Arguments to {@link wrapTool}. */
 export interface WrapToolArgs {
@@ -32,6 +34,21 @@ export interface WrapToolArgs {
   policy: ApprovalPolicy;
   /** Identity on whose behalf the agent acts. */
   principal: FlowletPrincipal;
+  /** Stable per-conversation id threaded into PolicyContext (ENG-193 §4.3). */
+  threadId?: string;
+  /**
+   * The run's stream writer (ENG-193 §4.5/§6.5). Optional — a caller with no
+   * consent-card client (tests, the local F1 transport) simply gets no
+   * data-consent parts, never a broken tool. When present, `needsApproval`
+   * writes ONE persistent `data-consent` part for any NON-READ tool call,
+   * regardless of the decision: an "approve" write lets the card render
+   * tier/unverified before the user answers; an "allow" write is what lets a
+   * settled mutating call still show a receipt (spec Moment 2 — asked, done,
+   * never invisible). `needsApproval` runs for every tool call the SDK
+   * generates (that's how it decides whether to pause), so this is the one
+   * call site both cases need.
+   */
+  writer?: UIMessageStreamWriter<FlowletUIMessage>;
 }
 
 /**
@@ -45,7 +62,7 @@ export interface WrapToolArgs {
  * is the fail-closed choice.
  */
 export function wrapTool(args: WrapToolArgs): Tool {
-  const { name, tool, descriptor, policy, principal } = args;
+  const { name, tool, descriptor, policy, principal, threadId, writer } = args;
 
   // Fail-closed: without an `execute` to short-circuit, a `deny` cannot be
   // enforced. Refuse to wrap rather than silently let denied calls through.
@@ -59,7 +76,18 @@ export function wrapTool(args: WrapToolArgs): Tool {
   const boundExecute = originalExecute.bind(tool);
 
   function buildCtx(input: unknown, toolCallId?: string): PolicyContext {
-    return { toolName: name, input, descriptor, principal, toolCallId };
+    return { toolName: name, input, descriptor, principal, toolCallId, threadId };
+  }
+
+  function writeConsentPart(toolCallId: string): void {
+    if (!writer) return;
+    const tier = dangerTier(descriptor);
+    if (tier === "read") return; // cards/receipts are for mutating calls only
+    writer.write({
+      type: "data-consent",
+      id: `consent-${toolCallId}`,
+      data: { toolCallId, tier, unverified: isUnverified(descriptor) },
+    });
   }
 
   /**
@@ -84,8 +112,11 @@ export function wrapTool(args: WrapToolArgs): Tool {
     // Args-only predicate the SDK runs when the call is generated. Only
     // `"approve"` pauses for a human; `"allow"` and `"deny"` do not (deny is
     // enforced in `execute`, not by asking the user).
-    needsApproval: async (input: unknown): Promise<boolean> =>
-      (await evaluate(input)) === "approve",
+    needsApproval: async (input: unknown, options: { toolCallId: string }): Promise<boolean> => {
+      const decision = await evaluate(input);
+      writeConsentPart(options.toolCallId);
+      return decision === "approve";
+    },
     // Authoritative, fail-closed gate. ALWAYS re-evaluates the composed policy
     // fresh; a `deny` short-circuits the original execute.
     execute: async (input: unknown, options: ToolExecutionOptions) => {
