@@ -715,3 +715,33 @@
   background: var(--flowlet-accent); color: var(--flowlet-accent-fg); transition: opacity .14s; }
 .fl-apply-btn:hover { opacity: .88; }
 .fl-applybar-hint { font-size: 11.5px; color: var(--flowlet-fg-muted); }
+
+/* ---------- FlowletToasts (2026-07-04): automation delivery surface ---------- */
+.fl-toasts { position: fixed; z-index: 2147483100; display: flex; flex-direction: column; gap: 10px;
+  width: min(340px, calc(100vw - 32px)); font-family: var(--flowlet-font); }
+.fl-toasts[data-placement="bottom-right"] { right: 18px; bottom: 18px; }
+.fl-toasts[data-placement="bottom-left"] { left: 18px; bottom: 18px; }
+.fl-toasts[data-placement="top-right"] { right: 18px; top: 18px; }
+.fl-toasts-card { display: flex; gap: 9px; align-items: flex-start; padding: 11px 13px;
+  border-radius: 13px; border: 1px solid var(--flowlet-border); background: var(--flowlet-surface);
+  color: var(--flowlet-fg); box-shadow: 0 10px 30px rgba(0,0,0,.16);
+  animation: fl-toast-in .18s ease-out; }
+.fl-toasts-card[data-kind="approval-required"] { border-color: var(--flowlet-warning-border, var(--flowlet-border)); }
+.fl-toasts-card[data-state="error"] { border-color: var(--flowlet-danger-border); }
+.fl-toasts-icon { color: var(--flowlet-accent); font-size: 13px; line-height: 1.5; }
+.fl-toasts-card[data-kind="approval-required"] .fl-toasts-icon { color: var(--flowlet-warning, #c07d1a); }
+.fl-toasts-body { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+.fl-toasts-text { font-size: 12.5px; line-height: 1.45; }
+.fl-toasts-actions { display: flex; align-items: center; gap: 10px; }
+.fl-toasts-approve { border: 0; border-radius: 8px; padding: 5px 12px; cursor: pointer;
+  background: var(--flowlet-accent); color: var(--flowlet-accent-fg);
+  font: 600 12px/1.2 var(--flowlet-font); }
+.fl-toasts-approve:hover { opacity: .88; }
+.fl-toasts-view { border: 0; background: none; padding: 0; cursor: pointer;
+  color: var(--flowlet-accent); font: 600 12px/1.2 var(--flowlet-font); }
+.fl-toasts-view:hover { text-decoration: underline; }
+.fl-toasts-hint { font-size: 11.5px; color: var(--flowlet-fg-muted); }
+.fl-toasts-dismiss { margin-left: auto; border: 0; background: none; padding: 0 2px; cursor: pointer;
+  color: var(--flowlet-fg-muted); font: 600 12px/1 var(--flowlet-font); }
+.fl-toasts-dismiss:hover { color: var(--flowlet-fg); }
+@keyframes fl-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

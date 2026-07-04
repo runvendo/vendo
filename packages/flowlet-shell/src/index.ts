@@ -46,6 +46,8 @@ export * from "./remix/FlowletRemix";
 export * from "./remix/page-context-registry";
 export * from "./remix/scope";
 export * from "./remix/snapshot";
+export * from "./toasts/FlowletToasts";
+export * from "./toasts/toast-queue";
 
 export * from "./FlowletThread";
 export * from "./elements/FlowletOverlay";

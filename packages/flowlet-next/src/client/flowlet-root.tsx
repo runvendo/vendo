@@ -21,10 +21,12 @@ import { FlowletProvider } from "@flowlet/react";
 import {
   FlowletOverlay,
   FlowletShellProvider,
+  FlowletToasts,
   createLocalIntegrations,
   createWebRemixes,
   createWebStorage,
   type FlowletIntegrations,
+  type FlowletToastsProps,
 } from "@flowlet/shell";
 import { FlowletThemeProvider } from "@flowlet/components";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@flowlet/components/theme";
@@ -52,6 +54,11 @@ export interface FlowletRootProps {
   suggestions?: string[];
   /** "pill" (default) renders a floating launcher; "none" = Cmd/Ctrl+K only. */
   launcher?: "pill" | "none";
+  /** Automation toasts (FlowletToasts) mount by default; `false` opts out. */
+  toasts?: boolean;
+  /** Corner for the toast stack. Default "bottom-left" (the launcher pill
+   *  owns bottom-right). */
+  toastPlacement?: FlowletToastsProps["placement"];
   children: ReactNode;
 }
 
@@ -100,6 +107,8 @@ export function FlowletRoot({
   greeting,
   suggestions,
   launcher = "pill",
+  toasts = true,
+  toastPlacement = "bottom-left",
   children,
 }: FlowletRootProps) {
   const brand = useMemo(() => parseBrand(theme), [theme]);
@@ -212,6 +221,9 @@ export function FlowletRoot({
             <button type="button" style={LAUNCHER_STYLE} onClick={() => setOpen(true)}>
               Ask {productName}
             </button>
+          )}
+          {toasts && (
+            <FlowletToasts placement={toastPlacement} namespace={`flowlet:${threadId}`} />
           )}
         </FlowletShellProvider>
       </FlowletThemeProvider>

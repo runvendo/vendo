@@ -40,6 +40,14 @@ export function FlowletOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcutKey, open, controlled]);
 
+  // Toast click-throughs (and other surfaces) summon the overlay by event.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("flowlet:open-overlay", onOpen);
+    return () => window.removeEventListener("flowlet:open-overlay", onOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlled]);
+
   // A FlowletRemix affordance click scopes the shared overlay and summons it.
   const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
   useEffect(() => {
