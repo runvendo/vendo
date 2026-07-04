@@ -47,6 +47,12 @@ export const MAX_RUN_MS_STEPS = 5 * 60 * 1000;
 export const MAX_RUN_MS_WITH_AGENT = 15 * 60 * 1000;
 /** Pending approvals expire after 7 days (amendment 7). */
 export const PENDING_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Checkpoint schema version. Bump whenever the `Checkpoint` shape changes so
+ * a future interpreter never silently misresumes an old, incompatible
+ * checkpoint — resume fails closed instead (nothing durable predates this).
+ */
+export const CHECKPOINT_VERSION = 1;
 
 /**
  * The narrow tool shape the interpreter executes. Adapters map ai-SDK tools
@@ -84,6 +90,7 @@ export type AgentStepRunner = (request: AgentStepRequest) => Promise<unknown>;
 
 /** Serializable pause state; opaque to everything but the interpreter. */
 interface Checkpoint {
+  v: number;
   stepId: string;
   tool: string;
   outputs: Record<string, unknown>;
@@ -714,6 +721,17 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
   let resumeTarget: ExecContext["resumeTarget"];
   let outputs: Record<string, unknown> = {};
   if (input.resume) {
+    // Fail closed on any checkpoint that isn't this exact schema version —
+    // nothing durable predates this release, so an unversioned or mismatched
+    // checkpoint is simply unresumable rather than silently misinterpreted.
+    const v = (input.resume.checkpoint as { v?: unknown } | null)?.v;
+    if (v !== CHECKPOINT_VERSION) {
+      return {
+        status: "failed",
+        steps: [],
+        error: `unsupported checkpoint version ${String(v)} — cannot resume this run`,
+      };
+    }
     const checkpoint = input.resume.checkpoint as Checkpoint;
     for (const record of checkpoint.steps) restored.set(record.id, record);
     outputs = { ...checkpoint.outputs };
@@ -757,6 +775,7 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
           requestedAt: now(),
           expiresAt: new Date(requestedAtMs + PENDING_APPROVAL_TTL_MS).toISOString(),
           checkpoint: {
+            v: CHECKPOINT_VERSION,
             stepId: err.stepId,
             tool: err.tool,
             outputs: ctx.outputs,
