@@ -97,6 +97,10 @@ export type { FadeTracker, FadeTrackerOptions, FadeEligibility } from "./fade-tr
 // paths that mutate grants.
 export { createGrantManager, scopePreview } from "./grant-manager";
 
+// Rule lifecycle API (ENG-193 §4.8/item-6): audited create/revoke, the only
+// paths that mutate compiled steering rules.
+export { createRuleManager } from "./rule-manager";
+
 // Consent endpoint (ENG-193 §4.5): server-validated grant creation behind
 // the consent channel. Transport-agnostic — hosts mount it behind their own
 // route (see @flowlet/next and the accounting demo).
