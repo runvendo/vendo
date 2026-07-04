@@ -101,6 +101,12 @@ export { createGrantManager, scopePreview } from "./grant-manager";
 // paths that mutate compiled steering rules.
 export { createRuleManager } from "./rule-manager";
 
+// Conversational steering tools (ENG-193 §3 Moment 11/§4.8): always_ask_before
+// (tighten) + stop_asking_about (loosen), built once per host like the
+// automation authoring tools.
+export { createSteeringTools } from "./steering-tools";
+export type { SteeringToolsConfig } from "./steering-tools";
+
 // Consent endpoint (ENG-193 §4.5): server-validated grant creation behind
 // the consent channel. Transport-agnostic — hosts mount it behind their own
 // route (see @flowlet/next and the accounting demo).
