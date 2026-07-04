@@ -42,6 +42,9 @@ export interface RealtimeVoiceDriverOptions {
   tools?: VoiceToolDef[];
   /** Voice-mode system prompt. The driver appends the consent protocol. */
   instructions?: string;
+  /** Spoken as the session opens (a response is created with these
+   *  instructions) — the agent introduces itself instead of dead air. */
+  greeting?: string;
   /** SDP exchange endpoint. Default: OpenAI's calls endpoint. */
   callsUrl?: string;
   /** Input transcription model (captions). */
@@ -463,6 +466,9 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
             });
             send({ type: "status", status: "listening" });
             startAmplitude();
+            if (options.greeting) {
+              sendClient({ type: "response.create", response: { instructions: options.greeting } });
+            }
           };
 
           const offer = await pc.createOffer();

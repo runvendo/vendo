@@ -18,6 +18,7 @@ import {
 } from "@flowlet/shell";
 import { executeHostToolCall, type UINode } from "@flowlet/core";
 import { mapleHostToolDefs } from "@/flowlet/host-tools";
+import { createComposioIntegrations } from "./integrations";
 import { mapleVoiceDriver as scriptedFallback } from "./voice-demo";
 
 let viewSeq = 0;
@@ -151,6 +152,46 @@ const demoTransferTool: VoiceToolDef = {
   },
 };
 
+/** Integrations by voice: listing is a plain read; CONNECTING renders the
+ *  same host Connect card chat uses — the card is the consent, and clicking
+ *  it provides the user gesture the OAuth popup needs. */
+const voiceIntegrations = createComposioIntegrations();
+const integrationTools: VoiceToolDef[] = [
+  {
+    name: "list_integrations",
+    description: "List the available integrations (Gmail, Slack, …) and whether each is connected.",
+    parameters: { type: "object", properties: {} },
+    tier: "read",
+    execute: () => voiceIntegrations.list(),
+  },
+  {
+    name: "request_connect",
+    description:
+      "Put a Connect card on screen so the user can link an integration (OAuth). Use when the user asks to connect a toolkit. The user completes the connection by tapping the card.",
+    parameters: {
+      type: "object",
+      properties: {
+        toolkit: { type: "string", description: "integration id, e.g. gmail, slack, notion" },
+        reason: { type: "string", description: "one short line on why" },
+      },
+      required: ["toolkit"],
+    },
+    tier: "read",
+    execute: async () => ({ shown: true, note: "Card is on screen; the user taps Connect to finish." }),
+    toView: (input) => {
+      const { toolkit, reason } = (input ?? {}) as { toolkit?: string; reason?: string };
+      if (!toolkit) return undefined;
+      return {
+        id: `voice-connect-${++viewSeq}`,
+        kind: "component",
+        source: "host",
+        name: "Connect",
+        props: { toolkit, reason },
+      };
+    },
+  },
+];
+
 /** Every Maple host-API operation, straight through the chat-side executor. */
 const hostVoiceTools: VoiceToolDef[] = mapleHostToolDefs.map((def) => ({
   name: def.name,
@@ -165,8 +206,12 @@ const INSTRUCTIONS = [
   "You can read the user's real accounts, transactions, cards, insights and payees through your tools; the data comes back as JSON from Maple's own API.",
   "Money amounts in the API are integer CENTS — always convert and display as dollars (941220 → $9,412.20), on screen and aloud.",
   "When data is worth seeing, put it on screen with show_table or show_key_value and speak only the headline (totals, the outlier, what to do next). Never read rows aloud.",
+  "Integrations: you can list them and put a Connect card on screen (request_connect) for the user to link one. You can NOT yet act through integrations (send email/Slack) in voice — if asked, say that part works in chat for now.",
   "Keep spoken turns to one or two sentences.",
 ].join(" ");
+
+const GREETING =
+  "Greet the user in ONE short sentence: you're Maple's voice assistant, ask what they need. Do not list capabilities.";
 
 /**
  * Mint-and-fallback: mint the session grant up front; with a grant, run the
@@ -201,8 +246,9 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
         if (stopped) return;
         const driver = createRealtimeVoiceDriver({
           getSession: async () => grant,
-          tools: [...displayTools, demoTransferTool, ...hostVoiceTools],
+          tools: [...displayTools, ...integrationTools, demoTransferTool, ...hostVoiceTools],
           instructions: INSTRUCTIONS,
+          greeting: GREETING,
         });
         adopt(driver.start(emit));
       })
