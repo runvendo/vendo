@@ -20,6 +20,7 @@ import { z } from "zod";
 import type { Principal, Scheduler, TimeTrigger } from "@flowlet/core";
 import { ExpressionError, validateExpression } from "./expressions";
 import { computeGrant } from "./grants";
+import { dangerTier } from "../policy/tier";
 import type { RegisteredTool } from "./interpreter";
 import type { AutomationRunner } from "./runner";
 import {
@@ -176,7 +177,7 @@ function buildGrants(
     // ENG-193 §8.3: dangerous tools are never pre-authorizable. They are
     // excluded here (not an error) — the step will pause/park per-firing
     // instead.
-    if (descriptor.annotations.destructiveHint === true) return;
+    if (dangerTier(descriptor) === "critical") return;
     grants.push(computeGrant({ tool: name, descriptor, spec, step, now }));
   };
 
