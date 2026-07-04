@@ -107,11 +107,16 @@ describe("VoiceStage", () => {
     expect(screen.queryByText("hi")).toBeNull(); // drawer yielded to the consent card
   });
 
-  it("fires onClosed after the exit beat when the session ends", () => {
+  it("stays on the stage after the session ends; Back to chat is the explicit exit", () => {
     vi.useFakeTimers();
     const onClosed = vi.fn();
     renderStage(snapshotOf([{ type: "status", status: "ended" }]), { onClosed });
+    // No auto-return: the stage lingers browsable.
+    act(() => {
+      vi.runAllTimers();
+    });
     expect(onClosed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
     act(() => {
       vi.runAllTimers();
     });

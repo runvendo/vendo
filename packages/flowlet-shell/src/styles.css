@@ -686,7 +686,7 @@
   animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
 @keyframes fl-voice-rise { from { opacity: 0; transform: translateY(18px) scale(.985); }
   to { opacity: 1; transform: none; } }
-.fl-voice-stage.is-ended { animation: fl-voice-settle .5s ease both; }
+.fl-voice-stage.is-leaving { animation: fl-voice-settle .5s ease both; }
 @keyframes fl-voice-settle { from { opacity: 1; transform: none; }
   to { opacity: 0; transform: translateY(14px) scale(.99); } }
 
@@ -717,32 +717,36 @@
 .fl-voice-feedwrap::after { bottom: 0;
   -webkit-mask-image: linear-gradient(0deg, #000 30%, transparent);
   mask-image: linear-gradient(0deg, #000 30%, transparent); }
+/* An ACTUAL stage: each view is a full slide; scroll pages between slides
+   (mandatory snap — one view owns the stage at rest, always). */
 .fl-voice-feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
-  /* Proximity snap: scrolling stays continuous, but resting near a boundary
-     settles a card cleanly under the blob — never half-between two views.
-     (mandatory would fight reading tall cards; proximity only nudges.) */
-  scroll-snap-type: y proximity;
-  display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 20px; scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 30px), transparent);
-  mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 30px), transparent); }
+  scroll-snap-type: y mandatory;
+  display: flex; flex-direction: column; padding: 0 18px; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent); }
 .fl-voice-feed::-webkit-scrollbar { display: none; }
-.fl-voice-feed > :first-child { margin-top: auto; }
-.fl-voice-feed > * { flex-shrink: 0; }
-@media (prefers-reduced-motion: no-preference) {
-  .fl-voice-feed > * { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) both; }
-}
-/* One view holds the focus (crisp, full presence); every other card blurs
-   out until scrolled to — the scroll-position card under the blob is always
-   unambiguously "the thing we're talking about". */
-.fl-voice-card { align-self: center; width: min(560px, 100%); border-radius: var(--flowlet-radius);
-  scroll-snap-align: start; scroll-margin-top: 10px;
+.fl-voice-slide { min-height: 100%; flex-shrink: 0; scroll-snap-align: start; scroll-snap-stop: always;
+  display: flex; align-items: center; justify-content: center; padding: 14px 0 20px;
+  /* The off-stage slides blur out; the focused one is crisp and whole. */
   filter: blur(2.5px); opacity: .38; transform: scale(.975);
   transition: filter .4s ease, opacity .4s ease, transform .4s ease; }
-.fl-voice-card.is-focus { filter: none; opacity: 1; transform: none; }
-.fl-voice-card.is-pending { border: 1px solid var(--flowlet-border); padding: 12px;
+.fl-voice-slide.is-focus { filter: none; opacity: 1; transform: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .fl-voice-slide { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) both; }
+}
+/* Tall views scroll inside their slide — mandatory snap never traps content. */
+.fl-voice-slide .fl-voice-card { width: min(560px, 100%); max-height: 100%; overflow: auto;
+  scrollbar-width: none; border-radius: var(--flowlet-radius); }
+.fl-voice-slide .fl-voice-card::-webkit-scrollbar { display: none; }
+.fl-voice-slide.is-pending .fl-voice-card { border: 1px solid var(--flowlet-border); padding: 12px;
   background: var(--flowlet-glass-strong); }
-.fl-voice-approval { display: flex; }
-.fl-voice-approval .fl-approval { align-self: stretch; width: 100%; }
+/* Slide dots — where you are among the session's views; tap to jump. */
+.fl-voice-dots { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); z-index: 2;
+  display: flex; flex-direction: column; gap: 8px; }
+.fl-voice-dots button { width: 7px; height: 7px; border-radius: 50%; border: 0; padding: 0;
+  cursor: pointer; background: color-mix(in srgb, var(--flowlet-fg) 22%, transparent);
+  transition: background .2s ease, transform .2s ease; }
+.fl-voice-dots button.is-on { background: var(--flowlet-accent); transform: scale(1.3); }
 
 /* Lives in the head, right under the blob + status — the words stay with the
    presence. Fixed height (~2 lines) so the feed doesn't jump as lines stream. */
@@ -830,12 +834,14 @@
 .fl-approval-outcome.is-declined { color: var(--flowlet-fg-muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  .fl-voice-stage, .fl-voice-stage.is-ended, .fl-voice-feed > * { animation: none; opacity: 1; }
+  .fl-voice-stage, .fl-voice-stage.is-leaving, .fl-voice-slide { animation: none; opacity: 1; }
+  .fl-voice-slide:not(.is-focus) { opacity: .45; }
   .fl-voice-blob { transition: none; transform: none !important; }
   .fl-approval-listening { animation: none;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
   .fl-voice-consent, .fl-voice-consent.is-listening { animation: none;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
-  /* No animated blur for vestibular-sensitive users: unfocused cards dim only. */
-  .fl-voice-card { transition: none; filter: none; }
+  /* No animated blur for vestibular-sensitive users: unfocused slides dim only. */
+  .fl-voice-slide { transition: none; filter: none; }
+  .fl-voice-dots button { transition: none; }
 }

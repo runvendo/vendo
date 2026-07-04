@@ -104,7 +104,11 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   // appears only where motion alone is ambiguous; a live region announces
   // every state for screen readers regardless.
   const mutedLive = muted && (status === "listening" || status === "speaking" || status === "thinking");
-  const visibleLabel = mutedLive ? "Muted" : status === "connecting" ? STATUS_COPY.connecting : undefined;
+  const visibleLabel = mutedLive
+    ? "Muted"
+    : status === "connecting" || status === "ended"
+      ? STATUS_COPY[status]
+      : undefined;
 
   // Feed auto-follows the newest entry, landing its TOP under the blob (the
   // snap resting position) rather than approximately-bottom — the stage keeps
@@ -123,15 +127,17 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
     }
   }, [feed.length]);
 
-  // The exit beat: linger briefly on "ended" so the stage settles instead of
-  // vanishing, then hand control back to the thread.
-  useEffect(() => {
-    if (status !== "ended" || closedFired.current) return;
+  // Ending the call does NOT auto-return to chat (Yousef): the stage stays up
+  // with its views browsable; "Back to chat" is an explicit choice. Leaving
+  // plays the settle beat, then hands control (and the record) to the thread.
+  const [leaving, setLeaving] = useState(false);
+  const leave = () => {
+    if (closedFired.current) return;
     closedFired.current = true;
+    setLeaving(true);
     const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const t = setTimeout(onClosed, reduce ? 0 : EXIT_BEAT_MS);
-    return () => clearTimeout(t);
-  }, [status, onClosed]);
+    setTimeout(onClosed, reduce ? 0 : EXIT_BEAT_MS);
+  };
 
   // One view carries the focus (crisp); the others blur until scrolled to.
   // Focus follows the SCROLL position — whichever card rests at the snap line
@@ -169,8 +175,23 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   const consentAction = pendingApproval ? toolAction(pendingApproval.toolName) : undefined;
   const consentDetail = pendingApproval ? consentFact(pendingApproval.input) : undefined;
 
+  const slides = feed.filter((entry) => entry.kind !== "approval");
+  const jumpTo = (id: string) => {
+    const el = feedRef.current;
+    if (!el) return;
+    const target = Array.from(el.children).find((child) => (child as HTMLElement).dataset.entryId === id);
+    if (target && typeof target.scrollIntoView === "function") {
+      const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    }
+  };
+
   return (
-    <div className={`fl-voice-stage is-${status}`} role="dialog" aria-label="Voice session">
+    <div
+      className={`fl-voice-stage is-${status} ${leaving ? "is-leaving" : ""}`}
+      role="dialog"
+      aria-label="Voice session"
+    >
       {/* The blob never moves: the feed scrolls under this pinned head. */}
       <div className="fl-voice-head">
         <VoiceBlob state={blobState} amplitude={amplitude} size={96} />
@@ -192,35 +213,43 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
 
       <div className="fl-voice-feedwrap">
         <div className="fl-voice-feed" ref={feedRef} onScroll={onFeedScroll}>
-          {feed.map((entry) => {
-            if (entry.kind === "pending-view") {
-              return (
-                <div
-                  key={entry.id}
-                  data-entry-id={entry.id}
-                  className={`fl-voice-card is-pending ${entry.id === focusId ? "is-focus" : ""}`}
-                >
-                  <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
-                  <Skeleton name={entry.name} />
-                </div>
-              );
-            }
-            if (entry.kind === "view") {
-              return (
-                <div
-                  key={entry.id}
-                  data-entry-id={entry.id}
-                  className={`fl-voice-card ${entry.id === focusId ? "is-focus" : ""}`}
-                >
-                  {renderNode(entry.node)}
-                </div>
-              );
-            }
-            // Approvals never enter the feed: the agent's UI keeps the stage;
-            // consent is edge chrome (the docked bar below).
-            return null;
-          })}
+          {/* Each view is a SLIDE — it owns the stage while focused; scroll
+              pages between slides (mandatory snap). Approvals never enter the
+              feed: consent is edge chrome (the docked bar below). */}
+          {slides.map((entry) => (
+            <div
+              key={entry.id}
+              data-entry-id={entry.id}
+              className={`fl-voice-slide ${entry.id === focusId ? "is-focus" : ""} ${entry.kind === "pending-view" ? "is-pending" : ""}`}
+            >
+              <div className="fl-voice-card">
+                {entry.kind === "pending-view" ? (
+                  <>
+                    <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
+                    <Skeleton name={entry.name} />
+                  </>
+                ) : (
+                  renderNode(entry.node)
+                )}
+              </div>
+            </div>
+          ))}
         </div>
+        {slides.length > 1 && (
+          <div className="fl-voice-dots" role="tablist" aria-label="Views in this session">
+            {slides.map((entry, i) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={entry.id === focusId}
+                aria-label={`View ${i + 1} of ${slides.length}`}
+                className={entry.id === focusId ? "is-on" : ""}
+                onClick={() => jumpTo(entry.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {(status === "reconnecting" || status === "error") && (
@@ -296,27 +325,37 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
           {drawerOpen ? "⌄" : "⌃"} transcript
         </button>
         <div className="fl-voice-controls">
-          <button
-            type="button"
-            className={`fl-icon-btn ${muted ? "is-active" : ""}`}
-            aria-label={muted ? "Unmute" : "Mute"}
-            aria-pressed={muted}
-            onClick={() => onMute(!muted)}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              {muted && <line x1="2" y1="2" x2="22" y2="22" />}
-              <rect x="9" y="2" width="6" height="12" rx="3" />
-              <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
-              <line x1="12" y1="19" x2="12" y2="22" />
-            </svg>
-          </button>
-          <button type="button" className="fl-icon-btn" aria-label="End voice session" onClick={onEnd}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-            </svg>
-          </button>
+          {status === "ended" ? (
+            // The call is over but the stage stays browsable — leaving is the
+            // user's explicit choice, and it lands the record in the thread.
+            <button type="button" className="fl-btn fl-btn-primary" onClick={leave}>
+              Back to chat
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={`fl-icon-btn ${muted ? "is-active" : ""}`}
+                aria-label={muted ? "Unmute" : "Mute"}
+                aria-pressed={muted}
+                onClick={() => onMute(!muted)}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  {muted && <line x1="2" y1="2" x2="22" y2="22" />}
+                  <rect x="9" y="2" width="6" height="12" rx="3" />
+                  <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              </button>
+              <button type="button" className="fl-icon-btn" aria-label="End voice session" onClick={onEnd}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
