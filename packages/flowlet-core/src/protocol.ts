@@ -8,6 +8,24 @@ export interface FlowletMetadata {
   runId: string;
   threadId: string;
   schemaVersion: number;
+  /** Anchor context riding a send from a FlowletRemix-scoped surface (2026-07-04 spec). */
+  anchors?: AnchorContextBlock;
+}
+
+/**
+ * Host-page context attached to a chat send. `scoped` is the anchor whose
+ * affordance opened the surface (DOM snapshot included, captured only at
+ * open). `ambient` is the page's other visible anchors — never snapshots.
+ */
+export interface AnchorContextBlock {
+  scoped?: AnchorRef & { snapshot?: string };
+  ambient?: AnchorRef[];
+}
+
+export interface AnchorRef {
+  anchorId: string;
+  label?: string;
+  context?: unknown;
 }
 
 /**
