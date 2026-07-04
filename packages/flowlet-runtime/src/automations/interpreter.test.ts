@@ -37,6 +37,7 @@ function makeTool(
   opts: {
     readOnly?: boolean;
     idempotent?: boolean;
+    destructive?: boolean;
     result?: unknown;
     failTimes?: number;
     inputSchema?: RegisteredTool["inputSchema"];
@@ -51,6 +52,7 @@ function makeTool(
       annotations: {
         readOnlyHint: opts.readOnly ?? false,
         idempotentHint: opts.idempotent ?? false,
+        destructiveHint: opts.destructive ?? false,
       },
       hasExecute: true,
       kind: "function",
@@ -313,6 +315,69 @@ describe("approvals, grants, pause/resume", () => {
       grants: [stale],
     });
     expect(staleOutcome.status).toBe("waiting_approval");
+  });
+
+  // The act-tier control for the two invariant tests below is the
+  // "executes unattended with a valid scope-hashed grant" test above:
+  // identical setup minus destructiveHint → the step executes.
+  it("INVARIANT §8.1: a dangerous tool with a matching grant still pauses", async () => {
+    const spec = freezeSpec();
+    const freeze = makeTool("freeze_card", { destructive: true });
+    const step = (spec.execution as { steps: Array<{ id: string }> }).steps[1]!;
+    const grant: AutomationGrant = computeGrant({
+      tool: "freeze_card",
+      descriptor: freeze.descriptor,
+      spec,
+      step: step as never,
+      now: NOW,
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, {
+        fetch_rows: makeTool("fetch_rows"),
+        freeze_card: freeze,
+        send_msg: makeTool("send_msg"),
+      }),
+      policy: approveFor("freeze_card"),
+      grants: [grant],
+    });
+    expect(outcome.status).toBe("waiting_approval");
+    expect(freeze.calls).toHaveLength(0);
+    if (outcome.status !== "waiting_approval") throw new Error("unreachable");
+    expect(outcome.pendingApproval.stepId).toBe("freeze");
+  });
+
+  it("INVARIANT §8.1: a dangerous tool with a matching grant is rejected inside agent steps", async () => {
+    const freeze = makeTool("freeze_card", { destructive: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Handle it", tools: ["freeze_card"] }],
+    });
+    const step = (spec.execution as { steps: Array<{ id: string }> }).steps[0]!;
+    const grant: AutomationGrant = computeGrant({
+      tool: "freeze_card",
+      descriptor: freeze.descriptor,
+      spec,
+      step: step as never,
+      now: NOW,
+    });
+    let callOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { freeze_card: freeze }),
+      policy: approveFor("freeze_card"),
+      grants: [grant],
+      agentRunner: async (req) => {
+        callOutcome = await req.tools["freeze_card"]!.execute(
+          { cardId: "c1" },
+          { idempotencyKey: "k" },
+        );
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded"); // the agent handled the rejection
+    expect(freeze.calls).toHaveLength(0);
+    expect(callOutcome?.ok).toBe(false);
+    if (callOutcome?.ok !== false) throw new Error("unreachable");
+    expect(callOutcome.error.message).toMatch(/approval|grant/i);
   });
 
   it("resume(approved) continues from the paused step without re-running earlier steps", async () => {

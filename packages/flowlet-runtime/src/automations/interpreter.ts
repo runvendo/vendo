@@ -18,6 +18,7 @@
  */
 import type { ToolCallOutcome } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
+import { dangerTier } from "../policy/tier";
 import type { FlowletPrincipal } from "../principal";
 import type { ToolDescriptor } from "../descriptor";
 import {
@@ -274,12 +275,16 @@ async function executeToolStep(ctx: ExecContext, step: ToolStep): Promise<void> 
     if (decision === "approve") {
       const resumeApproved =
         ctx.resumeTarget?.stepId === step.id && ctx.resumeTarget.approved;
-      const granted = hasValidGrant(ctx.grants, {
-        tool: step.tool,
-        descriptor: tool.descriptor,
-        spec: ctx.input.spec,
-        step,
-      });
+      // Critical is unsuppressible by type (ENG-193 §4.1): a grant for a
+      // dangerous tool — however it got into the store — never runs unattended.
+      const granted =
+        dangerTier(tool.descriptor) !== "critical" &&
+        hasValidGrant(ctx.grants, {
+          tool: step.tool,
+          descriptor: tool.descriptor,
+          spec: ctx.input.spec,
+          step,
+        });
       if (!granted && !resumeApproved) {
         if (ctx.insideLoop) {
           throw new StepFailure(
@@ -386,12 +391,16 @@ function gateAgentTool(
         };
       }
       if (decision === "approve") {
-        const granted = hasValidGrant(ctx.grants, {
-          tool: name,
-          descriptor: tool.descriptor,
-          spec: ctx.input.spec,
-          step: grantStep,
-        });
+        // Critical is unsuppressible by type (ENG-193 §4.1): a grant for a
+        // dangerous tool — however it got into the store — never runs unattended.
+        const granted =
+          dangerTier(tool.descriptor) !== "critical" &&
+          hasValidGrant(ctx.grants, {
+            tool: name,
+            descriptor: tool.descriptor,
+            spec: ctx.input.spec,
+            step: grantStep,
+          });
         if (!granted) {
           return {
             ok: false,

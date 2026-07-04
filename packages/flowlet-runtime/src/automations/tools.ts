@@ -173,6 +173,10 @@ function buildGrants(
   const maybeGrant = (name: string, step: AutomationStep | null): void => {
     const descriptor = registered[name]?.descriptor;
     if (!granted.has(name) || descriptor === undefined) return;
+    // ENG-193 §8.3: dangerous tools are never pre-authorizable. They are
+    // excluded here (not an error) — the step will pause/park per-firing
+    // instead.
+    if (descriptor.annotations.destructiveHint === true) return;
     grants.push(computeGrant({ tool: name, descriptor, spec, step, now }));
   };
 

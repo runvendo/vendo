@@ -17,14 +17,21 @@ const NOW = "2026-07-01T08:00:00.000Z";
 const scope: Principal = { tenantId: "t1", subject: "user-1" };
 const CALL_OPTS = { toolCallId: "tc", messages: [] } as unknown as ToolCallOptions;
 
-function makeTool(name: string, opts: { readOnly?: boolean; idempotent?: boolean } = {}) {
+function makeTool(
+  name: string,
+  opts: { readOnly?: boolean; idempotent?: boolean; destructive?: boolean } = {},
+) {
   const calls: Array<Record<string, unknown>> = [];
   const tool: RegisteredTool & { calls: typeof calls } = {
     calls,
     descriptor: {
       name,
       source: "caller",
-      annotations: { readOnlyHint: opts.readOnly ?? false, idempotentHint: opts.idempotent ?? false },
+      annotations: {
+        readOnlyHint: opts.readOnly ?? false,
+        idempotentHint: opts.idempotent ?? false,
+        destructiveHint: opts.destructive ?? false,
+      },
       hasExecute: true,
       kind: "function",
     },
@@ -71,7 +78,12 @@ function setup() {
   const store = new InMemoryAutomationStore({ now: () => NOW });
   const slack = makeTool("SLACK_SEND_MESSAGE");
   const read = makeTool("maple_list_transactions", { readOnly: true });
-  const registered = { SLACK_SEND_MESSAGE: slack, maple_list_transactions: read };
+  const transfer = makeTool("transfer_money", { destructive: true });
+  const registered = {
+    SLACK_SEND_MESSAGE: slack,
+    maple_list_transactions: read,
+    transfer_money: transfer,
+  };
   const scheduler = new FakeScheduler();
   const runner = new AutomationRunner({
     store,
@@ -191,6 +203,26 @@ describe("create_automation", () => {
     });
     expect(result["ok"]).toBe(false);
     expect(String(result["errors"])).toMatch(/idempotent/);
+  });
+
+  it("INVARIANT §8.3: grantedTools silently excludes dangerous tools", async () => {
+    const { store, exec } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        execution: {
+          mode: "steps",
+          steps: [
+            { id: "move", type: "tool", tool: "transfer_money", input: { amount: 5 } },
+            { id: "send", type: "tool", tool: "SLACK_SEND_MESSAGE", input: { text: "done" } },
+          ],
+        },
+      }),
+      grantedTools: ["transfer_money", "SLACK_SEND_MESSAGE"],
+    });
+    expect(result["ok"]).toBe(true); // silent exclusion, not an error
+    const id = (result["automation"] as Record<string, unknown>)["id"] as string;
+    const version = await store.getVersion(scope, id, 1);
+    expect(version?.grants.map((g) => g.tool)).toEqual(["SLACK_SEND_MESSAGE"]);
   });
 
   it("rejects grantedTools that the spec never references", async () => {
