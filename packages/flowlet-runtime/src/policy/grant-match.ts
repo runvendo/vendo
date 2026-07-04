@@ -30,8 +30,11 @@ function getByPath(obj: unknown, dotPath: string): unknown {
   return cursor;
 }
 
-/** Glob with `*` wildcards only, anchored both ends, case-insensitive. */
-function globMatches(pattern: string, value: string): boolean {
+/** Glob with `*` wildcards only, anchored both ends, case-insensitive.
+ *  Exported: `policy/rule-match.ts` reuses this verbatim for tighten-rule
+ *  matching (ENG-193 item-6) so a rule's semantics never drift from a
+ *  grant's `"matches"` constraint. */
+export function globMatches(pattern: string, value: string): boolean {
   // ReDoS guard: absurd wildcard counts fail closed (no match → the call
   // simply asks) instead of building a pathological regex.
   if ((pattern.match(/\*/g)?.length ?? 0) > 8) return false;
@@ -39,7 +42,8 @@ function globMatches(pattern: string, value: string): boolean {
   return new RegExp(`^${escaped}$`, "i").test(value);
 }
 
-function constraintHolds(
+/** Exported for the same reason as `globMatches` above. */
+export function constraintHolds(
   input: unknown,
   c: { path: string; op: "eq" | "lte" | "gte" | "matches"; value: string | number | boolean },
 ): boolean {

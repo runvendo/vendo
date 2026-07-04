@@ -5,6 +5,7 @@ export * from "./natural-language";
 export * from "./principal-rules";
 export * from "./tier";
 export * from "./grant-match";
+export * from "./rule-match";
 export * from "./grant-policy";
 export * from "./audit-policy";
 export * from "./run-context";
