@@ -22,6 +22,7 @@ import {
   FlowletOverlay,
   FlowletShellProvider,
   createLocalIntegrations,
+  createWebRemixes,
   createWebStorage,
   type FlowletIntegrations,
 } from "@flowlet/shell";
@@ -33,6 +34,7 @@ import type { FlowletCapabilities } from "../capabilities";
 import { SandboxStage } from "./sandbox-stage";
 import { FlowletConnectNode } from "./connect-node";
 import { createServerIntegrations } from "./integrations";
+import { createServerNotifications } from "./notifications";
 import { createRunQuery } from "./run-query";
 
 export interface FlowletRootProps {
@@ -130,6 +132,11 @@ export function FlowletRoot({
   // so importing stays SSR-safe.
   const store = useMemo(() => createWebStorage({ namespace: `flowlet:${threadId}` }), [threadId]);
 
+  // Remix pins (FlowletRemix) follow the same web-storage pattern; the
+  // notifications client polls the handler's deliveries feed (FlowletToasts).
+  const remixes = useMemo(() => createWebRemixes({ namespace: `flowlet:${threadId}` }), [threadId]);
+  const notifications = useMemo(() => createServerNotifications(basePath), [basePath]);
+
   const integrations = useMemo<FlowletIntegrations>(
     () =>
       capabilities?.integrations
@@ -181,6 +188,8 @@ export function FlowletRoot({
           renderNode={renderNode}
           integrations={integrations}
           store={store}
+          remixes={remixes}
+          notifications={notifications}
           runQuery={runQuery}
           components={[]}
           theme={{ scheme: brand.mode === "dark" ? "dark" : "light" }}

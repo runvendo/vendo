@@ -3,6 +3,8 @@ import type { RegisteredComponent, UINode } from "@flowlet/core";
 import { themeToStyle, type FlowletTheme } from "./theme";
 import { createLocalStore, type FlowletStore } from "./seams/store";
 import { createLocalIntegrations, type FlowletIntegrations } from "./seams/integrations";
+import { createLocalNotifications, type FlowletNotifications } from "./seams/notifications";
+import { createLocalRemixes, type RemixClient } from "./seams/remixes";
 import type { RunQuery } from "./seams/query";
 import "./styles.css";
 
@@ -11,6 +13,10 @@ export type RenderNode = (node: UINode) => ReactNode;
 export interface ShellContextValue {
   store: FlowletStore;
   integrations: FlowletIntegrations;
+  /** Per-user pinned remixes of dev-wrapped host components (FlowletRemix). */
+  remixes: RemixClient;
+  /** Automation deliveries feed + approval resume (FlowletToasts). */
+  notifications: FlowletNotifications;
   /** Host seam: re-run one declared data query through the policy-governed
    *  tool path (ENG-183). Absent → reopened views stay snapshots. */
   runQuery?: RunQuery;
@@ -67,6 +73,10 @@ function defaultRenderNode(node: UINode, impls: ImplMap): ReactNode {
 export interface FlowletShellProviderProps {
   store?: FlowletStore;
   integrations?: FlowletIntegrations;
+  /** Remix persistence client; defaults to in-memory (pins reset on remount). */
+  remixes?: RemixClient;
+  /** Automation deliveries client; defaults to an inert empty feed. */
+  notifications?: FlowletNotifications;
   /** Host seam for reopening saved views with fresh data; see ShellContextValue. */
   runQuery?: RunQuery;
   /** Live-refresh cadence for open saved views (ms); 0 disables. Default 60s. */
@@ -87,13 +97,15 @@ export interface FlowletShellProviderProps {
 }
 
 export function FlowletShellProvider({
-  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, children,
+  store, integrations, remixes, notifications, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
   const value = useMemo<ShellContextValue>(() => ({
     store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
+    remixes: remixes ?? createLocalRemixes(),
+    notifications: notifications ?? createLocalNotifications(),
     runQuery,
     refreshIntervalMs: refreshIntervalMs ?? 60_000,
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
@@ -101,7 +113,7 @@ export function FlowletShellProvider({
     cssVars: cssVars ?? {},
     productName,
     components,
-  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
+  }), [store, integrations, remixes, notifications, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
 
   return (
     <ShellContext.Provider value={value}>
