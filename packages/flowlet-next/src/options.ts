@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
-import type { AuditLog, GrantStore, HostToolDefinition, RegisteredComponent, ThreadStore } from "@flowlet/core";
+import type { AuditLog, CompiledRuleStore, GrantStore, HostToolDefinition, RegisteredComponent, ThreadStore } from "@flowlet/core";
 import type { ApprovalPolicy, BreakerState, FadeTracker, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
 import type { ConnectionsStore } from "./connections";
 
@@ -71,6 +71,8 @@ export interface FlowletHandlerOptions {
     breakers?: BreakerState;
     /** ENG-193 §4.4 — inject to share fade tracking with a host-owned instance. */
     fadeTracker?: FadeTracker;
+    /** ENG-193 item 6 — inject to persist compiled always-ask rules elsewhere. */
+    rules?: CompiledRuleStore;
   };
   /** The judge model (ENG-193 §4.2). Default: undefined — the judge is
    *  IDENTITY (fail-safe rollout; item-2 behavior, unchanged) until a host
@@ -113,6 +115,7 @@ const optionsSchema = z
         threads: z.custom<ThreadStore>((v) => typeof v === "object" && v !== null).optional(),
         breakers: z.custom<BreakerState>((v) => typeof v === "object" && v !== null).optional(),
         fadeTracker: z.custom<FadeTracker>((v) => typeof v === "object" && v !== null).optional(),
+        rules: z.custom<CompiledRuleStore>((v) => typeof v === "object" && v !== null).optional(),
       })
       .strict()
       .optional(),

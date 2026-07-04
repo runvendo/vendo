@@ -3,6 +3,7 @@ import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import { composeProductionPolicy } from "./policy-stack";
 import {
+  createInMemoryCompiledRuleStore,
   createInMemoryGrantStore,
   InMemoryAuditLog,
   hashDescriptor,
@@ -44,7 +45,7 @@ describe("composeProductionPolicy", () => {
       scope: { kind: "tool" }, duration: "standing", source: { kind: "chat" },
     });
     const policy = composeProductionPolicy(fixed("approve"), {
-      grants, audit: new InMemoryAuditLog(),
+      grants, rules: createInMemoryCompiledRuleStore(), audit: new InMemoryAuditLog(),
     });
     expect(await policy.evaluate(ctxFor(actDesc))).toBe("allow");
   });
@@ -56,7 +57,7 @@ describe("composeProductionPolicy", () => {
       scope: { kind: "tool" }, duration: "standing", source: { kind: "chat" },
     });
     const policy = composeProductionPolicy(fixed("approve"), {
-      grants, audit: new InMemoryAuditLog(),
+      grants, rules: createInMemoryCompiledRuleStore(), audit: new InMemoryAuditLog(),
     });
     expect(await policy.evaluate(ctxFor(criticalDesc))).toBe("approve");
   });
@@ -64,24 +65,64 @@ describe("composeProductionPolicy", () => {
   it("audit layer records tool_execution on onExecuted", async () => {
     const audit = new InMemoryAuditLog();
     const policy = composeProductionPolicy(fixed("allow"), {
-      grants: createInMemoryGrantStore(), audit, now: () => "2026-07-04T00:00:00Z",
+      grants: createInMemoryGrantStore(), rules: createInMemoryCompiledRuleStore(), audit, now: () => "2026-07-04T00:00:00Z",
     });
     await policy.onExecuted!({ ...ctxFor(actDesc), toolCallId: "call-1" }, "allow");
     expect(await audit.query(scope, { kinds: ["tool_execution"] })).toHaveLength(1);
   });
 });
 
+describe("composeProductionPolicy — compiled rules (ENG-193 item 6)", () => {
+  it("a matching always_ask rule forces approve even when the base policy would allow", async () => {
+    const rules = createInMemoryCompiledRuleStore();
+    await rules.create(scope, {
+      kind: "always_ask", toolPattern: actDesc.name, plainText: "sending any email",
+    });
+    const policy = composeProductionPolicy(fixed("allow"), {
+      grants: createInMemoryGrantStore(), rules, audit: new InMemoryAuditLog(),
+    });
+    expect(await policy.evaluate(ctxFor(actDesc))).toBe("approve");
+  });
+
+  it("a matching rule beats a matching grant AND a judge intent-match", async () => {
+    const grants = createInMemoryGrantStore();
+    await grants.create(scope, {
+      tool: actDesc.name, descriptorHash: hashDescriptor(actDesc),
+      scope: { kind: "tool" }, duration: "standing", source: { kind: "chat" },
+    });
+    const rules = createInMemoryCompiledRuleStore();
+    await rules.create(scope, {
+      kind: "always_ask", toolPattern: actDesc.name, plainText: "sending any email",
+    });
+    const policy = composeProductionPolicy(fixed("approve"), {
+      grants, rules, audit: new InMemoryAuditLog(), judgeModel: mockReturning("match"),
+    });
+    expect(await policy.evaluate({ ...ctxFor(actDesc), threadId: "th-1" })).toBe("approve");
+  });
+
+  it("a non-matching rule changes nothing", async () => {
+    const rules = createInMemoryCompiledRuleStore();
+    await rules.create(scope, {
+      kind: "always_ask", toolPattern: "some_other_tool", plainText: "something else",
+    });
+    const policy = composeProductionPolicy(fixed("allow"), {
+      grants: createInMemoryGrantStore(), rules, audit: new InMemoryAuditLog(),
+    });
+    expect(await policy.evaluate(ctxFor(actDesc))).toBe("allow");
+  });
+});
+
 describe("composeProductionPolicy — judge + breakers", () => {
   it("with NO judgeModel, behaves EXACTLY like item 2 (identity judge, no breaker forcing at low volume)", async () => {
     const policy = composeProductionPolicy(fixed("approve"), {
-      grants: createInMemoryGrantStore(), audit: new InMemoryAuditLog(),
+      grants: createInMemoryGrantStore(), rules: createInMemoryCompiledRuleStore(), audit: new InMemoryAuditLog(),
     });
     expect(await policy.evaluate(ctxFor(actDesc))).toBe("approve");
   });
 
   it("with a judgeModel returning match, an act-tier approve downgrades to allow", async () => {
     const policy = composeProductionPolicy(fixed("approve"), {
-      grants: createInMemoryGrantStore(), audit: new InMemoryAuditLog(),
+      grants: createInMemoryGrantStore(), rules: createInMemoryCompiledRuleStore(), audit: new InMemoryAuditLog(),
       judgeModel: mockReturning("match"),
     });
     expect(await policy.evaluate({ ...ctxFor(actDesc), threadId: "th-1" })).toBe("allow");
@@ -94,7 +135,7 @@ describe("composeProductionPolicy — judge + breakers", () => {
       scope: { kind: "tool" }, duration: "standing", source: { kind: "chat" },
     });
     const policy = composeProductionPolicy(fixed("approve"), {
-      grants, audit: new InMemoryAuditLog(),
+      grants, rules: createInMemoryCompiledRuleStore(), audit: new InMemoryAuditLog(),
       judgeModel: mockReturning("escalate: this looks different from usual"),
     });
     expect(await policy.evaluate({ ...ctxFor(actDesc), threadId: "th-1" })).toBe("approve");
@@ -107,7 +148,7 @@ describe("composeProductionPolicy — judge + breakers", () => {
       scope: { kind: "tool" }, duration: "standing", source: { kind: "chat" },
     });
     const policy = composeProductionPolicy(fixed("approve"), {
-      grants, audit: new InMemoryAuditLog(), judgeModel: mockReturning("match"),
+      grants, rules: createInMemoryCompiledRuleStore(), audit: new InMemoryAuditLog(), judgeModel: mockReturning("match"),
     });
     expect(await policy.evaluate({ ...ctxFor(criticalDesc), threadId: "th-1" })).toBe("approve");
   });

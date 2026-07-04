@@ -20,6 +20,8 @@
  *   POST /fade-proposal — resolves a fade proposal (ENG-193 §4.4)
  *   GET  /grants        — Trust screen: federated grants (standing + automation) (ENG-193 §3 Moment 12)
  *   POST /grants/revoke — Trust screen: revoke a standing grant (ENG-193 §3 Moment 12)
+ *   GET  /rules         — Trust screen: compiled always-ask rules (ENG-193 item 6)
+ *   POST /rules/revoke  — Trust screen: revoke a rule (ENG-193 item 6)
  *   GET  /audit         — Trust screen: audit query (ENG-193 §3 Moment 12)
  *   GET  /critical-tools — Trust screen: tools that always need the human (ENG-193 §3 Moment 12)
  *   POST /tick          — drives the automations scheduler
@@ -34,7 +36,9 @@ import {
   buildDescriptor,
   createBreakerState,
   createFadeTracker,
+  createInMemoryCompiledRuleStore,
   createInMemoryGrantStore,
+  createSteeringTools,
   hostToolset,
   InMemoryAuditLog,
   InMemoryThreadStore,
@@ -44,7 +48,7 @@ import { handleAction, createApprovalStore } from "./action";
 import { handleConsentRoute } from "./consent";
 import { handleFadeProposalRoute } from "./fade-proposal";
 import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
-import { listGrantsRoute, revokeGrantRoute, queryAuditRoute, listCriticalToolsRoute } from "./trust";
+import { listGrantsRoute, revokeGrantRoute, listRulesRoute, revokeRuleRoute, queryAuditRoute, listCriticalToolsRoute } from "./trust";
 import {
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
@@ -86,6 +90,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
     const model = options.model ?? defaultModel();
     const grants = options.store?.grants ?? createInMemoryGrantStore();
+    const rules = options.store?.rules ?? createInMemoryCompiledRuleStore();
     const audit = options.store?.audit ?? new InMemoryAuditLog();
     const threads = options.store?.threads ?? new InMemoryThreadStore(() => new Date().toISOString());
     const threadIndex = createThreadIndex(threads);
@@ -96,7 +101,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     // default) can tighten/loosen the act tier, deterministic breakers can
     // only tighten, and audit records executes.
     const basePolicy = options.policy ?? defaultFlowletPolicy;
-    const policy = composeProductionPolicy(basePolicy, { grants, audit, judgeModel: options.judgeModel, breakers });
+    const policy = composeProductionPolicy(basePolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 
@@ -113,9 +118,23 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
             audit,
           });
 
+    // ENG-193 item 6: steering tools merge into the same static "engine"
+    // bucket automation authoring tools use — fixed embedded principal, same
+    // single-tenant simplification world.ts documents. `resolveDescriptor` is
+    // a forward reference into this closure — safe, `serverTools` is never
+    // CALLED until `assemble()` has fully run and both consts are bound
+    // (`resolveDescriptor` itself back-references `serverTools()` already).
     const serverTools = (): ToolSet => {
       const extra = typeof options.tools === "function" ? options.tools() : options.tools ?? {};
-      return { ...extra, ...(world ? world.authoringTools() : {}) };
+      return {
+        ...extra,
+        ...(world ? world.authoringTools() : {}),
+        ...createSteeringTools({
+          principal: { tenantId: EMBEDDED_TENANT, subject: DEFAULT_PRINCIPAL.userId },
+          rules, grants, audit,
+          resolveDescriptor: (name) => resolveDescriptor(name),
+        }),
+      };
     };
 
     const instructions =
@@ -213,6 +232,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       getAgent,
       approvals: createApprovalStore(),
       grants,
+      rules,
       audit,
       threads,
       threadIndex,
@@ -248,6 +268,11 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           world: s.world,
           principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
         });
+      }
+      case "rules": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return listRulesRoute(req, { rules: s.rules, principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId } });
       }
       case "audit": {
         const guard = await resolvePrincipal(req, options);
@@ -335,16 +360,18 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
         if (!guard.ok) return guard.response;
         return resolveParkedActionRoute(req, { world: s.world, principal: guard.principal });
       }
-      // POST /api/flowlet/grants/revoke (ENG-193 §3 Moment 12) — same
-      // "last segment only" `subPath` behavior as parked-actions/resolve.
+      // POST /api/flowlet/grants/revoke AND POST /api/flowlet/rules/revoke
+      // (ENG-193 §3 Moment 12/item-6) — `subPath` only inspects the LAST path
+      // segment, so both collapse to "revoke" here; disambiguate on the full
+      // pathname (item-6 plan deviation #6 — found while wiring this task).
       case "revoke": {
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
-        return revokeGrantRoute(req, {
-          grants: s.grants,
-          audit: s.audit,
-          principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
-        });
+        const principal = { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId };
+        const isRuleRevoke = new URL(req.url).pathname.includes("/rules/revoke");
+        return isRuleRevoke
+          ? revokeRuleRoute(req, { rules: s.rules, audit: s.audit, principal })
+          : revokeGrantRoute(req, { grants: s.grants, audit: s.audit, principal });
       }
       default:
         return Response.json({ error: "not found" }, { status: 404 });

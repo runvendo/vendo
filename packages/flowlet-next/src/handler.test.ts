@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
+import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
 import { createFlowletHandler } from "./handler";
 
 function req(pathname: string, init?: RequestInit): Request {
@@ -263,6 +263,50 @@ describe("createFlowletHandler", () => {
     );
     expect(consentRes.status).toBe(200);
     expect(await grants.findForTool(scope, "send_email")).toHaveLength(1);
+  });
+
+  it("GET /rules returns an empty list from a fresh handler (ENG-193 item 6)", async () => {
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await GET(req("/api/flowlet/rules"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ rules: [] });
+  });
+
+  it("POST /rules/revoke 404s an unknown rule id", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: "nope" }) }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("REGRESSION (deviation #6): /grants/revoke revokes the GRANT and /rules/revoke revokes the RULE — never cross-wired", async () => {
+    const scope = { tenantId: "flowlet-embedded", subject: "flowlet-default-user" };
+    const grants = createInMemoryGrantStore();
+    const rules = createInMemoryCompiledRuleStore();
+    const grant = await grants.create(scope, {
+      tool: "send_email", descriptorHash: "h1", scope: { kind: "tool" }, duration: "standing",
+      source: { kind: "chat" },
+    });
+    const rule = await rules.create(scope, {
+      kind: "always_ask", toolPattern: "send_email", plainText: "sending any email",
+    });
+    const { GET, POST } = createFlowletHandler({ flowletDir: emptyDir(), store: { grants, rules } });
+
+    // Revoke the GRANT via /grants/revoke — the rule must survive.
+    const grantRes = await POST(
+      req("/api/flowlet/grants/revoke", { method: "POST", body: JSON.stringify({ id: grant.id }) }),
+    );
+    expect(grantRes.status).toBe(200);
+    expect(await grants.findForTool(scope, "send_email")).toHaveLength(0);
+    expect((await rules.list(scope)).filter((r) => r.revokedAt === undefined)).toHaveLength(1);
+
+    // Revoke the RULE via /rules/revoke — drops from GET /rules.
+    const ruleRes = await POST(
+      req("/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: rule.id }) }),
+    );
+    expect(ruleRes.status).toBe(200);
+    expect(await (await GET(req("/api/flowlet/rules"))).json()).toEqual({ rules: [] });
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {

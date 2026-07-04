@@ -3,10 +3,12 @@ import type { LanguageModel } from "ai";
 import {
   listGrantsRoute,
   revokeGrantRoute,
+  listRulesRoute,
+  revokeRuleRoute,
   queryAuditRoute,
   listCriticalToolsRoute,
 } from "./trust";
-import { createInMemoryGrantStore, InMemoryAuditLog, buildDescriptor } from "@flowlet/runtime";
+import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryAuditLog, buildDescriptor } from "@flowlet/runtime";
 import { createAutomationsWorld } from "./world";
 import { defaultFlowletPolicy } from "./default-policy";
 import { automationSpecSchema } from "@flowlet/runtime";
@@ -96,6 +98,77 @@ describe("revokeGrantRoute", () => {
     const res = await revokeGrantRoute(
       req("http://localhost/api/flowlet/grants/revoke", { method: "POST", body: JSON.stringify({}) }),
       { grants, audit, principal: scope },
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("listGrantsRoute — compiled-rule plainText (ENG-193 item 6)", () => {
+  it("carries a compiled-rule grant's source.rule through as plainText", async () => {
+    const grants = createInMemoryGrantStore({ now });
+    await grants.create(scope, {
+      tool: "send_email", descriptorHash: "h1", scope: { kind: "tool" }, duration: "standing",
+      source: { kind: "compiled-rule", rule: "don't ask about invoices" },
+    });
+    const res = await listGrantsRoute(req("http://localhost/api/flowlet/grants"), {
+      grants, world: null, principal: scope,
+    });
+    const body = (await res.json()) as { grants: { plainText?: string; source: string }[] };
+    expect(body.grants[0]).toMatchObject({ source: "compiled-rule", plainText: "don't ask about invoices" });
+  });
+});
+
+describe("listRulesRoute", () => {
+  it("returns an empty list from a fresh store", async () => {
+    const rules = createInMemoryCompiledRuleStore({ now });
+    const res = await listRulesRoute(req("http://localhost/api/flowlet/rules"), { rules, principal: scope });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ rules: [] });
+  });
+
+  it("returns live rules as TrustRuleRows", async () => {
+    const rules = createInMemoryCompiledRuleStore({ now });
+    const rule = await rules.create(scope, {
+      kind: "always_ask", toolPattern: "sendClientMessage", plainText: "sending client messages",
+    });
+    const res = await listRulesRoute(req("http://localhost/api/flowlet/rules"), { rules, principal: scope });
+    const body = (await res.json()) as { rules: { id: string; toolPattern: string; plainText: string; since: string }[] };
+    expect(body.rules).toEqual([
+      { id: rule.id, toolPattern: "sendClientMessage", plainText: "sending client messages", since: now() },
+    ]);
+  });
+});
+
+describe("revokeRuleRoute", () => {
+  it("revokes a live rule and drops it from a follow-up list", async () => {
+    const rules = createInMemoryCompiledRuleStore({ now });
+    const audit = new InMemoryAuditLog();
+    const rule = await rules.create(scope, {
+      kind: "always_ask", toolPattern: "sendClientMessage", plainText: "sending client messages",
+    });
+    const res = await revokeRuleRoute(
+      req("http://localhost/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: rule.id }) }),
+      { rules, audit, principal: scope },
+    );
+    expect(res.status).toBe(200);
+    const list = await listRulesRoute(req("http://localhost/api/flowlet/rules"), { rules, principal: scope });
+    expect(await list.json()).toEqual({ rules: [] });
+  });
+
+  it("404s an unknown rule id", async () => {
+    const rules = createInMemoryCompiledRuleStore({ now });
+    const res = await revokeRuleRoute(
+      req("http://localhost/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: "nope" }) }),
+      { rules, audit: new InMemoryAuditLog(), principal: scope },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("400s a malformed body", async () => {
+    const rules = createInMemoryCompiledRuleStore({ now });
+    const res = await revokeRuleRoute(
+      req("http://localhost/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({}) }),
+      { rules, audit: new InMemoryAuditLog(), principal: scope },
     );
     expect(res.status).toBe(400);
   });

@@ -2,10 +2,11 @@
  * The production policy stack (ENG-193 §4.2/§4.3/§4.7/§6.2), applied to
  * whatever BASE policy the host runs — `options.policy ?? defaultFlowletPolicy`.
  *
- *   volumeBreaker(cautionBreaker(judgePolicy(grantPolicy(base)))) ⊕ audit
+ *   volumeBreaker(cautionBreaker(judgePolicy(grantPolicy(base)))) ⊕ compiledRulesPolicy(rules) ⊕ audit
  *
- * `composePolicy` is most-restrictive-wins across the two top-level siblings
- * (the breaker/judge/grant chain; `auditPolicy`, always "allow"). SIBLING
+ * `composePolicy` is most-restrictive-wins across the top-level siblings
+ * (the breaker/judge/grant chain; `compiledRulesPolicy`, ENG-193 item 6's
+ * tighten rules; `auditPolicy`, always "allow"). SIBLING
  * ORDER IS LOAD-BEARING: `composePolicy` evaluates siblings in order with
  * one shared ctx, and `auditPolicy` must come LAST so its evaluate observes
  * the escalation reason the chain just stamped — that's what gives a
@@ -16,11 +17,12 @@
  * output. `contextKey: threadId` (§4.3) keys session/task-duration grants
  * to one conversation.
  */
-import type { AuditLog, GrantStore, Principal } from "@flowlet/core";
+import type { AuditLog, CompiledRuleStore, GrantStore, Principal } from "@flowlet/core";
 import type { LanguageModel } from "ai";
 import {
   auditPolicy,
   composePolicy,
+  compiledRulesPolicy,
   grantPolicy,
   judgePolicy,
   volumeBreaker,
@@ -43,6 +45,12 @@ export function composeProductionPolicy(
   base: ApprovalPolicy,
   deps: {
     grants: GrantStore;
+    /** ENG-193 item 6 — tighten rules. Required (not optional) here: this
+     *  function is the ONE production assembly point, and a host that omits
+     *  it would silently lose the tighten guarantee rather than getting a
+     *  loud type error. Callers with no rules yet pass a fresh in-memory
+     *  store — an empty store never matches anything. */
+    rules: CompiledRuleStore;
     audit: AuditLog;
     now?: () => string;
     /** Absent -> the judge layer is IDENTITY (ENG-193 §4.2 fail-safe default). */
@@ -68,6 +76,12 @@ export function composeProductionPolicy(
       ),
       breakerState,
     ),
+    // Item 6: a matching always-ask rule beats any grant/judge/breaker allow.
+    // A SIBLING, not nested inside the chain above — composePolicy's
+    // most-restrictive-wins already gives it precedence with no new ordering
+    // logic (see compiled-rules-policy.ts's own docstring for why this
+    // doesn't need auditPolicy's "must run last" treatment).
+    compiledRulesPolicy(deps.rules, { principalScope }),
     // LAST on purpose — must observe the reason the chain stamped (see docstring).
     auditPolicy(deps.audit, {
       principalScope,
