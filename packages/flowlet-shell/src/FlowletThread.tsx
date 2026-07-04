@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FileUIPart } from "ai";
-import type { AnchorContextBlock, UINode } from "@flowlet/core";
+import type { AnchorContextBlock, FlowletMetadata, UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
 import { REMIX_CHANGED_EVENT } from "./remix/FlowletRemix";
 import { stampHostComponents } from "./component-drift";
@@ -94,7 +94,10 @@ export function FlowletThread({
       scoped || ambient.length > 0
         ? { ...(scoped ? { scoped } : {}), ...(ambient.length > 0 ? { ambient } : {}) }
         : undefined;
-    void chat.sendMessage({ text, files, ...(anchors ? { metadata: { anchors } } : {}) });
+    const message: { text: string; files?: FileUIPart[]; metadata?: FlowletMetadata } = { text };
+    if (files) message.files = files;
+    if (anchors) message.metadata = { anchors };
+    void chat.sendMessage(message);
   };
   // Apply a remix candidate: pin it (stamped for drift detection) and tell the
   // mounted wrapper to swap in place.
