@@ -47,6 +47,10 @@ const ALWAYS_ALLOW = new Set<string>([
   "render_view",
   "list_automations",
   "get_automation_runs",
+  // In-process read tool registered for the automation world (ENG-193 item-4
+  // fixture beside set_document_status in automations.ts) — read-only by
+  // construction, same class as get_deadlines.
+  "get_documents_for_review",
   ...READ_ONLY_TOOLS,
 ]);
 
