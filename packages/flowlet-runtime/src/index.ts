@@ -84,6 +84,11 @@ export { InAppChannels, type InAppChannelsConfig } from "./embedded/in-app-chann
 // slot and tests.
 export { createInMemoryGrantStore } from "./grant-store";
 
+// FadeTracker (ENG-193 §4.4): per-principal fade eligibility, injectable
+// in-memory state.
+export { createFadeTracker } from "./fade-tracker";
+export type { FadeTracker, FadeTrackerOptions, FadeEligibility } from "./fade-tracker";
+
 // Grant lifecycle API (ENG-193 §4.3/§6.2): audited create/revoke, the only
 // paths that mutate grants.
 export { createGrantManager, scopePreview } from "./grant-manager";
