@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FileUIPart } from "ai";
-import type { UINode } from "@flowlet/core";
+import type { ConsentResponse, UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
 import type { Feedback } from "./components/TurnActions";
 import { useShell } from "./context";
@@ -90,38 +90,63 @@ export function FlowletThread({
       i.kind === "approval" && i.approvalId === approvalId,
     );
 
+  // Consent-channel POSTs are best-effort (ENG-193 §4.5): a failed or absent
+  // POST must never block or break the SDK's native approval resume, so every
+  // send is swallowed here and the SDK response proceeds either way.
+  const postConsent = (response: ConsentResponse): Promise<void> =>
+    sendConsent ? sendConsent(response).catch(() => {}) : Promise.resolve();
+
   const approve = (approvalId: string) => {
     const item = findApproval(approvalId);
-    const send =
-      item?.toolCallId && sendConsent
-        ? sendConsent({ id: item.toolCallId, decision: "yes" })
-        : Promise.resolve();
-    void send.finally(() => chat.addToolApprovalResponse({ id: approvalId, approved: true }));
+    const consentPost = item?.toolCallId
+      ? postConsent({ id: item.toolCallId, decision: "yes" })
+      : Promise.resolve();
+    void consentPost.then(() => chat.addToolApprovalResponse({ id: approvalId, approved: true }));
   };
-  const decline = (approvalId: string) => { void chat.addToolApprovalResponse({ id: approvalId, approved: false }); };
+  const decline = (approvalId: string) => {
+    // Declines reach the consent channel too (spec §4.4/§4.5 — the audit
+    // trail records EVERY decision, and fades need the "no" signal).
+    // Fire-and-forget: the SDK boolean never waits on the POST.
+    const item = findApproval(approvalId);
+    if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" });
+    void chat.addToolApprovalResponse({ id: approvalId, approved: false });
+  };
 
+  // Batch semantics: the consent `subset` field lists the BATCH's toolCallIds
+  // for audit context, while the per-id SDK responses below carry the actual
+  // approve/decline split.
   const approveBatch = (approvalIds: string[], toolCallIds: string[]) => {
-    const send = sendConsent
-      ? Promise.all(toolCallIds.map((id) => sendConsent({ id, decision: "yes", subset: toolCallIds })))
-      : Promise.resolve([]);
-    void send.finally(() =>
+    const consentPosts = Promise.all(
+      toolCallIds.map((id) => postConsent({ id, decision: "yes", subset: toolCallIds })),
+    );
+    void consentPosts.then(() =>
       approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true })),
     );
   };
-  const approveSubset = (approvalIds: string[], toolCallIds: string[], allToolCallIds: string[]) => {
-    const send = sendConsent
-      ? Promise.all(toolCallIds.map((id) => sendConsent({ id, decision: "subset", subset: allToolCallIds })))
-      : Promise.resolve([]);
-    void send.finally(() => {
+  const approveSubset = (
+    approvalIds: string[], toolCallIds: string[], allApprovalIds: string[], allToolCallIds: string[],
+  ) => {
+    // Declined siblings = the batch's own ids minus the selected ones — keyed
+    // by approvalId so an item with no toolCallId still gets its SDK decline.
+    const declinedApprovalIds = allApprovalIds.filter((id) => !approvalIds.includes(id));
+    const declinedToolCallIds = declinedApprovalIds
+      .map((id) => findApproval(id)?.toolCallId)
+      .filter((id): id is string => !!id);
+    const consentPosts = Promise.all([
+      ...toolCallIds.map((id) => postConsent({ id, decision: "subset", subset: allToolCallIds })),
+      ...declinedToolCallIds.map((id) => postConsent({ id, decision: "no", subset: allToolCallIds })),
+    ]);
+    void consentPosts.then(() => {
       approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
-      chat.items
-        .filter((i): i is Extract<typeof chat.items[number], { kind: "approval" }> => i.kind === "approval")
-        .filter((i) => !approvalIds.includes(i.approvalId) && allToolCallIds.includes(i.toolCallId ?? ""))
-        .forEach((i) => chat.addToolApprovalResponse({ id: i.approvalId, approved: false }));
+      declinedApprovalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: false }));
     });
   };
   const declineBatch = (approvalIds: string[]) => {
-    approvalIds.forEach((id) => void chat.addToolApprovalResponse({ id, approved: false }));
+    approvalIds.forEach((approvalId) => {
+      const item = findApproval(approvalId);
+      if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" });
+      void chat.addToolApprovalResponse({ id: approvalId, approved: false });
+    });
   };
 
   const empty = chat.items.length === 0;

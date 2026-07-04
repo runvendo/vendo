@@ -21,7 +21,9 @@ export interface MessageListProps {
   /** Batch decisions (ENG-193 §3 Moment 4). Omit to fall back to looping
    *  onApprove/onDecline per item — every existing caller keeps working. */
   onApproveBatch?: (approvalIds: string[], toolCallIds: string[]) => void;
-  onApproveSubset?: (approvalIds: string[], toolCallIds: string[], allToolCallIds: string[]) => void;
+  onApproveSubset?: (
+    approvalIds: string[], toolCallIds: string[], allApprovalIds: string[], allToolCallIds: string[],
+  ) => void;
   onDeclineBatch?: (approvalIds: string[]) => void;
   /** Regenerate a specific assistant turn (SDK `regenerate`). */
   onRegenerate?: (messageId: string) => void;
@@ -215,11 +217,18 @@ export function MessageList({
                   onApproveAll={(approvalIds, toolCallIds) =>
                     onApproveBatch ? onApproveBatch(approvalIds, toolCallIds) : approvalIds.forEach(onApprove)
                   }
-                  onApproveSubset={(approvalIds, toolCallIds, allToolCallIds) =>
-                    onApproveSubset
-                      ? onApproveSubset(approvalIds, toolCallIds, allToolCallIds)
-                      : approvalIds.forEach(onApprove)
-                  }
+                  onApproveSubset={(approvalIds, toolCallIds, allApprovalIds, allToolCallIds) => {
+                    if (onApproveSubset) {
+                      onApproveSubset(approvalIds, toolCallIds, allApprovalIds, allToolCallIds);
+                      return;
+                    }
+                    // Fallback mirrors the seam: approve the selection, decline
+                    // the rest of the batch by approvalId.
+                    approvalIds.forEach(onApprove);
+                    allApprovalIds
+                      .filter((id) => !approvalIds.includes(id))
+                      .forEach((id) => onDecline?.(id));
+                  }}
                   onDeclineAll={(approvalIds) =>
                     onDeclineBatch ? onDeclineBatch(approvalIds) : approvalIds.forEach((id) => onDecline?.(id))
                   }

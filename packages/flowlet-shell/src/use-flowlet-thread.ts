@@ -167,7 +167,9 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
  * turn's first tool call. Sibling approval-requested items of the SAME tool in
  * the SAME message also collapse into one `approval-batch` (ENG-193 §3 Moment
  * 4 — "ten at once → one decision"); a lone approval stays a plain `approval`
- * item so the existing single-card path renders it unchanged.
+ * item so the existing single-card path renders it unchanged. Critical-tier
+ * approvals are exempt from batching entirely (spec §3 Moment 6/§4.1): each
+ * always renders its own ceremony ApprovalCard.
  */
 export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
   const out: RenderItem[] = [];
@@ -185,6 +187,14 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
         out.push({ kind: "activity", key: `activity:${item.messageId}`, messageId: item.messageId, steps: [item] });
       }
     } else if (item.kind === "approval") {
+      // Critical-tier approvals NEVER enter batch collapse (spec §3 Moment
+      // 6/§4.1): every money/irreversible action renders its own ceremony
+      // card, one deliberate decision each — a batch "Approve all N" would
+      // bypass the ceremony register and its untruncated fields.
+      if (item.tier === "critical") {
+        out.push(item);
+        continue;
+      }
       const groupKey = `${item.messageId}::${item.toolName}`;
       const existing = approvalGroupIndex.get(groupKey);
       if (existing !== undefined) {
@@ -217,7 +227,11 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
       const toolName = groupKey.slice(groupKey.indexOf("::") + 2);
       const siblings = items.filter(
         (i): i is Extract<ThreadItem, { kind: "approval" }> =>
-          i.kind === "approval" && i.messageId === entry.messageId && i.toolName === toolName,
+          // tier !== "critical" mirrors the skip above: a critical item that
+          // shares a message+tool with act siblings must not be pulled into
+          // their batch during promotion either.
+          i.kind === "approval" && i.tier !== "critical" &&
+          i.messageId === entry.messageId && i.toolName === toolName,
       );
       if (siblings.length > 1) {
         out[index] = {

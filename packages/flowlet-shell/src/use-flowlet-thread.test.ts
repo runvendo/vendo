@@ -166,6 +166,39 @@ describe("groupThreadItems — batching sibling approvals", () => {
     const grouped = groupThreadItems(items);
     expect(grouped.every((g) => g.kind !== "approval-batch")).toBe(true);
   });
+
+  it("critical-tier siblings NEVER batch — each stays an individual ceremony card", () => {
+    // Money invariant (spec §3 Moment 6/§4.1): a batch "Approve all N" would
+    // bypass the ceremony register and its untruncated fields.
+    const items = toThreadItems([
+      msg("m6", "assistant", [
+        { type: "tool-transfer_money", toolCallId: "c1", state: "approval-requested", input: {}, approval: { id: "ap1" } },
+        { type: "tool-transfer_money", toolCallId: "c2", state: "approval-requested", input: {}, approval: { id: "ap2" } },
+        { type: "data-consent", data: { toolCallId: "c1", tier: "critical", unverified: false } },
+        { type: "data-consent", data: { toolCallId: "c2", tier: "critical", unverified: false } },
+      ]),
+    ]);
+    const grouped = groupThreadItems(items);
+    expect(grouped.filter((g) => g.kind === "approval")).toHaveLength(2);
+    expect(grouped.some((g) => g.kind === "approval-batch")).toBe(false);
+  });
+
+  it("a critical sibling sharing a message+tool with act siblings stays out of their batch", () => {
+    const items = toThreadItems([
+      msg("m7", "assistant", [
+        { type: "tool-transfer_money", toolCallId: "c1", state: "approval-requested", input: {}, approval: { id: "ap1" } },
+        { type: "tool-transfer_money", toolCallId: "c2", state: "approval-requested", input: {}, approval: { id: "ap2" } },
+        { type: "tool-transfer_money", toolCallId: "c3", state: "approval-requested", input: {}, approval: { id: "ap3" } },
+        { type: "data-consent", data: { toolCallId: "c1", tier: "act", unverified: false } },
+        { type: "data-consent", data: { toolCallId: "c2", tier: "act", unverified: false } },
+        { type: "data-consent", data: { toolCallId: "c3", tier: "critical", unverified: false } },
+      ]),
+    ]);
+    const grouped = groupThreadItems(items);
+    const batch = grouped.find((g) => g.kind === "approval-batch") as { items: { approvalId: string }[] } | undefined;
+    expect(batch?.items.map((i) => i.approvalId)).toEqual(["ap1", "ap2"]);
+    expect(grouped.filter((g) => g.kind === "approval")).toHaveLength(1); // the critical one, alone
+  });
 });
 
 describe("originatingPrompt", () => {

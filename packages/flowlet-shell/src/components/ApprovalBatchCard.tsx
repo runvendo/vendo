@@ -8,7 +8,12 @@ export interface ApprovalBatchCardProps {
   toolName: string;
   items: BatchItem[];
   onApproveAll: (approvalIds: string[], toolCallIds: string[]) => void;
-  onApproveSubset: (approvalIds: string[], toolCallIds: string[], allToolCallIds: string[]) => void;
+  /** Selected ids first, then the batch's FULL id lists — the caller derives
+   *  declined siblings as `allApprovalIds − approvalIds` (never by toolCallId
+   *  matching, so an item with no toolCallId still gets its decline). */
+  onApproveSubset: (
+    approvalIds: string[], toolCallIds: string[], allApprovalIds: string[], allToolCallIds: string[],
+  ) => void;
   onDeclineAll: (approvalIds: string[]) => void;
 }
 
@@ -76,6 +81,7 @@ export function ApprovalBatchCard({ toolName, items, onApproveAll, onApproveSubs
                 onApproveSubset(
                   selected.map((i) => i.approvalId),
                   selected.map((i) => i.toolCallId).filter((id): id is string => !!id),
+                  allApprovalIds,
                   allToolCallIds,
                 );
               }}

@@ -29,7 +29,7 @@ describe("ApprovalBatchCard", () => {
     fireEvent.click(screen.getByText("Pick which…"));
     fireEvent.click(screen.getByLabelText(/b@x\.com/));
     fireEvent.click(screen.getByText("Approve selected"));
-    expect(onApproveSubset).toHaveBeenCalledWith(["ap1"], ["c1"], ["c1", "c2"]);
+    expect(onApproveSubset).toHaveBeenCalledWith(["ap1"], ["c1"], ["ap1", "ap2"], ["c1", "c2"]);
   });
 
   it("No calls onDeclineAll with every approvalId", () => {
