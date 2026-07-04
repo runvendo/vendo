@@ -173,7 +173,9 @@ export const mapleVoiceDriver: VoiceDriver = createScriptedVoiceDriver([
     },
   },
   { event: { type: "view", id: "v2", node: refundView } },
-  { wait: 900 },
+  // Linger: room to scroll between the two views and feel the focus/blur
+  // handoff before the session winds down.
+  { wait: 7000 },
 
   // ---- a network blip mid-session, then recovery ----
   { event: { type: "status", status: "reconnecting", message: "Voice dropped — reconnecting…" } },

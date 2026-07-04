@@ -133,13 +133,38 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
     return () => clearTimeout(t);
   }, [status, onClosed]);
 
-  const lastViewIndex = (() => {
-    for (let i = feed.length - 1; i >= 0; i--) {
-      const entry = feed[i]!;
-      if (entry.kind === "view" || entry.kind === "pending-view") return i;
+  // One view carries the focus (crisp); the others blur until scrolled to.
+  // Focus follows the SCROLL position — whichever card rests at the snap line
+  // under the blob — not recency, so flicking back re-focuses an older view.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const focusFrame = useRef<number | null>(null);
+  const updateFocus = () => {
+    const el = feedRef.current;
+    if (!el) return;
+    let best: { id: string; distance: number } | null = null;
+    for (const child of Array.from(el.children) as HTMLElement[]) {
+      const id = child.dataset.entryId;
+      if (!id) continue;
+      const distance = Math.abs(child.offsetTop - el.scrollTop - el.offsetTop);
+      if (!best || distance < best.distance) best = { id, distance };
     }
-    return -1;
-  })();
+    setFocusId(best ? best.id : null);
+  };
+  const onFeedScroll = () => {
+    if (focusFrame.current !== null || typeof requestAnimationFrame === "undefined") return;
+    focusFrame.current = requestAnimationFrame(() => {
+      focusFrame.current = null;
+      updateFocus();
+    });
+  };
+  useEffect(() => () => {
+    if (focusFrame.current !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(focusFrame.current);
+    }
+  }, []);
+  // A new entry takes the focus immediately (the auto-follow scroll is still
+  // in flight; scroll events refine it as the animation lands).
+  useEffect(updateFocus, [feed.length]);
 
   const consentAction = pendingApproval ? toolAction(pendingApproval.toolName) : undefined;
   const consentDetail = pendingApproval ? consentFact(pendingApproval.input) : undefined;
@@ -166,11 +191,15 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
       </div>
 
       <div className="fl-voice-feedwrap">
-        <div className="fl-voice-feed" ref={feedRef}>
-          {feed.map((entry, index) => {
+        <div className="fl-voice-feed" ref={feedRef} onScroll={onFeedScroll}>
+          {feed.map((entry) => {
             if (entry.kind === "pending-view") {
               return (
-                <div key={entry.id} className="fl-voice-card is-pending">
+                <div
+                  key={entry.id}
+                  data-entry-id={entry.id}
+                  className={`fl-voice-card is-pending ${entry.id === focusId ? "is-focus" : ""}`}
+                >
                   <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
                   <Skeleton name={entry.name} />
                 </div>
@@ -178,7 +207,11 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
             }
             if (entry.kind === "view") {
               return (
-                <div key={entry.id} className={`fl-voice-card ${index === lastViewIndex ? "" : "is-past"}`}>
+                <div
+                  key={entry.id}
+                  data-entry-id={entry.id}
+                  className={`fl-voice-card ${entry.id === focusId ? "is-focus" : ""}`}
+                >
                   {renderNode(entry.node)}
                 </div>
               );

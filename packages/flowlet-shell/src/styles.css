@@ -731,13 +731,14 @@
 @media (prefers-reduced-motion: no-preference) {
   .fl-voice-feed > * { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) both; }
 }
+/* One view holds the focus (crisp, full presence); every other card blurs
+   out until scrolled to — the scroll-position card under the blob is always
+   unambiguously "the thing we're talking about". */
 .fl-voice-card { align-self: center; width: min(560px, 100%); border-radius: var(--flowlet-radius);
   scroll-snap-align: start; scroll-margin-top: 10px;
-  transition: opacity .35s ease, transform .35s ease; }
-/* Older views recede — attention stays on the newest thing (the decided
-   stacked-feed register: scrollable history, one thing in focus). */
-.fl-voice-card.is-past { opacity: .55; transform: scale(.985); }
-.fl-voice-card.is-past:hover { opacity: 1; transform: none; }
+  filter: blur(2.5px); opacity: .38; transform: scale(.975);
+  transition: filter .4s ease, opacity .4s ease, transform .4s ease; }
+.fl-voice-card.is-focus { filter: none; opacity: 1; transform: none; }
 .fl-voice-card.is-pending { border: 1px solid var(--flowlet-border); padding: 12px;
   background: var(--flowlet-glass-strong); }
 .fl-voice-approval { display: flex; }
@@ -835,5 +836,6 @@
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
   .fl-voice-consent, .fl-voice-consent.is-listening { animation: none;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
-  .fl-voice-card, .fl-voice-card.is-past { transition: none; }
+  /* No animated blur for vestibular-sensitive users: unfocused cards dim only. */
+  .fl-voice-card { transition: none; filter: none; }
 }
