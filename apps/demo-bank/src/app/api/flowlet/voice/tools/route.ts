@@ -19,6 +19,7 @@ import { createComposioClient, ingestComposioTools, type ToolDescriptor } from "
 import type { ToolSet } from "ai";
 import { connectedToolkits } from "@/flowlet/connections-store";
 import { DEMO_PRINCIPAL } from "@/flowlet/principal";
+import { demoGateResponse, demoRequestAllowed } from "@/flowlet/local-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +64,9 @@ function schemaOf(tool: unknown): Record<string, unknown> {
   return { type: "object", properties: {}, additionalProperties: true };
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req: Request): Promise<Response> {
+  // Parity with the chat loop's gate: these tools act AS the demo principal.
+  if (!demoRequestAllowed(req)) return demoGateResponse();
   try {
     const { toolset, descriptors } = await ingested();
     const byName = new Map(descriptors.map((d) => [d.name, d]));
@@ -83,6 +86,7 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  if (!demoRequestAllowed(req)) return demoGateResponse();
   const { tool, input } = (await req.json().catch(() => ({}))) as { tool?: string; input?: unknown };
   if (!tool) return Response.json({ error: "missing tool" }, { status: 400 });
   const { toolset } = await ingested();

@@ -8,13 +8,18 @@
  * `createFlowletHandler()`; Maple carries it inline as the reference host.
  * 503 with no key — the shell's mic degrades to the scripted demo.
  */
+import { demoGateResponse, demoRequestAllowed } from "@/flowlet/local-gate";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime";
 const VOICE = process.env.OPENAI_REALTIME_VOICE ?? "marin";
 
-export async function POST(): Promise<Response> {
+export async function POST(req: Request): Promise<Response> {
+  // Same gate as the chat loop: this route SPENDS the operator's OpenAI key
+  // (each mint funds a realtime session) — local runs only unless opted in.
+  if (!demoRequestAllowed(req)) return demoGateResponse();
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return Response.json({ error: "voice not configured (OPENAI_API_KEY missing)" }, { status: 503 });
