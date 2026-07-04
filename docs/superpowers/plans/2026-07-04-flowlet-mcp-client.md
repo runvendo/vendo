@@ -11,7 +11,7 @@
 **Key SDK facts (verified against the installed package, 2026-07-04):**
 - `createMCPClient({ transport: { type: "http", url, headers } })` → `Promise<MCPClient>`; `client.tools()` → `ToolSet` where every tool has `execute` and `_meta`.
 - **`client.tools()` DISCARDS MCP `annotations`** (uses only `annotations.title`). The runtime class HAS a `listTools()` method returning the raw `tools/list` result (with `annotations`), but it's missing from the 1.0.6 public type. Yousef-approved approach: call it via a narrow structural cast + a contract test that fails loudly if an SDK bump removes it. If the method is absent at runtime, degrade to empty annotations (tools still ingest; policy fail-safes them to "approve").
-- The HTTP transport accepts plain `application/json` responses, so the contract test runs a tiny in-process `node:http` JSON-RPC server (no SSE needed). For JSON-RPC *notifications* the test server must reply `200` with **no content-type** (the transport ignores such bodies; a `202` would make it open an SSE GET connection). The `initialize` reply must echo the client's requested `protocolVersion`.
+- The HTTP transport accepts plain `application/json` responses, so the contract test runs a tiny in-process `node:http` JSON-RPC server (no SSE needed). **Probe-verified 2026-07-04** (scratchpad `probe-mcp.mjs`, full handshake + tools + listTools + execute PASSED against the real SDK): JSON-RPC *notifications* must get `202 Accepted` — a `200` with any non-JSON/SSE content-type makes the transport throw `Unexpected content type`. The client also opens a GET (inbound SSE) at startup; reply `405` and it is tolerated. The `initialize` reply must echo the client's requested `protocolVersion`. `tools/call` params carry `arguments` (not `args`), and results come back as `{ content, isError }`.
 
 ---
 
@@ -125,7 +125,7 @@ describe("ingestMcpTools", () => {
     expect(Object.keys(result.toolset)).toEqual(["weather_get_forecast"]);
   });
 
-  it("tolerates a failing server: warns, skips it, keeps the others", async () => {
+  it("tolerates a failing server: warns, records the failure, keeps the others", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const source = fakeSource({
       broken: new Error("connect refused"),
@@ -139,10 +139,59 @@ describe("ingestMcpTools", () => {
       source,
     });
     expect(Object.keys(result.toolset)).toEqual(["weather_get_forecast"]);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('MCP server "broken"'),
-      expect.anything(),
-    );
+    expect(result.failures).toEqual(["broken"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('MCP server "broken"'));
+    warn.mockRestore();
+  });
+
+  it("redacts configured header values from failure logs (no token leakage)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const source = fakeSource({
+      leaky: new Error("HTTP 401: request had Authorization: Bearer sekrit-token"),
+    });
+    await ingestMcpTools({
+      servers: [
+        { name: "leaky", url: "http://x", headers: { Authorization: "Bearer sekrit-token" } },
+      ],
+      source,
+    });
+    const logged = warn.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(logged).not.toContain("sekrit-token");
+    expect(logged).toContain("[redacted]");
+    warn.mockRestore();
+  });
+
+  it("skips server-returned tool names that are not provider-safe, fail-closed", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const source = fakeSource({
+      srv: { tools: { "bad name!": echoTool, ok_tool: echoTool } },
+    });
+    const result = await ingestMcpTools({
+      servers: [{ name: "srv", url: "http://x" }],
+      source,
+    });
+    expect(Object.keys(result.toolset)).toEqual(["srv_ok_tool"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('tool "bad name!" skipped'));
+    warn.mockRestore();
+  });
+
+  it("keeps the FIRST tool and warns on ambiguous-prefix collisions (server 'a' tool 'b_c' vs server 'a_b' tool 'c')", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = { description: "first", inputSchema: {}, execute: async () => "first" };
+    const source = fakeSource({
+      a: { tools: { b_c: first } },
+      a_b: { tools: { c: echoTool } },
+    });
+    const result = await ingestMcpTools({
+      servers: [
+        { name: "a", url: "http://a" },
+        { name: "a_b", url: "http://ab" },
+      ],
+      source,
+    });
+    expect(Object.keys(result.toolset)).toEqual(["a_b_c"]);
+    expect(result.toolset["a_b_c"]).toBe(first);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('collision on "a_b_c"'));
     warn.mockRestore();
   });
 
@@ -221,27 +270,70 @@ export interface McpToolSource {
 }
 
 /**
+ * Final tool names must be provider-safe: the SDK forwards them verbatim to
+ * the model API, and Anthropic caps tool names at `[A-Za-z0-9_-]{1,64}`. A
+ * server-returned name that breaks this after prefixing would 400 the WHOLE
+ * turn, so invalid names are skipped fail-closed instead.
+ */
+const VALID_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Sanitize an error for logging. SDK transport errors embed the raw HTTP
+ * response body, which a malicious server can use to reflect the request's
+ * Authorization header — so never log the error object itself, and redact
+ * every configured header value from the message.
+ */
+function describeError(err: unknown, headers?: Record<string, string>): string {
+  let message = err instanceof Error ? err.message : String(err);
+  for (const value of Object.values(headers ?? {})) {
+    if (value.length > 0) message = message.split(value).join("[redacted]");
+  }
+  return message.slice(0, 300);
+}
+
+/**
  * Ingest tools from host-declared MCP servers.
  *
  * FAILS CLOSED: an empty server list returns empty without touching the
- * source. Per-server fault tolerance: a server that errors is warned about and
- * skipped — it never breaks other servers or the turn.
+ * source. Per-server fault tolerance: a server that errors is warned about,
+ * recorded in `failures`, and skipped — it never breaks other servers or the
+ * turn. Callers use `failures` to avoid caching a partial result.
+ *
+ * Name safety: duplicate final names (duplicate server names, or prefix
+ * ambiguity like server "a" tool "b_c" vs server "a_b" tool "c") keep the
+ * FIRST registration and warn; server-returned tool names that are not
+ * provider-safe are skipped.
  */
 export async function ingestMcpTools(args: {
   servers: McpServerConfig[];
   source: McpToolSource;
-}): Promise<{ toolset: ToolSet; descriptors: ToolDescriptor[] }> {
+}): Promise<{ toolset: ToolSet; descriptors: ToolDescriptor[]; failures: string[] }> {
   const { servers, source } = args;
 
   const toolset: ToolSet = {};
   const descriptors: ToolDescriptor[] = [];
+  const failures: string[] = [];
 
+  const seenServers = new Set<string>();
   for (const server of servers) {
+    // Duplicate server names would alias each other in the client cache and
+    // collide on every prefixed tool name. Deterministic misconfig — warn and
+    // skip, but do NOT count as a failure (failures trigger cache retry, and
+    // a deterministic one would re-ingest forever).
+    if (seenServers.has(server.name)) {
+      console.warn(`[flowlet] duplicate MCP server name "${server.name}" skipped.`);
+      continue;
+    }
+    seenServers.add(server.name);
+
     let fetched: McpFetchResult;
     try {
       fetched = await source.fetchTools(server);
     } catch (err) {
-      console.warn(`[flowlet] MCP server "${server.name}" skipped:`, err);
+      console.warn(
+        `[flowlet] MCP server "${server.name}" skipped: ${describeError(err, server.headers)}`,
+      );
+      failures.push(server.name);
       continue;
     }
 
@@ -249,6 +341,20 @@ export async function ingestMcpTools(args: {
     for (const [name, tool] of Object.entries(fetched.tools)) {
       if (allow && !allow.has(name)) continue;
       const prefixed = `${server.name}_${name}`;
+      if (!VALID_TOOL_NAME.test(prefixed)) {
+        console.warn(
+          `[flowlet] MCP server "${server.name}" tool "${name}" skipped: ` +
+            "final tool name is not provider-safe.",
+        );
+        continue;
+      }
+      if (prefixed in toolset) {
+        console.warn(
+          `[flowlet] MCP tool name collision on "${prefixed}" ` +
+            `(server "${server.name}") — keeping the first registration.`,
+        );
+        continue;
+      }
       toolset[prefixed] = tool;
       descriptors.push(
         buildDescriptor(prefixed, tool, "mcp", fetched.annotations[name] ?? {}),
@@ -256,7 +362,7 @@ export async function ingestMcpTools(args: {
     }
   }
 
-  return { toolset, descriptors };
+  return { toolset, descriptors, failures };
 }
 ```
 
@@ -282,7 +388,7 @@ git commit -m "feat(runtime): MCP ingestion seam — McpToolSource + fail-closed
 
 - [ ] **Step 1: Write the failing contract test**
 
-The in-process server implements just enough Streamable HTTP: JSON-RPC over POST with plain-JSON responses. Notifications (no `id`) get `200` with no content-type — NOT `202` (202 makes the client open an SSE GET). `initialize` echoes the client's `protocolVersion`.
+The in-process server implements just enough Streamable HTTP: JSON-RPC over POST with plain-JSON responses. Notifications (no `id`) get `202 Accepted` (probe-verified; a 200 without a JSON/SSE content-type makes the transport throw). Non-POST requests (the client's startup inbound-SSE GET) get `405` — tolerated. `initialize` echoes the client's `protocolVersion`.
 
 ```typescript
 // packages/flowlet-runtime/src/mcp.contract.test.ts
@@ -321,6 +427,11 @@ const seenAuthHeaders: Array<string | undefined> = [];
 
 beforeAll(async () => {
   server = createServer((req, res) => {
+    if (req.method !== "POST") {
+      // The client opens a GET (inbound SSE) at startup; 405 is tolerated.
+      res.writeHead(405).end();
+      return;
+    }
     let raw = "";
     req.on("data", (c) => (raw += c));
     req.on("end", () => {
@@ -331,8 +442,8 @@ beforeAll(async () => {
         res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
       };
       if (msg.id === undefined) {
-        // Notification — 200 with no content-type (transport ignores the body).
-        res.writeHead(200).end();
+        // Notification — 202 Accepted (a 200 without JSON/SSE content-type throws).
+        res.writeHead(202).end();
         return;
       }
       if (msg.method === "initialize") {
@@ -394,7 +505,7 @@ describe("createMcpToolSource (contract, real @ai-sdk/mcp)", () => {
       { city: "SF" },
       { toolCallId: "t1", messages: [] },
     )) as { content: Array<{ text: string }> };
-    expect(result.content[0]!.text).toBe("ran:tools/call" === "x" ? "" : "ran:get_forecast");
+    expect(result.content[0]!.text).toBe("ran:get_forecast");
   });
 
   it("rejects (so ingest can skip the server) when the server is unreachable", async () => {
@@ -405,8 +516,6 @@ describe("createMcpToolSource (contract, real @ai-sdk/mcp)", () => {
   });
 });
 ```
-
-Note for the executor: the `"ran:tools/call" === "x" ? ...` ternary above is a typo-guard artifact — write the assertion plainly as `expect(result.content[0]!.text).toBe("ran:get_forecast")`.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -528,11 +637,17 @@ git commit -m "feat(runtime): real MCP tool source on @ai-sdk/mcp with annotatio
 
 - [ ] **Step 1: Write the failing engine tests**
 
-Add to `packages/flowlet-runtime/src/engine.test.ts` (follow the existing composio-injection pattern in that file — `mockModel()`, `collect()`, `userTurn`, `allowPolicy` already exist there):
+Add to `packages/flowlet-runtime/src/engine.test.ts` (follow the existing composio-injection pattern in that file — `mockModel()`, `collect()`, `userTurn`, `allowPolicy` already exist there; import `tool` from `"ai"` and `z` from `"zod"` if not already imported):
 
 ```typescript
 describe("MCP ingestion wiring", () => {
-  const echoTool = { description: "echo", inputSchema: {}, execute: async () => "ok" };
+  // Must be a REAL ai-SDK tool: the engine hands the toolset to streamText,
+  // which calls asSchema(tool.inputSchema) — a bare `{}` schema crashes there.
+  const echoTool = tool({
+    description: "echo",
+    inputSchema: z.object({}),
+    execute: async () => "ok",
+  });
 
   function fakeMcpSource(result?: { tools: ToolSet; annotations: Record<string, Record<string, boolean>> }) {
     return {
@@ -622,10 +737,11 @@ In `packages/flowlet-runtime/src/engine.ts`:
 ```typescript
         // 3b. MCP ingestion (fail-closed inside ingestMcpTools; per-server
         //     fault tolerance). Cached host-level: the tools/list round-trip
-        //     blocks only the first turn. `ingestMcpTools` never rejects, so
-        //     "don't cache failures" means: if servers were declared but
-        //     NOTHING ingested (all servers down), evict so the next turn
-        //     retries instead of permanently running tool-less.
+        //     blocks only the first turn. `ingestMcpTools` never rejects —
+        //     instead it reports per-server `failures` — so "failures are
+        //     never cached" means: any failed server evicts the cache after
+        //     resolution, and the next turn re-ingests (healthy servers are
+        //     cheap to re-fetch; their clients stay open in the source).
         let mcpTools: ToolSet = {};
         let mcpDescriptors: Record<string, ToolDescriptor> = {};
         if (config.mcp && mcpSource && config.mcp.servers.length > 0) {
@@ -633,7 +749,7 @@ In `packages/flowlet-runtime/src/engine.ts`:
           const source = mcpSource;
           if (!mcpCache) {
             mcpCache = ingestMcpTools({ servers, source }).then((ingested) => {
-              if (Object.keys(ingested.toolset).length === 0) mcpCache = null;
+              if (ingested.failures.length > 0) mcpCache = null;
               return {
                 toolset: ingested.toolset,
                 descriptors: Object.fromEntries(ingested.descriptors.map((d) => [d.name, d])),
@@ -782,6 +898,13 @@ Expected: FAIL — module not found.
  * as `${VAR_NAME}` so tokens never live in the checked-in file. A server whose
  * referenced var is missing/empty is DROPPED with a boot warning — fail
  * closed, never send empty auth.
+ *
+ * SECURITY INVARIANT: server URLs and header templates come ONLY from the
+ * host's code (`mcpServers` option) or its repo (`.flowlet/mcp.json`) — never
+ * from request input. The URL schema is deliberately NOT an SSRF guard
+ * (localhost/private ranges are legitimate for host-declared servers); any
+ * future user-added-server feature MUST add network denylisting before
+ * accepting URLs from users.
  */
 import { z } from "zod";
 import type { McpServerConfig } from "@flowlet/runtime";
@@ -800,10 +923,21 @@ export const mcpServerSchema = z
   })
   .strict();
 
+/** Reject duplicate server names — they'd alias each other's tools and clients. */
+export const mcpServerArraySchema = z.array(mcpServerSchema).superRefine((servers, ctx) => {
+  const seen = new Set<string>();
+  for (const s of servers) {
+    if (seen.has(s.name)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate MCP server name "${s.name}"` });
+    }
+    seen.add(s.name);
+  }
+});
+
 export const mcpJsonSchema = z
   .object({
     version: z.literal(1),
-    servers: z.array(mcpServerSchema),
+    servers: mcpServerArraySchema,
   })
   .strict();
 
@@ -949,13 +1083,14 @@ git commit -m "feat(next): load .flowlet/mcp.json (absent-safe, loud on invalid)
 
 **Files:**
 - Modify: `packages/flowlet-next/src/options.ts`
-- Modify: `packages/flowlet-next/src/options.test.ts`
+- Create: `packages/flowlet-next/src/options.test.ts` (does NOT exist yet — option validation is currently covered indirectly; create the file with vitest imports)
 - Modify: `packages/flowlet-next/src/capabilities.ts`
 - Modify: `packages/flowlet-next/src/capabilities.test.ts`
+- Modify: `packages/flowlet-next/src/handler.test.ts` (any exact `capabilities` object assertions gain `mcp: false` — check around line 30)
 
 - [ ] **Step 1: Write the failing tests**
 
-`options.test.ts` — follow the file's existing accept/reject pattern:
+`options.test.ts` (new file):
 
 ```typescript
 it("accepts mcpServers", () => {
@@ -969,6 +1104,17 @@ it("accepts mcpServers", () => {
 it("rejects an mcpServers entry with a bad name or unknown key", () => {
   expect(() => parseHandlerOptions({ mcpServers: [{ name: "bad name", url: "https://x" }] })).toThrow(/invalid options/);
   expect(() => parseHandlerOptions({ mcpServers: [{ name: "s", url: "https://x", transport: "stdio" } as never] })).toThrow(/invalid options/);
+});
+
+it("rejects duplicate MCP server names", () => {
+  expect(() =>
+    parseHandlerOptions({
+      mcpServers: [
+        { name: "dup", url: "https://a" },
+        { name: "dup", url: "https://b" },
+      ],
+    }),
+  ).toThrow(/invalid options/);
 });
 ```
 
@@ -1002,7 +1148,7 @@ Expected: FAIL.
   mcpServers?: McpServerConfig[];
 ```
 
-- Add to the zod schema: `mcpServers: z.array(mcpServerSchema).optional(),`
+- Add to the zod schema: `mcpServers: mcpServerArraySchema.optional(),` (imported from `./mcp-config` — rejects duplicate names too)
 
 `capabilities.ts`:
 
