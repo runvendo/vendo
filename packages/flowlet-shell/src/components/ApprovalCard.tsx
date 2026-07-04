@@ -3,6 +3,10 @@ import { toolAction } from "./tool-labels";
 export interface ApprovalCardProps {
   toolName: string;
   input: unknown;
+  /** ENG-193 §4.1 — from the sibling data-consent part. Defaults to "act". */
+  tier?: "act" | "critical";
+  /** Yousef ruling: unknown-annotation tools land in act but are flagged. */
+  unverified?: boolean;
   onApprove: () => void;
   onDecline: () => void;
 }
@@ -21,14 +25,17 @@ function fieldLabel(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function fieldValue(value: unknown): string {
+/** `maxChars: null` disables truncation entirely — critical cards never
+ *  truncate material fields (spec §3 Moment 6, §4.5 "untruncated"). */
+function fieldValue(value: unknown, maxChars: number | null): string {
   const text =
     typeof value === "string"
       ? value
       : typeof value === "number" || typeof value === "boolean"
         ? String(value)
         : JSON.stringify(value);
-  return text.length > MAX_VALUE_CHARS ? `${text.slice(0, MAX_VALUE_CHARS)}…` : text;
+  if (maxChars === null || text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}…`;
 }
 
 /** True for values that carry no information worth confirming. */
@@ -40,26 +47,34 @@ function isEmpty(value: unknown): boolean {
 }
 
 /** Flatten the tool input into readable label/value rows for confirmation. */
-function approvalRows(input: unknown): { rows: FieldRow[]; more: number } {
+function approvalRows(input: unknown, maxChars: number | null): { rows: FieldRow[]; more: number } {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return isEmpty(input) ? { rows: [], more: 0 } : { rows: [{ label: "Input", value: fieldValue(input) }], more: 0 };
+    return isEmpty(input) ? { rows: [], more: 0 } : { rows: [{ label: "Input", value: fieldValue(input, maxChars) }], more: 0 };
   }
   const entries = Object.entries(input as Record<string, unknown>).filter(([, v]) => !isEmpty(v));
-  const rows = entries.slice(0, MAX_ROWS).map(([k, v]) => ({ label: fieldLabel(k), value: fieldValue(v) }));
+  const rows = entries.slice(0, MAX_ROWS).map(([k, v]) => ({ label: fieldLabel(k), value: fieldValue(v, maxChars) }));
   return { rows, more: Math.max(0, entries.length - MAX_ROWS) };
 }
 
 /**
- * The consent moment: the agent wants to run a gated action and is asking
- * first. Reads as a plain-language request — friendly action title + the
- * parameters as labelled fields — never a tool slug and never raw JSON.
+ * The consent moment (spec §3 Moments 3 & 6): a plain yes/no card for an
+ * act-tier action, or the ceremony variant for critical (money/irreversible)
+ * actions — amber register, a named confirm button (never generic
+ * "Approve"), a fixed consequence line, and NO truncation of material fields.
  */
-export function ApprovalCard({ toolName, input, onApprove, onDecline }: ApprovalCardProps) {
-  const title = toolAction(toolName).request;
-  const { rows, more } = approvalRows(input);
+export function ApprovalCard({ toolName, input, tier = "act", unverified = false, onApprove, onDecline }: ApprovalCardProps) {
+  const action = toolAction(toolName);
+  const critical = tier === "critical";
+  const { rows, more } = approvalRows(input, critical ? null : MAX_VALUE_CHARS);
+  const confirmLabel = critical ? `Confirm ${action.request.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : "Send it";
+  const declineLabel = critical ? "Cancel" : "No";
 
   return (
-    <div className="fl-approval" role="group" aria-label={`Approval request: ${title}`}>
+    <div
+      className={`fl-approval${critical ? " fl-approval--ceremony" : ""}`}
+      role="group"
+      aria-label={`Approval request: ${action.question}`}
+    >
       <div className="fl-approval-head">
         <span className="fl-approval-ic" aria-hidden="true">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -68,8 +83,11 @@ export function ApprovalCard({ toolName, input, onApprove, onDecline }: Approval
           </svg>
         </span>
         <div className="fl-approval-heading">
-          <div className="fl-approval-eyebrow">Needs your approval</div>
-          <div className="fl-approval-title">{title}</div>
+          <div className="fl-approval-eyebrow">
+            {critical ? "Money — always needs you" : "Needs your approval"}
+            {unverified && <span className="fl-approval-unverified">Unverified tool</span>}
+          </div>
+          <div className="fl-approval-title">{action.question}</div>
         </div>
       </div>
       {rows.length > 0 && (
@@ -83,9 +101,16 @@ export function ApprovalCard({ toolName, input, onApprove, onDecline }: Approval
           {more > 0 && <div className="fl-approval-more">+{more} more</div>}
         </dl>
       )}
+      {critical && <div className="fl-approval-consequence">This can&apos;t be undone.</div>}
       <div className="fl-approval-actions">
-        <button type="button" className="fl-btn fl-btn-primary" onClick={onApprove}>Approve</button>
-        <button type="button" className="fl-btn" onClick={onDecline}>Decline</button>
+        <button
+          type="button"
+          className={`fl-btn ${critical ? "fl-btn-ceremony" : "fl-btn-primary"}`}
+          onClick={onApprove}
+        >
+          {confirmLabel}
+        </button>
+        <button type="button" className="fl-btn" onClick={onDecline}>{declineLabel}</button>
       </div>
     </div>
   );

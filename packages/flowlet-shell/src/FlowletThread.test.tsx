@@ -48,8 +48,8 @@ describe("FlowletThread end-to-end", () => {
     );
 
     fireEvent.click(screen.getByText("show me a card")); // suggestion chip sends
-    await waitFor(() => screen.getByText("Approve"));
-    fireEvent.click(screen.getByText("Approve"));
+    await waitFor(() => screen.getByText("Send it"));
+    fireEvent.click(screen.getByText("Send it"));
     await waitFor(() => screen.getByTestId("demo-card"));
     expect(screen.getByTestId("demo-card").textContent).toBe("Hello from Flowlet");
   });

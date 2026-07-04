@@ -35,8 +35,8 @@ describe("approval resume does not duplicate the turn", () => {
   it("approve: pre-approval text, chip, and rendered node each appear once", async () => {
     const { container } = renderThread();
     fireEvent.click(screen.getByText("show me a card"));
-    await waitFor(() => screen.getByText("Approve"));
-    fireEvent.click(screen.getByText("Approve"));
+    await waitFor(() => screen.getByText("Send it"));
+    fireEvent.click(screen.getByText("Send it"));
     await waitFor(() => screen.getByTestId("demo-card"));
     // Let the resumed stream fully settle before counting.
     await waitFor(() => expect(visibleCount(container, "Here is your demo card.")).toBeGreaterThan(0));
@@ -50,8 +50,8 @@ describe("approval resume does not duplicate the turn", () => {
   it("decline: pre-approval text and chip each appear once", async () => {
     const { container } = renderThread();
     fireEvent.click(screen.getByText("show me a card"));
-    await waitFor(() => screen.getByText("Decline"));
-    fireEvent.click(screen.getByText("Decline"));
+    await waitFor(() => screen.getByText("No"));
+    fireEvent.click(screen.getByText("No"));
     await waitFor(() =>
       expect(visibleCount(container, "No problem — I won't render the card.")).toBeGreaterThan(0),
     );

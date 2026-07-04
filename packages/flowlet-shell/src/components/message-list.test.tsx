@@ -94,7 +94,7 @@ describe("MessageList", () => {
     // (render_view/request_connect never reach here — they stay a skeleton).
     expect(screen.getByTestId("activity-panel")).toBeTruthy();
     expect(screen.getByTestId("ui-node")).toBeTruthy();
-    fireEvent.click(screen.getByText("Approve"));
+    fireEvent.click(screen.getByText("Send it"));
     expect(onApprove).toHaveBeenCalledWith("a1");
   });
 });

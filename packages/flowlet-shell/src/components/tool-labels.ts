@@ -65,6 +65,7 @@ const TOOLKITS: Record<string, string> = {
  *  verbs Composio uses across its catalogs plus common host-tool verbs. */
 const VERBS: Record<string, [active: string, done: string, base: string]> = {
   SEND: ["Sending", "Sent", "Send"],
+  TRANSFER: ["Transferring", "Transferred", "Transfer"],
   CREATE: ["Creating", "Created", "Create"],
   UPDATE: ["Updating", "Updated", "Update"],
   DELETE: ["Deleting", "Deleted", "Delete"],

@@ -25,6 +25,10 @@
   --flowlet-danger: light-dark(#b0392b, #f1816f);
   --flowlet-danger-bg: light-dark(#fff5f5, color-mix(in srgb, #f1816f 13%, var(--flowlet-surface)));
   --flowlet-danger-border: light-dark(#f0caca, color-mix(in srgb, #f1816f 32%, var(--flowlet-border)));
+  /* Warn/ceremony surface — critical (money/irreversible) approval cards. */
+  --flowlet-warn: light-dark(#8a5a00, #f0b429);
+  --flowlet-warn-bg: light-dark(#fff8e8, color-mix(in srgb, #f0b429 13%, var(--flowlet-surface)));
+  --flowlet-warn-border: light-dark(#f0dca0, color-mix(in srgb, #f0b429 32%, var(--flowlet-border)));
   color: var(--flowlet-fg);
   font-family: var(--flowlet-font);
   letter-spacing: -.011em;
@@ -255,6 +259,16 @@
 .fl-btn-primary { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: transparent;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-fg) 22%, transparent), inset 0 1px 0 rgba(255,255,255,.16); }
 .fl-btn-primary:hover { opacity: .92; background: var(--flowlet-accent); border-color: transparent; }
+.fl-approval--ceremony { border-color: var(--flowlet-warn-border); background: var(--flowlet-warn-bg); }
+.fl-approval--ceremony .fl-approval-ic { color: var(--flowlet-warn); background: color-mix(in srgb, var(--flowlet-warn) 16%, transparent); }
+.fl-approval--ceremony .fl-approval-eyebrow { color: var(--flowlet-warn); }
+.fl-approval-unverified { margin-left: 8px; padding: 1px 6px; border-radius: 999px; font-size: 9.5px;
+  font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--flowlet-fg-muted);
+  background: color-mix(in srgb, var(--flowlet-fg-muted) 12%, transparent); }
+.fl-approval-consequence { margin-top: 10px; font: 600 12px/1.4 var(--flowlet-font); color: var(--flowlet-warn); }
+.fl-btn-ceremony { background: var(--flowlet-warn); color: #fff; border-color: transparent;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-warn) 40%, transparent); }
+.fl-btn-ceremony:hover { opacity: .92; background: var(--flowlet-warn); border-color: transparent; }
 .fl-uinode { align-self: flex-start; width: 100%; }
 
 /* ---------- composer ---------- */
