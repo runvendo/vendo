@@ -57,6 +57,15 @@ describe("createDemoAgent onSettled wiring", () => {
     await vi.waitFor(async () => {
       const stored = await demoStore.threads.getMessages(CADENCE_SCOPE, threadId);
       expect(stored.length).toBeGreaterThanOrEqual(2); // user turn + streamed assistant turn
+      // The stored assistant turn must carry the PAUSED approval part itself —
+      // state "approval-requested" for the gated tool call — because that part
+      // is exactly what the consent endpoint looks up by toolCallId.
+      const parts = stored
+        .filter((m) => m.role === "assistant")
+        .flatMap((m) => m.parts as Array<{ type: string; toolCallId?: string; state?: string }>);
+      const approvalPart = parts.find((p) => p.toolCallId === "call-1");
+      expect(approvalPart?.type).toBe("tool-send_test_email");
+      expect(approvalPart?.state).toBe("approval-requested");
     });
   });
 });

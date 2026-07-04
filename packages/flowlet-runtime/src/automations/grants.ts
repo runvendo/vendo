@@ -17,8 +17,28 @@ import { canonicalJson, fnv1a64 } from "../hashing";
 
 export { canonicalJson, fnv1a64 };
 
+/**
+ * Hash the GRANT-RELEVANT projection of a descriptor, not the whole struct
+ * (ENG-193 review 2026-07-04). `{name, source, annotations, executor}` is the
+ * tool's safety identity — what it is, where it came from, what it claims
+ * about danger, and where it executes. `hasExecute`/`kind` are runtime
+ * mechanics that legitimately differ between a consent-time static resolver
+ * and the live ingested tool (e.g. a Composio tool statically described with
+ * no execute vs. the live `@composio/vercel` object that has one); hashing
+ * them made every such grant silently never match. Annotation differences
+ * still lapse grants — that IS the drift semantics this hash exists for.
+ * `executor` is normalized (absent means "server" by the ToolDescriptor
+ * contract) so hand-authored descriptors that omit it hash identically to
+ * `buildDescriptor` output.
+ */
 export function hashDescriptor(descriptor: ToolDescriptor): string {
-  return fnv1a64(canonicalJson(descriptor));
+  const identity = {
+    name: descriptor.name,
+    source: descriptor.source,
+    annotations: descriptor.annotations,
+    executor: descriptor.executor ?? "server",
+  };
+  return fnv1a64(canonicalJson(identity));
 }
 
 /**

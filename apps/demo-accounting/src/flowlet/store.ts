@@ -48,12 +48,29 @@ export async function resolveThreadRecordId(scope: Principal, clientId: string):
 }
 
 /** Reset hook for the demo's `Cmd/Ctrl+Shift+.` reseed — clears the mapping so
- *  a reset thread doesn't inherit stale message history. Not yet wired into
- *  `/api/demo/reset` (out of scope for this task's file list) — a reset today
- *  leaves grants/threads/mapping standing across takes; flagged as a known
- *  follow-up. */
+ *  a reset thread doesn't inherit stale message history (wired into
+ *  `/api/demo/reset` via `resetDemoStore`). */
 export function resetThreadMapping(): void {
   threadIdByClientId.clear();
+}
+
+/**
+ * Full demo-take reset (`/api/demo/reset`): clear the thread mapping and
+ * revoke every standing grant, so the next take starts with a clean consent
+ * story. Deliberately works WITHIN the existing store objects rather than
+ * replacing them: `policy.ts` captured `demoStore.grants`/`demoStore.audit`
+ * by reference at module load (inside `grantPolicy`/`auditPolicy`), so
+ * swapping the objects would split the world — the policy suppressing off one
+ * grant store while consent mints into another. Grants are soft-revoked (the
+ * GrantStore seam has no delete); old ThreadRecords are simply orphaned by
+ * the cleared mapping (the seam has no delete either — the next chat mints a
+ * fresh thread); the audit log intentionally survives resets (append-only by
+ * design).
+ */
+export async function resetDemoStore(): Promise<void> {
+  resetThreadMapping();
+  const grants = await demoStore.grants.list(CADENCE_SCOPE);
+  await Promise.all(grants.map((g) => demoStore.grants.revoke(CADENCE_SCOPE, g.id)));
 }
 
 // Re-export for callers that only need the fixed demo principal scope.

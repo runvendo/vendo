@@ -19,6 +19,22 @@
  *   `buildDescriptor` with no explicit annotations therefore correctly
  *   resolves them to tier "act" + unverified (Yousef's own ruling for
  *   unknown-annotation tools) — this is accurate, not a workaround.
+ *
+ * GRANT HASH PARITY with the live engine descriptors (ENG-193 review
+ * 2026-07-04): `hashDescriptor` covers the projection {name, source,
+ * annotations, executor} only, so a grant minted from THIS resolver's
+ * descriptor must agree with the live one on exactly those fields:
+ * - Host tools: the same `hostToolset(cadenceHostToolDefs)` objects feed both
+ *   sides (annotations from OpenAPI, `flowletExecutor: "client"`) — exact.
+ * - Authoring tools: the same live tool objects are introspected — exact.
+ * - Composio: verified against `@composio/vercel@0.4.0`'s source — its
+ *   wrapper builds bare ai-SDK `tool({description, inputSchema, execute})`
+ *   objects with NO `annotations` and no `_meta`, so live ingestion's
+ *   `buildDescriptor(name, tool, "composio")` also lands on
+ *   `annotations: {}` + executor "server", matching this resolver's
+ *   `buildDescriptor(name, {}, "composio")`. The fields that DO differ live
+ *   (`hasExecute: true`, possibly a different `kind`) are excluded from the
+ *   hash by design — see tool-registry.test.ts's round-trip test.
  */
 import { buildDescriptor, hostToolset, type ToolDescriptor } from "@flowlet/runtime";
 import { cadenceHostToolDefs } from "./host-tools";

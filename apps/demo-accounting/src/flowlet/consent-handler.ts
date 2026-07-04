@@ -40,6 +40,13 @@ export async function handleDemoConsent(req: Request): Promise<Response> {
   const consentReq: HandleConsentRequest = {
     threadId, toolCallId: body.toolCallId, toolName: body.toolName, response: parsedResponse.data,
   };
+  // RACE WINDOW (single-client v1): the approval part this reads is written by
+  // the engine's fire-and-forget onSettled hook (agent.ts) after the run's
+  // stream settles. A consent POST racing that write 404s. In practice the run
+  // settles (and persists) when it pauses at the approval — human reaction
+  // time dwarfs the in-memory write — so v1 accepts the window. A cloud
+  // ThreadStore must close it properly: await the persistence before serving
+  // consent, or retry the lookup on miss.
   const result = await handleConsent(
     {
       grants: demoStore.grants,

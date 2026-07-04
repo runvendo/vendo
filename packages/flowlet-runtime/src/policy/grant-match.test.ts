@@ -93,4 +93,51 @@ describe("grantMatches", () => {
     expect(grantMatches(g, { ...ctx, contextKey: "sess-2" })).toBe(false);
     expect(grantMatches(g, ctx)).toBe(false); // no context at all
   });
+
+  describe("descriptor hash projection (ENG-193 review 2026-07-04)", () => {
+    // hashDescriptor covers the safety identity {name, source, annotations,
+    // executor} ONLY. hasExecute/kind are runtime mechanics that legitimately
+    // differ between a consent-time static resolver and the live ingested
+    // tool; hashing them made every such grant silently never match.
+    const consentTimeDesc: ToolDescriptor = {
+      name: "GMAIL_SEND_EMAIL", source: "composio",
+      annotations: {}, hasExecute: false, kind: "function",
+    };
+    const liveShapedDesc: ToolDescriptor = {
+      name: "GMAIL_SEND_EMAIL", source: "composio",
+      annotations: {}, hasExecute: true, kind: "dynamic", executor: "server",
+    };
+
+    it("a grant minted from a static resolver's descriptor matches the live-shaped descriptor (hasExecute/kind differ)", () => {
+      const g: PermissionGrant = {
+        ...base, tool: "GMAIL_SEND_EMAIL",
+        descriptorHash: hashDescriptor(consentTimeDesc),
+      };
+      expect(grantMatches(g, { ...ctx, tool: "GMAIL_SEND_EMAIL", descriptor: liveShapedDesc })).toBe(true);
+    });
+
+    it("differing annotations still lapse the grant (drift semantics preserved)", () => {
+      const g: PermissionGrant = {
+        ...base, tool: "GMAIL_SEND_EMAIL",
+        descriptorHash: hashDescriptor(consentTimeDesc),
+      };
+      const drifted: ToolDescriptor = { ...liveShapedDesc, annotations: { destructiveHint: true } };
+      expect(grantMatches(g, { ...ctx, tool: "GMAIL_SEND_EMAIL", descriptor: drifted })).toBe(false);
+    });
+
+    it("differing executor lapses the grant; an absent executor hashes as 'server'", () => {
+      // executor IS identity: a server-executed tool and a client-executed
+      // one with the same name are different capabilities.
+      const clientDesc: ToolDescriptor = { ...liveShapedDesc, executor: "client" };
+      const g: PermissionGrant = {
+        ...base, tool: "GMAIL_SEND_EMAIL",
+        descriptorHash: hashDescriptor(consentTimeDesc), // executor absent → "server"
+      };
+      expect(grantMatches(g, { ...ctx, tool: "GMAIL_SEND_EMAIL", descriptor: clientDesc })).toBe(false);
+      // Normalization: absent executor and explicit "server" hash identically.
+      expect(hashDescriptor(consentTimeDesc)).toBe(
+        hashDescriptor({ ...consentTimeDesc, executor: "server" }),
+      );
+    });
+  });
 });
