@@ -21,17 +21,19 @@
  * `createAutomationsWorld()` call reads it). `principal.ts` is a
  * dependency-free leaf, so routing through it breaks the cycle.
  */
-import { createInMemoryGrantStore, createInMemoryStore, type InMemoryStore } from "@flowlet/runtime";
+import { createFadeTracker, createInMemoryGrantStore, createInMemoryStore, type FadeTracker, type InMemoryStore } from "@flowlet/runtime";
 import type { GrantStore, Principal } from "@flowlet/core";
 import { CADENCE_SCOPE } from "./principal";
 
 export interface DemoStore extends InMemoryStore {
   grants: GrantStore;
+  fadeTracker: FadeTracker;
 }
 
 export const demoStore: DemoStore = {
   ...createInMemoryStore(),
   grants: createInMemoryGrantStore(),
+  fadeTracker: createFadeTracker(),
 };
 
 const threadIdByClientId = new Map<string, string>();
@@ -66,6 +68,13 @@ export function resetThreadMapping(): void {
  * the cleared mapping (the seam has no delete either — the next chat mints a
  * fresh thread); the audit log intentionally survives resets (append-only by
  * design).
+ *
+ * `demoStore.fadeTracker` is deliberately NOT reset here either (ENG-193
+ * §4.4) — same "audit log intentionally survives resets" reasoning: a fresh
+ * take should still show fades already learned this session as a demo
+ * feature, not a bug. Flip this if the runbook wants a clean-slate reset
+ * instead — flag for Yousef at review, since this is a demo-choreography
+ * call, not an architecture one.
  */
 export async function resetDemoStore(): Promise<void> {
   resetThreadMapping();

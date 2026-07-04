@@ -53,10 +53,11 @@ export async function handleDemoConsent(req: Request): Promise<Response> {
       audit: demoStore.audit,
       resolveDescriptor: resolveToolDescriptor,
       getMessages: (scope, id) => demoStore.threads.getMessages(scope, id),
+      fadeTracker: demoStore.fadeTracker,
     },
     CADENCE_SCOPE,
     consentReq,
   );
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, ...(result.fadeEligible ? { fadeEligible: result.fadeEligible } : {}) });
 }
