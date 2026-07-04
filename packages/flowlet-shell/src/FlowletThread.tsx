@@ -48,9 +48,10 @@ export function FlowletThread({
   heroComposer = false, onPin, onFeedback,
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
-  const { integrations, sendConsent } = useShell();
+  const { integrations, sendConsent, trust } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [fadeProposal, setFadeProposal] = useState<{ messageId: string; toolName: string; proposalId: string } | null>(null);
 
   // The most recent rendered view — what "Pin to card" commits.
   const latestNode = useMemo<UINode | null>(() => {
@@ -100,19 +101,29 @@ export function FlowletThread({
   // send is swallowed here and the SDK response proceeds either way. toolName
   // rides beside the response — the consent endpoints require the client's
   // tool-name assertion to cross-check against the pending part.
-  // ENG-193 §4.4: `sendConsent` now resolves `SendConsentResult | void` (the
-  // fade-eligibility passthrough) — this Task-10-only signature widening is
-  // consumed for real by Task 11's FadeProposalCard wiring; here it's just
-  // kept type-compiling (the resolved value is still discarded).
+  // ENG-193 §4.4: `sendConsent` resolves `SendConsentResult | void` (the
+  // fade-eligibility passthrough) — `approve` below is the real consumer,
+  // stashing a returned `fadeEligible` against the approval's turn.
   const postConsent = (response: ConsentResponse, toolName: string): Promise<SendConsentResult | void> =>
-    sendConsent ? sendConsent(response, { toolName }).catch(() => {}) : Promise.resolve();
+    sendConsent ? sendConsent(response, { toolName }).catch(() => undefined) : Promise.resolve(undefined);
 
   const approve = (approvalId: string) => {
     const item = findApproval(approvalId);
     const consentPost = item?.toolCallId
       ? postConsent({ id: item.toolCallId, decision: "yes" }, item.toolName)
-      : Promise.resolve();
-    void consentPost.then(() => chat.addToolApprovalResponse({ id: approvalId, approved: true }));
+      : Promise.resolve(undefined);
+    void consentPost.then((result) => {
+      if (result?.fadeEligible && item) {
+        setFadeProposal({ messageId: item.messageId, toolName: item.toolName, proposalId: result.fadeEligible.proposalId });
+      }
+      chat.addToolApprovalResponse({ id: approvalId, approved: true });
+    });
+  };
+  const resolveFade = (accept: boolean) => {
+    if (!fadeProposal) return;
+    const { proposalId } = fadeProposal;
+    setFadeProposal(null);
+    void trust?.resolveFadeProposal(proposalId, accept);
   };
   const decline = (approvalId: string) => {
     // Declines reach the consent channel too (spec §4.4/§4.5 — the audit
@@ -236,6 +247,9 @@ export function FlowletThread({
             onDeclineBatch={declineBatch}
             onRegenerate={regenerate}
             onFeedback={onFeedback}
+            fadeProposal={fadeProposal}
+            onAcceptFade={() => resolveFade(true)}
+            onDeclineFade={() => resolveFade(false)}
           />
         </ThreadErrorBoundary>
       )}

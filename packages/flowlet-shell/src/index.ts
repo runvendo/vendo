@@ -27,6 +27,7 @@ export * from "./components/FileAttachment";
 export * from "./components/Skeleton";
 export * from "./components/ApprovalCard";
 export * from "./components/ApprovalBatchCard";
+export * from "./components/FadeProposalCard";
 export * from "./components/UINodeView";
 export * from "./components/VoiceButton";
 export * from "./components/Composer";

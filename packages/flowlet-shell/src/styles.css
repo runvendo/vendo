@@ -295,6 +295,12 @@
   max-height: 7em; overflow-y: auto; overflow-wrap: break-word; }
 .fl-uinode { align-self: flex-start; width: 100%; }
 
+/* ---------- fade proposal (ENG-193 §3 Moment 5/§4.4) ---------- */
+.fl-fade { display: flex; flex-direction: column; gap: 10px; margin: 6px 0; padding: 12px 14px;
+  border: 1px dashed var(--flowlet-border); border-radius: 12px; background: var(--flowlet-accent-soft); }
+.fl-fade-text { font-size: 13px; line-height: 1.4; color: var(--flowlet-fg); }
+.fl-fade-actions { display: flex; gap: 8px; }
+
 /* ---------- waiting list ("waiting on you", ENG-193 §4.6) ---------- */
 /* Height-capped with internal scroll: an unbounded inbox (verified live with
    9 parked rows) starves the host page's flex column, compressing the thread

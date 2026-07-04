@@ -9,11 +9,17 @@
  * The route's body shape is the same one /chat uses: `id` is the CLIENT chat/
  * thread id (resolved server-side to the persisted thread record), plus the
  * toolCallId/toolName the server cross-checks against the persisted part.
+ *
+ * ENG-193 §4.4/Task 11: the route's success body carries an optional
+ * `fadeEligible` passthrough (handleConsent's own re-derivation, never
+ * client-supplied) — parsed and returned here so FlowletThread's `approve`
+ * can offer the fade proposal for the turn.
  */
 import type { ConsentResponse } from "@flowlet/core";
+import type { SendConsentResult } from "@flowlet/shell";
 
 export function createSendConsent(threadId: string) {
-  return async (response: ConsentResponse, meta: { toolName: string }): Promise<void> => {
+  return async (response: ConsentResponse, meta: { toolName: string }): Promise<SendConsentResult | void> => {
     const res = await fetch("/api/flowlet/consent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -24,9 +30,8 @@ export function createSendConsent(threadId: string) {
         response,
       }),
     });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      throw new Error((json as { error?: string }).error ?? `consent POST failed (${res.status})`);
-    }
+    const json = (await res.json().catch(() => ({}))) as SendConsentResult & { error?: string };
+    if (!res.ok) throw new Error(json.error ?? `consent POST failed (${res.status})`);
+    return json.fadeEligible ? { fadeEligible: json.fadeEligible } : undefined;
   };
 }

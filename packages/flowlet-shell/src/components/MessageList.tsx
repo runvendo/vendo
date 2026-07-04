@@ -7,6 +7,7 @@ import { AutomationCard, isAutomationApproval } from "./AutomationCard";
 import { UINodeView } from "./UINodeView";
 import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
+import { FadeProposalCard } from "./FadeProposalCard";
 import { TurnActions, type Feedback } from "./TurnActions";
 import { FileAttachment } from "./FileAttachment";
 import { FluidReveal } from "./FluidReveal";
@@ -29,10 +30,16 @@ export interface MessageListProps {
   onRegenerate?: (messageId: string) => void;
   /** Host feedback sink for a turn's thumbs up/down. */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
+  /** A pending fade proposal for the turn (ENG-193 §3 Moment 5) — renders
+   *  right after that turn's activity panel. Null/absent -> nothing renders. */
+  fadeProposal?: { messageId: string; toolName: string } | null;
+  onAcceptFade?: () => void;
+  onDeclineFade?: () => void;
 }
 
 export function MessageList({
   items, status, onApprove, onDecline, onApproveBatch, onApproveSubset, onDeclineBatch, onRegenerate, onFeedback,
+  fadeProposal, onAcceptFade, onDeclineFade,
 }: MessageListProps) {
   const rendered = useMemo(() => groupThreadItems(items), [items]);
   // Render-slot keys (ENG-205): a skeleton and the ui view that replaces it
@@ -146,11 +153,19 @@ export function MessageList({
               // A turn is still working if this is the last render unit and the
               // thread hasn't settled — the panel then shows its live header.
               return (
-                <ActivityPanel
-                  key={item.key}
-                  steps={item.steps}
-                  working={status !== "ready" && status !== "error" && item === rendered[rendered.length - 1]}
-                />
+                <div key={item.key} className="fl-activity-slot">
+                  <ActivityPanel
+                    steps={item.steps}
+                    working={status !== "ready" && status !== "error" && item === rendered[rendered.length - 1]}
+                  />
+                  {fadeProposal && fadeProposal.messageId === item.messageId && (
+                    <FadeProposalCard
+                      toolName={fadeProposal.toolName}
+                      onAccept={() => onAcceptFade?.()}
+                      onDecline={() => onDeclineFade?.()}
+                    />
+                  )}
+                </div>
               );
             case "text":
               if (item.role === "user")
