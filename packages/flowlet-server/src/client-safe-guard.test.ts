@@ -11,6 +11,9 @@
  * that have them. Type-only imports (`import type` / `export type`) are
  * erased at compile time and are always fine.
  *
+ * `model-choice.ts` isn't exported as a subpath itself, but `capabilities.ts`
+ * imports it at runtime, so it must be just as pure — scanned here too.
+ *
  * If this test failed: don't loosen it — move the runtime dependency out of
  * the client-safe module, or stop exporting that module as a subpath.
  */
@@ -18,11 +21,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-/** The modules package.json exports as client-safe subpaths. */
-const CLIENT_SAFE_MODULES = ["capabilities.ts", "manifest-tools.ts", "catalog.ts"];
+/** The modules package.json exports as client-safe subpaths, plus their pure helpers. */
+const CLIENT_SAFE_MODULES = ["capabilities.ts", "manifest-tools.ts", "catalog.ts", "model-choice.ts"];
 
 /** Relative runtime imports allowed between the client-safe modules only. */
-const ALLOWED_RELATIVE = ["./capabilities", "./manifest-tools", "./catalog"];
+const ALLOWED_RELATIVE = ["./capabilities", "./manifest-tools", "./catalog", "./model-choice"];
 
 /** Runtime import/export-from/side-effect specifiers (type-only ones erased). */
 function runtimeSpecifiers(source: string): string[] {

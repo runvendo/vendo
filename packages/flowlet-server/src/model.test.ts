@@ -79,6 +79,20 @@ describe("resolveModelChoice", () => {
     expect(resolveModelChoice({})).toEqual({ kind: "none" });
   });
 
+  it("splits FLOWLET_MODEL on the first slash only, keeping the rest as the model id", () => {
+    expect(
+      resolveModelChoice({ FLOWLET_MODEL: "openai/ft:gpt-5.5:org/suffix" }),
+    ).toEqual({ kind: "configured", provider: "openai", modelId: "ft:gpt-5.5:org/suffix" });
+  });
+
+  it("falls back to the provider's default id when FLOWLET_MODEL is empty after the slash", () => {
+    expect(resolveModelChoice({ FLOWLET_MODEL: "openai/" })).toEqual({
+      kind: "configured",
+      provider: "openai",
+      modelId: "gpt-5.5",
+    });
+  });
+
   it("treats empty/whitespace key values as absent", () => {
     expect(resolveModelChoice({ ANTHROPIC_API_KEY: "  ", OPENAI_API_KEY: "" })).toEqual({
       kind: "none",
@@ -134,6 +148,16 @@ describe("resolveModel", () => {
     const importer = vi.fn(async () => {
       throw new Error("Cannot find package '@ai-sdk/openai'");
     });
+    await expect(resolveModel({ OPENAI_API_KEY: "sk-x" }, { import: importer })).rejects.toThrow(
+      'Flowlet: model "openai/gpt-5.5" requires @ai-sdk/openai — run: npm i @ai-sdk/openai',
+    );
+  });
+
+  it("raises the same actionable error when the peer module resolves but doesn't export the provider factory", async () => {
+    // e.g. a stale/incompatible @ai-sdk/openai version, or a broken mock —
+    // `mod.openai` isn't a function, so calling it would throw a cryptic
+    // "openai is not a function" instead of naming the missing peer.
+    const importer = vi.fn(async () => ({ openai: undefined }));
     await expect(resolveModel({ OPENAI_API_KEY: "sk-x" }, { import: importer })).rejects.toThrow(
       'Flowlet: model "openai/gpt-5.5" requires @ai-sdk/openai — run: npm i @ai-sdk/openai',
     );

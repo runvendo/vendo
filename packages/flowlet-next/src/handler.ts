@@ -67,7 +67,9 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
   // import; the memoized promise keeps the lazy-on-first-request behavior.
   let assembled: ReturnType<typeof assemble> | null = null;
   async function assemble() {
-    const capabilities = detectCapabilities();
+    const capabilities = detectCapabilities(undefined, {
+      hasInjectedModel: options.model !== undefined,
+    });
     const loaded = loadFlowletDir(options.flowletDir);
     const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
     const model = options.model ?? (await resolveModel());
@@ -183,9 +185,10 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           getAgent: s.getAgent,
           hostTools: s.hostTools,
           options,
-          // A host that injects its own `model` owns the key; otherwise chat
-          // needs ANTHROPIC_API_KEY (capabilities.chat).
-          chatEnabled: options.model !== undefined || s.capabilities.chat,
+          // capabilities.chat is the single source of truth: it already
+          // folds in an injected model (via hasInjectedModel above) alongside
+          // any configured provider key.
+          chatEnabled: s.capabilities.chat,
         });
       case "action":
         return handleAction(req, {

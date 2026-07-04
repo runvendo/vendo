@@ -13,72 +13,20 @@
  */
 import { anthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
+import { DEFAULT_MODEL_ID, resolveModelChoice, type ModelChoice, type ModelProvider } from "./model-choice";
 
-export type ModelProvider = "anthropic" | "openai" | "google";
-
-/** The outcome of pure, SDK-free resolution — reused by capabilities and the CLI. */
-export type ModelChoice =
-  | { kind: "configured"; provider: ModelProvider; modelId: string }
-  | { kind: "none" };
-
-const DEFAULT_MODEL_ID: Record<ModelProvider, string> = {
-  anthropic: "claude-sonnet-5",
-  openai: "gpt-5.5",
-  google: "gemini-3.5-flash",
-};
-
-/** Env var per provider, in precedence order (first present wins). */
-const PROVIDER_KEYS: ReadonlyArray<readonly [ModelProvider, string]> = [
-  ["anthropic", "ANTHROPIC_API_KEY"],
-  ["openai", "OPENAI_API_KEY"],
-  ["google", "GOOGLE_GENERATIVE_AI_API_KEY"],
-];
+// Re-exported so the package's public API (`@flowlet/server`'s index.ts)
+// stays unchanged — the pure resolution logic itself now lives in
+// `./model-choice`, which `capabilities.ts` also imports without pulling in
+// `@ai-sdk/anthropic`.
+export { resolveModelChoice };
+export type { ModelChoice, ModelProvider };
 
 /** The optional-peer package that supplies each non-Anthropic provider. */
 const PROVIDER_PACKAGE: Record<Exclude<ModelProvider, "anthropic">, string> = {
   openai: "@ai-sdk/openai",
   google: "@ai-sdk/google",
 };
-
-function present(value: string | undefined): boolean {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function detectProvider(env: Record<string, string | undefined>): ModelProvider | undefined {
-  return PROVIDER_KEYS.find(([, key]) => present(env[key]))?.[0];
-}
-
-function isProvider(value: string): value is ModelProvider {
-  return value === "anthropic" || value === "openai" || value === "google";
-}
-
-export function resolveModelChoice(
-  env: Record<string, string | undefined> = process.env,
-): ModelChoice {
-  const detected = detectProvider(env);
-  const flowletModel = env["FLOWLET_MODEL"]?.trim();
-
-  if (flowletModel) {
-    const slash = flowletModel.indexOf("/");
-    if (slash !== -1) {
-      const prefix = flowletModel.slice(0, slash);
-      const rest = flowletModel.slice(slash + 1);
-      if (!isProvider(prefix)) {
-        throw new Error(
-          `Flowlet: FLOWLET_MODEL="${flowletModel}" names an unknown provider "${prefix}" — supported providers are anthropic, openai, google (or pass a bare model id).`,
-        );
-      }
-      return { kind: "configured", provider: prefix, modelId: rest || DEFAULT_MODEL_ID[prefix] };
-    }
-    // Bare id: apply to the detected provider; Anthropic is the back-compat default.
-    return { kind: "configured", provider: detected ?? "anthropic", modelId: flowletModel };
-  }
-
-  if (detected) {
-    return { kind: "configured", provider: detected, modelId: DEFAULT_MODEL_ID[detected] };
-  }
-  return { kind: "none" };
-}
 
 /** Injectable importer, defaulting to the real dynamic import (tests supply a fake). */
 export interface ResolveModelDeps {
@@ -91,16 +39,23 @@ async function loadOptionalProvider(
   modelId: string,
 ): Promise<LanguageModel> {
   const pkg = PROVIDER_PACKAGE[provider];
+  const missingPeerError = new Error(
+    `Flowlet: model "${provider}/${modelId}" requires ${pkg} — run: npm i ${pkg}`,
+  );
   let mod: Record<string, unknown>;
   try {
     mod = (await importer(pkg)) as Record<string, unknown>;
   } catch {
-    throw new Error(
-      `Flowlet: model "${provider}/${modelId}" requires ${pkg} — run: npm i ${pkg}`,
-    );
+    throw missingPeerError;
   }
-  const factory = mod[provider] as (id: string) => LanguageModel;
-  return factory(modelId);
+  const factory = mod[provider];
+  if (typeof factory !== "function") {
+    // The module resolved but doesn't export the expected provider factory
+    // (stale/incompatible version, broken mock) — surface the same
+    // actionable error instead of a cryptic "factory is not a function".
+    throw missingPeerError;
+  }
+  return (factory as (id: string) => LanguageModel)(modelId);
 }
 
 /**
