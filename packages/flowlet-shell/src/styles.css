@@ -229,7 +229,21 @@
 .fl-approval { align-self: flex-start; border: 1px solid var(--flowlet-border);
   border-radius: var(--flowlet-radius); padding: 14px; box-shadow: var(--flowlet-shadow);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
-  max-width: 88%; min-width: min(360px, 88%); }
+  max-width: 88%; min-width: min(360px, 88%);
+  /* Moment of consequence (ENG-205 inc.4): the card materializes — rise,
+     un-blur — while a one-shot accent ring blooms and settles. Calm by
+     default; silenced entirely under reduced motion below. */
+  animation: fl-approval-in .45s cubic-bezier(.22, 1, .36, 1) both,
+             fl-approval-ring .9s ease-out both; }
+@keyframes fl-approval-in {
+  from { opacity: 0; transform: translateY(10px) scale(.97); filter: blur(6px); }
+  60% { filter: blur(0); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes fl-approval-ring {
+  from { outline: 2px solid color-mix(in srgb, var(--flowlet-accent) 45%, transparent); outline-offset: 0px; }
+  to { outline: 2px solid transparent; outline-offset: 10px; }
+}
 .fl-approval-head { display: flex; align-items: flex-start; gap: 10px; }
 .fl-approval-ic { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0;
   border-radius: 9px; color: var(--flowlet-accent); background: var(--flowlet-accent-soft); }
@@ -445,7 +459,13 @@
   display: flex; align-items: center; gap: 12px; padding: 9px 14px;
   border: 1px solid var(--flowlet-border-strong); border-radius: 10px;
   background: var(--flowlet-fg); color: var(--flowlet-bg); font-size: 12.5px;
-  box-shadow: 0 6px 24px color-mix(in srgb, var(--flowlet-fg) 24%, transparent); z-index: 30; }
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--flowlet-fg) 24%, transparent); z-index: 30;
+  /* ENG-205 inc.4: the toast surfaces — rise + un-blur, then settles. */
+  animation: fl-toast-in .3s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fl-toast-in {
+  from { opacity: 0; transform: translate(-50%, 10px); filter: blur(4px); }
+  to { opacity: 1; transform: translate(-50%, 0); filter: none; }
+}
 .fl-toast-action { border: 0; background: none; padding: 0; font-size: 12.5px; font-weight: 600;
   color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
@@ -566,6 +586,16 @@
   /* open animation — the "squeeze": a horizontal stretch out from a sliver, with a
      springy overshoot. transform-origin stays centered so it grows symmetrically. */
   transform-origin: center; animation: fl-overlay-stretch .5s cubic-bezier(.22, 1.2, .36, 1) both; }
+/* Liquid variant: fluidkit's LiquidCard paints the surface (brand-tinted glass,
+   rim light), so the panel box itself goes bare — it keeps only positioning,
+   size, radius clipping, and the entrance animation. */
+.fl-overlay-panel--liquid { background: none; border: 0; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+.fl-overlay-card { height: 100%; }
+/* Restore the flex-column height chain through LiquidCard's wrappers so the
+   thread scrolls internally exactly as before. */
+.fl-overlay-card > [data-fluidkit="liquid-card-content"] { position: relative; height: 100%;
+  display: flex; flex-direction: column; min-height: 0; }
 .fl-overlay-close { position: absolute; top: 12px; right: 12px; z-index: 5; width: 28px; height: 28px;
   border-radius: 9px; display: grid; place-items: center; border: 0; background: transparent;
   color: var(--flowlet-fg-muted); cursor: pointer; transition: background .12s, color .12s; }
@@ -579,6 +609,7 @@
   .fl-overlay-panel { animation: fl-overlay-fade .18s ease both; }
   @keyframes fl-overlay-fade { from { opacity: 0; } to { opacity: 1; } }
   /* Silence every looping loader for vestibular-sensitive users. */
+  .fl-approval, .fl-toast { animation: none; }
   .fl-caret, .fl-md--streaming > :last-child::after { animation: none; opacity: 1; }
   .fl-typing span, .fl-generating .fl-pulse, .fl-skeleton-bar,
   .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin { animation: none; }
@@ -595,7 +626,7 @@
    a quiet underline row, the body fills the height, only the message list scrolls. */
 .fl-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .fl-page > [hidden] { display: none; }
-.fl-tabbar { display: flex; align-items: center; gap: 2px; padding: 0 0 0 2px;
+.fl-tabbar { display: flex; align-items: center; gap: 2px; padding: 6px 6px 6px 8px;
   border-bottom: 1px solid var(--flowlet-border); flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
 .fl-tabbar::-webkit-scrollbar { display: none; }
 .fl-tab { display: flex; align-items: center; gap: 7px; padding: 10px 13px; font-size: 12.5px; font-weight: 500;
@@ -607,8 +638,15 @@
 .fl-tab-new { color: var(--flowlet-fg-muted); font-size: 16px; line-height: 1; padding: 8px 11px; }
 /* Body region below the tabs — the only thing that scrolls is the inner message list. */
 .fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column;
+  /* Tab-switch cross-fade (ENG-205 inc.3): plays when a pane becomes the
+     visible one. Opacity-only, so thread layout/scroll state is untouched. */
+  animation: fl-pane-in .22s ease both; }
 .fl-page-pane[hidden] { display: none; }
+@keyframes fl-pane-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .fl-page-pane { animation: none; }
+}
 .fl-saved-pane { flex: 1; min-height: 0; overflow: auto; padding: 22px 2px; }
 .fl-slot-empty { border: 1.5px dashed var(--flowlet-border-strong); border-radius: var(--flowlet-radius);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;

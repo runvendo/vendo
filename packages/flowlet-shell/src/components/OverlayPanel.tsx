@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { animate } from "motion";
+import { LiquidCard, resolvePrefersReducedMotion } from "fluidkit";
 import { themeToStyle } from "../theme";
 import { useShell } from "../context";
 import { useFocusTrap } from "../use-focus-trap";
@@ -11,6 +13,13 @@ export interface OverlayPanelProps {
   children: ReactNode;
 }
 
+/** fluidkit's static-safe semantics: unknown (SSR) → treated as reduced. */
+function prefersReducedMotion(): boolean {
+  const raw =
+    typeof matchMedia !== "undefined" ? matchMedia("(prefers-reduced-motion: reduce)").matches : null;
+  return resolvePrefersReducedMotion(raw);
+}
+
 /**
  * The shared centered modal used by the Cmd/Ctrl+K overlay AND the dashboard slot
  * — one implementation so they look and behave identically.
@@ -19,26 +28,59 @@ export interface OverlayPanelProps {
  * the viewport (centered on screen, full-bleed blur). Rendering inline would let
  * a transformed/filtered ancestor (e.g. the slot's themed card) become the
  * containing block, centering the modal on the card instead of the screen. The
- * portal re-applies the host theme via a `flowlet-root` wrapper so CSS vars hold.
+ * portal re-applies the host theme via a `flowlet-root` wrapper so CSS vars hold
+ * (fluidkit's theme context crosses the portal on its own).
+ *
+ * The shell owns the dialog lifecycle — portal, scrim, focus trap, Escape,
+ * close-button placement; fluidkit's LiquidCard is only the visual surface
+ * (brand-tinted glass, rim light) behind the content.
  */
 export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPanelProps) {
   const { theme, cssVars } = useShell();
   const panelRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
+  // Trails `open` by a short exit fade on close (instant under reduced motion).
+  const [visible, setVisible] = useState(open);
   useEffect(() => setMounted(true), []);
   useFocusTrap(open, panelRef);
 
-  if (!open || !mounted) return null;
+  useEffect(() => {
+    if (open) {
+      setVisible(true);
+      return;
+    }
+    const el = rootRef.current;
+    if (prefersReducedMotion() || !el) {
+      setVisible(false);
+      return;
+    }
+    // Opacity-only: the panel's centering lives in its transform, so the exit
+    // must not touch transforms.
+    const control = animate(el, { opacity: [1, 0] }, { duration: 0.15, ease: "easeIn" });
+    let cancelled = false;
+    void Promise.resolve(control)
+      .catch(() => undefined)
+      .then(() => {
+        if (!cancelled) setVisible(false);
+      });
+    return () => {
+      cancelled = true;
+      (control as { stop?: () => void }).stop?.();
+    };
+  }, [open]);
+
+  if (!visible || !mounted) return null;
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") onClose();
   };
 
   return createPortal(
-    <div className="flowlet-root fl-overlay-portal" style={{ ...themeToStyle(theme), ...cssVars }}>
+    <div ref={rootRef} className="flowlet-root fl-overlay-portal" style={{ ...themeToStyle(theme), ...cssVars }}>
       <div className="fl-overlay-scrim" onClick={onClose} />
       <div
-        className="fl-overlay-panel"
+        className="fl-overlay-panel fl-overlay-panel--liquid"
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
@@ -46,7 +88,9 @@ export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPane
         ref={panelRef}
         onKeyDown={onKeyDown}
       >
-        {children}
+        <LiquidCard className="fl-overlay-card" padding={0}>
+          {children}
+        </LiquidCard>
         {/* AFTER the content in DOM order (absolute-positioned, so visually
             top-right regardless): the focus trap sends initial focus to the
             first focusable descendant, and that must stay the content — with
