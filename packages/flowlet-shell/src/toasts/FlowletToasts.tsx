@@ -20,6 +20,9 @@ export interface FlowletToastsProps {
 
 const cursorKey = (namespace: string) => `flowlet:toasts-cursor:${namespace}`;
 
+/** Stable SSR snapshot — a fresh array per call would loop useSyncExternalStore. */
+const NO_TOASTS: Toast[] = [];
+
 function readCursor(namespace: string): number | null {
   try {
     const raw = localStorage.getItem(cursorKey(namespace));
@@ -53,7 +56,7 @@ export function FlowletToasts({
   const { notifications } = useShell();
   const chat = useFlowletThread();
   const queue = useMemo(createToastQueue, []);
-  const toasts = useSyncExternalStore(queue.subscribe, queue.visible, () => [] as Toast[]);
+  const toasts = useSyncExternalStore(queue.subscribe, queue.visible, () => NO_TOASTS);
 
   // Spec: never toast while the user is mid-conversation on any surface.
   const active = chat.status === "submitted" || chat.status === "streaming";
@@ -70,10 +73,16 @@ export function FlowletToasts({
       const cursor = readCursor(namespace);
       try {
         const notices = await notifications.listSince(cursor ?? 0);
-        if (disposed || notices.length === 0) return;
-        writeCursor(namespace, Math.max(...notices.map((n) => n.cursor)));
+        if (disposed) return;
         const initial = firstBatch.current;
         firstBatch.current = false;
+        if (notices.length === 0) {
+          // An empty feed still consumes the baseline: without stamping the
+          // cursor here, the next delivery would be swallowed as "history".
+          if (cursor === null) writeCursor(namespace, 0);
+          return;
+        }
+        writeCursor(namespace, Math.max(...notices.map((n) => n.cursor)));
         if (initial && cursor === null) return; // baseline only
         const push = (notice: AutomationNotice) =>
           queue.push({

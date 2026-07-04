@@ -78,9 +78,15 @@ export function DeadlineList({ className }: { className?: string }) {
   return (
     /* Remixable (2026-07-04 spec): renders exactly as-is by default; the ✦
        affordance lets the user customize this widget via the shared overlay,
-       with the live entries flowing into any pinned remix. */
-    <FlowletRemix id="upcoming-deadlines" label="Upcoming deadlines" context={{ clients: entries }}>
-    <Card className={cn("overflow-hidden", className)}>
+       with the live entries flowing into any pinned remix. The wrapper takes
+       the layout className — it is the grid child now. */
+    <FlowletRemix
+      id="upcoming-deadlines"
+      label="Upcoming deadlines"
+      context={{ clients: entries }}
+      className={className}
+    >
+    <Card className="overflow-hidden">
       <CardHeader
         title="Upcoming deadlines"
         action={

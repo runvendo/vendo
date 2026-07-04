@@ -93,6 +93,12 @@ function anchorSection(anchors: AnchorContextBlock): string {
           "reproduces this baseline faithfully first, then applies the requested change. " +
           "Put the element data in `data` and bind props with { $path } so the host can " +
           "feed live data into the pinned view.",
+        "IMPORTANT: the snapshot's class names come from the HOST's stylesheet, which does " +
+          "NOT exist inside the render sandbox — copying them produces unstyled, overlapping " +
+          "markup. Treat them only as hints about the intended look, and style generated " +
+          "components with inline styles plus the --flowlet-* CSS variables (layout with " +
+          "flexbox gaps, explicit font sizes, no absolute positioning unless the baseline " +
+          "truly overlaps).",
       );
     }
   }

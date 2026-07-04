@@ -58,6 +58,14 @@ describe("FlowletToasts", () => {
     expect(document.querySelector(".fl-toasts")).toBeNull();
   });
 
+  it("an empty first poll consumes the baseline: the NEXT delivery toasts (fresh install, live event)", async () => {
+    const { client, notices } = fakeNotifications([]);
+    mount(client);
+    await waitFor(() => expect(localStorage.getItem("flowlet:toasts-cursor:test")).toBe("0"));
+    notices.push(completed(1)); // first real event after install
+    await waitFor(() => expect(screen.getByText(/finished \(r1\)/)).toBeTruthy());
+  });
+
   it("collapses a backlog of completions into one while-you-were-away digest", async () => {
     localStorage.setItem("flowlet:toasts-cursor:test", "0");
     const { client } = fakeNotifications([completed(1), completed(2), completed(3)]);

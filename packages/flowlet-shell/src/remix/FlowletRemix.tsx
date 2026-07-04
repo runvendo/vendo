@@ -17,6 +17,9 @@ export interface FlowletRemixProps {
   /** Serializable data describing the wrapped thing; feeds the agent and
    *  flows into a pinned remix as live data on every render. */
   context?: unknown;
+  /** The wrapper is one real div in the host's layout — layout classes that
+   *  used to sit on the wrapped child (grid spans, widths) belong here. */
+  className?: string;
   children: ReactNode;
 }
 
@@ -33,7 +36,7 @@ type PinnedState =
  * render in place with a "customized · reset" pill, fail-open to the original
  * children on any error or drift. SSR renders children only.
  */
-export function FlowletRemix({ id, label, context, children }: FlowletRemixProps) {
+export function FlowletRemix({ id, label, context, className, children }: FlowletRemixProps) {
   const { registry, remixes, renderNode, scope, components } = useShell();
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Client-only affordance: nothing beyond children exists until after mount.
@@ -109,7 +112,10 @@ export function FlowletRemix({ id, label, context, children }: FlowletRemixProps
 
   const customized = mounted && pin !== null;
   return (
-    <div className="fl-remix" data-flowlet-remix={id}>
+    <div
+      className={className ? `fl-remix ${className}` : "fl-remix"}
+      data-flowlet-remix={id}
+    >
       <div ref={hostRef} className="fl-remix-host">
         {customized && pinned.kind === "ready" ? renderNode(pinned.node) : children}
       </div>
