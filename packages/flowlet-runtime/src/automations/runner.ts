@@ -10,7 +10,7 @@
  * consecutive failures the automation is parked: frozen status "paused" plus
  * disabledReason (the frozen status union stays untouched).
  */
-import type { Principal } from "@flowlet/core";
+import type { AutomationDelivery, Channels, Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import { evaluateGuard } from "./expressions";
 import {
@@ -48,6 +48,11 @@ export interface AutomationRunnerConfig {
   nowMs?: () => number;
   /** Observer hook (demo toast, logging). Called after each finalized run. */
   onRunFinished?: (run: AutomationRun, automation: AutomationRecord) => void;
+  /** Off-thread delivery (FlowletToasts, 2026-07-04 spec): terminal runs and
+   *  approval pauses go out as in-app messages. Best-effort — a down surface
+   *  must never fail the run. Guard-false skips and bulk park-cancellations
+   *  are deliberately silent (routine, would spam). */
+  channels?: Channels;
 }
 
 export interface FireOptions {
@@ -77,6 +82,55 @@ export class AutomationRunner {
   private async claims(scope: Principal): Promise<Record<string, unknown>> {
     if (this.config.userClaims) return this.config.userClaims(scope);
     return { id: scope.subject, ...scope.claims };
+  }
+
+  /** Deliver a terminal-run toast. Skipped runs never reach this. */
+  private async notifyFinished(
+    scope: Principal,
+    run: AutomationRun,
+    automation: AutomationRecord,
+  ): Promise<void> {
+    const outcome =
+      run.outcome === "cancelled"
+        ? (run.error ?? "cancelled")
+        : run.status === "failed"
+          ? `failed: ${run.error ?? "unknown error"}`
+          : "finished";
+    await this.notify(scope, {
+      text: `Automation "${automation.name}" ${outcome}.`,
+      automation: { kind: "completed", runId: run.id, summary: `${automation.name}: ${outcome}` },
+    });
+  }
+
+  private async notifyApproval(
+    scope: Principal,
+    run: AutomationRun,
+    automation: AutomationRecord,
+    pending: { stepId: string; tool: string },
+  ): Promise<void> {
+    await this.notify(scope, {
+      text: `Automation "${automation.name}" needs your approval to run ${pending.tool}.`,
+      automation: {
+        kind: "approval-required",
+        runId: run.id,
+        stepId: pending.stepId,
+        summary: `${automation.name} wants to run ${pending.tool}`,
+      },
+    });
+  }
+
+  private async notify(
+    scope: Principal,
+    message: { text: string; automation: AutomationDelivery },
+  ): Promise<void> {
+    if (!this.config.channels) return;
+    try {
+      await this.config.channels.deliver({ channel: "in-app", principal: scope, ...message });
+    } catch (err) {
+      // Best-effort by design: the run already reached its true state; a dead
+      // toast surface must not flip it. The event stays visible in run history.
+      console.warn("flowlet: in-app delivery failed", err);
+    }
   }
 
   /** Serialize work per automation id; different automations run independently. */
@@ -143,6 +197,7 @@ export class AutomationRunner {
           error: `dropped: exceeded maxFiringsPerHour (${cap})`,
         });
         this.config.onRunFinished?.(cancelled, automation);
+        await this.notifyFinished(scope, cancelled, automation);
         return cancelled;
       }
     }
@@ -204,11 +259,13 @@ export class AutomationRunner {
     });
 
     if (outcome.status === "waiting_approval") {
-      return this.config.store.updateRun(scope, run.id, {
+      const waiting = await this.config.store.updateRun(scope, run.id, {
         outcome: "waiting_approval",
         steps: outcome.steps,
         pendingApproval: outcome.pendingApproval,
       });
+      await this.notifyApproval(scope, waiting, automation, outcome.pendingApproval);
+      return waiting;
     }
     return this.finalize(scope, run.id, automation, {
       status: outcome.status,
@@ -237,6 +294,7 @@ export class AutomationRunner {
       }
     }
     this.config.onRunFinished?.(finalized, automation);
+    await this.notifyFinished(scope, finalized, automation);
     return finalized;
   }
 
@@ -263,10 +321,12 @@ export class AutomationRunner {
 
         // Expired approvals cancel instead of executing stale intent.
         if (Date.parse(pending.expiresAt) < this.nowMs()) {
-          return this.config.store.finalizeRun(scope, run.id, {
+          const expired = await this.config.store.finalizeRun(scope, run.id, {
             outcome: "cancelled",
             error: "pending approval expired",
           });
+          await this.notifyFinished(scope, expired, automation);
+          return expired;
         }
         // Claim the run before executing so nothing else sees it as pending.
         await this.config.store.updateRun(scope, run.id, { pendingApproval: undefined });
