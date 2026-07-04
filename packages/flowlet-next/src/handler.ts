@@ -36,6 +36,7 @@ import {
 import { handleChat } from "./chat";
 import { handleAction, createApprovalStore } from "./action";
 import { handleConsentRoute } from "./consent";
+import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
 import {
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
@@ -98,6 +99,9 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
             model,
             ...(options.automations?.tools ? { tools: options.automations.tools } : {}),
             scope: { tenantId: "flowlet-embedded", subject: DEFAULT_PRINCIPAL.userId },
+            // ENG-193 §4.6/§6.2: parked-action resolutions get the SAME
+            // "consent" audit trail chat approvals already do.
+            audit,
           });
 
     const serverTools = (): ToolSet => {
@@ -211,6 +215,12 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           enabled: s.capabilities.integrations,
           options,
         });
+      case "parked-actions": {
+        if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return listParkedActionsRoute(req, { world: s.world, principal: guard.principal });
+      }
       default:
         return Response.json({ error: "not found" }, { status: 404 });
     }
@@ -260,6 +270,15 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
         if (!guard.ok) return guard.response;
         await s.world.tick();
         return Response.json({ ok: true });
+      }
+      // POST /api/flowlet/parked-actions/resolve (ENG-193 §4.6) — `subPath`
+      // only inspects the LAST path segment, so this is "resolve", not the
+      // full mount path.
+      case "resolve": {
+        if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return resolveParkedActionRoute(req, { world: s.world, principal: guard.principal });
       }
       default:
         return Response.json({ error: "not found" }, { status: 404 });

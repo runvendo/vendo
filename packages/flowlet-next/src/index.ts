@@ -22,3 +22,4 @@ export { buildInstructions, type BuildInstructionsInput } from "./agent";
 export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./policy-stack";
 export { createThreadIndex, type ThreadIndex } from "./threads";
 export { handleConsentRoute, type ConsentRouteDeps } from "./consent";
+export { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";

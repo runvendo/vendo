@@ -18,7 +18,7 @@
  */
 import { anthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel, ToolSet } from "ai";
-import type { Principal } from "@flowlet/core";
+import type { AuditLog, Principal } from "@flowlet/core";
 import {
   AutomationRunner,
   InMemoryAutomationStore,
@@ -37,6 +37,11 @@ export interface CreateWorldConfig {
   tools?: Record<string, RegisteredTool>;
   /** The engine store scope. One embedded tenant; subject = default user. */
   scope: Principal;
+  /** ENG-193 §4.6/§6.2 — when present, a parked-action resolution appends the
+   *  SAME "consent" audit event kind chat approvals already use. Absent in
+   *  tests that don't wire an audit log; `scope` is already Principal-shaped
+   *  here, so the runner's default identity `auditPrincipal` is correct. */
+  audit?: AuditLog;
 }
 
 export interface FlowletAutomationsWorld {
@@ -57,6 +62,7 @@ export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutoma
     policy: config.policy,
     userClaims: async () => ({ id: config.scope.subject }),
     agentRunner: createAgentStepRunner({ model: config.model }),
+    ...(config.audit ? { audit: config.audit } : {}),
   });
   const scheduler = new InProcessScheduler();
   scheduler.onFire(createSchedulerFiringHandler(runner));
