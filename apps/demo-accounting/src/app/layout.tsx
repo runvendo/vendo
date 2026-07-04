@@ -17,10 +17,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${hanken.variable} ${splineMono.variable}`}>
       <body className="min-h-screen antialiased">
-        <AppShell>{children}</AppShell>
-        {/* Flowlet's invisible layer: the Cmd/Ctrl+K overlay + scheduler
-            heartbeat, floating over the untouched Cadence UI. */}
-        <FlowletLayer />
+        {/* Flowlet's layer WRAPS the app: the Cmd/Ctrl+K overlay, automation
+            toasts, and the shared provider that FlowletRemix wrappers inside
+            the page reach for scoping and pinned remixes. */}
+        <FlowletLayer>
+          <AppShell>{children}</AppShell>
+        </FlowletLayer>
       </body>
     </html>
   )

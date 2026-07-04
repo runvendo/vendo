@@ -14,7 +14,13 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider, createLocalIntegrations, createWebStorage } from "@flowlet/shell";
+import {
+  FlowletShellProvider,
+  createLocalIntegrations,
+  createWebRemixes,
+  createWebStorage,
+  type FlowletNotifications,
+} from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { cadenceBrand } from "@/flowlet/brand";
 import { cadenceHostComponents } from "@/flowlet/host-components/descriptors";
@@ -26,6 +32,51 @@ import { runQuery } from "./run-query";
 // module-scope instance so every surface shares it; it only touches
 // localStorage inside its methods, so importing it stays SSR-safe.
 const store = createWebStorage({ namespace: "cadence-demo" });
+
+// Remix pins (FlowletRemix) follow the same web-storage pattern.
+const remixes = createWebRemixes({ namespace: "cadence-demo" });
+
+// FlowletToasts feed: poll the world's retained deliveries, resume approvals.
+const notifications: FlowletNotifications = {
+  async listSince(since) {
+    const res = await fetch(`/api/flowlet/deliveries?since=${since}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`deliveries request failed (${res.status})`);
+    const body = (await res.json()) as {
+      deliveries?: Array<{
+        cursor: number;
+        message: {
+          text: string;
+          automation?: { kind: "completed" | "approval-required"; runId: string; stepId?: string; summary: string };
+        };
+      }>;
+    };
+    return (body.deliveries ?? []).flatMap(({ cursor, message }) =>
+      message.automation
+        ? [
+            {
+              cursor,
+              kind: message.automation.kind,
+              runId: message.automation.runId,
+              ...(message.automation.stepId !== undefined
+                ? { stepId: message.automation.stepId }
+                : {}),
+              summary: message.automation.summary,
+              text: message.text,
+            },
+          ]
+        : [],
+    );
+  },
+  async resume(runId, approved) {
+    const res = await fetch("/api/flowlet/resume", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId, approved }),
+    });
+    if (!res.ok) throw new Error(`resume request failed (${res.status})`);
+    return ((await res.json()) as { stale?: boolean }).stale === true ? "stale" : "resumed";
+  },
+};
 
 // The firm's standing integrations, shown CONNECTED in the shell's in-bar
 // connect tray (ENG-205) because they truly are: the agent ingests both
@@ -71,6 +122,8 @@ export function FlowletRoot({
           renderNode={renderNode}
           integrations={integrations}
           store={store}
+          remixes={remixes}
+          notifications={notifications}
           runQuery={runQuery}
           // Same registry as FlowletProvider — reopened saved views diff their
           // host-component stamp against it and surface drift (ENG-186).
