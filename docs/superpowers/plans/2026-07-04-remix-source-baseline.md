@@ -6,7 +6,7 @@
 
 **Architecture:** Contracts first (scoped-block `source`, `RemixSourceRecord`/`RemixSourceResolver`), then the engine prompt section (delimited untrusted-data block, edited-variant + mapping instructions), then `@flowlet/next` loading/enrichment, then the CLI extractor step, then Cadence wiring and browser fidelity verification. Stacks on PR #34; no shell changes at all.
 
-**Tech stack:** Existing conventions: TypeScript, vitest, zod for the `.flowlet` schema, ts-morph/AST utilities already used by the ENG-197 extractor (match whatever `packages/flowlet-cli` uses today — confirm in-repo before Task 4).
+**Tech stack:** Existing conventions: TypeScript, vitest, zod for the `.flowlet` schema. NOTE (Codex plan review): the existing extractor steps are regex/LLM-based — there is NO reusable AST/import-resolution substrate in `packages/flowlet-cli` today. Task 4 explicitly adds a parser dependency (TypeScript's own compiler API is already available transitively and needs no new install — prefer it; add `ts-morph` only if the bare API proves too painful) and updates `packages/flowlet-cli/package.json` accordingly.
 
 **Process rules:** TDD per task (failing test → minimal impl → green → commit) on branch `yousefh409/remix-source-baseline`. Full suite in Task 6. Stop and surface if anything conflicts with the locked architecture.
 
@@ -44,18 +44,22 @@
 
 **Files:**
 - Create: `packages/flowlet-cli/src/remix-sources.ts` + `remix-sources.test.ts`
-- Modify: `packages/flowlet-cli/src/init.ts` (+ test) to run the step and include results in the extraction report; wire a standalone re-run path the way existing steps expose one (confirm the existing command structure in `cli.ts` first and follow it).
+- Modify: `packages/flowlet-cli/package.json` (parser dependency per the tech-stack note, if any is added)
+- Modify: `packages/flowlet-cli/src/init.ts` (+ test) to run the step and include results in the extraction report
+- Modify: `packages/flowlet-cli/src/cli.ts` (+ `cli.test.ts`): a NEW standalone command `flowlet remix-sources [dir]` (the CLI has only `init`/`publish` today — there is no existing re-run pattern to follow), including help text.
 
-- [ ] Failing tests (fixture app trees): literal-id `<FlowletRemix id="x">` captured with resolved child component file, `sourceHash`, `capturedAt`; dynamic id skipped + reported; multi-child/non-component child captures the enclosing file; unresolvable import omitted + reported; server-only rule (`"use server"`, `server/`, `api/`, `pages/api/`, outside source root) refused; 48 KB cap.
+- [ ] Failing tests (fixture app trees): literal-id `<FlowletRemix id="x">` captured with resolved child component file, `sourceHash`, `capturedAt`; dynamic id skipped + reported; multi-child/non-component child captures the enclosing file; unresolvable import omitted + reported; server-only rule (`"use server"`, `server/`, `api/`, `pages/api/`, outside source root — enforced AFTER alias resolution) refused; 48 KB cap.
+- [ ] Import-resolution fixtures MUST cover the real Next shapes: `@/*` tsconfig path aliases, extensionless imports, `index.ts` barrels, and relative paths — Cadence's own `@/components/dashboard/deadline-list` is the reference case.
 - [ ] Implement deterministically (AST only, no LLM), fail-open per anchor with report entries; green; commit.
 - [ ] Ground-truth check: run against demo-bank with one wrapped widget; commit the fixture expectations.
 
 ### Task 5: Cadence wiring
 
 **Files:**
-- Modify: `apps/demo-accounting/src/flowlet/chat-handler.ts` (or wherever its chat route builds agent input — confirm) to enrich scoped anchors from a hand-passed map containing `upcoming-deadlines` → the DeadlineList source (+ test following the existing chat-handler tests).
+- Modify: `apps/demo-accounting/src/flowlet/chat-handler.ts` (or wherever its chat route builds agent input — confirm) to enrich scoped anchors for `upcoming-deadlines`.
+- Source loading MUST be a raw file read on the server (`readFileSync` of `src/components/dashboard/deadline-list.tsx` relative to the app root, with the shared 48 KB cap/truncation helper) — NOT an import of the module: `deadline-list.tsx` is a client component whose import would not yield source text and could break the Node route (Codex plan review).
 
-- [ ] Failing test: scoped send for `upcoming-deadlines` reaches the agent with `source` populated; other anchors untouched.
+- [ ] Failing test: scoped send for `upcoming-deadlines` reaches the agent with `source` populated (file-read stubbed); other anchors untouched; missing file falls open to no enrichment.
 - [ ] Implement; green; commit.
 
 ### Task 6: Full suite + browser fidelity verification
