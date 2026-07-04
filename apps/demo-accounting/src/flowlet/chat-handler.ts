@@ -8,6 +8,16 @@
  * fixed DEMO_PRINCIPAL is only attached for local requests (the demo's primary
  * stage path). Set FLOWLET_DEMO_PUBLIC=1 to intentionally enable it on a
  * reachable deployment.
+ *
+ * NO persistence here — the SINGLE writer for thread messages is the engine's
+ * `onSettled` hook, wired at agent construction in `agent.ts`'s
+ * `createDemoAgent` (mirrors `packages/flowlet-next/src/handler.ts`). It fires
+ * with the FULL settled message list — including the streamed assistant turn
+ * and any approval-requested parts — keyed by the threadId resolved below, so
+ * the consent endpoint can read this turn's approval part BEFORE the client's
+ * next chat turn. Persisting the request body here too would double-append it
+ * (and, alone, it would miss the streamed turn entirely — ENG-193 review
+ * 2026-07-04, see `packages/flowlet-next`'s equivalent chat.ts/handler.ts fix).
  */
 import { createUIMessageStreamResponse } from "ai";
 import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
@@ -15,8 +25,13 @@ import { hostToolset } from "@flowlet/runtime";
 import { DEMO_PRINCIPAL } from "./principal";
 import { cadenceHostToolDefs } from "./host-tools";
 import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";
+import { CADENCE_SCOPE, resolveThreadRecordId } from "./store";
 
 interface ChatRequestBody {
+  /** The ai SDK Chat's own id (DefaultChatTransport's default body key — see
+   *  the ENG-193 item-2 plan's "Plan deviations" #2). Falls back to a fixed
+   *  thread when a caller (tests, an older client) omits it. */
+  id?: string;
   messages?: FlowletUIMessage[];
 }
 
@@ -31,6 +46,8 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
   if (!Array.isArray(messages) || messages.length === 0) {
     return Response.json({ error: "messages must be a non-empty array" }, { status: 400 });
   }
+  const clientThreadId = typeof body.id === "string" && body.id.length > 0 ? body.id : "cadence-demo";
+  const threadRecordId = await resolveThreadRecordId(CADENCE_SCOPE, clientThreadId);
   const stream = agent.run({
     messages,
     // Cadence's own API surface enters through the caller seam (ENG-202): no
@@ -39,6 +56,7 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
     tools: hostToolset(cadenceHostToolDefs),
     principal: DEMO_PRINCIPAL,
     signal: req.signal,
+    threadId: threadRecordId,
   });
   return createUIMessageStreamResponse({ stream });
 }

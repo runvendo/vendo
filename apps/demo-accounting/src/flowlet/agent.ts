@@ -24,6 +24,7 @@ import { demoPolicy } from "./policy";
 import { cadenceBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
 import { cadenceHostComponents } from "./host-components/descriptors";
+import { CADENCE_SCOPE, demoStore } from "./store";
 
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
@@ -200,5 +201,28 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     tools: opts.extraTools,
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
+    // ENG-193 §6.2: persist each SETTLED run's full message list to the demo's
+    // thread store. This is the SINGLE writer for thread messages —
+    // chat-handler.ts deliberately does NOT persist the request body — the
+    // streamed assistant turn, with any approval-requested parts, must be in
+    // the store BEFORE the client's consent POST arrives, which happens before
+    // any next chat turn. Mirrors packages/flowlet-next/src/handler.ts's
+    // onSettled wiring (ENG-193 review 2026-07-04).
+    //
+    // Delta-append prefix assumption (single-client v1, same as flowlet-next):
+    // the settled list is treated as a strict extension of what's stored — we
+    // append only `messages.slice(storedCount)` because `appendMessages` is
+    // append-only by the frozen seam.
+    onSettled: async ({ messages, threadId }) => {
+      // Skip runs whose threadId isn't a store-assigned thread (e.g. a direct
+      // agent.run() test caller with no resolved thread) — appendMessages
+      // throws on unknown ids and the engine would just log the noise.
+      if (!(await demoStore.threads.get(CADENCE_SCOPE, threadId))) return;
+      const existing = await demoStore.threads.getMessages(CADENCE_SCOPE, threadId);
+      const toAppend = messages.slice(existing.length);
+      if (toAppend.length > 0) {
+        await demoStore.threads.appendMessages(CADENCE_SCOPE, threadId, toAppend);
+      }
+    },
   });
 }

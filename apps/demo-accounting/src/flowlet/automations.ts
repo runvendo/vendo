@@ -37,7 +37,7 @@ import {
 } from "@flowlet/runtime";
 import { listDeadlineEntries } from "@/server/clients";
 import { demoPolicy } from "./policy";
-import { DEMO_USER_ID, DEMO_USER_NAME } from "./principal";
+import { CADENCE_SCOPE, DEMO_USER_ID, DEMO_USER_NAME } from "./principal";
 import {
   createCalendarEvent as realCreateCalendarEvent,
   sendGmail as realSendGmail,
@@ -47,8 +47,10 @@ import {
 
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
 
-/** The demo's Principal: one fixed tenant + the Composio-authorized subject. */
-export const CADENCE_SCOPE: Principal = { tenantId: "cadence-demo", subject: DEMO_USER_ID };
+/** The demo's Principal: one fixed tenant + the Composio-authorized subject.
+ *  Defined in `./principal` (a dependency-free leaf) — re-exported here for
+ *  existing/plan call sites that import it from this module. */
+export { CADENCE_SCOPE };
 
 /** What the automation reads per client (the trigger-independent world view). */
 export function deadlineWorldView() {
