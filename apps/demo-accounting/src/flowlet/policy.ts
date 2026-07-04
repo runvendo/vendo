@@ -11,9 +11,19 @@
  *   read verbs run freely, write verbs require approval — which is exactly
  *   what makes the AutomationCard mint grants for the two sends.
  * - Everything else fails safe to approval.
+ *
+ * ENG-193 item 2 (§4.3/§6.2): the exported `demoPolicy` composes the item-1
+ * primitives (audit + standing grants) onto this app's REAL base decision
+ * layer, `namePolicy` (the ENG-193 item-2 plan's "Plan deviations" #4 — the
+ * scope ruling's bare `annotationPolicy()` snippet is illustrative; wrapping
+ * the host's actual base layer is the intent, matching what
+ * `packages/flowlet-next/src/policy-stack.ts` does for the production path).
+ * `contextKey: threadId` lets a fade/session grant (later items) match within
+ * one conversation; the standing grants item 2 mints ignore it.
  */
-import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/runtime";
+import { annotationPolicy, auditPolicy, composePolicy, grantPolicy, type ApprovalPolicy } from "@flowlet/runtime";
 import { READ_ONLY_TOOLS } from "./tools";
+import { demoStore, CADENCE_SCOPE } from "./store";
 
 /** In-process tools that are safe by construction (incl. read-shaped
  *  automation authoring; create/update/delete/pause/run-now stay gated). */
@@ -50,4 +60,10 @@ const namePolicy: ApprovalPolicy = {
   },
 };
 
-export const demoPolicy = composePolicy(namePolicy);
+export const demoPolicy: ApprovalPolicy = composePolicy(
+  auditPolicy(demoStore.audit, { principalScope: () => CADENCE_SCOPE }),
+  grantPolicy(namePolicy, demoStore.grants, {
+    principalScope: () => CADENCE_SCOPE,
+    contextKey: (ctx) => ctx.threadId,
+  }),
+);

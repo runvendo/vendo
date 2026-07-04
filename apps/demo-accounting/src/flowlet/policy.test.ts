@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import type { FlowletPrincipal } from "@flowlet/runtime";
+import { hashDescriptor, type FlowletPrincipal } from "@flowlet/runtime";
 import { demoPolicy } from "./policy";
+import { demoStore, CADENCE_SCOPE } from "./store";
+import { resolveToolDescriptor } from "./tool-registry";
 
 const PRINCIPAL: FlowletPrincipal = { userId: "test" };
 
@@ -60,5 +62,50 @@ describe("demoPolicy", () => {
 
   it("fails safe to approval for unknown names", async () => {
     expect(await evaluate("mystery_tool")).toBe("approve");
+  });
+
+  it("a matching grant suppresses a repeat act-tier approve, but never a critical one", async () => {
+    // ENG-193 item 2 (§4.3): demoPolicy now composes grantPolicy+auditPolicy
+    // onto namePolicy (Task 7). Use resolveToolDescriptor's own descriptor for
+    // both the grant's descriptorHash AND the evaluated ctx — grantMatches
+    // requires an EXACT descriptor hash match, so this is the only descriptor
+    // shape that will actually round-trip (the `evaluate()` helper above
+    // fabricates its own descriptor, which won't hash-match).
+    const gmailDescriptor = resolveToolDescriptor("GMAIL_SEND_EMAIL")!;
+    await demoStore.grants.create(CADENCE_SCOPE, {
+      tool: "GMAIL_SEND_EMAIL",
+      descriptorHash: hashDescriptor(gmailDescriptor),
+      scope: { kind: "tool" },
+      duration: "standing",
+      source: { kind: "chat" },
+    });
+    expect(
+      await demoPolicy.evaluate({
+        toolName: "GMAIL_SEND_EMAIL",
+        input: {},
+        descriptor: gmailDescriptor,
+        principal: PRINCIPAL,
+      }),
+    ).toBe("allow");
+
+    // INVARIANT: even a grant seeded for a critical (destructiveHint) tool
+    // never suppresses it — grantPolicy refuses to apply by type, before any
+    // grant lookup.
+    const criticalDescriptor = resolveToolDescriptor("create_automation")!;
+    await demoStore.grants.create(CADENCE_SCOPE, {
+      tool: "create_automation",
+      descriptorHash: hashDescriptor(criticalDescriptor),
+      scope: { kind: "tool" },
+      duration: "standing",
+      source: { kind: "chat" },
+    });
+    expect(
+      await demoPolicy.evaluate({
+        toolName: "create_automation",
+        input: {},
+        descriptor: criticalDescriptor,
+        principal: PRINCIPAL,
+      }),
+    ).toBe("approve");
   });
 });
