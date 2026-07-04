@@ -1,10 +1,11 @@
-import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import type { RegisteredComponent, UINode } from "@flowlet/core";
 import { themeToStyle, type FlowletTheme } from "./theme";
 import { createLocalStore, type FlowletStore } from "./seams/store";
 import { createLocalIntegrations, type FlowletIntegrations } from "./seams/integrations";
 import { createLocalNotifications, type FlowletNotifications } from "./seams/notifications";
 import { createLocalRemixes, type RemixClient } from "./seams/remixes";
+import { createPageContextRegistry, type PageContextRegistry } from "./remix/page-context-registry";
 import type { RunQuery } from "./seams/query";
 import "./styles.css";
 
@@ -17,6 +18,9 @@ export interface ShellContextValue {
   remixes: RemixClient;
   /** Automation deliveries feed + approval resume (FlowletToasts). */
   notifications: FlowletNotifications;
+  /** Mounted FlowletRemix anchors on the current page — created per provider,
+   *  not a prop. Gives every surface "what's on this page" awareness. */
+  registry: PageContextRegistry;
   /** Host seam: re-run one declared data query through the policy-governed
    *  tool path (ENG-183). Absent → reopened views stay snapshots. */
   runQuery?: RunQuery;
@@ -101,11 +105,15 @@ export function FlowletShellProvider({
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
+  // Stable per provider instance: re-renders must never drop registrations.
+  const [registry] = useState(createPageContextRegistry);
+
   const value = useMemo<ShellContextValue>(() => ({
     store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
     remixes: remixes ?? createLocalRemixes(),
     notifications: notifications ?? createLocalNotifications(),
+    registry,
     runQuery,
     refreshIntervalMs: refreshIntervalMs ?? 60_000,
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
@@ -113,7 +121,7 @@ export function FlowletShellProvider({
     cssVars: cssVars ?? {},
     productName,
     components,
-  }), [store, integrations, remixes, notifications, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
+  }), [store, integrations, remixes, notifications, registry, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
 
   return (
     <ShellContext.Provider value={value}>
