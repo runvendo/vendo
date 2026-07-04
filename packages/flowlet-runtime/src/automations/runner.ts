@@ -13,6 +13,7 @@
 import type { Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import { evaluateGuard } from "./expressions";
+import { hashDescriptor } from "./grants";
 import {
   interpret,
   type AgentStepRunner,
@@ -203,17 +204,40 @@ export class AutomationRunner {
       resume,
     });
 
+    // ENG-193 §4.6: persist every parked draft this pass produced, regardless
+    // of the run's outcome — a run can park several actions before ALSO
+    // pausing at a later direct-step checkpoint (§4.6's own text: parking and
+    // run-checkpoint pausing coexist).
+    for (const draft of outcome.parkedActions) {
+      await this.config.store.createParkedAction(scope, {
+        automationId: automation.id,
+        runId: run.id,
+        stepId: draft.stepId,
+        tool: draft.tool,
+        input: draft.input,
+        ...(draft.guardExpr !== undefined ? { guardExpr: draft.guardExpr } : {}),
+        ...(draft.guardBindings !== undefined ? { guardBindings: draft.guardBindings } : {}),
+        reason: draft.reason,
+        tier: draft.tier,
+        descriptorHash: draft.descriptorHash,
+        requestedAt: draft.requestedAt,
+      });
+    }
+    const parkedCount = run.parkedCount + outcome.parkedActions.length;
+
     if (outcome.status === "waiting_approval") {
       return this.config.store.updateRun(scope, run.id, {
         outcome: "waiting_approval",
         steps: outcome.steps,
         pendingApproval: outcome.pendingApproval,
+        parkedCount,
       });
     }
     return this.finalize(scope, run.id, automation, {
       status: outcome.status,
       steps: outcome.steps,
       error: outcome.status === "failed" ? outcome.error : undefined,
+      parkedCount,
     });
   }
 
@@ -221,7 +245,12 @@ export class AutomationRunner {
     scope: Principal,
     runId: string,
     automation: AutomationRecord,
-    input: { status: "succeeded" | "failed"; steps?: StepRecord[]; error?: string },
+    input: {
+      status: "succeeded" | "failed";
+      steps?: StepRecord[];
+      error?: string;
+      parkedCount?: number;
+    },
   ): Promise<AutomationRun> {
     const { store } = this.config;
     const finalized = await store.finalizeRun(scope, runId, input);
@@ -277,5 +306,104 @@ export class AutomationRunner {
         });
       });
     })();
+  }
+
+  /**
+   * Resolve a parked action (ENG-193 §4.6) — late, STANDALONE execution: no
+   * interpreter re-run, no re-resolution of input (frozen at park time).
+   * Reuses the SAME per-automation queue `resume()` relies on for its
+   * "two rapid approvals must not double-execute" guarantee (spec §8's
+   * parked-critical-executes-exactly-once invariant rides this, not a new
+   * mechanism — plan deviation #3).
+   */
+  async resolveParkedAction(
+    scope: Principal,
+    actionId: string,
+    decision: "approved" | "declined",
+  ): Promise<
+    | { ok: true; executed: boolean; skipped?: boolean; reason?: string; guardStale?: boolean }
+    | { ok: false; error: string }
+  > {
+    const peek = await this.config.store.getParkedAction(scope, actionId);
+    if (!peek) return { ok: false, error: `parked action "${actionId}" not found` };
+    if (peek.resolution !== undefined) {
+      return { ok: false, error: `parked action "${actionId}" is already resolved (${peek.resolution})` };
+    }
+    return this.enqueue(peek.automationId, async () => {
+      // Re-peek inside the queue: a sibling concurrent call may have resolved
+      // it while this one waited (the SAME race resume() guards against).
+      const action = await this.config.store.getParkedAction(scope, actionId);
+      if (!action || action.resolution !== undefined) {
+        return { ok: false, error: `parked action "${actionId}" is already resolved` };
+      }
+
+      if (decision === "declined") {
+        await this.config.store.resolveParkedAction(scope, actionId, "declined", this.now());
+        return { ok: true, executed: false };
+      }
+
+      const automation = await this.config.store.get(scope, action.automationId);
+      if (!automation) return { ok: false, error: `automation "${action.automationId}" not found` };
+      const tools = await this.config.tools(scope, automation);
+      const tool = tools[action.tool];
+      if (!tool) return { ok: false, error: `tool "${action.tool}" is no longer registered` };
+
+      // Descriptor drift (spec §8.8): a tool whose safety identity changed
+      // since park time is never executed on the stale approval — the row
+      // stays UNRESOLVED (re-askable), not silently declined.
+      const liveHash = hashDescriptor(tool.descriptor);
+      if (liveHash !== action.descriptorHash) {
+        return {
+          ok: false,
+          error: `tool "${action.tool}" changed since this was parked — approval must be requested again`,
+        };
+      }
+
+      // Policy is consulted at resolve time too (mirrors executeToolStep's
+      // own "deny" branch): a tenant/role deny always wins over the human's
+      // "approved" decision. Left UNRESOLVED like descriptor drift — a
+      // policy verdict can change, unlike a declined human answer.
+      const policyDecision = await this.config.policy.evaluate({
+        toolName: action.tool,
+        input: action.input,
+        descriptor: tool.descriptor,
+        principal: { userId: scope.subject },
+      });
+      if (policyDecision === "deny") {
+        return { ok: false, error: `policy denied tool "${action.tool}"` };
+      }
+
+      // CLAIM before executing (the resume() pattern): a retry after this
+      // point sees "already resolved" and 409s instead of double-executing.
+      await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
+
+      // Guard re-check (deviation #2): only when it's provably self-contained
+      // (no steps.* reference) — otherwise flagged stale, never re-evaluated.
+      let guardStale = false;
+      if (action.guardExpr !== undefined && !/\bsteps\s*\./.test(action.guardExpr)) {
+        const run = await this.config.store.getRun(scope, action.runId);
+        const scopeForGuard = {
+          trigger: run?.trigger.payload,
+          steps: {},
+          run: { id: action.runId, automationId: action.automationId, firedAt: run?.trigger.occurredAt ?? "" },
+          user: await this.claims(scope),
+          ...(action.guardBindings ?? {}),
+        };
+        const stillHolds = await evaluateGuard(action.guardExpr, scopeForGuard);
+        if (!stillHolds) {
+          return { ok: true, executed: false, skipped: true, reason: "guard no longer holds" };
+        }
+      } else if (action.guardExpr !== undefined) {
+        // References steps.* — never re-checked (deviation #2). Executes
+        // with the frozen input; the WaitingList/ceremony copy is
+        // responsible for saying so ("reviewed Xh after the run").
+        guardStale = true;
+      }
+
+      const idempotencyKey = `${action.runId}/${action.stepId}/parked-${action.id}`;
+      const outcome = await tool.execute(action.input as Record<string, unknown>, { idempotencyKey });
+      if (!outcome.ok) return { ok: false, error: outcome.error.message };
+      return { ok: true, executed: true, ...(guardStale ? { guardStale: true } : {}) };
+    });
   }
 }
