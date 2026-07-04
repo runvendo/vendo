@@ -83,19 +83,21 @@ describe("VoiceStage", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 
-  it("opens the transcript drawer with finished lines", () => {
-    renderStage(
+  it("opens the transcript drawer with finished lines (and keeps the caption sticky)", () => {
+    const { container } = renderStage(
       snapshotOf([{ type: "caption", id: "c1", role: "user", text: "show my spending", final: true }]),
     );
+    // Settled line stays visible in the caption area (dimmed), never vanishes.
+    expect(container.querySelector(".fl-voice-caption .is-user.is-settled")?.textContent).toContain("show my spending");
     fireEvent.click(screen.getByRole("button", { name: /transcript/ }));
-    expect(screen.getByText("show my spending")).toBeTruthy();
+    expect(container.querySelector(".fl-voice-drawer")?.textContent).toContain("show my spending");
   });
 
   it("closes the transcript drawer when an approval arrives (consent is never covered)", () => {
     const before = snapshotOf([{ type: "caption", id: "c1", role: "user", text: "hi", final: true }]);
-    const { rerender } = renderStage(before);
+    const { rerender, container } = renderStage(before);
     fireEvent.click(screen.getByRole("button", { name: /transcript/ }));
-    expect(screen.getByText("hi")).toBeTruthy(); // drawer open
+    expect(container.querySelector(".fl-voice-drawer")).toBeTruthy(); // drawer open
     const withApproval = reduceVoice(before, {
       type: "approval", id: "a1", toolName: "send_email", input: {}, tier: "act",
     });
@@ -104,7 +106,7 @@ describe("VoiceStage", () => {
         <VoiceStage snapshot={withApproval} onMute={noop} onEnd={noop} onApprove={noop} onDecline={noop} onClosed={noop} />
       </FlowletShellProvider>,
     );
-    expect(screen.queryByText("hi")).toBeNull(); // drawer yielded to the consent card
+    expect(container.querySelector(".fl-voice-drawer")).toBeNull(); // drawer yielded to the consent bar
   });
 
   it("offers Pin this view in the post-call browse state when a pin sink is wired", () => {

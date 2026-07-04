@@ -13,13 +13,32 @@ describe("reduceVoice", () => {
       { type: "status", status: "listening" },
       { type: "caption", id: "c1", role: "user", text: "show me" },
     ]);
-    expect(snap.live?.text).toBe("show me");
+    expect(snap.liveUser?.text).toBe("show me");
     expect(snap.transcript).toHaveLength(0);
     snap = reduceVoice(snap, { type: "caption", id: "c1", role: "user", text: "show me spending", final: true });
-    expect(snap.live).toBeUndefined();
+    expect(snap.liveUser).toBeUndefined();
     expect(snap.transcript).toEqual([
       { id: "c1", role: "user", text: "show me spending", interrupted: undefined, seq: 0 },
     ]);
+  });
+
+  it("keeps user and agent live captions in separate slots (no clobbering)", () => {
+    const snap = run([
+      { type: "caption", id: "a1", role: "assistant", text: "here is" },
+      { type: "caption", id: "u1", role: "user", text: "what did I" },
+    ]);
+    expect(snap.liveAgent?.text).toBe("here is");
+    expect(snap.liveUser?.text).toBe("what did I");
+  });
+
+  it("promotes a replaced un-finalized live line into the transcript (words never vanish)", () => {
+    const snap = run([
+      { type: "caption", id: "u1", role: "user", text: "first thing I said" },
+      // completed never arrived for u1 — a new utterance starts.
+      { type: "caption", id: "u2", role: "user", text: "second" },
+    ]);
+    expect(snap.transcript.map((l) => l.text)).toEqual(["first thing I said"]);
+    expect(snap.liveUser?.text).toBe("second");
   });
 
   it("replaces a pending view in place so the reveal morphs instead of appending", () => {

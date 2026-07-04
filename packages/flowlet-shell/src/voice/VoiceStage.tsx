@@ -67,7 +67,22 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   const feedRef = useRef<HTMLDivElement>(null);
   const closedFired = useRef(false);
 
-  const { status, muted, amplitude, live, transcript, feed, errorMessage } = snapshot;
+  const { status, muted, amplitude, liveUser, liveAgent, transcript, feed, errorMessage } = snapshot;
+
+  // Captions are STICKY: a finalized line stays visible (dimmed) until the
+  // next one starts — words never just vanish off the stage (real-speech
+  // E2E finding). Each role holds its own line; they never clobber.
+  const lastOf = (role: "user" | "assistant") => {
+    for (let i = transcript.length - 1; i >= 0; i--) {
+      const line = transcript[i]!;
+      if (line.role === role) return line;
+    }
+    return undefined;
+  };
+  const userLine = liveUser ?? lastOf("user");
+  const userSettled = !liveUser && userLine !== undefined;
+  const agentLine = liveAgent ?? lastOf("assistant");
+  const agentSettled = !liveAgent && agentLine !== undefined;
 
   const approvals = feed.filter((entry): entry is ApprovalEntry => entry.kind === "approval");
   const pendingApproval = approvals.find((entry) => !entry.resolution);
@@ -209,13 +224,18 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
           {mutedLive ? "Muted" : STATUS_COPY[status]}
         </span>
         {visibleLabel && <div className="fl-voice-status">{visibleLabel}</div>}
-        {/* The conversation lives with the blob (Yousef): the current utterance
-            streams right under the presence, not in a far-away footer strip. */}
+        {/* The conversation lives with the blob (Yousef): both sides of the
+            current exchange, sticky until the next line replaces them. */}
         <div className="fl-voice-caption" aria-live="off">
-          {live && (
-            <span className={live.role === "user" ? "is-user" : "is-agent"}>
-              {live.text}
-              {live.interrupted && <em> — interrupted</em>}
+          {userLine && (
+            <span className={`is-user ${userSettled ? "is-settled" : ""}`}>
+              {userLine.text}
+            </span>
+          )}
+          {agentLine && (
+            <span className={`is-agent ${agentSettled ? "is-settled" : ""}`}>
+              {agentLine.text}
+              {agentLine.interrupted && <em> — interrupted</em>}
             </span>
           )}
         </div>

@@ -46,6 +46,10 @@ export interface RealtimeVoiceDriverOptions {
   callsUrl?: string;
   /** Input transcription model (captions). */
   transcriptionModel?: string;
+  /** Turn detection config. Default: server VAD with a longer silence window
+   *  — stock settings split turns at mid-thought pauses and cancel responses;
+   *  semantic VAD stalled without committing in the real-speech E2E. */
+  turnDetection?: Record<string, unknown>;
 }
 
 const DEFAULT_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
@@ -102,6 +106,7 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
       let micAnalyser: AnalyserNode | null = null;
       let outAnalyser: AnalyserNode | null = null;
       let amplitudeTimer: ReturnType<typeof setInterval> | null = null;
+      let reviveTimer: ReturnType<typeof setTimeout> | null = null;
       const pending = new Map<string, PendingApproval>();
       const handledCalls = new Set<string>();
       // Live caption accumulators (item/response id → text so far).
@@ -344,6 +349,7 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
           return;
         }
         if (type === "response.created") {
+          if (reviveTimer) { clearTimeout(reviveTimer); reviveTimer = null; }
           if (status === "listening") send({ type: "status", status: "thinking" });
           return;
         }
@@ -353,13 +359,27 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         }
         if (type === "response.done") {
           // Function calls also ride the finished response (belt-and-braces).
-          const response = evt.response as { output?: Array<{ type?: string; name?: string; call_id?: string; arguments?: string }> } | undefined;
+          const response = evt.response as
+            | { status?: string; output?: Array<{ type?: string; name?: string; call_id?: string; arguments?: string }> }
+            | undefined;
           for (const item of response?.output ?? []) {
             if (item.type === "function_call" && item.call_id) {
               handleFunctionCall(String(item.name ?? ""), item.call_id, String(item.arguments ?? ""));
             }
           }
           if (status === "speaking" || status === "thinking") send({ type: "status", status: "listening" });
+          // Dead-air guard (real-speech E2E finding): a turn_detected
+          // cancellation with no follow-up turn strands the session — the
+          // user asked, nothing ever answers. If no new response starts
+          // shortly, revive one (unless we're waiting on a consent).
+          if (response?.status === "cancelled" && !reviveTimer) {
+            reviveTimer = setTimeout(() => {
+              reviveTimer = null;
+              if (alive && pending.size === 0 && status !== "ended") {
+                sendClient({ type: "response.create" });
+              }
+            }, 1800);
+          }
           return;
         }
         if (type === "error") {
@@ -432,6 +452,11 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
                 audio: {
                   input: {
                     transcription: { model: options.transcriptionModel ?? "gpt-4o-mini-transcribe" },
+                    turn_detection:
+                      options.turnDetection ?? {
+                        type: "server_vad",
+                        silence_duration_ms: 750,
+                      },
                   },
                 },
               },

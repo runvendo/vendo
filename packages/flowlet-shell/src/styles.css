@@ -765,15 +765,18 @@
 
 /* Lives in the head, right under the blob + status — the words stay with the
    presence. Fixed height (~2 lines) so the feed doesn't jump as lines stream. */
-.fl-voice-caption { height: 38px; padding: 0 22px; text-align: center; max-width: 560px;
+/* Two sticky rows — your last line and the agent's — each clamped so long
+   streaming lines show their tail, not their start. Settled lines dim
+   instead of vanishing. */
+.fl-voice-caption { height: 62px; padding: 0 22px; text-align: center; max-width: 620px;
   font-size: 13.5px; line-height: 1.45; flex-shrink: 0; overflow: hidden;
-  /* Bottom-anchored: a long streaming line scrolls up through the box, so the
-     newest words are always the visible ones. */
-  display: flex; align-items: flex-end; justify-content: center; }
-.fl-voice-caption .is-user { color: var(--flowlet-fg-muted); }
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
+.fl-voice-caption > span { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.fl-voice-caption .is-user { color: var(--flowlet-fg-muted); font-size: 12.5px; -webkit-line-clamp: 1; }
 .fl-voice-caption .is-user::before { content: "“"; }
 .fl-voice-caption .is-user::after { content: "”"; }
-.fl-voice-caption .is-agent { color: var(--flowlet-fg); }
+.fl-voice-caption .is-agent { color: var(--flowlet-fg); -webkit-line-clamp: 2; }
+.fl-voice-caption .is-settled { opacity: .55; transition: opacity .4s ease; }
 .fl-voice-caption em { font-style: italic; color: var(--flowlet-fg-muted); }
 
 /* ---- consent bar: approvals dock at the edge, the agent's UI keeps the

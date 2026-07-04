@@ -48,8 +48,11 @@ export interface VoiceSnapshot {
   muted: boolean;
   /** 0..1 live level (mic while listening, agent output while speaking). */
   amplitude: number;
-  /** The in-flight caption (streams word by word, then finalizes into the transcript). */
-  live?: Omit<VoiceLine, "seq">;
+  /** In-flight captions, ONE SLOT PER ROLE — in real sessions transcription
+   *  lags and the two sides interleave; a single slot makes them clobber
+   *  each other (found in the real-speech E2E). */
+  liveUser?: Omit<VoiceLine, "seq">;
+  liveAgent?: Omit<VoiceLine, "seq">;
   transcript: VoiceLine[];
   feed: VoiceFeedEntry[];
   /** Friendly copy for the reconnect/error banner. */
@@ -89,17 +92,27 @@ export function reduceVoice(snap: VoiceSnapshot, event: VoiceEvent): VoiceSnapsh
     case "amplitude":
       return { ...snap, amplitude: Math.max(0, Math.min(1, event.value)) };
     case "caption": {
-      if (!event.final) {
-        return { ...snap, live: { id: event.id, role: event.role, text: event.text, interrupted: event.interrupted } };
+      const slot = event.role === "user" ? "liveUser" : "liveAgent";
+      const prior = snap[slot];
+      // NEVER lose words: a new utterance arriving while a different one is
+      // still un-finalized promotes the old line into the transcript instead
+      // of silently replacing it (missing `completed` events happen).
+      let transcript = snap.transcript;
+      let seq = snap.seq;
+      if (prior && prior.id !== event.id && prior.text.trim()) {
+        transcript = [...transcript, { ...prior, seq }];
+        seq += 1;
       }
-      const line: VoiceLine = {
-        id: event.id,
-        role: event.role,
-        text: event.text,
-        interrupted: event.interrupted,
-        seq: snap.seq,
-      };
-      return { ...snap, live: undefined, transcript: [...snap.transcript, line], seq: snap.seq + 1 };
+      if (!event.final) {
+        return {
+          ...snap,
+          transcript,
+          seq,
+          [slot]: { id: event.id, role: event.role, text: event.text, interrupted: event.interrupted },
+        };
+      }
+      const line: VoiceLine = { id: event.id, role: event.role, text: event.text, interrupted: event.interrupted, seq };
+      return { ...snap, transcript: [...transcript, line], seq: seq + 1, [slot]: undefined };
     }
     case "view-pending":
       return {
