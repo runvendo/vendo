@@ -296,9 +296,17 @@
 .fl-uinode { align-self: flex-start; width: 100%; }
 
 /* ---------- waiting list ("waiting on you", ENG-193 §4.6) ---------- */
+/* Height-capped with internal scroll: an unbounded inbox (verified live with
+   9 parked rows) starves the host page's flex column, compressing the thread
+   until the last card's buttons sit UNDER the docked composer — whose form
+   then intercepts their clicks. The strip must never take more than its
+   share of the surface; overflow scrolls inside. */
 .fl-waiting { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  max-height: min(40vh, 360px); overflow-y: auto; overscroll-behavior: contain;
   border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
   background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
+/* The scroller's children must never compress (same rule as .fl-msglist). */
+.fl-waiting > * { flex-shrink: 0; }
 .fl-waiting-head { font: 600 11px/1 var(--flowlet-font); letter-spacing: .04em;
   text-transform: uppercase; color: var(--flowlet-fg-muted); }
 .fl-waiting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;

@@ -474,7 +474,8 @@ function gateAgentTool(
               code: "approval_required",
               message:
                 `tool "${name}" needs the user's approval and has no grant for unattended runs — ` +
-                "approval requested from the user; continue without it.",
+                "approval requested from the user; the action is parked as WAITING (never report " +
+                "it as done or sent), continue without it.",
             },
           };
         }

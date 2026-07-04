@@ -60,20 +60,22 @@ on the AutomationCard). Force-fired with "run it now live, actually send them".
   fetch step fails safe to "approve", and the run checkpoint-pauses before
   the loop ever parks.
 
-## Observations / bugs found (not fixed — outside scope)
+## Observations / bugs found live (both FIXED in the review follow-up)
 
 - **Model copy overstates**: after the first parked run the agent's summary
   said "8 chase emails sent" when all 8 were parked awaiting approval (a
-  later pass phrased it correctly as "approval cards queued"). Copy-level
-  model behavior, not a runtime bug — the §4.6 ruling's "run summary says
-  what's waiting" instruction may deserve a stronger prompt nudge.
-- **Composer dock intercepts clicks on the last thread card**: when the
-  thread is scrolled to its bottom limit, the final message's action buttons
-  (e.g. "Approve automation") can sit under `.fl-dock-anchor`/`.fl-composer`,
-  which intercepts pointer events — the thread's bottom padding does not
-  fully account for the dock, most visibly with the WaitingList strip
-  mounted. Worked around by enlarging the viewport. Shell layout issue worth
-  a look in the UI review.
+  later pass phrased it correctly as "approval cards queued"). Fixed by
+  strengthening gateAgentTool's approval_required message ("parked as
+  WAITING — never report it as done or sent") and the compiler instructions
+  (instructions.ts) with the same rule.
+- **Composer dock intercepts clicks on the last thread card**: the unbounded
+  WaitingList strip starved the page's flex column, compressing the thread
+  until the last card's buttons sat under the docked composer (whose form
+  intercepts pointer events). Fixed by height-capping `.fl-waiting`
+  (`min(40vh, 360px)`) with internal scroll. jsdom does no layout, so this
+  is a MANUAL check: mount 9+ parked rows on the assistant page at a
+  ~1000px-tall viewport and confirm the strip scrolls internally while the
+  last thread card's buttons stay clickable above the composer.
 - Screenshots of beats 1–4 predate a dev-server restart mid-pass (external
   SIGTERM); the world was rebuilt and beats re-verified after it — beat 4's
   evidence (resolve response + list state) is from the second pass.

@@ -52,7 +52,7 @@ describe("WaitingList", () => {
       />,
     );
     expect(screen.getByText(/staleness@example.com/)).toBeTruthy();
-    expect(screen.getByText(/after the run/i)).toBeTruthy();
+    expect(screen.getByText(/conditions can't be re-verified/i)).toBeTruthy();
   });
 
   it("Approve/Decline call the corresponding callback with the action's id", () => {

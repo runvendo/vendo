@@ -44,7 +44,11 @@ export function WaitingList({ actions, onApprove, onDecline }: WaitingListProps)
                 <div className="fl-waiting-row-meta">
                   {relativeTimeLabel(requestedMs)}
                   {action.guardStale && (
-                    <span className="fl-waiting-stale"> · reviewed {relativeTimeLabel(requestedMs)} after the run</span>
+                    // The run's conditions referenced other steps' outputs —
+                    // the resolve path never re-checks those (frozen input
+                    // executes as-is), so the row says so plainly instead of
+                    // fabricating a review that hasn't happened.
+                    <span className="fl-waiting-stale"> · conditions can&apos;t be re-verified — review carefully</span>
                   )}
                 </div>
               </div>
