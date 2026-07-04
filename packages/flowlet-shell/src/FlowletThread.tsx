@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FileUIPart } from "ai";
-import type { UINode } from "@flowlet/core";
+import type { AnchorContextBlock, UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
+import { REMIX_CHANGED_EVENT } from "./remix/FlowletRemix";
+import { stampHostComponents } from "./component-drift";
 import type { Feedback } from "./components/TurnActions";
 import { useShell } from "./context";
 import type { Flowlet } from "./seams/store";
@@ -48,9 +50,10 @@ export function FlowletThread({
   heroComposer = false, onPin, onFeedback,
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
-  const { integrations } = useShell();
+  const { integrations, registry, scope, remixes, components } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
 
   // The most recent rendered view — what "Pin to card" commits.
   const latestNode = useMemo<UINode | null>(() => {
@@ -82,7 +85,30 @@ export function FlowletThread({
     if (chat.status === "error") logErrorDetail(chat.error);
   }, [chat.status, chat.error]);
 
-  const send = (text: string, files?: FileUIPart[]) => { void chat.sendMessage({ text, files }); };
+  // Anchor context (FlowletRemix): a scoped send carries the clicked anchor
+  // (snapshot included); every send lists the page's other anchors ambiently.
+  const send = (text: string, files?: FileUIPart[]) => {
+    const scoped = activeScope;
+    const ambient = registry.ambient().filter((a) => a.anchorId !== scoped?.anchorId);
+    const anchors: AnchorContextBlock | undefined =
+      scoped || ambient.length > 0
+        ? { ...(scoped ? { scoped } : {}), ...(ambient.length > 0 ? { ambient } : {}) }
+        : undefined;
+    void chat.sendMessage({ text, files, ...(anchors ? { metadata: { anchors } } : {}) });
+  };
+  // Apply a remix candidate: pin it (stamped for drift detection) and tell the
+  // mounted wrapper to swap in place.
+  const applyRemix = (node: UINode) => {
+    if (node.kind !== "generated" || !node.remixAnchorId) return;
+    const anchorId = node.remixAnchorId;
+    const stamp = stampHostComponents(node, components ?? []);
+    void remixes
+      .pin({ anchorId, node, ...(stamp ? { components: stamp } : {}) })
+      .then(() => {
+        window.dispatchEvent(new CustomEvent(REMIX_CHANGED_EVENT, { detail: { anchorId } }));
+      })
+      .catch((err) => console.warn(`[flowlet] failed to apply remix for "${anchorId}"`, err));
+  };
   const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
   const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
@@ -145,6 +171,7 @@ export function FlowletThread({
             onDecline={decline}
             onRegenerate={regenerate}
             onFeedback={onFeedback}
+            onApplyRemix={applyRemix}
           />
         </ThreadErrorBoundary>
       )}

@@ -3,11 +3,13 @@ import type { UINode } from "./ui";
 
 export const SCHEMA_VERSION = 1 as const;
 
-/** Run identity, carried as ai SDK UIMessage metadata (not a custom data part). */
+/** Message metadata. Run identity (set by the engine's `start` chunk) rides on
+ *  assistant messages; user messages may carry only `anchors`, so the identity
+ *  fields are optional at the type level. */
 export interface FlowletMetadata {
-  runId: string;
-  threadId: string;
-  schemaVersion: number;
+  runId?: string;
+  threadId?: string;
+  schemaVersion?: number;
   /** Anchor context riding a send from a FlowletRemix-scoped surface (2026-07-04 spec). */
   anchors?: AnchorContextBlock;
 }

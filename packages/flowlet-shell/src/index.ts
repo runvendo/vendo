@@ -42,6 +42,11 @@ export * from "./components/ConnectTray";
 export * from "./components/ConnectCard";
 export * from "./components/BrandIcon";
 
+export * from "./remix/FlowletRemix";
+export * from "./remix/page-context-registry";
+export * from "./remix/scope";
+export * from "./remix/snapshot";
+
 export * from "./FlowletThread";
 export * from "./elements/FlowletOverlay";
 export * from "./elements/FlowletSlot";

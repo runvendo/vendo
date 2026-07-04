@@ -678,3 +678,40 @@
   border: 1px solid var(--flowlet-danger-border); background: transparent;
   color: var(--flowlet-danger); font: 600 12px/1.2 var(--flowlet-font); cursor: pointer; }
 .fl-error-retry:hover { background: var(--flowlet-danger); color: var(--flowlet-bg, #fff); }
+
+/* ---------- FlowletRemix (2026-07-04): wrapper, affordance, pill ---------- */
+.fl-remix { position: relative; }
+.fl-remix-host { min-width: 0; }
+.fl-remix-btn { position: absolute; top: 8px; right: 8px; z-index: 5;
+  width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--flowlet-border);
+  background: var(--flowlet-surface); color: var(--flowlet-accent);
+  font: 600 13px/1 var(--flowlet-font); cursor: pointer;
+  opacity: 0; transform: scale(.9); transition: opacity .15s, transform .15s;
+  box-shadow: 0 4px 14px rgba(0,0,0,.10); }
+.fl-remix:hover .fl-remix-btn, .fl-remix:focus-within .fl-remix-btn { opacity: 1; transform: scale(1); }
+.fl-remix-btn:hover { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); }
+.fl-remix-pill { position: absolute; bottom: 8px; right: 8px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px;
+  border-radius: 999px; border: 1px solid var(--flowlet-border);
+  background: var(--flowlet-surface); color: var(--flowlet-fg-muted);
+  font: 500 10.5px/1.4 var(--flowlet-font); box-shadow: 0 3px 10px rgba(0,0,0,.08); }
+.fl-remix-pill[data-state="broken"] { color: var(--flowlet-danger); border-color: var(--flowlet-danger-border); }
+.fl-remix-pill-act { border: 0; background: none; padding: 0; font: 600 10.5px/1.4 var(--flowlet-font);
+  color: var(--flowlet-accent); cursor: pointer; }
+.fl-remix-pill-act:hover { text-decoration: underline; }
+
+/* ---- scoped-overlay header bar ---- */
+.fl-scope-bar { display: flex; align-items: center; gap: 8px; padding: 9px 16px;
+  border-bottom: 1px solid var(--flowlet-border); background: var(--flowlet-accent-soft); }
+.fl-scope-label { font: 600 12px/1.3 var(--flowlet-font); color: var(--flowlet-fg); }
+.fl-scope-clear { margin-left: auto; border: 0; background: none; cursor: pointer;
+  color: var(--flowlet-fg-muted); font: 600 12px/1 var(--flowlet-font); }
+.fl-scope-clear:hover { color: var(--flowlet-fg); }
+
+/* ---- remix-candidate apply bar (under a tagged generated view) ---- */
+.fl-applybar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.fl-apply-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+  padding: 8px 13px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+  background: var(--flowlet-accent); color: var(--flowlet-accent-fg); transition: opacity .14s; }
+.fl-apply-btn:hover { opacity: .88; }
+.fl-applybar-hint { font-size: 11.5px; color: var(--flowlet-fg-muted); }

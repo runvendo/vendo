@@ -6,6 +6,7 @@ import { createLocalIntegrations, type FlowletIntegrations } from "./seams/integ
 import { createLocalNotifications, type FlowletNotifications } from "./seams/notifications";
 import { createLocalRemixes, type RemixClient } from "./seams/remixes";
 import { createPageContextRegistry, type PageContextRegistry } from "./remix/page-context-registry";
+import { createScopeStore, type ScopeStore } from "./remix/scope";
 import type { RunQuery } from "./seams/query";
 import "./styles.css";
 
@@ -21,6 +22,9 @@ export interface ShellContextValue {
   /** Mounted FlowletRemix anchors on the current page — created per provider,
    *  not a prop. Gives every surface "what's on this page" awareness. */
   registry: PageContextRegistry;
+  /** Which anchor the shared overlay is scoped to right now (created per
+   *  provider). Affordance clicks open it; the overlay clears it on close. */
+  scope: ScopeStore;
   /** Host seam: re-run one declared data query through the policy-governed
    *  tool path (ENG-183). Absent → reopened views stay snapshots. */
   runQuery?: RunQuery;
@@ -107,6 +111,7 @@ export function FlowletShellProvider({
 
   // Stable per provider instance: re-renders must never drop registrations.
   const [registry] = useState(createPageContextRegistry);
+  const [scope] = useState(createScopeStore);
 
   const value = useMemo<ShellContextValue>(() => ({
     store: store ?? createLocalStore(),
@@ -114,6 +119,7 @@ export function FlowletShellProvider({
     remixes: remixes ?? createLocalRemixes(),
     notifications: notifications ?? createLocalNotifications(),
     registry,
+    scope,
     runQuery,
     refreshIntervalMs: refreshIntervalMs ?? 60_000,
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
@@ -121,7 +127,7 @@ export function FlowletShellProvider({
     cssVars: cssVars ?? {},
     productName,
     components,
-  }), [store, integrations, remixes, notifications, registry, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
+  }), [store, integrations, remixes, notifications, registry, scope, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
 
   return (
     <ShellContext.Provider value={value}>
