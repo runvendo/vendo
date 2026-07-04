@@ -15,6 +15,8 @@
  *   POST /action        — sandbox dispatch through the policy (+ approval tokens)
  *   GET|POST /integrations — Composio connect flow (inert without the key)
  *   GET  /capabilities  — { chat, integrations, voice } from env-key presence
+ *   POST /consent       — answers a ConsentRequest; server-validates grant
+ *                          creation (ENG-193)
  *   POST /tick          — drives the automations scheduler
  *
  * ZERO-CONFIG: with no options it reads `.env` (capability-additive keys) and
@@ -23,8 +25,16 @@
  */
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
+import {
+  buildDescriptor,
+  createInMemoryGrantStore,
+  hostToolset,
+  InMemoryAuditLog,
+  InMemoryThreadStore,
+} from "@flowlet/runtime";
 import { handleChat } from "./chat";
 import { handleAction, createApprovalStore } from "./action";
+import { handleConsentRoute } from "./consent";
 import {
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
@@ -37,6 +47,8 @@ import { manifestToolsToHostTools } from "./manifest-tools";
 import { buildInstructions, createAgentCache } from "./agent";
 import { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld } from "./world";
 import { defaultFlowletPolicy } from "./default-policy";
+import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
+import { createThreadIndex } from "./threads";
 import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
 
@@ -63,7 +75,14 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const loaded = loadFlowletDir(options.flowletDir);
     const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
     const model = options.model ?? defaultModel();
-    const policy = options.policy ?? defaultFlowletPolicy;
+    const grants = options.store?.grants ?? createInMemoryGrantStore();
+    const audit = options.store?.audit ?? new InMemoryAuditLog();
+    const threads = options.store?.threads ?? new InMemoryThreadStore(() => new Date().toISOString());
+    const threadIndex = createThreadIndex(threads);
+    // ENG-193 item 2: the item-1 stack wraps the host's base policy — grants
+    // can suppress repeat approvals (never critical), audit records executes.
+    const basePolicy = options.policy ?? defaultFlowletPolicy;
+    const policy = composeProductionPolicy(basePolicy, { grants, audit });
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 
@@ -107,6 +126,23 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
     });
 
+    // Static tool-descriptor resolver for the consent endpoint (ENG-193 §4.5
+    // ruling (c): "resolve the LIVE descriptor from the engine's registered
+    // toolset"). Exact for host tools and server tools whose objects carry
+    // annotations; act+unverified for Composio names, which carry no
+    // annotations on this path. Even if a live Composio descriptor ever
+    // differed, `grantPolicy` re-checks the LIVE tier before suppressing, so
+    // a mis-minted grant can never fire on a critical tool — item-1 invariant.
+    const clientTools = hostToolset(hostTools);
+    const resolveDescriptor = (toolName: string) => {
+      const client = clientTools[toolName];
+      if (client) return buildDescriptor(toolName, client, "caller");
+      const server = serverTools()[toolName];
+      if (server) return buildDescriptor(toolName, server, "engine");
+      if (/^[A-Z]+_[A-Z_]+$/.test(toolName)) return buildDescriptor(toolName, {}, "composio");
+      return undefined;
+    };
+
     return {
       capabilities,
       hostTools,
@@ -116,6 +152,11 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       serverTools,
       getAgent,
       approvals: createApprovalStore(),
+      grants,
+      audit,
+      threads,
+      threadIndex,
+      resolveDescriptor,
     };
   }
   const state = () => (assembled ??= assemble());
@@ -147,6 +188,8 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           // A host that injects its own `model` owns the key; otherwise chat
           // needs ANTHROPIC_API_KEY (capabilities.chat).
           chatEnabled: options.model !== undefined || s.capabilities.chat,
+          threads: s.threads,
+          threadIndex: s.threadIndex,
         });
       case "action":
         return handleAction(req, {
@@ -161,6 +204,18 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           enabled: s.capabilities.integrations,
           options,
         });
+      case "consent": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return handleConsentRoute(req, {
+          grants: s.grants,
+          audit: s.audit,
+          threads: s.threads,
+          threadIndex: s.threadIndex,
+          resolveDescriptor: s.resolveDescriptor,
+          principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
+        });
+      }
       case "tick": {
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);

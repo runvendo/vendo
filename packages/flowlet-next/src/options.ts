@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
-import type { HostToolDefinition, RegisteredComponent } from "@flowlet/core";
+import type { AuditLog, GrantStore, HostToolDefinition, RegisteredComponent, ThreadStore } from "@flowlet/core";
 import type { ApprovalPolicy, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
 import type { ConnectionsStore } from "./connections";
 
@@ -58,6 +58,12 @@ export interface FlowletHandlerOptions {
   automations?: false | { tools?: Record<string, RegisteredTool> };
   /** Max model->tool steps per turn. Default: engine default. */
   maxSteps?: number;
+  /**
+   * Store seam members backing grants, audit, and thread persistence
+   * (ENG-193 §6.1/§6.2). Defaults: fresh in-memory instances (reset on
+   * process restart). Inject when the host persists these elsewhere.
+   */
+  store?: { grants?: GrantStore; audit?: AuditLog; threads?: ThreadStore };
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
@@ -88,6 +94,14 @@ const optionsSchema = z
       .union([z.literal(false), z.object({ tools: z.record(z.custom<RegisteredTool>()).optional() }).strict()])
       .optional(),
     maxSteps: z.number().int().positive().optional(),
+    store: z
+      .object({
+        grants: z.custom<GrantStore>((v) => typeof v === "object" && v !== null).optional(),
+        audit: z.custom<AuditLog>((v) => typeof v === "object" && v !== null).optional(),
+        threads: z.custom<ThreadStore>((v) => typeof v === "object" && v !== null).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

@@ -19,3 +19,6 @@ export { defaultFlowletPolicy } from "./default-policy";
 export { createConnectionsStore, type ConnectionsStore } from "./connections";
 export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
 export { buildInstructions, type BuildInstructionsInput } from "./agent";
+export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./policy-stack";
+export { createThreadIndex, type ThreadIndex } from "./threads";
+export { handleConsentRoute, type ConsentRouteDeps } from "./consent";
