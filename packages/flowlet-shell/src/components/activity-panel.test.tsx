@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ActivityPanel } from "./ActivityPanel";
+import { ActivityStep } from "./ActivityStep";
 import type { ToolItem } from "../use-flowlet-thread";
 
 const tool = (name: string, state: string, output?: unknown): ToolItem => ({
@@ -72,5 +73,32 @@ describe("ActivityPanel", () => {
     );
     expect(screen.getByText("Partly done")).toBeTruthy();
     expect(screen.queryByText("Declined")).toBeNull();
+  });
+
+  it("shows an expandable receipt row for a settled mutating call, reusing approvalRows fields", () => {
+    const { container } = render(
+      <ActivityStep
+        step={{
+          kind: "tool", key: "s1", messageId: "m", toolName: "GMAIL_SEND_EMAIL",
+          toolCallId: "c1", state: "output-available", input: { to: "acme@example.com" }, output: "sent",
+          tier: "act",
+        }}
+        showPeek
+      />,
+    );
+    expect(screen.getByText("Sent email")).toBeTruthy();
+    expect(container.querySelector(".fl-receipt")).toBeTruthy();
+    fireEvent.click(screen.getByText("details"));
+    expect(screen.getByText("acme@example.com")).toBeTruthy();
+  });
+
+  it("shows NO receipt affordance for a settled READ call (no tier)", () => {
+    const { container } = render(
+      <ActivityStep
+        step={{ kind: "tool", key: "s2", messageId: "m", toolName: "get_dashboard", state: "output-available", output: {} }}
+        showPeek
+      />,
+    );
+    expect(container.querySelector(".fl-receipt")).toBeNull();
   });
 });

@@ -366,6 +366,10 @@
 .fl-act-peek-row:last-child { border-bottom: 0; }
 .fl-act-peek-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-act-peek-v { color: var(--flowlet-fg-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.fl-receipt { margin-left: 6px; padding: 0; border: none; background: none; cursor: pointer;
+  font: 500 10.5px/1 var(--flowlet-font); color: var(--flowlet-fg-muted); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--flowlet-fg-muted) 45%, transparent); }
+.fl-receipt-fields { margin-top: 6px; padding-left: 26px; }
 
 /* ---------- turn actions ---------- */
 .fl-turn-actions { display: flex; align-items: center; gap: 2px; margin-top: 6px;
