@@ -90,16 +90,23 @@ export function FlowletThread({
       i.kind === "approval" && i.approvalId === approvalId,
     );
 
+  const findApprovalByCall = (toolCallId: string) =>
+    chat.items.find((i): i is Extract<typeof chat.items[number], { kind: "approval" }> =>
+      i.kind === "approval" && i.toolCallId === toolCallId,
+    );
+
   // Consent-channel POSTs are best-effort (ENG-193 §4.5): a failed or absent
   // POST must never block or break the SDK's native approval resume, so every
-  // send is swallowed here and the SDK response proceeds either way.
-  const postConsent = (response: ConsentResponse): Promise<void> =>
-    sendConsent ? sendConsent(response).catch(() => {}) : Promise.resolve();
+  // send is swallowed here and the SDK response proceeds either way. toolName
+  // rides beside the response — the consent endpoints require the client's
+  // tool-name assertion to cross-check against the pending part.
+  const postConsent = (response: ConsentResponse, toolName: string): Promise<void> =>
+    sendConsent ? sendConsent(response, { toolName }).catch(() => {}) : Promise.resolve();
 
   const approve = (approvalId: string) => {
     const item = findApproval(approvalId);
     const consentPost = item?.toolCallId
-      ? postConsent({ id: item.toolCallId, decision: "yes" })
+      ? postConsent({ id: item.toolCallId, decision: "yes" }, item.toolName)
       : Promise.resolve();
     void consentPost.then(() => chat.addToolApprovalResponse({ id: approvalId, approved: true }));
   };
@@ -108,7 +115,7 @@ export function FlowletThread({
     // trail records EVERY decision, and fades need the "no" signal).
     // Fire-and-forget: the SDK boolean never waits on the POST.
     const item = findApproval(approvalId);
-    if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" });
+    if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" }, item.toolName);
     void chat.addToolApprovalResponse({ id: approvalId, approved: false });
   };
 
@@ -117,7 +124,12 @@ export function FlowletThread({
   // approve/decline split.
   const approveBatch = (approvalIds: string[], toolCallIds: string[]) => {
     const consentPosts = Promise.all(
-      toolCallIds.map((id) => postConsent({ id, decision: "yes", subset: toolCallIds })),
+      toolCallIds.map((id) =>
+        postConsent(
+          { id, decision: "yes", subset: toolCallIds },
+          findApprovalByCall(id)?.toolName ?? "",
+        ),
+      ),
     );
     void consentPosts.then(() =>
       approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true })),
@@ -133,8 +145,18 @@ export function FlowletThread({
       .map((id) => findApproval(id)?.toolCallId)
       .filter((id): id is string => !!id);
     const consentPosts = Promise.all([
-      ...toolCallIds.map((id) => postConsent({ id, decision: "subset", subset: allToolCallIds })),
-      ...declinedToolCallIds.map((id) => postConsent({ id, decision: "no", subset: allToolCallIds })),
+      ...toolCallIds.map((id) =>
+        postConsent(
+          { id, decision: "subset", subset: allToolCallIds },
+          findApprovalByCall(id)?.toolName ?? "",
+        ),
+      ),
+      ...declinedToolCallIds.map((id) =>
+        postConsent(
+          { id, decision: "no", subset: allToolCallIds },
+          findApprovalByCall(id)?.toolName ?? "",
+        ),
+      ),
     ]);
     void consentPosts.then(() => {
       approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
@@ -144,7 +166,7 @@ export function FlowletThread({
   const declineBatch = (approvalIds: string[]) => {
     approvalIds.forEach((approvalId) => {
       const item = findApproval(approvalId);
-      if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" });
+      if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" }, item.toolName);
       void chat.addToolApprovalResponse({ id: approvalId, approved: false });
     });
   };

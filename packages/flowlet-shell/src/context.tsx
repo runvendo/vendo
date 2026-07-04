@@ -42,8 +42,14 @@ export interface ShellContextValue {
   components?: RegisteredComponent[];
   /** Posts a ConsentResponse (ENG-193 §4.5). Absent → approve/decline still
    *  work via the SDK's native approval boolean alone, just with no server
-   *  grant/audit trail — the graceful no-op default every other seam here has. */
-  sendConsent?: (response: import("@flowlet/core").ConsentResponse) => Promise<void>;
+   *  grant/audit trail — the graceful no-op default every other seam here has.
+   *  `meta.toolName` rides beside the response because the consent endpoints
+   *  (`handleConsent`) require the client's tool-name assertion to cross-check
+   *  against the pending part, and `ConsentResponse` itself doesn't carry it. */
+  sendConsent?: (
+    response: import("@flowlet/core").ConsentResponse,
+    meta: { toolName: string },
+  ) => Promise<void>;
   /** Parked-action data plane (ENG-193 §4.6). See `ParkedActionsSeam`. */
   parkedActions?: ParkedActionsSeam;
 }
@@ -99,7 +105,10 @@ export interface FlowletShellProviderProps {
   /** F1 component registry; enables drift detection on reopened saved views. */
   components?: RegisteredComponent[];
   /** Posts a ConsentResponse; see ShellContextValue. */
-  sendConsent?: (response: import("@flowlet/core").ConsentResponse) => Promise<void>;
+  sendConsent?: (
+    response: import("@flowlet/core").ConsentResponse,
+    meta: { toolName: string },
+  ) => Promise<void>;
   /** Parked-action data plane; see ShellContextValue. */
   parkedActions?: ParkedActionsSeam;
   children: ReactNode;

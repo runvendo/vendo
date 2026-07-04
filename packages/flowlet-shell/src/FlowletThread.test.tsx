@@ -77,7 +77,10 @@ describe("FlowletThread consent channel", () => {
     fireEvent.click(screen.getByText("Send it"));
     // The approval resume proceeds even though the consent POST rejected.
     await waitFor(() => screen.getByTestId("demo-card"));
-    expect(sendConsent).toHaveBeenCalledWith({ id: "call-1", decision: "yes" });
+    expect(sendConsent).toHaveBeenCalledWith(
+      { id: "call-1", decision: "yes" },
+      { toolName: "renderDemoCard" },
+    );
   });
 
   it("decline posts a no-decision consent (audit records every decision) before answering the SDK boolean", async () => {
@@ -90,6 +93,9 @@ describe("FlowletThread consent channel", () => {
     await waitFor(() =>
       expect(screen.getAllByText("No problem — I won't render the card.").length).toBeGreaterThan(0),
     );
-    expect(sendConsent).toHaveBeenCalledWith({ id: "call-1", decision: "no" });
+    expect(sendConsent).toHaveBeenCalledWith(
+      { id: "call-1", decision: "no" },
+      { toolName: "renderDemoCard" },
+    );
   });
 });
