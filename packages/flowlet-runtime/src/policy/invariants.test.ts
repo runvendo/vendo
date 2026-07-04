@@ -25,6 +25,10 @@ import { judgePolicy } from "./judge-policy";
 import { cautionBreaker, createBreakerState, volumeBreaker } from "./breakers";
 import { getEscalationReason, setEscalationReason } from "./escalation";
 import type { ApprovalPolicy } from "./types";
+import type { FlowletUIMessage } from "@flowlet/core";
+import { createFadeTracker } from "../fade-tracker";
+import { handleConsent } from "../consent";
+import { handleFadeProposal } from "../fade-proposal";
 
 const scope: Principal = { tenantId: "t", subject: "u" };
 
@@ -214,5 +218,127 @@ describe("ENG-193 item 3 — judge + breaker invariants", () => {
       expect(await denyWrapped.evaluate(ctx)).toBe("deny");
       expect(getEscalationReason(ctx)).toBeUndefined();
     }
+  });
+});
+
+/** `handleConsent` deps around a single pending approval for `descriptor`,
+ *  with a live FadeTracker — the full production fade-gating path, not a
+ *  tracker-level unit (the §7 contract lives at the consent boundary). */
+function fadeConsentDeps(descriptor: ToolDescriptor, input: unknown) {
+  const messages = [
+    {
+      id: "m1",
+      role: "assistant",
+      parts: [
+        { type: `tool-${descriptor.name}`, toolCallId: "call-1", state: "approval-requested", input },
+      ],
+    },
+  ] as unknown as FlowletUIMessage[];
+  return {
+    grants: createInMemoryGrantStore(),
+    audit: new InMemoryAuditLog(),
+    fadeTracker: createFadeTracker(),
+    resolveDescriptor: (name: string) => (name === descriptor.name ? descriptor : undefined),
+    getMessages: async () => messages,
+  };
+}
+
+describe("ENG-193 §7 — fade invariants (item 5)", () => {
+  it("INVARIANT: fade is never offered for a critical tool, no matter how many yeses", async () => {
+    const d = fadeConsentDeps(criticalDesc, { to: "a@acme.co" });
+    for (let i = 0; i < 5; i++) {
+      const result = await handleConsent(d, scope, {
+        threadId: "th-1", toolCallId: "call-1", toolName: criticalDesc.name,
+        response: { id: "call-1", decision: "yes" },
+      });
+      expect(result.ok).toBe(true);
+      expect(result.ok && result.fadeEligible).toBeUndefined();
+    }
+  });
+
+  it("INVARIANT: fade is never offered for an unverified tool", async () => {
+    // No informative hints at all -> act tier but isUnverified === true.
+    const unverifiedDesc: ToolDescriptor = {
+      name: "mystery_tool", source: "caller", annotations: {}, hasExecute: true, kind: "function",
+    };
+    const d = fadeConsentDeps(unverifiedDesc, { to: "a@acme.co" });
+    for (let i = 0; i < 5; i++) {
+      const result = await handleConsent(d, scope, {
+        threadId: "th-1", toolCallId: "call-1", toolName: unverifiedDesc.name,
+        response: { id: "call-1", decision: "yes" },
+      });
+      expect(result.ok).toBe(true);
+      expect(result.ok && result.fadeEligible).toBeUndefined();
+    }
+  });
+
+  it("INVARIANT: accept mints a grant matching ONLY the derived shape (never tool-wide unless the shape itself was tool-wide)", async () => {
+    const resolveDescriptor = (n: string) => (n === actDesc.name ? actDesc : undefined);
+
+    // Constrained shape -> a ONE-constraint constrained scope, never wider.
+    const tracker = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) {
+      tracker.record(scope, actDesc.name, { to }, "yes");
+    }
+    const offer = tracker.propose(scope, actDesc.name, { to: "d@acme.co" });
+    expect(offer).not.toBeNull();
+    const grants = createInMemoryGrantStore();
+    const result = await handleFadeProposal(
+      { fadeTracker: tracker, grants, audit: new InMemoryAuditLog(), resolveDescriptor },
+      scope,
+      { proposalId: offer!.proposalId, accept: true },
+    );
+    expect(result.ok).toBe(true);
+    const [grant] = await grants.findForTool(scope, actDesc.name);
+    expect(grant?.scope).toEqual({
+      kind: "constrained",
+      constraints: [{ path: "to", op: "matches", value: "*@acme.co" }],
+    });
+    expect(grant?.source).toEqual({ kind: "fade" });
+
+    // Tool-wide ONLY when the derived shape itself was tool-wide.
+    const tracker2 = createFadeTracker();
+    for (let i = 0; i < 3; i++) tracker2.record(scope, actDesc.name, { amount: i }, "yes");
+    const offer2 = tracker2.propose(scope, actDesc.name, { amount: 9 });
+    expect(offer2?.shape).toEqual({ kind: "tool" });
+    const grants2 = createInMemoryGrantStore();
+    const result2 = await handleFadeProposal(
+      { fadeTracker: tracker2, grants: grants2, audit: new InMemoryAuditLog(), resolveDescriptor },
+      scope,
+      { proposalId: offer2!.proposalId, accept: true },
+    );
+    expect(result2.ok).toBe(true);
+    const [grant2] = await grants2.findForTool(scope, actDesc.name);
+    expect(grant2?.scope).toEqual({ kind: "tool" });
+  });
+
+  it("INVARIANT: server re-derivation rejects a forged accept for an ineligible/unknown proposalId", async () => {
+    const grants = createInMemoryGrantStore();
+    const result = await handleFadeProposal(
+      {
+        fadeTracker: createFadeTracker(), grants, audit: new InMemoryAuditLog(),
+        resolveDescriptor: (n: string) => (n === actDesc.name ? actDesc : undefined),
+      },
+      scope,
+      { proposalId: "forged-proposal-id", accept: true },
+    );
+    expect(result.ok).toBe(false);
+    expect(await grants.list(scope)).toHaveLength(0);
+  });
+
+  it("INVARIANT: revoke takes effect on the very next call (no caching)", async () => {
+    const store = createInMemoryGrantStore();
+    const mgr = createGrantManager({ store, audit: new InMemoryAuditLog() });
+    const grant = await mgr.create(
+      scope,
+      { tool: actDesc.name, scope: { kind: "tool" }, duration: "standing", source: { kind: "fade" } },
+      actDesc,
+    );
+    const policy = grantPolicy(annotationPolicy(), store, { principalScope: () => scope });
+    expect(await policy.evaluate(ctxFor(actDesc))).toBe("allow");
+    await mgr.revoke(scope, grant.id);
+    // grant-policy consults the live store on EVERY evaluate — this pins that
+    // contract so a future caching layer can't quietly break revocation.
+    expect(await policy.evaluate(ctxFor(actDesc))).toBe("approve");
   });
 });
