@@ -22,9 +22,16 @@ import type { PolicyContext } from "./types";
 
 const reasons = new WeakMap<PolicyContext, string>();
 
-/** Stamp a plain-language reason on this exact ctx instance. */
+/** The judge's reason is MODEL-AUTHORED text bound for the card DOM, the
+ *  data-consent part, and the audit trail — cap it at the single stamp site
+ *  so every consumer gets the bounded, single-line form. */
+const MAX_REASON_CHARS = 200;
+
+/** Stamp a plain-language reason on this exact ctx instance. Whitespace
+ *  (including newlines) collapses to single spaces and the result is capped
+ *  at {@link MAX_REASON_CHARS} — see the constant's doc for why. */
 export function setEscalationReason(ctx: PolicyContext, reason: string): void {
-  reasons.set(ctx, reason);
+  reasons.set(ctx, reason.replace(/\s+/g, " ").trim().slice(0, MAX_REASON_CHARS));
 }
 
 /** Read back a reason stamped on this exact ctx instance, if any. */

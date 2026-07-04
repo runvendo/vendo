@@ -28,4 +28,16 @@ describe("escalation reason side channel", () => {
     setEscalationReason(ctx1, "reason for ctx1 only");
     expect(getEscalationReason(ctx2)).toBeUndefined();
   });
+
+  it("caps a runaway model-authored reason at 200 chars AT THE STAMP SITE", () => {
+    const ctx = ctxFor("send_email");
+    setEscalationReason(ctx, "x".repeat(5000));
+    expect(getEscalationReason(ctx)).toHaveLength(200);
+  });
+
+  it("collapses all whitespace/newlines to single spaces so every consumer gets one line", () => {
+    const ctx = ctxFor("send_email");
+    setEscalationReason(ctx, "  line one\n\nline\ttwo   spaced\r\nend  ");
+    expect(getEscalationReason(ctx)).toBe("line one line two spaced end");
+  });
 });

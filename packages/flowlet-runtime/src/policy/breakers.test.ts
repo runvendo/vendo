@@ -94,6 +94,21 @@ describe("volumeBreaker", () => {
     await policy.onExecuted!(ctx, "allow");
     expect(await policy.evaluate(ctx)).toBe("allow"); // ...still untouched, no threadId
   });
+
+  it("counts are scoped per principal — the same threadId under a different user starts fresh", async () => {
+    const state = createBreakerState();
+    const policy = volumeBreaker(fixed("allow"), state, { threshold: 2 });
+    for (let i = 0; i < 2; i++) {
+      const ctx = ctxFor(actDesc, "th-A");
+      await policy.evaluate(ctx);
+      await policy.onExecuted!(ctx, "allow");
+    }
+    // Tripped for principal "u" on th-A...
+    expect(await policy.evaluate(ctxFor(actDesc, "th-A"))).toBe("approve");
+    // ...but a DIFFERENT principal on the SAME thread starts fresh.
+    const otherUser = { ...ctxFor(actDesc, "th-A"), principal: { userId: "someone-else" } };
+    expect(await policy.evaluate(otherUser)).toBe("allow");
+  });
 });
 
 describe("cautionBreaker", () => {
@@ -187,5 +202,45 @@ describe("cautionBreaker", () => {
     await escalating.onExecuted!(ctx, "approve");
     const policy = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 1 });
     expect(await policy.evaluate(ctx)).toBe("allow"); // never tripped — no thread to key on
+  });
+
+  it("REGRESSION: the SDK's double-evaluate (same toolCallId at needsApproval + execute) counts ONE escalation, not two", async () => {
+    // Production evaluates the composed policy TWICE per call — once from
+    // needsApproval, once from execute — with two different ctx objects that
+    // share the same toolCallId. Without toolCallId dedupe, each escalated
+    // call counted twice and caution tripped at ~half the documented
+    // thresholds, dependent on whether the user approved (execute ran).
+    const state = createBreakerState();
+    // 2 distinct escalated calls, each evaluated TWICE (4 evaluations, 2 escalations).
+    for (let i = 0; i < 2; i++) {
+      const policy = cautionBreaker(escalatingStub("approve"), state, { consecutiveThreshold: 3 });
+      for (let pass = 0; pass < 2; pass++) {
+        const ctx = { ...ctxFor(actDesc), toolCallId: `call-${i}` };
+        expect(await policy.evaluate(ctx)).toBe("approve");
+      }
+    }
+    // Only 2 DISTINCT escalations so far — caution must NOT be tripped.
+    const probe1 = { ...ctxFor(actDesc), toolCallId: "probe-1" };
+    expect(await cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 }).evaluate(probe1)).toBe("allow");
+    // The THIRD distinct escalated call (also double-evaluated) trips it at exactly 3.
+    const third = cautionBreaker(escalatingStub("approve"), state, { consecutiveThreshold: 3 });
+    await third.evaluate({ ...ctxFor(actDesc), toolCallId: "call-2" });
+    await third.evaluate({ ...ctxFor(actDesc), toolCallId: "call-2" });
+    const probe2 = { ...ctxFor(actDesc), toolCallId: "probe-2" };
+    expect(await cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 }).evaluate(probe2)).toBe("approve");
+    expect(getEscalationReason(probe2)).toBeTruthy();
+  });
+
+  it("caution state is scoped per principal — the same threadId under a different user starts fresh", async () => {
+    const state = createBreakerState();
+    for (let i = 0; i < 3; i++) {
+      const esc = cautionBreaker(escalatingStub("approve"), state, { consecutiveThreshold: 3 });
+      await esc.evaluate({ ...ctxFor(actDesc), toolCallId: `c-${i}` });
+    }
+    // Tripped for principal "u"...
+    expect(await cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 }).evaluate(ctxFor(actDesc))).toBe("approve");
+    // ...but a DIFFERENT principal on the SAME thread is untouched.
+    const otherUser = { ...ctxFor(actDesc), principal: { userId: "someone-else" } };
+    expect(await cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 }).evaluate(otherUser)).toBe("allow");
   });
 });

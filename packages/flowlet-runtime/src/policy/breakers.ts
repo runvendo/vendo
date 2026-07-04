@@ -2,7 +2,9 @@
  * Deterministic seatbelts (ENG-193 §4.7) — no LLM, always on, compose
  * OUTSIDE `judgePolicy`: they see whatever it decided and can only tighten
  * further (most-restrictive-wins), never loosen. State is in-memory, keyed
- * by `threadId` (module-scope store injected — the same pattern the retired
+ * by `principal.userId :: threadId` (a shared/guessable threadId under a
+ * different user must never read or trip another user's breaker state;
+ * module-scope store injected — the same pattern the retired
  * `rememberDecisions`/`DecisionStore` used); swap for cloud persistence later
  * behind the same `BreakerState` shape.
  *
@@ -36,9 +38,9 @@ import { dangerTier } from "./tier";
 import { getEscalationReason, setEscalationReason } from "./escalation";
 
 export interface BreakerState {
-  /** Executed-call counts per thread per tool (fed by onExecuted). */
+  /** Executed-call counts per principal::thread per tool (fed by onExecuted). */
   volumeCounts: Map<string, Map<string, number>>;
-  /** Per-thread caution tracking. */
+  /** Per-principal::thread caution tracking. */
   caution: Map<string, CautionRecord>;
 }
 
@@ -47,14 +49,29 @@ interface CautionRecord {
   consecutiveEscalations: number;
   totalEscalations: number;
   cleanApprovals: number;
+  /**
+   * toolCallIds whose escalation was already counted (bounded FIFO). The SDK
+   * evaluates the composed policy TWICE per call — needsApproval AND execute
+   * — with the SAME toolCallId; without this, one escalated call counted
+   * twice and caution tripped at ~half the documented thresholds, dependent
+   * on whether the user approved (whether execute's evaluation ever ran).
+   */
+  countedEscalationIds: string[];
 }
+
+/** Bound on the per-thread counted-escalation FIFO — plenty for the SDK's
+ *  two-evaluations-per-call window, tiny enough to never matter. */
+const MAX_COUNTED_IDS = 64;
 
 export function createBreakerState(): BreakerState {
   return { volumeCounts: new Map(), caution: new Map() };
 }
 
+/** Breaker state key: principal + thread (undefined = automation context).
+ *  A different user on the SAME threadId gets fully independent state. */
 function threadKey(ctx: PolicyContext): string | undefined {
-  return ctx.threadId;
+  if (ctx.threadId === undefined) return undefined;
+  return `${ctx.principal.userId}::${ctx.threadId}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,10 +135,21 @@ export interface CautionBreakerOptions {
 function cautionFor(state: BreakerState, key: string): CautionRecord {
   let rec = state.caution.get(key);
   if (!rec) {
-    rec = { active: false, consecutiveEscalations: 0, totalEscalations: 0, cleanApprovals: 0 };
+    rec = { active: false, consecutiveEscalations: 0, totalEscalations: 0, cleanApprovals: 0, countedEscalationIds: [] };
     state.caution.set(key, rec);
   }
   return rec;
+}
+
+/** True when this toolCallId's escalation was already counted; records it
+ *  otherwise. An id-less ctx (bare unit tests) is never deduped — production
+ *  contexts always carry a toolCallId (`wrapTool`/`wrapClientTool`). */
+function alreadyCounted(rec: CautionRecord, toolCallId: string | undefined): boolean {
+  if (toolCallId === undefined) return false;
+  if (rec.countedEscalationIds.includes(toolCallId)) return true;
+  rec.countedEscalationIds.push(toolCallId);
+  if (rec.countedEscalationIds.length > MAX_COUNTED_IDS) rec.countedEscalationIds.shift();
+  return false;
 }
 
 export function cautionBreaker(
@@ -144,7 +172,13 @@ export function cautionBreaker(
 
       // inner is judgePolicy DIRECTLY (composition contract, see docstring):
       // an "approve" with a reason already stamped IS a judge escalation.
-      if (decision === "approve" && getEscalationReason(ctx) !== undefined) {
+      // Counted at most ONCE per toolCallId — the SDK evaluates the same
+      // call twice (needsApproval + execute), see CautionRecord's doc.
+      if (
+        decision === "approve" &&
+        getEscalationReason(ctx) !== undefined &&
+        !alreadyCounted(rec, ctx.toolCallId)
+      ) {
         rec.consecutiveEscalations += 1;
         rec.totalEscalations += 1;
         rec.cleanApprovals = 0;

@@ -210,6 +210,14 @@ describe("judgePolicy", () => {
     expect(getEscalationReason(ctx2)).toBe("memoised reason");
   });
 
+  it("memo is scoped per principal — the same thread+tool+input under a different user re-invokes the model", async () => {
+    const { model, spy } = spyMock(() => "match");
+    const policy = judgePolicy(fixed("approve"), { model });
+    await policy.evaluate(ctxFor(actDesc));
+    await policy.evaluate(ctxFor(actDesc, { principal: { userId: "someone-else" } }));
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it("propagates onExecuted to inner", async () => {
     const calls: string[] = [];
     const inner: ApprovalPolicy = { evaluate: () => "allow", onExecuted: async () => { calls.push("inner"); } };

@@ -288,7 +288,11 @@
 .fl-approval--escalation { border-color: var(--flowlet-warn-border); background: var(--flowlet-warn-bg); }
 .fl-approval--escalation .fl-approval-ic { color: var(--flowlet-warn); background: color-mix(in srgb, var(--flowlet-warn) 16%, transparent); }
 .fl-approval--escalation .fl-approval-eyebrow { color: var(--flowlet-warn); }
-.fl-approval-reason { margin: 10px 0 0; font: 400 12.5px/1.4 var(--flowlet-font); color: var(--flowlet-fg); }
+.fl-approval-reason { margin: 10px 0 0; font: 400 12.5px/1.4 var(--flowlet-font); color: var(--flowlet-fg);
+  /* Defensive: the reason is model-authored text — capped at 200 chars at the
+     stamp site (runtime escalation.ts), but never let a runaway value blow
+     the card up regardless. */
+  max-height: 7em; overflow-y: auto; overflow-wrap: break-word; }
 .fl-uinode { align-self: flex-start; width: 100%; }
 
 /* ---------- composer ---------- */

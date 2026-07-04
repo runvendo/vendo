@@ -23,10 +23,18 @@ import { dangerTier } from "./tier";
 import type { PolicyContext } from "./types";
 import { judgePolicy } from "./judge-policy";
 import { cautionBreaker, createBreakerState, volumeBreaker } from "./breakers";
-import { setEscalationReason } from "./escalation";
+import { getEscalationReason, setEscalationReason } from "./escalation";
+import type { ApprovalPolicy } from "./types";
 
 const scope: Principal = { tenantId: "t", subject: "u" };
 
+const readDesc: ToolDescriptor = {
+  name: "get_x",
+  source: "caller",
+  annotations: { readOnlyHint: true },
+  hasExecute: true,
+  kind: "function",
+};
 const actDesc: ToolDescriptor = {
   name: "send_email",
   source: "caller",
@@ -189,10 +197,22 @@ describe("ENG-193 item 3 — judge + breaker invariants", () => {
     await seedToolGrant(store, actDesc);
     const withoutJudge = grantPolicy(annotationPolicy(), store, { principalScope: () => scope });
     const wrappedInJudge = judgePolicy(withoutJudge, {}); // no model
-    for (const descriptor of [actDesc, criticalDesc]) {
+    // Every tier cell: read, act, critical.
+    for (const descriptor of [readDesc, actDesc, criticalDesc]) {
       const ctx = { ...ctxFor(descriptor), threadId: "th-1" };
       const ctxCopy = { ...ctxFor(descriptor), threadId: "th-1" };
       expect(await wrappedInJudge.evaluate(ctx)).toBe(await withoutJudge.evaluate(ctxCopy));
+      // No side-channel writes either: an unset judge must leave the
+      // escalation channel untouched for every cell.
+      expect(getEscalationReason(ctx)).toBeUndefined();
+    }
+    // The deny cell: a denying inner stays deny, with no side-channel write.
+    const denyInner: ApprovalPolicy = { evaluate: () => "deny" };
+    const denyWrapped = judgePolicy(denyInner, {});
+    for (const descriptor of [readDesc, actDesc, criticalDesc]) {
+      const ctx = { ...ctxFor(descriptor), threadId: "th-1" };
+      expect(await denyWrapped.evaluate(ctx)).toBe("deny");
+      expect(getEscalationReason(ctx)).toBeUndefined();
     }
   });
 });

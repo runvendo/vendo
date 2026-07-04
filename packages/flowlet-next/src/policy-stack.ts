@@ -2,14 +2,19 @@
  * The production policy stack (ENG-193 §4.2/§4.3/§4.7/§6.2), applied to
  * whatever BASE policy the host runs — `options.policy ?? defaultFlowletPolicy`.
  *
- *   audit ⊕ volumeBreaker(cautionBreaker(judgePolicy(grantPolicy(base))))
+ *   volumeBreaker(cautionBreaker(judgePolicy(grantPolicy(base)))) ⊕ audit
  *
  * `composePolicy` is most-restrictive-wins across the two top-level siblings
- * (`auditPolicy`, always "allow"; the breaker/judge/grant chain). Within that
- * chain, nesting order is load-bearing — see `judge-policy.ts` and
- * `breakers.ts`'s own docstrings for why `cautionBreaker` must sit directly
- * on `judgePolicy`'s output. `contextKey: threadId` (§4.3) keys
- * session/task-duration grants to one conversation.
+ * (the breaker/judge/grant chain; `auditPolicy`, always "allow"). SIBLING
+ * ORDER IS LOAD-BEARING: `composePolicy` evaluates siblings in order with
+ * one shared ctx, and `auditPolicy` must come LAST so its evaluate observes
+ * the escalation reason the chain just stamped — that's what gives a
+ * DECLINED escalation its `judge_escalation` audit entry (see
+ * audit-policy.ts's composition contract). Within the chain, nesting order
+ * is load-bearing too — see `judge-policy.ts` and `breakers.ts`'s own
+ * docstrings for why `cautionBreaker` must sit directly on `judgePolicy`'s
+ * output. `contextKey: threadId` (§4.3) keys session/task-duration grants
+ * to one conversation.
  */
 import type { AuditLog, GrantStore, Principal } from "@flowlet/core";
 import type { LanguageModel } from "ai";
@@ -49,10 +54,6 @@ export function composeProductionPolicy(
 ): ApprovalPolicy {
   const breakerState = deps.breakers ?? createBreakerState();
   return composePolicy(
-    auditPolicy(deps.audit, {
-      principalScope,
-      ...(deps.now ? { now: deps.now } : {}),
-    }),
     volumeBreaker(
       cautionBreaker(
         judgePolicy(
@@ -67,5 +68,10 @@ export function composeProductionPolicy(
       ),
       breakerState,
     ),
+    // LAST on purpose — must observe the reason the chain stamped (see docstring).
+    auditPolicy(deps.audit, {
+      principalScope,
+      ...(deps.now ? { now: deps.now } : {}),
+    }),
   );
 }

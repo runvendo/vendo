@@ -90,7 +90,6 @@ const judgeModel = JUDGE_MODEL_NAME ? anthropic(JUDGE_MODEL_NAME) : undefined;
 const breakerState = createBreakerState();
 
 export const demoPolicy: ApprovalPolicy = composePolicy(
-  auditPolicy(demoStore.audit, { principalScope: () => CADENCE_SCOPE }),
   volumeBreaker(
     cautionBreaker(
       judgePolicy(
@@ -104,4 +103,8 @@ export const demoPolicy: ApprovalPolicy = composePolicy(
     ),
     breakerState,
   ),
+  // LAST on purpose — auditPolicy's evaluate must observe the escalation
+  // reason the chain stamped, so a DECLINED escalation still gets its
+  // judge_escalation trail entry (see audit-policy.ts's composition contract).
+  auditPolicy(demoStore.audit, { principalScope: () => CADENCE_SCOPE }),
 );

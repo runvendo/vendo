@@ -28,7 +28,7 @@
  *                              nothing to match against, and Moment 1's
  *                              promise ("reads just flow") has no exception.
  *   - tier "act"            -> the judge runs, ONCE per distinct call
- *                              (memoised by thread+tool+input — the ai SDK
+ *                              (memoised by principal+thread+tool+input — the ai SDK
  *                              re-evaluates the FULL composed policy at
  *                              `needsApproval` time AND again at `execute`
  *                              time for the same call; asking the model
@@ -160,7 +160,9 @@ export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): Ap
       if (ctx.threadId === undefined) return decision; // automation context — item 4
       if (dangerTier(ctx.descriptor) !== "act") return decision;
 
-      const key = JSON.stringify([ctx.threadId, ctx.toolName, ctx.input]);
+      // Principal in the key: a shared/guessable threadId under a DIFFERENT
+      // user must never replay another user's cached verdict.
+      const key = JSON.stringify([ctx.principal.userId, ctx.threadId, ctx.toolName, ctx.input]);
       const cached = memo.get(key);
       if (cached) return applyVerdict(ctx, cached);
 
