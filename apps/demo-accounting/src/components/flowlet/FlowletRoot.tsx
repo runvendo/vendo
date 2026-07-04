@@ -23,6 +23,7 @@ import { renderNode } from "./render-node";
 import { runQuery } from "./run-query";
 import { listParkedActions, resolveParkedAction } from "./parked-actions";
 import { createSendConsent } from "./consent";
+import { listGrants, revokeGrant, queryAudit, listCriticalTools, resolveFadeProposal } from "./trust";
 
 // The real embedded-mode store (ENG-183): saved flowlets survive reloads. One
 // module-scope instance so every surface shares it; it only touches
@@ -80,6 +81,7 @@ export function FlowletRoot({
           runQuery={runQuery}
           sendConsent={sendConsent}
           parkedActions={{ list: listParkedActions, resolve: resolveParkedAction }}
+          trust={{ listGrants, revokeGrant, queryAudit, listCriticalTools, resolveFadeProposal }}
           // Same registry as FlowletProvider — reopened saved views diff their
           // host-component stamp against it and surface drift (ENG-186).
           components={[...prewiredComponents, ...cadenceHostComponents]}

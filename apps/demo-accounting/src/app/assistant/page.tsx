@@ -17,6 +17,7 @@ import {
   useReopenFlowlet,
   useParkedActions,
   WaitingList,
+  TrustScreen,
   type Flowlet,
 } from "@flowlet/shell"
 import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
@@ -36,6 +37,7 @@ function PageSurface() {
   const parked = useParkedActions()
   const [active, setActive] = useState<string>(CHAT)
   const [saved, setSaved] = useState<Flowlet[]>([])
+  const [trustOpen, setTrustOpen] = useState(false)
 
   // Hydrate the tab strip from the store (ENG-183): saved flowlets survive
   // reloads. Oldest-first so tabs keep their creation order.
@@ -148,6 +150,14 @@ function PageSurface() {
         <button type="button" className="fl-tab fl-tab-new" aria-label="New chat" onClick={newChat}>
           ＋
         </button>
+        <button
+          type="button"
+          className="fl-tab fl-tab-trust"
+          aria-label="Trust — what Vendo can do"
+          onClick={() => setTrustOpen(true)}
+        >
+          🛡
+        </button>
       </div>
 
       <div className="fl-page-body">
@@ -172,6 +182,13 @@ function PageSurface() {
           onAction={() => settleDelete(deleted[0]!, true)}
           onDismiss={() => settleDelete(deleted[0]!, false)}
         />
+      )}
+      {trustOpen && (
+        <div className="fl-trust-overlay" role="presentation" onClick={() => setTrustOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <TrustScreen onClose={() => setTrustOpen(false)} />
+          </div>
+        </div>
       )}
     </div>
   )
