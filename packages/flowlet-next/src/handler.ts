@@ -18,6 +18,10 @@
  *   POST /consent       — answers a ConsentRequest; server-validates grant
  *                          creation (ENG-193)
  *   POST /fade-proposal — resolves a fade proposal (ENG-193 §4.4)
+ *   GET  /grants        — Trust screen: federated grants (standing + automation) (ENG-193 §3 Moment 12)
+ *   POST /grants/revoke — Trust screen: revoke a standing grant (ENG-193 §3 Moment 12)
+ *   GET  /audit         — Trust screen: audit query (ENG-193 §3 Moment 12)
+ *   GET  /critical-tools — Trust screen: tools that always need the human (ENG-193 §3 Moment 12)
  *   POST /tick          — drives the automations scheduler
  *
  * ZERO-CONFIG: with no options it reads `.env` (capability-additive keys) and
@@ -40,6 +44,7 @@ import { handleAction, createApprovalStore } from "./action";
 import { handleConsentRoute } from "./consent";
 import { handleFadeProposalRoute } from "./fade-proposal";
 import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
+import { listGrantsRoute, revokeGrantRoute, queryAuditRoute, listCriticalToolsRoute } from "./trust";
 import {
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
@@ -205,6 +210,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       threadIndex,
       resolveDescriptor,
       fadeTracker,
+      clientTools,
     };
   }
   const state = () => (assembled ??= assemble());
@@ -225,6 +231,30 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
         return listParkedActionsRoute(req, { world: s.world, principal: guard.principal });
+      }
+      case "grants": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return listGrantsRoute(req, {
+          grants: s.grants,
+          world: s.world,
+          principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
+        });
+      }
+      case "audit": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return queryAuditRoute(req, { audit: s.audit, principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId } });
+      }
+      case "critical-tools": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        const names = [
+          ...Object.keys(s.clientTools),
+          ...Object.keys(s.serverTools()),
+          ...(s.world ? Object.keys(s.world.authoringTools()) : []),
+        ];
+        return listCriticalToolsRoute(req, { toolNames: names, resolveDescriptor: s.resolveDescriptor });
       }
       default:
         return Response.json({ error: "not found" }, { status: 404 });
@@ -296,6 +326,17 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
         return resolveParkedActionRoute(req, { world: s.world, principal: guard.principal });
+      }
+      // POST /api/flowlet/grants/revoke (ENG-193 §3 Moment 12) — same
+      // "last segment only" `subPath` behavior as parked-actions/resolve.
+      case "revoke": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return revokeGrantRoute(req, {
+          grants: s.grants,
+          audit: s.audit,
+          principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
+        });
       }
       default:
         return Response.json({ error: "not found" }, { status: 404 });
