@@ -13,13 +13,21 @@ describe("consent wire types", () => {
     expect(req.tier).toBe("act");
   });
 
-  it("rejects a kind other than approval or parked-action (discriminated union)", () => {
+  it("rejects a kind outside the known union (discriminated union)", () => {
     expect(() =>
       consentRequestSchema.parse({
-        id: "call-1", kind: "fade-proposal", tier: "act",
+        id: "call-1", kind: "not-a-real-kind", tier: "act",
         toolName: "x", inputPreview: "",
       }),
     ).toThrow();
+  });
+
+  it("accepts the new 'fade-proposal' kind (ENG-193 §4.4)", () => {
+    const req = consentRequestSchema.parse({
+      id: "p-1", kind: "fade-proposal", tier: "act", toolName: "GMAIL_SEND_EMAIL",
+      inputPreview: "reminder emails to your clients",
+    });
+    expect(req.kind).toBe("fade-proposal");
   });
 
   it("widens consentRequestSchema to a discriminated union — 'approval' still parses (regression)", () => {

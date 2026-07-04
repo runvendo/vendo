@@ -4,6 +4,7 @@ export * from "./host-api";
 export * from "./ui";
 export * from "./protocol";
 export * from "./consent";
+export * from "./fade";
 export * from "./agent";
 export * from "./registry";
 export * from "./genui";

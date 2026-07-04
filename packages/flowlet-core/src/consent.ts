@@ -12,9 +12,9 @@ import { grantDurationSchema, grantScopeSchema } from "./seams/grants";
  *
  * A discriminated union on `kind`: `"approval"` is the original v1 chat-turn
  * shape; `"parked-action"` (ENG-193 §4.6) is the extension point this
- * docstring reserved, now populated. `"fade-proposal"` (§4.4) joins it in a
- * later item. Do not widen this speculatively — each new kind ships with its
- * own consumer.
+ * docstring reserved, now populated. "fade-proposal" (§4.4) — see fade.ts for
+ * its real accept/decline wire object. Do not widen this speculatively — each
+ * new kind ships with its own consumer.
  */
 const approvalConsentRequestSchema = z
   .object({
@@ -50,9 +50,32 @@ const parkedActionConsentRequestSchema = z
   })
   .strict();
 
+/**
+ * ENG-193 §4.4 — the fade proposal card's own kind: "that's the third time
+ * you've okayed this — want me to handle these without checking?" Like
+ * `"parked-action"` before it, this is the documented extension point item
+ * 2's docstring reserved — a contract-completeness addition; the actual
+ * accept/decline wire object is `FadeProposalResolution` (see fade.ts), not
+ * a `ConsentResponse` against this request.
+ */
+const fadeProposalConsentRequestSchema = z
+  .object({
+    /** The proposal's own id (FadeTracker-assigned, deterministic) — reused
+     *  as this request's id; there is no separate toolCallId. */
+    id: z.string(),
+    kind: z.literal("fade-proposal"),
+    tier: z.literal("act"),
+    toolName: z.string(),
+    /** Plain-language description of the narrowed shape, e.g. "reminder
+     *  emails to your clients" — never "all email" (spec §3 Moment 5). */
+    inputPreview: z.string(),
+  })
+  .strict();
+
 export const consentRequestSchema = z.discriminatedUnion("kind", [
   approvalConsentRequestSchema,
   parkedActionConsentRequestSchema,
+  fadeProposalConsentRequestSchema,
 ]);
 export type ConsentRequest = z.infer<typeof consentRequestSchema>;
 
