@@ -205,6 +205,7 @@ export class AutomationRunner {
           outcome: "cancelled",
           error: `dropped: exceeded maxFiringsPerHour (${cap})`,
         });
+        await this.parkIfSpentOneShot(scope, automationId);
         this.config.onRunFinished?.(cancelled, automation);
         await this.notifyFinished(scope, cancelled, automation);
         return cancelled;
@@ -231,6 +232,7 @@ export class AutomationRunner {
       }
       if (!pass) {
         const skipped = await store.finalizeRun(scope, run.id, { outcome: "skipped" });
+        if (options.isTest !== true) await this.parkIfSpentOneShot(scope, automationId);
         this.config.onRunFinished?.(skipped, automation);
         return skipped;
       }
@@ -339,25 +341,26 @@ export class AutomationRunner {
       }
     }
 
-    // A one-shot schedule (`at`) is spent after its firing finalizes — success
-    // or failure — so park it; otherwise durable stores would rehydrate it as
-    // "enabled" forever. Test runs (run_automation_now) never spend it.
-    if (!finalized.isTest) {
-      const fresh = await store.get(scope, automation.id);
-      const trigger = fresh?.spec.trigger;
-      if (
-        fresh?.status === "enabled" &&
-        trigger?.type === "schedule" &&
-        trigger.at !== undefined
-      ) {
-        await store.setStatus(scope, automation.id, "paused", {
-          disabledReason: "completed_one_shot",
-        });
-      }
-    }
+    if (!finalized.isTest) await this.parkIfSpentOneShot(scope, automation.id);
     this.config.onRunFinished?.(finalized, automation);
     await this.notifyFinished(scope, finalized, automation);
     return finalized;
+  }
+
+  /**
+   * A one-shot schedule (`at`) is spent once its firing finalizes — however it
+   * finalized (success, failure, guard-skip, cap-cancel, expired approval) —
+   * so park it; otherwise durable stores would rehydrate it as "enabled"
+   * forever. Callers gate on isTest: run_automation_now never spends it.
+   */
+  private async parkIfSpentOneShot(scope: Principal, automationId: string): Promise<void> {
+    const fresh = await this.config.store.get(scope, automationId);
+    const trigger = fresh?.spec.trigger;
+    if (fresh?.status === "enabled" && trigger?.type === "schedule" && trigger.at !== undefined) {
+      await this.config.store.setStatus(scope, automationId, "paused", {
+        disabledReason: "completed_one_shot",
+      });
+    }
   }
 
   /** Resume a waiting_approval run with the user's decision. When
@@ -404,6 +407,7 @@ export class AutomationRunner {
             outcome: "cancelled",
             error: "pending approval expired",
           });
+          if (!run.isTest) await this.parkIfSpentOneShot(scope, run.automationId);
           await this.notifyFinished(scope, expired, automation);
           return expired;
         }

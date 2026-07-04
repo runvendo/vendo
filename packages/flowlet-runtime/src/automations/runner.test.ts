@@ -323,6 +323,83 @@ describe("one-shot schedules", () => {
     expect(after?.status).toBe("enabled");
     expect(after?.disabledReason).toBeUndefined();
   });
+
+  it("parks a one-shot whose firing is guard-skipped (spent either way)", async () => {
+    const send = makeTool("send_msg");
+    const { runner, automation, store } = await setup({
+      spec: spec({
+        trigger: { type: "schedule", at: "2026-06-30T08:00:00.000Z" },
+        if: "trigger.amountDollars > 500",
+      }),
+      tools: { send_msg: send },
+    });
+    const run = await runner.fire(scope, automation.id, envelope("e1"));
+    expect(run?.outcome).toBe("skipped");
+    expect(send.calls).toHaveLength(0);
+    const parked = await store.get(scope, automation.id);
+    expect(parked?.status).toBe("paused");
+    expect(parked?.disabledReason).toBe("completed_one_shot");
+  });
+
+  const gatedOneShotSpec = () =>
+    spec({
+      trigger: { type: "schedule", at: "2026-06-30T08:00:00.000Z" },
+      execution: {
+        mode: "steps",
+        steps: [
+          { id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "c1" } },
+          { id: "send", type: "tool", tool: "send_msg" },
+        ],
+      },
+    });
+
+  it("does not park a one-shot while it waits for approval, then parks once resume finalizes it", async () => {
+    const freeze = makeTool("freeze_card");
+    const send = makeTool("send_msg");
+    const { runner, automation, store } = await setup({
+      spec: gatedOneShotSpec(),
+      tools: { freeze_card: freeze, send_msg: send },
+      policy: approveFor("freeze_card"),
+    });
+
+    const paused = await runner.fire(scope, automation.id, cronEnvelope("e1"));
+    expect(paused?.outcome).toBe("waiting_approval");
+    const waiting = await store.get(scope, automation.id);
+    expect(waiting?.status).toBe("enabled");
+    expect(waiting?.disabledReason).toBeUndefined();
+
+    const resumed = await runner.resume(scope, paused!.id, true);
+    expect(resumed?.status).toBe("succeeded");
+    const parked = await store.get(scope, automation.id);
+    expect(parked?.status).toBe("paused");
+    expect(parked?.disabledReason).toBe("completed_one_shot");
+  });
+
+  it("parks a one-shot whose pending approval expires (cancelled resume)", async () => {
+    const freeze = makeTool("freeze_card");
+    const send = makeTool("send_msg");
+    let nowMs = Date.parse(NOW);
+    const store = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation } = await store.create(scope, { spec: gatedOneShotSpec(), grants: [] });
+    const runner = new AutomationRunner({
+      store,
+      tools: async () => ({ freeze_card: freeze, send_msg: send }),
+      policy: approveFor("freeze_card"),
+      now: () => NOW,
+      nowMs: () => nowMs,
+    });
+
+    const paused = await runner.fire(scope, automation.id, cronEnvelope("e1"));
+    expect(paused?.outcome).toBe("waiting_approval");
+
+    nowMs += 8 * 24 * 60 * 60 * 1000; // past the 7-day approval TTL
+    const resumed = await runner.resume(scope, paused!.id, true);
+    expect(resumed?.outcome).toBe("cancelled");
+    expect(freeze.calls).toHaveLength(0);
+    const parked = await store.get(scope, automation.id);
+    expect(parked?.status).toBe("paused");
+    expect(parked?.disabledReason).toBe("completed_one_shot");
+  });
 });
 
 describe("pause and resume", () => {
