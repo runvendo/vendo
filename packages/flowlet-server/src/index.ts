@@ -12,8 +12,8 @@
 
 export const FLOWLET_SERVER_PACKAGE = "@flowlet/server";
 
-export { handleChat } from "./chat";
-export { handleAction, createApprovalStore, type ActionDeps } from "./action";
+export { handleChat, type ChatDeps } from "./chat";
+export { handleAction, createApprovalStore, type ActionDeps, type ApprovalStore } from "./action";
 export {
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
@@ -28,5 +28,5 @@ export { manifestToolsToHostTools } from "./manifest-tools";
 export { buildInstructions, createAgentCache, type BuildInstructionsInput, type AgentFactoryConfig } from "./agent";
 export { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld, type CreateWorldConfig } from "./world";
 export { defaultFlowletPolicy } from "./default-policy";
-export { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
+export { resolvePrincipal, DEFAULT_PRINCIPAL, type GuardResult } from "./guard";
 export { parseHandlerOptions, type FlowletHandlerOptions, type IntegrationCatalogEntry } from "./options";
