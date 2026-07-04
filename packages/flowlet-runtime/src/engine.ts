@@ -77,6 +77,13 @@ export interface FlowletAgentConfig {
   /** Max model->tool steps before the loop stops. Defaults to 8. */
   maxSteps?: number;
   /**
+   * Called once the run's stream settles with the FULL updated message list
+   * (ENG-193 §6.2 — persistence for the consent endpoint's "load the thread's
+   * messages" step, Task 4). Errors thrown here are logged, never surfaced to
+   * the model or the client — persistence must not take down a finished run.
+   */
+  onSettled?: (messages: FlowletUIMessage[], principal: FlowletPrincipal) => void | Promise<void>;
+  /**
    * F1 component registry (prewired + host). When provided, `render_view`
    * validates `source:"host"` nodes server-side — unknown names and
    * schema-invalid props return correctable tool errors the model can repair
@@ -161,7 +168,12 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     const ordinal = ++runCounter;
     const runId = `run-${ordinal}`;
-    const threadId = `thread-${ordinal}`;
+    const threadId = input.threadId ?? `thread-${ordinal}`;
+    // Hoisted so `onFinish` (a SIBLING of `execute` in the object below, not
+    // nested inside it) can read the principal `execute` resolves. Both
+    // callbacks close over this one binding; `execute` assigns it before any
+    // tool runs, and the stream can't finish before `execute` has started.
+    let settledPrincipal: FlowletPrincipal = { userId: "" };
 
     return createUIMessageStream<FlowletUIMessage>({
       // Route execute failures (bad prompt, provider/Composio errors) into the
@@ -170,6 +182,15 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
       onError: (error) => {
         console.error(`[flowlet] run ${runId} failed:`, error);
         return error instanceof Error ? error.message : "The agent run failed.";
+      },
+      // ENG-193 §6.2: persistence for the consent endpoint's "load the
+      // thread's messages" step. A throwing/rejecting hook is caught here,
+      // never surfaced to the model or the client stream.
+      onFinish: ({ messages }) => {
+        if (!config.onSettled) return;
+        Promise.resolve(config.onSettled(messages, settledPrincipal)).catch((err) =>
+          console.error(`[flowlet] onSettled failed for run ${runId}:`, err),
+        );
       },
       execute: async ({ writer }) => {
         // 1. Resolve the principal. A missing/empty userId fails Composio closed
@@ -181,6 +202,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           candidate.userId.length > 0
             ? candidate
             : { userId: "" };
+        settledPrincipal = principal;
 
         // 2. The render + connect tools, bound to this run's stream writer.
         const renderViewTool = createRenderViewTool(writer, { components: config.components });
@@ -242,6 +264,8 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           sources,
           policy: config.policy,
           principal,
+          threadId,
+          writer,
           // Surface dropped tools rather than discarding them silently.
           onCollision: (name, kept, dropped) =>
             console.warn(

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { tool } from "ai";
-import type { ToolSet } from "ai";
+import type { Tool, ToolSet } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
@@ -381,5 +381,98 @@ describe("createFlowletAgent", () => {
       expect(results.some((r) => r.type === "tool-result" && r.toolCallId === call.toolCallId)).toBe(true);
     }
     expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
+  });
+
+  it("writes a data-consent part for a gated tool call", async () => {
+    const gatedTool = {
+      description: "mutate something",
+      inputSchema: z.object({}),
+      annotations: { destructiveHint: false },
+      execute: async () => "done",
+    } as unknown as Tool;
+    const approvePolicy: ApprovalPolicy = { evaluate: () => "approve" };
+
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: "mutate_thing", input: {} }),
+      policy: approvePolicy,
+      tools: { mutate_thing: gatedTool },
+    });
+
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+    const consentParts = parts.filter((p) => (p as { type: string }).type === "data-consent");
+    expect(consentParts).toHaveLength(1);
+  });
+
+  it("calls onSettled with the run's final messages once the stream finishes", async () => {
+    const onSettled = vi.fn();
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      onSettled,
+    });
+
+    await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+
+    expect(onSettled).toHaveBeenCalledOnce();
+    expect(Array.isArray(onSettled.mock.calls[0]![0])).toBe(true);
+  });
+
+  it("threads a caller-supplied threadId into PolicyContext (contextKey)", async () => {
+    const seenThreadIds: (string | undefined)[] = [];
+    const policy: ApprovalPolicy = {
+      evaluate: (ctx) => {
+        seenThreadIds.push(ctx.threadId);
+        return "allow";
+      },
+    };
+    const payload = {
+      formatVersion: "flowlet-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Text", props: { text: "Hi" } }],
+    };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
+      policy,
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        threadId: "conv-1",
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(seenThreadIds).toContain("conv-1");
+  });
+
+  it("falls back to its own minted threadId when the caller supplies none", async () => {
+    const seenThreadIds: (string | undefined)[] = [];
+    const policy: ApprovalPolicy = {
+      evaluate: (ctx) => {
+        seenThreadIds.push(ctx.threadId);
+        return "allow";
+      },
+    };
+    const payload = {
+      formatVersion: "flowlet-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Text", props: { text: "Hi" } }],
+    };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
+      policy,
+    });
+
+    await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+
+    expect(seenThreadIds.some((id) => /^thread-\d+$/.test(id ?? ""))).toBe(true);
   });
 });
