@@ -58,8 +58,8 @@ export function wrapTool(args: WrapToolArgs): Tool {
   }
   const boundExecute = originalExecute.bind(tool);
 
-  function buildCtx(input: unknown): PolicyContext {
-    return { toolName: name, input, descriptor, principal };
+  function buildCtx(input: unknown, toolCallId?: string): PolicyContext {
+    return { toolName: name, input, descriptor, principal, toolCallId };
   }
 
   /**
@@ -106,7 +106,7 @@ export function wrapTool(args: WrapToolArgs): Tool {
       // auto-allowed call from a human-approved one. Only reached for non-deny
       // decisions and only after `boundExecute` resolves (a throw propagates
       // before this line, so a failed call is never recorded as executed).
-      await policy.onExecuted?.(buildCtx(input), decision);
+      await policy.onExecuted?.(buildCtx(input, options.toolCallId), decision);
       return result;
     },
     // Guard the model-output transform against the deny payload. When `execute`

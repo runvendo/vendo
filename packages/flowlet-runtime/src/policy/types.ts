@@ -25,6 +25,12 @@ export interface PolicyContext {
   descriptor: ToolDescriptor;
   /** Identity and role information for the acting principal. */
   principal: FlowletPrincipal;
+  /**
+   * ai SDK toolCallId (ENG-193 §4.2 first slice; the fuller judge context
+   * lands in item 3). Present in execute-path contexts, absent at preflight
+   * (`needsApproval` has no `toolCallId` to thread).
+   */
+  toolCallId?: string;
 }
 
 /** A single guardrail layer. Evaluation may be async (e.g. LLM judge). */

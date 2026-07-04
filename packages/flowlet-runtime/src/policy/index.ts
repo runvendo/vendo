@@ -6,3 +6,4 @@ export * from "./principal-rules";
 export * from "./tier";
 export * from "./grant-match";
 export * from "./grant-policy";
+export * from "./audit-policy";
