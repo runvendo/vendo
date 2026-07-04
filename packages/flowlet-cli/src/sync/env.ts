@@ -8,6 +8,7 @@
  * reported and the anchor keeps whatever it can. The env NEVER fails the host
  * build for a classification gap.
  */
+import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { build } from "esbuild";
@@ -16,6 +17,16 @@ import { classifyImport, importSpecifiers, toManifestStatus } from "./classify.j
 import { sanitizeCss } from "./host-css.js";
 
 const VENDOR_SOFT_CAP = 2 * 1024 * 1024;
+
+/** Framework/data specifier → @flowlet/sandbox-shims source subpath. Each is
+ *  bundled to ESM and mapped so a remixed component's `import ... from "next/link"`
+ *  resolves in-sandbox (Codex review: shims were classified but never wired). */
+const SHIM_ENTRIES: Record<string, string> = {
+  "next/link": "next-link",
+  "next/image": "next-image",
+  "next/navigation": "next-navigation",
+  swr: "swr",
+};
 
 export interface BuildEnvResult {
   manifest: EnvManifest;
@@ -51,7 +62,7 @@ export async function buildEnvironment(
 
   const anchors: EnvManifest["anchors"] = {};
   const npmToVendor = new Map<string, string>(); // specifier → vendor entry file
-  const localToVendor = new Map<string, { file: string; specifier: string }>();
+  const shimsToVendor = new Set<string>(); // shimmed specifiers actually imported
 
   // 1. Classify per anchor; collect what to vendor.
   for (const [anchorId, record] of Object.entries(records)) {
@@ -60,6 +71,7 @@ export async function buildEnvironment(
       const cls = classifyImport(specifier);
       perImport[specifier] = toManifestStatus(cls);
       if (cls.kind === "vendor-npm") npmToVendor.set(specifier, `${slug(specifier)}.js`);
+      else if (cls.kind === "shimmed" && specifier in SHIM_ENTRIES) shimsToVendor.add(specifier);
       // Local modules are vendored from the app source tree; resolution reuses
       // the capture resolver conventions, deferred to a follow-up — for now
       // they are marked real and the raw source is inlined by the model.
@@ -113,11 +125,48 @@ export async function buildEnvironment(
     );
   }
 
+  // 2b. Bundle each imported shim from @flowlet/sandbox-shims (react
+  //     externalized) so `next/link`/`swr`/… actually resolve in-sandbox.
+  const shimToVendor = new Map<string, string>();
+  if (shimsToVendor.size > 0) {
+    const requireFrom = createRequire(import.meta.url);
+    // Resolve the package's dist dir via its main entry (only "." is exported).
+    const shimsDist = path.dirname(requireFrom.resolve("@flowlet/sandbox-shims"));
+    for (const specifier of shimsToVendor) {
+      const outName = `shim-${slug(specifier)}.js`;
+      try {
+        const entry = path.join(shimsDist, `${SHIM_ENTRIES[specifier]!}.js`);
+        const result = await build({
+          entryPoints: [entry],
+          bundle: true,
+          format: "esm",
+          platform: "browser",
+          write: false,
+          external: ["react", "react-dom", "react/jsx-runtime"],
+          logLevel: "silent",
+        });
+        const code = result.outputFiles[0]!.text;
+        writeFileSync(path.join(vendorDir, outName), code);
+        shimToVendor.set(specifier, outName);
+        vendorSizes[specifier] = code.length;
+        report.push(`env: shimmed ${specifier} (${kb(code.length)})`);
+      } catch (err) {
+        for (const perImport of Object.values(anchors)) {
+          if (perImport[specifier]) {
+            perImport[specifier] = { kind: "absent", alternative: "shim unavailable — reimplement or omit" };
+          }
+        }
+        report.push(`env: could not bundle shim ${specifier} (${err instanceof Error ? err.message : String(err)}) — marked absent`);
+      }
+    }
+  }
+
   // 3. Import map (blob-resolved at runtime by the stage; paths are relative).
   const importMap = {
-    imports: Object.fromEntries(
-      [...npmToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
-    ),
+    imports: Object.fromEntries([
+      ...[...npmToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
+      ...[...shimToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
+    ]),
   };
   writeFileSync(path.join(envDir, "import-map.json"), `${JSON.stringify(importMap, null, 2)}\n`);
 

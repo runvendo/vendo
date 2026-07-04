@@ -76,9 +76,14 @@ export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
           `var _e${i}=URL.createObjectURL(new Blob([${safeInline(env!.modules![specifier]!)}],{type:"text/javascript"}));`,
       )
       .join("");
-    const envMapImports = envModuleEntries
-      .map(([specifier], i) => `${JSON.stringify(specifier)}:_e${i}`)
-      .join(",");
+    // Import specifier KEYS are attacker-influenceable strings — harden them
+    // with the SAME `<`-escaping as module bodies (a specifier containing
+    // `</script>` would otherwise break the inline script parse), and assign
+    // into a null-proto object so keys like "__proto__" become real entries
+    // (Codex review). Values are blob-URL variable refs, not strings.
+    const envMapAssign = envModuleEntries
+      .map(([specifier], i) => `_imports[${safeInline(specifier)}]=_e${i};`)
+      .join("");
     reactSetupScript =
       `<script nonce="${nonce}">` +
       `(function(){` +
@@ -86,18 +91,18 @@ export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
       `var _u=URL.createObjectURL(new Blob([_s],{type:"text/javascript"}));` +
       `window.__FLOWLET_REACT_URL=_u;` +
       envMapSetup +
+      `var _imports=Object.create(null);` +
+      `_imports["react"]=_u;` +
+      `_imports["react-dom"]=_u;` +
+      `_imports["react-dom/client"]=_u;` +
+      `_imports["react/jsx-runtime"]=_u;` +
+      envMapAssign +
       `var _im=document.createElement('script');` +
       `_im.type='importmap';` +
       `_im.nonce=${safeInline(nonce)};` +
-      `_im.textContent=JSON.stringify({imports:{` +
-      `"react":_u,` +
-      `"react-dom":_u,` +
-      `"react-dom/client":_u,` +
-      `"react/jsx-runtime":_u` +
-      (envMapImports ? `,${envMapImports}` : ``) +
-      `}});` +
+      `_im.textContent=JSON.stringify({imports:_imports});` +
       `document.head.appendChild(_im);` +
-      `import(_u).then(function(){URL.revokeObjectURL(_u);}).catch(function(){});` +
+      `import(_u).finally(function(){URL.revokeObjectURL(_u);});` +
       `})();` +
       `<\/script>`;
   }
@@ -113,7 +118,7 @@ export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
     envStyleScript +=
       `<script type="module" nonce="${nonce}">` +
       `var _t=URL.createObjectURL(new Blob([${safeInline(env.tailwindRuntimeSrc)}],{type:"text/javascript"}));` +
-      `import(_t).catch(function(){});` +
+      `import(_t).finally(function(){URL.revokeObjectURL(_t);});` +
       `<\/script>`;
   }
   // Baseline document styles: consume the injected --flowlet-* brand vars so

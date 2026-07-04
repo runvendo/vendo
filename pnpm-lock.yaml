@@ -486,6 +486,9 @@ importers:
       '@flowlet/core':
         specifier: workspace:*
         version: link:../flowlet-core
+      '@flowlet/sandbox-shims':
+        specifier: workspace:*
+        version: link:../flowlet-sandbox-shims
       '@tailwindcss/browser':
         specifier: ^4.1.0
         version: 4.3.2

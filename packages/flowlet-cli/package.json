@@ -14,14 +14,15 @@
     "@ai-sdk/anthropic": "3.0.12",
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
-    "ai": "6.0.28",
-    "sucrase": "^3.35.0",
-    "yaml": "^2.5.0",
-    "zod": "^3.24.0",
-    "typescript": "^5.9.0",
-    "esbuild": "^0.25.0",
+    "@flowlet/sandbox-shims": "workspace:*",
     "@tailwindcss/browser": "^4.1.0",
-    "@tailwindcss/cli": "^4.1.0"
+    "@tailwindcss/cli": "^4.1.0",
+    "ai": "6.0.28",
+    "esbuild": "^0.25.0",
+    "sucrase": "^3.35.0",
+    "typescript": "^5.9.0",
+    "yaml": "^2.5.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@ai-sdk/provider": "3.0.2",

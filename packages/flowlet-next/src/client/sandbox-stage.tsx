@@ -50,7 +50,13 @@ async function loadEnv(): Promise<StageEnv | undefined> {
     const map = (await mapRes.json().catch(() => ({}))) as EnvImportMap;
     const entries = await Promise.all(
       Object.entries(map.imports ?? {}).map(async ([specifier, rel]) => {
-        const url = rel.replace(/^\.\//, "/flowlet/env/");
+        // Only fetch bundle-relative `./` paths, resolved strictly under
+        // /flowlet/env/. A malformed/hostile import map with an absolute URL
+        // must NOT cause a host-side fetch that bypasses the iframe's
+        // connect-src 'none' (Codex review).
+        if (typeof rel !== "string" || !rel.startsWith("./")) return null;
+        const url = new URL(rel.replace(/^\.\//, "/flowlet/env/"), location.origin);
+        if (url.origin !== location.origin || !url.pathname.startsWith("/flowlet/env/")) return null;
         const src = await fetch(url).then((r) => (r.ok ? r.text() : undefined)).catch(() => undefined);
         return src !== undefined ? ([specifier, src] as const) : null;
       }),
