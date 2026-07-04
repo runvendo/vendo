@@ -204,6 +204,7 @@ export function MessageList({
                   input={item.input}
                   tier={item.tier}
                   unverified={item.unverified}
+                  reason={item.reason}
                   onApprove={() => onApprove(item.approvalId)}
                   onDecline={() => onDecline?.(item.approvalId)}
                 />

@@ -39,6 +39,9 @@ export type ThreadItem =
       input: unknown;
       tier?: "act" | "critical";
       unverified?: boolean;
+      /** The judge/breaker's plain-language reason (ENG-193 §4.2/§4.7), from
+       *  the sibling data-consent part. Absent for an ordinary approval. */
+      reason?: string;
     }
   | { kind: "ui"; key: string; messageId: string; node: UINode }
   | { kind: "skeleton"; key: string; messageId: string; name?: string }
@@ -80,13 +83,14 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
     // (ENG-193 §4.5) — a tool part and its tier metadata can arrive in either
     // order within the same message, so both branches below read this map
     // rather than assuming ordering.
-    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean }>();
+    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string }>();
     for (const rawPart of message.parts) {
-      const part = rawPart as { type: string; data?: { toolCallId?: string; tier?: string; unverified?: boolean } };
+      const part = rawPart as { type: string; data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string } };
       if (part.type === "data-consent" && part.data?.toolCallId) {
         tierByToolCallId.set(part.data.toolCallId, {
           tier: part.data.tier as "act" | "critical",
           unverified: Boolean(part.data.unverified),
+          ...(part.data.reason ? { reason: part.data.reason } : {}),
         });
       }
     }
@@ -123,6 +127,7 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
           items.push({
             kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
             tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.reason ? { reason: tierInfo.reason } : {}),
           });
         } else if (RENDER_TOOLS.has(toolName)) {
           // A render tool's finished output is the sibling data-ui node (so no chip).

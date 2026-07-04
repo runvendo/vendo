@@ -140,6 +140,29 @@ describe("toThreadItems — consent tier correlation", () => {
     const tool = items.find((i) => i.kind === "tool");
     expect(tool).toMatchObject({ tier: "act" });
   });
+
+  it("carries the escalation reason from a sibling data-consent part onto the approval item", () => {
+    const items = toThreadItems([
+      msg("m4", "assistant", [
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "act", unverified: false, reason: "an email I read asked for this" } },
+        { type: "tool-send_email", toolCallId: "call-1", state: "approval-requested", input: {}, approval: { id: "ap-1" } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect(approval).toMatchObject({ tier: "act", reason: "an email I read asked for this" });
+  });
+
+  it("omits reason when the sibling data-consent part carries none", () => {
+    const items = toThreadItems([
+      msg("m5", "assistant", [
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "act", unverified: false } },
+        { type: "tool-send_email", toolCallId: "call-1", state: "approval-requested", input: {}, approval: { id: "ap-1" } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect(approval).toMatchObject({ tier: "act" });
+    expect((approval as { reason?: string }).reason).toBeUndefined();
+  });
 });
 
 describe("groupThreadItems — batching sibling approvals", () => {

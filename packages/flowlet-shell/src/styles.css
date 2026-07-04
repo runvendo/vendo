@@ -285,6 +285,10 @@
 .fl-btn-ceremony { background: var(--flowlet-warn); color: #fff; border-color: transparent;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-warn) 40%, transparent); }
 .fl-btn-ceremony:hover { opacity: .92; background: var(--flowlet-warn); border-color: transparent; }
+.fl-approval--escalation { border-color: var(--flowlet-warn-border); background: var(--flowlet-warn-bg); }
+.fl-approval--escalation .fl-approval-ic { color: var(--flowlet-warn); background: color-mix(in srgb, var(--flowlet-warn) 16%, transparent); }
+.fl-approval--escalation .fl-approval-eyebrow { color: var(--flowlet-warn); }
+.fl-approval-reason { margin: 10px 0 0; font: 400 12.5px/1.4 var(--flowlet-font); color: var(--flowlet-fg); }
 .fl-uinode { align-self: flex-start; width: 100%; }
 
 /* ---------- composer ---------- */
