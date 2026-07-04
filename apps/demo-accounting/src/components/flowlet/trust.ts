@@ -4,7 +4,7 @@
  * fade-proposal-handler.ts), mirroring `parked-actions.ts`/`consent.ts`'s
  * plain-fetch style exactly.
  */
-import type { TrustAuditRow, TrustGrantRow } from "@flowlet/shell";
+import type { TrustAuditRow, TrustGrantRow, TrustRuleRow } from "@flowlet/shell";
 
 async function json<T>(res: Response, fallback: string): Promise<T> {
   const body = (await res.json().catch(() => ({}))) as T & { error?: string };
@@ -35,6 +35,19 @@ export async function listCriticalTools(): Promise<{ name: string }[]> {
   const res = await fetch("/api/flowlet/critical-tools");
   const body = await json<{ tools?: { name: string }[] }>(res, `failed to list critical tools (${res.status})`);
   return body.tools ?? [];
+}
+
+export async function listRules(): Promise<TrustRuleRow[]> {
+  const res = await fetch("/api/flowlet/rules");
+  const body = await json<{ rules?: TrustRuleRow[] }>(res, `failed to list rules (${res.status})`);
+  return body.rules ?? [];
+}
+
+export async function revokeRule(id: string): Promise<void> {
+  const res = await fetch("/api/flowlet/rules/revoke", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }),
+  });
+  await json(res, `failed to revoke rule (${res.status})`);
 }
 
 export async function resolveFadeProposal(proposalId: string, accept: boolean): Promise<void> {
