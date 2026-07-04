@@ -83,3 +83,7 @@ export { InAppChannels, type InAppChannelsConfig } from "./embedded/in-app-chann
 // Grant store (ENG-193 §6.1): in-memory GrantStore for the embedded seam
 // slot and tests.
 export { createInMemoryGrantStore } from "./grant-store";
+
+// Grant lifecycle API (ENG-193 §4.3/§6.2): audited create/revoke, the only
+// paths that mutate grants.
+export { createGrantManager, scopePreview } from "./grant-manager";
