@@ -19,7 +19,12 @@ const CALL_OPTS = { toolCallId: "tc", messages: [] } as unknown as ToolCallOptio
 
 function makeTool(
   name: string,
-  opts: { readOnly?: boolean; idempotent?: boolean; destructive?: boolean } = {},
+  opts: {
+    readOnly?: boolean;
+    idempotent?: boolean;
+    destructive?: boolean;
+    executor?: "server" | "client";
+  } = {},
 ) {
   const calls: Array<Record<string, unknown>> = [];
   const tool: RegisteredTool & { calls: typeof calls } = {
@@ -34,6 +39,7 @@ function makeTool(
       },
       hasExecute: true,
       kind: "function",
+      ...(opts.executor !== undefined ? { executor: opts.executor } : {}),
     },
     execute: async (input) => {
       calls.push(input);
@@ -79,10 +85,13 @@ function setup() {
   const slack = makeTool("SLACK_SEND_MESSAGE");
   const read = makeTool("maple_list_transactions", { readOnly: true });
   const transfer = makeTool("transfer_money", { destructive: true });
+  // Registered but client-executed: must be rejected for unattended use.
+  const clientTool = makeTool("host_fetch_txns_client", { executor: "client" });
   const registered = {
     SLACK_SEND_MESSAGE: slack,
     maple_list_transactions: read,
     transfer_money: transfer,
+    host_fetch_txns_client: clientTool,
   };
   const scheduler = new FakeScheduler();
   const runner = new AutomationRunner({
@@ -158,19 +167,19 @@ describe("create_automation", () => {
     expect(await store.list(scope)).toHaveLength(0);
   });
 
-  it("rejects a client-executed host tool with the unattended-tool error, not the generic one", async () => {
+  it("rejects a REGISTERED tool whose descriptor is client-executed", async () => {
     const { store, exec } = setup();
     const result = await exec("create_automation", {
       spec: validSpec({
         execution: {
           mode: "steps",
-          steps: [{ id: "send", type: "tool", tool: "host_fetch_txns", input: {} }],
+          steps: [{ id: "send", type: "tool", tool: "host_fetch_txns_client", input: {} }],
         },
       }),
     });
     expect(result["ok"]).toBe(false);
     expect(String(result["errors"])).toMatch(/server-registered|cannot run unattended/i);
-    expect(String(result["errors"])).toMatch(/host_fetch_txns/);
+    expect(String(result["errors"])).toMatch(/host_fetch_txns_client/);
     expect(await store.list(scope)).toHaveLength(0);
   });
 
