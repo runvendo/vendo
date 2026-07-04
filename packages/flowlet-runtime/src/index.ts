@@ -87,3 +87,9 @@ export { createInMemoryGrantStore } from "./grant-store";
 // Grant lifecycle API (ENG-193 §4.3/§6.2): audited create/revoke, the only
 // paths that mutate grants.
 export { createGrantManager, scopePreview } from "./grant-manager";
+
+// Consent endpoint (ENG-193 §4.5): server-validated grant creation behind
+// the consent channel. Transport-agnostic — hosts mount it behind their own
+// route (see @flowlet/next and the accounting demo).
+export { handleConsent } from "./consent";
+export type { HandleConsentDeps, HandleConsentRequest, HandleConsentResult } from "./consent";
