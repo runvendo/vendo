@@ -7,11 +7,13 @@ describe("toolAction", () => {
       active: "Reading transactions",
       done: "Read transactions",
       request: "Read transactions",
+      question: "Read transactions?",
     });
     expect(toolAction("create_automation")).toEqual({
       active: "Setting up automation",
       done: "Set up automation",
       request: "Create an automation",
+      question: "Create an automation?",
     });
   });
 
@@ -25,21 +27,25 @@ describe("toolAction", () => {
       active: "Listing Google Calendar events",
       done: "Listed Google Calendar events",
       request: "List Google Calendar events",
+      question: "List Google Calendar events?",
     });
     expect(toolAction("GMAIL_CREATE_EMAIL_DRAFT")).toEqual({
       active: "Creating Gmail email draft",
       done: "Created Gmail email draft",
       request: "Create Gmail email draft",
+      question: "Create Gmail email draft?",
     });
     expect(toolAction("NOTION_UPDATE_PAGE")).toEqual({
       active: "Updating Notion page",
       done: "Updated Notion page",
       request: "Update Notion page",
+      question: "Update Notion page?",
     });
     expect(toolAction("LINEAR_DELETE_ISSUE")).toEqual({
       active: "Deleting Linear issue",
       done: "Deleted Linear issue",
       request: "Delete Linear issue",
+      question: "Delete Linear issue?",
     });
   });
 
@@ -53,6 +59,20 @@ describe("toolAction", () => {
 
   it("falls back to readable humanization for anything else", () => {
     expect(toolAction("my_custom_thing").active).toBe("My Custom Thing");
+  });
+});
+
+describe("question-form title", () => {
+  it("derives a question from the imperative request form by default", () => {
+    expect(toolAction("SLACK_API_TEST").question).toBe("Check Slack?");
+  });
+
+  it("exact-override tools get a real hand-authored question", () => {
+    expect(toolAction("create_automation").question).toBe("Create an automation?");
+  });
+
+  it("Gmail send gets its hand-tuned question form", () => {
+    expect(toolAction("GMAIL_SEND_EMAIL").question).toBe("Send email?");
   });
 });
 
