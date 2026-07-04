@@ -159,6 +159,19 @@ export class InMemoryAuditLog implements AuditLog {
   async append(event: AuditEvent): Promise<void> {
     this.log.push(structuredClone(event));
   }
+
+  /** Read API (ENG-193 §6.2): principal-scoped, newest first. */
+  async query(
+    scope: Principal,
+    filter?: { kinds?: AuditEvent["kind"][]; since?: string; limit?: number },
+  ): Promise<AuditEvent[]> {
+    let rows = this.log.filter((e) => sameScope(scope, e.principal));
+    if (filter?.kinds) rows = rows.filter((e) => (filter.kinds as string[]).includes(e.kind));
+    if (filter?.since !== undefined) rows = rows.filter((e) => e.at >= filter.since!);
+    rows = [...rows].reverse();
+    if (filter?.limit !== undefined) rows = rows.slice(0, filter.limit);
+    return structuredClone(rows);
+  }
 }
 
 export interface InMemoryStore extends Store {

@@ -128,8 +128,20 @@ export type AuditEvent = { at: string; principal: Principal } & (
   | { kind: "approval"; toolCallId: string; decision: "approved" | "denied" }
   | { kind: "grant_exchange"; automationId: string; scopes: string[] }
   | { kind: "automation_firing"; automationId: string; runId: string }
+  | { kind: "grant_created"; grantId: string; tool: string; scopePreview: string }
+  | { kind: "grant_revoked"; grantId: string; tool: string }
+  | { kind: "judge_escalation"; toolName: string; reason: string }
+  | { kind: "consent"; consentId: string; decision: "yes" | "no" | "subset" }
 );
 
+/**
+ * Read API (ENG-193 §6.2): principal-scoped, newest first, optionally
+ * filtered by kind/since/limit. Powers receipts, the diary, and ENG-194.
+ */
 export interface AuditLog {
   append(event: AuditEvent): Promise<void>;
+  query(
+    scope: Principal,
+    filter?: { kinds?: AuditEvent["kind"][]; since?: string; limit?: number },
+  ): Promise<AuditEvent[]>;
 }
