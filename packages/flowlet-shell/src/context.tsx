@@ -15,6 +15,40 @@ export interface ParkedActionsSeam {
   resolve: (actionId: string, decision: "yes" | "no") => Promise<void>;
 }
 
+/** Trust-screen data plane (ENG-193 §3 Moment 12): mirrors `ParkedActionsSeam`'s
+ *  pattern exactly. Absent -> `useTrustData` reports empty everything, no
+ *  polling — the same graceful no-op every other optional seam here has. */
+export interface TrustGrantRow {
+  /** Absent for automation-federated rows — not individually revokable from
+   *  here (spec: "read-only + link hint"). */
+  id?: string;
+  tool: string;
+  scopePreview: string;
+  since: string;
+  source: "chat" | "fade" | "compiled-rule" | "automation";
+  automationName?: string;
+}
+export interface TrustAuditRow {
+  at: string;
+  kind: string;
+  toolName?: string;
+  mutating?: boolean;
+  dangerous?: boolean;
+}
+export interface TrustSeam {
+  listGrants: () => Promise<TrustGrantRow[]>;
+  revokeGrant: (id: string) => Promise<void>;
+  queryAudit: (opts: { sinceMs: number }) => Promise<TrustAuditRow[]>;
+  listCriticalTools: () => Promise<{ name: string }[]>;
+  resolveFadeProposal: (proposalId: string, accept: boolean) => Promise<void>;
+}
+
+/** What `sendConsent` resolves with (ENG-193 §4.4 addition — additive:
+ *  existing `Promise<void>`-returning implementations stay assignable). */
+export interface SendConsentResult {
+  fadeEligible?: { shape: import("@flowlet/core").FadeShape; proposalId: string };
+}
+
 export type RenderNode = (node: UINode) => ReactNode;
 
 export interface ShellContextValue {
@@ -49,9 +83,11 @@ export interface ShellContextValue {
   sendConsent?: (
     response: import("@flowlet/core").ConsentResponse,
     meta: { toolName: string },
-  ) => Promise<void>;
+  ) => Promise<SendConsentResult | void>;
   /** Parked-action data plane (ENG-193 §4.6). See `ParkedActionsSeam`. */
   parkedActions?: ParkedActionsSeam;
+  /** Trust-screen data plane (ENG-193 §3 Moment 12). See `TrustSeam`. */
+  trust?: TrustSeam;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -108,14 +144,16 @@ export interface FlowletShellProviderProps {
   sendConsent?: (
     response: import("@flowlet/core").ConsentResponse,
     meta: { toolName: string },
-  ) => Promise<void>;
+  ) => Promise<SendConsentResult | void>;
   /** Parked-action data plane; see ShellContextValue. */
   parkedActions?: ParkedActionsSeam;
+  /** Trust-screen data plane; see ShellContextValue. */
+  trust?: TrustSeam;
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions, children,
+  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions, trust, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
@@ -131,7 +169,8 @@ export function FlowletShellProvider({
     components,
     sendConsent,
     parkedActions,
-  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions]);
+    trust,
+  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions, trust]);
 
   return (
     <ShellContext.Provider value={value}>

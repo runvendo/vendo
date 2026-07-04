@@ -3,7 +3,7 @@ import type { FileUIPart } from "ai";
 import type { ConsentResponse, UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
 import type { Feedback } from "./components/TurnActions";
-import { useShell } from "./context";
+import { useShell, type SendConsentResult } from "./context";
 import type { Flowlet } from "./seams/store";
 import type { Integration } from "./seams/integrations";
 import { Landing } from "./components/Landing";
@@ -100,7 +100,11 @@ export function FlowletThread({
   // send is swallowed here and the SDK response proceeds either way. toolName
   // rides beside the response — the consent endpoints require the client's
   // tool-name assertion to cross-check against the pending part.
-  const postConsent = (response: ConsentResponse, toolName: string): Promise<void> =>
+  // ENG-193 §4.4: `sendConsent` now resolves `SendConsentResult | void` (the
+  // fade-eligibility passthrough) — this Task-10-only signature widening is
+  // consumed for real by Task 11's FadeProposalCard wiring; here it's just
+  // kept type-compiling (the resolved value is still discarded).
+  const postConsent = (response: ConsentResponse, toolName: string): Promise<SendConsentResult | void> =>
     sendConsent ? sendConsent(response, { toolName }).catch(() => {}) : Promise.resolve();
 
   const approve = (approvalId: string) => {
