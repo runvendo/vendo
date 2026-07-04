@@ -40,7 +40,7 @@ Replaces v1's `flowlet remix-sources`. Lifecycle unchanged from the reviewed rev
    - **data** (`swr`, raw fetch) → mapped to shims; the fetcher path never executes;
    - **unknown/refused** → listed in the manifest as absent.
    The allowlist starts as "exactly what captured components import" and is host-extendable in `flowlet.config`; nothing outside it is ever vendored.
-3. **`env/host.css`** — the app's compiled stylesheet, URL assets rewritten same-origin or dropped, plus extracted theme tokens.
+3. **`env/host.css`** — compiled DURING sync, from source (Tailwind v4 CLI over the app's stylesheet entry when Tailwind is detected; otherwise a configured `cssPath`), NOT read from `.next/static/css` — `prebuild` runs before `next build`, so build output would be stale-or-absent by construction. URL policy (the sandbox CSP allows only `data:` for images/fonts and stays untouched): every fetchable `url()`/`@import`/`@font-face` reference is either inlined as a `data:` URI at build time (under a per-asset size cap) or dropped with a report entry — the sanitized output contains ZERO fetchable URLs, verified by test.
 4. **`env/manifest.json`** — per-import classification (real / shimmed / absent) per anchor, sizes, and the capture report. This is both the dev's fidelity report and the model's environment contract.
 5. **UI-kit catalog registrations** — generated `hostComponent` registrations for the app's `components/ui/*` primitives (props inferred from TypeScript types where possible; skipped with a report entry where not), so edited variants can also compose real host components through the existing validated path.
 
@@ -50,7 +50,7 @@ Replaces v1's `flowlet remix-sources`. Lifecycle unchanged from the reviewed rev
 
 Identical-API stand-ins vendored into the environment:
 
-- `next/link` → renders an anchor; clicks dispatch a `navigate` action through the policy channel; the HOST performs real router navigation. Same for a minimal `next/navigation` subset (`useRouter().push` → dispatch).
+- `next/link` → renders an anchor; clicks emit the RESERVED `flowlet.navigate` action. Navigation is handled CLIENT-SIDE by the host receiver (`SandboxStage`), never sent to the server `/action` route (it is local UI, not a tool call — documented decision): the receiver validates the href (same-app path-only; `javascript:`, protocol-relative, and external URLs rejected) and then drives the host router. Same for a minimal `next/navigation` subset (`useRouter().push` → same reserved action).
 - `next/image` → plain `img` with the same prop surface (fill/sizes approximated), src subject to the sandbox CSP as ever.
 - `swr` → `useSWR(key, fetcher)` returns data resolved from the anchor's live `data.anchor` payload or declared governed queries; the fetcher argument is NEVER invoked; mutate/revalidate map to the query-refresh path where declared, no-op otherwise.
 - Everything a shim cannot honestly express throws a descriptive error inside the sandbox (contained by the existing fail-open boundary) rather than silently misbehaving.
@@ -59,13 +59,14 @@ Shims are versioned with the package and listed in the manifest so the model kno
 
 ## Stage changes (@flowlet/stage + @flowlet/next)
 
-- The stage's existing import map gains the vendored entries + shim mappings (per-host, loaded from `public/flowlet/env/import-map.json`).
-- `installFlowletHost` (existing options path) injects `env/host.css` into the sandbox document, and loads the vendored `@tailwindcss/browser` (v4, MIT) seeded with the host's theme tokens so NOVEL utility classes in edited code compile offline. Order: host.css first, JIT for what it doesn't cover.
-- All of this is capability-additive: no `env/` present → the stage behaves byte-for-byte as today.
+- **Blob pipeline, CSP untouched.** The iframe CSP allows only nonce scripts and `blob:` (`connect-src 'none'`), and today's import map is React-to-blob only. Static `/flowlet/env/...` URLs would be BLOCKED inside the iframe — correctly. So the HOST side (`SandboxStage`) fetches all env artifacts (vendor ESM, shims, host.css, Tailwind runtime) on its own origin, converts them to blob URLs, and injects a complete blob-backed import map + style content into the stage before runtime execution. Zero network from inside the iframe is preserved by construction, and the CSP does not change.
+- **Explicit env plumbing, not `installFlowletHost` overload.** The existing `installFlowletHost({ css })` option is only a primitive (inline `<style>` at bundle eval). This epic adds a first-class stage env API (`createStage`/`FlowletStage` accepts the fetched env: import-map entries, styles in order — host.css first, Tailwind JIT for what it doesn't cover — and the token seed), with mount-time-only application.
+- **Fatal-error channel (closes a declared PR #34 follow-up).** The stage runtime reports fatal load/module errors (missing vendored module, failed import) to the host via the bridge; `SandboxStage` exposes it; `FlowletRemix` marks the pin broken and falls open to the original children. Until that message arrives, the stage's contained error rendering remains the inner fallback.
+- All of this is capability-additive: no `env/` present → the stage behaves byte-for-byte as today (tested by snapshotting the generated sandbox document in both modes).
 
 ## Engine prompt
 
-The reviewed v1 source-baseline section stands (captured-snapshot framing, delimited untrusted-data block, adversarial test, non-disclosure nudge), with the mapping rules REPLACED by manifest-driven precision: the anchor section lists, from `env/manifest.json`, which imports resolve for real, which are shimmed (with the shim's honest semantics), and which are absent (with the prescribed alternative — `data.anchor` bindings, catalog components, inline styles). The old blanket "imports don't exist, restyle everything" guidance applies only when no environment is present.
+The reviewed v1 source-baseline section stands (captured-snapshot framing, delimited untrusted-data block, adversarial test, non-disclosure nudge), plus one contract instruction: the stage loader consumes `mod.default`, so the emitted module MUST default-export the component — when the captured source used a named export (`exportName` in the record, e.g. `DeadlineList`), the prompt says so explicitly and instructs the conversion. The mapping rules are REPLACED by manifest-driven precision: the anchor section lists, from `env/manifest.json`, which imports resolve for real, which are shimmed (with the shim's honest semantics), and which are absent (with the prescribed alternative — `data.anchor` bindings, catalog components, inline styles). The old blanket "imports don't exist, restyle everything" guidance applies only when no environment is present.
 
 ## Server injection (@flowlet/next) — unchanged from reviewed v1
 
@@ -73,7 +74,7 @@ The reviewed v1 source-baseline section stands (captured-snapshot framing, delim
 
 ## Failure handling
 
-- Every layer degrades independently: no sources → snapshot baseline; no env → bare sandbox + blanket guidance; a missing vendored module at runtime → the import fails inside the sandbox and the pinned view falls open to original children (existing boundary).
+- Every layer degrades independently: no sources → snapshot baseline; no env → bare sandbox + blanket guidance; a missing vendored module at runtime → stage fatal-error channel → pin marked broken → original children (the new channel above; NOT assumed from the existing boundary, which only catches host-side render throws).
 - `sync` is fail-open per item with a complete report; it never fails the host build for a classification gap (it CAN fail loud for its own bugs — malformed output).
 - Oversized vendor budget: total env size is reported; beyond a soft cap (2 MB) `sync` warns and lists the heaviest entries; nothing is silently dropped.
 

@@ -24,7 +24,7 @@
 **Files:**
 - Modify: `packages/flowlet-runtime/src/engine.ts` (+ `engine.test.ts`)
 
-- [ ] Failing tests: scoped anchor with `source` → delimited untrusted-data block, captured-snapshot framing, edited-variant instruction, non-disclosure nudge; adversarial source-comment test; WITH an env manifest → the prompt lists real/shimmed/absent imports with prescribed alternatives; WITHOUT env → today's blanket guidance; WITHOUT source → byte-identical to today.
+- [ ] Failing tests: scoped anchor with `source` → delimited untrusted-data block, captured-snapshot framing, edited-variant instruction, non-disclosure nudge, and the DEFAULT-EXPORT contract instruction (naming the original `exportName` when it was a named export — the stage loader consumes `mod.default`); adversarial source-comment test; WITH an env manifest → the prompt lists real/shimmed/absent imports with prescribed alternatives; WITHOUT env → today's blanket guidance; WITHOUT source → byte-identical to today.
 - [ ] Implement (engine receives the manifest via config, same seam style as `components`); 48 KB source cap as last defense; green; commit.
 
 ### Task 3: @flowlet/next — load + enrich (unchanged from reviewed v1 scope)
@@ -50,10 +50,11 @@
 
 **Files:**
 - Create: `packages/flowlet-cli/src/sync/classify.ts`, `sync/vendor.ts`, `sync/host-css.ts`, `sync/catalog-gen.ts` (+ tests each)
+- Modify: `packages/flowlet-cli/package.json` — declare `esbuild` and the Tailwind v4 CLI/`@tailwindcss/browser` runtime as REAL direct dependencies (neither is resolvable from the CLI today); the browser runtime ships as a bundled asset like the existing sandbox assets.
 
 - [ ] Classify failing fixtures: pure npm / app-local pure / framework-coupled / data / refused-unknown, driven by import specifier + resolved location + refusal rules; allowlist starts at "what captured components import", extendable via config.
 - [ ] Vendor failing fixtures: esbuild ESM output per allowlisted entry, react/react-dom externalized to the stage shim, deterministic output paths, import-map generation; total-size soft cap (2 MB) warns listing heaviest entries.
-- [ ] Host CSS: locate the app's built stylesheet (Next `.next/static/css` after build; fail-open with report when absent), rewrite/drop URL assets to same-origin, copy theme tokens; vendor `@tailwindcss/browser` seeded with extracted tokens.
+- [ ] Host CSS: compile from SOURCE during sync (Tailwind v4 CLI over the app's stylesheet entry when detected; configured `cssPath` otherwise — never `.next/static/css`, which does not exist when `prebuild` runs); sanitize to ZERO fetchable URLs (inline small assets as `data:` under a per-asset cap, drop the rest with report entries; covers `url()`, `@import`, `@font-face`, `image-set`, masks/cursors) — with a test asserting no fetchable URL survives; extract theme tokens; stage the `@tailwindcss/browser` runtime asset.
 - [ ] Catalog generation: `components/ui/*` registrations with TS-type-derived prop schemas where derivable, report-skipped otherwise.
 - [ ] Manifest: per-anchor, per-import `real | shimmed | absent` + sizes + report. Artifacts copied into `public/flowlet/env/`.
 - [ ] All green; commit per sub-module as they land.
@@ -63,7 +64,8 @@
 **Files:**
 - Create: `packages/flowlet-sandbox-shims/` (package scaffold matching sibling packages) with `next-link.tsx`, `next-image.tsx`, `next-navigation.ts`, `swr.ts` (+ tests each)
 
-- [ ] Failing tests: link renders an anchor and dispatches `navigate` through the bridge on click (no real navigation from inside); image renders `img` with the prop surface mapped; `useSWR` resolves from anchor data / declared queries, NEVER invokes the fetcher, mutate no-ops without a declared query; unsupported APIs throw descriptive contained errors.
+- [ ] Failing tests: link renders an anchor and emits the reserved `flowlet.navigate` action through the bridge on click (no real navigation from inside); image renders `img` with the prop surface mapped; `useSWR` resolves from anchor data / declared queries, NEVER invokes the fetcher, mutate no-ops without a declared query; unsupported APIs throw descriptive contained errors.
+- [ ] HOST RECEIVER (new, owned here): `SandboxStage` intercepts `flowlet.navigate` CLIENT-SIDE (never posted to `/action` — the server action handler would 404 it): href validation (same-app path-only; reject `javascript:`, protocol-relative, external) then host router push. Tests for accept/reject matrix + router call.
 - [ ] Implement; wire into the vendor import map under the framework specifiers; green; commit.
 
 ### Task 7: Stage env loading
@@ -71,7 +73,9 @@
 **Files:**
 - Modify: `packages/flowlet-stage/src/stage-host.ts` / `genui-host.ts` and `packages/flowlet-components/src/sandbox-install.ts` (+ tests); `packages/flowlet-next/src/client/sandbox-stage.tsx` (+ test) to pass env URLs.
 
-- [ ] Failing tests: env present → import map extended with vendor + shim entries, `host.css` injected first, Tailwind JIT loaded with tokens; env absent → BYTE-IDENTICAL current behavior (snapshot the generated sandbox doc in both modes); a missing vendored module at runtime surfaces as a contained sandbox error (existing fail-open path).
+- [ ] BLOB PIPELINE (the CSP-correct load path): `SandboxStage` fetches env artifacts on the host origin, converts to blob URLs, and injects a complete blob-backed import map + styles into the stage before runtime execution — the iframe CSP (`connect-src 'none'`, nonce/blob scripts only) does NOT change. Tests: no non-blob script/style source appears in the generated sandbox doc; artifacts load with network disabled inside the iframe.
+- [ ] Failing tests: env present → import map extended with vendor + shim entries, `host.css` injected first, Tailwind JIT loaded with tokens; env absent → BYTE-IDENTICAL current behavior (snapshot the generated sandbox doc in both modes).
+- [ ] FATAL-ERROR CHANNEL (owned here; closes the PR #34 declared follow-up): stage runtime reports fatal module/load errors over the bridge; `SandboxStage` exposes `onFatal`; `FlowletRemix` marks the pin broken → original children + broken pill. Tests at each layer.
 - [ ] Implement; green; commit. UI checkpoint: showcase screenshot of an edited component rendering with real CSS + icons.
 
 ### Task 8: Cadence wiring
