@@ -418,7 +418,18 @@ describe("createFlowletAgent", () => {
     );
 
     expect(onSettled).toHaveBeenCalledOnce();
-    expect(Array.isArray(onSettled.mock.calls[0]![0])).toBe(true);
+    const messages = onSettled.mock.calls[0]![0] as FlowletUIMessage[];
+    // ai@6.0.28's handleUIMessageStreamFinish returns [...originalMessages,
+    // state.message] — the FULL updated list, not just the new turn. Assert
+    // the prior user message survives alongside the new assistant reply.
+    expect(messages).toContainEqual(userTurn[0]);
+    expect(
+      messages.some(
+        (m) =>
+          m.role === "assistant" &&
+          m.parts.some((p) => (p as { type: string; text?: string }).type === "text" && (p as { text?: string }).text === "All done."),
+      ),
+    ).toBe(true);
   });
 
   it("threads a caller-supplied threadId into PolicyContext (contextKey)", async () => {

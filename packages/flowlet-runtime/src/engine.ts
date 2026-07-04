@@ -176,6 +176,13 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
     let settledPrincipal: FlowletPrincipal = { userId: "" };
 
     return createUIMessageStream<FlowletUIMessage>({
+      // Verified against ai@6.0.28's handleUIMessageStreamFinish: without this,
+      // `originalMessages` defaults to `[]` and onFinish's `messages` would be
+      // JUST the new assistant message, not the full thread. Passing the run's
+      // input messages here makes onFinish's `messages` the FULL updated list
+      // ([...originalMessages, state.message]) — what a Store-backed
+      // persistence hook (Task 4/5) actually needs to write.
+      originalMessages: input.messages,
       // Route execute failures (bad prompt, provider/Composio errors) into the
       // stream as an error part instead of an unhandled rejection — one crashed
       // run must never take the host process down with it.
@@ -185,13 +192,15 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
       },
       // ENG-193 §6.2: persistence for the consent endpoint's "load the
       // thread's messages" step. A throwing/rejecting hook is caught here,
-      // never surfaced to the model or the client stream.
-      onFinish: ({ messages }) => {
-        if (!config.onSettled) return;
-        Promise.resolve(config.onSettled(messages, settledPrincipal)).catch((err) =>
-          console.error(`[flowlet] onSettled failed for run ${runId}:`, err),
-        );
-      },
+      // never surfaced to the model or the client stream. Only registered when
+      // the caller supplied `onSettled` — no behavior change when it's omitted.
+      onFinish: config.onSettled
+        ? ({ messages }) => {
+            Promise.resolve(config.onSettled!(messages, settledPrincipal)).catch((err) =>
+              console.error(`[flowlet] onSettled failed for run ${runId}:`, err),
+            );
+          }
+        : undefined,
       execute: async ({ writer }) => {
         // 1. Resolve the principal. A missing/empty userId fails Composio closed
         //    (no external tools) — the safe default.

@@ -163,6 +163,25 @@ describe("wrapClientTool", () => {
     });
     await expect(wrapped.needsApproval!({}, { toolCallId: "call-4", messages: [] } as never)).resolves.toBe(true);
   });
+
+  it("a throwing writer still resolves needsApproval normally (consent write must never break the tool call)", async () => {
+    const writer = {
+      write: () => {
+        throw new Error("stream torn down");
+      },
+    } as never;
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("approve"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await expect(
+      wrapped.needsApproval!({}, { toolCallId: "call-5", messages: [] } as never),
+    ).resolves.toBe(true);
+  });
 });
 
 describe("buildToolset with client-executed tools", () => {

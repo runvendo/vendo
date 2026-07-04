@@ -83,11 +83,19 @@ export function wrapTool(args: WrapToolArgs): Tool {
     if (!writer) return;
     const tier = dangerTier(descriptor);
     if (tier === "read") return; // cards/receipts are for mutating calls only
-    writer.write({
-      type: "data-consent",
-      id: `consent-${toolCallId}`,
-      data: { toolCallId, tier, unverified: isUnverified(descriptor) },
-    });
+    // A consent-metadata write is a side channel to the card/receipt — it must
+    // never break the tool call itself (needsApproval's return value is what
+    // actually gates execution). A throwing writer (a torn-down stream, a
+    // client that closed early) is swallowed and logged, not propagated.
+    try {
+      writer.write({
+        type: "data-consent",
+        id: `consent-${toolCallId}`,
+        data: { toolCallId, tier, unverified: isUnverified(descriptor) },
+      });
+    } catch (err) {
+      console.error(`[flowlet] failed to write data-consent part for "${toolCallId}":`, err);
+    }
   }
 
   /**
