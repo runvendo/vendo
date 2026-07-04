@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleConsentRoute } from "./consent";
 import {
+  createFadeTracker,
   createInMemoryGrantStore,
   InMemoryAuditLog,
   InMemoryThreadStore,
@@ -63,5 +64,48 @@ describe("handleConsentRoute", () => {
       response: { id: "call-missing", decision: "yes" },
     }), deps);
     expect(res.status).toBe(404);
+  });
+
+  it("threads fadeEligible from handleConsent into the route's JSON body (ENG-193 §4.4)", async () => {
+    const deps = {
+      ...makeDeps(),
+      // Explicit readOnlyHint: false marks this descriptor VERIFIED — an
+      // all-{} annotations object is "unverified" per policy/tier.ts's
+      // `isUnverified`, which would make it fade-ineligible (same fixture
+      // rationale as packages/flowlet-runtime/src/consent.test.ts).
+      resolveDescriptor: (name: string) =>
+        name === "GMAIL_SEND_EMAIL"
+          ? { name, source: "composio" as const, annotations: { readOnlyHint: false }, hasExecute: true, kind: "function" as const }
+          : undefined,
+      fadeTracker: createFadeTracker(),
+    };
+    const threadId = await deps.threadIndex.resolve(scope, "chat-2");
+    for (const to of ["a@b.com", "b@b.com", "c@b.com"]) {
+      await deps.threads.appendMessages(scope, threadId, [
+        { id: `m-${to}`, role: "assistant", parts: [
+          { type: "tool-GMAIL_SEND_EMAIL", toolCallId: `call-${to}`, state: "approval-requested",
+            input: { to }, approval: { id: `ap-${to}` } },
+        ] } as never,
+      ]);
+      const res = await handleConsentRoute(req({
+        id: "chat-2", toolCallId: `call-${to}`, toolName: "GMAIL_SEND_EMAIL",
+        response: { id: `call-${to}`, decision: "yes" },
+      }), deps);
+      expect(res.status).toBe(200);
+    }
+    await deps.threads.appendMessages(scope, threadId, [
+      { id: "m-final", role: "assistant", parts: [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "call-final", state: "approval-requested",
+          input: { to: "d@b.com" }, approval: { id: "ap-final" } },
+      ] } as never,
+    ]);
+    const res = await handleConsentRoute(req({
+      id: "chat-2", toolCallId: "call-final", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-final", decision: "yes" },
+    }), deps);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; fadeEligible?: { proposalId: string } };
+    expect(body.ok).toBe(true);
+    expect(body.fadeEligible?.proposalId).toBeTruthy();
   });
 });

@@ -5,7 +5,7 @@
  * `resolvePrincipal` before dispatching here), result statuses pass through.
  */
 import { handleConsent } from "@flowlet/runtime";
-import type { ToolDescriptor } from "@flowlet/runtime";
+import type { FadeTracker, ToolDescriptor } from "@flowlet/runtime";
 import type { AuditLog, GrantStore, Principal, ThreadStore } from "@flowlet/core";
 import { consentResponseSchema } from "@flowlet/core";
 import type { ThreadIndex } from "./threads";
@@ -16,6 +16,8 @@ export interface ConsentRouteDeps {
   threads: ThreadStore;
   threadIndex: ThreadIndex;
   resolveDescriptor: (toolName: string) => ToolDescriptor | undefined;
+  /** ENG-193 §4.4 — optional (absent -> no fade tracking passthrough). */
+  fadeTracker?: FadeTracker;
   principal: Principal;
 }
 
@@ -44,10 +46,11 @@ export async function handleConsentRoute(req: Request, deps: ConsentRouteDeps): 
       audit: deps.audit,
       resolveDescriptor: deps.resolveDescriptor,
       getMessages: (scope, id) => deps.threads.getMessages(scope, id),
+      fadeTracker: deps.fadeTracker,
     },
     deps.principal,
     { threadId, toolCallId: body.toolCallId, toolName: body.toolName, response: parsedResponse.data },
   );
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, ...(result.fadeEligible ? { fadeEligible: result.fadeEligible } : {}) });
 }

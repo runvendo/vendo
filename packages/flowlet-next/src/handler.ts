@@ -17,6 +17,7 @@
  *   GET  /capabilities  — { chat, integrations, voice } from env-key presence
  *   POST /consent       — answers a ConsentRequest; server-validates grant
  *                          creation (ENG-193)
+ *   POST /fade-proposal — resolves a fade proposal (ENG-193 §4.4)
  *   POST /tick          — drives the automations scheduler
  *
  * ZERO-CONFIG: with no options it reads `.env` (capability-additive keys) and
@@ -28,6 +29,7 @@ import { prewiredComponents } from "@flowlet/components/descriptors";
 import {
   buildDescriptor,
   createBreakerState,
+  createFadeTracker,
   createInMemoryGrantStore,
   hostToolset,
   InMemoryAuditLog,
@@ -36,6 +38,7 @@ import {
 import { handleChat } from "./chat";
 import { handleAction, createApprovalStore } from "./action";
 import { handleConsentRoute } from "./consent";
+import { handleFadeProposalRoute } from "./fade-proposal";
 import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
 import {
   DEFAULT_INTEGRATION_CATALOG,
@@ -82,6 +85,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const threads = options.store?.threads ?? new InMemoryThreadStore(() => new Date().toISOString());
     const threadIndex = createThreadIndex(threads);
     const breakers = options.store?.breakers ?? createBreakerState();
+    const fadeTracker = options.store?.fadeTracker ?? createFadeTracker();
     // ENG-193 item 2/3: the production stack wraps the host's base policy —
     // grants can suppress repeat approvals (never critical), a judge (off by
     // default) can tighten/loosen the act tier, deterministic breakers can
@@ -200,6 +204,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       threads,
       threadIndex,
       resolveDescriptor,
+      fadeTracker,
     };
   }
   const state = () => (assembled ??= assemble());
@@ -260,6 +265,18 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           audit: s.audit,
           threads: s.threads,
           threadIndex: s.threadIndex,
+          resolveDescriptor: s.resolveDescriptor,
+          fadeTracker: s.fadeTracker,
+          principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
+        });
+      }
+      case "fade-proposal": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return handleFadeProposalRoute(req, {
+          fadeTracker: s.fadeTracker,
+          grants: s.grants,
+          audit: s.audit,
           resolveDescriptor: s.resolveDescriptor,
           principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
         });

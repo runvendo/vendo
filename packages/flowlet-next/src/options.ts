@@ -7,7 +7,7 @@
 import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
 import type { AuditLog, GrantStore, HostToolDefinition, RegisteredComponent, ThreadStore } from "@flowlet/core";
-import type { ApprovalPolicy, BreakerState, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
+import type { ApprovalPolicy, BreakerState, FadeTracker, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
 import type { ConnectionsStore } from "./connections";
 
 export interface IntegrationCatalogEntry {
@@ -64,7 +64,14 @@ export interface FlowletHandlerOptions {
    * instances (reset on process restart). Inject when the host persists
    * these elsewhere.
    */
-  store?: { grants?: GrantStore; audit?: AuditLog; threads?: ThreadStore; breakers?: BreakerState };
+  store?: {
+    grants?: GrantStore;
+    audit?: AuditLog;
+    threads?: ThreadStore;
+    breakers?: BreakerState;
+    /** ENG-193 §4.4 — inject to share fade tracking with a host-owned instance. */
+    fadeTracker?: FadeTracker;
+  };
   /** The judge model (ENG-193 §4.2). Default: undefined — the judge is
    *  IDENTITY (fail-safe rollout; item-2 behavior, unchanged) until a host
    *  opts in. */
@@ -105,6 +112,7 @@ const optionsSchema = z
         audit: z.custom<AuditLog>((v) => typeof v === "object" && v !== null).optional(),
         threads: z.custom<ThreadStore>((v) => typeof v === "object" && v !== null).optional(),
         breakers: z.custom<BreakerState>((v) => typeof v === "object" && v !== null).optional(),
+        fadeTracker: z.custom<FadeTracker>((v) => typeof v === "object" && v !== null).optional(),
       })
       .strict()
       .optional(),
