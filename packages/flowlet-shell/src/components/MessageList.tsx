@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { groupThreadItems, type ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalBatchCard } from "./ApprovalBatchCard";
 import { AutomationCard, isAutomationApproval } from "./AutomationCard";
 import { UINodeView } from "./UINodeView";
 import { Skeleton } from "./Skeleton";
@@ -17,13 +18,20 @@ export interface MessageListProps {
   status?: string;
   onApprove: (approvalId: string) => void;
   onDecline?: (approvalId: string) => void;
+  /** Batch decisions (ENG-193 §3 Moment 4). Omit to fall back to looping
+   *  onApprove/onDecline per item — every existing caller keeps working. */
+  onApproveBatch?: (approvalIds: string[], toolCallIds: string[]) => void;
+  onApproveSubset?: (approvalIds: string[], toolCallIds: string[], allToolCallIds: string[]) => void;
+  onDeclineBatch?: (approvalIds: string[]) => void;
   /** Regenerate a specific assistant turn (SDK `regenerate`). */
   onRegenerate?: (messageId: string) => void;
   /** Host feedback sink for a turn's thumbs up/down. */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
 }
 
-export function MessageList({ items, status, onApprove, onDecline, onRegenerate, onFeedback }: MessageListProps) {
+export function MessageList({
+  items, status, onApprove, onDecline, onApproveBatch, onApproveSubset, onDeclineBatch, onRegenerate, onFeedback,
+}: MessageListProps) {
   const rendered = useMemo(() => groupThreadItems(items), [items]);
   // Render-slot keys (ENG-205): a skeleton and the ui view that replaces it
   // carry different item keys (different part indices), but must share one
@@ -192,8 +200,29 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                   key={item.key}
                   toolName={item.toolName}
                   input={item.input}
+                  tier={item.tier}
+                  unverified={item.unverified}
                   onApprove={() => onApprove(item.approvalId)}
                   onDecline={() => onDecline?.(item.approvalId)}
+                />
+              );
+            case "approval-batch":
+              return (
+                <ApprovalBatchCard
+                  key={item.key}
+                  toolName={item.toolName}
+                  items={item.items}
+                  onApproveAll={(approvalIds, toolCallIds) =>
+                    onApproveBatch ? onApproveBatch(approvalIds, toolCallIds) : approvalIds.forEach(onApprove)
+                  }
+                  onApproveSubset={(approvalIds, toolCallIds, allToolCallIds) =>
+                    onApproveSubset
+                      ? onApproveSubset(approvalIds, toolCallIds, allToolCallIds)
+                      : approvalIds.forEach(onApprove)
+                  }
+                  onDeclineAll={(approvalIds) =>
+                    onDeclineBatch ? onDeclineBatch(approvalIds) : approvalIds.forEach((id) => onDecline?.(id))
+                  }
                 />
               );
             case "ui":

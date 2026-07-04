@@ -97,4 +97,14 @@ describe("MessageList", () => {
     fireEvent.click(screen.getByText("Send it"));
     expect(onApprove).toHaveBeenCalledWith("a1");
   });
+
+  it("renders a batch of sibling approvals as ONE grouped card", () => {
+    const onApprove = vi.fn();
+    renderList([
+      { kind: "approval", key: "a", messageId: "m", approvalId: "ap1", toolCallId: "c1", toolName: "GMAIL_SEND_EMAIL", input: {} },
+      { kind: "approval", key: "b", messageId: "m", approvalId: "ap2", toolCallId: "c2", toolName: "GMAIL_SEND_EMAIL", input: {} },
+    ], onApprove);
+    expect(screen.getByText("Approve all 2")).toBeTruthy();
+    expect(screen.queryAllByText("Send it")).toHaveLength(0); // not the single-card path
+  });
 });

@@ -31,6 +31,10 @@ export interface ShellContextValue {
   /** F1 component registry (prewired + host). When present, reopened saved
    *  views diff their stamp against it and surface drift (ENG-186). */
   components?: RegisteredComponent[];
+  /** Posts a ConsentResponse (ENG-193 §4.5). Absent → approve/decline still
+   *  work via the SDK's native approval boolean alone, just with no server
+   *  grant/audit trail — the graceful no-op default every other seam here has. */
+  sendConsent?: (response: import("@flowlet/core").ConsentResponse) => Promise<void>;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -83,11 +87,13 @@ export interface FlowletShellProviderProps {
   productName?: string;
   /** F1 component registry; enables drift detection on reopened saved views. */
   components?: RegisteredComponent[];
+  /** Posts a ConsentResponse; see ShellContextValue. */
+  sendConsent?: (response: import("@flowlet/core").ConsentResponse) => Promise<void>;
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, children,
+  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
@@ -101,7 +107,8 @@ export function FlowletShellProvider({
     cssVars: cssVars ?? {},
     productName,
     components,
-  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components]);
+    sendConsent,
+  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent]);
 
   return (
     <ShellContext.Provider value={value}>

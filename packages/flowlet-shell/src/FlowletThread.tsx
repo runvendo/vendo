@@ -48,7 +48,7 @@ export function FlowletThread({
   heroComposer = false, onPin, onFeedback,
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
-  const { integrations } = useShell();
+  const { integrations, sendConsent } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -83,9 +83,46 @@ export function FlowletThread({
   }, [chat.status, chat.error]);
 
   const send = (text: string, files?: FileUIPart[]) => { void chat.sendMessage({ text, files }); };
-  const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
-  const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
+
+  const findApproval = (approvalId: string) =>
+    chat.items.find((i): i is Extract<typeof chat.items[number], { kind: "approval" }> =>
+      i.kind === "approval" && i.approvalId === approvalId,
+    );
+
+  const approve = (approvalId: string) => {
+    const item = findApproval(approvalId);
+    const send =
+      item?.toolCallId && sendConsent
+        ? sendConsent({ id: item.toolCallId, decision: "yes" })
+        : Promise.resolve();
+    void send.finally(() => chat.addToolApprovalResponse({ id: approvalId, approved: true }));
+  };
+  const decline = (approvalId: string) => { void chat.addToolApprovalResponse({ id: approvalId, approved: false }); };
+
+  const approveBatch = (approvalIds: string[], toolCallIds: string[]) => {
+    const send = sendConsent
+      ? Promise.all(toolCallIds.map((id) => sendConsent({ id, decision: "yes", subset: toolCallIds })))
+      : Promise.resolve([]);
+    void send.finally(() =>
+      approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true })),
+    );
+  };
+  const approveSubset = (approvalIds: string[], toolCallIds: string[], allToolCallIds: string[]) => {
+    const send = sendConsent
+      ? Promise.all(toolCallIds.map((id) => sendConsent({ id, decision: "subset", subset: allToolCallIds })))
+      : Promise.resolve([]);
+    void send.finally(() => {
+      approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
+      chat.items
+        .filter((i): i is Extract<typeof chat.items[number], { kind: "approval" }> => i.kind === "approval")
+        .filter((i) => !approvalIds.includes(i.approvalId) && allToolCallIds.includes(i.toolCallId ?? ""))
+        .forEach((i) => chat.addToolApprovalResponse({ id: i.approvalId, approved: false }));
+    });
+  };
+  const declineBatch = (approvalIds: string[]) => {
+    approvalIds.forEach((id) => void chat.addToolApprovalResponse({ id, approved: false }));
+  };
 
   const empty = chat.items.length === 0;
   // The connect-tools entry lives in the bar (ENG-205): a dock button beside
@@ -143,6 +180,9 @@ export function FlowletThread({
             status={chat.status}
             onApprove={approve}
             onDecline={decline}
+            onApproveBatch={approveBatch}
+            onApproveSubset={approveSubset}
+            onDeclineBatch={declineBatch}
             onRegenerate={regenerate}
             onFeedback={onFeedback}
           />
