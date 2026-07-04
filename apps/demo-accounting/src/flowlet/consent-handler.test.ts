@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { dangerTier } from "@flowlet/runtime";
 import { handleDemoConsent } from "./consent-handler";
 import { demoStore, resolveThreadRecordId, CADENCE_SCOPE } from "./store";
+import { resolveToolDescriptor } from "./tool-registry";
 
 function req(body: unknown): Request {
   return new Request("http://localhost/api/flowlet/consent", {
@@ -38,5 +40,27 @@ describe("handleDemoConsent", () => {
       response: { id: "call-missing", decision: "yes" },
     }));
     expect(res.status).toBe(404);
+  });
+
+  it("setDocumentStatus is annotated critical for demo verification (Plan deviations #3)", () => {
+    const d = resolveToolDescriptor("setDocumentStatus");
+    expect(d).toBeDefined();
+    expect(dangerTier(d!)).toBe("critical");
+  });
+
+  it("a grant draft for setDocumentStatus is refused (403) — critical is never grantable", async () => {
+    const threadId = await resolveThreadRecordId(CADENCE_SCOPE, "test-thread-critical");
+    await demoStore.threads.appendMessages(CADENCE_SCOPE, threadId, [
+      { id: "m1", role: "assistant", parts: [
+        { type: "tool-setDocumentStatus", toolCallId: "call-crit", state: "approval-requested",
+          input: { docId: "d1", action: "reject" }, approval: { id: "ap-crit" } },
+      ] } as never,
+    ]);
+    const res = await handleDemoConsent(req({
+      id: "test-thread-critical", toolCallId: "call-crit", toolName: "setDocumentStatus",
+      response: { id: "call-crit", decision: "yes",
+        grant: { tool: "setDocumentStatus", scope: { kind: "tool" }, duration: "standing" } },
+    }));
+    expect(res.status).toBe(403);
   });
 });

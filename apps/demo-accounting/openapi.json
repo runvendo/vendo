@@ -126,6 +126,7 @@
     "/api/clients/{id}/documents/{docId}/status": {
       "post": {
         "operationId": "setDocumentStatus",
+        "x-flowlet-dangerous": true,
         "summary": "Advance a document through its lifecycle: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review.",
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Client id" },
