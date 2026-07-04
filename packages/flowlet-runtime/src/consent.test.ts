@@ -152,6 +152,9 @@ describe("handleConsent — fade eligibility (ENG-193 §4.4)", () => {
     });
     expect(result.ok).toBe(true);
     expect(result.ok && result.fadeEligible?.proposalId).toBeTruthy();
+    // Review nit: the card renders its own ordinal from this count instead of
+    // hardcoding "third" — carry the tracker's own in-window yes-count.
+    expect(result.ok && result.fadeEligible?.count).toBe(3);
   });
 
   it("never offers fadeEligible for a critical tool, even after repeated yeses", async () => {

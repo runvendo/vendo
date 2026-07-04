@@ -104,8 +104,12 @@ describe("handleConsentRoute", () => {
       response: { id: "call-final", decision: "yes" },
     }), deps);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; fadeEligible?: { proposalId: string } };
+    const body = (await res.json()) as { ok: boolean; fadeEligible?: { proposalId: string; count?: number } };
     expect(body.ok).toBe(true);
     expect(body.fadeEligible?.proposalId).toBeTruthy();
+    // Review nit: the route passes the tracker's own yes-count through
+    // verbatim — the card renders its ordinal from this, not a hardcoded
+    // "third". Loop records 3 yeses (a/b/c) before this 4th (d) one.
+    expect(body.fadeEligible?.count).toBe(4);
   });
 });

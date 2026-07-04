@@ -45,8 +45,25 @@ describe("useTrustData", () => {
       listCriticalTools: async () => [], resolveFadeProposal: async () => {},
     };
     const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
-    await waitFor(() => expect(result.current.diary.total).toBe(3)); // 1 read + 1 approved + 1 automation run
+    // 1 read + 1 approved + 1 automation run + 1 money move — money moves
+    // fold into the total too (review nit: a week of only money moves must
+    // not read "handled 0 things").
+    await waitFor(() => expect(result.current.diary.total).toBe(4));
     expect(result.current.diary).toMatchObject({ reads: 1, approved: 1, automationRuns: 1, moneyMoves: 1 });
+  });
+
+  it("a week of ONLY money moves is never counted as 0 (review nit)", async () => {
+    const rows: TrustAuditRow[] = [
+      { at: "1", kind: "tool_execution", toolName: "transfer_money", mutating: true, dangerous: true },
+      { at: "2", kind: "tool_execution", toolName: "transfer_money", mutating: true, dangerous: true },
+    ];
+    const trust: TrustSeam = {
+      listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => rows,
+      listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+    };
+    const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
+    await waitFor(() => expect(result.current.diary.moneyMoves).toBe(2));
+    expect(result.current.diary.total).toBe(2);
   });
 
   it("revoke calls trust.revokeGrant and refreshes", async () => {

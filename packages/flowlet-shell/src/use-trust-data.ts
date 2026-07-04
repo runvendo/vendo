@@ -35,7 +35,10 @@ function summarize(rows: TrustAuditRow[]): DiaryData {
       automationRuns += 1;
     }
   }
-  return { total: reads + approved + automationRuns, reads, approved, automationRuns, moneyMoves };
+  // Money moves fold into the total too (review nit): a week of ONLY money
+  // moves must never read "handled 0 things" just because they're broken out
+  // as their own counter.
+  return { total: reads + approved + automationRuns + moneyMoves, reads, approved, automationRuns, moneyMoves };
 }
 
 export function useTrustData() {

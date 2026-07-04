@@ -42,7 +42,7 @@ export interface HandleConsentRequest {
 }
 
 export type HandleConsentResult =
-  | { ok: true; fadeEligible?: { shape: FadeShape; proposalId: string } }
+  | { ok: true; fadeEligible?: { shape: FadeShape; proposalId: string; count: number } }
   | { ok: false; status: 400 | 403 | 404; error: string };
 
 /** Structural view of the ai SDK tool-part shape this reads — matches
@@ -106,7 +106,7 @@ export async function handleConsent(
     });
   }
 
-  let fadeEligible: { shape: FadeShape; proposalId: string } | undefined;
+  let fadeEligible: { shape: FadeShape; proposalId: string; count: number } | undefined;
   if (deps.fadeTracker) {
     const fadeDescriptor = deps.resolveDescriptor(req.toolName);
     // Fade eligibility is act-tier, verified-tool territory ONLY (ENG-193 §4.4

@@ -51,7 +51,7 @@ export function FlowletThread({
   const { integrations, sendConsent, trust } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [fadeProposal, setFadeProposal] = useState<{ messageId: string; toolName: string; proposalId: string } | null>(null);
+  const [fadeProposal, setFadeProposal] = useState<{ messageId: string; toolName: string; proposalId: string; count?: number } | null>(null);
 
   // The most recent rendered view — what "Pin to card" commits.
   const latestNode = useMemo<UINode | null>(() => {
@@ -114,7 +114,12 @@ export function FlowletThread({
       : Promise.resolve(undefined);
     void consentPost.then((result) => {
       if (result?.fadeEligible && item) {
-        setFadeProposal({ messageId: item.messageId, toolName: item.toolName, proposalId: result.fadeEligible.proposalId });
+        setFadeProposal({
+          messageId: item.messageId,
+          toolName: item.toolName,
+          proposalId: result.fadeEligible.proposalId,
+          count: result.fadeEligible.count,
+        });
       }
       chat.addToolApprovalResponse({ id: approvalId, approved: true });
     });

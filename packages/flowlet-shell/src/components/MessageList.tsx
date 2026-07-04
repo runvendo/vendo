@@ -31,8 +31,10 @@ export interface MessageListProps {
   /** Host feedback sink for a turn's thumbs up/down. */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
   /** A pending fade proposal for the turn (ENG-193 §3 Moment 5) — renders
-   *  right after that turn's activity panel. Null/absent -> nothing renders. */
-  fadeProposal?: { messageId: string; toolName: string } | null;
+   *  right after that turn's activity panel. Null/absent -> nothing renders.
+   *  `count` (review nit) is the tracker's own yes-count at proposal time,
+   *  threaded straight to `FadeProposalCard`'s ordinal. */
+  fadeProposal?: { messageId: string; toolName: string; count?: number } | null;
   onAcceptFade?: () => void;
   onDeclineFade?: () => void;
 }
@@ -161,6 +163,7 @@ export function MessageList({
                   {fadeProposal && fadeProposal.messageId === item.messageId && (
                     <FadeProposalCard
                       toolName={fadeProposal.toolName}
+                      count={fadeProposal.count}
                       onAccept={() => onAcceptFade?.()}
                       onDecline={() => onDeclineFade?.()}
                     />

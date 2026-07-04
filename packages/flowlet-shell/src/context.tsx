@@ -46,7 +46,15 @@ export interface TrustSeam {
 /** What `sendConsent` resolves with (ENG-193 §4.4 addition — additive:
  *  existing `Promise<void>`-returning implementations stay assignable). */
 export interface SendConsentResult {
-  fadeEligible?: { shape: import("@flowlet/core").FadeShape; proposalId: string };
+  fadeEligible?: {
+    shape: import("@flowlet/core").FadeShape;
+    proposalId: string;
+    /** The tracker's in-window yes-count at proposal time (review nit) —
+     *  `FadeProposalCard` renders its ordinal from this instead of a
+     *  hardcoded "third". Optional for backward compatibility with a host
+     *  that hasn't upgraded its consent route yet. */
+    count?: number;
+  };
 }
 
 export type RenderNode = (node: UINode) => ReactNode;
