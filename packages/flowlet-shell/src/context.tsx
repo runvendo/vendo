@@ -4,7 +4,16 @@ import { themeToStyle, type FlowletTheme } from "./theme";
 import { createLocalStore, type FlowletStore } from "./seams/store";
 import { createLocalIntegrations, type FlowletIntegrations } from "./seams/integrations";
 import type { RunQuery } from "./seams/query";
+import type { ParkedActionRow } from "./components/WaitingList";
 import "./styles.css";
+
+/** Parked-action data plane (ENG-193 §4.6): list unresolved rows, resolve one
+ *  yes/no. Absent → `useParkedActions` reports an empty list and no polling —
+ *  the graceful no-op default every other optional seam here has. */
+export interface ParkedActionsSeam {
+  list: () => Promise<ParkedActionRow[]>;
+  resolve: (actionId: string, decision: "yes" | "no") => Promise<void>;
+}
 
 export type RenderNode = (node: UINode) => ReactNode;
 
@@ -35,6 +44,8 @@ export interface ShellContextValue {
    *  work via the SDK's native approval boolean alone, just with no server
    *  grant/audit trail — the graceful no-op default every other seam here has. */
   sendConsent?: (response: import("@flowlet/core").ConsentResponse) => Promise<void>;
+  /** Parked-action data plane (ENG-193 §4.6). See `ParkedActionsSeam`. */
+  parkedActions?: ParkedActionsSeam;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -89,11 +100,13 @@ export interface FlowletShellProviderProps {
   components?: RegisteredComponent[];
   /** Posts a ConsentResponse; see ShellContextValue. */
   sendConsent?: (response: import("@flowlet/core").ConsentResponse) => Promise<void>;
+  /** Parked-action data plane; see ShellContextValue. */
+  parkedActions?: ParkedActionsSeam;
   children: ReactNode;
 }
 
 export function FlowletShellProvider({
-  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, children,
+  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
 
@@ -108,7 +121,8 @@ export function FlowletShellProvider({
     productName,
     components,
     sendConsent,
-  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent]);
+    parkedActions,
+  }), [store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions]);
 
   return (
     <ShellContext.Provider value={value}>
