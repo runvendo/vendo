@@ -186,7 +186,7 @@ describe("cadence automations world — the morning document chase", () => {
     expect(calendar).not.toHaveBeenCalled();
   });
 
-  it("without grants, the gated for_each send never executes (grant-required failure, not a silent send)", async () => {
+  it("without grants, the gated for_each send never executes — it parks instead of failing the run (ENG-193 §4.6)", async () => {
     __reseed(new Date());
     const gmail = vi.fn(async () => OK);
     const calendar = vi.fn(async () => OK);
@@ -196,12 +196,16 @@ describe("cadence automations world — the morning document chase", () => {
     await forceFire(world, id, true);
     expect(gmail).not.toHaveBeenCalled();
     expect(calendar).not.toHaveBeenCalled();
-    // A gated tool inside for_each cannot pause per-iteration (not resumable
-    // in v1) — the run fails loudly, telling the user to grant the tool. The
-    // AutomationCard's approval is what mints those grants.
+    // A gated tool inside for_each parks rather than failing the run (ENG-193
+    // §4.6 "park the action, not the run") — the run still completes
+    // everything it can, and every ungranted send in both loops ends up as a
+    // ParkedAction row instead of a silent skip or a loud run failure.
     const runs = await world.store.listRuns(world.scope, id);
-    expect(runs[0]!.status).toBe("failed");
-    expect(runs[0]!.error).toMatch(/requires a grant/);
+    expect(runs[0]!.status).toBe("succeeded");
+    expect(runs[0]!.parkedCount).toBeGreaterThan(0);
+    const parked = await world.store.listParkedActions(world.scope, { runId: runs[0]!.id });
+    expect(parked.length).toBe(runs[0]!.parkedCount);
+    expect(parked.every((p) => p.reason === "ungranted")).toBe(true);
   });
 
   it("a failed real send surfaces as a failed run — never fake success", async () => {

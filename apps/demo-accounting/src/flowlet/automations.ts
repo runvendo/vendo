@@ -37,6 +37,7 @@ import {
 } from "@flowlet/runtime";
 import { listDeadlineEntries } from "@/server/clients";
 import { demoPolicy } from "./policy";
+import { demoStore } from "./store";
 import { CADENCE_SCOPE, DEMO_USER_ID, DEMO_USER_NAME } from "./principal";
 import {
   createCalendarEvent as realCreateCalendarEvent,
@@ -258,6 +259,11 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
     policy: demoPolicy,
     userClaims: async () => ({ id: DEMO_USER_ID, name: DEMO_USER_NAME }),
     agentRunner: createAgentStepRunner({ model: opts.model ?? anthropic(DEMO_MODEL) }),
+    // ENG-193 §4.6/§6.2: a parked-action resolution gets the SAME "consent"
+    // audit trail chat approvals already do (CADENCE_SCOPE is already
+    // Principal-shaped, so the runner's default identity auditPrincipal is
+    // correct — no mapping needed).
+    audit: demoStore.audit,
     ...(opts.now ? { now: opts.now } : {}),
   });
 
