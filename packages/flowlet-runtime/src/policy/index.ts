@@ -8,3 +8,4 @@ export * from "./grant-match";
 export * from "./grant-policy";
 export * from "./audit-policy";
 export * from "./run-context";
+export * from "./judge-policy";
