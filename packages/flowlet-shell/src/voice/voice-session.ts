@@ -170,13 +170,19 @@ export interface VoiceDriverHandle extends VoiceSessionActions {
   stop(): void;
 }
 
+/** Per-session start context (all optional; drivers may ignore). */
+export interface VoiceSessionInit {
+  /** Compact rendering of the recent thread, so a session started mid-
+   *  conversation isn't amnesiac about what was just typed. */
+  context?: string;
+}
+
 /**
  * The session seam. `start` is called once per session; the driver pushes
  * events through `emit` until it emits `{type:"status", status:"ended"}` or
  * `stop()` is called. The realtime WebRTC driver implements this same
- * interface at ENG-185 build-out; `createScriptedVoiceDriver` implements it
- * for demos and tests.
+ * interface; `createScriptedVoiceDriver` implements it for demos and tests.
  */
 export interface VoiceDriver {
-  start(emit: (event: VoiceEvent) => void): VoiceDriverHandle;
+  start(emit: (event: VoiceEvent) => void, init?: VoiceSessionInit): VoiceDriverHandle;
 }

@@ -63,6 +63,34 @@ export function FlowletThread({
   const [pickerOpen, setPickerOpen] = useState(false);
   const voiceSession = useVoiceSession(voice);
 
+  // Context carry-over: a session started mid-thread knows what was just
+  // typed. Compact tail of the conversation, hard-capped.
+  const startVoice = () => {
+    const lines: string[] = [];
+    for (const item of chat.items.slice(-16)) {
+      if (item.kind === "text" && item.text.trim()) {
+        lines.push(`${item.role}: ${item.text.trim()}`);
+      }
+    }
+    const context = lines.join("\n").slice(-2000);
+    voiceSession.start(context ? { context } : undefined);
+  };
+
+  // Cmd/Ctrl+Shift+K toggles a voice session (sibling of the overlay's Cmd+K).
+  useEffect(() => {
+    if (!voiceSession.supported || typeof window === "undefined") return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (voiceSession.active) voiceSession.end();
+        else startVoice();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceSession.supported, voiceSession.active, chat.items]);
+
   // The most recent rendered view — what "Pin to card" commits.
   const latestNode = useMemo<UINode | null>(() => {
     for (let i = chat.items.length - 1; i >= 0; i--) {
@@ -107,7 +135,7 @@ export function FlowletThread({
       onSend={send}
       status={chat.status}
       onStop={() => chat.stop()}
-      onVoice={voiceSession.supported ? voiceSession.start : undefined}
+      onVoice={voiceSession.supported ? startVoice : undefined}
       accessory={
         <ConnectDock
           integrations={tools}

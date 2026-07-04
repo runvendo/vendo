@@ -4,6 +4,7 @@ import type {
   VoiceDriver,
   VoiceDriverHandle,
   VoiceEvent,
+  VoiceSessionInit,
 } from "./voice-session";
 
 /**
@@ -57,6 +58,16 @@ export interface RealtimeVoiceDriverOptions {
 
 const DEFAULT_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 const AMPLITUDE_TICK_MS = 90;
+/** Idle while listening: prompt at 45s, end 20s after the prompt (spec §2). */
+const IDLE_PROMPT_MS = 45_000;
+const IDLE_END_MS = 20_000;
+
+/** Conservative spoken-cancel: an utterance that is ONLY a stop word declines
+ *  the pending consent deterministically — no model manners required. */
+const SPOKEN_DECLINE = /^\s*(stop|cancel|no|nope|wait|hold on|don'?t(?: do (?:it|that))?|never ?mind)[\s.,!?]*$/i;
+export function isSpokenDecline(text: string): boolean {
+  return SPOKEN_DECLINE.test(text);
+}
 
 /** Built-in tools that implement the session protocol itself. */
 const RESOLVE_APPROVAL_TOOL = "resolve_pending_approval";
@@ -97,7 +108,7 @@ interface PendingApproval {
 
 export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): VoiceDriver {
   return {
-    start(emit): VoiceDriverHandle {
+    start(emit, sessionInit?: VoiceSessionInit): VoiceDriverHandle {
       let alive = true;
       let muted = false;
       let status: string = "connecting";
@@ -110,6 +121,7 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
       let outAnalyser: AnalyserNode | null = null;
       let amplitudeTimer: ReturnType<typeof setInterval> | null = null;
       let reviveTimer: ReturnType<typeof setTimeout> | null = null;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
       const pending = new Map<string, PendingApproval>();
       const handledCalls = new Set<string>();
       // Live caption accumulators (item/response id → text so far).
@@ -158,6 +170,25 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
           parameters: { type: "object", properties: {} },
         },
       ];
+
+      // Idle guard: after long silence the agent checks in, then hangs up —
+      // an open mic left forgotten shouldn't run (or bill) forever.
+      const resetIdle = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        if (!alive) return;
+        idleTimer = setTimeout(() => {
+          if (!alive || status === "ended") return;
+          sendClient({
+            type: "response.create",
+            response: { instructions: "Ask in a few words whether the user is still there." },
+          });
+          idleTimer = setTimeout(() => {
+            if (!alive || status === "ended") return;
+            send({ type: "status", status: "ended" });
+            teardown();
+          }, IDLE_END_MS);
+        }, IDLE_PROMPT_MS);
+      };
 
       const rms = (analyser: AnalyserNode, buf: Uint8Array): number => {
         // Cast: TS 5.9 DOM types pin getByteTimeDomainData to ArrayBuffer-backed views.
@@ -318,6 +349,8 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         }
         const type = evt.type ?? "";
 
+        resetIdle(); // any server activity means the session isn't idle
+
         if (type === "input_audio_buffer.speech_started") {
           // Barge-in: the user talking preempts agent speech instantly.
           finalizeInterruptedCaption();
@@ -337,6 +370,12 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
           userCaptions.delete(id);
           const text = String(evt.transcript ?? "").trim();
           if (text) send({ type: "caption", id: `u:${id}`, role: "user", text, final: true });
+          // Deterministic spoken cancel: a bare stop-word declines the
+          // pending consent without waiting on the model's manners.
+          if (text && pending.size > 0 && isSpokenDecline(text)) {
+            const oldest = pending.keys().next().value as string | undefined;
+            if (oldest) resolveApproval(oldest, false, "voice");
+          }
           return;
         }
         // Agent captions (transcript of the audio it speaks). GA + beta names.
@@ -399,6 +438,8 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
 
       const teardown = () => {
         alive = false;
+        if (idleTimer) clearTimeout(idleTimer);
+        if (reviveTimer) clearTimeout(reviveTimer);
         if (amplitudeTimer) clearInterval(amplitudeTimer);
         try { dc?.close(); } catch { /* already closed */ }
         try { pc?.close(); } catch { /* already closed */ }
@@ -456,7 +497,13 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
               type: "session.update",
               session: {
                 type: "realtime",
-                instructions: [options.instructions, protocolInstructions(tools.length > 0)].filter(Boolean).join("\n\n"),
+                instructions: [
+                  options.instructions,
+                  protocolInstructions(tools.length > 0),
+                  sessionInit?.context
+                    ? `The user was just having this conversation in the text thread before starting voice — continue from it naturally:\n${sessionInit.context}`
+                    : "",
+                ].filter(Boolean).join("\n\n"),
                 tools: sessionTools,
                 audio: {
                   input: {
@@ -472,6 +519,7 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
             });
             send({ type: "status", status: "listening" });
             startAmplitude();
+            resetIdle();
             if (options.greeting) {
               sendClient({ type: "response.create", response: { instructions: options.greeting } });
             }

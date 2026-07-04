@@ -104,6 +104,23 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   }, [resolvedCount, approvals]);
   useEffect(() => () => clearTimeout(receiptTimer.current), []);
 
+  // Escape ends the call (or leaves, once ended) — captured so a hosting
+  // overlay's own Escape-to-close doesn't unmount a live session out from
+  // under the record.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (status === "ended") leave();
+      else onEnd();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
   // The floating drawer must never sit between the user and a consent moment:
   // it yields to any newly-arrived pending approval (found live in Playwright —
   // an open drawer intercepted the critical confirm tap).

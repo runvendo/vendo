@@ -1,105 +1,69 @@
-# ENG-185 — Realtime voice mode: UX design
+# ENG-185 — Realtime voice mode: design & as-built record
 
-> **Status: DESIGN DECIDED — brainstormed live with Yousef 2026-07-02 (visual companion session).**
-> The direction, surface behavior, feed layout, approval policy, and agent-brain decisions below are his calls; remaining smaller opens are flagged inline with recommendations. UI still pauses for Yousef's review before build and again before merge, per standing rules.
-> Coordinated with the ENG-193 permissions proposals (sibling worktree) and the locked platform architecture (2026-07-01).
+> **Status: BUILT — designed with Yousef in two live sessions (2026-07-02 UX brainstorm, 2026-07-04 iteration + realtime), verified end-to-end with real speech.** UI merges only with his sign-off, per standing rules.
+> Coordinated with ENG-193 (permissions tiers) and the locked platform architecture (2026-07-01). Screenshot trail in `assets/eng185-voice/`.
 
 ## 1. What's locked upstream
 
-**PRD (2026-07-01):** straight-to-realtime bidirectional voice — the user talks, the agent talks back *and does/shows things live* mid-conversation. No dictation stepping stone. ENG-185 in Linear confirms: realtime session driving the same agent core/tools/permissions as chat; live rendering while speaking; barge-in; approval by voice or on-screen card via ENG-193; the existing `VoiceButton`/`useVoiceInput` stubs get **replaced, not extended**.
+**PRD (2026-07-01):** straight-to-realtime bidirectional voice — the user talks, the agent talks back *and does/shows things live*. No dictation stepping stone. Linear ENG-185 confirms: same agent core/tools/permissions as chat; live rendering while speaking; barge-in; approval by voice or on-screen card; the old `useVoiceInput` stub replaced, not extended.
 
-**OSS install model (locked 2026-07-02):** zero-infra BYO-keys. Voice is capability-additive — `+OPENAI_API_KEY` in `.env` turns it on. No separate relay server (see §7).
+**OSS install model (locked 2026-07-02):** zero-infra BYO-keys — `+OPENAI_API_KEY` turns voice on; no relay server.
 
-## 2. The decided experience: stage-native voice
+## 2. The decided experience (Yousef's calls — do not relitigate)
 
-**Voice is its own experience, not a chat accessory** (the "native voice" register — Siri/ChatGPT-voice, not a mic feeding a composer). Tapping the mic replaces conversation-as-text with the **stage**:
+**Stage-native voice.** Mic tap → the full voice experience takes over the surface that launched it (page content area / Cmd+K panel / the slot's design overlay — the mic appears wherever a composer does). Not a chat accessory; nothing floats over host chrome.
 
-- **The stage fills the container you launched it from** — the page's content area becomes the stage; the Cmd+K overlay panel becomes the stage; a slot escalates to its design overlay (as slots already do for interaction) and *that* becomes the stage. Flowlet never floats voice UI over the host app's own chrome.
-- **Anatomy:** the blob (voice presence) is **locked in place** at the top of the stage; generated views **stack into a scrolling feed** beneath it — newest arrives at the bottom with the `FluidReveal` morph, older views dim slightly, everything stays scrollable during the session. A transcript drawer peeks from the bottom edge (captions of the whole session so far); mute and end-session controls sit beside it.
-- **The thread is still the record.** When the session ends, the transcript (both sides) and every generated view land in the launching surface's thread as ordinary history — pin-to-card, save-as-flowlet, and continuing in text all work on what voice built. Voice sessions are never amnesiac. A slot-launched session can end with "pin it" (spoken or tapped) committing the view to the card.
+**The stage:**
+- The **blob** (the ENG-205 `Thinking` metaball, promoted, amplitude-reactive from real audio analysers) is **locked at the top**. No visible Speaking/Listening labels — motion IS the state; visible text only for Muted / Connecting… / Session ended; a screen-reader live region announces everything.
+- **Captions live with the blob**: two sticky rows — your last line (quoted) and the agent's — each role in its own slot, settled lines dim instead of vanishing. Words are never dropped: an un-finalized line displaced by a new one is promoted into the transcript.
+- **Views are slides.** Mandatory center-snap paging: exactly one view owns the stage at rest, dead-centered (edge spacers give deck ends true center). Off-stage neighbors **peek** at the top/bottom edges — blurred, dimmed, scaled to .78 — and animate into the frame on focus. A dot rail (right edge) shows position and jumps on tap. Tall views scroll inside their slide. Frosted blur strips dissolve content at both scroll edges.
+- **Consent is edge chrome**, never a feed card: a slim bar docked above the footer (§4).
+- **Transcript drawer** peeks from the footer; it auto-yields whenever a consent is pending (it once intercepted a critical confirm tap).
+- **Ending ≠ leaving.** The call ends (✕, Escape, spoken sign-off via the `end_session` tool, or idle timeout) but the stage stays browsable; **Back to chat** is the explicit exit — that's when the transcript + views land in the launching surface's thread as ordinary messages (resolved consents as compact text traces). Slot-launched sessions also get **Pin this view** (pins the focused slide; post-call only — mid-call the slot overlay would tear down).
 
-```
-┌─ stage (fills the launching container) ───────┐
-│                  ( ◕ ◕ )        ← blob, locked│
-│                 ~ speaking ~                  │
-│  ┌─ Overdue invoices ───────────────┐         │
-│  │ Acme Co        $1,200    32 days │  ← older│
-│  └──────────────────────────────────┘   (dim) │
-│  ┌─ June vs May — collections ──────┐         │
-│  │ June  $4,200 open · May  $1,700  │  ← new, │
-│  └──────────────────────────────────┘  reveal │
-│         (feed scrolls under the blob)         │
-│  ⌃ transcript                    [🔇]  [✕]    │
-└───────────────────────────────────────────────┘
-```
+**Session spine:** open-mic with server VAD (silence window 750ms — stock settings split mid-thought pauses; `semantic_vad` stalled in testing). Barge-in halts speech ≤ the VAD's reaction, marks the caption "— interrupted", never cancels work. A `turn_detected` cancellation with no follow-up auto-revives a response after 1.8s — dead air is structurally impossible. Idle: at 45s of silence the agent asks if you're there; 20s later it hangs up. Keyboard: `Cmd/Ctrl+Shift+K` toggles a session, `Escape` ends (then leaves). Context carry-over: starting voice mid-thread injects the recent text conversation into the session.
 
-### Session spine
+**Reduced motion:** static disc + text state labels, dim-only (no animated blur), instant transitions — the fluidkit enhancement-layer doctrine throughout. No driver configured / no mic / no key → the mic button hides; Flowlet is exactly the text product.
+
+## 3. Architecture — the `VoiceDriver` seam
 
 ```
-enter ──► LISTENING ⇄ THINKING ⇄ SPEAKING ──► exit
-              ▲            │
-              └── barge-in ┘     (feed renders in parallel throughout)
+VoiceDriver.start(emit, {context?}) → handle {mute, end, approve, decline, stop}
+   events → reducer → VoiceSnapshot → VoiceStage (pure render)
 ```
 
-- **Enter:** one mic tap starts an **open-mic session** (server VAD + semantic turn detection; not hold-to-talk). Mic-permission prompt happens here with a one-line explainer ("〈Agent〉 can hear you until you end the session").
-- **The blob is one creature** — the ENG-205 `Thinking` metaball scaled up, with state expressed as behavior: *listening* breathes and ripples to the user's mic amplitude (driven locally, <100 ms — the "it hears me" signal); *thinking* is exactly today's Thinking cluster; *speaking* pulses to output amplitude, brighter, with a small glyph so listening/speaking don't rely on color alone; *muted* settles to a still disc with a slash. One tap on the blob = mute toggle. Needs two new fluidkit behaviors (amplitude-reactive listening, speaking pulse) — same upstream path as ENG-205's findings.
-- **Voice narrates, the surface shows.** Views render in the feed; the voice gives the headline ("Three overdue, $4,200 total — Acme's is the oldest"), never reads tables. The voice-session system prompt (prompt catalog variant) encodes this: short spoken turns, name-the-view-then-summarize, offer "want me to read them out?" rather than defaulting to it. Spoken progress markers only when latency is felt ("checking your calendar…").
-- **Exit:** tap ✕, `Escape`, a natural sign-off the model recognizes, or ~45 s silence → "still there?" → 15 s → soft-chime end. Ending voice never loses anything (the thread has it all).
+- **`createScriptedVoiceDriver`** — deterministic beats (say/wait/approval/auto-yes/branch); powers demos and tests, and is the graceful fallback when the host has no realtime key.
+- **`createRealtimeVoiceDriver`** — OpenAI Realtime over WebRTC: host backend mints an ephemeral client secret (`POST /v1/realtime/client_secrets`), browser exchanges SDP at `/v1/realtime/calls`, events ride the `oai-events` data channel (caption handlers tolerate GA + beta names). Audio never touches the host backend or Flowlet.
+- **Tools execute client-side** (topology B): host-API tools go through the same `executeHostToolCall` chat uses, tiers derived by `annotationsToTier` — parity by construction. Display tools (`show_table`, `show_key_value`) map model-filled props onto genui payloads rendered by the real sandbox.
+- **Integrations:** `list_integrations` + `request_connect` (the host Connect card on stage = the consent *and* the user gesture the OAuth popup needs). Composio ACTIONS go through the host bridge (`/api/flowlet/voice/tools`): GET returns defs + tiers for the connected toolkits (shared `ingestComposioTools`), POST executes one named call server-side — because the Composio SDK and its key are Node/server-only.
 
-## 3. Approvals on the stage — tiered (decided)
+## 4. Consent (aligned with ENG-193 tiers)
 
-Adopts ENG-193's danger tiers unchanged; voice must not weaken them. **Read** runs silently. Then:
+- **read** — auto-allowed, silent. Composio tools mostly ship without annotation hints, so the bridge enriches by name: FETCH/GET/LIST/SEARCH/… → read; DELETE/REMOVE/… → critical; ambiguous stays act (fail-closed, "unknown stays gated").
+- **act** — the consent bar docks above the footer (listening ring, one restated fact, Allow/Decline). Spoken yes resolves via the model calling `resolve_pending_approval`; a tap always wins over a pending auto-yes; a bare spoken stop-word ("stop", "cancel", "never mind") declines **deterministically** in the driver, no model manners required.
+- **critical** — amber bar, named confirm button, "This can't be undone." The driver **structurally refuses** a voice resolution for critical tier and tells the model to send the user to the screen.
+- **Single-pending invariant:** a new consent auto-declines any stale unanswered one — the bar shows one request, and a later "yes" can never be swallowed by something the user already moved past (learned live: an ignored fictional transfer captured a yes meant for a Gmail fetch; the fictional tool is gone too — critical coverage comes from real annotations only).
+- Settled consent lingers as a transient receipt in the bar; the durable record is the transcript/thread.
 
-- **Act tier — spoken yes accepted, carefully.** The approval card slides into the feed (same `ApprovalCard`, listening ring) and the agent **repeats the key facts aloud** before accepting assent: *"I'll send the reminder to billing@acme.co — should I?"* Matching is conservative: clear assents only ("yes", "send it", "go ahead"); "hmm"/"sure?"/topic-change leave the card pending (agent re-asks or moves on), and the card stays tappable throughout — the hand can always settle what the ear muddled. On assent the card flips to **"Approved by voice ✓"** so audio and screen never disagree, and resolves the same `addToolApprovalResponse` path as a click.
-- **Critical tier — voice announces, the hand confirms. Always.** *"This one I need you to confirm on screen — it's a $5,000 transfer."* The card renders with ENG-193's critical treatment (amber, consequence line, named button); a spoken yes is never accepted; `stepUp` host re-auth applies exactly as in text. The always-ask tier never becomes always-hear.
-- **Standing grants stay a hand gesture** ("always allow …" is deliberately deliberate — no spoken grant creation in v1; the agent points at the card's menu instead).
-- **Wiring is structural, not behavioral:** Topology B executes tools client-side through the same policy-wrapped executor as chat, so voice cannot bypass approvals even if the realtime model misbehaves. Voice approvals write the standard `AuditEvent` with `via: "voice"` — visible in ENG-193's Permission Center and ENG-194's future console.
-- **Rejected:** spoken-yes-for-everything (a misheard word can move money — fails the bank-grade bar) and touch-for-everything (guts hands-free; acceptable only as a fallback milestone if assent-matching proves unreliable).
+## 5. What real-speech E2E testing caught (method + findings)
 
-## 4. The brain: the realtime model is the agent (decided)
+Test rig: macOS `say` WAVs piped through a monkeypatched `getUserMedia` (MediaStreamDestination + a faint 60 Hz hum — a source-less destination goes Opus-DTX silent and wedges server VAD). Findings, all fixed and regression-covered where testable: VAD pause-splitting + cancellation dead air; caption slot clobbering between roles; un-finalized caption loss; captions vanishing on finalize; the model preferring a Connect card over a connected toolkit's tools; raw-cents money readouts; permission nagging on reads.
 
-The realtime model gets the **same tool manifest and the same executor-side policy gates** as chat — parity on the things that must match is by construction, not by prompt discipline. Behavior is aligned via a voice variant in the prompt catalog (ENG-186). For **heavy UI codegen** (`render_view`), the voice agent delegates to the text model as a tool — conversation stays sub-second, codegen stays good; the demo path favors host-catalog components and saved flowlets (fast) over fresh codegen. The rejected alternative — realtime model as mouth-and-ears forwarding everything to the text engine — pays full text-agent latency as dead air mid-conversation, which is where voice UX dies.
+## 6. Maple wiring (the reference host)
 
-## 5. Barge-in, latency, failure
+- `POST /api/flowlet/voice` mints the ephemeral secret (`OPENAI_REALTIME_MODEL`/`_VOICE` env overrides; 503 without a key → scripted fallback). `GET|POST /api/flowlet/voice/tools` is the Composio bridge. All three handlers share the chat loop's local-only gate (`FLOWLET_DEMO_PUBLIC=1` to opt a deployment in).
+- The voice agent gets: Maple's 17 host-API tools, 2 display tools, 2 integration tools, plus the connected toolkits' Composio tools (capped at 40). Instructions: narrate-don't-read, dollars-not-cents, connected-toolkit tools over Connect cards, yes = most recent request, one-to-two-sentence turns; a spoken greeting opens every session.
 
-- **Barge-in:** native (server VAD). Agent speech halts ≤~200 ms after the user starts talking; blob snaps speaking→listening; the cut-off caption is marked "— interrupted." **Barge-in stops speech, never work** — in-flight tool calls complete or hit their own gates; explicit "stop"/"cancel" additionally declines any pending approval.
-- **Latency feel:** blob ripple is local (instant); live partial captions show the words were heard; slow tool work is narrated ("give me a second…"). Silence is the failure mode, not delay.
-- **Network drop:** blob freezes to the desaturated disc, soft chime, "Voice dropped — reconnecting…" with auto-retry; after ~10 s: "Your conversation is saved — continue by typing, or tap to retry." The thread record makes this a soft landing. Mic-permission denied: one-line pointer to browser settings; the session never half-starts.
+## 7. Follow-ups (tracked, deliberately out of this epic)
 
-## 6. Accessibility & no-voice fallback
-
-Voice is an enhancement layer (fluidkit doctrine): `useVoiceInput().supported` gates the button — no key configured, no mic, no secure context → button hidden, Flowlet is exactly today's product. Live captions on by default (the transcript drawer is the caption surface). `aria-live` announcements for state changes ("Listening", "Speaking", "Approval requested"). Keyboard: `Cmd/Ctrl+Shift+K` toggles a session (sibling of the overlay's Cmd+K), `Escape` ends, mute is tabbable. Reduced motion: static disc + text state labels. Eyes-free users: "read it out" always available, offered when a view's headline can't carry the content.
-
-## 7. OSS wiring: no relay — the handler mints tokens (superseded §)
-
-The earlier draft proposed a `@flowlet/voice-relay` package; the locked OSS install model does it better and this design adopts it:
-
-- **`createFlowletHandler()` grows a voice ephemeral-token endpoint.** The host's existing backend route (`app/api/flowlet/[...path]`) mints short-lived OpenAI Realtime session credentials (`POST /v1/realtime/sessions` → `client_secret`) from the operator's own `OPENAI_API_KEY`, stamped with the voice system-prompt variant, the published manifest's tool definitions, VAD/voice settings, and bounded recent thread history (context carry-over when a session starts mid-thread). Audit events `voice_session_started/ended` write through the existing seam.
-- **Audio never touches Flowlet or the host's backend** — browser ⇄ provider over WebRTC directly. Tool calls arrive on the client data channel and route through the existing client executor + policy + approvals (§3).
-- **Capability-additive:** `ANTHROPIC_API_KEY` alone = chat + UI gen; `+OPENAI_API_KEY` = the mic button appears. Zero extra infra; Flowlet Cloud runs the identical endpoint hosted (BYOK later, mirroring ENG-198).
-- **Provider posture:** OpenAI Realtime first (WebRTC + ephemeral tokens + function calling is the decisive browser fit); adapter boundary keeps Gemini Live (WebSocket-only) and a future Anthropic realtime API pluggable. Noted consciously: voice is the first Flowlet capability requiring a non-Anthropic key.
-- **Operator cost guardrail:** realtime audio is order-of-magnitude dollars per conversation-hour; the handler ships a per-principal session-minutes cap **on by default**, config-overridable.
-
-## 8. Session ↔ thread mechanics
-
-- Starting voice from a surface binds the session to that surface's thread; bounded recent history (last N turns) is injected into the session config so mid-thread voice isn't amnesiac.
-- Ending a session appends: transcribed user turns, agent speech (as assistant messages), generated views (as the same ui parts chat produces), approval cards in their resolved states.
-- The `Channels` seam stays untouched (message-shaped); voice gets its own session-shaped contract (`VoiceSessions`: `createSession(principal, threadId) → transport config + ephemeral credential`) as `channels.ts` reserved. Contract detail is implementation-phase work.
-
-## 9. Remaining opens (small, with recommendations — none block design review)
-
-1. **Stage enter/exit transition** — the container's content morphing into the stage is a fluidkit "surface transition" (ENG-205 inc.3 territory). Recommend designing them together.
-2. **Hold-to-talk fallback** for noisy rooms (long-press = manual turn)? Recommend: not in v1; add on real-world noise data.
-3. **Voice persona:** one curated default provider voice, host-configurable id (like `productName`). No cloning.
-4. **Mobile/touch specifics** (the stage is a natural full-screen sheet on mobile) — design pass when a mobile host exists.
-5. **Feed density:** how many views before the feed becomes noise? Recommend soft-collapsing all but the last ~5 into a "earlier in this session" pill.
-6. **"Read it out" verbosity contract** — how much the agent reads when asked; prompt-catalog tuning, not UI.
-7. **Assent-matcher evaluation** — before build, a quick eval harness for the conservative yes-matching (false-accept rate is the metric that matters). If unreliable → ship touch-approvals first, add voice-assent behind a flag.
-
-## 10. Explicitly not in this epic
-
-- Concierge phone/SMS voice (ENG-191). Wake words / always-listening. Voice cloning. Voice UI floating over host chrome (rejected in brainstorm — stage fills Flowlet's containers). Tenant voice policy (ENG-194 — but `via: "voice"` audit events flow from day 1).
+1. **Reconnect is cosmetic** — a dropped WebRTC session shows the banner but doesn't re-mint/resume; the record is safe and text continues. Real resume = re-mint + fresh session + context re-injection.
+2. **Server-verified consent** for the bridge (signed approval tokens) — ENG-193; today the server trusts the client's gating, same demo-grade posture as the action route.
+3. **`createFlowletHandler` packaging** of the mint endpoint + bridge — the OSS release work (ENG-206).
+4. **Fluidkit upstream:** true amplitude listening ripple + speaking pulse (today: speed/spread presets + scale).
+5. **Stage enter/exit morph** with ENG-205 inc.3's surface-transition vocabulary; feed density collapse for very long sessions; host-configurable voice persona.
+6. **Assent-quality tuning with human speech** — the rig proves correctness, not feel.
+7. Concierge phone/SMS (ENG-191), wake words, voice cloning: explicitly not this epic.
 
 ---
 
-*Provider landscape sources: [OpenAI Realtime API — WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc), [OpenAI Realtime and audio](https://developers.openai.com/api/docs/guides/realtime), [Gemini Live API overview](https://ai.google.dev/gemini-api/docs/live-api), [Realtime voice API comparison (APIScout, 2026)](https://apiscout.dev/guides/realtime-voice-ai-apis-comparison-2026).*
+*Provider references: [OpenAI Realtime WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc), [client_secrets reference](https://developers.openai.com/api/reference/resources/realtime/subresources/client_secrets/methods/create), [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api) (adapter candidate), [webrtcHacks on gpt-realtime](https://webrtchacks.com/how-openai-does-webrtc-in-the-new-gpt-realtime/).*

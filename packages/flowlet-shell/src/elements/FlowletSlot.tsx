@@ -15,6 +15,9 @@ export interface FlowletSlotProps {
    *  the design experience matches it (plus the pin-to-card footer). */
   greeting?: string;
   suggestions?: string[];
+  /** Realtime voice seam (ENG-185) — the mic appears wherever the composer
+   *  does, including this slot's design overlay. */
+  voice?: import("../voice/voice-session").VoiceDriver;
 }
 
 const storageKey = (id: string) => `flowlet-slot:${id}`;
@@ -31,6 +34,7 @@ export function FlowletSlot({
   emptyLabel = "Design a view",
   greeting,
   suggestions = [],
+  voice,
 }: FlowletSlotProps) {
   const { productName } = useShell();
   // Brand-neutral default: the shell ships no product names of its own; hosts
@@ -139,7 +143,7 @@ export function FlowletSlot({
         </button>
       )}
       <OverlayPanel open={designing} onClose={() => setDesigning(false)} ariaLabel="Design view">
-        <FlowletThread greeting={slotGreeting} suggestions={suggestions} onPin={pin} />
+        <FlowletThread greeting={slotGreeting} suggestions={suggestions} onPin={pin} voice={voice} />
       </OverlayPanel>
     </div>
   );

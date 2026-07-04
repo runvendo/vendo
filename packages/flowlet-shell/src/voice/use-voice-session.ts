@@ -5,6 +5,7 @@ import {
   type VoiceDriver,
   type VoiceDriverHandle,
   type VoiceSessionActions,
+  type VoiceSessionInit,
   type VoiceSnapshot,
 } from "./voice-session";
 
@@ -14,7 +15,7 @@ export interface VoiceSession extends VoiceSessionActions {
   /** A session is mounted (including its exit beat while "ended"). */
   active: boolean;
   snapshot: VoiceSnapshot;
-  start(): void;
+  start(init?: VoiceSessionInit): void;
   /** Unmount the stage after the exit beat; returns the final snapshot. */
   close(): VoiceSnapshot;
 }
@@ -36,7 +37,7 @@ export function useVoiceSession(driver?: VoiceDriver): VoiceSession {
     setSnapshot(latest.current);
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback((init?: VoiceSessionInit) => {
     if (!driver || handle.current) return;
     latest.current = initialVoiceSnapshot;
     setSnapshot(initialVoiceSnapshot);
@@ -54,7 +55,7 @@ export function useVoiceSession(driver?: VoiceDriver): VoiceSession {
         frame.current = null;
       }
       setSnapshot(latest.current);
-    });
+    }, init);
   }, [driver, commit]);
 
   const close = useCallback((): VoiceSnapshot => {
