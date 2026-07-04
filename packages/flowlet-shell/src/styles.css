@@ -741,9 +741,9 @@
    edge, not empty slide padding. */
 .fl-voice-slide.is-before { align-items: flex-end; }
 .fl-voice-slide.is-after { align-items: flex-start; }
-/* A lone slide (or the ends of the deck) rests centered in the stage. */
-.fl-voice-slide:first-child { margin-top: auto; }
-.fl-voice-slide:last-child { margin-bottom: auto; }
+/* Edge spacers give the deck's first/last slide the scroll room to reach
+   true center — without them the ends rest half-a-peek off-center. */
+.fl-voice-feed::before, .fl-voice-feed::after { content: ""; flex: 0 0 42px; }
 @media (prefers-reduced-motion: no-preference) {
   /* `backwards`, never `both`: a forwards fill would pin the keyframe's
      `transform: none; opacity: 1` over the off-stage shrink/dim forever. */
