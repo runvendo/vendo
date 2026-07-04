@@ -1,74 +1,97 @@
-# Source-Baseline Remixing Implementation Plan
+# Remix Fidelity Epic Implementation Plan (source baseline + furnished environment)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship `docs/superpowers/specs/2026-07-04-remix-source-baseline-design.md`: the remix baseline becomes the wrapped component's captured source (extractor step + server-side injection), with the DOM snapshot as automatic fallback.
+**Goal:** Ship `docs/superpowers/specs/2026-07-04-remix-source-baseline-design.md`: the agent edits captured REAL component source, and that edited code runs in a sandbox furnished with the app's real stylesheet, Tailwind JIT, UI kit, pure packages, local helpers, and framework shims — snapshot + bare sandbox remaining the fallback at every layer.
 
-**Architecture:** Contracts first (scoped-block `source`, `RemixSourceRecord`/`RemixSourceResolver`), then the engine prompt section (delimited untrusted-data block, edited-variant + mapping instructions), then `@flowlet/next` loading/enrichment, then the CLI extractor step, then Cadence wiring and browser fidelity verification. Stacks on PR #34; no shell changes at all.
+**Architecture:** Contracts → engine prompt (manifest-driven) → server enrichment → `flowlet sync` (capture + classification + vendoring + CSS + manifest + catalog registrations) → shims package → stage env loading → Cadence wiring → fidelity verification. Stacks on PR #34. Renderer inversion and cloud builds are explicitly out (see option map).
 
-**Tech stack:** Existing conventions: TypeScript, vitest, zod for the `.flowlet` schema. NOTE (Codex plan review): the existing extractor steps are regex/LLM-based — there is NO reusable AST/import-resolution substrate in `packages/flowlet-cli` today. Task 4 explicitly adds a parser dependency (TypeScript's own compiler API is already available transitively and needs no new install — prefer it; add `ts-morph` only if the bare API proves too painful) and updates `packages/flowlet-cli/package.json` accordingly.
+**Tech stack:** TypeScript, vitest, zod. Parser for the CLI: TypeScript's own compiler API (available transitively, no new install; add ts-morph only if bare API proves too painful). Bundler for vendoring: esbuild (already in the repo toolchain). New package `@flowlet/sandbox-shims`.
 
-**Process rules:** TDD per task (failing test → minimal impl → green → commit) on branch `yousefh409/remix-source-baseline`. Full suite in Task 6. Stop and surface if anything conflicts with the locked architecture.
+**Process rules:** TDD per task on branch `yousefh409/remix-source-baseline`; full suite in Task 9; stop and surface on any locked-architecture conflict. NOTE: several tasks touch the stage/sandbox — every stage change must keep the "no env present → byte-identical behavior" test green.
 
 ---
 
-### Task 1: Contracts — scoped source + shared record types
+### Task 1: Contracts
 
 **Files:**
-- Modify: `packages/flowlet-core/src/protocol.ts` (scoped block only: `AnchorContextBlock.scoped` gains `source?: string`; export `RemixSourceRecord`, `RemixSourceResolver`)
-- Test: `packages/flowlet-core/src/protocol.test.ts`
+- Modify: `packages/flowlet-core/src/protocol.ts` (+ test): scoped block gains `source?: string` (NOT AnchorRef); export `RemixSourceRecord`, `RemixSourceResolver`, and `EnvManifest` types (per-import classification: `real | shimmed | absent`, per-anchor).
 
-- [ ] Failing tests: scoped block accepts `source`; `AnchorRef` (ambient) has no such field (type-level assertion); `RemixSourceRecord` requires file/source/sourceHash/capturedAt.
-- [ ] Implement additively; green; commit.
+- [ ] Failing tests for all three shapes; implement additively; green; commit.
 
-### Task 2: Engine — source section with injection isolation
+### Task 2: Engine — source block + manifest-driven environment section
 
 **Files:**
-- Modify: `packages/flowlet-runtime/src/engine.ts` (`anchorSection`)
-- Test: `packages/flowlet-runtime/src/engine.test.ts`
+- Modify: `packages/flowlet-runtime/src/engine.ts` (+ `engine.test.ts`)
 
-- [ ] Failing tests: scoped anchor WITH `source` → prompt contains the delimited untrusted-data block, the captured-snapshot framing, edited-variant instruction, mapping rules, and the non-disclosure nudge; WITHOUT `source` → prompt byte-identical to today; adversarial test: source whose comments say "ignore previous instructions" still lands inside the delimited data block with the data-only framing present.
-- [ ] Implement (48 KB cap with visible truncation marker applied here as the last defense even though capture also caps); green; commit.
+- [ ] Failing tests: scoped anchor with `source` → delimited untrusted-data block, captured-snapshot framing, edited-variant instruction, non-disclosure nudge; adversarial source-comment test; WITH an env manifest → the prompt lists real/shimmed/absent imports with prescribed alternatives; WITHOUT env → today's blanket guidance; WITHOUT source → byte-identical to today.
+- [ ] Implement (engine receives the manifest via config, same seam style as `components`); 48 KB source cap as last defense; green; commit.
 
-### Task 3: @flowlet/next — load + enrich
+### Task 3: @flowlet/next — load + enrich (unchanged from reviewed v1 scope)
 
 **Files:**
-- Modify: `packages/flowlet-next/src/flowlet-dir.ts` (+ test): read `remix-sources.json`; absent → empty map; present-invalid → fail loud via zod (same rule as theme/tools).
-- Modify: `packages/flowlet-next/src/options.ts` (+ test): `remixSources?: Record<string, string> | RemixSourceResolver`.
-- Modify: `packages/flowlet-next/src/chat.ts` and `packages/flowlet-next/src/handler.ts` (+ tests): strip client-supplied `scoped.source`, then enrich the last user message's scoped block; precedence option-first, fall through to the file map.
+- Modify: `packages/flowlet-next/src/flowlet-dir.ts`, `options.ts`, `chat.ts`, `handler.ts` (+ tests)
 
-- [ ] Failing tests: absent file → no enrichment; valid file → enrichment by anchorId; invalid file → boot error; client-supplied source is stripped even when no server source exists; option resolver wins over file map, `undefined` falls through.
-- [ ] Dev-freshness tests: `NODE_ENV !== "production"` + mapped file exists on disk → enrichment uses the CURRENT file content (cap applied), not the captured `source`; production path never reads the filesystem at request time.
+- [ ] Failing tests: `remix-sources.json` absent → empty / present-invalid → fail loud (zod); `env/manifest.json` loaded the same way; client-supplied `scoped.source` stripped always; enrichment by anchorId; option resolver precedence with `undefined` fall-through; dev-mode re-read of the mapped file (`NODE_ENV !== "production"`), production never touches the filesystem at request time; manifest handed to the agent config.
 - [ ] Implement; green; commit.
 
-### Task 4: CLI extractor — capture step
+### Task 4: CLI — `flowlet sync` capture core
 
 **Files:**
-- Create: `packages/flowlet-cli/src/remix-sources.ts` + `remix-sources.test.ts`
-- Modify: `packages/flowlet-cli/package.json` (parser dependency per the tech-stack note, if any is added)
-- Modify: `packages/flowlet-cli/src/cli.ts` (+ `cli.test.ts`): the PRIMARY entry point is a NEW standalone command `flowlet remix-sources [dir]` (the CLI has only `init`/`publish` today — no existing re-run pattern), including help text. Capture is a per-build concern, not an install-time one: at init time the app has no wrappers yet.
-- Modify: `packages/flowlet-cli/src/init.ts` and `next-wiring.ts` (+ tests): init WIRES the command into the app's `package.json` `prebuild` script (create or extend, idempotently) and runs it once (expected empty on fresh installs — the report says so rather than warning).
+- Create: `packages/flowlet-cli/src/sync/capture.ts` (+ test) — the v1 source-capture scan.
+- Modify: `packages/flowlet-cli/src/cli.ts` (+ `cli.test.ts`): new `flowlet sync [dir]` command + help.
+- Modify: `packages/flowlet-cli/src/init.ts` / `next-wiring.ts` (+ tests): wire `flowlet sync` into `prebuild` (create/extend idempotently); init runs it once, empty-is-fine report line.
+- Modify: `packages/flowlet-cli/package.json` if a parser dep is added.
 
-- [ ] Failing tests (fixture app trees): literal-id `<FlowletRemix id="x">` captured with resolved child component file, `sourceHash`, `capturedAt`; dynamic id skipped + reported; multi-child/non-component child captures the enclosing file; unresolvable import omitted + reported; server-only rule (`"use server"`, `server/`, `api/`, `pages/api/`, outside source root — enforced AFTER alias resolution) refused; 48 KB cap.
-- [ ] Import-resolution fixtures MUST cover the real Next shapes: `@/*` tsconfig path aliases, extensionless imports, `index.ts` barrels, and relative paths — Cadence's own `@/components/dashboard/deadline-list` is the reference case.
-- [ ] Implement deterministically (AST only, no LLM), fail-open per anchor with report entries; green; commit.
-- [ ] Ground-truth check: run against demo-bank with one wrapped widget; commit the fixture expectations.
+- [ ] Failing fixtures: literal-id capture with resolved child file + `sourceHash` + `capturedAt`; dynamic id skipped + reported; multi-child → enclosing file; unresolvable import omitted + reported; `@/*` aliases, extensionless imports, `index` barrels, relative paths (Cadence's `@/components/dashboard/deadline-list` is the reference); server-only refusals AFTER alias resolution; 48 KB cap.
+- [ ] Implement deterministically (AST, no LLM), fail-open per anchor; green; commit.
 
-### Task 5: Cadence wiring
+### Task 5: CLI — classification + vendoring + CSS + manifest + catalog registrations
 
 **Files:**
-- Modify: `apps/demo-accounting/src/flowlet/chat-handler.ts` (or wherever its chat route builds agent input — confirm) to enrich scoped anchors for `upcoming-deadlines`.
-- Source loading MUST be a raw file read on the server (`readFileSync` of `src/components/dashboard/deadline-list.tsx` relative to the app root, with the shared 48 KB cap/truncation helper) — NOT an import of the module: `deadline-list.tsx` is a client component whose import would not yield source text and could break the Node route (Codex plan review).
+- Create: `packages/flowlet-cli/src/sync/classify.ts`, `sync/vendor.ts`, `sync/host-css.ts`, `sync/catalog-gen.ts` (+ tests each)
 
-- [ ] Failing test: scoped send for `upcoming-deadlines` reaches the agent with `source` populated (file-read stubbed); other anchors untouched; missing file falls open to no enrichment.
+- [ ] Classify failing fixtures: pure npm / app-local pure / framework-coupled / data / refused-unknown, driven by import specifier + resolved location + refusal rules; allowlist starts at "what captured components import", extendable via config.
+- [ ] Vendor failing fixtures: esbuild ESM output per allowlisted entry, react/react-dom externalized to the stage shim, deterministic output paths, import-map generation; total-size soft cap (2 MB) warns listing heaviest entries.
+- [ ] Host CSS: locate the app's built stylesheet (Next `.next/static/css` after build; fail-open with report when absent), rewrite/drop URL assets to same-origin, copy theme tokens; vendor `@tailwindcss/browser` seeded with extracted tokens.
+- [ ] Catalog generation: `components/ui/*` registrations with TS-type-derived prop schemas where derivable, report-skipped otherwise.
+- [ ] Manifest: per-anchor, per-import `real | shimmed | absent` + sizes + report. Artifacts copied into `public/flowlet/env/`.
+- [ ] All green; commit per sub-module as they land.
+
+### Task 6: `@flowlet/sandbox-shims` (new package)
+
+**Files:**
+- Create: `packages/flowlet-sandbox-shims/` (package scaffold matching sibling packages) with `next-link.tsx`, `next-image.tsx`, `next-navigation.ts`, `swr.ts` (+ tests each)
+
+- [ ] Failing tests: link renders an anchor and dispatches `navigate` through the bridge on click (no real navigation from inside); image renders `img` with the prop surface mapped; `useSWR` resolves from anchor data / declared queries, NEVER invokes the fetcher, mutate no-ops without a declared query; unsupported APIs throw descriptive contained errors.
+- [ ] Implement; wire into the vendor import map under the framework specifiers; green; commit.
+
+### Task 7: Stage env loading
+
+**Files:**
+- Modify: `packages/flowlet-stage/src/stage-host.ts` / `genui-host.ts` and `packages/flowlet-components/src/sandbox-install.ts` (+ tests); `packages/flowlet-next/src/client/sandbox-stage.tsx` (+ test) to pass env URLs.
+
+- [ ] Failing tests: env present → import map extended with vendor + shim entries, `host.css` injected first, Tailwind JIT loaded with tokens; env absent → BYTE-IDENTICAL current behavior (snapshot the generated sandbox doc in both modes); a missing vendored module at runtime surfaces as a contained sandbox error (existing fail-open path).
+- [ ] Implement; green; commit. UI checkpoint: showcase screenshot of an edited component rendering with real CSS + icons.
+
+### Task 8: Cadence wiring
+
+**Files:**
+- Modify: Cadence chat handler for source enrichment (raw `readFileSync` of `deadline-list.tsx`, shared cap helper — never a module import); run `flowlet sync`-equivalent artifacts for the demo (checked-in `env/` for the deadlines widget's closure: lucide-react, `@/lib/format`, `@/components/ui/*`, swr shim).
+
+- [ ] Failing test: scoped send reaches the agent with source + manifest; missing file falls open.
 - [ ] Implement; green; commit.
 
-### Task 6: Full suite + browser fidelity verification
+### Task 9: Full suite green
 
-- [ ] `pnpm test`, `pnpm typecheck`, `pnpm lint` (demo-bank lint remains pre-existing-broken; everything else green).
-- [ ] `pnpm demo:accounting`: run the SAME remix ask against the deadlines widget with source enrichment on, screenshot, and compare against the snapshot-only screenshots from PR #34. Both sets go in the PR body.
+- [ ] `pnpm test`, `pnpm typecheck`, `pnpm lint` (demo-bank lint remains pre-existing-broken); fix regressions; commit.
 
-### Task 7: Codex diff review + PR
+### Task 10: Real-browser fidelity verification
 
-- [ ] Codex review of the full diff; triage (verify each finding against code); fix real ones; rerun affected tests.
-- [ ] Push and open a PR based on `yousefh409/interface` (stacked on #34), spec/plan links + screenshots + session link. Do not merge.
+- [ ] `pnpm demo:accounting`; run the SAME remix ask as PR #34's verification against the deadlines widget with the full environment; verify: real Tailwind classes render, lucide icons appear, `@/lib/format` output matches, row links navigate via dispatch, live data updates. Screenshot set side-by-side with PR #34's bare-sandbox results.
+- [ ] Verify fallback: delete `env/` → today's behavior, no errors.
+
+### Task 11: Codex diff review + PR update
+
+- [ ] Codex review of the full diff; triage with code verification; fix; rerun affected tests.
+- [ ] Push; update PR #35 (title/body: docs → implementation) with the comparison screenshots. Do not merge.
