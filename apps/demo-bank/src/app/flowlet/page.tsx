@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react"
 import { FlowletThread, FlowletToast, useFlowletThread, useShell, useReopenFlowlet, type Flowlet } from "@flowlet/shell"
 import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
+import { mapleRealtimeVoiceDriver } from "@/components/flowlet/voice-realtime"
 import { deriveSavedDrafts } from "@/flowlet/saved-flowlets"
 
 const SUGGESTIONS = [
@@ -149,6 +150,7 @@ function PageSurface() {
             greeting="What do you want to build?"
             suggestions={SUGGESTIONS}
             heroComposer
+            voice={mapleRealtimeVoiceDriver}
             flows={saved}
             onOpenFlow={(f) => setActive(f.id)}
             onRenameFlow={(f, name) => persistPatch(f, { name })}

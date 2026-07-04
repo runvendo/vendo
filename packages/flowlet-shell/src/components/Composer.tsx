@@ -2,7 +2,6 @@ import { useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEve
 import type { FileUIPart } from "ai";
 import { VoiceButton } from "./VoiceButton";
 import { AttachmentChips } from "./AttachmentChips";
-import { useVoiceInput } from "../use-voice-input";
 import { ACCEPT_ATTR, useAttachments } from "../use-attachments";
 
 export interface ComposerProps {
@@ -12,12 +11,13 @@ export interface ComposerProps {
   placeholder?: string;
   /** In-bar affordance rendered beside attach (ENG-205 connect dock). */
   accessory?: ReactNode;
+  /** Start a realtime voice session (ENG-185). Absent → no mic affordance. */
+  onVoice?: () => void;
 }
 
-export function Composer({ onSend, status, onStop, placeholder = "Ask anything", accessory }: ComposerProps) {
+export function Composer({ onSend, status, onStop, placeholder = "Ask anything", accessory, onVoice }: ComposerProps) {
   const [value, setValue] = useState("");
   const [dragging, setDragging] = useState(false);
-  const voice = useVoiceInput();
   const att = useAttachments();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -111,7 +111,7 @@ export function Composer({ onSend, status, onStop, placeholder = "Ask anything",
           enterKeyHint="send"
           autoComplete="off"
         />
-        {voice.supported && <VoiceButton state={voice.state} onClick={voice.toggle} />}
+        {onVoice && <VoiceButton onClick={onVoice} />}
         {streaming && onStop ? (
           <button type="button" className="fl-icon-btn" aria-label="Stop" onClick={onStop}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

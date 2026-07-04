@@ -678,3 +678,188 @@
   border: 1px solid var(--flowlet-danger-border); background: transparent;
   color: var(--flowlet-danger); font: 600 12px/1.2 var(--flowlet-font); cursor: pointer; }
 .fl-error-retry:hover { background: var(--flowlet-danger); color: var(--flowlet-bg, #fff); }
+
+/* ---------- realtime voice stage (ENG-185) ---------- */
+/* The stage fills the surface that launched it. The blob head is pinned; the
+   feed scrolls beneath it; the caption + footer stay anchored at the bottom. */
+.fl-voice-stage { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
+  animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fl-voice-rise { from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: none; } }
+.fl-voice-stage.is-leaving { animation: fl-voice-settle .5s ease both; }
+@keyframes fl-voice-settle { from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(14px) scale(.99); } }
+
+.fl-voice-head { display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 18px 0 10px; flex-shrink: 0; }
+.fl-voice-blob { position: relative; display: grid; place-items: center; border-radius: 50%;
+  transition: transform .12s ease; }
+.fl-voice-blob .fl-voice-disc { width: 46%; height: 46%; border-radius: 50%;
+  background: var(--flowlet-accent); transition: background .2s, opacity .2s; }
+.fl-voice-blob.is-muted .fl-voice-disc, .fl-voice-blob.is-error .fl-voice-disc { opacity: .38; }
+.fl-voice-blob.is-error .fl-voice-disc { background: var(--flowlet-fg-muted); }
+.fl-voice-glyph { position: absolute; display: grid; place-items: center; color: var(--flowlet-fg);
+  opacity: .85; }
+.fl-voice-status { font: 500 12px/1 var(--flowlet-font); color: var(--flowlet-fg-muted);
+  letter-spacing: .01em; min-height: 12px; }
+.fl-voice-stage.is-speaking .fl-voice-status { color: var(--flowlet-fg); }
+
+/* The scroll edges blur out: content dissolves under the blob and above the
+   caption. A soft alpha mask on the scroller + frosted strips (backdrop blur,
+   themselves mask-faded so the blur tapers instead of ending on a hard line). */
+.fl-voice-feedwrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fl-voice-feedwrap::before, .fl-voice-feedwrap::after { content: ""; position: absolute; left: 0; right: 0;
+  height: 40px; z-index: 1; pointer-events: none;
+  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px); }
+.fl-voice-feedwrap::before { top: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
+  mask-image: linear-gradient(180deg, #000 30%, transparent); }
+.fl-voice-feedwrap::after { bottom: 0;
+  -webkit-mask-image: linear-gradient(0deg, #000 30%, transparent);
+  mask-image: linear-gradient(0deg, #000 30%, transparent); }
+/* An ACTUAL stage: each view is a full slide; scroll pages between slides
+   (mandatory snap — one view owns the stage at rest, always). */
+.fl-voice-feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  display: flex; flex-direction: column; padding: 0 18px; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent); }
+.fl-voice-feed::-webkit-scrollbar { display: none; }
+/* Slides are slightly shorter than the stage and snap to CENTER, so the
+   neighbors peek in at the top/bottom edges — blurred, smaller, unmistakably
+   "there's more" — and grow into the frame as they take focus. A too-tall
+   view scrolls inside its card instead of hanging below the fold. */
+.fl-voice-slide { height: calc(100% - 84px); box-sizing: border-box; flex-shrink: 0;
+  scroll-snap-align: center; scroll-snap-stop: always;
+  display: flex; align-items: center; justify-content: center; padding: 4px 0;
+  /* Off-stage: blurred, dimmed, visibly smaller; the focused one is crisp
+     and whole. The transition IS the "animate into the frame" beat. */
+  filter: blur(2.5px); opacity: .45; transform: scale(.78);
+  transition: filter .45s ease, opacity .45s ease, transform .45s ease; }
+.fl-voice-slide.is-focus { filter: none; opacity: 1; transform: none; }
+/* Neighbors hug the boundary nearest the stage, so what peeks is the CARD's
+   edge, not empty slide padding. */
+.fl-voice-slide.is-before { align-items: flex-end; }
+.fl-voice-slide.is-after { align-items: flex-start; }
+/* Edge spacers give the deck's first/last slide the scroll room to reach
+   true center — without them the ends rest half-a-peek off-center. */
+.fl-voice-feed::before, .fl-voice-feed::after { content: ""; flex: 0 0 42px; }
+@media (prefers-reduced-motion: no-preference) {
+  /* `backwards`, never `both`: a forwards fill would pin the keyframe's
+     `transform: none; opacity: 1` over the off-stage shrink/dim forever. */
+  .fl-voice-slide { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) backwards; }
+}
+/* Tall views scroll inside their slide — mandatory snap never traps content. */
+.fl-voice-slide .fl-voice-card { width: min(560px, 100%); max-height: 100%; overflow: auto;
+  scrollbar-width: none; border-radius: var(--flowlet-radius); }
+.fl-voice-slide .fl-voice-card::-webkit-scrollbar { display: none; }
+.fl-voice-slide.is-pending .fl-voice-card { border: 1px solid var(--flowlet-border); padding: 12px;
+  background: var(--flowlet-glass-strong); }
+/* Slide dots — where you are among the session's views; tap to jump. */
+.fl-voice-dots { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); z-index: 2;
+  display: flex; flex-direction: column; gap: 8px; }
+.fl-voice-dots button { width: 7px; height: 7px; border-radius: 50%; border: 0; padding: 0;
+  cursor: pointer; background: color-mix(in srgb, var(--flowlet-fg) 22%, transparent);
+  transition: background .2s ease, transform .2s ease; }
+.fl-voice-dots button.is-on { background: var(--flowlet-accent); transform: scale(1.3); }
+
+/* Lives in the head, right under the blob + status — the words stay with the
+   presence. Fixed height (~2 lines) so the feed doesn't jump as lines stream. */
+/* Two sticky rows — your last line and the agent's — each clamped so long
+   streaming lines show their tail, not their start. Settled lines dim
+   instead of vanishing. */
+.fl-voice-caption { height: 62px; padding: 0 22px; text-align: center; max-width: 620px;
+  font-size: 13.5px; line-height: 1.45; flex-shrink: 0; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
+.fl-voice-caption > span { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.fl-voice-caption .is-user { color: var(--flowlet-fg-muted); font-size: 12.5px; -webkit-line-clamp: 1; }
+.fl-voice-caption .is-user::before { content: "“"; }
+.fl-voice-caption .is-user::after { content: "”"; }
+.fl-voice-caption .is-agent { color: var(--flowlet-fg); -webkit-line-clamp: 2; }
+.fl-voice-caption .is-settled { opacity: .55; transition: opacity .4s ease; }
+.fl-voice-caption em { font-style: italic; color: var(--flowlet-fg-muted); }
+
+/* ---- consent bar: approvals dock at the edge, the agent's UI keeps the
+   stage. Act tier breathes the listening ring (spoken yes acceptable);
+   critical goes amber with the named confirm; settled = transient receipt. */
+.fl-voice-consent { margin: 0 18px 8px; padding: 9px 12px; border-radius: 13px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px; font-size: 12.5px;
+  border: 1px solid var(--flowlet-border-strong); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
+.fl-voice-consent.is-listening { animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both,
+  fl-voice-ring 2.2s ease-in-out .3s infinite; }
+.fl-voice-consent-ic { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
+  border-radius: 8px; border: 1px solid var(--flowlet-border); color: var(--flowlet-fg-muted); }
+.fl-voice-consent-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fl-voice-consent-title { font-weight: 600; color: var(--flowlet-fg); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.fl-voice-consent-fact { font-weight: 400; color: var(--flowlet-fg-muted); }
+.fl-voice-consent-warn { font-size: 11px; font-weight: 500; color: light-dark(#8a6a2e, #d9a94e); }
+.fl-voice-consent-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.fl-voice-consent.is-critical { border-color: color-mix(in srgb, #b3822f 55%, var(--flowlet-border)); }
+.fl-voice-consent.is-critical .fl-voice-consent-ic { color: light-dark(#8a6a2e, #d9a94e);
+  border-color: color-mix(in srgb, #b3822f 40%, var(--flowlet-border)); }
+.fl-voice-consent.is-receipt { justify-content: center; font-weight: 600; color: var(--flowlet-ok);
+  border-color: color-mix(in srgb, var(--flowlet-ok) 40%, var(--flowlet-border)); }
+.fl-voice-consent.is-receipt.is-declined { color: var(--flowlet-fg-muted);
+  border-color: var(--flowlet-border); }
+
+.fl-voice-banner { margin: 0 18px 8px; padding: 9px 13px; border-radius: 12px; flex-shrink: 0;
+  border: 1px solid var(--flowlet-danger-border); background: var(--flowlet-danger-bg);
+  color: var(--flowlet-danger); font-size: 12.5px; display: flex; align-items: center; gap: 10px; }
+.fl-voice-stage.is-reconnecting .fl-voice-banner { border-color: var(--flowlet-border-strong);
+  background: var(--flowlet-glass-strong); color: var(--flowlet-fg-muted); }
+
+.fl-voice-foot { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 14px 12px; flex-shrink: 0; }
+.fl-voice-drawer-btn { border: 0; background: transparent; color: var(--flowlet-fg-muted);
+  font: 500 11.5px/1 var(--flowlet-font); letter-spacing: .02em; cursor: pointer; padding: 6px 4px; }
+.fl-voice-drawer-btn:hover { color: var(--flowlet-fg); }
+.fl-voice-controls { display: flex; align-items: center; gap: 6px; }
+.fl-voice-controls .fl-icon-btn.is-active { color: var(--flowlet-danger); }
+
+.fl-voice-drawer { position: absolute; left: 10px; right: 10px; bottom: 46px; max-height: 46%;
+  overflow: auto; z-index: 4; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--flowlet-border-strong); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); display: flex; flex-direction: column; gap: 8px;
+  animation: fl-fade-in .16s ease; }
+.fl-voice-drawer-empty { font-size: 12px; color: var(--flowlet-fg-muted); text-align: center; padding: 8px; }
+.fl-voice-line { display: grid; grid-template-columns: 44px 1fr; gap: 10px; font-size: 12.5px; line-height: 1.45; }
+.fl-voice-line-role { color: var(--flowlet-fg-muted); font-weight: 600; font-size: 11px; padding-top: 1px; }
+.fl-voice-line.is-user span:last-child { color: var(--flowlet-fg-muted); }
+.fl-voice-line.is-agent span:last-child { color: var(--flowlet-fg); }
+.fl-voice-line em { font-style: italic; color: var(--flowlet-fg-muted); }
+
+/* ---- approval card voice/tier registers (ENG-185 × ENG-193) ---- */
+/* Act-tier while a spoken yes is acceptable: a soft breathing ring. */
+.fl-approval-listening { animation: fl-voice-ring 2.2s ease-in-out infinite; }
+@keyframes fl-voice-ring {
+  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 34%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--flowlet-accent) 12%, transparent); } }
+/* Critical: amber always-confirm register — voice announces, the hand confirms. */
+.fl-approval-critical { border-color: color-mix(in srgb, #b3822f 55%, var(--flowlet-border)); }
+.fl-approval-critical .fl-approval-eyebrow { color: light-dark(#8a6a2e, #d9a94e); }
+.fl-approval-consequence { margin-top: 10px; font-size: 12px; font-weight: 500;
+  color: light-dark(#8a6a2e, #d9a94e); }
+.fl-btn-critical { background: light-dark(#a97e2f, #b3822f); border-color: transparent; color: #fff; }
+/* Settled: the card becomes a receipt. */
+.fl-approval-approved { border-color: color-mix(in srgb, var(--flowlet-ok) 45%, var(--flowlet-border)); }
+.fl-approval-declined { opacity: .7; }
+.fl-approval-outcome { margin-top: 12px; font: 600 12.5px/1.2 var(--flowlet-font); }
+.fl-approval-outcome.is-approved { color: var(--flowlet-ok); }
+.fl-approval-outcome.is-declined { color: var(--flowlet-fg-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fl-voice-stage, .fl-voice-stage.is-leaving, .fl-voice-slide { animation: none; opacity: 1; }
+  .fl-voice-slide:not(.is-focus) { opacity: .45; }
+  .fl-voice-blob { transition: none; transform: none !important; }
+  .fl-approval-listening { animation: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
+  .fl-voice-consent, .fl-voice-consent.is-listening { animation: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
+  /* No animated blur for vestibular-sensitive users: unfocused slides dim only. */
+  .fl-voice-slide { transition: none; filter: none; }
+  .fl-voice-dots button { transition: none; }
+}
