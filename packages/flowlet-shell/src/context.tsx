@@ -1,5 +1,7 @@
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
+import { FluidThemeProvider } from "fluidkit";
 import type { RegisteredComponent, UINode } from "@flowlet/core";
+import { brandToFluidTheme, type FluidConfig } from "./brand-to-fluid-theme";
 import { themeToStyle, type FlowletTheme } from "./theme";
 import { createLocalStore, type FlowletStore } from "./seams/store";
 import { createLocalIntegrations, type FlowletIntegrations } from "./seams/integrations";
@@ -79,6 +81,8 @@ export interface FlowletShellProviderProps {
   theme?: FlowletTheme;
   /** Opaque `--flowlet-*` var map from the host brand; applied inline on `.flowlet-root`. */
   cssVars?: Record<string, string>;
+  /** Liquid character knobs (material/intensity) for fluidkit chrome; absent = fluidkit defaults. */
+  fluid?: FluidConfig;
   /** What the host calls its assistant; read by default copy that names it. */
   productName?: string;
   /** F1 component registry; enables drift detection on reopened saved views. */
@@ -87,9 +91,12 @@ export interface FlowletShellProviderProps {
 }
 
 export function FlowletShellProvider({
-  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, children,
+  store, integrations, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, fluid, productName, components, children,
 }: FlowletShellProviderProps) {
   if (store === undefined) warnNoStoreOnce();
+  // React context crosses portals, so one mount here also themes the
+  // overlay's portaled subtree (only CSS vars need DOM-level reapplication).
+  const fluidTheme = useMemo(() => brandToFluidTheme(theme, fluid), [theme, fluid]);
 
   const value = useMemo<ShellContextValue>(() => ({
     store: store ?? createLocalStore(),
@@ -105,7 +112,9 @@ export function FlowletShellProvider({
 
   return (
     <ShellContext.Provider value={value}>
-      <div className="flowlet-root" style={{ ...themeToStyle(theme), ...cssVars }}>{children}</div>
+      <FluidThemeProvider theme={fluidTheme}>
+        <div className="flowlet-root" style={{ ...themeToStyle(theme), ...cssVars }}>{children}</div>
+      </FluidThemeProvider>
     </ShellContext.Provider>
   );
 }

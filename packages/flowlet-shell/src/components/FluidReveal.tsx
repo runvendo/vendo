@@ -1,5 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { loadFluidMotion, loadedFluidMotion } from "./fluid-motion";
+import { animate } from "motion";
+import { resolvePrefersReducedMotion } from "fluidkit";
+
+/** fluidkit's static-safe semantics: unknown (SSR) → treated as reduced. */
+function prefersReducedMotion(): boolean {
+  const raw =
+    typeof matchMedia !== "undefined" ? matchMedia("(prefers-reduced-motion: reduce)").matches : null;
+  return resolvePrefersReducedMotion(raw);
+}
 
 export interface FluidRevealProps {
   /** Which face of the render slot is live. */
@@ -17,9 +25,8 @@ const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
  * only cross-fade/translate/un-blur; sandboxed view content is never scaled.
  *
  * The reveal plays only on an OBSERVED skeleton→view flip: restored threads
- * mount straight into view phase and stay static. Enhancement layer: if the
- * motion toolkit isn't loaded (or reduced motion is on), the swap is instant —
- * exactly the pre-fluidkit behavior.
+ * mount straight into view phase and stay static. Under reduced motion the
+ * swap is instant.
  */
 export function FluidReveal({ phase, children }: FluidRevealProps) {
   const container = useRef<HTMLDivElement>(null);
@@ -31,12 +38,10 @@ export function FluidReveal({ phase, children }: FluidRevealProps) {
   const [exiting, setExiting] = useState<ReactNode>(null);
   const [animating, setAnimating] = useState(false);
 
-  // While the skeleton is up: preload the toolkit (the view usually lands
-  // seconds later — the first reveal must not miss), remember the skeleton
-  // face for the cross-fade, and track its height for the surface spring.
+  // While the skeleton is up: remember the skeleton face for the cross-fade,
+  // and track its height for the surface spring.
   useEffect(() => {
     if (phase !== "skeleton") return;
-    void loadFluidMotion();
     lastSkeleton.current = children;
   });
   useLayoutEffect(() => {
@@ -52,8 +57,7 @@ export function FluidReveal({ phase, children }: FluidRevealProps) {
     const was = prevPhase.current;
     prevPhase.current = phase;
     if (was !== "skeleton" || phase !== "view") return;
-    const toolkit = loadedFluidMotion();
-    if (!toolkit || toolkit.prefersReducedMotion() === true) return;
+    if (prefersReducedMotion()) return;
     setExiting(lastSkeleton.current);
     setAnimating(true);
   }, [phase]);
@@ -61,14 +65,13 @@ export function FluidReveal({ phase, children }: FluidRevealProps) {
   // The morph itself, once the overlay render is committed.
   useLayoutEffect(() => {
     if (!animating) return;
-    const toolkit = loadedFluidMotion();
     const host = container.current;
     const enter = entering.current;
     const finish = () => {
       setExiting(null);
       setAnimating(false);
     };
-    if (!toolkit || !host || !enter) {
+    if (!host || !enter) {
       finish();
       return;
     }
@@ -77,12 +80,12 @@ export function FluidReveal({ phase, children }: FluidRevealProps) {
     host.style.overflow = "hidden";
     enter.style.opacity = "0";
     const animations = [
-      toolkit.animate(
+      animate(
         host,
         { height: [`${oldHeight}px`, `${newHeight}px`] },
         { type: "spring", stiffness: 220, damping: 28 },
       ),
-      toolkit.animate(
+      animate(
         enter,
         { opacity: [0, 1], transform: ["translateY(10px)", "translateY(0px)"], filter: ["blur(8px)", "blur(0px)"] },
         { duration: 0.45, ease: EASE },
@@ -90,7 +93,7 @@ export function FluidReveal({ phase, children }: FluidRevealProps) {
     ];
     if (exitingEl.current) {
       animations.push(
-        toolkit.animate(
+        animate(
           exitingEl.current,
           { opacity: [1, 0], filter: ["blur(0px)", "blur(4px)"] },
           { duration: 0.25, ease: "easeOut" },

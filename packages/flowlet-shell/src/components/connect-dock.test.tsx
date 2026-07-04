@@ -1,15 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { ConnectDock } from "./ConnectDock";
 import { ConnectTray } from "./ConnectTray";
-import type { FluidMotion } from "./fluid-motion";
 import type { Integration } from "../seams/integrations";
 
-let toolkit: FluidMotion | null = null;
-vi.mock("./fluid-motion", () => ({
-  loadFluidMotion: () => Promise.resolve(toolkit),
-  loadedFluidMotion: () => toolkit,
+// Deferred animate mock; reduced motion is controlled via a matchMedia stub.
+const animateCalls: unknown[] = [];
+vi.mock("motion", () => ({
+  animate: (_el: unknown, kf: unknown) => {
+    animateCalls.push(kf);
+    return Promise.resolve();
+  },
 }));
+
+function stubReducedMotion(matches: boolean) {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches, media: query }) as MediaQueryList);
+}
 // The dock button's ripple is fluidkit-optional; keep it inert in tests.
 vi.mock("./FluidRipple", () => ({
   FluidRipple: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -22,7 +28,11 @@ const tools: Integration[] = [
 ];
 
 beforeEach(() => {
-  toolkit = null;
+  animateCalls.length = 0;
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("ConnectDock", () => {
@@ -55,7 +65,7 @@ describe("ConnectDock", () => {
 });
 
 describe("ConnectTray", () => {
-  it("renders children when open and nothing when closed (toolkit absent → instant)", () => {
+  it("renders children when open and nothing when closed (preference unknown → instant)", () => {
     const { container, rerender } = render(
       <ConnectTray open={false} onClose={vi.fn()}>
         <div data-testid="picker" />
@@ -81,15 +91,8 @@ describe("ConnectTray", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("animates open when the toolkit is present, instantly under reduced motion", () => {
-    const calls: unknown[] = [];
-    toolkit = {
-      animate: ((el: unknown, kf: unknown) => {
-        calls.push(kf);
-        return Promise.resolve();
-      }) as unknown as FluidMotion["animate"],
-      prefersReducedMotion: () => false,
-    };
+  it("animates open with motion allowed, instantly under reduced motion", () => {
+    stubReducedMotion(false);
     const { rerender } = render(
       <ConnectTray open={false} onClose={vi.fn()}>
         <div />
@@ -100,10 +103,10 @@ describe("ConnectTray", () => {
         <div />
       </ConnectTray>,
     );
-    expect(calls.length).toBeGreaterThan(0);
+    expect(animateCalls.length).toBeGreaterThan(0);
 
-    toolkit = { ...toolkit, prefersReducedMotion: () => true };
-    const before = calls.length;
+    stubReducedMotion(true);
+    const before = animateCalls.length;
     const r2 = render(
       <ConnectTray open={false} onClose={vi.fn()}>
         <div />
@@ -114,6 +117,6 @@ describe("ConnectTray", () => {
         <div />
       </ConnectTray>,
     );
-    expect(calls.length).toBe(before);
+    expect(animateCalls.length).toBe(before);
   });
 });

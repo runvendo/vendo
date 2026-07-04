@@ -1,62 +1,31 @@
-import { useEffect, useState, type ComponentType } from "react";
-import type { ThinkingProps } from "fluidkit";
-
-type ThinkingComponent = ComponentType<ThinkingProps>;
-
-// Module-level so the import (or its failure) is paid once per session, not
-// once per streaming turn. `undefined` = not attempted, `null` = unavailable.
-let cached: ThinkingComponent | null | undefined;
+import { Thinking } from "fluidkit";
 
 export interface FluidThinkingProps {
   /** Accessible label for the working state. */
   label?: string;
   /** Drop diameter in px (fluidkit Thinking `size`). */
   size?: number;
-  /** Cluster extent in px (fluidkit Thinking `spread`). */
+  /**
+   * Legacy cluster extent in px, from the 0.3 API. 0.5's Thinking sizes its
+   * canvas from `size` alone; when only `spread` is given we derive an
+   * equivalent `size` from it so old callsites keep their footprint.
+   */
   spread?: number;
 }
 
+/** 0.5 Thinking canvas = size × 3.5; a legacy `spread` was that extent. */
+const CANVAS_SCALE = 3.5;
+
 /**
- * The agent-liveness indicator. fluidkit is an enhancement layer: the legacy
- * static dots paint immediately (and are all reduced-motion CSS ever animates),
- * then fluidkit's metaball Thinking takes over once its chunk resolves. If the
- * library is missing or fails to load, the dots simply stay — the shell never
- * depends on it to function.
+ * The agent-liveness indicator: fluidkit's metaball Thinking, statically
+ * imported. Reduced-motion and missing-capability rendering are fluidkit's
+ * tested degradation contract — the shell keeps no fallback of its own.
  */
-export function FluidThinking({ label = "Working", size = 9, spread = 30 }: FluidThinkingProps) {
-  // Initializer form: the cached value is itself a function component, and a
-  // bare function passed to useState would be invoked as a lazy initializer.
-  const [Thinking, setThinking] = useState<ThinkingComponent | null>(() => cached ?? null);
-
-  useEffect(() => {
-    if (cached !== undefined) return;
-    let alive = true;
-    import("fluidkit").then(
-      (mod) => {
-        cached = mod.Thinking;
-        if (alive) setThinking(() => mod.Thinking);
-      },
-      () => {
-        cached = null;
-      },
-    );
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  if (!Thinking) {
-    return (
-      <div className="fl-typing" aria-label={label}>
-        <span />
-        <span />
-        <span />
-      </div>
-    );
-  }
+export function FluidThinking({ label = "Working", size, spread }: FluidThinkingProps) {
+  const resolvedSize = size ?? (spread !== undefined ? Math.max(3, Math.round(spread / CANVAS_SCALE)) : 9);
   return (
     <div className="fl-thinking">
-      <Thinking label={label} material="flat" size={size} spread={spread} />
+      <Thinking label={label} material="flat" size={resolvedSize} />
     </div>
   );
 }

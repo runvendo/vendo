@@ -1,5 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { loadFluidMotion, loadedFluidMotion } from "./fluid-motion";
+import { animate } from "motion";
+import { resolvePrefersReducedMotion } from "fluidkit";
+
+/** fluidkit's static-safe semantics: unknown (SSR) → treated as reduced. */
+function prefersReducedMotion(): boolean {
+  const raw =
+    typeof matchMedia !== "undefined" ? matchMedia("(prefers-reduced-motion: reduce)").matches : null;
+  return resolvePrefersReducedMotion(raw);
+}
 
 export interface ConnectTrayProps {
   open: boolean;
@@ -11,34 +19,28 @@ const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
 
 /**
  * The liquid tray: anchors above the composer and morphs out of the bar's top
- * edge (height spring + un-blur + rise). Enhancement layer per ENG-205 —
- * toolkit missing or reduced motion means it simply appears, like any popover.
- * Mounted only while open, so surfaces without it pay nothing.
+ * edge (height spring + un-blur + rise). Under reduced motion it simply
+ * appears, like any popover. Mounted only while open, so surfaces without it
+ * pay nothing.
  */
 export function ConnectTray({ open, onClose, children }: ConnectTrayProps) {
   const ref = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(false);
   // The tray stays mounted through a short exit animation on close; `visible`
-  // trails `open` by that much. No toolkit / reduced motion: trails by nothing.
+  // trails `open` by that much. Reduced motion: trails by nothing.
   const [visible, setVisible] = useState(open);
-
-  // Preload alongside first render so the first open can animate.
-  useEffect(() => {
-    void loadFluidMotion();
-  }, []);
 
   useEffect(() => {
     if (open) {
       setVisible(true);
       return;
     }
-    const toolkit = loadedFluidMotion();
     const el = ref.current;
-    if (!toolkit || toolkit.prefersReducedMotion() || !el) {
+    if (prefersReducedMotion() || !el) {
       setVisible(false);
       return;
     }
-    const control = toolkit.animate(
+    const control = animate(
       el,
       { opacity: [1, 0], transform: ["translateY(0px)", "translateY(10px)"], filter: ["blur(0px)", "blur(5px)"] },
       { duration: 0.16, ease: "easeIn" },
@@ -87,17 +89,16 @@ export function ConnectTray({ open, onClose, children }: ConnectTrayProps) {
     const justOpened = open && !wasOpen.current;
     wasOpen.current = open;
     if (!justOpened) return;
-    const toolkit = loadedFluidMotion();
     const el = ref.current;
-    if (!toolkit || toolkit.prefersReducedMotion() || !el) return;
+    if (prefersReducedMotion() || !el) return;
     const height = el.offsetHeight;
     const controls = [
-      toolkit.animate(
+      animate(
         el,
         { height: [`${Math.round(height * 0.4)}px`, `${height}px`] },
         { type: "spring", stiffness: 320, damping: 30 },
       ),
-      toolkit.animate(
+      animate(
         el,
         { opacity: [0, 1], transform: ["translateY(14px)", "translateY(0px)"], filter: ["blur(7px)", "blur(0px)"] },
         { duration: 0.35, ease: EASE },
