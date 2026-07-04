@@ -751,6 +751,32 @@
 .fl-voice-caption .is-agent { color: var(--flowlet-fg); }
 .fl-voice-caption em { font-style: italic; color: var(--flowlet-fg-muted); }
 
+/* ---- consent bar: approvals dock at the edge, the agent's UI keeps the
+   stage. Act tier breathes the listening ring (spoken yes acceptable);
+   critical goes amber with the named confirm; settled = transient receipt. */
+.fl-voice-consent { margin: 0 18px 8px; padding: 9px 12px; border-radius: 13px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px; font-size: 12.5px;
+  border: 1px solid var(--flowlet-border-strong); background: var(--flowlet-glass-strong);
+  -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur);
+  box-shadow: var(--flowlet-shadow); animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both; }
+.fl-voice-consent.is-listening { animation: fl-item-in .3s cubic-bezier(.22, 1, .36, 1) both,
+  fl-voice-ring 2.2s ease-in-out .3s infinite; }
+.fl-voice-consent-ic { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0;
+  border-radius: 8px; border: 1px solid var(--flowlet-border); color: var(--flowlet-fg-muted); }
+.fl-voice-consent-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fl-voice-consent-title { font-weight: 600; color: var(--flowlet-fg); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.fl-voice-consent-fact { font-weight: 400; color: var(--flowlet-fg-muted); }
+.fl-voice-consent-warn { font-size: 11px; font-weight: 500; color: light-dark(#8a6a2e, #d9a94e); }
+.fl-voice-consent-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.fl-voice-consent.is-critical { border-color: color-mix(in srgb, #b3822f 55%, var(--flowlet-border)); }
+.fl-voice-consent.is-critical .fl-voice-consent-ic { color: light-dark(#8a6a2e, #d9a94e);
+  border-color: color-mix(in srgb, #b3822f 40%, var(--flowlet-border)); }
+.fl-voice-consent.is-receipt { justify-content: center; font-weight: 600; color: var(--flowlet-ok);
+  border-color: color-mix(in srgb, var(--flowlet-ok) 40%, var(--flowlet-border)); }
+.fl-voice-consent.is-receipt.is-declined { color: var(--flowlet-fg-muted);
+  border-color: var(--flowlet-border); }
+
 .fl-voice-banner { margin: 0 18px 8px; padding: 9px 13px; border-radius: 12px; flex-shrink: 0;
   border: 1px solid var(--flowlet-danger-border); background: var(--flowlet-danger-bg);
   color: var(--flowlet-danger); font-size: 12.5px; display: flex; align-items: center; gap: 10px; }
@@ -801,6 +827,8 @@
   .fl-voice-stage, .fl-voice-stage.is-ended, .fl-voice-feed > * { animation: none; opacity: 1; }
   .fl-voice-blob { transition: none; transform: none !important; }
   .fl-approval-listening { animation: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
+  .fl-voice-consent, .fl-voice-consent.is-listening { animation: none;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--flowlet-accent) 30%, transparent); }
   .fl-voice-card, .fl-voice-card.is-past { transition: none; }
 }

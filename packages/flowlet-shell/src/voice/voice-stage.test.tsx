@@ -26,25 +26,29 @@ function renderStage(snapshot: VoiceSnapshot, overrides: Partial<Parameters<type
 }
 
 describe("VoiceStage", () => {
-  it("announces the session status and pins the blob head", () => {
+  it("announces the session status (screen-reader region) without a visible live-state label", () => {
     renderStage(snapshotOf([{ type: "status", status: "listening" }]));
-    expect(screen.getByText("Listening")).toBeTruthy();
+    // The blob carries the state; the label exists only for assistive tech.
+    const announced = screen.getByText("Listening");
+    expect(announced.className).toContain("fl-sr-only");
     expect(screen.getByRole("dialog", { name: "Voice session" })).toBeTruthy();
   });
 
-  it("shows Muted over live statuses when muted", () => {
+  it("shows a visible Muted label over live statuses when muted", () => {
     renderStage(snapshotOf([{ type: "status", status: "listening" }, { type: "muted", muted: true }]));
-    expect(screen.getByText("Muted")).toBeTruthy();
+    const labels = screen.getAllByText("Muted");
+    expect(labels.some((el) => !el.className.includes("fl-sr-only"))).toBe(true);
   });
 
-  it("renders act-tier approvals tappable and their voice-approved receipt", () => {
+  it("docks act-tier consent as a tappable bar and shows the voice-approved receipt", () => {
     const onApprove = vi.fn();
     const pending = snapshotOf([
       { type: "status", status: "listening" },
       { type: "approval", id: "a1", toolName: "send_email", input: { to: "x@y.co" }, tier: "act" },
     ]);
     const { rerender } = renderStage(pending, { onApprove });
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(screen.getByText(/x@y.co/)).toBeTruthy(); // the one restated fact
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
     expect(onApprove).toHaveBeenCalledWith("a1", "tap");
 
     const settled = reduceVoice(pending, { type: "approval-resolved", id: "a1", resolution: "voice" });
@@ -54,18 +58,18 @@ describe("VoiceStage", () => {
       </FlowletShellProvider>,
     );
     expect(screen.getByText(/approved by voice/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
   });
 
-  it("renders critical approvals with the named confirm and consequence line", () => {
+  it("renders critical consent with the named confirm and consequence line", () => {
     renderStage(
       snapshotOf([
         { type: "approval", id: "a2", toolName: "transfer_funds", input: { amount: 5000 }, tier: "critical" },
       ]),
     );
-    expect(screen.getByText("Confirm on screen")).toBeTruthy();
     expect(screen.getByText("This can't be undone.")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Confirm — / })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
   });
 
   it("shows the live caption and the reconnect banner", () => {
