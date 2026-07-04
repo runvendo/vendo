@@ -6,6 +6,10 @@
  * `model.ts` re-exports `resolveModelChoice`/`ModelChoice`/`ModelProvider`
  * from here so the package's public API is unchanged, and wraps this with the
  * actual `LanguageModel` construction.
+ *
+ * This module also hosts the generic `present()` env helper reused by
+ * `capabilities.ts` — it must live in a runtime-import-free module so the
+ * client-safe subpath chain stays pure.
  */
 
 export type ModelProvider = "anthropic" | "openai" | "google";

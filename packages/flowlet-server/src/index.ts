@@ -22,7 +22,11 @@ export {
   type ConnectionsStore,
   type IntegrationsDeps,
 } from "./integrations";
-export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
+export {
+  detectCapabilities,
+  type FlowletCapabilities,
+  type DetectCapabilitiesOptions,
+} from "./capabilities";
 export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
 export { manifestToolsToHostTools } from "./manifest-tools";
 export { buildInstructions, createAgentCache, type BuildInstructionsInput, type AgentFactoryConfig } from "./agent";
