@@ -17,14 +17,32 @@ export interface ApprovalBatchCardProps {
   onDeclineAll: (approvalIds: string[]) => void;
 }
 
+const SNIPPET_CHARS = 60;
+
+/** A short, human row summary from the input's most identifying string field,
+ *  plus a body/message snippet when one exists (live-verification polish
+ *  2026-07-04: host-tool inputs like `{id, body}` summarized to "" and every
+ *  picker row read identically — picking "which" was blind). */
 function summarize(input: unknown): string {
-  if (input && typeof input === "object") {
-    const record = input as Record<string, unknown>;
-    for (const key of ["to", "recipient", "recipient_email", "email"]) {
-      if (typeof record[key] === "string") return record[key] as string;
-    }
+  if (!input || typeof input !== "object") return "";
+  const record = input as Record<string, unknown>;
+  let identity = "";
+  for (const key of ["to", "recipient", "recipient_email", "email", "name", "title", "subject", "id"]) {
+    if (typeof record[key] === "string" && record[key]) { identity = record[key] as string; break; }
   }
-  return "";
+  let snippet = "";
+  for (const key of ["body", "message", "text"]) {
+    const v = record[key];
+    // Host-API tools nest the request body one level down ({body: {body: "…"}}).
+    const s = typeof v === "string"
+      ? v
+      : v && typeof v === "object" && !Array.isArray(v)
+        ? Object.values(v as Record<string, unknown>).find((x): x is string => typeof x === "string" && x.length > 0)
+        : undefined;
+    if (s) { snippet = s.length > SNIPPET_CHARS ? `${s.slice(0, SNIPPET_CHARS)}…` : s; break; }
+  }
+  if (identity && snippet) return `${identity} — ${snippet}`;
+  return identity || snippet;
 }
 
 /**
@@ -60,12 +78,14 @@ export function ApprovalBatchCard({ toolName, items, onApproveAll, onApproveSubs
       {picking ? (
         <>
           <ul className="fl-approval-batch-list">
-            {items.map((item) => (
+            {items.map((item, index) => (
               <li key={item.approvalId} className="fl-approval-batch-row">
                 <label>
                   <input
                     type="checkbox"
-                    aria-label={summarize(item.input) || item.toolCallId || item.approvalId}
+                    // Never a raw toolCallId — an unidentifiable input falls
+                    // back to a positional human label.
+                    aria-label={summarize(item.input) || `${action.request} ${index + 1} of ${items.length}`}
                     checked={checked.has(item.approvalId)}
                     onChange={(e) => {
                       // Seed from the derived all-checked view on first touch

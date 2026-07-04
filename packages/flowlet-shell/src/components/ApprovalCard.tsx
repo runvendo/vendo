@@ -42,7 +42,10 @@ export function ApprovalCard({ toolName, input, tier = "act", unverified = false
         </span>
         <div className="fl-approval-heading">
           <div className="fl-approval-eyebrow">
-            {critical ? "Money — always needs you" : "Needs your approval"}
+            {/* Tier-generic (live-verification polish 2026-07-04): critical
+                covers money AND irreversible/permission-changing tools — the
+                spec's Trust-screen phrase, not money-specific copy. */}
+            {critical ? "Always needs you" : "Needs your approval"}
             {unverified && <span className="fl-approval-unverified">Unverified tool</span>}
           </div>
           <div className="fl-approval-title">{action.question}</div>

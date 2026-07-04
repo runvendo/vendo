@@ -246,9 +246,25 @@
 .fl-approval-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;
   font-size: 12.5px; line-height: 1.45; }
 .fl-approval-field dt { color: var(--flowlet-fg-muted); }
-.fl-approval-field dd { margin: 0; color: var(--flowlet-fg); overflow-wrap: anywhere; }
+/* pre-line: object/array inputs render as compact `Key: value` lines
+   (field-rows.ts), one per line, instead of raw JSON. */
+.fl-approval-field dd { margin: 0; color: var(--flowlet-fg); overflow-wrap: anywhere; white-space: pre-line; }
 .fl-approval-more { font-size: 11.5px; color: var(--flowlet-fg-muted); }
 .fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+.fl-approval-batch-list { list-style: none; margin: 12px 0 0; padding: 10px 0 2px;
+  border-top: 1px solid var(--flowlet-border); display: flex; flex-direction: column; gap: 7px; }
+.fl-approval-batch-row label { display: flex; align-items: center; gap: 9px;
+  font-size: 12.5px; line-height: 1.45; color: var(--flowlet-fg); cursor: pointer; }
+.fl-approval-batch-row input[type="checkbox"] { appearance: none; margin: 0; width: 15px; height: 15px;
+  flex-shrink: 0; border: 1px solid var(--flowlet-border-strong); border-radius: 4.5px;
+  background: var(--flowlet-surface); cursor: pointer; display: grid; place-items: center;
+  transition: background .13s, border-color .13s; }
+.fl-approval-batch-row input[type="checkbox"]:hover { border-color: var(--flowlet-accent); }
+.fl-approval-batch-row input[type="checkbox"]:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
+.fl-approval-batch-row input[type="checkbox"]:checked { background: var(--flowlet-accent); border-color: var(--flowlet-accent); }
+.fl-approval-batch-row input[type="checkbox"]:checked::after { content: ""; width: 8.5px; height: 8.5px;
+  background: var(--flowlet-accent-fg);
+  clip-path: polygon(14% 44%, 0 62%, 40% 100%, 100% 18%, 84% 4%, 39% 68%); }
 .fl-btn { border: 1px solid var(--flowlet-border); border-radius: 9px; padding: 8px 15px;
   font: 550 12.5px/1 var(--flowlet-font); letter-spacing: -.006em;
   background: var(--flowlet-surface); color: var(--flowlet-fg); cursor: pointer;

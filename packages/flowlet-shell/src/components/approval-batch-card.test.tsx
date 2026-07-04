@@ -58,6 +58,33 @@ describe("ApprovalBatchCard", () => {
     );
   });
 
+  it("picker rows summarize identity + snippet from host-tool inputs and never expose raw toolCallIds (live-verification polish 2026-07-04)", () => {
+    // The live sendClientMessage batch: input {id, body: {body}} summarized to
+    // "" — all 8 rows read identically and the a11y label was the toolCallId.
+    const hostItems = [
+      { kind: "approval", key: "h1", messageId: "m", approvalId: "hp1", toolCallId: "hc1", toolName: "sendClientMessage",
+        input: { id: "cl_rivera", body: { body: "Hi Marisol, your documents are due" } } },
+      { kind: "approval", key: "h2", messageId: "m", approvalId: "hp2", toolCallId: "hc2", toolName: "sendClientMessage",
+        input: { id: "cl_chen", body: { body: "Hi Wei, your documents are due" } } },
+    ] as Extract<ThreadItem, { kind: "approval" }>[];
+    render(<ApprovalBatchCard toolName="sendClientMessage" items={hostItems} onApproveAll={vi.fn()} onApproveSubset={vi.fn()} onDeclineAll={vi.fn()} />);
+    fireEvent.click(screen.getByText("Pick which…"));
+    expect(screen.getByLabelText(/cl_rivera — Hi Marisol/)).toBeTruthy();
+    expect(screen.getByLabelText(/cl_chen — Hi Wei/)).toBeTruthy();
+    expect(screen.queryByLabelText(/hc1/)).toBeNull();
+  });
+
+  it("an unidentifiable input gets a positional a11y label, never the toolCallId", () => {
+    const blank = [
+      { kind: "approval", key: "b1", messageId: "m", approvalId: "bp1", toolCallId: "bc1", toolName: "GMAIL_SEND_EMAIL", input: {} },
+      { kind: "approval", key: "b2", messageId: "m", approvalId: "bp2", toolCallId: "bc2", toolName: "GMAIL_SEND_EMAIL", input: {} },
+    ] as Extract<ThreadItem, { kind: "approval" }>[];
+    render(<ApprovalBatchCard toolName="GMAIL_SEND_EMAIL" items={blank} onApproveAll={vi.fn()} onApproveSubset={vi.fn()} onDeclineAll={vi.fn()} />);
+    fireEvent.click(screen.getByText("Pick which…"));
+    expect(screen.getByLabelText("Send email 1 of 2")).toBeTruthy();
+    expect(screen.queryByLabelText(/bc1/)).toBeNull();
+  });
+
   it("No calls onDeclineAll with every approvalId", () => {
     const onDeclineAll = vi.fn();
     render(<ApprovalBatchCard toolName="GMAIL_SEND_EMAIL" items={items} onApproveAll={vi.fn()} onApproveSubset={vi.fn()} onDeclineAll={onDeclineAll} />);

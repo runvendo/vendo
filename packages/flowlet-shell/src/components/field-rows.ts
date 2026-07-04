@@ -17,17 +17,32 @@ export function fieldLabel(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** `maxChars: null` disables truncation entirely — critical cards never
- *  truncate material fields (spec §3 Moment 6, §4.5 "untruncated"). */
-export function fieldValue(value: unknown, maxChars: number | null): string {
-  const text =
-    typeof value === "string"
-      ? value
-      : typeof value === "number" || typeof value === "boolean"
-        ? String(value)
-        : JSON.stringify(value);
+function truncate(text: string, maxChars: number | null): string {
   if (maxChars === null || text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}…`;
+}
+
+/** `maxChars: null` disables truncation entirely — critical cards never
+ *  truncate material fields (spec §3 Moment 6, §4.5 "untruncated").
+ *
+ *  Object/array values render as compact `Key: value` lines (one per entry,
+ *  depth 1 — live-verification polish 2026-07-04: the cards were showing raw
+ *  JSON like `{"body":"Hi Marisol…`). Nested values beyond depth 1 fall back
+ *  to JSON; truncation applies per line so a long field can't hide its
+ *  siblings. The rows render with `white-space: pre-line`. */
+export function fieldValue(value: unknown, maxChars: number | null, depth = 0): string {
+  if (typeof value === "string") return truncate(value, maxChars);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (depth === 0 && value && typeof value === "object") {
+    if (Array.isArray(value)) {
+      return value.map((v) => truncate(fieldValue(v, maxChars, 1), maxChars)).join("\n");
+    }
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => !isEmpty(v))
+      .map(([k, v]) => `${fieldLabel(k)}: ${fieldValue(v, maxChars, 1)}`)
+      .join("\n");
+  }
+  return truncate(JSON.stringify(value), maxChars);
 }
 
 /** True for values that carry no information worth confirming. */
