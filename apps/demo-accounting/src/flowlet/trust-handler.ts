@@ -1,10 +1,12 @@
 /**
  * GET /api/flowlet/grants, POST /api/flowlet/grants/revoke,
  * GET /api/flowlet/audit, GET /api/flowlet/critical-tools (ENG-193 §3 Moment
- * 12/§4.3/§6.2) — the Trust screen's data plane, mounted behind this app's
- * own hand-rolled routes.
+ * 12/§4.3/§6.2), GET /api/flowlet/rules + POST /api/flowlet/rules/revoke
+ * (ENG-193 item 6 — compiled always-ask rules, mirroring grants exactly) —
+ * the Trust screen's data plane, mounted behind this app's own hand-rolled
+ * routes.
  */
-import { createGrantManager, dangerTier } from "@flowlet/runtime";
+import { createGrantManager, createRuleManager, dangerTier } from "@flowlet/runtime";
 import { demoStore, CADENCE_SCOPE } from "./store";
 import { automationsWorld } from "./automations";
 import { cadenceHostToolDefs } from "./host-tools";
@@ -22,7 +24,9 @@ export async function handleDemoGrantsList(req: Request): Promise<Response> {
   if (!demoPrincipalAllowed(req)) return Response.json({ error: LOCAL_ONLY_MESSAGE }, { status: 403 });
   const standing = await demoStore.grants.list(CADENCE_SCOPE);
   const rows = standing.filter((g) => g.revokedAt === undefined).map((g) => ({
-    id: g.id, tool: g.tool, scopePreview: scopePreview(g.scope), since: g.grantedAt, source: g.source.kind,
+    id: g.id, tool: g.tool, scopePreview: scopePreview(g.scope),
+    ...(g.source.kind === "compiled-rule" && g.source.rule ? { plainText: g.source.rule } : {}),
+    since: g.grantedAt, source: g.source.kind,
   }));
   const automations = await automationsWorld().store.list(CADENCE_SCOPE);
   for (const automation of automations) {
@@ -45,6 +49,25 @@ export async function handleDemoGrantsRevoke(req: Request): Promise<Response> {
   const existing = (await demoStore.grants.list(CADENCE_SCOPE)).find((g) => g.id === id && g.revokedAt === undefined);
   if (!existing) return Response.json({ error: `no live grant "${id}"` }, { status: 404 });
   await createGrantManager({ store: demoStore.grants, audit: demoStore.audit }).revoke(CADENCE_SCOPE, id);
+  return Response.json({ ok: true });
+}
+
+export async function handleDemoRulesList(req: Request): Promise<Response> {
+  if (!demoPrincipalAllowed(req)) return Response.json({ error: LOCAL_ONLY_MESSAGE }, { status: 403 });
+  const rows = (await demoStore.rules.list(CADENCE_SCOPE))
+    .filter((r) => r.revokedAt === undefined)
+    .map((r) => ({ id: r.id, toolPattern: r.toolPattern, plainText: r.plainText, since: r.createdAt }));
+  return Response.json({ rules: rows });
+}
+
+export async function handleDemoRulesRevoke(req: Request): Promise<Response> {
+  if (!demoPrincipalAllowed(req)) return Response.json({ error: LOCAL_ONLY_MESSAGE }, { status: 403 });
+  const body = await req.json().catch(() => ({}));
+  const id = typeof (body as { id?: unknown }).id === "string" ? (body as { id: string }).id : undefined;
+  if (!id) return Response.json({ error: "malformed revoke request" }, { status: 400 });
+  const existing = (await demoStore.rules.list(CADENCE_SCOPE)).find((r) => r.id === id && r.revokedAt === undefined);
+  if (!existing) return Response.json({ error: `no live rule "${id}"` }, { status: 404 });
+  await createRuleManager({ store: demoStore.rules, audit: demoStore.audit }).revoke(CADENCE_SCOPE, id);
   return Response.json({ ok: true });
 }
 

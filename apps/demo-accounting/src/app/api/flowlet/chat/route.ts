@@ -6,10 +6,13 @@
  * authoring tools. (No connect flow here — the Composio toolkit set is fixed,
  * so the generation is the only cache key.)
  */
+import { createSteeringTools } from "@flowlet/runtime";
 import { createDemoAgent } from "@/flowlet/agent";
 import { handleChat } from "@/flowlet/chat-handler";
 import { demoTools } from "@/flowlet/tools";
 import { automationsWorld, automationsGeneration } from "@/flowlet/automations";
+import { demoStore, CADENCE_SCOPE } from "@/flowlet/store";
+import { resolveToolDescriptor } from "@/flowlet/tool-registry";
 import type { FlowletAgent } from "@flowlet/core";
 
 export const runtime = "nodejs";
@@ -27,7 +30,19 @@ function getAgent(): FlowletAgent {
     cached = {
       gen,
       agent: createDemoAgent({
-        extraTools: { ...demoTools(), ...automationsWorld().authoringTools() },
+        extraTools: {
+          ...demoTools(),
+          ...automationsWorld().authoringTools(),
+          // ENG-193 item 6: conversational steering — same static
+          // single-tenant registration the authoring tools above use.
+          ...createSteeringTools({
+            principal: CADENCE_SCOPE,
+            rules: demoStore.rules,
+            grants: demoStore.grants,
+            audit: demoStore.audit,
+            resolveDescriptor: resolveToolDescriptor,
+          }),
+        },
       }),
     };
   }

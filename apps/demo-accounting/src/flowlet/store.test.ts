@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoStore, resolveThreadRecordId } from "./store";
+import { demoStore, resetDemoStore, resolveThreadRecordId } from "./store";
 import { CADENCE_SCOPE } from "./automations";
 
 describe("demo store + thread id mapping", () => {
@@ -14,5 +14,18 @@ describe("demo store + thread id mapping", () => {
     expect(a).toBe(b);
     const other = await resolveThreadRecordId(CADENCE_SCOPE, "other-thread");
     expect(other).not.toBe(a);
+  });
+
+  it("resetDemoStore revokes live grants AND live rules (ENG-193 item 6)", async () => {
+    await demoStore.grants.create(CADENCE_SCOPE, {
+      tool: "sendClientMessage", descriptorHash: "h1", scope: { kind: "tool" }, duration: "standing",
+      source: { kind: "chat" },
+    });
+    await demoStore.rules.create(CADENCE_SCOPE, {
+      kind: "always_ask", toolPattern: "sendClientMessage", plainText: "sending client messages",
+    });
+    await resetDemoStore();
+    expect(await demoStore.grants.findForTool(CADENCE_SCOPE, "sendClientMessage")).toHaveLength(0);
+    expect((await demoStore.rules.list(CADENCE_SCOPE)).filter((r) => r.revokedAt === undefined)).toHaveLength(0);
   });
 });

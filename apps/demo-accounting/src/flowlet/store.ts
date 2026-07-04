@@ -21,18 +21,21 @@
  * `createAutomationsWorld()` call reads it). `principal.ts` is a
  * dependency-free leaf, so routing through it breaks the cycle.
  */
-import { createFadeTracker, createInMemoryGrantStore, createInMemoryStore, type FadeTracker, type InMemoryStore } from "@flowlet/runtime";
-import type { GrantStore, Principal } from "@flowlet/core";
+import { createFadeTracker, createInMemoryCompiledRuleStore, createInMemoryGrantStore, createInMemoryStore, type FadeTracker, type InMemoryStore } from "@flowlet/runtime";
+import type { CompiledRuleStore, GrantStore, Principal } from "@flowlet/core";
 import { CADENCE_SCOPE } from "./principal";
 
 export interface DemoStore extends InMemoryStore {
   grants: GrantStore;
+  /** ENG-193 item 6 — compiled always-ask rules (conversational steering). */
+  rules: CompiledRuleStore;
   fadeTracker: FadeTracker;
 }
 
 export const demoStore: DemoStore = {
   ...createInMemoryStore(),
   grants: createInMemoryGrantStore(),
+  rules: createInMemoryCompiledRuleStore(),
   fadeTracker: createFadeTracker(),
 };
 
@@ -80,6 +83,11 @@ export async function resetDemoStore(): Promise<void> {
   resetThreadMapping();
   const grants = await demoStore.grants.list(CADENCE_SCOPE);
   await Promise.all(grants.map((g) => demoStore.grants.revoke(CADENCE_SCOPE, g.id)));
+  // ENG-193 item 6: rules reset like grants (a rule is standing, agreed-to
+  // policy state, exactly like a grant — not a learned-signal counter like
+  // the fadeTracker, which intentionally survives).
+  const rules = await demoStore.rules.list(CADENCE_SCOPE);
+  await Promise.all(rules.map((r) => demoStore.rules.revoke(CADENCE_SCOPE, r.id)));
 }
 
 // Re-export for callers that only need the fixed demo principal scope.

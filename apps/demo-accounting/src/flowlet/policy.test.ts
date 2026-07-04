@@ -109,6 +109,24 @@ describe("demoPolicy", () => {
     ).toBe("approve");
   });
 
+  it("a matching always_ask rule forces approve even on an ALWAYS_ALLOW'd tool name (ENG-193 item 6)", async () => {
+    // get_deadlines is in ALWAYS_ALLOW (name-policy fast path) — a rule must
+    // still beat it. Descriptor is act-shaped (not read) so the rules layer's
+    // "reads just flow" exemption doesn't apply.
+    const rule = await demoStore.rules.create(CADENCE_SCOPE, {
+      kind: "always_ask", toolPattern: "get_deadlines", plainText: "checking deadlines",
+    });
+    expect(
+      await demoPolicy.evaluate({
+        toolName: "get_deadlines",
+        input: {},
+        descriptor: { name: "get_deadlines", source: "caller", annotations: {}, hasExecute: true, kind: "function" } as never,
+        principal: PRINCIPAL,
+      }),
+    ).toBe("approve");
+    await demoStore.rules.revoke(CADENCE_SCOPE, rule.id); // don't leak into other tests
+  });
+
   it("with a judge configured, a matching grant is still gated on a judge escalation (composition smoke test)", async () => {
     // Exercises the SAME composition shape demoPolicy uses, with a scripted
     // mock model — proves the wiring, not the env var (which stays unset in CI).

@@ -31,6 +31,7 @@ import {
   annotationPolicy,
   auditPolicy,
   composePolicy,
+  compiledRulesPolicy,
   grantPolicy,
   judgePolicy,
   volumeBreaker,
@@ -107,6 +108,9 @@ export const demoPolicy: ApprovalPolicy = composePolicy(
     ),
     breakerState,
   ),
+  // ENG-193 item 6: a matching always-ask rule beats any grant/judge/breaker
+  // allow — a sibling, mirrors packages/flowlet-next/src/policy-stack.ts.
+  compiledRulesPolicy(demoStore.rules, { principalScope: () => CADENCE_SCOPE }),
   // LAST on purpose — auditPolicy's evaluate must observe the escalation
   // reason the chain stamped, so a DECLINED escalation still gets its
   // judge_escalation trail entry (see audit-policy.ts's composition contract).

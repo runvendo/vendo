@@ -3,6 +3,8 @@ import { automationSpecSchema, type AutomationSpec } from "@flowlet/runtime";
 import {
   handleDemoGrantsList,
   handleDemoGrantsRevoke,
+  handleDemoRulesList,
+  handleDemoRulesRevoke,
   handleDemoAuditQuery,
   handleDemoCriticalTools,
 } from "./trust-handler";
@@ -75,6 +77,46 @@ describe("Trust-screen demo handlers", () => {
     expect(malformedRes.status).toBe(400);
   });
 
+  it("carries a compiled-rule grant's source.rule through as plainText (ENG-193 item 6)", async () => {
+    await demoStore.grants.create(CADENCE_SCOPE, {
+      tool: "sendClientMessage", descriptorHash: "h9", scope: { kind: "tool" }, duration: "standing",
+      source: { kind: "compiled-rule", rule: "sending client messages" },
+    });
+    const res = await handleDemoGrantsList(req("http://localhost/api/flowlet/grants"));
+    const body = (await res.json()) as { grants: { source: string; plainText?: string }[] };
+    const row = body.grants.find((g) => g.source === "compiled-rule");
+    expect(row?.plainText).toBe("sending client messages");
+  });
+
+  it("lists live rules and revokes them (ENG-193 item 6)", async () => {
+    const rule = await demoStore.rules.create(CADENCE_SCOPE, {
+      kind: "always_ask", toolPattern: "sendClientMessage", plainText: "sending client messages",
+    });
+    const listRes = await handleDemoRulesList(req("http://localhost/api/flowlet/rules"));
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as { rules: { id: string; toolPattern: string; plainText: string }[] };
+    expect(listBody.rules.some((r) => r.id === rule.id && r.plainText === "sending client messages")).toBe(true);
+
+    const okRes = await handleDemoRulesRevoke(
+      req("http://localhost/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: rule.id }) }),
+    );
+    expect(okRes.status).toBe(200);
+    const after = (await (await handleDemoRulesList(req("http://localhost/api/flowlet/rules"))).json()) as {
+      rules: { id: string }[];
+    };
+    expect(after.rules.some((r) => r.id === rule.id)).toBe(false);
+
+    const missingRes = await handleDemoRulesRevoke(
+      req("http://localhost/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: "nope" }) }),
+    );
+    expect(missingRes.status).toBe(404);
+
+    const malformedRes = await handleDemoRulesRevoke(
+      req("http://localhost/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({}) }),
+    );
+    expect(malformedRes.status).toBe(400);
+  });
+
   it("queries the audit log honoring sinceMs", async () => {
     await demoStore.audit.append({ at: "2026-07-01T00:00:00Z", principal: CADENCE_SCOPE, kind: "automation_firing", automationId: "a1", runId: "r1" });
     await demoStore.audit.append({ at: "2026-07-04T00:00:00Z", principal: CADENCE_SCOPE, kind: "automation_firing", automationId: "a1", runId: "r2" });
@@ -103,6 +145,12 @@ describe("Trust-screen demo handlers", () => {
     expect(
       (await handleDemoGrantsRevoke(
         deployedReq("https://deployed.example.com/api/flowlet/grants/revoke", { method: "POST", body: JSON.stringify({ id: "x" }) }),
+      )).status,
+    ).toBe(403);
+    expect((await handleDemoRulesList(deployedReq("https://deployed.example.com/api/flowlet/rules"))).status).toBe(403);
+    expect(
+      (await handleDemoRulesRevoke(
+        deployedReq("https://deployed.example.com/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: "x" }) }),
       )).status,
     ).toBe(403);
     expect((await handleDemoAuditQuery(deployedReq("https://deployed.example.com/api/flowlet/audit"))).status).toBe(403);
