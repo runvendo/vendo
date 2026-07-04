@@ -22,6 +22,7 @@ import {
 import type { AutomationSpec } from "./schema";
 import {
   DuplicateRunError,
+  PARKED_ACTION_TTL_MS,
   type AutomationEngineStore,
   type AutomationGrant,
   type AutomationRecord,
@@ -379,6 +380,16 @@ export class AutomationRunner {
           error:
             `the parked input for "${action.tool}" was truncated at park time and cannot be ` +
             "executed safely — the action must be requested again",
+        };
+      }
+
+      // TTL holds on the raw API path too, not just the list sweep: a stale
+      // intent is never approvable by direct replay of a resolve request.
+      if (Date.parse(action.requestedAt) + PARKED_ACTION_TTL_MS <= this.nowMs()) {
+        await this.config.store.resolveParkedAction(scope, action.id, "expired", this.now());
+        return {
+          ok: false,
+          error: `this request expired ${PARKED_ACTION_TTL_MS / 86_400_000} days after it was parked — ask again if it is still wanted`,
         };
       }
 

@@ -169,6 +169,30 @@ describe("ENG-193 §4.6/§8 permanent parking invariants", () => {
     expect((await store.getParkedAction(scope, action!.id))?.resolution).toBe("declined");
   });
 
+  it("INVARIANT §8: a parked action past the 7-day TTL is never executable, even via direct resolve replay (bypassing the list sweep)", async () => {
+    const notify = makeTool("notify_act");
+    const store = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation } = await store.create(scope, { spec: loopSpec("notify_act"), grants: [] });
+    let clockMs = Date.parse(NOW);
+    const runner = new AutomationRunner({
+      store,
+      tools: async () => ({ notify_act: notify }),
+      policy: approveFor("notify_act"),
+      now: () => NOW,
+      nowMs: () => clockMs,
+    });
+    const run = await runner.fire(scope, automation.id, rows("e1", ["a"]));
+    const [action] = await store.listParkedActions(scope, { runId: run!.id });
+
+    clockMs += 8 * 24 * 60 * 60 * 1000; // 8 days later — past the TTL
+    const result = await runner.resolveParkedAction(scope, action!.id, "approved");
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/expired/);
+    expect(notify.calls).toHaveLength(0);
+    // The row is settled as expired — no later gesture revives it.
+    expect((await store.getParkedAction(scope, action!.id))?.resolution).toBe("expired");
+  });
+
   it("INVARIANT §8.8: descriptor drift refuses to execute AND leaves the action unresolved (re-askable, never silently declined)", async () => {
     const notify = makeTool("notify_act");
     const store = new InMemoryAutomationStore({ now: () => NOW });
