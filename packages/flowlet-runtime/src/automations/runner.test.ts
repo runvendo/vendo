@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
+import { InMemoryAuditLog } from "../embedded/in-memory-store";
 import { AutomationRunner } from "./runner";
 import { automationSpecSchema, type AutomationSpec } from "./schema";
 import type { RegisteredTool } from "./interpreter";
@@ -566,5 +567,37 @@ describe("ENG-193 §4.6 — parked-action persistence + resolveParkedAction", ()
     expect(notify.calls).toHaveLength(1);
     expect(notify.calls[0]).toEqual({ row: "a" });
     expect(result).toMatchObject({ ok: true, executed: true, guardStale: true });
+  });
+});
+
+describe("ENG-193 §6.2 — audit trail for parked-action resolutions", () => {
+  it("resolveParkedAction appends a 'consent' audit event on both approve and decline", async () => {
+    const notify = makeTool("notify_act");
+    const store = new InMemoryAutomationStore({ now: () => NOW });
+    const { automation } = await store.create(scope, { spec: forEachSpec(), grants: [] });
+    const audit = new InMemoryAuditLog();
+    const runner = new AutomationRunner({
+      store,
+      tools: async () => ({ notify_act: notify }),
+      policy: approveFor("notify_act"),
+      now: () => NOW,
+      nowMs: () => Date.parse(NOW),
+      audit,
+      auditPrincipal: (s) => s,
+    });
+
+    const run1 = await runner.fire(scope, automation.id, forEachEnvelope("e1", ["a"]));
+    const [approved] = await store.listParkedActions(scope, { runId: run1!.id });
+    await runner.resolveParkedAction(scope, approved!.id, "approved");
+
+    const run2 = await runner.fire(scope, automation.id, forEachEnvelope("e2", ["a"]));
+    const [declined] = await store.listParkedActions(scope, { runId: run2!.id });
+    await runner.resolveParkedAction(scope, declined!.id, "declined");
+
+    const events = await audit.query(scope, { kinds: ["consent"] });
+    expect(events).toHaveLength(2);
+    const byDecision = Object.fromEntries(events.map((e) => [e.decision, e]));
+    expect(byDecision["yes"]?.consentId).toBe(approved!.id);
+    expect(byDecision["no"]?.consentId).toBe(declined!.id);
   });
 });

@@ -10,7 +10,7 @@
  * consecutive failures the automation is parked: frozen status "paused" plus
  * disabledReason (the frozen status union stays untouched).
  */
-import type { Principal } from "@flowlet/core";
+import type { AuditLog, Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import { evaluateGuard } from "./expressions";
 import { hashDescriptor } from "./grants";
@@ -49,6 +49,13 @@ export interface AutomationRunnerConfig {
   nowMs?: () => number;
   /** Observer hook (demo toast, logging). Called after each finalized run. */
   onRunFinished?: (run: AutomationRun, automation: AutomationRecord) => void;
+  /** ENG-193 §6.2 — records parked-action resolutions on the SAME "consent"
+   *  audit event kind chat approvals already use (Task 5). Optional: tests
+   *  that don't care about the trail can omit it. */
+  audit?: AuditLog;
+  /** Maps the engine scope onto the core audit Principal shape — structurally
+   *  identical today ({tenantId, subject}); defaults to the identity. */
+  auditPrincipal?: (scope: Principal) => Principal;
 }
 
 export interface FireOptions {
@@ -339,6 +346,13 @@ export class AutomationRunner {
 
       if (decision === "declined") {
         await this.config.store.resolveParkedAction(scope, actionId, "declined", this.now());
+        await this.config.audit?.append({
+          at: this.now(),
+          principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+          kind: "consent",
+          consentId: actionId,
+          decision: "no",
+        });
         return { ok: true, executed: false };
       }
 
@@ -376,6 +390,13 @@ export class AutomationRunner {
       // CLAIM before executing (the resume() pattern): a retry after this
       // point sees "already resolved" and 409s instead of double-executing.
       await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
+      await this.config.audit?.append({
+        at: this.now(),
+        principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+        kind: "consent",
+        consentId: actionId,
+        decision: "yes",
+      });
 
       // Guard re-check (deviation #2): only when it's provably self-contained
       // (no steps.* reference) — otherwise flagged stale, never re-evaluated.
