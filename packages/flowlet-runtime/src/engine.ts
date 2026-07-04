@@ -35,6 +35,12 @@ import {
   type ComposioClient,
   type ComposioConfig,
 } from "./composio";
+import {
+  ingestMcpTools,
+  createMcpToolSource,
+  type McpServerConfig,
+  type McpToolSource,
+} from "./mcp";
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 import type { ToolDescriptor } from "./descriptor";
@@ -67,6 +73,8 @@ export interface FlowletAgentConfig {
   tools?: ToolSet;
   /** Optional Composio ingestion. `client` is injectable for tests. */
   composio?: { config: ComposioConfig; client?: ComposioClient };
+  /** Optional MCP ingestion (host-declared servers). `source` is injectable for tests. */
+  mcp?: { servers: McpServerConfig[]; source?: McpToolSource };
   /**
    * Policy version string. Forwarded to policy layers that key on it (e.g. the
    * ask-once `rememberDecisions` store). Not used by the engine itself.
@@ -113,6 +121,13 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   // transient failure never permanently disables that user's tools.
   type Ingested = { toolset: ToolSet; descriptors: Record<string, ToolDescriptor> };
   const composioCache = new Map<string, Promise<Ingested>>();
+
+  // MCP tools are HOST-level (declared by the host, shared across users), so
+  // one ingestion serves every principal — unlike the per-user Composio cache.
+  const mcpSource: McpToolSource | undefined = config.mcp
+    ? config.mcp.source ?? createMcpToolSource()
+    : undefined;
+  let mcpCache: Promise<Ingested> | null = null;
 
   /**
    * Normalize client-supplied history so a stale turn can't wedge the thread.
@@ -220,7 +235,33 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           composioDescriptors = ingested.descriptors;
         }
 
-        // 4. Sources in precedence order: caller > engine > composio.
+        // 3b. MCP ingestion (fail-closed inside ingestMcpTools; per-server
+        //     fault tolerance). Cached host-level: the tools/list round-trip
+        //     blocks only the first turn. `ingestMcpTools` never rejects —
+        //     instead it reports per-server `failures` — so "failures are
+        //     never cached" means: any failed server evicts the cache after
+        //     resolution, and the next turn re-ingests (healthy servers are
+        //     cheap to re-fetch; their clients stay open in the source).
+        let mcpTools: ToolSet = {};
+        let mcpDescriptors: Record<string, ToolDescriptor> = {};
+        if (config.mcp && mcpSource && config.mcp.servers.length > 0) {
+          const servers = config.mcp.servers;
+          const source = mcpSource;
+          if (!mcpCache) {
+            mcpCache = ingestMcpTools({ servers, source }).then((ingested) => {
+              if (ingested.failures.length > 0) mcpCache = null;
+              return {
+                toolset: ingested.toolset,
+                descriptors: Object.fromEntries(ingested.descriptors.map((d) => [d.name, d])),
+              };
+            });
+          }
+          const ingested = await mcpCache;
+          mcpTools = ingested.toolset;
+          mcpDescriptors = ingested.descriptors;
+        }
+
+        // 4. Sources in precedence order: caller > engine > composio > mcp.
         const sources: ToolSourceInput[] = [
           // Defensive: a non-TS caller may omit `tools` entirely.
           { source: "caller", tools: input.tools ?? {} },
@@ -233,6 +274,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             },
           },
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
+          { source: "mcp", tools: mcpTools, descriptors: mcpDescriptors },
         ];
 
         // 5. Merge + uniformly policy-wrap every tool.

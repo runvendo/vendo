@@ -57,6 +57,13 @@ export {
 } from "./composio";
 export type { ComposioClient, ComposioConfig } from "./composio";
 
+// MCP ingestion (host-declared servers)
+export {
+  ingestMcpTools,
+  createMcpToolSource,
+} from "./mcp";
+export type { McpServerConfig, McpToolSource, McpFetchResult } from "./mcp";
+
 // Automations engine (ENG-188): DSL, interpreter, store, runner, scheduler,
 // ingest helpers, and chat authoring tools.
 export * from "./automations";
