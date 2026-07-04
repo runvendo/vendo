@@ -725,19 +725,29 @@
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent);
   mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 22px), transparent); }
 .fl-voice-feed::-webkit-scrollbar { display: none; }
-/* Hard 100% height: the slide IS the stage viewport, so centering is true
-   and a too-tall view scrolls inside its card instead of hanging below the
-   fold. Slightly heavier bottom padding biases the card to the optical
-   center (dead-center reads low next to the head). */
-.fl-voice-slide { height: 100%; box-sizing: border-box; flex-shrink: 0;
-  scroll-snap-align: start; scroll-snap-stop: always;
-  display: flex; align-items: center; justify-content: center; padding: 6px 0 28px;
-  /* The off-stage slides blur out; the focused one is crisp and whole. */
-  filter: blur(2.5px); opacity: .38; transform: scale(.975);
-  transition: filter .4s ease, opacity .4s ease, transform .4s ease; }
+/* Slides are slightly shorter than the stage and snap to CENTER, so the
+   neighbors peek in at the top/bottom edges — blurred, smaller, unmistakably
+   "there's more" — and grow into the frame as they take focus. A too-tall
+   view scrolls inside its card instead of hanging below the fold. */
+.fl-voice-slide { height: calc(100% - 84px); box-sizing: border-box; flex-shrink: 0;
+  scroll-snap-align: center; scroll-snap-stop: always;
+  display: flex; align-items: center; justify-content: center; padding: 4px 0;
+  /* Off-stage: blurred, dimmed, visibly smaller; the focused one is crisp
+     and whole. The transition IS the "animate into the frame" beat. */
+  filter: blur(2.5px); opacity: .45; transform: scale(.78);
+  transition: filter .45s ease, opacity .45s ease, transform .45s ease; }
 .fl-voice-slide.is-focus { filter: none; opacity: 1; transform: none; }
+/* Neighbors hug the boundary nearest the stage, so what peeks is the CARD's
+   edge, not empty slide padding. */
+.fl-voice-slide.is-before { align-items: flex-end; }
+.fl-voice-slide.is-after { align-items: flex-start; }
+/* A lone slide (or the ends of the deck) rests centered in the stage. */
+.fl-voice-slide:first-child { margin-top: auto; }
+.fl-voice-slide:last-child { margin-bottom: auto; }
 @media (prefers-reduced-motion: no-preference) {
-  .fl-voice-slide { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) both; }
+  /* `backwards`, never `both`: a forwards fill would pin the keyframe's
+     `transform: none; opacity: 1` over the off-stage shrink/dim forever. */
+  .fl-voice-slide { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) backwards; }
 }
 /* Tall views scroll inside their slide — mandatory snap never traps content. */
 .fl-voice-slide .fl-voice-card { width: min(560px, 100%); max-height: 100%; overflow: auto;

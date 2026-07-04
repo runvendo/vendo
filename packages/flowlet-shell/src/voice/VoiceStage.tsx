@@ -124,7 +124,7 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
     const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     const last = el.lastElementChild;
     if (last && typeof last.scrollIntoView === "function") {
-      last.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+      last.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
     } else if (typeof el.scrollTo === "function") {
       el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
     } else {
@@ -152,11 +152,14 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   const updateFocus = () => {
     const el = feedRef.current;
     if (!el) return;
+    // Center-snap geometry: focus = the slide whose center is nearest the
+    // stage's center.
     let best: { id: string; distance: number } | null = null;
     for (const child of Array.from(el.children) as HTMLElement[]) {
       const id = child.dataset.entryId;
       if (!id) continue;
-      const distance = Math.abs(child.offsetTop - el.scrollTop - el.offsetTop);
+      const center = child.offsetTop + child.offsetHeight / 2 - el.scrollTop;
+      const distance = Math.abs(center - el.clientHeight / 2);
       if (!best || distance < best.distance) best = { id, distance };
     }
     setFocusId(best ? best.id : null);
@@ -223,11 +226,17 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
           {/* Each view is a SLIDE — it owns the stage while focused; scroll
               pages between slides (mandatory snap). Approvals never enter the
               feed: consent is edge chrome (the docked bar below). */}
-          {slides.map((entry) => (
+          {slides.map((entry, index) => {
+            const focusIndex = slides.findIndex((s) => s.id === focusId);
+            const relative =
+              focusIndex < 0 || entry.id === focusId
+                ? entry.id === focusId ? "is-focus" : ""
+                : index < focusIndex ? "is-before" : "is-after";
+            return (
             <div
               key={entry.id}
               data-entry-id={entry.id}
-              className={`fl-voice-slide ${entry.id === focusId ? "is-focus" : ""} ${entry.kind === "pending-view" ? "is-pending" : ""}`}
+              className={`fl-voice-slide ${relative} ${entry.kind === "pending-view" ? "is-pending" : ""}`}
             >
               <div className="fl-voice-card">
                 {entry.kind === "pending-view" ? (
@@ -240,7 +249,8 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
         {slides.length > 1 && (
           <div className="fl-voice-dots" role="tablist" aria-label="Views in this session">
