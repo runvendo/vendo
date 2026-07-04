@@ -293,6 +293,46 @@ describe("pause and resume", () => {
     expect((await store.getRun(scope, paused!.id))?.status).toBe("succeeded");
   });
 
+  it("resume obtains the approval via the atomic claim, not read-then-clear", async () => {
+    const freeze = makeTool("freeze_card");
+    const send = makeTool("send_msg");
+    const { runner, automation, store } = await setup({
+      spec: gatedSpec(),
+      tools: { freeze_card: freeze, send_msg: send },
+      policy: approveFor("freeze_card"),
+    });
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    expect(paused?.outcome).toBe("waiting_approval");
+
+    // Spy AFTER the run is parked: count claims, record updateRun patches, and
+    // hide pendingApproval from reads so a read-then-clear path cannot work.
+    let claimCalls = 0;
+    const originalClaim = store.claimPendingApproval.bind(store);
+    store.claimPendingApproval = async (s, id) => {
+      claimCalls += 1;
+      return originalClaim(s, id);
+    };
+    const updatePatches: Array<Record<string, unknown>> = [];
+    const originalUpdateRun = store.updateRun.bind(store);
+    store.updateRun = async (s, id, patch) => {
+      updatePatches.push(patch);
+      return originalUpdateRun(s, id, patch);
+    };
+    const originalGetRun = store.getRun.bind(store);
+    store.getRun = async (s, id) => {
+      const run = await originalGetRun(s, id);
+      if (!run) return run;
+      const { pendingApproval: _hidden, ...rest } = run;
+      return rest;
+    };
+
+    const resumed = await runner.resume(scope, paused!.id, true);
+    expect(resumed?.status).toBe("succeeded");
+    expect(freeze.calls).toHaveLength(1);
+    expect(claimCalls).toBe(1);
+    expect(updatePatches.some((p) => "pendingApproval" in p)).toBe(false);
+  });
+
   it("two concurrent approvals of one pending run execute the gated step exactly once (review P1)", async () => {
     const freeze = makeTool("freeze_card");
     const send = makeTool("send_msg");

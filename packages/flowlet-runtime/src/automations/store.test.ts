@@ -257,6 +257,62 @@ describe("runs", () => {
   });
 });
 
+describe("claimPendingApproval", () => {
+  const pending = {
+    stepId: "notify",
+    tool: "SLACK_SEND_MESSAGE",
+    requestedAt: NOW,
+    expiresAt: NOW,
+    checkpoint: { stepIndex: 0, outputs: {} },
+  };
+
+  async function waitingRun(store: InMemoryAutomationStore) {
+    const { automation } = await create(store);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    await store.updateRun(alice, run.id, {
+      outcome: "waiting_approval",
+      pendingApproval: pending,
+    });
+    return run;
+  }
+
+  it("first claim returns the approval and removes it from the run; second claim loses", async () => {
+    const store = makeStore();
+    const run = await waitingRun(store);
+
+    const claimed = await store.claimPendingApproval(alice, run.id);
+    expect(claimed).toEqual(pending);
+    expect((await store.getRun(alice, run.id))?.pendingApproval).toBeUndefined();
+
+    expect(await store.claimPendingApproval(alice, run.id)).toBeUndefined();
+  });
+
+  it("wrong-scope claim returns undefined and leaves the approval in place", async () => {
+    const store = makeStore();
+    const run = await waitingRun(store);
+
+    expect(await store.claimPendingApproval(bob, run.id)).toBeUndefined();
+    expect((await store.getRun(alice, run.id))?.pendingApproval).toEqual(pending);
+  });
+
+  it("claim on a run with nothing pending returns undefined", async () => {
+    const store = makeStore();
+    const { automation } = await create(store);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    expect(await store.claimPendingApproval(alice, run.id)).toBeUndefined();
+  });
+});
+
 describe("listEnabledSchedules", () => {
   it("lists enabled schedule-triggered automations across scopes with their stored principal", async () => {
     const store = makeStore();

@@ -362,11 +362,11 @@ export class AutomationRunner {
       if (!peek) return undefined;
       return this.enqueue(peek.automationId, async () => {
         const run = await this.config.store.getRun(scope, runId);
-        if (!run || run.outcome !== "waiting_approval" || !run.pendingApproval) {
-          return undefined; // already resumed, cancelled, or finished
-        }
-        const pending = run.pendingApproval;
-        if (expectedStepId !== undefined && pending.stepId !== expectedStepId) {
+        if (!run) return undefined;
+        if (
+          expectedStepId !== undefined &&
+          run.pendingApproval?.stepId !== expectedStepId
+        ) {
           return undefined; // stale: the run moved on to a different pause
         }
         const automation = await this.config.store.get(scope, run.automationId);
@@ -374,6 +374,12 @@ export class AutomationRunner {
           ? await this.config.store.getVersion(scope, run.automationId, run.version)
           : undefined;
         if (!automation || !version) return undefined;
+
+        // Atomically claim the approval: exactly one resumer gets it, and the
+        // run stops being pending in the same operation. A lost claim means
+        // the run was already resumed, cancelled, or finished.
+        const pending = await this.config.store.claimPendingApproval(scope, runId);
+        if (!pending) return undefined;
 
         // Expired approvals cancel instead of executing stale intent.
         if (Date.parse(pending.expiresAt) < this.nowMs()) {
@@ -384,8 +390,6 @@ export class AutomationRunner {
           await this.notifyFinished(scope, expired, automation);
           return expired;
         }
-        // Claim the run before executing so nothing else sees it as pending.
-        await this.config.store.updateRun(scope, run.id, { pendingApproval: undefined });
         const user = await this.claims(scope);
         return this.execute(scope, run, automation, version.spec, version.grants, user, {}, {
           checkpoint: pending.checkpoint,

@@ -307,6 +307,8 @@ export interface AutomationEngineStore extends CoreAutomationStore {
   ): Promise<AutomationRun>;
   finalizeRun(scope: Principal, id: string, input: FinalizeRunInput): Promise<AutomationRun>;
   getRun(scope: Principal, id: string): Promise<AutomationRun | undefined>;
+  /** Atomically take the pending approval off a run. Exactly one caller wins. */
+  claimPendingApproval(scope: Principal, runId: string): Promise<PendingApproval | undefined>;
   /** waiting_approval runs are cancelled on pause/edit/delete (amendment 7). */
   cancelPendingRuns(scope: Principal, automationId: string): Promise<void>;
 
@@ -663,6 +665,19 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
     const run = this.runs.get(id);
     if (!run) return undefined;
     return run.tenantId === scope.tenantId && run.subject === scope.subject ? run : undefined;
+  }
+
+  async claimPendingApproval(scope: Principal, runId: string): Promise<PendingApproval | undefined> {
+    // mustGetRun's scoping, but wrong scope / missing run loses the claim
+    // instead of throwing — callers treat both as "nothing to resume".
+    const run = this.runs.get(runId);
+    if (!run || run.tenantId !== scope.tenantId || run.subject !== scope.subject) return undefined;
+    if (!run.pendingApproval) return undefined;
+    const claimed = { ...run.pendingApproval };
+    const next: AutomationRun = { ...run };
+    delete next.pendingApproval;
+    this.runs.set(runId, next);
+    return claimed;
   }
 
   async cancelPendingRuns(scope: Principal, automationId: string): Promise<void> {
