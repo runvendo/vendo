@@ -38,6 +38,7 @@
 - Modify: `packages/flowlet-next/src/chat.ts` and `packages/flowlet-next/src/handler.ts` (+ tests): strip client-supplied `scoped.source`, then enrich the last user message's scoped block; precedence option-first, fall through to the file map.
 
 - [ ] Failing tests: absent file → no enrichment; valid file → enrichment by anchorId; invalid file → boot error; client-supplied source is stripped even when no server source exists; option resolver wins over file map, `undefined` falls through.
+- [ ] Dev-freshness tests: `NODE_ENV !== "production"` + mapped file exists on disk → enrichment uses the CURRENT file content (cap applied), not the captured `source`; production path never reads the filesystem at request time.
 - [ ] Implement; green; commit.
 
 ### Task 4: CLI extractor — capture step
@@ -45,8 +46,8 @@
 **Files:**
 - Create: `packages/flowlet-cli/src/remix-sources.ts` + `remix-sources.test.ts`
 - Modify: `packages/flowlet-cli/package.json` (parser dependency per the tech-stack note, if any is added)
-- Modify: `packages/flowlet-cli/src/init.ts` (+ test) to run the step and include results in the extraction report
-- Modify: `packages/flowlet-cli/src/cli.ts` (+ `cli.test.ts`): a NEW standalone command `flowlet remix-sources [dir]` (the CLI has only `init`/`publish` today — there is no existing re-run pattern to follow), including help text.
+- Modify: `packages/flowlet-cli/src/cli.ts` (+ `cli.test.ts`): the PRIMARY entry point is a NEW standalone command `flowlet remix-sources [dir]` (the CLI has only `init`/`publish` today — no existing re-run pattern), including help text. Capture is a per-build concern, not an install-time one: at init time the app has no wrappers yet.
+- Modify: `packages/flowlet-cli/src/init.ts` and `next-wiring.ts` (+ tests): init WIRES the command into the app's `package.json` `prebuild` script (create or extend, idempotently) and runs it once (expected empty on fresh installs — the report says so rather than warning).
 
 - [ ] Failing tests (fixture app trees): literal-id `<FlowletRemix id="x">` captured with resolved child component file, `sourceHash`, `capturedAt`; dynamic id skipped + reported; multi-child/non-component child captures the enclosing file; unresolvable import omitted + reported; server-only rule (`"use server"`, `server/`, `api/`, `pages/api/`, outside source root — enforced AFTER alias resolution) refused; 48 KB cap.
 - [ ] Import-resolution fixtures MUST cover the real Next shapes: `@/*` tsconfig path aliases, extensionless imports, `index.ts` barrels, and relative paths — Cadence's own `@/components/dashboard/deadline-list` is the reference case.

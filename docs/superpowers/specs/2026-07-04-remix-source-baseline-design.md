@@ -11,7 +11,7 @@ FlowletRemix (PR #34) remixes from a sanitized DOM snapshot. That reproduces how
 Constraints that do not move:
 
 - The host component's source file is never modified. Output still runs in the egress-jailed sandbox, still pins per user, still resets.
-- Zero new config for the happy path: `flowlet init` captures sources; installs without the extractor fall back to today's snapshot baseline automatically.
+- Zero new config for the happy path: `flowlet init` wires capture into the app's build (`prebuild` → `flowlet remix-sources`), and dev mode resolves source live from disk. Installs without the extractor fall back to today's snapshot baseline automatically.
 
 ## Threat model (Codex review S1, stated honestly)
 
@@ -24,14 +24,23 @@ Captured sources are **frontend component files** — code that already ships to
 ## How it works
 
 ```
-flowlet init (build time)                      chat request (runtime)
+flowlet remix-sources (every build)            chat request (runtime)
   scan app for <FlowletRemix id="...">           client sends anchors metadata (id, label,
   resolve the wrapped child component              context, DOM snapshot) — unchanged
-  capture its source file                        server: handler looks up source by anchorId
-  write .flowlet/remix-sources.json                and adds it to the scoped anchor block
+  capture its source file                        server: handler resolves source by anchorId
+  write .flowlet/remix-sources.json                (dev: live from disk; prod: captured file)
                                                  engine: system prompt = baseline snapshot
-                                                   + REAL SOURCE + mapping instructions
+                                                   + captured source + mapping instructions
 ```
+
+## Capture lifecycle (why this is NOT an init-time step)
+
+`flowlet init` runs once, when the app has ZERO `<FlowletRemix>` wrappers — devs wrap components incrementally afterward, and wrapped components keep evolving. So capture is a **per-build** concern, not an install-time one:
+
+- **`flowlet remix-sources [dir]`** is the capture command (idempotent, fast, deterministic).
+- **`flowlet init` wires it, it does not rely on running it**: the codemod adds `flowlet remix-sources` to the app's `prebuild` script (creating or extending it), so every production build refreshes the capture with zero ongoing effort. Init also runs the command once for completeness — expected to capture nothing on a fresh install, which is fine and says so in the report.
+- **`next dev` stays fresh without re-capturing**: the captured file provides the anchorId → file mapping, and in dev the handler re-reads the mapped file from disk at request time — editing a wrapped component never yields a stale baseline. Only ADDING a new wrapper needs a `flowlet remix-sources` run (or the next build). The AST scanner deliberately stays in the CLI; the runtime never scans.
+- **Production** uses the build-time capture only — deployed servers have no source tree, which is exactly what `prebuild` exists for.
 
 ## Contracts (additive)
 
@@ -41,7 +50,7 @@ flowlet init (build time)                      chat request (runtime)
 
 ## Extractor (flowlet-cli)
 
-A new deterministic step in `flowlet init` (and re-runnable on its own):
+The `flowlet remix-sources` command (also invoked by init once, and by `prebuild` every build):
 
 - AST-scan the app source for `<FlowletRemix id="...">` usages. Only literal string `id`s are capturable; dynamic ids are skipped with a report warning.
 - Resolve the wrapped child: the single top-level JSX child's component identifier, followed through its import to a source file in the app. Multi-child or non-component children capture the enclosing file instead.
@@ -53,6 +62,7 @@ A new deterministic step in `flowlet init` (and re-runnable on its own):
 ## Server injection (@flowlet/next)
 
 - `loadFlowletDir` also reads `remix-sources.json`. Semantics match `theme.json`/`tools.json`: **absent → empty map; present but invalid JSON/schema → fail loud at boot** (zod schema for `RemixSourceRecord`). A developer-editable file that is present and wrong is a bug to surface, not to swallow.
+- **Dev-mode freshness:** when `NODE_ENV !== "production"` and the record's `file` exists on disk, the handler re-reads the file at enrichment time (cap applied) instead of using the captured `source` — an edited component is never a stale baseline during development. Production never touches the filesystem beyond the one `.flowlet` load.
 - `handleChat` enriches the LAST user message's `anchors.scoped` with `source` when a source resolves for its anchorId, after stripping any client-supplied `source`. Enrichment is handler-side so the engine stays transport-agnostic.
 - Handler option `remixSources?: Record<string, string> | RemixSourceResolver`. Precedence per anchor: the option is consulted first; a resolver returning `undefined` (or a map without the key) falls through to the `.flowlet` file map. Cadence's hand-rolled chat handler passes its own map the same way.
 
