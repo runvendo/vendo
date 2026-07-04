@@ -259,6 +259,72 @@ describe("fire", () => {
   });
 });
 
+describe("one-shot schedules", () => {
+  const oneShotSpec = () =>
+    spec({ trigger: { type: "schedule", at: "2026-06-30T08:00:00.000Z" } });
+  const cronSpec = () =>
+    spec({ trigger: { type: "schedule", cron: "0 8 * * *", timezone: "UTC" } });
+  const cronEnvelope = (eventId: string): TriggerEnvelope => ({
+    source: "cron",
+    eventId,
+    subject: "user-1",
+    occurredAt: NOW,
+    payload: { firedAt: NOW },
+  });
+
+  it("parks a spent one-shot as paused + completed_one_shot after a successful run", async () => {
+    const send = makeTool("send_msg");
+    const { runner, automation, store } = await setup({
+      spec: oneShotSpec(),
+      tools: { send_msg: send },
+    });
+    const run = await runner.fire(scope, automation.id, cronEnvelope("e1"));
+    expect(run?.status).toBe("succeeded");
+    const parked = await store.get(scope, automation.id);
+    expect(parked?.status).toBe("paused");
+    expect(parked?.disabledReason).toBe("completed_one_shot");
+  });
+
+  it("parks a spent one-shot even when the run fails", async () => {
+    const send = makeTool("send_msg", { failTimes: 99 });
+    const { runner, automation, store } = await setup({
+      spec: oneShotSpec(),
+      tools: { send_msg: send },
+    });
+    const run = await runner.fire(scope, automation.id, cronEnvelope("e1"));
+    expect(run?.status).toBe("failed");
+    const parked = await store.get(scope, automation.id);
+    expect(parked?.status).toBe("paused");
+    expect(parked?.disabledReason).toBe("completed_one_shot");
+  });
+
+  it("does not park a recurring cron schedule after firing", async () => {
+    const send = makeTool("send_msg");
+    const { runner, automation, store } = await setup({
+      spec: cronSpec(),
+      tools: { send_msg: send },
+    });
+    const run = await runner.fire(scope, automation.id, cronEnvelope("e1"));
+    expect(run?.status).toBe("succeeded");
+    const after = await store.get(scope, automation.id);
+    expect(after?.status).toBe("enabled");
+    expect(after?.disabledReason).toBeUndefined();
+  });
+
+  it("does not park a one-shot on a test run (run_automation_now)", async () => {
+    const send = makeTool("send_msg");
+    const { runner, automation, store } = await setup({
+      spec: oneShotSpec(),
+      tools: { send_msg: send },
+    });
+    const run = await runner.fire(scope, automation.id, cronEnvelope("e1"), { isTest: true });
+    expect(run?.status).toBe("succeeded");
+    const after = await store.get(scope, automation.id);
+    expect(after?.status).toBe("enabled");
+    expect(after?.disabledReason).toBeUndefined();
+  });
+});
+
 describe("pause and resume", () => {
   const gatedSpec = () =>
     spec({

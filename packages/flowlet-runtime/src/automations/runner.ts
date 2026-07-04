@@ -338,6 +338,23 @@ export class AutomationRunner {
         await store.cancelPendingRuns(scope, automation.id);
       }
     }
+
+    // A one-shot schedule (`at`) is spent after its firing finalizes — success
+    // or failure — so park it; otherwise durable stores would rehydrate it as
+    // "enabled" forever. Test runs (run_automation_now) never spend it.
+    if (!finalized.isTest) {
+      const fresh = await store.get(scope, automation.id);
+      const trigger = fresh?.spec.trigger;
+      if (
+        fresh?.status === "enabled" &&
+        trigger?.type === "schedule" &&
+        trigger.at !== undefined
+      ) {
+        await store.setStatus(scope, automation.id, "paused", {
+          disabledReason: "completed_one_shot",
+        });
+      }
+    }
     this.config.onRunFinished?.(finalized, automation);
     await this.notifyFinished(scope, finalized, automation);
     return finalized;

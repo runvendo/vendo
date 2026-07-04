@@ -98,7 +98,7 @@ export interface AutomationRecord extends CoreAutomationRecord {
   triggerKey: string | null;
   counters: AutomationCounters;
   /** Why a paused automation was parked by the system, if it was. */
-  disabledReason?: "consecutive_failures";
+  disabledReason?: "consecutive_failures" | "completed_one_shot";
   createdFromThreadId?: string | null;
 }
 
