@@ -107,6 +107,20 @@ describe("VoiceStage", () => {
     expect(screen.queryByText("hi")).toBeNull(); // drawer yielded to the consent card
   });
 
+  it("offers Pin this view in the post-call browse state when a pin sink is wired", () => {
+    const onPin = vi.fn();
+    const node = { id: "n9", kind: "component", source: "prewired", name: "Table", props: {} } as const;
+    renderStage(
+      snapshotOf([
+        { type: "view", id: "v1", node },
+        { type: "status", status: "ended" },
+      ]),
+      { onPin },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Pin this view/ }));
+    expect(onPin).toHaveBeenCalledWith(node);
+  });
+
   it("stays on the stage after the session ends; Back to chat is the explicit exit", () => {
     vi.useFakeTimers();
     const onClosed = vi.fn();

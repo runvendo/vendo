@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { UINode } from "@flowlet/core";
 import { useShell } from "../context";
 import { Skeleton } from "../components/Skeleton";
 import { toolAction } from "../components/tool-labels";
@@ -15,6 +16,10 @@ export interface VoiceStageProps {
   /** Called after the exit beat once the session has ended — unmount + land
    *  the record in the thread. */
   onClosed: () => void;
+  /** Slot-launched (component-activated) sessions: commit the FOCUSED view to
+   *  the host card. Offered in the post-call browse state — mid-call, "pin
+   *  it" is a spoken request the agent handles. */
+  onPin?: (node: UINode) => void;
 }
 
 const STATUS_COPY: Record<VoiceSnapshot["status"], string> = {
@@ -56,7 +61,7 @@ function consentFact(input: unknown): string | undefined {
  * session plays a short settle beat, then `onClosed` lands the record in the
  * thread.
  */
-export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onClosed }: VoiceStageProps) {
+export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onClosed, onPin }: VoiceStageProps) {
   const { renderNode } = useShell();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -176,6 +181,8 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   const consentDetail = pendingApproval ? consentFact(pendingApproval.input) : undefined;
 
   const slides = feed.filter((entry) => entry.kind !== "approval");
+  const focusedSlide = slides.find((entry) => entry.id === focusId);
+  const focusedNode = focusedSlide?.kind === "view" ? focusedSlide.node : undefined;
   const jumpTo = (id: string) => {
     const el = feedRef.current;
     if (!el) return;
@@ -328,9 +335,21 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
           {status === "ended" ? (
             // The call is over but the stage stays browsable — leaving is the
             // user's explicit choice, and it lands the record in the thread.
-            <button type="button" className="fl-btn fl-btn-primary" onClick={leave}>
-              Back to chat
-            </button>
+            <>
+              {onPin && focusedNode && (
+                <button type="button" className="fl-btn" onClick={() => onPin(focusedNode)}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                    style={{ marginRight: 6, verticalAlign: -2 }}>
+                    <path d="M12 17v5" /><path d="M5 17h14l-1.5-4.5a2 2 0 0 1 0-1.3L19 7H5l1.5 4.2a2 2 0 0 1 0 1.3Z" />
+                  </svg>
+                  Pin this view
+                </button>
+              )}
+              <button type="button" className="fl-btn fl-btn-primary" onClick={leave}>
+                Back to chat
+              </button>
+            </>
           ) : (
             <>
               <button

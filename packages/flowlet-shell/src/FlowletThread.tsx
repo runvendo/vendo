@@ -146,6 +146,7 @@ export function FlowletThread({
           onEnd={voiceSession.end}
           onApprove={voiceSession.approve}
           onDecline={voiceSession.decline}
+          onPin={onPin}
           onClosed={() => {
             const finalSnapshot = voiceSession.close();
             const landed = voiceSessionMessages(finalSnapshot);
