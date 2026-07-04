@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { FlowletShellProvider } from "./context";
-import type { TrustAuditRow, TrustGrantRow, TrustSeam } from "./context";
+import type { TrustAuditRow, TrustGrantRow, TrustRuleRow, TrustSeam } from "./context";
 import { useTrustData } from "./use-trust-data";
 
 function wrap(trust?: TrustSeam) {
@@ -26,6 +26,7 @@ describe("useTrustData", () => {
     const trust: TrustSeam = {
       listGrants: async () => grants, revokeGrant: async () => {}, queryAudit: async (): Promise<TrustAuditRow[]> => [],
       listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      listRules: async () => [], revokeRule: async () => {},
     };
     const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
     await waitFor(() => expect(result.current.grants).toHaveLength(1));
@@ -43,6 +44,7 @@ describe("useTrustData", () => {
     const trust: TrustSeam = {
       listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => rows,
       listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      listRules: async () => [], revokeRule: async () => {},
     };
     const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
     // 1 read + 1 approved + 1 automation run + 1 money move — money moves
@@ -60,16 +62,50 @@ describe("useTrustData", () => {
     const trust: TrustSeam = {
       listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => rows,
       listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      listRules: async () => [], revokeRule: async () => {},
     };
     const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
     await waitFor(() => expect(result.current.diary.moneyMoves).toBe(2));
     expect(result.current.diary.total).toBe(2);
   });
 
+  it("fetches rules and exposes them alongside grants (ENG-193 item 6)", async () => {
+    const rules: TrustRuleRow[] = [
+      { id: "r1", toolPattern: "sendClientMessage", plainText: "emailing anyone at Acme", since: "2026-07-01T00:00:00Z" },
+    ];
+    const trust: TrustSeam = {
+      listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => [],
+      listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      listRules: async () => rules, revokeRule: vi.fn().mockResolvedValue(undefined),
+    };
+    const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
+    await waitFor(() => expect(result.current.rules).toHaveLength(1));
+    expect(result.current.rules[0]?.plainText).toBe("emailing anyone at Acme");
+  });
+
+  it("revokeRule calls trust.revokeRule and refreshes (ENG-193 item 6)", async () => {
+    const listRules = vi.fn().mockResolvedValue([]);
+    const revokeRule = vi.fn().mockResolvedValue(undefined);
+    const trust: TrustSeam = {
+      listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => [],
+      listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      listRules, revokeRule,
+    };
+    const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
+    await result.current.revokeRule("r1");
+    expect(revokeRule).toHaveBeenCalledWith("r1");
+    expect(listRules).toHaveBeenCalledTimes(2); // initial + post-revoke refresh
+  });
+
+  it("empty/no-op for rules when trust is absent (ENG-193 item 6)", () => {
+    const { result } = renderHook(() => useTrustData(), { wrapper: wrap(undefined) });
+    expect(result.current.rules).toEqual([]);
+  });
+
   it("revoke calls trust.revokeGrant and refreshes", async () => {
     const revokeGrant = vi.fn().mockResolvedValue(undefined);
     const listGrants = vi.fn().mockResolvedValue([]);
-    const trust: TrustSeam = { listGrants, revokeGrant, queryAudit: async () => [], listCriticalTools: async () => [], resolveFadeProposal: async () => {} };
+    const trust: TrustSeam = { listGrants, revokeGrant, queryAudit: async () => [], listCriticalTools: async () => [], resolveFadeProposal: async () => {}, listRules: async () => [], revokeRule: async () => {} };
     const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
     await result.current.revoke("g1");
     expect(revokeGrant).toHaveBeenCalledWith("g1");

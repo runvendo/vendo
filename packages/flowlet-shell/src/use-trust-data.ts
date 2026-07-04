@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShell } from "./context";
 import { useParkedActions } from "./use-parked-actions";
-import type { TrustAuditRow, TrustGrantRow } from "./context";
+import type { TrustAuditRow, TrustGrantRow, TrustRuleRow } from "./context";
 
 const POLL_MS = 30_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -45,6 +45,7 @@ export function useTrustData() {
   const { trust } = useShell();
   const parked = useParkedActions();
   const [grants, setGrants] = useState<TrustGrantRow[]>([]);
+  const [rules, setRules] = useState<TrustRuleRow[]>([]);
   const [criticalTools, setCriticalTools] = useState<{ name: string }[]>([]);
   const [activity, setActivity] = useState<TrustAuditRow[]>([]);
   const mounted = useRef(true);
@@ -52,6 +53,7 @@ export function useTrustData() {
   const refresh = useCallback(() => {
     if (!trust) return;
     void trust.listGrants().then((rows) => { if (mounted.current) setGrants(rows); });
+    void trust.listRules().then((rows) => { if (mounted.current) setRules(rows); });
     void trust.listCriticalTools().then((rows) => { if (mounted.current) setCriticalTools(rows); });
     void trust.queryAudit({ sinceMs: Date.now() - WEEK_MS }).then((rows) => { if (mounted.current) setActivity(rows); });
   }, [trust]);
@@ -65,15 +67,18 @@ export function useTrustData() {
   }, [refresh, trust]);
 
   const revoke = (id: string) => (trust ? trust.revokeGrant(id).then(refresh) : Promise.resolve());
+  const revokeRule = (id: string) => (trust ? trust.revokeRule(id).then(refresh) : Promise.resolve());
 
   return {
     grants: grants.filter((g) => g.source !== "automation"),
     automationGrants: grants.filter((g) => g.source === "automation"),
+    rules,
     criticalTools,
     activity,
     diary: summarize(activity),
     parked,
     revoke,
+    revokeRule,
     refresh,
   };
 }

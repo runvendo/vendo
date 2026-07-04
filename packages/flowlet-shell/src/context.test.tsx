@@ -68,6 +68,8 @@ describe("ShellContextValue — trust seam (ENG-193 §3 Moment 12)", () => {
     const trust = {
       listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => [],
       listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      // ENG-193 item 6 — the rules half of the seam rides through the same way.
+      listRules: async () => [], revokeRule: async () => {},
     };
     let seen: { trust?: unknown } | undefined;
     render(

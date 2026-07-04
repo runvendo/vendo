@@ -40,6 +40,10 @@ const EXACT: Record<string, Omit<ToolAction, "question">> = {
   pause_automation: { active: "Pausing automation", done: "Paused automation", request: "Pause an automation" },
   resume_automation: { active: "Resuming automation", done: "Resumed automation", request: "Resume an automation" },
   run_automation_now: { active: "Test-firing automation", done: "Test-fired automation", request: "Test-fire an automation" },
+  // ENG-193 item 6 — conversational steering (deliberate copy, not
+  // humanize()'s "Always Ask Before" fallback):
+  always_ask_before: { active: "Setting a rule", done: "Set a rule", request: "Always ask before this" },
+  stop_asking_about: { active: "Loosening a rule", done: "Loosened a rule", request: "Stop asking about this" },
 };
 
 /** Composio toolkit ids -> display names (mirrors the connect catalog). */

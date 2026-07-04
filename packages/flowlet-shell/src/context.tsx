@@ -24,9 +24,19 @@ export interface TrustGrantRow {
   id?: string;
   tool: string;
   scopePreview: string;
+  /** ENG-193 item 6: a compiled-rule-sourced grant's own loosen-rule
+   *  phrasing, preferred over `scopePreview` when present. */
+  plainText?: string;
   since: string;
   source: "chat" | "fade" | "compiled-rule" | "automation";
   automationName?: string;
+}
+/** ENG-193 item 6 — a compiled "always ask before X" rule. */
+export interface TrustRuleRow {
+  id: string;
+  toolPattern: string;
+  plainText: string;
+  since: string;
 }
 export interface TrustAuditRow {
   at: string;
@@ -41,6 +51,9 @@ export interface TrustSeam {
   queryAudit: (opts: { sinceMs: number }) => Promise<TrustAuditRow[]>;
   listCriticalTools: () => Promise<{ name: string }[]>;
   resolveFadeProposal: (proposalId: string, accept: boolean) => Promise<void>;
+  /** ENG-193 item 6 — mirrors `listGrants`/`revokeGrant` exactly. */
+  listRules: () => Promise<TrustRuleRow[]>;
+  revokeRule: (id: string) => Promise<void>;
 }
 
 /** What `sendConsent` resolves with (ENG-193 §4.4 addition — additive:

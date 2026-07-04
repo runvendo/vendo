@@ -1,10 +1,13 @@
 /**
- * TrustScreen (spec §3 Moment 12) — behind a quiet shield icon. Five
- * sections: what's handled without asking, what automations run
- * unattended (read-only, federated), what always needs the human
- * (critical tools, can't be changed), what's waiting, and the weekly
- * plain-English activity/diary. Seams: `useTrustData` (mirrors
- * `useParkedActions` exactly).
+ * TrustScreen (spec §3 Moment 12) — behind a quiet shield icon. Six
+ * sections: what's handled without asking, standing always-ask Rules
+ * (ENG-193 item 6 — its own section, deliberately NOT folded into "Handled
+ * without asking": a rule ADDS friction, the opposite of that heading; see
+ * the item-6 plan's deviation #4), what automations run unattended
+ * (read-only, federated), what always needs the human (critical tools,
+ * can't be changed), what's waiting, and the weekly plain-English
+ * activity/diary. Seams: `useTrustData` (mirrors `useParkedActions`
+ * exactly).
  */
 import { useTrustData } from "../use-trust-data";
 import { toolAction } from "./tool-labels";
@@ -26,6 +29,11 @@ function auditLine(row: TrustAuditRow): string {
       return "Started handling something without asking";
     case "grant_revoked":
       return "Asked to check again on something";
+    // ENG-193 item 6:
+    case "rule_created":
+      return "Set a rule to always ask about something";
+    case "rule_revoked":
+      return "Removed a rule";
     case "judge_escalation":
       return "Stopped to check something unusual";
     case "consent":
@@ -36,7 +44,7 @@ function auditLine(row: TrustAuditRow): string {
 }
 
 export function TrustScreen({ onClose }: TrustScreenProps) {
-  const { grants, automationGrants, criticalTools, activity, diary, parked, revoke } = useTrustData();
+  const { grants, automationGrants, rules, criticalTools, activity, diary, parked, revoke, revokeRule } = useTrustData();
 
   return (
     <div className="fl-trust" role="dialog" aria-modal="true" aria-label="Trust">
@@ -51,12 +59,26 @@ export function TrustScreen({ onClose }: TrustScreenProps) {
         {grants.map((g) => (
           <div key={g.id} className="fl-trust-row">
             <div className="fl-trust-row-main">
-              <div className="fl-trust-row-title">{toolAction(g.tool).request} · {g.scopePreview}</div>
+              <div className="fl-trust-row-title">{g.plainText ?? `${toolAction(g.tool).request} · ${g.scopePreview}`}</div>
               <div className="fl-trust-row-meta">since {relativeTimeLabel(Date.parse(g.since))}</div>
             </div>
             {g.id && (
               <button type="button" className="fl-btn" onClick={() => revoke(g.id!)}>Ask me again</button>
             )}
+          </div>
+        ))}
+      </section>
+
+      <section className="fl-trust-section">
+        <h3 className="fl-trust-section-head">Rules</h3>
+        {rules.length === 0 && <div className="fl-trust-empty">No standing rules yet.</div>}
+        {rules.map((r) => (
+          <div key={r.id} className="fl-trust-row">
+            <div className="fl-trust-row-main">
+              <div className="fl-trust-row-title">Rule: &quot;{r.plainText}&quot;</div>
+              <div className="fl-trust-row-meta">since {relativeTimeLabel(Date.parse(r.since))}</div>
+            </div>
+            <button type="button" className="fl-btn" onClick={() => revokeRule(r.id)}>Remove rule</button>
           </div>
         ))}
       </section>

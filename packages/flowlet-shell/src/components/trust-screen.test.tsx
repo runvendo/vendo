@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { FlowletShellProvider } from "../context";
-import type { TrustAuditRow, TrustGrantRow, TrustSeam } from "../context";
+import type { TrustAuditRow, TrustGrantRow, TrustRuleRow, TrustSeam } from "../context";
 import { TrustScreen } from "./TrustScreen";
 
 const GRANTS: TrustGrantRow[] = [
@@ -16,6 +16,10 @@ const AUDIT: TrustAuditRow[] = [
   { at: "2026-07-01T03:00:00Z", kind: "automation_firing" },
 ];
 
+const RULES: TrustRuleRow[] = [
+  { id: "r1", toolPattern: "sendClientMessage", plainText: "sending client messages", since: "2026-07-01T00:00:00Z" },
+];
+
 function stubTrust(overrides: Partial<TrustSeam> = {}): TrustSeam {
   return {
     listGrants: async () => GRANTS,
@@ -23,6 +27,8 @@ function stubTrust(overrides: Partial<TrustSeam> = {}): TrustSeam {
     queryAudit: async () => AUDIT,
     listCriticalTools: async () => [{ name: "transfer_money" }],
     resolveFadeProposal: async () => {},
+    listRules: async () => RULES,
+    revokeRule: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -79,6 +85,43 @@ describe("TrustScreen (ENG-193 §3 Moment 12)", () => {
     expect(diary).toMatch(/1 action you approved/);
     expect(diary).toMatch(/1 ran in/);
     expect(diary).toMatch(/Money moves: 1/);
+  });
+
+  it("renders a rule under the Rules heading with a Remove rule button that calls revokeRule (ENG-193 item 6)", async () => {
+    const revokeRule = vi.fn(async () => {});
+    render(
+      <FlowletShellProvider trust={stubTrust({ revokeRule })}>
+        <TrustScreen onClose={() => {}} />
+      </FlowletShellProvider>,
+    );
+    await waitFor(() => screen.getByText(/^Rules$/));
+    await waitFor(() => screen.getByText(/sending client messages/i));
+    fireEvent.click(screen.getByText(/Remove rule/i));
+    expect(revokeRule).toHaveBeenCalledWith("r1");
+  });
+
+  it("shows an empty state (no crash) when there are no rules (ENG-193 item 6)", async () => {
+    render(
+      <FlowletShellProvider trust={stubTrust({ listRules: async () => [] })}>
+        <TrustScreen onClose={() => {}} />
+      </FlowletShellProvider>,
+    );
+    await waitFor(() => screen.getByText(/^Rules$/));
+    expect(screen.getByText(/No standing rules yet/i)).toBeTruthy();
+    expect(screen.queryByText(/Remove rule/i)).toBeNull();
+  });
+
+  it("prefers a grant's plainText over its scopePreview when present (ENG-193 item 6)", async () => {
+    const grants: TrustGrantRow[] = [
+      { id: "g2", tool: "sendClientMessage", scopePreview: "any input", plainText: "don't ask about invoices", since: "2026-07-01T00:00:00Z", source: "compiled-rule" },
+    ];
+    render(
+      <FlowletShellProvider trust={stubTrust({ listGrants: async () => grants })}>
+        <TrustScreen onClose={() => {}} />
+      </FlowletShellProvider>,
+    );
+    await waitFor(() => screen.getByText(/don't ask about invoices/i));
+    expect(screen.queryByText(/any input/i)).toBeNull();
   });
 
   it("fires onClose from the close control", async () => {
