@@ -1,5 +1,6 @@
 import type { FlowletUIMessage } from "../protocol";
 import type { UINode } from "../ui";
+import type { CompiledRuleStore } from "./compiled-rules";
 import type { GrantStore } from "./grants";
 import type { Principal } from "./principal";
 
@@ -26,6 +27,9 @@ export interface Store {
   /** ENG-193: standing user permission grants. Optional — additive to the
    *  frozen seam (same pattern as the reserved memory member). */
   grants?: GrantStore;
+  /** ENG-193 item 6: compiled "always ask before X" steering rules. Optional
+   *  — additive to the frozen seam, same pattern as `grants`. */
+  rules?: CompiledRuleStore;
 }
 
 export interface ThreadRecord {
@@ -145,6 +149,8 @@ export type AuditEvent = { at: string; principal: Principal } & (
   | { kind: "grant_revoked"; grantId: string; tool: string }
   | { kind: "judge_escalation"; toolName: string; reason: string }
   | { kind: "consent"; consentId: string; decision: "yes" | "no" | "subset" }
+  | { kind: "rule_created"; ruleId: string; toolPattern: string; plainText: string }
+  | { kind: "rule_revoked"; ruleId: string; toolPattern: string }
 );
 
 /**
