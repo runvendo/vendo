@@ -96,6 +96,43 @@ function collectExpressions(spec: AutomationSpec): string[] {
   return expressions;
 }
 
+/**
+ * Every tool name a spec may invoke: tool steps at any nesting (branch
+ * then/else, for_each children), agent-step `tools` allowlists, and
+ * agentic-mode's own `execution.tools` allowlist.
+ */
+function collectReferencedTools(spec: AutomationSpec): Set<string> {
+  const names = new Set<string>();
+  if (spec.execution.mode === "agent") {
+    for (const name of spec.execution.tools) names.add(name);
+  } else {
+    walkSteps(spec.execution.steps, (step) => {
+      if (step.type === "tool") names.add(step.tool);
+      else if (step.type === "agent") for (const name of step.tools) names.add(name);
+    });
+  }
+  return names;
+}
+
+/**
+ * Tools a spec may not reference at all: missing from the closed world, or
+ * present but client-executed (`.flowlet/tools.json` host tools ride the
+ * user's browser session and cannot run unattended — spec section "Unattended-
+ * tool honesty"). Checked once, up front, so create/update fail before any
+ * store write instead of the interpreter discovering it mid-run.
+ */
+function findUnattendedTools(
+  spec: AutomationSpec,
+  registered: Record<string, RegisteredTool>,
+): string[] {
+  const offenders: string[] = [];
+  for (const name of collectReferencedTools(spec)) {
+    const descriptor = registered[name]?.descriptor;
+    if (!descriptor || descriptor.executor === "client") offenders.push(name);
+  }
+  return offenders;
+}
+
 /** Semantic validation beyond the zod shape. Returns human/model-readable errors. */
 function validateSpecSemantics(
   spec: AutomationSpec,
@@ -104,14 +141,7 @@ function validateSpecSemantics(
   grantedTools: readonly string[],
 ): string[] {
   const errors: string[] = [];
-  const referencedTools = new Set<string>();
-
-  const checkTool = (name: string, where: string): void => {
-    referencedTools.add(name);
-    if (!registered[name]) {
-      errors.push(`${where}: tool "${name}" is not registered — use only available tools`);
-    }
-  };
+  const referencedTools = collectReferencedTools(spec);
 
   if (spec.trigger.type === "host_event" && hostEvents !== undefined) {
     if (!hostEvents.includes(spec.trigger.event)) {
@@ -122,26 +152,20 @@ function validateSpecSemantics(
     }
   }
 
-  if (spec.execution.mode === "agent") {
-    for (const name of spec.execution.tools) checkTool(name, "execution.tools");
-  } else {
+  if (spec.execution.mode !== "agent") {
     walkSteps(spec.execution.steps, (step) => {
-      if (step.type === "tool") {
-        checkTool(step.tool, `step "${step.id}"`);
-        const descriptor = registered[step.tool]?.descriptor;
-        if (
-          step.onError?.strategy === "retry" &&
-          descriptor !== undefined &&
-          descriptor.annotations.idempotentHint !== true &&
-          descriptor.annotations.readOnlyHint !== true
-        ) {
-          errors.push(
-            `step "${step.id}": onError.retry requires an idempotent tool; ` +
-              `"${step.tool}" is not marked idempotent`,
-          );
-        }
-      } else if (step.type === "agent") {
-        for (const name of step.tools) checkTool(name, `step "${step.id}" tools`);
+      if (step.type !== "tool") return;
+      const descriptor = registered[step.tool]?.descriptor;
+      if (
+        step.onError?.strategy === "retry" &&
+        descriptor !== undefined &&
+        descriptor.annotations.idempotentHint !== true &&
+        descriptor.annotations.readOnlyHint !== true
+      ) {
+        errors.push(
+          `step "${step.id}": onError.retry requires an idempotent tool; ` +
+            `"${step.tool}" is not marked idempotent`,
+        );
       }
     });
   }
@@ -243,6 +267,16 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
     | { ok: false; errors: string[] }
   > => {
     const registered = await config.registeredTools();
+    const unattended = findUnattendedTools(spec, registered);
+    if (unattended.length > 0) {
+      return {
+        ok: false,
+        errors: [
+          `tool(s) ${unattended.join(", ")} are not server-registered — client-executed host ` +
+            `tools cannot run unattended; register a server tool via automations.tools`,
+        ],
+      };
+    }
     const errors = validateSpecSemantics(spec, registered, config.hostEvents, grantedTools);
     if (errors.length > 0) return { ok: false, errors };
     return { ok: true, registered, grants: buildGrants(spec, registered, grantedTools, now()) };

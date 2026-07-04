@@ -158,6 +158,137 @@ describe("create_automation", () => {
     expect(await store.list(scope)).toHaveLength(0);
   });
 
+  it("rejects a client-executed host tool with the unattended-tool error, not the generic one", async () => {
+    const { store, exec } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        execution: {
+          mode: "steps",
+          steps: [{ id: "send", type: "tool", tool: "host_fetch_txns", input: {} }],
+        },
+      }),
+    });
+    expect(result["ok"]).toBe(false);
+    expect(String(result["errors"])).toMatch(/server-registered|cannot run unattended/i);
+    expect(String(result["errors"])).toMatch(/host_fetch_txns/);
+    expect(await store.list(scope)).toHaveLength(0);
+  });
+
+  it("rejects an unattended tool nested inside a branch arm", async () => {
+    const { store, exec } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        execution: {
+          mode: "steps",
+          steps: [
+            {
+              id: "check",
+              type: "branch",
+              if: "trigger.direction = 'debit'",
+              then: [{ id: "send", type: "tool", tool: "host_fetch_txns", input: {} }],
+              else: [
+                { id: "send_else", type: "tool", tool: "SLACK_SEND_MESSAGE", input: {} },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    expect(result["ok"]).toBe(false);
+    expect(String(result["errors"])).toMatch(/server-registered|cannot run unattended/i);
+    expect(String(result["errors"])).toMatch(/host_fetch_txns/);
+    expect(await store.list(scope)).toHaveLength(0);
+  });
+
+  it("rejects an unattended tool nested inside a for_each", async () => {
+    const { store, exec } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        execution: {
+          mode: "steps",
+          steps: [
+            {
+              id: "loop",
+              type: "for_each",
+              items: "{{ trigger.rows }}",
+              as: "row",
+              steps: [{ id: "send", type: "tool", tool: "host_fetch_txns", input: {} }],
+            },
+          ],
+        },
+      }),
+    });
+    expect(result["ok"]).toBe(false);
+    expect(String(result["errors"])).toMatch(/server-registered|cannot run unattended/i);
+    expect(String(result["errors"])).toMatch(/host_fetch_txns/);
+    expect(await store.list(scope)).toHaveLength(0);
+  });
+
+  it("rejects an unattended tool in an agent step's tools allowlist", async () => {
+    const { store, exec } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        execution: {
+          mode: "steps",
+          steps: [
+            {
+              id: "decide",
+              type: "agent",
+              goal: "judge the transaction",
+              tools: ["host_fetch_txns"],
+              maxToolCalls: 5,
+            },
+          ],
+        },
+      }),
+    });
+    expect(result["ok"]).toBe(false);
+    expect(String(result["errors"])).toMatch(/server-registered|cannot run unattended/i);
+    expect(String(result["errors"])).toMatch(/host_fetch_txns/);
+    expect(await store.list(scope)).toHaveLength(0);
+  });
+
+  it("rejects an unattended tool in agentic-mode's execution.tools allowlist", async () => {
+    const { store, exec } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        execution: {
+          mode: "agent",
+          goal: "handle it end to end",
+          tools: ["host_fetch_txns"],
+          maxToolCalls: 10,
+        },
+      }),
+    });
+    expect(result["ok"]).toBe(false);
+    expect(String(result["errors"])).toMatch(/server-registered|cannot run unattended/i);
+    expect(String(result["errors"])).toMatch(/host_fetch_txns/);
+    expect(await store.list(scope)).toHaveLength(0);
+  });
+
+  it("still creates fine when every referenced tool is server-registered (regression)", async () => {
+    const { store, exec } = setup();
+    const result = await exec("create_automation", {
+      spec: validSpec({
+        execution: {
+          mode: "steps",
+          steps: [
+            {
+              id: "check",
+              type: "branch",
+              if: "trigger.direction = 'debit'",
+              then: [
+                { id: "send", type: "tool", tool: "SLACK_SEND_MESSAGE", input: {} },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    expect(result["ok"]).toBe(true);
+    expect(await store.list(scope)).toHaveLength(1);
+  });
+
   it("rejects undeclared host events", async () => {
     const { exec } = setup();
     const result = await exec("create_automation", {
@@ -296,6 +427,33 @@ describe("lifecycle tools", () => {
     const stored = (await store.get(scope, id))!.spec;
     expect(stored.dslVersion).toBe(1);
     expect(stored.name).toBe("Renamed");
+  });
+
+  it("rejects an update referencing an unattended tool, keeping the previous version live", async () => {
+    const { store, exec } = setup();
+    const created = await exec("create_automation", {
+      spec: validSpec(),
+      grantedTools: ["SLACK_SEND_MESSAGE"],
+    });
+    const id = (created["automation"] as Record<string, unknown>)["id"] as string;
+
+    const result = await exec("update_automation", {
+      id,
+      spec: validSpec({
+        execution: {
+          mode: "steps",
+          steps: [{ id: "send", type: "tool", tool: "host_fetch_txns", input: {} }],
+        },
+      }),
+    });
+    expect(result["ok"]).toBe(false);
+    expect(String(result["errors"])).toMatch(/server-registered|cannot run unattended/i);
+    expect(String(result["errors"])).toMatch(/host_fetch_txns/);
+
+    const automation = await store.get(scope, id);
+    expect(automation?.currentVersion).toBe(1);
+    const spec = (automation?.spec ?? {}) as { name?: string };
+    expect(spec.name).toBe("Snitch");
   });
 
   it("pause cancels the schedule, resume re-registers it, delete removes", async () => {
