@@ -8,11 +8,13 @@
  * when the policy answers "approve".
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import type { UINode, ActionRequest, ActionResult, RegisteredComponent } from "@flowlet/core";
 import { FlowletStage } from "@flowlet/react";
 import { ApprovalCard } from "@flowlet/shell";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@flowlet/components";
 import type { BrandTokens } from "@flowlet/components/theme";
+import { NAVIGATE_ACTION, isSafeAppPath } from "./navigate";
 
 interface Sources {
   react: string;
@@ -76,6 +78,7 @@ export interface SandboxStageProps {
 }
 
 export function SandboxStage({ node, brand, components, basePath }: SandboxStageProps): ReactNode {
+  const router = useRouter();
   const [sources, setSources] = useState<Sources | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Pending approvals keyed by requestId: concurrent gated dispatches each get
@@ -122,6 +125,17 @@ export function SandboxStage({ node, brand, components, basePath }: SandboxStage
   if (!sources) return <div data-testid="stage-loading" aria-busy="true" />;
 
   const onAction = async (req: ActionRequest): Promise<ActionResult> => {
+    // Reserved navigation from the link/router shims: handled here, never sent
+    // to /action. Validate the href (same-app path only) before touching the
+    // host router — a generated view cannot navigate off-site or run a scheme.
+    if (req.action === NAVIGATE_ACTION) {
+      const href = (req.payload as { href?: unknown } | undefined)?.href;
+      if (isSafeAppPath(href)) {
+        router.push(href);
+        return { result: { navigated: href } };
+      }
+      return { error: { code: "unsafe_navigation", message: `blocked navigation to ${String(href)}` } };
+    }
     // First pass: let the policy decide.
     const first = await postAction(basePath, req.action, req.payload);
     if (first.needsApproval !== true) return { result: first.result };
