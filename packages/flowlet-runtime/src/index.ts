@@ -84,6 +84,10 @@ export { InAppChannels, type InAppChannelsConfig } from "./embedded/in-app-chann
 // slot and tests.
 export { createInMemoryGrantStore } from "./grant-store";
 
+// Compiled-rule store (ENG-193 §4.8/item-6): in-memory CompiledRuleStore for
+// the embedded seam slot and tests.
+export { createInMemoryCompiledRuleStore } from "./rule-store";
+
 // FadeTracker (ENG-193 §4.4): per-principal fade eligibility, injectable
 // in-memory state.
 export { createFadeTracker } from "./fade-tracker";
