@@ -11,7 +11,7 @@
  * means connecting e.g. gmail builds a FRESH agent that ingests it.
  */
 import type { LanguageModel, ToolSet } from "ai";
-import type { FlowletAgent, RegisteredComponent } from "@flowlet/core";
+import type { EnvManifest, FlowletAgent, RegisteredComponent } from "@flowlet/core";
 import { createFlowletAgent, buildBrandGuidance, type ApprovalPolicy } from "@flowlet/runtime";
 import type { BrandTokens } from "@flowlet/components/theme";
 import {
@@ -180,6 +180,8 @@ export interface AgentFactoryConfig {
   /** Extra cache-key material from the host (e.g. store generation). */
   cacheKey?: () => string;
   maxSteps?: number;
+  /** Sandbox environment manifest (flowlet sync) → engine prompt precision. */
+  envManifest?: EnvManifest;
 }
 
 /**
@@ -203,6 +205,7 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         ...(config.toolkits ? { composio: { config: { toolkits } } } : {}),
         ...(config.tools ? { tools: config.tools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
+        ...(config.envManifest ? { envManifest: config.envManifest } : {}),
         components: config.components,
       });
       agents.set(key, agent);

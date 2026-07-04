@@ -5,10 +5,11 @@
  * resolves the principal, and streams.
  */
 import { createUIMessageStreamResponse } from "ai";
-import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
+import type { FlowletAgent, FlowletUIMessage, RemixSourceResolver } from "@flowlet/core";
 import { hostToolset } from "@flowlet/runtime";
 import type { HostToolDefinition } from "@flowlet/core";
 import { resolvePrincipal } from "./guard";
+import { enrichAnchorSources } from "./remix-enrich";
 import type { FlowletHandlerOptions } from "./options";
 
 interface ChatRequestBody {
@@ -21,6 +22,9 @@ export interface ChatDeps {
   options: FlowletHandlerOptions;
   /** False when no model key is configured → chat answers 503 instead of streaming a provider error. */
   chatEnabled: boolean;
+  /** Server-side anchor source lookup (remix-fidelity). Client-supplied
+   *  `scoped.source` is stripped regardless. */
+  resolveRemixSource?: RemixSourceResolver;
 }
 
 export async function handleChat(req: Request, deps: ChatDeps): Promise<Response> {
@@ -47,7 +51,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   }
 
   const stream = deps.getAgent().run({
-    messages,
+    messages: enrichAnchorSources(messages, deps.resolveRemixSource ?? (() => undefined)),
     // The app's own API surface enters through the caller seam: no execute —
     // the policy gates each call and the BROWSER executes approved ones on
     // the user's session via the SDK's host-tool runner.

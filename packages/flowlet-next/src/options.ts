@@ -58,6 +58,10 @@ export interface FlowletHandlerOptions {
   automations?: false | { tools?: Record<string, RegisteredTool> };
   /** Max model->tool steps per turn. Default: engine default. */
   maxSteps?: number;
+  /** Remix-source lookup for hosts without the extractor: map or resolver;
+   *  consulted before `.flowlet/remix-sources.json` (`undefined` falls
+   *  through). Values are raw component source strings. */
+  remixSources?: Record<string, string> | ((anchorId: string) => string | undefined);
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
@@ -86,6 +90,9 @@ const optionsSchema = z
       .optional(),
     automations: z
       .union([z.literal(false), z.object({ tools: z.record(z.custom<RegisteredTool>()).optional() }).strict()])
+      .optional(),
+    remixSources: z
+      .union([z.record(z.string(), z.string()), fn<(anchorId: string) => string | undefined>()])
       .optional(),
     maxSteps: z.number().int().positive().optional(),
   })
