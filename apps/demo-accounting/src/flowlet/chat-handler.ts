@@ -10,8 +10,11 @@
  * reachable deployment.
  */
 import { createUIMessageStreamResponse } from "ai";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
 import { hostToolset } from "@flowlet/runtime";
+import { enrichAnchorSources, createSourceResolver } from "@flowlet/next";
 import { DEMO_PRINCIPAL } from "./principal";
 import { cadenceHostToolDefs } from "./host-tools";
 import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";
@@ -19,6 +22,27 @@ import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";
 interface ChatRequestBody {
   messages?: FlowletUIMessage[];
 }
+
+/**
+ * Remix-source map for the demo. `deadline-list.tsx` is a client component —
+ * a RAW server-side file read (never an import, which would drag Next/browser
+ * deps into the Node route). The @/-relative path resolves from the app root.
+ */
+const remixSourceMap: Record<string, string> = {
+  "upcoming-deadlines": "src/components/dashboard/deadline-list.tsx",
+};
+const resolveRemixSource = createSourceResolver({
+  option: (anchorId) => {
+    const rel = remixSourceMap[anchorId];
+    if (!rel) return undefined;
+    try {
+      return readFileSync(path.join(process.cwd(), rel), "utf8");
+    } catch {
+      return undefined; // file moved — fall open to the DOM-snapshot baseline
+    }
+  },
+  captured: {},
+});
 
 export async function handleChat(req: Request, agent: FlowletAgent): Promise<Response> {
   if (!demoPrincipalAllowed(req)) {
@@ -32,7 +56,9 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
     return Response.json({ error: "messages must be a non-empty array" }, { status: 400 });
   }
   const stream = agent.run({
-    messages,
+    // Strip any client-supplied source, then enrich the scoped anchor from the
+    // raw file read (remix-fidelity epic).
+    messages: enrichAnchorSources(messages, resolveRemixSource),
     // Cadence's own API surface enters through the caller seam (ENG-202): no
     // execute — the policy gates each call and the BROWSER executes approved
     // ones on the user's session via the SDK's host-tool runner.

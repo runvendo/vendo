@@ -1,0 +1,10 @@
+{
+  "anchors": {
+    "upcoming-deadlines": {
+      "@/lib/cn": {
+        "kind": "real"
+      }
+    }
+  },
+  "vendorSizes": {}
+}

@@ -21,7 +21,7 @@ function hrefString(href: LinkProps["href"]): string {
   return typeof href === "string" ? href : (href.pathname ?? "");
 }
 
-export default function Link({ href, children, onClick, prefetch: _p, replace: _r, scroll: _s, ...rest }: LinkProps) {
+export default function Link({ href, children, onClick, prefetch: _p, replace: _r, scroll: _s, ...rest }: LinkProps): import("react").ReactElement {
   const target = hrefString(href);
   return createElement(
     "a",
