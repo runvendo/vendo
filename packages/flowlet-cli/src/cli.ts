@@ -10,7 +10,9 @@ import { runPublish } from "./publish.js";
 const HELP = `flowlet — Flowlet one-click dev tool
 
 Usage:
-  flowlet init [dir] [--skip-llm] [--force]   Extract theme, tools, components into .flowlet/
+  flowlet init [dir] [--skip-llm] [--force]   Extract theme/tools/components into .flowlet/ AND
+                                              wire a Next.js App Router app (route handler,
+                                              provider, .env.example, sandbox assets)
   flowlet publish [dir]                       Publish the manifest (stub — registry lands with ENG-198)
 
 Options:

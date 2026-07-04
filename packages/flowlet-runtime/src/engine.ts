@@ -24,7 +24,7 @@ import {
   type ToolSet,
   type UIMessageChunk,
 } from "ai";
-import type { FlowletAgent, RunInput, FlowletUIMessage } from "@flowlet/core";
+import type { FlowletAgent, RunInput, FlowletUIMessage, RegisteredComponent } from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
 import { createRenderViewTool } from "./render-view-tool";
@@ -76,6 +76,13 @@ export interface FlowletAgentConfig {
   policyVersion?: string;
   /** Max model->tool steps before the loop stops. Defaults to 8. */
   maxSteps?: number;
+  /**
+   * F1 component registry (prewired + host). When provided, `render_view`
+   * validates `source:"host"` nodes server-side — unknown names and
+   * schema-invalid props return correctable tool errors the model can repair
+   * before anything streams (ENG-186).
+   */
+  components?: RegisteredComponent[];
 }
 
 /**
@@ -176,7 +183,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             : { userId: "" };
 
         // 2. The render + connect tools, bound to this run's stream writer.
-        const renderViewTool = createRenderViewTool(writer);
+        const renderViewTool = createRenderViewTool(writer, { components: config.components });
         const requestConnectTool = createRequestConnectTool(writer);
 
         // 3. Composio ingestion (fail-closed inside ingestComposioTools).

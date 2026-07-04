@@ -39,8 +39,7 @@ async function postConnect(toolkit: string): Promise<ConnectResponse> {
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`connect failed: ${res.status}`);
-  const json = (await res.json()) as { data?: ConnectResponse };
-  return json.data ?? { connected: false };
+  return (await res.json()) as ConnectResponse;
 }
 
 async function pollStatus(toolkit: string, account: string): Promise<"active" | "pending" | "failed"> {
@@ -49,9 +48,8 @@ async function pollStatus(toolkit: string, account: string): Promise<"active" | 
     { cache: "no-store" },
   );
   if (!res.ok) return "failed";
-  const json = (await res.json()) as { data?: { status?: string } };
-  const status = json.data?.status;
-  return status === "active" || status === "failed" ? status : "pending";
+  const json = (await res.json()) as { status?: string };
+  return json.status === "active" || json.status === "failed" ? json.status : "pending";
 }
 
 export async function runConnectFlow(toolkit: string): Promise<ConnectOutcome> {

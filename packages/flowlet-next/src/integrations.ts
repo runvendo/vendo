@@ -1,0 +1,129 @@
+/**
+ * /api/flowlet/integrations — the REAL Composio connect flow behind the
+ * in-memory connections store that gates agent ingestion.
+ *
+ *  - GET (no query) returns the catalog with live `connected` flags.
+ *  - GET ?status&id=<toolkit>&account=<connectedAccountId> polls Composio; when
+ *    ACTIVE it ALSO marks the toolkit connected (the agent gains it next turn,
+ *    because the agent cache keys on the connected set).
+ *  - POST { id, action: "connect" } fast-paths an already-authorized toolkit,
+ *    else begins OAuth and returns { redirectUrl, connectedAccountId }.
+ *  - POST { id, action: "disconnect" } flips the store off (store only).
+ *
+ * CAPABILITY-ADDITIVE: without COMPOSIO_API_KEY the endpoints stay up but
+ * inert — GET reports `enabled: false` with an empty catalog (the client
+ * hides the integrations UI), POST answers 503. No errors, no crashes.
+ */
+import { createComposioClient, type ComposioClient } from "@flowlet/runtime";
+import { resolvePrincipal } from "./guard";
+import type { FlowletHandlerOptions } from "./options";
+import type { ConnectionsStore } from "./connections";
+
+export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
+export { createConnectionsStore } from "./connections";
+export type { ConnectionsStore } from "./connections";
+
+export interface IntegrationsDeps {
+  store: ConnectionsStore;
+  enabled: boolean;
+  options: FlowletHandlerOptions;
+  /** Injectable for tests; defaults to a lazily-built real client. */
+  client?: ComposioClient;
+}
+
+// Lazily-constructed singleton: never touches the network until first use.
+let realClient: ComposioClient | undefined;
+function getClient(deps: IntegrationsDeps): ComposioClient {
+  if (deps.client) return deps.client;
+  if (!realClient) {
+    realClient = createComposioClient({ apiKey: process.env["COMPOSIO_API_KEY"] });
+  }
+  return realClient;
+}
+
+/** True iff `id` is a toolkit in the handler's catalog. */
+function isKnownToolkit(deps: IntegrationsDeps, id: string): boolean {
+  return deps.store.list().some((i) => i.id === id);
+}
+
+export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps): Promise<Response> {
+  const guard = await resolvePrincipal(req, deps.options);
+  if (!guard.ok) return guard.response;
+  if (!deps.enabled) return Response.json({ enabled: false, integrations: [] });
+
+  const url = new URL(req.url);
+  if (url.searchParams.has("status")) {
+    const id = url.searchParams.get("id") ?? "";
+    const account = url.searchParams.get("account") ?? "";
+    if (!id || !account) {
+      return Response.json({ error: "status requires id and account" }, { status: 400 });
+    }
+    if (!isKnownToolkit(deps, id)) {
+      return Response.json({ error: "unknown integration id" }, { status: 400 });
+    }
+    try {
+      const status = await getClient(deps).connectionStatus(account);
+      // The store is the agent gate. Marking a toolkit connected requires TWO
+      // facts: the polled account is ACTIVE *and* this user genuinely has an
+      // active connection for THIS toolkit — otherwise a caller could pass any
+      // active account id against any toolkit id and flip it on without OAuth.
+      if (status === "active" && (await getClient(deps).hasActiveConnection(guard.principal.userId, id))) {
+        deps.store.connect(id);
+      }
+      return Response.json({ status });
+    } catch {
+      return Response.json({ status: "failed" as const });
+    }
+  }
+  return Response.json({ enabled: true, integrations: deps.store.list() });
+}
+
+export async function handleIntegrationsPost(req: Request, deps: IntegrationsDeps): Promise<Response> {
+  const guard = await resolvePrincipal(req, deps.options);
+  if (!guard.ok) return guard.response;
+  if (!deps.enabled) {
+    return Response.json(
+      { error: "integrations are disabled — set COMPOSIO_API_KEY to enable them" },
+      { status: 503 },
+    );
+  }
+
+  let body: { id?: unknown; action?: unknown };
+  try {
+    body = (await req.json()) as { id?: unknown; action?: unknown };
+  } catch {
+    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+  const id = typeof body.id === "string" ? body.id : "";
+  if (!id) return Response.json({ error: "missing integration id" }, { status: 400 });
+  // Validate against the catalog BEFORE touching Composio, so a caller can't
+  // spend the server's Composio key initiating OAuth for arbitrary slugs.
+  if (!isKnownToolkit(deps, id)) {
+    return Response.json({ error: "unknown integration id" }, { status: 400 });
+  }
+  const userId = guard.principal.userId;
+
+  if (body.action === "connect") {
+    try {
+      // Fast path: already authorized in Composio → mark connected immediately.
+      if (await getClient(deps).hasActiveConnection(userId, id)) {
+        deps.store.connect(id);
+        return Response.json({ connected: true });
+      }
+      const { redirectUrl, connectedAccountId } = await getClient(deps).authorize(userId, id);
+      return Response.json({ connected: false, redirectUrl, connectedAccountId });
+    } catch (err) {
+      // Log the detail server-side; don't echo the SDK's message (it can carry
+      // internal URLs/ids) back to the caller.
+      console.error("[flowlet] integrations connect failed:", err);
+      return Response.json({ error: "connect failed" }, { status: 400 });
+    }
+  }
+
+  if (body.action === "disconnect") {
+    deps.store.disconnect(id);
+    return Response.json({ enabled: true, integrations: deps.store.list() });
+  }
+
+  return Response.json({ error: "action must be 'connect' or 'disconnect'" }, { status: 400 });
+}

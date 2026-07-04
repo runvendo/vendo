@@ -7,6 +7,10 @@ export interface RegisteredComponent {
   description: string;        // drives LLM selection
   propsSchema: FlowletSchema<unknown>;
   source: UINodeSource;
+  /** Registry compat version (ENG-186). Host teams bump it on a breaking
+   *  change to a component's props/behavior; saved flowlets stamp it at save
+   *  time and diff it on reopen to surface drift. Unset means "1". */
+  version?: string;
 }
 
 export interface ComponentRegistry {

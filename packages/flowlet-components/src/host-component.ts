@@ -4,8 +4,16 @@ import { RESERVED_COMPONENT_NAMES } from "@flowlet/core";
 import type { PrewiredDescriptor } from "./descriptor";
 
 /** A host component's registration metadata. Same shape as PrewiredDescriptor
- *  (React-free, safe for server code) — only the stamped `source` differs. */
-export type HostComponentDescriptor = PrewiredDescriptor;
+ *  (React-free, safe for server code) — only the stamped `source` differs,
+ *  plus an optional registry compat version (ENG-186). */
+export type HostComponentDescriptor = PrewiredDescriptor & { version?: string };
+
+export interface HostComponentOptions {
+  /** Registry compat version. Bump on a BREAKING change to the component's
+   *  props or behavior — saved flowlets stamp the version they were built
+   *  against and warn on reopen when it moved. Unset means "1". */
+  version?: string;
+}
 
 /**
  * Declare one of the HOST APP's own components for the agent's menu.
@@ -23,6 +31,7 @@ export function hostComponent(
   name: string,
   description: string,
   propsSchema: z.ZodType,
+  options: HostComponentOptions = {},
 ): HostComponentDescriptor {
   if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) {
     throw new Error(
@@ -43,11 +52,13 @@ export function hostComponent(
     name,
     description,
     propsSchema,
+    version: options.version,
     toRegistered: () => ({
       name,
       description,
       propsSchema: propsSchema as FlowletSchema<unknown>,
       source: "host",
+      ...(options.version !== undefined ? { version: options.version } : {}),
     }),
   };
 }

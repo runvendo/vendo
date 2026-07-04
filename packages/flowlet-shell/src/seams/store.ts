@@ -10,6 +10,10 @@ export interface Flowlet {
   /** The user prompt that originally produced the view. */
   prompt?: string;
   pinned?: boolean;
+  /** Host-component name → registry version the view was saved against
+   *  (ENG-186; see `stampHostComponents`). Absent on trees with no host nodes
+   *  and on pre-versioning records — both diff as clean. */
+  components?: Record<string, string>;
   /** Stamped by the store on first save; preserved on later saves. */
   createdAt?: number;
   updatedAt: number;

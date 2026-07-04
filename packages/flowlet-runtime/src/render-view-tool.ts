@@ -9,13 +9,23 @@ import { tool } from "ai";
 import type { UIMessageStreamWriter } from "ai";
 import { z } from "zod";
 import {
+  hostPropIssues,
   validateGeneratedPayload,
   type FlowletUIMessage,
+  type RegisteredComponent,
   type UINode,
 } from "@flowlet/core";
 import { compileComponentSource } from "./compile-component";
 
 type FlowletWriter = UIMessageStreamWriter<FlowletUIMessage>;
+
+export interface RenderViewToolOptions {
+  /** F1 component registry. When provided, `source:"host"` nodes are validated
+   *  server-side — unknown names and schema-invalid props come back as
+   *  correctable tool errors the model can repair, instead of only degrading
+   *  to placeholders in the stage (ENG-186). */
+  components?: RegisteredComponent[];
+}
 
 const genNodeSchema = z.object({
   id: z.string().describe("Unique node id within this payload."),
@@ -34,7 +44,7 @@ const dataQuerySchema = z.object({
     .describe("The exact input to replay the tool with on refresh."),
 });
 
-export function createRenderViewTool(writer: FlowletWriter) {
+export function createRenderViewTool(writer: FlowletWriter, options: RenderViewToolOptions = {}) {
   // Node ids key saved flowlets (ENG-183), and a tool instance lives for ONE
   // request — a bare counter would make every session's first view "view-1".
   // The random suffix keeps ids unique across instances.
@@ -71,6 +81,12 @@ export function createRenderViewTool(writer: FlowletWriter) {
       const validation = validateGeneratedPayload(payload);
       if (!validation.ok) {
         return `render_view error (${validation.error.code}): ${validation.error.message}`;
+      }
+      if (options.components) {
+        const issues = hostPropIssues(validation.payload, options.components);
+        if (issues.length > 0) {
+          return `render_view error (host): ${issues.map((i) => i.message).join(" | ")}`;
+        }
       }
       // Validation ran on the ORIGINAL authored payload (name/cap checks apply
       // to what the model emitted). Compile each component's JSX/TS to plain ESM

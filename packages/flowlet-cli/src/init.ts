@@ -7,6 +7,7 @@ import { extractComponents } from "./components/extract-components.js";
 import { cliModel } from "./llm.js";
 import { renderReport, type InitReport } from "./report.js";
 import { writeGenerated } from "./fsx.js";
+import { wireNextApp, renderWiring } from "./next-wiring.js";
 
 export interface InitOptions {
   targetDir: string;
@@ -63,5 +64,28 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return 1;
   }
   console.log(renderReport(report));
+
+  // The install codemod (Next.js App Router): route handler, provider wrap,
+  // .env.example, sandbox assets, dependency. Fail-open by design — anything
+  // uncertain is skipped and reported, never guessed.
+  try {
+    const wiring = await wireNextApp(targetDir, info, { force: opts.force });
+    const rendered = renderWiring(wiring);
+    if (rendered) console.log(rendered);
+    if (wiring) {
+      console.log(
+        [
+          "",
+          "Next steps:",
+          "  1. install deps (npm install / pnpm install)",
+          "  2. cp .env.example .env.local  and paste your ANTHROPIC_API_KEY",
+          "  3. npm run dev — then hit the launcher (or Cmd/Ctrl+K) and ask for a view",
+        ].join("\n"),
+      );
+    }
+  } catch (err) {
+    console.error(`next wiring failed (review \`git diff\` — wiring writes are individually atomic): ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
   return 0;
 }

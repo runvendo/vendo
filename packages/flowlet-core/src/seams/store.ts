@@ -59,6 +59,10 @@ export interface SavedFlowlet {
   /** Re-executed via the Executor on reopen — never a raw DB query. */
   query: { toolName: string; input: unknown };
   originatingPrompt: string;
+  /** Host-component name → registry version stamped at save time (ENG-186).
+   *  Reopen diffs it against the live registry to surface component drift.
+   *  Absent on trees with no host nodes and on pre-versioning records. */
+  components?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

@@ -14,7 +14,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { wrapLanguageModel } from "ai";
 import { createFlowletAgent, buildBrandGuidance } from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
-import { prewiredComponents, brandToCssVars } from "@flowlet/components/descriptors";
+import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
 import { jsonRepairMiddleware } from "./json-repair";
@@ -28,18 +28,7 @@ const brand = brandTokensSchema.parse(brandJson);
 
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
 
-/** Compact "{ field, optional? }" hint from a component's zod props schema. */
-function fieldHint(schema: unknown): string {
-  const shape = (schema as { shape?: Record<string, { isOptional?: () => boolean }> }).shape;
-  if (!shape) return "";
-  const parts = Object.entries(shape).map(([key, def]) =>
-    typeof def?.isOptional === "function" && def.isOptional() ? `${key}?` : key,
-  );
-  return parts.length ? `  props: { ${parts.join(", ")} }` : "";
-}
-
-const catalogLines = (components: ReadonlyArray<{ name: string; description: string; propsSchema: unknown }>) =>
-  components.map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`).join("\n");
+const catalogLines = componentPromptCatalog;
 
 function buildInstructions(): string {
   return [
@@ -195,5 +184,6 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     instructions: buildInstructions(),
     tools: opts.extraTools,
     maxSteps: 10,
+    components: [...prewiredComponents, ...gmailHostComponents],
   });
 }

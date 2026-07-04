@@ -11,6 +11,7 @@ export * from "./seams/store";
 export * from "./seams/web-storage";
 export * from "./seams/query";
 export * from "./reopen";
+export * from "./component-drift";
 export * from "./seams/integrations";
 
 export * from "./components/StreamingText";

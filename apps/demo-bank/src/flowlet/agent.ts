@@ -18,7 +18,7 @@ import {
   type ComposioClient,
 } from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
-import { prewiredComponents, brandToCssVars } from "@flowlet/components/descriptors";
+import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@flowlet/components/descriptors";
 import { mapleHostComponents } from "./host-components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
@@ -28,32 +28,19 @@ import { demoAutomationInstructions } from "./automations";
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
 
-/** Compact "{ field, optional? }" hint from a component's zod props schema, so
- *  the model uses exact prop names (e.g. Callout's `text`, not `body`). */
-function fieldHint(schema: unknown): string {
-  const shape = (schema as { shape?: Record<string, { isOptional?: () => boolean }> }).shape;
-  if (!shape) return "";
-  const parts = Object.entries(shape).map(([key, def]) =>
-    typeof def?.isOptional === "function" && def.isOptional() ? `${key}?` : key,
-  );
-  return parts.length ? `  props: { ${parts.join(", ")} }` : "";
-}
-
 function componentCatalog(): string {
-  return prewiredComponents
-    .map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`)
-    .join("\n");
+  return componentPromptCatalog(prewiredComponents);
 }
 
 /** The host app's registered components (source:'host') — data-driven from the
  *  registry, so newly registered components appear here automatically. */
 function hostComponentCatalog(): string {
-  return mapleHostComponents
-    .map((c) => `- ${c.name}: ${c.description}${fieldHint(c.propsSchema)}`)
-    .join("\n");
+  return componentPromptCatalog(mapleHostComponents);
 }
 
-function buildInstructions(): string {
+/** Maple's full system prompt — consumed by the demo agent factory below and
+ *  by the @flowlet/next catch-all route (`instructions` option). */
+export function buildInstructions(): string {
   return [
     "You are Maple's assistant, an agent embedded in Maple (a consumer bank app). You can answer",
     "in plain text AND, when it helps, generate bespoke UI on demand via render_view.",
@@ -223,5 +210,6 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     },
     tools: opts.extraTools,
     maxSteps: 10,
+    components: [...prewiredComponents, ...mapleHostComponents],
   });
 }

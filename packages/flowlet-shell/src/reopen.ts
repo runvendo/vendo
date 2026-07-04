@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   applyPointerPatch,
   isGeneratedNode,
@@ -8,6 +8,7 @@ import {
 } from "@flowlet/core";
 import type { Flowlet } from "./seams/store";
 import type { RunQuery } from "./seams/query";
+import { diffHostComponents, NO_DRIFT, type ComponentDrift } from "./component-drift";
 import { useShell } from "./context";
 
 export type RefreshStatus = "live" | "partial" | "snapshot";
@@ -73,8 +74,17 @@ const MAX_REFRESH_FAILURES = 3;
  * Fresh data is written back onto the CURRENT stored record (a rename/pin
  * during a refresh survives; a deleted record is never resurrected).
  */
-export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing: boolean } {
-  const { store, runQuery, refreshIntervalMs } = useShell();
+export function useReopenFlowlet(
+  flowlet: Flowlet,
+): RefreshResult & { refreshing: boolean; drift: ComponentDrift } {
+  const { store, runQuery, refreshIntervalMs, components } = useShell();
+  // Registry drift (ENG-186): which of the view's stamped host components have
+  // been renamed/removed or version-bumped since the save. Empty without a
+  // provider registry or a stamp — old records never warn retroactively.
+  const drift = useMemo(
+    () => (components ? diffHostComponents(flowlet.components, components) : NO_DRIFT),
+    [flowlet.components, components],
+  );
   const [result, setResult] = useState<RefreshResult>({ node: flowlet.node, status: "snapshot", errors: [] });
   const [refreshing, setRefreshing] = useState(false);
 
@@ -172,5 +182,5 @@ export function useReopenFlowlet(flowlet: Flowlet): RefreshResult & { refreshing
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowlet.id, runQuery, store, refreshIntervalMs]);
 
-  return { ...result, refreshing };
+  return { ...result, refreshing, drift };
 }
