@@ -30,10 +30,15 @@ export type NodeHandler = (req: IncomingMessage, res: ServerResponse) => Promise
 export function toNodeHandler(handler: FetchHandler): NodeHandler {
   return async function nodeHandler(req, res) {
     const controller = new AbortController();
-    // "close" fires both on a normal completed exchange and on a premature
-    // client disconnect; aborting after a normal completion is a no-op, so
-    // one listener covers both without extra bookkeeping.
-    req.on("close", () => controller.abort());
+    // Disconnect detection must hang off `res`, NOT `req`: an
+    // IncomingMessage emits "close" when the request MESSAGE completes
+    // (body fully consumed), so a req-side listener would abort every
+    // body-reading POST the moment the handler finishes `await req.json()`.
+    // `res` "close" with `writableEnded === false` is a genuine mid-stream
+    // disconnect; a normally completed response closes with it `true`.
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
 
     let response: Response;
     try {

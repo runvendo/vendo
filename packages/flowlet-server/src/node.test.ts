@@ -121,9 +121,66 @@ describe("toNodeHandler", () => {
     expect(third.done).toBe(true);
   });
 
-  it("cancels the response stream when the client disconnects mid-stream", async () => {
+  it("streams incrementally on a POST whose handler consumed the body first", async () => {
+    // Regression: node's IncomingMessage emits "close" when the request
+    // MESSAGE completes (body fully read), not on client disconnect. A
+    // disconnect detector wired to req "close" therefore aborts every
+    // body-reading POST right after `await req.json()` and the client gets
+    // a 200 with an EMPTY body — exactly the chat/action handler shape.
+    let releaseB!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    const url = await startServer(async (req) => {
+      await req.json();
+      const stream = new ReadableStream({
+        async start(controller) {
+          controller.enqueue(new TextEncoder().encode("chunk-A"));
+          await gate;
+          controller.enqueue(new TextEncoder().encode("chunk-B"));
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+    });
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [] }),
+    });
+    const reader = res.body!.getReader();
+
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    expect(new TextDecoder().decode(first.value)).toBe("chunk-A");
+
+    releaseB();
+    const second = await reader.read();
+    expect(new TextDecoder().decode(second.value)).toBe("chunk-B");
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it("returns a buffered JSON body intact on a POST whose handler consumed the body", async () => {
+    const url = await startServer(async (req) => {
+      const body = (await req.json()) as { n: number };
+      return Response.json({ doubled: body.n * 2 });
+    });
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ n: 21 }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ doubled: 42 });
+  });
+
+  it("cancels the response stream when the client disconnects mid-stream (POST, body consumed)", async () => {
     let cancelled = false;
-    const url = await startServer(async () => {
+    const url = await startServer(async (req) => {
+      await req.json();
       const stream = new ReadableStream({
         start(controller) {
           controller.enqueue(new TextEncoder().encode("chunk-A"));
@@ -136,7 +193,12 @@ describe("toNodeHandler", () => {
     });
 
     const controller = new AbortController();
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [] }),
+      signal: controller.signal,
+    });
     // Read the first chunk to make sure the stream actually started before
     // disconnecting, then abort mid-stream (the server never closes it).
     await res.body!.getReader().read();
