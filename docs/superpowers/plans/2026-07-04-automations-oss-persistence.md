@@ -2,19 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Version:** v2 — after Codex plan review (2 blockers + 13 majors folded in; notably: build on the EXISTING core `ThreadStore`/`SavedFlowletStore` seams, CTE-based approval claim, async PGlite creation, remember-layer wiring that doesn't exist yet, full-tail routing table).
+
 **Goal:** Make every embedded persistence surface durable (automations, decisions, threads, saved flowlets, connections) on one Postgres-dialect database (PGlite default, `DATABASE_URL` for hosted), make schedules fire without a client, and give Composio triggers a signature-verified OSS webhook path.
 
-**Architecture:** New `@flowlet/store` package owns the Drizzle Postgres schema + boot migrations + durable seam implementations. `@flowlet/runtime` gains small additive seam methods (rehydration listing, atomic approval claim, checkpoint versioning, ThreadStore interface). `@flowlet/next` wires storage config, full-tail routing, tick service auth, the Composio webhook, thread persistence, `/flowlets` endpoints, and a `startFlowletScheduler()` boot entry consumed from `instrumentation.ts` (added by the CLI codemod).
+**Architecture:** New `@flowlet/store` package owns the Drizzle Postgres schema + boot migrations + durable implementations of the EXISTING seams (`packages/flowlet-core/src/seams/store.ts` defines `ThreadStore`, `SavedFlowletStore`, `AutomationStore`; runtime refines the automation one). `@flowlet/runtime` gains small additive seam methods. `@flowlet/next` wires storage config, full-tail routing, tick service auth, the Composio webhook, thread persistence, `/flowlets` endpoints, and a `startFlowletScheduler()` boot entry consumed from `instrumentation.ts` (added by the CLI codemod).
 
 **Tech Stack:** Drizzle ORM (`drizzle-orm`, `drizzle-kit`), `@electric-sql/pglite`, `pg` (node-postgres), Vitest, Next 16 App Router, croner (existing).
 
-**Reference spec:** `docs/superpowers/specs/2026-07-04-automations-oss-persistence-design.md` (v2). The semantic reference for the store port is `packages/flowlet-runtime/src/automations/store.ts` (`InMemoryAutomationStore`) and its test suite.
+**Reference spec:** `docs/superpowers/specs/2026-07-04-automations-oss-persistence-design.md` (v2). Semantic reference for the store port: `packages/flowlet-runtime/src/automations/store.ts` (`InMemoryAutomationStore`) and its tests.
 
-**Working rules for every task:** TDD (write the failing test first, watch it fail, implement, watch it pass), commit after each task, `pnpm typecheck` before each commit. Never touch `packages/flowlet-runtime/test/dependency-guard*` allowlists except where a task explicitly says so. The `flowlet` Postgres schema namespaces every table.
+**Working rules for every task:** TDD (failing test → watch it fail → implement → watch it pass), commit per task, `pnpm typecheck` before each commit. `@flowlet/runtime`'s dependency-guard allowlist is only touched where a task says so. All tables live in the `flowlet` Postgres schema.
 
 ---
 
-## Phase 0 — runtime seam prep (no new package yet)
+## Phase 0 — runtime seam prep
 
 ### Task 1: Checkpoint versioning in the interpreter
 
@@ -22,13 +24,10 @@
 - Modify: `packages/flowlet-runtime/src/automations/interpreter.ts`
 - Test: `packages/flowlet-runtime/src/automations/interpreter.test.ts`
 
-The interpreter's pause checkpoint (`{ stepId, steps, outputs }`) gains a `v: 1` field, and resume validates it: missing/unknown version → the run fails with a clear error instead of silently misresuming.
-
-- [ ] **Step 1: Write the failing tests** — in `interpreter.test.ts`, add: (a) a pause produces `checkpoint.v === 1`; (b) resuming with `checkpoint: { ...valid, v: 2 }` returns a failed result whose error matches `/unsupported checkpoint version/i`; (c) resuming with a checkpoint missing `v` fails the same way (pre-versioning checkpoints are unresumable by definition since nothing durable existed before this release).
-- [ ] **Step 2: Run** `pnpm --filter @flowlet/runtime test -- interpreter` — expect the new tests FAIL.
-- [ ] **Step 3: Implement** — add `export const CHECKPOINT_VERSION = 1;` in `interpreter.ts`; include `v: CHECKPOINT_VERSION` where the checkpoint object is built (`checkpoint: { ... }` near line 613); at the resume entry (near line 573), before casting, check `(input.resume.checkpoint as { v?: unknown })?.v === CHECKPOINT_VERSION` and return the interpreter's failed-run shape with error `` `unsupported checkpoint version ${String(v)} — cannot resume this run` `` when it isn't. Follow the file's existing failure-result construction (see how step failures finalize).
-- [ ] **Step 4: Run** the interpreter suite — all green.
-- [ ] **Step 5: Commit** `feat(runtime): version interpreter checkpoints; fail closed on unknown versions`
+- [ ] **Step 1: Failing tests** — (a) a pause produces `checkpoint.v === 1`; (b) resuming with `{ ...valid, v: 2 }` returns a failed result whose error matches `/unsupported checkpoint version/i`; (c) a checkpoint missing `v` fails the same way (nothing durable predates this release).
+- [ ] **Step 2: Run** `pnpm --filter @flowlet/runtime test -- interpreter` — new tests FAIL.
+- [ ] **Step 3: Implement** — `export const CHECKPOINT_VERSION = 1;`; add `v: CHECKPOINT_VERSION` where the checkpoint object is built (~line 613); at resume entry (~line 573) check the version before casting and return the interpreter's existing failed-run shape with error `` `unsupported checkpoint version ${String(v)} — cannot resume this run` `` on mismatch.
+- [ ] **Step 4: Run** — green. **Step 5: Commit** `feat(runtime): version interpreter checkpoints; fail closed on unknown versions`
 
 ### Task 2: `listEnabledSchedules` on the engine store seam
 
@@ -36,11 +35,9 @@ The interpreter's pause checkpoint (`{ stepId, steps, outputs }`) gains a `v: 1`
 - Modify: `packages/flowlet-runtime/src/automations/store.ts`
 - Test: `packages/flowlet-runtime/src/automations/store.test.ts`
 
-Rehydration needs a cross-scope listing (id, trigger, stored principal). Additive method; the frozen per-scope surface is untouched.
-
-- [ ] **Step 1: Failing test** — create two automations under two different principals (one `schedule` trigger, one `host_event`), then `store.listEnabledSchedules()` returns exactly the schedule one as `{ automationId, trigger, principal: { tenantId, subject } }`; pause it → returns `[]`.
-- [ ] **Step 2: Run** `pnpm --filter @flowlet/runtime test -- automations/store` — FAIL.
-- [ ] **Step 3: Implement** — add to the `AutomationEngineStore` interface:
+- [ ] **Step 1: Failing test** — two automations under two principals (one `schedule`, one `host_event`); `listEnabledSchedules()` returns exactly the schedule one as `{ automationId, trigger, principal }`; pausing it empties the list.
+- [ ] **Step 2: Run** — FAIL.
+- [ ] **Step 3: Implement** — interface addition:
 
 ```ts
 /** Cross-scope listing used ONLY for boot rehydration of the scheduler. */
@@ -49,9 +46,8 @@ listEnabledSchedules(): Promise<
 >;
 ```
 
-and in `InMemoryAutomationStore`: filter `this.automations.values()` for `status === "enabled" && triggerKind === "schedule"`, map to `{ automationId: a.id, trigger: a.spec.trigger, principal: { tenantId: a.tenantId, subject: a.subject } }` (narrow the trigger type via the `type === "schedule"` check).
-- [ ] **Step 4: Run** suite — green.
-- [ ] **Step 5: Commit** `feat(runtime): listEnabledSchedules store method for boot rehydration`
+In-memory impl: filter `status === "enabled" && triggerKind === "schedule"`, narrow the trigger via `spec.trigger.type === "schedule"`.
+- [ ] **Step 4: Run** — green. **Step 5: Commit** `feat(runtime): listEnabledSchedules store method for boot rehydration`
 
 ### Task 3: Atomic approval claim on the seam
 
@@ -59,32 +55,34 @@ and in `InMemoryAutomationStore`: filter `this.automations.values()` for `status
 - Modify: `packages/flowlet-runtime/src/automations/store.ts`, `packages/flowlet-runtime/src/automations/runner.ts`
 - Test: `packages/flowlet-runtime/src/automations/store.test.ts`, `packages/flowlet-runtime/src/automations/runner.test.ts`
 
-Approve/decline becomes an atomic claim: exactly one caller wins; the loser gets `undefined`. The runner resumes only from a successful claim.
+The runner's existing resume API is `resume(...)` returning `AutomationRun | undefined` (`runner.ts:244`) — **the public API does not change**; only how it takes the pending approval off the run becomes an atomic claim.
 
-- [ ] **Step 1: Failing store test** — drive a run into `waiting_approval` (see existing waiting-approval fixtures in `runner.test.ts` for the shape; in the store test build the run via `createRun` + `updateRun({ outcome: "waiting_approval", pendingApproval })`). Then: first `claimPendingApproval(scope, runId)` returns the `PendingApproval` and a re-read run has no `pendingApproval`; second call returns `undefined`.
+- [ ] **Step 1: Failing store test** — drive a run to `waiting_approval` (createRun + `updateRun({ outcome: "waiting_approval", pendingApproval })`); first `claimPendingApproval(scope, runId)` returns the `PendingApproval` and the re-read run has none; second call returns `undefined`.
 - [ ] **Step 2: Run** — FAIL.
-- [ ] **Step 3: Implement** — interface addition:
+- [ ] **Step 3: Implement** — interface:
 
 ```ts
 /** Atomically take the pending approval off a run. Exactly one caller wins. */
 claimPendingApproval(scope: Principal, runId: string): Promise<PendingApproval | undefined>;
 ```
 
-In-memory impl: `mustGetRun`, if `run.pendingApproval` undefined return undefined; otherwise copy it, `delete next.pendingApproval`, keep `outcome` as-is (finalization decides), store, return the copy. (Single-threaded JS makes the in-memory version trivially atomic; the Drizzle version does it with one conditional `UPDATE … RETURNING` in Task 8.)
-- [ ] **Step 4: Failing runner test** — wherever `runner.ts` currently reads `run.pendingApproval` then `updateRun` to clear it (the resume path), assert via a spy store that resume goes through `claimPendingApproval` and that a second concurrent `resumeApproval(...)` for the same run resolves to the existing "already decided" error shape (match the runner's current error convention).
-- [ ] **Step 5: Implement** the runner switch to `claimPendingApproval`; a failed claim returns the already-decided error, never re-executes.
-- [ ] **Step 6: Run** `pnpm --filter @flowlet/runtime test -- automations` — green. **Commit** `feat(runtime): atomic pending-approval claim; idempotent resume`
+In-memory: `mustGetRun`; if no `pendingApproval` return `undefined`; copy it, delete from a new run object, store, return the copy.
+- [ ] **Step 4: Failing runner test** — spy store: `resume(...)` goes through `claimPendingApproval`; two concurrent `resume(...)` for the same run (Promise.all) → one proceeds, the other resolves `undefined` (the existing "nothing to resume" contract) and the interpreter runs once.
+- [ ] **Step 5: Implement** — runner swaps its read-then-clear for the claim; lost claim → return `undefined`, never execute.
+- [ ] **Step 6: Run** `pnpm --filter @flowlet/runtime test -- automations` — green. **Commit** `feat(runtime): atomic pending-approval claim; race-free resume`
 
 ### Task 4: One-shot `at` schedules complete durably
 
 **Files:**
-- Modify: `packages/flowlet-runtime/src/automations/store.ts` (type only), `packages/flowlet-runtime/src/automations/runner.ts` (or the firing handler in `packages/flowlet-runtime/src/automations/tools.ts` — find `createSchedulerFiringHandler` and put the logic where the firing completes)
+- Modify: `packages/flowlet-runtime/src/automations/store.ts` (type), the firing-completion path (find it: `createSchedulerFiringHandler` in `packages/flowlet-runtime/src/automations/tools.ts` or `runner.ts` — read both, put the logic where a firing finalizes)
 - Test: `packages/flowlet-runtime/src/automations/runner.test.ts`
 
-- [ ] **Step 1: Failing test** — an automation whose spec trigger is `{ type: "schedule", kind: "at", at: <past-iso> }` (match the real schema field names in `schema.ts`) finishes its run → the automation record now has `status: "paused"` and `disabledReason: "completed_one_shot"`.
-- [ ] **Step 2: Run** — FAIL (also a type error: `disabledReason` union).
-- [ ] **Step 3: Implement** — widen the type: `disabledReason?: "consecutive_failures" | "completed_one_shot"`. In the firing completion path, after finalize, if the automation's schedule trigger is one-shot (`kind === "at"` — verify the exact discriminator in `schema.ts` and use it), call `setStatus(scope, id, "paused", { disabledReason: "completed_one_shot" })`.
-- [ ] **Step 4: Run** suite — green. **Commit** `feat(runtime): one-shot schedules pause as completed after firing`
+The spec trigger has **no `kind` field** — a one-shot is `{ type: "schedule", at: string }` (interval/cron shapes use other fields; check `schema.ts:142` region for the exact union). Detect via `trigger.at !== undefined`.
+
+- [ ] **Step 1: Failing test** — drive a firing of an automation whose trigger is `{ type: "schedule", at: <iso> }` **directly through the runner/firing handler** (do not route through scheduler tick — a past `at` never fires there); after the run finalizes, the automation has `status: "paused"` and `disabledReason: "completed_one_shot"`.
+- [ ] **Step 2: Run** — FAIL (incl. the `disabledReason` union type error).
+- [ ] **Step 3: Implement** — widen: `disabledReason?: "consecutive_failures" | "completed_one_shot"`; after finalize, when the spec trigger is schedule-with-`at`, `setStatus(scope, id, "paused", { disabledReason: "completed_one_shot" })`.
+- [ ] **Step 4: Run** — green. **Commit** `feat(runtime): one-shot schedules pause as completed after firing`
 
 ### Task 4b: Explicit unattended-tool rejection at authoring time
 
@@ -92,104 +90,48 @@ In-memory impl: `mustGetRun`, if `run.pendingApproval` undefined return undefine
 - Modify: `packages/flowlet-runtime/src/automations/tools.ts`
 - Test: `packages/flowlet-runtime/src/automations/tools.test.ts`
 
-Automations may only reference server-registered tools (client-executed host tools can't run unattended). Today unknown tools fail late; make the create/update authoring tools reject them upfront with a clear message.
-
-- [ ] **Step 1: Failing test** — authoring `create_automation` with a spec step referencing a tool NOT in `registeredTools` returns the tools' error shape with a message matching `/server-registered|cannot run unattended/i` and does NOT create the automation.
-- [ ] **Step 2: Implement** — in the create/update tool handlers, before store writes: collect every `tool` referenced by the spec (walk steps incl. branch/for_each children + agent-step `tools` allowlists), diff against `await registeredTools()`, reject listing the offenders: `` `tool(s) ${names} are not server-registered — client-executed host tools cannot run unattended; register a server tool via automations.tools` ``.
+- [ ] **Step 1: Failing test** — authoring `create_automation` with a step referencing a tool NOT in `registeredTools` returns the tools' error shape matching `/server-registered|cannot run unattended/i` and creates nothing.
+- [ ] **Step 2: Implement** — in create/update handlers, before store writes: walk the spec for every referenced tool (steps incl. branch/for_each children + agent-step `tools` allowlists), diff against `await registeredTools()`, reject naming the offenders and the fix (`automations.tools`).
 - [ ] **Step 3: Run** `pnpm --filter @flowlet/runtime test -- automations/tools` — green. **Commit** `feat(runtime): authoring-time rejection of non-server tools in automations`
 
-### Task 5: ThreadStore seam in runtime
+### Task 5: Upsert semantics on the EXISTING core ThreadStore seam
 
 **Files:**
-- Create: `packages/flowlet-runtime/src/threads.ts`
-- Modify: `packages/flowlet-runtime/src/index.ts` (export)
-- Test: `packages/flowlet-runtime/src/threads.test.ts`
+- Modify: `packages/flowlet-core/src/seams/store.ts`, `packages/flowlet-runtime/src/embedded/in-memory-store.ts`
+- Test: `packages/flowlet-runtime/src/embedded/in-memory-store.test.ts` (or create alongside if missing)
 
-The seam + an in-memory reference implementation (the durable one lands in `@flowlet/store`).
+Core already defines `ThreadStore` (`create/get/list/appendMessages/getMessages`) and runtime has an embedded in-memory `Store`. Do NOT invent a parallel seam. Add one **additive** method (frozen-surface rule: additive is allowed; `appendMessages` stays untouched):
 
-- [ ] **Step 1: Failing test** — upsert two messages, read back seq-ordered; re-upsert message id 1 with new parts → still 2 messages, parts replaced, order unchanged; `listThreads` returns thread metadata sorted by `updatedAt` desc.
-- [ ] **Step 2: Run** `pnpm --filter @flowlet/runtime test -- threads` — FAIL.
-- [ ] **Step 3: Implement:**
+- [ ] **Step 1: Failing tests** against the runtime in-memory impl — (a) `upsertMessages` inserts two `FlowletUIMessage`s, `getMessages` returns them in order; (b) re-upserting id 1 with new parts → still 2 messages, parts replaced, order preserved; (c) upsert on an unknown thread id auto-creates the thread row (needed because the client owns thread ids — assert `get` finds it after); (d) scope isolation.
+- [ ] **Step 2: Run** — FAIL.
+- [ ] **Step 3: Implement** — core interface addition:
 
 ```ts
-import type { Principal } from "@flowlet/core";
-
-export interface ThreadMessageRecord {
-  /** ai-SDK UIMessage id — the upsert key. */
-  id: string;
-  /** Whole UIMessage as JSON; parts are replaced wholesale on re-upsert. */
-  message: unknown;
-}
-
-export interface ThreadRecord {
-  id: string;
-  title: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ThreadStore {
-  /** Creates the thread row if missing; upserts each message by id (existing keeps its seq). */
-  upsertMessages(scope: Principal, threadId: string, messages: ThreadMessageRecord[]): Promise<void>;
-  /** Seq-ordered full history. Empty array for an unknown thread. */
-  getMessages(scope: Principal, threadId: string): Promise<ThreadMessageRecord[]>;
-  listThreads(scope: Principal): Promise<ThreadRecord[]>;
-}
-
-export function createInMemoryThreadStore(now: () => string = () => new Date().toISOString()): ThreadStore {
-  interface Row { seq: number; message: unknown }
-  const threads = new Map<string, { meta: ThreadRecord; rows: Map<string, Row>; nextSeq: number }>();
-  const key = (scope: Principal, threadId: string) => `${scope.tenantId}::${scope.subject}::${threadId}`;
-  return {
-    async upsertMessages(scope, threadId, messages) {
-      const k = key(scope, threadId);
-      const t = threads.get(k) ?? {
-        meta: { id: threadId, title: null, createdAt: now(), updatedAt: now() },
-        rows: new Map<string, Row>(),
-        nextSeq: 0,
-      };
-      for (const m of messages) {
-        const existing = t.rows.get(m.id);
-        t.rows.set(m.id, { seq: existing?.seq ?? t.nextSeq++, message: m.message });
-      }
-      t.meta.updatedAt = now();
-      threads.set(k, t);
-    },
-    async getMessages(scope, threadId) {
-      const t = threads.get(key(scope, threadId));
-      if (!t) return [];
-      return [...t.rows.entries()]
-        .sort((a, b) => a[1].seq - b[1].seq)
-        .map(([id, row]) => ({ id, message: row.message }));
-    },
-    async listThreads(scope) {
-      const prefix = `${scope.tenantId}::${scope.subject}::`;
-      return [...threads.entries()]
-        .filter(([k]) => k.startsWith(prefix))
-        .map(([, t]) => t.meta)
-        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-    },
-  };
-}
+/** Upsert by message id: existing messages keep their position, parts are
+ *  replaced wholesale (ai-SDK mutates approval parts on resume — ENG-204).
+ *  Unknown threadId auto-creates the thread. */
+upsertMessages(scope: Principal, threadId: string, messages: FlowletUIMessage[]): Promise<void>;
 ```
 
-- [ ] **Step 4: Run** — green. Export from `index.ts`. **Commit** `feat(runtime): ThreadStore seam + in-memory reference`
+Runtime in-memory impl: per-thread `Map<messageId, { seq, message }>` + `nextSeq` counter; `getMessages` sorts by seq. Check every other implementor of `ThreadStore` in the repo (`grep -rn "ThreadStore" packages apps`) and add the method there too — the demo apps may have one.
+- [ ] **Step 4: Run** — green, plus full `pnpm --filter @flowlet/core --filter @flowlet/runtime typecheck` (interface change ripples). **Commit** `feat(core,runtime): ThreadStore.upsertMessages — resume-safe message persistence`
 
 ---
 
 ## Phase 1 — the `@flowlet/store` package
 
-### Task 6: Package scaffold + connection factory + migrations runner
+### Task 6: Package scaffold + async connection factory + migrations runner
 
 **Files:**
-- Create: `packages/flowlet-store/package.json`, `tsconfig.json`, `vitest.config.ts` (copy the shape from `packages/flowlet-runtime`'s configs), `src/index.ts`, `src/db.ts`, `drizzle.config.ts`, `src/schema.ts` (tables land next task — start with an empty `flowlet` schema declaration)
+- Create: `packages/flowlet-store/package.json`, `tsconfig.json`, `vitest.config.ts` (copy shapes from `packages/flowlet-runtime`), `src/index.ts`, `src/db.ts`, `drizzle.config.ts`, `src/schema.ts` (starts empty; tables next task), `migrations/.gitkeep`
 - Test: `packages/flowlet-store/src/db.test.ts`
 
-`createFlowletDatabase` resolves: explicit `connectionString` → node-postgres Pool; explicit `pglite: { dataDir }` or nothing → PGlite. Process-wide singleton per resolved target via a `globalThis` registry (HMR-safe). Serverless guard: if no connection string and (`process.env.VERCEL` or `process.env.CF_PAGES` or `process.env.AWS_LAMBDA_FUNCTION_NAME`) → throw with a message naming `DATABASE_URL`. Migrations: `migrate()` behind a per-process promise + `pg_advisory_lock(7461001)` (any stable constant), released after; PGlite path skips the advisory lock (single process by construction).
+**Dependency placement (Codex):** `dependencies`: `drizzle-orm`, `@electric-sql/pglite`, `pg`, `@flowlet/core`, `@flowlet/runtime` (runtime is imported for VALUES — `firingRunId`, `DuplicateRunError`, schema parsing — so it's a real dependency, not dev). `devDependencies`: `drizzle-kit`, `@types/pg`, `vitest`. Register the package in the workspace + turbo pipeline like its siblings.
 
-- [ ] **Step 1:** `package.json` — name `@flowlet/store`, deps: `drizzle-orm`, `@electric-sql/pglite`, `pg`; devDeps: `drizzle-kit`, `@types/pg`, `vitest`, workspace `@flowlet/core` + `@flowlet/runtime`. Match the repo's existing `exports`/`build` conventions (`vite build` vs `tsc` — copy whichever `flowlet-runtime` uses). Add the package to the root workspace + turbo pipeline like the other packages.
-- [ ] **Step 2: Failing tests** (`db.test.ts`, PGlite in-memory via `dataDir: "memory://"`): (a) two `createFlowletDatabase()` calls with the same config return the same instance; (b) `migrateFlowletDatabase(db)` twice resolves without error (idempotent); (c) with `process.env.VERCEL = "1"` and no connection string, `createFlowletDatabase()` throws matching `/DATABASE_URL/`.
-- [ ] **Step 3: Implement** `src/db.ts`:
+**Creation is async** (PGlite's documented path is `await PGlite.create(...)`; drizzle's pglite adapter takes the client). The factory memoizes a **promise** per cache key; the resolved handle carries its cache key so migration memoization can't collide across tests.
+
+- [ ] **Step 1: Failing tests** (`db.test.ts`, unique `dataDir: "memory://" + suffix` per test): (a) two `createFlowletDatabase()` calls with the same config resolve to the same handle (promise identity); (b) `migrateFlowletDatabase(handle)` twice resolves (idempotent, memoized per handle); (c) `process.env.VERCEL = "1"` + no connection string → rejects matching `/DATABASE_URL/`; (d) `FLOWLET_DATA_DIR` env is honored when no explicit dataDir; (e) an unwritable dataDir (e.g. a path under a read-only file, `chmod 0444` fixture) rejects loudly matching `/writable/i`.
+- [ ] **Step 2: Implement** `src/db.ts`:
 
 ```ts
 import { PGlite } from "@electric-sql/pglite";
@@ -200,6 +142,7 @@ import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import { sql } from "drizzle-orm";
 import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import path from "node:path";
 
 export interface FlowletDatabaseConfig {
@@ -208,29 +151,31 @@ export interface FlowletDatabaseConfig {
 }
 
 export type FlowletDb =
-  | { kind: "pglite"; db: ReturnType<typeof drizzlePglite> }
-  | { kind: "pg"; db: ReturnType<typeof drizzlePg> };
+  | { kind: "pglite"; db: ReturnType<typeof drizzlePglite>; cacheKey: string }
+  | { kind: "pg"; db: ReturnType<typeof drizzlePg>; cacheKey: string };
 
 const SERVERLESS_ENVS = ["VERCEL", "CF_PAGES", "AWS_LAMBDA_FUNCTION_NAME"] as const;
 const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 const ADVISORY_LOCK_KEY = 7461001;
 
-interface Registry { instances: Map<string, FlowletDb>; migrated: Map<string, Promise<void>> }
+interface Registry {
+  instances: Map<string, Promise<FlowletDb>>;
+  migrated: Map<string, Promise<void>>;
+}
 const registry: Registry = ((globalThis as Record<string, unknown>)["__flowletStoreRegistry"] ??= {
   instances: new Map(),
   migrated: new Map(),
 }) as Registry;
 
-export function createFlowletDatabase(config: FlowletDatabaseConfig = {}): FlowletDb {
+export function createFlowletDatabase(config: FlowletDatabaseConfig = {}): Promise<FlowletDb> {
   const conn = config.connectionString ?? process.env["DATABASE_URL"];
-  const cacheKey = conn ?? `pglite:${config.pglite?.dataDir ?? ".flowlet/data"}`;
+  const dataDir = config.pglite?.dataDir ?? process.env["FLOWLET_DATA_DIR"] ?? ".flowlet/data";
+  const cacheKey = conn ?? `pglite:${dataDir}`;
   const existing = registry.instances.get(cacheKey);
   if (existing) return existing;
 
-  let created: FlowletDb;
-  if (conn) {
-    created = { kind: "pg", db: drizzlePg(new Pool({ connectionString: conn })) };
-  } else {
+  const created: Promise<FlowletDb> = (async () => {
+    if (conn) return { kind: "pg", db: drizzlePg(new Pool({ connectionString: conn })), cacheKey };
     const onServerless = SERVERLESS_ENVS.find((e) => process.env[e]);
     if (onServerless) {
       throw new Error(
@@ -238,16 +183,21 @@ export function createFlowletDatabase(config: FlowletDatabaseConfig = {}): Flowl
           `Set DATABASE_URL to a hosted Postgres (Supabase, Neon, …) instead.`,
       );
     }
-    const dataDir = config.pglite?.dataDir ?? ".flowlet/data";
-    created = { kind: "pglite", db: drizzlePglite(new PGlite(dataDir)) };
-  }
+    if (!dataDir.startsWith("memory://")) {
+      fs.mkdirSync(dataDir, { recursive: true }); // throws EACCES/EROFS loudly
+      fs.accessSync(dataDir, fs.constants.W_OK);  // "not writable" fails boot, never a silent fallback
+    }
+    const client = await PGlite.create(dataDir);
+    return { kind: "pglite", db: drizzlePglite(client), cacheKey };
+  })();
+  created.catch(() => registry.instances.delete(cacheKey)); // failed boots retry
   registry.instances.set(cacheKey, created);
   return created;
 }
 
-/** Idempotent, race-safe (advisory lock on real PG), memoized per process. */
-export function migrateFlowletDatabase(handle: FlowletDb, cacheKey = "default"): Promise<void> {
-  const memo = registry.migrated.get(cacheKey);
+/** Idempotent, race-safe (advisory lock on real PG), memoized per handle. */
+export function migrateFlowletDatabase(handle: FlowletDb): Promise<void> {
+  const memo = registry.migrated.get(handle.cacheKey);
   if (memo) return memo;
   const run = (async () => {
     if (handle.kind === "pglite") {
@@ -257,24 +207,24 @@ export function migrateFlowletDatabase(handle: FlowletDb, cacheKey = "default"):
     await handle.db.execute(sql`select pg_advisory_lock(${ADVISORY_LOCK_KEY})`);
     try {
       await migratePg(handle.db, { migrationsFolder: MIGRATIONS_DIR, migrationsSchema: "flowlet" });
-    } catch (err) {
-      registry.migrated.delete(cacheKey); // let a later boot retry
-      throw new Error(
-        `[flowlet] migration failed — if this is a permissions error, grant the role CREATE on the database ` +
-          `or run migrations out-of-band with autoMigrate: false. Cause: ${err instanceof Error ? err.message : String(err)}`,
-      );
     } finally {
       await handle.db.execute(sql`select pg_advisory_unlock(${ADVISORY_LOCK_KEY})`);
     }
   })();
-  registry.migrated.set(cacheKey, run);
-  return run;
+  run.catch(() => registry.migrated.delete(handle.cacheKey));
+  registry.migrated.set(handle.cacheKey, run);
+  return run.catch((err) => {
+    throw new Error(
+      `[flowlet] migration failed — if this is a permissions error, grant the role CREATE on the database ` +
+        `or run migrations out-of-band (autoMigrate: false + migrateFlowletDatabase). Cause: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
 }
 ```
 
-(Adjust imports/API names to the installed drizzle version — check `node_modules/drizzle-orm/pglite` exists after install; if the pglite adapter lives elsewhere, follow the drizzle docs via context7.)
-- [ ] **Step 4: Run** `pnpm --filter @flowlet/store test -- db` — green (an empty migrations dir migrates to nothing; commit a `.gitkeep`).
-- [ ] **Step 5: Commit** `feat(store): @flowlet/store scaffold — connection factory, singleton, race-safe boot migrations`
+(If the installed drizzle version's pglite adapter API differs — e.g. `drizzle({ client })` — follow the installed version's types; check via context7/drizzle docs. Error-wrapping shape: make sure the memoized promise itself isn't the wrapped-rejection one twice — adjust so tests pass with a single clear message.)
+- [ ] **Step 3: Run** `pnpm --filter @flowlet/store test -- db` — green (empty migrations dir migrates to nothing).
+- [ ] **Step 4: Commit** `feat(store): @flowlet/store scaffold — async connection factory, singleton, race-safe boot migrations`
 
 ### Task 7: Schema + generated migration
 
@@ -283,7 +233,7 @@ export function migrateFlowletDatabase(handle: FlowletDb, cacheKey = "default"):
 - Create: `packages/flowlet-store/migrations/0000_*.sql` (generated)
 - Test: `packages/flowlet-store/src/schema.test.ts`
 
-- [ ] **Step 1: Write the schema** — all tables in `pgSchema("flowlet")`. Columns mirror the seam types (JSON-heavy fields as `jsonb`):
+- [ ] **Step 1: Write the schema** — all in `pgSchema("flowlet")`; note `threads.nextSeq` (the race-safe seq allocator) and the `meta` table (scheduler heartbeat — DecisionStore is NOT a junk drawer):
 
 ```ts
 import { pgSchema, text, integer, boolean, jsonb, timestamp, primaryKey, uniqueIndex, index, bigserial } from "drizzle-orm/pg-core";
@@ -349,6 +299,7 @@ export const threads = flowlet.table("threads", {
   tenantId: text("tenant_id").notNull(),
   subject: text("subject").notNull(),
   title: text("title"),
+  nextSeq: integer("next_seq").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (t) => [primaryKey({ columns: [t.tenantId, t.subject, t.id] })]);
@@ -370,7 +321,7 @@ export const savedFlowlets = flowlet.table("saved_flowlets", {
   id: text("id").notNull(),
   tenantId: text("tenant_id").notNull(),
   subject: text("subject").notNull(),
-  record: jsonb("record").notNull(), // whole shell Flowlet record (schema-versioned envelope)
+  record: jsonb("record").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (t) => [primaryKey({ columns: [t.tenantId, t.subject, t.id] })]);
 
@@ -381,11 +332,21 @@ export const connections = flowlet.table("connections", {
   connectedAccountId: text("connected_account_id"),
   status: text("status").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (t) => [primaryKey({ columns: [t.tenantId, t.subject, t.toolkit] })]);
+}, (t) => [
+  primaryKey({ columns: [t.tenantId, t.subject, t.toolkit] }),
+  index("connections_account_idx").on(t.connectedAccountId),
+]);
+
+/** Tiny operational KV (scheduler heartbeat, future flags). NOT for domain data. */
+export const meta = flowlet.table("meta", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+});
 ```
 
-- [ ] **Step 2: Generate the migration** — `drizzle.config.ts` points `schema` at `src/schema.ts`, `out` at `./migrations`, dialect `postgresql`. Run `pnpm --filter @flowlet/store exec drizzle-kit generate`. Inspect the SQL: it must `CREATE SCHEMA "flowlet"` and create all 8 tables. Commit the generated SQL.
-- [ ] **Step 3: Failing → passing schema test** — `schema.test.ts`: create a PGlite db, run `migrateFlowletDatabase`, insert + read one row in `automations` and one in `thread_messages` (exercises bigserial + unique indexes). Run `pnpm --filter @flowlet/store test -- schema` — green.
+- [ ] **Step 2: Generate** — `pnpm --filter @flowlet/store exec drizzle-kit generate` (config: schema → `src/schema.ts`, out → `./migrations`, dialect `postgresql`). Inspect: `CREATE SCHEMA "flowlet"` + all 9 tables. Commit the SQL.
+- [ ] **Step 3: Schema test** — migrate a fresh PGlite db; insert+read a row in `automations` and `thread_messages` (bigserial + unique indexes exercised). Green.
 - [ ] **Step 4: Commit** `feat(store): flowlet-schema tables + generated initial migration`
 
 ### Task 8: `DrizzleAutomationStore` (the port)
@@ -393,151 +354,187 @@ export const connections = flowlet.table("connections", {
 **Files:**
 - Create: `packages/flowlet-store/src/automation-store.ts`
 - Test: `packages/flowlet-store/src/automation-store.test.ts`
+- Modify: `packages/flowlet-runtime/src/automations/store.ts` (export the `capStep`/`capEnvelope` helpers so the port reuses them — do not fork truncation semantics)
 
-Implements `AutomationEngineStore` (including Tasks 2–3 additions). **The behavioral spec is `InMemoryAutomationStore`** (`packages/flowlet-runtime/src/automations/store.ts`) — port it method-for-method onto Drizzle queries. Non-negotiable semantics to preserve, each with a test:
+Implements `AutomationEngineStore` incl. Tasks 2–3 additions. **Behavioral spec = `InMemoryAutomationStore`.** Non-negotiables, each with a test:
 
-1. `save()` validates the opaque spec via `automationSpecSchema.parse` and delegates to `create` (+ paused status passthrough).
-2. Principal scoping on every read/write (`tenantId`/`subject` columns, not scopeKey strings).
-3. `create`/`update` write an `automation_versions` row; `update` bumps `currentVersion` and re-derives the trigger index (`triggerIndex` behavior).
-4. `createRun` uses `firingRunId` as the PK; a duplicate insert (catch the PG unique-violation, code `23505`) rethrows `DuplicateRunError`.
-5. `capStep`/`capEnvelope` truncation (import `MAX_STEP_OUTPUT_BYTES` etc. from `@flowlet/runtime` — the functions are private, so re-implement by importing the constants and copying the two small helpers, or export them from runtime; prefer exporting from runtime and reusing).
-6. `finalizeRun` computes `coarseStatus`, clears `pendingApproval`, and updates counters **in the same transaction** (`db.transaction`); skipped runs store empty steps.
-7. `cancelPendingRuns` cancels only `waiting_approval` runs of that automation+scope.
-8. `claimPendingApproval` = single conditional `UPDATE flowlet.automation_runs SET pending_approval = NULL WHERE id = $1 AND tenant_id=$2 AND subject=$3 AND pending_approval IS NOT NULL RETURNING pending_approval` — one winner by construction.
-9. `listEnabledSchedules` = `SELECT` on status+triggerKind, cross-scope.
-10. ID generation: replace the in-memory counter with `auto-${crypto.randomUUID()}`.
+1. `save()` validates via `automationSpecSchema.parse`, delegates to `create`, honors paused.
+2. Principal scoping on every read/write.
+3. `create`/`update` write a version row; `update` bumps `currentVersion`, re-derives the trigger index.
+4. `createRun`: `firingRunId` PK; PG unique-violation (code `23505`) → rethrow `DuplicateRunError`.
+5. Truncation caps via the runtime-exported helpers.
+6. `finalizeRun`: `coarseStatus`, clears `pendingApproval`, counters updated **in the same `db.transaction`**; skipped runs store `[]` steps.
+7. `cancelPendingRuns` touches only `waiting_approval` runs of that automation+scope.
+8. **`claimPendingApproval` — capture-then-clear in ONE statement** (Codex blocker: a plain `RETURNING pending_approval` returns the new NULL):
 
-- [ ] **Step 1: Write the contract test suite first** — port every scenario in `packages/flowlet-runtime/src/automations/store.test.ts` (all 314 lines) to run against `new DrizzleAutomationStore(createFlowletDatabase({ pglite: { dataDir: "memory://" } }))`, plus new cases for items 4, 6, 8 above (duplicate insert → `DuplicateRunError`; concurrent `claimPendingApproval` via `Promise.all` → exactly one non-undefined). Fresh database per test (`memory://` + unique cacheKey, run migrations in `beforeEach`).
-- [ ] **Step 2: Run** — FAIL (class missing).
-- [ ] **Step 3: Implement** `DrizzleAutomationStore` method-for-method. Keep it one class in one file; if it passes 500 lines that's acceptable (it mirrors the reference). Reuse `firingRunId`, `DuplicateRunError`, `automationSpecSchema` and the truncation helpers from `@flowlet/runtime` — never fork semantics.
-- [ ] **Step 4: Run** the suite — green. `pnpm --filter @flowlet/store typecheck`.
-- [ ] **Step 5: Commit** `feat(store): DrizzleAutomationStore — full engine-store port with DB-level dedup + atomic claim`
+```sql
+WITH claimed AS (
+  SELECT id, pending_approval FROM flowlet.automation_runs
+  WHERE id = $1 AND tenant_id = $2 AND subject = $3 AND pending_approval IS NOT NULL
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE flowlet.automation_runs r
+SET pending_approval = NULL
+FROM claimed
+WHERE r.id = claimed.id
+RETURNING claimed.pending_approval AS claimed_approval;
+```
 
-### Task 9: Durable DecisionStore, ThreadStore, saved-flowlet + connections stores
+(via `db.execute(sql\`…\`)`; zero rows → `undefined`.)
+9. `listEnabledSchedules` cross-scope select.
+10. IDs: `auto-${crypto.randomUUID()}`.
+
+- [ ] **Step 1: Contract tests first** — port every scenario from `packages/flowlet-runtime/src/automations/store.test.ts` to run against `DrizzleAutomationStore` on fresh PGlite (`memory://` + unique suffix per file, migrate in `beforeAll`), plus: duplicate `createRun` → `DuplicateRunError`; `Promise.all` double-claim → exactly one wins.
+- [ ] **Step 2: Run** — FAIL. **Step 3: Implement** method-for-method (one class, one file; mirroring the reference beats artificial splitting). **Step 4: Run** — green; typecheck.
+- [ ] **Step 5: Runner-over-Drizzle integration test** (spec requires the engine suites against the durable store): add `packages/flowlet-store/src/runner-integration.test.ts` that assembles the real `AutomationRunner` (+ `createAgentStepRunner` stubbed like `runner.test.ts` does) over `DrizzleAutomationStore` and exercises: one deterministic run end-to-end; one waiting_approval pause → `resume` → completion; counters/disable-threshold behavior. Reuse the fixtures from `runner.test.ts`.
+- [ ] **Step 6: Commit** `feat(store): DrizzleAutomationStore — engine-store port, CTE claim, runner integration`
+
+### Task 9: Durable decision/thread/flowlet/connections stores
 
 **Files:**
 - Create: `packages/flowlet-store/src/decision-store.ts`, `src/thread-store.ts`, `src/flowlet-registry.ts`, `src/connections-store.ts`
-- Test: mirror `.test.ts` per file
+- Test: one `.test.ts` per file
 
-Four small stores, same TDD loop each (write tests against the seam contract first, PGlite in-memory, then implement):
+Same TDD loop each. All implement EXISTING seams:
 
-- [ ] **Step 1: `createDrizzleDecisionStore(db, scope)`** implements runtime's `DecisionStore` (`get`/`set` by canonical key): `set` = upsert (`onConflictDoUpdate` on the PK); test get-miss → undefined, set→get roundtrip, scope isolation (two scopes, same key, different decisions).
-- [ ] **Step 2: `createDrizzleThreadStore(db)`** implements `ThreadStore` (Task 5): `upsertMessages` in one transaction — ensure thread row (insert-on-conflict-nothing, then bump `updatedAt`), for each message `INSERT … ON CONFLICT (tenant,subject,thread,message_id) DO UPDATE SET message = excluded.message` with `seq` allocated as `COALESCE(MAX(seq)+1, 0)` inside the transaction; reads order by `seq`. Port the Task 5 test cases plus: concurrent upserts of different messages produce distinct seqs (run two upserts, assert 2 rows, distinct seq).
-- [ ] **Step 3: `createDrizzleFlowletRegistry(db, scope)`** — server registry for saved flowlets storing the shell record as jsonb: `list()` (updatedAt desc), `load(id)`, `save(record)` upsert, `remove(id)`. Match the shell `FlowletStore` seam's method names/shapes exactly (see `packages/flowlet-shell/src/seams/store.ts` — read it first; the record type is `Flowlet`).
-- [ ] **Step 4: `createDrizzleConnectionsStore(db, scope, catalog)`** — implements `ConnectionsStore` from `packages/flowlet-next/src/connections.ts` (read it first; keep `connectedToolkits()`/`list()` behavior identical to the in-memory version) with rows in `connections`, plus one addition used by the webhook: `findByConnectedAccount(connectedAccountId)` returning `{ toolkit, principal } | undefined`. NOTE: `ConnectionsStore` lives in `@flowlet/next` — to avoid a circular dependency, define the interface's structural shape locally in `@flowlet/store` (duck-typed; `@flowlet/next` accepts it since the option is validated structurally).
-- [ ] **Step 5: Run** all four suites — green. Export everything from `src/index.ts`. **Commit** `feat(store): durable decision/thread/flowlet-registry/connections stores`
+- [ ] **Step 1: `createDrizzleDecisionStore(db, scope)`** → runtime `DecisionStore` (`get`/`set`): upsert on PK conflict; tests: miss → undefined; roundtrip; scope isolation.
+- [ ] **Step 2: `createDrizzleThreadStore(db)`** → **core** `ThreadStore` (all six methods incl. Task 5's `upsertMessages`). Seq allocation is race-safe via the `threads.nextSeq` counter (Codex: `MAX(seq)+1` double-allocates under concurrency): inside one transaction, `UPDATE flowlet.threads SET next_seq = next_seq + <n_new>, updated_at = now() WHERE … RETURNING next_seq` reserves a block, then insert new messages with reserved seqs and `ON CONFLICT … DO UPDATE SET message = excluded.message` for existing ids. `create` assigns a `crypto.randomUUID()` id + timestamps (store-owned authorship per the seam doc); `upsertMessages` on unknown thread auto-creates with the given id. Tests: Task 5's cases + two parallel upserts of different messages → distinct seqs, no unique violation.
+- [ ] **Step 3: `createDrizzleSavedFlowletStore(db)`** → **core** `SavedFlowletStore` (`save` assigns id+timestamps, `get`, `list` updatedAt-desc, `delete`). The whole `SavedFlowlet` record lives in the `record` jsonb column; `updatedAt` is denormalized as a column for ordering. Tests: authorship rule (caller never supplies id/timestamps), list order, delete.
+- [ ] **Step 4: `createDrizzleConnectionsStore(db, scope, catalog)`** — implements the structural shape of `ConnectionsStore` (`packages/flowlet-next/src/connections.ts` — read first; duck-typed locally to avoid a next→store→next cycle) with rows in `connections`, plus the two additions the webhook + integrations flow need:
+
+```ts
+/** Record the Composio connected-account id once the OAuth flow lands. */
+setConnectedAccount(toolkit: string, connectedAccountId: string): Promise<void>;
+/** Webhook routing: which principal owns this connected account? */
+findByConnectedAccount(connectedAccountId: string): Promise<{ toolkit: string; principal: Principal } | undefined>;
+```
+
+Tests: connect → `connectedToolkits()` includes it after a store rebuild (durability); account mapping roundtrip; unknown account → undefined.
+- [ ] **Step 5: Run** all suites — green. Export all from `src/index.ts`. **Commit** `feat(store): durable decision/thread/saved-flowlet/connections stores`
 
 ---
 
 ## Phase 2 — wiring `@flowlet/next`
 
-### Task 10: Full-tail routing + storage option
+### Task 10: Full-tail routing table + storage option
 
 **Files:**
-- Modify: `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/options.ts`
+- Modify: `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/options.ts`, `packages/flowlet-next/package.json` (add `@flowlet/store` dependency)
 - Test: `packages/flowlet-next/src/handler.test.ts`
 
-- [ ] **Step 1: Failing tests** — (a) a POST to `…/api/flowlet/webhooks/composio` routes distinctly from `…/composio` (assert 404 vs the future handler — for now assert the sub-path resolver returns `"webhooks/composio"`); (b) options accept `storage: { connectionString }`, `storage: { pglite: { dataDir } }`, `storage: false`, and reject `storage: 42`.
-- [ ] **Step 2: Implement routing** — replace `subPath` with a resolver that returns the full tail after the catch-all mount. The mount is wherever the route file lives, so derive it: split the pathname, find the last occurrence of a known FIRST segment… simpler and robust: match known endpoints from the END of the path — `const tail = segments.slice(-2).join("/");` then `if (tail === "webhooks/composio") …` else fall back to the last segment for all existing single-segment routes. Keep the old behavior for every current endpoint (regression tests: `chat`, `action`, `tick`, `integrations`, `capabilities` still route).
-- [ ] **Step 3: Implement the option** — `options.ts` gains:
+- [ ] **Step 1: Failing tests** — a route-resolution test table: `…/api/flowlet/chat` → `chat`; `…/webhooks/composio` → `webhooks/composio`; `…/threads` → `threads`; `…/threads/t1` → `threads/t1`; `…/flowlets/f1/delete` → `flowlets/f1/delete`; and (options) `storage: { connectionString }` / `{ pglite: { dataDir } }` / `false` accepted, `storage: 42` rejected.
+- [ ] **Step 2: Implement routing** — replace `subPath` with a resolver that returns the tail AFTER the mount. The mount can't be assumed to be `api/flowlet`; resolve it against a known first-segment set:
 
 ```ts
-/** Durable storage. Default: PGlite at .flowlet/data (or DATABASE_URL when set). `false` = in-memory (tests). */
+const FIRST_SEGMENTS = new Set(["chat", "action", "integrations", "capabilities", "tick", "webhooks", "threads", "flowlets"]);
+/** Everything after the catch-all mount: the suffix starting at the FIRST known segment (scanning right-to-left so a host route named e.g. /threads/... upstream can't confuse it). */
+function routeTail(req: Request): string {
+  const segments = new URL(req.url).pathname.split("/").filter(Boolean);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (FIRST_SEGMENTS.has(segments[i]!)) return segments.slice(i).join("/");
+  }
+  return segments[segments.length - 1] ?? "";
+}
+```
+
+Existing cases switch on exact matches (`"chat"`, `"tick"`, …); new multi-segment routes match by pattern (`tail === "webhooks/composio"`, `tail.startsWith("threads/")`, …). Regression tests: all five existing endpoints still route.
+- [ ] **Step 3: Implement the option** —
+
+```ts
+/** Durable storage. Default: PGlite at .flowlet/data (or DATABASE_URL / FLOWLET_DATA_DIR). `false` = in-memory (tests). */
 storage?: false | { connectionString?: string; pglite?: { dataDir: string }; autoMigrate?: boolean };
 ```
 
-zod: `z.union([z.literal(false), z.object({ connectionString: z.string().min(1).optional(), pglite: z.object({ dataDir: z.string().min(1) }).strict().optional(), autoMigrate: z.boolean().optional() }).strict()]).optional()`. `autoMigrate: false` skips boot migrations (DDL-gated shops run them out-of-band via the exported `migrateFlowletDatabase`); default true.
-- [ ] **Step 4: Run** `pnpm --filter @flowlet/next test -- handler options` — green. **Commit** `feat(next): full-tail routing + storage handler option`
+zod mirror, `.strict()`. `autoMigrate` default true; false skips boot migrations (out-of-band via exported `migrateFlowletDatabase`).
+- [ ] **Step 4: Run** — green. **Commit** `feat(next): full-tail routing + storage handler option`
 
-### Task 11: Durable world assembly + boot warnings
-
-**Files:**
-- Modify: `packages/flowlet-next/src/world.ts`, `packages/flowlet-next/src/handler.ts`
-- Test: `packages/flowlet-next/src/world.test.ts`
-
-- [ ] **Step 1: Failing tests** — (a) `createAutomationsWorld` with a provided `store` uses it (spy: `create` goes through); (b) handler assembly with `storage: false` logs the in-memory production warning when `NODE_ENV === "production"` (spy `console.warn`, match `/in-memory/`); (c) assembly with default storage + a custom `principal` resolver logs the single-tenant warning once (`/single-tenant/`).
-- [ ] **Step 2: Implement** — `CreateWorldConfig` gains optional `store?: AutomationEngineStore` (default stays `new InMemoryAutomationStore({})`). In `handler.ts` `assemble()`:
-
-```ts
-const storage = resolveStorage(options); // null when options.storage === false
-// resolveStorage: options.storage === false → null; otherwise createFlowletDatabase
-// with the option's connectionString/pglite (falling back to DATABASE_URL / .flowlet/data)
-// and a kicked-off (awaited-on-first-use) migrateFlowletDatabase promise.
-```
-
-Store instances built from it: `DrizzleAutomationStore`, decision store (thread/flowlet/connections wired in Tasks 13–15). The engine world gets the durable store; migration completion is awaited before the first request completes (make `assemble` async-safe: keep the lazy `assembled` slot but have `state()` return a promise — adjust call sites; this is the trickiest mechanical change in the plan, keep the diff small and typed).
-- [ ] **Step 3:** boot warnings per the spec (in-memory-in-prod; principal-resolver + durable single-tenant note). One-time flags on the assembled state.
-- [ ] **Step 4: Run** suite — green. **Commit** `feat(next): durable stores wired through handler assembly (PGlite default, DATABASE_URL override)`
-
-### Task 12: Scheduler boot — rehydration, `startFlowletScheduler`, tick service auth
+### Task 11: Async assembly + durable world + boot warnings
 
 **Files:**
-- Modify: `packages/flowlet-next/src/world.ts`, `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/index.ts`
+- Modify: `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/world.ts`, `packages/flowlet-next/src/world.test.ts`
+- Test: `packages/flowlet-next/src/world.test.ts`, `handler.test.ts`
+
+**The async ripple, enumerated (Codex):** `assemble()` becomes `async assemble(): Promise<State>`; the slot becomes `let assembled: Promise<State> | null`; `const state = () => (assembled ??= assemble())`; both `GET`/`POST` start with `const s = await state()`. `createAutomationsWorld` becomes async (rehydration awaits the store). `world.test.ts:7`-region call sites gain `await`. No other production call sites exist (verify: `grep -rn "createAutomationsWorld\|assemble()" packages apps`).
+
+- [ ] **Step 1: Failing tests** — (a) `createAutomationsWorld` with an injected `store` uses it (spy); (b) `storage: false` + `NODE_ENV=production` → one `console.warn` matching `/in-memory/`; (c) default storage + custom `principal` resolver → one warn matching `/single-tenant/`; (d) `GET /capabilities` resolves after async assembly (smoke for the ripple).
+- [ ] **Step 2: Implement** — `resolveStorage(options)`: `false` → null; else `await createFlowletDatabase({...})` + (autoMigrate !== false) `await migrateFlowletDatabase(handle)`. Build `DrizzleAutomationStore` and hand it to the world (`CreateWorldConfig.store?: AutomationEngineStore`, default in-memory). Warnings as one-time flags on the assembled state.
+- [ ] **Step 3: Run** `pnpm --filter @flowlet/next test` — full suite green (the ripple breaks things loudly; fix them here, not later).
+- [ ] **Step 4: Commit** `feat(next): async assembly; durable engine store wired (PGlite default, DATABASE_URL override)`
+
+### Task 12: Scheduler boot — rehydration, `startFlowletScheduler`, tick service auth, heartbeat
+
+**Files:**
 - Create: `packages/flowlet-next/src/boot.ts`
+- Modify: `packages/flowlet-next/src/world.ts`, `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/index.ts`
 - Test: `packages/flowlet-next/src/boot.test.ts`, extend `handler.test.ts`
 
-- [ ] **Step 1: Failing tests** — (a) `rehydrateSchedules(world)` registers every row from `listEnabledSchedules` (durable store seeded with 2 schedules → scheduler has both; spy `scheduler.schedule`); (b) `startFlowletScheduler()` twice starts one timer (globalThis singleton — assert via exposed handle identity); (c) with `FLOWLET_SCHEDULER=external` it no-ops; (d) `POST /tick` with `authorization: Bearer <secret>` matching `FLOWLET_TICK_SECRET` succeeds **without** a principal, wrong secret → 401, no secret env + remote → existing guard behavior.
-- [ ] **Step 2: Implement** — `world.ts`: after constructing scheduler+runner, `await rehydrateSchedules()` (reads `listEnabledSchedules()`, calls `scheduler.schedule(id, trigger, principal)`); export the world factory as async. `boot.ts`:
+- [ ] **Step 1: Failing tests** — (a) world assembly with a durable store seeded with 2 enabled schedules registers both (spy `scheduler.schedule`); (b) `startFlowletScheduler()` twice → one started scheduler (globalThis flag); (c) `FLOWLET_SCHEDULER=external` → no-op; (d) `POST /tick` with header `authorization: Bearer <FLOWLET_TICK_SECRET>` succeeds with no principal; wrong secret → 401; unset secret → existing `resolvePrincipal` path unchanged; (e) a successful tick upserts the `meta` row `scheduler_heartbeat`.
+- [ ] **Step 2: Implement** — world assembly ends with `for (const s of await store.listEnabledSchedules()) await scheduler.schedule(s.automationId, toTimeTrigger(s.trigger), s.principal)` (write `toTimeTrigger` mapping the spec trigger to the core `TimeTrigger` — check both shapes and map explicitly). `boot.ts`:
 
 ```ts
-/** Long-lived Node boot hook: import { startFlowletScheduler } from "@flowlet/next" in instrumentation.ts. */
+/** Long-lived Node boot: import { startFlowletScheduler } from "@flowlet/next" in instrumentation.ts. */
 export function startFlowletScheduler(options: FlowletHandlerOptions = {}): void {
   if (process.env["FLOWLET_SCHEDULER"] === "external") return;
   const g = globalThis as Record<string, unknown>;
   if (g["__flowletSchedulerStarted"]) return;
   g["__flowletSchedulerStarted"] = true;
-  void ensureFlowletWorld(options).then((world) => world?.scheduler.start());
+  void ensureFlowletState(options).then((s) => s.world?.scheduler.start());
 }
 ```
 
-where `ensureFlowletWorld` is the (new, exported-for-internal-use) shared lazy assembly used by the handler too — ONE world per process regardless of entry point (move the `assembled` slot into a globalThis-keyed registry keyed by a stable options hash; handler + boot share it). Tick auth: in the `"tick"` case, accept `FLOWLET_TICK_SECRET` bearer before falling back to `resolvePrincipal`; heartbeat: after a successful tick write `lastTickAt` (a tiny `flowlet.meta` key-value insert is overkill — store it on the world object in-process AND, when durable, in the decisions table under a reserved key `["__flowlet","scheduler_heartbeat"]`; keep it simple, it's observability-only).
-- [ ] **Step 3: Run** suites — green. Export `startFlowletScheduler` from the package index. **Commit** `feat(next): scheduler boot hook + rehydration + tick service auth + heartbeat`
+`ensureFlowletState` = the handler's lazy assembly hoisted into a globalThis registry keyed by a stable options identity (module-scope `Symbol` + the options object reference; handler and boot called with the same options share one world — document that `startFlowletScheduler()` with different options than the route is a misuse that creates a second world, and key the registry so the FIRST assembly wins with a warn). Tick: accept the bearer secret before `resolvePrincipal`; on success write heartbeat (`meta` upsert) when durable.
+- [ ] **Step 3: Run** — green. Export `startFlowletScheduler`. **Commit** `feat(next): scheduler boot hook + rehydration + tick service auth + heartbeat`
 
-### Task 13: Composio webhook ingress
+### Task 13: Composio webhook ingress (+ connected-account capture)
 
 **Files:**
 - Create: `packages/flowlet-next/src/webhooks.ts`
-- Modify: `packages/flowlet-next/src/handler.ts` (route), `packages/flowlet-next/src/integrations.ts` (record `connectedAccountId` on connect — read the file first to find where a successful connection lands)
-- Test: `packages/flowlet-next/src/webhooks.test.ts`
+- Modify: `packages/flowlet-next/src/handler.ts` (route), `packages/flowlet-next/src/integrations.ts` + `connections.ts` (capture `connectedAccountId` — Codex blocker: today `connect(id)` stores only toolkit ids)
+- Test: `packages/flowlet-next/src/webhooks.test.ts`, extend `integrations.test.ts`
 
-- [ ] **Step 1: Research pin (30 min, context7/web):** confirm Composio's current webhook signature scheme (header names, HMAC algorithm, timestamp format) and the trigger payload envelope (where `id`/delivery id, `connectedAccountId`, and the trigger slug live). Record findings as a comment block atop `webhooks.ts`. If documentation is ambiguous, verify against a captured real payload during the acceptance drill and adjust — the verification helper is isolated for exactly this.
-- [ ] **Step 2: Failing tests** — matrix: missing `COMPOSIO_WEBHOOK_SECRET` → 404; bad signature → 401; stale timestamp (>5 min) → 401; malformed JSON with valid signature → 400; valid + unknown connected account → 200 `{ skipped: true }`; valid + known account + matching enabled automation → fires runner (spy) under the connection's principal with `eventId` = delivery id; redelivery (same id) → 200, runner NOT re-invoked (DuplicateRunError swallowed).
-- [ ] **Step 3: Implement** `handleComposioWebhook(req, deps)` — raw body via `await req.text()` BEFORE JSON.parse (HMAC over raw bytes), `crypto.timingSafeEqual` for compare, then: parse → look up connection by connected-account id → `findEnabledByTrigger({ kind: "composio", key: <trigger slug> })` under that principal → for each, build `TriggerEnvelope { source: "composio", eventId, subject, occurredAt, payload }` → `runner.fire(...)` (match the runner's actual firing API from `createSchedulerFiringHandler` / `host-events.ts` — reuse the host-events ingest helper if it fits). Catch `DuplicateRunError` → treat as success. Route it in `handler.ts` under `webhooks/composio`.
-- [ ] **Step 4: Run** — green. Fix the stale "cloud-only" comment in `in-process-scheduler.ts` (now: "needs a reachable webhook URL — see @flowlet/next webhooks"). **Commit** `feat(next): signature-verified Composio webhook ingress (single-tenant v1)`
+- [ ] **Step 1: Connected-account capture first** — read `integrations.ts`/`connections.ts`; wherever the Composio OAuth flow lands a successful connection (the status-poll or callback path), persist the Composio `connectedAccountId` via the store's `setConnectedAccount`. Extend the in-memory `ConnectionsStore` with the same two methods (Task 9 shapes) so both impls satisfy the widened contract. Failing test: after a simulated connect flow, `findByConnectedAccount(accountId)` resolves the toolkit+principal.
+- [ ] **Step 2: Research pin (30 min, context7/web):** Composio's current webhook signature scheme (headers, HMAC algo, timestamp format) and trigger payload envelope (delivery id, `connectedAccountId`, trigger slug paths). Record as a comment block atop `webhooks.ts`; the verify helper is isolated so a real captured payload at drill time can correct it cheaply.
+- [ ] **Step 3: Failing tests** — matrix: missing `COMPOSIO_WEBHOOK_SECRET` → 404; bad signature → 401; stale timestamp (>5 min) → 401; valid sig + malformed JSON → 400; valid + unknown connected account → 200 `{ skipped: true }`; valid + known account + matching enabled automation → runner fired under the connection's principal, `eventId` = delivery id; redelivery → 200, runner not re-invoked (`DuplicateRunError` swallowed).
+- [ ] **Step 4: Implement** `handleComposioWebhook(req, deps)` — `const raw = await req.text()` BEFORE parsing (HMAC over raw bytes), `crypto.timingSafeEqual`; then parse → `findByConnectedAccount` → `findEnabledByTrigger({ kind: "composio", key: slug })` under that principal → envelope → fire via the same pipeline host events use (read `host-events.ts` and reuse its ingest helper if it fits; else call the runner exactly as `createSchedulerFiringHandler` does). Route `webhooks/composio` in the handler.
+- [ ] **Step 5: Run** — green. Correct the stale "cloud-only" comment in `in-process-scheduler.ts` (now: "needs a reachable webhook URL — see @flowlet/next webhooks"). **Commit** `feat(next): signature-verified Composio webhook ingress (single-tenant v1)`
 
 ### Task 14: Thread persistence through `/chat`
 
 **Files:**
-- Modify: `packages/flowlet-next/src/chat.ts`, `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/client/flowlet-root.tsx` (send `threadId`)
+- Modify: `packages/flowlet-next/src/chat.ts`, `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/client/flowlet-root.tsx`
 - Test: `packages/flowlet-next/src/chat.test.ts`
 
-- [ ] **Step 1: Failing tests** — (a) a chat request with `threadId` upserts the incoming client messages into the ThreadStore before streaming and the assistant message after settlement (in-memory ThreadStore + a stub agent that emits a fixed UIMessage stream — follow existing chat.test.ts stubbing patterns); (b) a resumed request re-sending mutated approval messages (same ids, new parts) results in updated rows, not duplicates (assert count + parts); (c) no `threadId` → nothing persisted (back-compat); (d) `GET /threads` lists thread metadata; `GET /threads/<id>` returns seq-ordered messages (route via full-tail: `threads` and `threads/<id>`).
-- [ ] **Step 2: Implement** — `ChatRequestBody` gains `threadId?: string`; when present and a ThreadStore is wired: upsert `body.messages` (each `{ id: m.id, message: m }`) pre-stream; wrap the agent stream to capture the final assistant UIMessage on finish (the ai SDK's `createUIMessageStreamResponse` consumes a stream — use the SDK's `onFinish` hook on the stream creation if available in the installed version, else tee the stream; check how the engine exposes run completion) and upsert it. Add the two GET routes. `FlowletRoot`: include `threadId` in the transport body (`DefaultChatTransport({ api, body: { threadId } })` — verify the installed ai-SDK transport supports a static body object; it does via `body` option).
-- [ ] **Step 3: Run** — green. **Commit** `feat(next): durable chat threads (upsert-by-message-id, seq-ordered reads)`
+`FlowletAgent.run()` returns a plain `ReadableStream` — there is no `onFinish` hook (Codex). Capture the assistant message by TEEING the UIMessage stream and reducing it server-side.
+
+- [ ] **Step 1: Failing tests** — (a) chat with `threadId` upserts incoming client messages pre-stream and the final assistant message post-stream (stub agent emitting a fixed UIMessage-chunk sequence — follow `chat.test.ts`'s existing stubbing; assert by CONSUMING the response body fully, then reading the store); (b) resume re-send with mutated approval parts (same ids) → updated rows, not duplicates; (c) no `threadId` → nothing persisted; (d) `GET threads` lists metadata; `GET threads/<id>` returns seq-ordered messages.
+- [ ] **Step 2: Implement** — body gains `threadId?: string`. When present + ThreadStore wired: `await threads.upsertMessages(scope, threadId, body.messages)` pre-stream; then `const [a, b] = stream.tee()` — respond with `a`, and consume `b` through the ai SDK's UIMessage-stream reader (`readUIMessageStream` from `ai` if exported in the installed version — check; else accumulate the chunks and reduce to the final UIMessage per the UIMessage-chunk protocol used in the engine tests) and upsert the terminal assistant message `after` the stream closes (fire-and-forget with error logging — a persistence failure must not kill the response). Add the two GET routes (principal-guarded). `FlowletRoot`: pass `body: { threadId }` on `DefaultChatTransport` (verify the installed ai-SDK supports the static `body` option; it does in v5 — confirm at implementation).
+- [ ] **Step 3: Run** — green. **Commit** `feat(next): durable chat threads (upsert-by-message-id, tee-captured assistant turns)`
 
 ### Task 15: Saved flowlets — server endpoints + client adapter
 
 **Files:**
-- Modify: `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/client/flowlet-root.tsx`
 - Create: `packages/flowlet-next/src/flowlets.ts`, `packages/flowlet-next/src/client/server-store.ts`
+- Modify: `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/client/flowlet-root.tsx`, `packages/flowlet-next/src/capabilities.ts`
 - Test: `packages/flowlet-next/src/flowlets.test.ts`, `packages/flowlet-next/src/client/server-store.test.ts`
 
-- [ ] **Step 1: Read** `packages/flowlet-shell/src/seams/store.ts` — the client `FlowletStore` seam (list/load/save/remove + `Flowlet` record). The server endpoints mirror it 1:1 over HTTP.
-- [ ] **Step 2: Failing endpoint tests** — `GET /flowlets` → list; `GET /flowlets/<id>` → one or 404; `POST /flowlets` (save, body = record) → saved record with server timestamps; `DELETE` via `POST /flowlets/<id>/delete` (the handler only exports GET/POST — keep the existing convention, don't add a DELETE export without checking how PR #34's toast routes did it; if the handler already gained more verbs on the interface branch, match it at rebase time and note it in the PR).
-- [ ] **Step 3: Implement** endpoints over `createDrizzleFlowletRegistry`, principal-guarded like `/chat`.
-- [ ] **Step 4: Failing client-adapter tests** — `createServerFlowletStore(basePath)` implements the shell seam against `fetch` (happy paths + a 500 → throws loudly, matching the web-storage seam's "failures are loud" contract). jsdom/fetch-mock per existing client test patterns.
-- [ ] **Step 5: Implement + wire** — in `flowlet-root.tsx`, pick the store by capability: the `/capabilities` response gains `storage: boolean` (set true when the handler has durable storage — add to `detectCapabilities`/handler assembly and its test); `storage ? createServerFlowletStore(basePath) : createWebStorage(...)` (existing localStorage behavior is the no-storage fallback, no data migration in v1 — document).
-- [ ] **Step 6: Run** both suites + `pnpm --filter @flowlet/next test` full — green. **Commit** `feat(next): durable saved flowlets — /flowlets endpoints + server-backed client store`
+- [ ] **Step 1: Read seams** — server side implements core `SavedFlowletStore` (Task 9); the CLIENT seam is the shell's `FlowletStore` (`packages/flowlet-shell/src/seams/store.ts` — read it; its `Flowlet` record differs from core's `SavedFlowlet`). The endpoints speak the SHELL record shape (that's what the client stores today; `record` jsonb column holds it verbatim) — implement the server store as a thin registry over the shell shape and note in code that core's `SavedFlowlet` reconciliation happens when cloud lands (don't force a lossy mapping now; YAGNI).
+- [ ] **Step 2: Failing endpoint tests** — `GET flowlets` → list; `GET flowlets/<id>` → record or 404; `POST flowlets` (body = draft) → saved with server timestamps; `POST flowlets/<id>/delete` → gone. Principal-guarded like `/chat`.
+- [ ] **Step 3: Implement** endpoints over the Drizzle registry.
+- [ ] **Step 4: Failing client tests** — `createServerFlowletStore(basePath)` implements the shell seam over `fetch`; a 500 THROWS (web-storage's "failures are loud" contract); happy paths roundtrip.
+- [ ] **Step 5: Wire by capability** — `detectCapabilities`/assembly add `storage: boolean`; `flowlet-root.tsx` picks `capabilities?.storage ? createServerFlowletStore(basePath) : createWebStorage(...)`. No localStorage migration in v1 (document in the deploy guide).
+- [ ] **Step 6: Run** full `pnpm --filter @flowlet/next test` — green. **Commit** `feat(next): durable saved flowlets — endpoints + server-backed client store`
 
-### Task 16: Decisions + connections wired durable
+### Task 16: Decisions actually wired (remember layer + onExecuted)
 
 **Files:**
-- Modify: `packages/flowlet-next/src/handler.ts` (assembly), `packages/flowlet-next/src/default-policy.ts` (accept injected DecisionStore — read first; the remember layer wraps the policy somewhere in assembly), `packages/flowlet-next/src/integrations.ts`
-- Test: extend `handler.test.ts`, `integrations.test.ts`
+- Modify: `packages/flowlet-next/src/handler.ts` (assembly), `packages/flowlet-next/src/action.ts`
+- Test: extend `handler.test.ts` + `action.test.ts`
 
-- [ ] **Step 1: Failing tests** — (a) with durable storage, the assembled policy's remember layer round-trips through the Drizzle decision store (approve-once → second identical evaluate auto-allows, then rebuild the world from the same PGlite dir → still auto-allows); (b) connections: connect a toolkit, rebuild world → still connected (`connectedToolkits()` includes it).
-- [ ] **Step 2: Implement** — assembly passes `createDrizzleDecisionStore(db, scope)` into the remember wrapper and `createDrizzleConnectionsStore(db, scope, catalog)` as the default connections store when durable (explicit `options.connections` still wins).
-- [ ] **Step 3: Run** — green. **Commit** `feat(next): durable approval decisions + integration connections`
+Codex ground truth: NO remember layer wraps the policy today, and `/action` never calls `policy.onExecuted` — durable decisions need both ends built, not just swapped.
+
+- [ ] **Step 1: Failing tests** — (a) with durable storage, an approved-and-executed action for tool+input X makes the NEXT `policy.evaluate` for identical X return allow (the remember contract) — and still does after rebuilding assembly from the same PGlite dir; (b) a DENIED action never memoizes (re-prompts); (c) without durable storage, behavior is unchanged (no remember layer, or in-memory remember — pick: **in-memory remember when storage off**, keeping semantics uniform; test accordingly).
+- [ ] **Step 2: Implement** — assembly: `policy = rememberDecisions(basePolicy, { store: decisionStore, policyVersion: <existing constant or "v1"> })` (read `remember.ts` for the exact factory signature); `action.ts`: after a successful approved execution, `await policy.onExecuted?.(ctx)` with the same `PolicyContext` used for evaluate (find the execute-success point, ~line 127 region).
+- [ ] **Step 3: Run** — green. **Commit** `feat(next): ask-once-remember wired end-to-end with durable decisions`
 
 ---
 
@@ -546,10 +543,10 @@ where `ensureFlowletWorld` is the (new, exported-for-internal-use) shared lazy a
 ### Task 17: CLI codemod — instrumentation.ts + env docs
 
 **Files:**
-- Modify: `packages/flowlet-cli/src/next-wiring.ts` (+ its test), `packages/flowlet-cli/src/init.ts` if wiring is orchestrated there (read first)
+- Modify: `packages/flowlet-cli/src/next-wiring.ts` (+ test), `packages/flowlet-cli/src/init.ts` if it orchestrates wiring (read first)
 - Test: `packages/flowlet-cli/src/next-wiring.test.ts`
 
-- [ ] **Step 1: Failing tests** — the codemod (a) creates `instrumentation.ts` at the app root (or `src/`, matching where it put the route file — reuse its existing root-detection) with:
+- [ ] **Step 1: Failing tests** — codemod (a) creates `instrumentation.ts` at the detected app root (reuse the route-file root detection) with:
 
 ```ts
 export async function register() {
@@ -560,9 +557,8 @@ export async function register() {
 }
 ```
 
-(b) merges into an EXISTING `instrumentation.ts` non-destructively (append the import+call inside `register` if present; if the file exists and can't be safely merged, write `instrumentation.flowlet-example.ts` and print a manual step — follow the codemod's existing conflict convention); (c) `.env.example` gains commented `DATABASE_URL`, `FLOWLET_TICK_SECRET`, `COMPOSIO_WEBHOOK_SECRET`, `FLOWLET_SCHEDULER` entries.
-- [ ] **Step 2: Implement**, matching next-wiring's existing codemod style (idempotent re-runs — running init twice must not duplicate).
-- [ ] **Step 3: Run** `pnpm --filter flowlet-cli test -- next-wiring` — green. **Commit** `feat(cli): init wires instrumentation.ts scheduler boot + storage env docs`
+(b) merges into an existing `instrumentation.ts` non-destructively, or writes `instrumentation.flowlet-example.ts` + prints a manual step when it can't (follow the codemod's existing conflict convention); (c) `.env.example` gains commented `DATABASE_URL`, `FLOWLET_DATA_DIR`, `FLOWLET_TICK_SECRET`, `COMPOSIO_WEBHOOK_SECRET`, `FLOWLET_SCHEDULER` entries; (d) idempotent re-run.
+- [ ] **Step 2: Implement** in next-wiring's style. **Step 3: Run** `pnpm --filter flowlet-cli test -- next-wiring` — green. **Commit** `feat(cli): init wires instrumentation.ts scheduler boot + storage env docs`
 
 ### Task 18: Docs
 
@@ -570,31 +566,31 @@ export async function register() {
 - Modify: `docs/quickstart.md`
 - Create: `docs/persistence-and-deploy.md`
 
-- [ ] **Step 1:** `docs/persistence-and-deploy.md` — succinct and direct, covering: the one storage knob (PGlite default / `DATABASE_URL` / `storage: false`); what persists (all five surfaces); single-writer + single-tenant posture (verbatim honest); scheduler modes (instrumentation auto-start vs `FLOWLET_SCHEDULER=external` + Vercel `vercel.json` crons + Cloudflare Cron Trigger examples hitting `/tick` with the bearer secret); Composio webhook setup (dashboard URL, secret env, tunnel note for local dev); migration policy (`autoMigrate` + out-of-band path).
-- [ ] **Step 2:** `quickstart.md` — add the persistence paragraph + link; update the endpoints list (`webhooks/composio`, `threads`, `flowlets`); note `instrumentation.ts` in the init output inventory.
+- [ ] **Step 1:** `persistence-and-deploy.md` — succinct: the one storage knob (PGlite default / `DATABASE_URL` / `storage: false`); what persists (all five surfaces); single-writer + single-tenant posture, verbatim honest; scheduler modes (instrumentation auto-start; `FLOWLET_SCHEDULER=external` + `vercel.json` cron and Cloudflare Cron Trigger examples hitting `/tick` with the bearer secret); Composio webhook setup (dashboard URL, secret env, tunnel for local dev); migrations (`autoMigrate: false` + out-of-band path); no localStorage→server flowlet migration in v1.
+- [ ] **Step 2:** `quickstart.md` — persistence paragraph + link; endpoint list additions (`webhooks/composio`, `threads`, `flowlets`); `instrumentation.ts` in the init inventory.
 - [ ] **Step 3: Commit** `docs: persistence + deploy guide; quickstart updates`
 
 ### Task 19: The kill-the-server drill (scripted)
 
 **Files:**
-- Create: `scripts/drill-persistence.mjs` (repo root, next to existing scripts if a scripts dir exists — check; else `packages/flowlet-next/scripts/`)
-- Test: the script IS the test (exit non-zero on any failed assertion)
+- Create: `scripts/drill-persistence.mjs` (check whether a root `scripts/` exists; else `packages/flowlet-next/scripts/`)
 
-- [ ] **Step 1: Write the script** — automates spec acceptance items 1–4 against a target app dir (default: `apps/demo-bank`): boot `next start` (child process) with a temp `FLOWLET_DATA_DIR`; via HTTP: create an automation through the authoring tools (POST /chat is LLM-dependent — instead seed deterministically: add a tiny test-only route? NO — drive the store directly via a seeding script that imports `@flowlet/store` with the same data dir, creating an automation with a 1-minute cron + grant, THEN boot). Assert: `GET`-able state before kill; `SIGKILL` the server; reboot; assert automations/flowlets/threads/decisions all read back; wait ≤75s for the cron to fire with no client connected (poll run history through the store); assert run status succeeded + no `waiting_approval`.
-- [ ] **Step 2: Run it** on demo-bank with PGlite. Fix what breaks (this is the step that finds real integration bugs — budget real time; each fix lands as its own commit in the package it touches).
-- [ ] **Step 3: Run it** with `DATABASE_URL` pointing at a local Dockerized Postgres (`docker run --rm -p 5433:5432 -e POSTGRES_PASSWORD=flowlet postgres:16`) as the Supabase stand-in; the live Supabase + live Composio webhook passes happen at release time per the spec (deployed host required).
+- [ ] **Step 1: Write the script** — drives spec acceptance 1–4 against `apps/demo-bank`: seed deterministically by importing `@flowlet/store` against a temp `FLOWLET_DATA_DIR` (create an automation with a ~1-minute cron trigger + valid grant via `DrizzleAutomationStore` + `computeGrant` from runtime, a saved flowlet, a thread with messages, a decision); boot `next start` (child process, same env); assert via HTTP that state reads back; `SIGKILL`; reboot; re-assert all four surfaces; wait ≤75s with NO client request for the cron to fire (instrumentation boot must start the timer); poll run history via the store; assert a succeeded run honoring the grant (no `waiting_approval`). Exit non-zero on any failed assertion, printing which.
+- [ ] **Step 2: Run on PGlite** — fix what breaks (this step finds the real integration bugs; each fix commits in the package it touches).
+- [ ] **Step 3: Run with `DATABASE_URL`** on local Docker Postgres (`docker run --rm -d -p 5433:5432 -e POSTGRES_PASSWORD=flowlet postgres:16`) as the Supabase stand-in. Live Supabase + live Composio webhook = release-time on a deployed host (spec items 5–6).
 - [ ] **Step 4: Commit** `test: kill-the-server persistence drill script`
 
 ### Task 20: Full-repo verification + PR
 
-- [ ] **Step 1:** `pnpm build && pnpm typecheck && pnpm lint && pnpm test` at the root — all green (turbo).
-- [ ] **Step 2:** Browser pass per repo rules: run demo-bank, exercise chat + save a flowlet + author an automation, restart, screenshot the surviving state (screenshots go in the PR body).
-- [ ] **Step 3:** Open the PR (never merge): title `feat: durable persistence + scheduler liveness + Composio webhook ingress (automations OSS release)`, body = spec link, decisions summary, drill output, screenshots, the two Yousef-gated items called out (last-ticked UI unbuilt; single-tenant posture) — and the note that PR #35 executes separately from its own plan.
+- [ ] **Step 1:** `pnpm build && pnpm typecheck && pnpm lint && pnpm test` at root — green.
+- [ ] **Step 2:** Browser pass (repo rule): run demo-bank, exercise chat + save a flowlet + author an automation, restart the server, screenshot surviving state for the PR.
+- [ ] **Step 3:** Open the PR (never merge): spec link, decision summary, drill output, screenshots; call out the Yousef-gated items (last-ticked UI unbuilt, single-tenant posture) and that PR #35 executes separately from its own plan.
 
 ---
 
 ## Explicitly deferred to their own tracks
 
-- **PR #34** — Yousef reviews/merges; this branch rebases if #34 lands first (watch for handler route additions on that branch at rebase time — Task 15 note).
+- **PR #34** — Yousef reviews/merges; rebase over it if it lands first (watch for handler route/verb additions on `yousefh409/interface` at rebase time — Task 15 note).
 - **PR #35 (source-baseline)** — executed from its existing spec+plan on `yousefh409/remix-source-baseline` after this plan completes.
 - Live-Supabase + live-Composio drill passes — release-time, deployed host.
+- Real-Postgres CI job for the migration/advisory-lock race — add to CI config only if a Postgres service container is already conventional in this repo's CI; otherwise document `docker`-based local verification in the deploy guide and defer the CI wiring (don't invent CI infrastructure mid-plan).
