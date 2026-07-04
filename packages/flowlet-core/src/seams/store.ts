@@ -135,8 +135,9 @@ export type AuditEvent = { at: string; principal: Principal } & (
 );
 
 /**
- * Read API (ENG-193 §6.2): principal-scoped, newest first, optionally
- * filtered by kind/since/limit. Powers receipts, the diary, and ENG-194.
+ * Read API (ENG-193 §6.2): principal-scoped, ordered by `at` descending,
+ * optionally filtered by kind/since/limit (an empty `kinds` array means no
+ * kind filter; `since` is inclusive). Powers receipts, the diary, and ENG-194.
  */
 export interface AuditLog {
   append(event: AuditEvent): Promise<void>;

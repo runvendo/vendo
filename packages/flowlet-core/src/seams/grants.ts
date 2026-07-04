@@ -69,9 +69,10 @@ export const permissionGrantSchema = z
 export type PermissionGrant = z.infer<typeof permissionGrantSchema>;
 
 /**
- * GrantStore seam. The store assigns `id` and `grantedAt` — callers never
- * supply them (house authorship rule). Truth lives server-side where policy
- * evaluates; clients only read through this seam.
+ * GrantStore seam. The store assigns `id`, `tenantId`, `subject`, and
+ * `grantedAt` (`revokedAt` starts unset) — callers never supply them (house
+ * authorship rule). Truth lives server-side where policy evaluates; clients
+ * only read through this seam.
  */
 export interface GrantStore {
   create(
@@ -80,6 +81,7 @@ export interface GrantStore {
   ): Promise<PermissionGrant>;
   list(scope: Principal): Promise<PermissionGrant[]>;
   revoke(scope: Principal, id: string): Promise<void>;
-  /** Live (unrevoked) grants for one tool — the policy-time lookup. */
+  /** Unrevoked grants for one tool — the policy-time lookup. Excludes revoked
+   *  grants only; expiry is evaluated at match time by the policy layer. */
   findForTool(scope: Principal, tool: string): Promise<PermissionGrant[]>;
 }

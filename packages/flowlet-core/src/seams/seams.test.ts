@@ -48,7 +48,7 @@ function makeStore(): Store {
     recordRun: async () => {},
     listRuns: async () => [],
   };
-  const audit: AuditLog = { append: async () => {} };
+  const audit: AuditLog = { append: async () => {}, query: async () => [] };
   return { threads, flowlets, automations, audit };
 }
 

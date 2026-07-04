@@ -160,15 +160,18 @@ export class InMemoryAuditLog implements AuditLog {
     this.log.push(structuredClone(event));
   }
 
-  /** Read API (ENG-193 §6.2): principal-scoped, newest first. */
+  /** Read API (ENG-193 §6.2): principal-scoped, ordered by `at` descending.
+   *  `since` is inclusive; an empty `kinds` array means no kind filter. */
   async query(
     scope: Principal,
     filter?: { kinds?: AuditEvent["kind"][]; since?: string; limit?: number },
   ): Promise<AuditEvent[]> {
     let rows = this.log.filter((e) => sameScope(scope, e.principal));
-    if (filter?.kinds) rows = rows.filter((e) => (filter.kinds as string[]).includes(e.kind));
+    if (filter?.kinds && filter.kinds.length > 0) {
+      rows = rows.filter((e) => (filter.kinds as string[]).includes(e.kind));
+    }
     if (filter?.since !== undefined) rows = rows.filter((e) => e.at >= filter.since!);
-    rows = [...rows].reverse();
+    rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     if (filter?.limit !== undefined) rows = rows.slice(0, filter.limit);
     return structuredClone(rows);
   }
