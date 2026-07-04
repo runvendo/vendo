@@ -39,6 +39,7 @@ export * from "./components/ConnectDock";
 export * from "./components/ConnectTray";
 export * from "./components/ConnectCard";
 export * from "./components/BrandIcon";
+export * from "./components/WaitingList";
 
 export * from "./FlowletThread";
 export * from "./elements/FlowletOverlay";
