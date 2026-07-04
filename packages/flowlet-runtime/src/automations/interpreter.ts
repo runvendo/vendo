@@ -26,7 +26,7 @@ import {
   resolveInput,
   type ExpressionScope,
 } from "./expressions";
-import { canonicalJson, fnv1a64, hasValidGrant } from "./grants";
+import { canonicalJson, fnv1a64, hashDescriptor, hasValidGrant } from "./grants";
 import type {
   AgentExecution,
   AutomationSpec,
@@ -110,13 +110,30 @@ export interface InterpretInput {
   resume?: { checkpoint: unknown; approved: boolean };
 }
 
+/** What the interpreter can observe and record about a park — no I/O, no
+ *  store access (this module stays pure; the runner persists, per its own
+ *  docstring's rule). One-to-one with store.ts's CreateParkedActionInput,
+ *  minus automationId/runId (the runner already has those from InterpretInput). */
+export interface ParkedActionDraft {
+  stepId: string;
+  tool: string;
+  input: Record<string, unknown>;
+  guardExpr?: string;
+  guardBindings?: Record<string, unknown>;
+  reason: "ungranted" | "critical";
+  tier: "act" | "critical";
+  descriptorHash: string;
+  requestedAt: string;
+}
+
 export type InterpretOutcome =
-  | { status: "succeeded"; steps: StepRecord[] }
-  | { status: "failed"; steps: StepRecord[]; error: string }
+  | { status: "succeeded"; steps: StepRecord[]; parkedActions: ParkedActionDraft[] }
+  | { status: "failed"; steps: StepRecord[]; error: string; parkedActions: ParkedActionDraft[] }
   | {
       status: "waiting_approval";
       steps: StepRecord[];
       pendingApproval: PendingApproval;
+      parkedActions: ParkedActionDraft[];
     };
 
 /** Internal control-flow signals. */
@@ -162,6 +179,10 @@ interface ExecContext {
   nowMs: () => number;
   now: () => string;
   grants: AutomationGrant[];
+  /** ENG-193 §4.6 — accumulates across the WHOLE run, including every
+   *  for_each iteration (shared by reference into iterationCtx, unlike
+   *  `records`, which is deliberately per-iteration). */
+  parkedActions: ParkedActionDraft[];
 }
 
 function specHasAgent(spec: AutomationSpec): boolean {
@@ -287,11 +308,30 @@ async function executeToolStep(ctx: ExecContext, step: ToolStep): Promise<void> 
         });
       if (!granted && !resumeApproved) {
         if (ctx.insideLoop) {
-          throw new StepFailure(
-            step.id,
-            `approval-gated tool "${step.tool}" inside for_each requires a grant ` +
-              "(per-iteration pauses are not supported)",
-          );
+          // ENG-193 §4.6: park the action, not the run — record it and treat
+          // this step as a soft-skip (deviation #6: sibling steps in the same
+          // iteration still run; a later step reading this one's output sees
+          // undefined, the spec author's responsibility to guard against).
+          const critical = dangerTier(tool.descriptor) === "critical";
+          ctx.parkedActions.push({
+            stepId: step.id,
+            tool: step.tool,
+            input: resolved,
+            ...(step.if !== undefined ? { guardExpr: step.if } : {}),
+            ...(Object.keys(ctx.bindings).length > 0 ? { guardBindings: { ...ctx.bindings } } : {}),
+            reason: critical ? "critical" : "ungranted",
+            tier: critical ? "critical" : "act",
+            descriptorHash: hashDescriptor(tool.descriptor),
+            requestedAt: ctx.now(),
+          });
+          ctx.records.push({
+            id: step.id,
+            status: "parked",
+            startedAt,
+            finishedAt: ctx.now(),
+            idempotencyKey: `${ctx.input.runId}/${step.id}/0`,
+          });
+          return;
         }
         throw new PauseSignal(step.id, step.tool, resolved);
       }
@@ -598,6 +638,7 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
     nowMs,
     now,
     grants: input.grants ?? [],
+    parkedActions: [],
   };
 
   try {
@@ -606,7 +647,7 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
     } else {
       await executeSteps(ctx, input.spec.execution.steps);
     }
-    return { status: "succeeded", steps: ctx.records };
+    return { status: "succeeded", steps: ctx.records, parkedActions: ctx.parkedActions };
   } catch (err) {
     if (err instanceof PauseSignal) {
       const requestedAtMs = nowMs();
@@ -626,9 +667,10 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
             steps: ctx.records,
           } satisfies Checkpoint,
         },
+        parkedActions: ctx.parkedActions,
       };
     }
-    return { status: "failed", steps: ctx.records, error: errorMessage(err) };
+    return { status: "failed", steps: ctx.records, error: errorMessage(err), parkedActions: ctx.parkedActions };
   }
 }
 

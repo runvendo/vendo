@@ -436,6 +436,159 @@ describe("approvals, grants, pause/resume", () => {
   });
 });
 
+describe("ENG-193 §4.6 — for_each parks instead of failing", () => {
+  it("§4.6: an ungranted gated tool inside for_each PARKS the iteration's step and the run still succeeds", async () => {
+    const notify = makeTool("notify_act");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [{ id: "notify", type: "tool", tool: "notify_act", input: { row: "{{ item }}" } }],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { notify_act: notify }),
+      policy: approveFor("notify_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(notify.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(2);
+    expect(outcome.parkedActions.map((p) => p.input)).toEqual([{ row: "a" }, { row: "b" }]);
+    for (const parked of outcome.parkedActions) {
+      expect(parked.stepId).toBe("notify");
+      expect(parked.tool).toBe("notify_act");
+      expect(parked.reason).toBe("ungranted");
+      expect(parked.tier).toBe("act");
+    }
+    const loop = outcome.steps.find((s) => s.id === "loop")!;
+    expect(loop.status).toBe("succeeded");
+    const output = loop.output as { iterations: unknown[] };
+    expect(output.iterations).toHaveLength(2);
+  });
+
+  it("§4.6/§8: a CRITICAL tool inside for_each ALWAYS parks, even with a matching grant", async () => {
+    const freeze = makeTool("freeze_card", { destructive: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 1,
+          steps: [{ id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "{{ item }}" } }],
+        },
+      ],
+    });
+    const nested = (
+      (spec.execution as { steps: Array<{ steps: Array<{ id: string }> }> }).steps[0]
+    ).steps[0]!;
+    const grant: AutomationGrant = computeGrant({
+      tool: "freeze_card",
+      descriptor: freeze.descriptor,
+      spec,
+      step: nested as never,
+      now: NOW,
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { freeze_card: freeze }),
+      policy: approveFor("freeze_card"),
+      grants: [grant],
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(freeze.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(1);
+    expect(outcome.parkedActions[0]!.reason).toBe("critical");
+    expect(outcome.parkedActions[0]!.tier).toBe("critical");
+  });
+
+  it("a parked step's sibling steps in the SAME iteration still run (deviation #6)", async () => {
+    const gated = makeTool("gated_act");
+    const after = makeTool("after_tool", { readOnly: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [
+            { id: "gate", type: "tool", tool: "gated_act", input: { row: "{{ item }}" } },
+            { id: "after", type: "tool", tool: "after_tool", input: { row: "{{ item }}" } },
+          ],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { gated_act: gated, after_tool: after }),
+      policy: approveFor("gated_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(after.calls).toHaveLength(2);
+    expect(outcome.parkedActions).toHaveLength(2);
+  });
+
+  it("a parked step's own StepRecord has status 'parked', not 'failed' (never aborts the run)", async () => {
+    // NOTE (deviation): per-iteration StepRecords (including `.status`) are
+    // NOT surfaced through the public interpret() API — executeForEach folds
+    // only `record.output` into `iterations[i].steps` (pre-existing, unchanged
+    // by this task). This asserts the equivalent black-box-observable
+    // distinction: unlike a real StepFailure inside for_each (which propagates
+    // and fails the WHOLE run — see "denied tools fail the step outright"),
+    // a parked step leaves the run "succeeded", the loop's own record
+    // "succeeded", and records exactly one parked draft.
+    const gated = makeTool("gated_act");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 1,
+          steps: [{ id: "gate", type: "tool", tool: "gated_act", input: { row: "{{ item }}" } }],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { gated_act: gated }),
+      policy: approveFor("gated_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(gated.calls).toHaveLength(0);
+    const loop = outcome.steps.find((s) => s.id === "loop")!;
+    expect(loop.status).toBe("succeeded");
+    expect(outcome.parkedActions).toHaveLength(1);
+  });
+
+  it("direct (non-loop) steps are UNCHANGED: an ungranted gated tool still PauseSignal-checkpoints, never parks", async () => {
+    const fetch = makeTool("fetch_rows");
+    const freeze = makeTool("freeze_card");
+    const send = makeTool("send_msg");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        { id: "first", type: "tool", tool: "fetch_rows" },
+        { id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "c1" } },
+        { id: "notify", type: "tool", tool: "send_msg" },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { fetch_rows: fetch, freeze_card: freeze, send_msg: send }),
+      policy: approveFor("freeze_card"),
+    });
+    expect(outcome.status).toBe("waiting_approval");
+    expect(freeze.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toEqual([]);
+  });
+});
+
 describe("dry-run", () => {
   it("simulates mutating tools (recording evaluated input) and executes read-only ones", async () => {
     const read = makeTool("read_rows", { readOnly: true, result: { data: [1] } });
