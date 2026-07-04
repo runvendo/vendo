@@ -307,7 +307,10 @@ export interface AutomationEngineStore extends CoreAutomationStore {
   ): Promise<AutomationRun>;
   finalizeRun(scope: Principal, id: string, input: FinalizeRunInput): Promise<AutomationRun>;
   getRun(scope: Principal, id: string): Promise<AutomationRun | undefined>;
-  /** Atomically take the pending approval off a run. Exactly one caller wins. */
+  /** Atomically take the pending approval off a run. Exactly one caller wins.
+   *  Implementations must preserve the invariant that `pendingApproval` exists
+   *  only on runs whose outcome is `waiting_approval` — the claim is the sole
+   *  authority the runner's resume path checks. */
   claimPendingApproval(scope: Principal, runId: string): Promise<PendingApproval | undefined>;
   /** waiting_approval runs are cancelled on pause/edit/delete (amendment 7). */
   cancelPendingRuns(scope: Principal, automationId: string): Promise<void>;
