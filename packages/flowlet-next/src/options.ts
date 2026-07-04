@@ -7,7 +7,7 @@
 import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
 import type { AuditLog, GrantStore, HostToolDefinition, RegisteredComponent, ThreadStore } from "@flowlet/core";
-import type { ApprovalPolicy, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
+import type { ApprovalPolicy, BreakerState, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
 import type { ConnectionsStore } from "./connections";
 
 export interface IntegrationCatalogEntry {
@@ -59,11 +59,16 @@ export interface FlowletHandlerOptions {
   /** Max model->tool steps per turn. Default: engine default. */
   maxSteps?: number;
   /**
-   * Store seam members backing grants, audit, and thread persistence
-   * (ENG-193 §6.1/§6.2). Defaults: fresh in-memory instances (reset on
-   * process restart). Inject when the host persists these elsewhere.
+   * Store seam members backing grants, audit, thread persistence, and
+   * breaker state (ENG-193 §6.1/§6.2/§4.7). Defaults: fresh in-memory
+   * instances (reset on process restart). Inject when the host persists
+   * these elsewhere.
    */
-  store?: { grants?: GrantStore; audit?: AuditLog; threads?: ThreadStore };
+  store?: { grants?: GrantStore; audit?: AuditLog; threads?: ThreadStore; breakers?: BreakerState };
+  /** The judge model (ENG-193 §4.2). Default: undefined — the judge is
+   *  IDENTITY (fail-safe rollout; item-2 behavior, unchanged) until a host
+   *  opts in. */
+  judgeModel?: LanguageModel;
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
@@ -99,9 +104,11 @@ const optionsSchema = z
         grants: z.custom<GrantStore>((v) => typeof v === "object" && v !== null).optional(),
         audit: z.custom<AuditLog>((v) => typeof v === "object" && v !== null).optional(),
         threads: z.custom<ThreadStore>((v) => typeof v === "object" && v !== null).optional(),
+        breakers: z.custom<BreakerState>((v) => typeof v === "object" && v !== null).optional(),
       })
       .strict()
       .optional(),
+    judgeModel: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
   })
   .strict();
 

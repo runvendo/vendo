@@ -20,8 +20,24 @@
  * `packages/flowlet-next/src/policy-stack.ts` does for the production path).
  * `contextKey: threadId` lets a fade/session grant (later items) match within
  * one conversation; the standing grants item 2 mints ignore it.
+ *
+ * ENG-193 item 3 (§4.2/§4.7): `demoPolicy` also composes the judge and the
+ * deterministic breakers — OFF by default (no `FLOWLET_JUDGE_MODEL` set), so
+ * `policy.test.ts` and CI never make a live model call and `demoPolicy`
+ * behaves EXACTLY as item 2 shipped.
  */
-import { annotationPolicy, auditPolicy, composePolicy, grantPolicy, type ApprovalPolicy } from "@flowlet/runtime";
+import { anthropic } from "@ai-sdk/anthropic";
+import {
+  annotationPolicy,
+  auditPolicy,
+  composePolicy,
+  grantPolicy,
+  judgePolicy,
+  volumeBreaker,
+  cautionBreaker,
+  createBreakerState,
+  type ApprovalPolicy,
+} from "@flowlet/runtime";
 import { READ_ONLY_TOOLS } from "./tools";
 import { demoStore, CADENCE_SCOPE } from "./store";
 
@@ -60,10 +76,32 @@ const namePolicy: ApprovalPolicy = {
   },
 };
 
+/**
+ * Optional judge model (ENG-193 §4.2) — OFF by default (undefined) so
+ * `policy.test.ts` and CI never make a live model call: with no
+ * FLOWLET_JUDGE_MODEL set, `judgePolicy` is pure identity and `demoPolicy`
+ * behaves EXACTLY as item 2 shipped. Set it to a model id (a small/fast one
+ * is enough — the judge is a classifier, not a generator — e.g.
+ * "claude-haiku-4-5") to turn the judge on for a live verification pass.
+ */
+const JUDGE_MODEL_NAME = process.env.FLOWLET_JUDGE_MODEL;
+const judgeModel = JUDGE_MODEL_NAME ? anthropic(JUDGE_MODEL_NAME) : undefined;
+
+const breakerState = createBreakerState();
+
 export const demoPolicy: ApprovalPolicy = composePolicy(
   auditPolicy(demoStore.audit, { principalScope: () => CADENCE_SCOPE }),
-  grantPolicy(namePolicy, demoStore.grants, {
-    principalScope: () => CADENCE_SCOPE,
-    contextKey: (ctx) => ctx.threadId,
-  }),
+  volumeBreaker(
+    cautionBreaker(
+      judgePolicy(
+        grantPolicy(namePolicy, demoStore.grants, {
+          principalScope: () => CADENCE_SCOPE,
+          contextKey: (ctx) => ctx.threadId,
+        }),
+        { model: judgeModel },
+      ),
+      breakerState,
+    ),
+    breakerState,
+  ),
 );

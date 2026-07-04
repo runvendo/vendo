@@ -27,6 +27,7 @@ import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 import {
   buildDescriptor,
+  createBreakerState,
   createInMemoryGrantStore,
   hostToolset,
   InMemoryAuditLog,
@@ -79,10 +80,13 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const audit = options.store?.audit ?? new InMemoryAuditLog();
     const threads = options.store?.threads ?? new InMemoryThreadStore(() => new Date().toISOString());
     const threadIndex = createThreadIndex(threads);
-    // ENG-193 item 2: the item-1 stack wraps the host's base policy — grants
-    // can suppress repeat approvals (never critical), audit records executes.
+    const breakers = options.store?.breakers ?? createBreakerState();
+    // ENG-193 item 2/3: the production stack wraps the host's base policy —
+    // grants can suppress repeat approvals (never critical), a judge (off by
+    // default) can tighten/loosen the act tier, deterministic breakers can
+    // only tighten, and audit records executes.
     const basePolicy = options.policy ?? defaultFlowletPolicy;
-    const policy = composeProductionPolicy(basePolicy, { grants, audit });
+    const policy = composeProductionPolicy(basePolicy, { grants, audit, judgeModel: options.judgeModel, breakers });
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 

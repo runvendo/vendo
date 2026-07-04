@@ -108,4 +108,32 @@ describe("demoPolicy", () => {
       }),
     ).toBe("approve");
   });
+
+  it("with a judge configured, a matching grant is still gated on a judge escalation (composition smoke test)", async () => {
+    // Exercises the SAME composition shape demoPolicy uses, with a scripted
+    // mock model — proves the wiring, not the env var (which stays unset in CI).
+    const { annotationPolicy, judgePolicy, cautionBreaker, volumeBreaker, createBreakerState, grantPolicy, composePolicy } =
+      await import("@flowlet/runtime");
+    const { MockLanguageModelV3 } = await import("ai/test");
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "escalate: unusual" }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: { inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 0, text: 0, reasoning: 0 } },
+        warnings: [],
+      }),
+    });
+    const state = createBreakerState();
+    const stack = composePolicy(
+      volumeBreaker(cautionBreaker(judgePolicy(grantPolicy(annotationPolicy(), demoStore.grants, {
+        principalScope: () => CADENCE_SCOPE, contextKey: (ctx: { threadId?: string }) => ctx.threadId,
+      }), { model }), state), state),
+    );
+    const result = await stack.evaluate({
+      toolName: "GMAIL_SEND_EMAIL", input: {},
+      descriptor: { name: "GMAIL_SEND_EMAIL", source: "composio", annotations: {}, hasExecute: true, kind: "function" },
+      principal: PRINCIPAL, threadId: "th-1",
+    } as never);
+    expect(result).toBe("approve");
+  });
 });
