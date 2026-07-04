@@ -612,6 +612,9 @@ importers:
       '@flowlet/runtime':
         specifier: workspace:*
         version: link:../flowlet-runtime
+      '@flowlet/server':
+        specifier: workspace:*
+        version: link:../flowlet-server
       '@flowlet/shell':
         specifier: workspace:*
         version: link:../flowlet-shell

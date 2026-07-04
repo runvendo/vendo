@@ -11,11 +11,11 @@
 export const FLOWLET_NEXT_PACKAGE = "@flowlet/next";
 
 export { createFlowletHandler, type FlowletRouteHandlers } from "./handler";
-export type { FlowletHandlerOptions, IntegrationCatalogEntry } from "./options";
-export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
-export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
-export { manifestToolsToHostTools } from "./manifest-tools";
-export { defaultFlowletPolicy } from "./default-policy";
-export { createConnectionsStore, type ConnectionsStore } from "./connections";
-export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
-export { buildInstructions, type BuildInstructionsInput } from "./agent";
+export type { FlowletHandlerOptions, IntegrationCatalogEntry } from "@flowlet/server";
+export { detectCapabilities, type FlowletCapabilities } from "@flowlet/server";
+export { loadFlowletDir, type LoadedFlowletDir } from "@flowlet/server";
+export { manifestToolsToHostTools } from "@flowlet/server";
+export { defaultFlowletPolicy } from "@flowlet/server";
+export { createConnectionsStore, type ConnectionsStore } from "@flowlet/server";
+export { DEFAULT_INTEGRATION_CATALOG } from "@flowlet/server";
+export { buildInstructions, type BuildInstructionsInput } from "@flowlet/server";

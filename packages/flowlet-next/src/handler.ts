@@ -23,22 +23,28 @@
  */
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
-import { handleChat } from "./chat";
-import { handleAction, createApprovalStore } from "./action";
 import {
+  handleChat,
+  handleAction,
+  createApprovalStore,
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
   handleIntegrationsGet,
   handleIntegrationsPost,
-} from "./integrations";
-import { detectCapabilities } from "./capabilities";
-import { loadFlowletDir } from "./flowlet-dir";
-import { manifestToolsToHostTools } from "./manifest-tools";
-import { buildInstructions, createAgentCache } from "./agent";
-import { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld } from "./world";
-import { defaultFlowletPolicy } from "./default-policy";
-import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
-import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
+  detectCapabilities,
+  loadFlowletDir,
+  manifestToolsToHostTools,
+  buildInstructions,
+  createAgentCache,
+  createAutomationsWorld,
+  defaultModel,
+  type FlowletAutomationsWorld,
+  defaultFlowletPolicy,
+  resolvePrincipal,
+  DEFAULT_PRINCIPAL,
+  parseHandlerOptions,
+  type FlowletHandlerOptions,
+} from "@flowlet/server";
 
 export interface FlowletRouteHandlers {
   GET: (req: Request) => Promise<Response>;

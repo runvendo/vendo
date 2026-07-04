@@ -1,3 +1,32 @@
-// Placeholder entry point for @flowlet/server.
-// Task 2 moves the framework-agnostic handler core out of @flowlet/next into this package.
-export const FLOWLET_SERVER_VERSION = "0.0.0";
+/**
+ * Public API surface for `@flowlet/server` — the framework-agnostic handler
+ * core behind `@flowlet/next`. This package holds the request handlers
+ * (chat/action/integrations), capability detection, `.flowlet/` loading,
+ * the embedded automations world, the default policy, and the agent/
+ * instructions builder. Framework adapters (like `@flowlet/next`) wire
+ * these into their routing layer; this package has no framework deps.
+ *
+ * Server-only: reads `.flowlet/` from disk and holds API keys. Never import
+ * this from a client component.
+ */
+
+export const FLOWLET_SERVER_PACKAGE = "@flowlet/server";
+
+export { handleChat } from "./chat";
+export { handleAction, createApprovalStore, type ActionDeps } from "./action";
+export {
+  DEFAULT_INTEGRATION_CATALOG,
+  createConnectionsStore,
+  handleIntegrationsGet,
+  handleIntegrationsPost,
+  type ConnectionsStore,
+  type IntegrationsDeps,
+} from "./integrations";
+export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
+export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
+export { manifestToolsToHostTools } from "./manifest-tools";
+export { buildInstructions, createAgentCache, type BuildInstructionsInput, type AgentFactoryConfig } from "./agent";
+export { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld, type CreateWorldConfig } from "./world";
+export { defaultFlowletPolicy } from "./default-policy";
+export { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
+export { parseHandlerOptions, type FlowletHandlerOptions, type IntegrationCatalogEntry } from "./options";

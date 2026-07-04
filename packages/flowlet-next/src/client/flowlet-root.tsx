@@ -28,8 +28,8 @@ import {
 import { FlowletThemeProvider } from "@flowlet/components";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@flowlet/components/theme";
 import { brandToCssVars } from "@flowlet/components/descriptors";
-import { manifestToolsToHostTools } from "../manifest-tools";
-import type { FlowletCapabilities } from "../capabilities";
+import { manifestToolsToHostTools } from "@flowlet/server/manifest-tools";
+import type { FlowletCapabilities } from "@flowlet/server/capabilities";
 import { SandboxStage } from "./sandbox-stage";
 import { FlowletConnectNode } from "./connect-node";
 import { createServerIntegrations } from "./integrations";

@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useFlowletChat } from "@flowlet/react";
 import { BrandIcon, ConnectCard, type Integration } from "@flowlet/shell";
 import { runConnectFlow } from "./connect-flow";
-import { DEFAULT_INTEGRATION_CATALOG } from "../catalog";
+import { DEFAULT_INTEGRATION_CATALOG } from "@flowlet/server/catalog";
 
 const NAMES: Record<string, string> = Object.fromEntries(
   DEFAULT_INTEGRATION_CATALOG.map((c) => [c.id, c.name]),
