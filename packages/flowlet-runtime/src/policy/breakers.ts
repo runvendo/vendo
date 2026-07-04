@@ -1,0 +1,183 @@
+/**
+ * Deterministic seatbelts (ENG-193 §4.7) — no LLM, always on, compose
+ * OUTSIDE `judgePolicy`: they see whatever it decided and can only tighten
+ * further (most-restrictive-wins), never loosen. State is in-memory, keyed
+ * by `threadId` (module-scope store injected — the same pattern the retired
+ * `rememberDecisions`/`DecisionStore` used); swap for cloud persistence later
+ * behind the same `BreakerState` shape.
+ *
+ * NESTING ORDER IS LOAD-BEARING. `cautionBreaker` must wrap `judgePolicy`'s
+ * output DIRECTLY:
+ *
+ *     volumeBreaker(cautionBreaker(judgePolicy(grantPolicy(base, ...), opts)), state)
+ *
+ * `cautionBreaker` counts JUDGE escalations specifically (spec §4.7: "counts
+ * judge escalations per thread"). It tells a judge escalation apart from
+ * anything else by checking whether its OWN `inner.evaluate(ctx)` returned
+ * "approve" with a reason already stamped on `ctx` — if `volumeBreaker` sat
+ * BETWEEN `cautionBreaker` and `judgePolicy`, a volume-forced "unusual
+ * volume" approval would look identical to a judge escalation and get
+ * miscounted. Putting `volumeBreaker` OUTSIDE `cautionBreaker` instead keeps
+ * `cautionBreaker`'s immediate inner as `judgePolicy`, and only it, so the
+ * attribution is unambiguous.
+ *
+ * Both breakers skip entirely when `ctx.threadId` is undefined — an
+ * automation context, item 4's territory (see judge-policy.ts's docstring
+ * for the same reasoning: no per-run isolation exists here yet for
+ * unattended firings).
+ *
+ * Caution is scoped to the ACT tier only: reads keep flowing even in
+ * caution mode (Moment 1's promise has no exception), and critical's
+ * ceremony is unconditional either way — caution can tighten nothing there
+ * because nothing is ever loosened for critical in the first place.
+ */
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
+import { dangerTier } from "./tier";
+import { getEscalationReason, setEscalationReason } from "./escalation";
+
+export interface BreakerState {
+  /** Executed-call counts per thread per tool (fed by onExecuted). */
+  volumeCounts: Map<string, Map<string, number>>;
+  /** Per-thread caution tracking. */
+  caution: Map<string, CautionRecord>;
+}
+
+interface CautionRecord {
+  active: boolean;
+  consecutiveEscalations: number;
+  totalEscalations: number;
+  cleanApprovals: number;
+}
+
+export function createBreakerState(): BreakerState {
+  return { volumeCounts: new Map(), caution: new Map() };
+}
+
+function threadKey(ctx: PolicyContext): string | undefined {
+  return ctx.threadId;
+}
+
+// ---------------------------------------------------------------------------
+// volumeBreaker
+// ---------------------------------------------------------------------------
+
+export interface VolumeBreakerOptions {
+  /** Executed calls of ONE tool in ONE thread before this forces a card. Default 15. */
+  threshold?: number;
+}
+
+export function volumeBreaker(
+  inner: ApprovalPolicy,
+  state: BreakerState,
+  opts: VolumeBreakerOptions = {},
+): ApprovalPolicy {
+  const threshold = opts.threshold ?? 15;
+
+  return {
+    async evaluate(ctx: PolicyContext): Promise<ApprovalDecision> {
+      const decision = await inner.evaluate(ctx);
+      if (decision === "deny") return decision;
+      if (dangerTier(ctx.descriptor) === "critical") return decision;
+      const key = threadKey(ctx);
+      if (key === undefined) return decision; // automation context — item 4
+      if (decision !== "allow") return decision; // nothing to force — already asking
+      const count = state.volumeCounts.get(key)?.get(ctx.toolName) ?? 0;
+      if (count >= threshold) {
+        setEscalationReason(ctx, "unusual volume");
+        return "approve";
+      }
+      return decision;
+    },
+    async onExecuted(ctx, decision) {
+      await inner.onExecuted?.(ctx, decision);
+      const key = threadKey(ctx);
+      if (key === undefined) return;
+      let perTool = state.volumeCounts.get(key);
+      if (!perTool) {
+        perTool = new Map();
+        state.volumeCounts.set(key, perTool);
+      }
+      perTool.set(ctx.toolName, (perTool.get(ctx.toolName) ?? 0) + 1);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// cautionBreaker
+// ---------------------------------------------------------------------------
+
+export interface CautionBreakerOptions {
+  /** Consecutive judge escalations that trip caution. Default 3. */
+  consecutiveThreshold?: number;
+  /** Total (non-consecutive) judge escalations that trip caution. Default 8. */
+  totalThreshold?: number;
+  /** Clean (non-flagged) human approvals that lift caution. Default 5. */
+  cleanApprovalsToLift?: number;
+}
+
+function cautionFor(state: BreakerState, key: string): CautionRecord {
+  let rec = state.caution.get(key);
+  if (!rec) {
+    rec = { active: false, consecutiveEscalations: 0, totalEscalations: 0, cleanApprovals: 0 };
+    state.caution.set(key, rec);
+  }
+  return rec;
+}
+
+export function cautionBreaker(
+  inner: ApprovalPolicy,
+  state: BreakerState,
+  opts: CautionBreakerOptions = {},
+): ApprovalPolicy {
+  const consecutiveThreshold = opts.consecutiveThreshold ?? 3;
+  const totalThreshold = opts.totalThreshold ?? 8;
+  const cleanApprovalsToLift = opts.cleanApprovalsToLift ?? 5;
+
+  return {
+    async evaluate(ctx: PolicyContext): Promise<ApprovalDecision> {
+      const decision = await inner.evaluate(ctx);
+      if (decision === "deny") return decision;
+      if (dangerTier(ctx.descriptor) === "critical") return decision;
+      const key = threadKey(ctx);
+      if (key === undefined) return decision; // automation context — item 4
+      const rec = cautionFor(state, key);
+
+      // inner is judgePolicy DIRECTLY (composition contract, see docstring):
+      // an "approve" with a reason already stamped IS a judge escalation.
+      if (decision === "approve" && getEscalationReason(ctx) !== undefined) {
+        rec.consecutiveEscalations += 1;
+        rec.totalEscalations += 1;
+        rec.cleanApprovals = 0;
+        if (rec.consecutiveEscalations >= consecutiveThreshold || rec.totalEscalations >= totalThreshold) {
+          rec.active = true;
+        }
+      }
+
+      if (dangerTier(ctx.descriptor) === "act" && rec.active && decision === "allow") {
+        setEscalationReason(ctx, "a few things seemed unusual, so I'm checking with you for a bit");
+        return "approve";
+      }
+      return decision;
+    },
+    async onExecuted(ctx, decision) {
+      await inner.onExecuted?.(ctx, decision);
+      if (dangerTier(ctx.descriptor) === "critical") return;
+      const key = threadKey(ctx);
+      if (key === undefined) return;
+      const rec = cautionFor(state, key);
+      if (!rec.active) return;
+      // A CLEAN human approval — this exact call was NOT flagged — counts
+      // toward lifting caution. An approval the user granted despite a
+      // flag does not (they said yes to something suspicious, not "all clear").
+      if (decision === "approve" && getEscalationReason(ctx) === undefined) {
+        rec.cleanApprovals += 1;
+        rec.consecutiveEscalations = 0;
+        if (rec.cleanApprovals >= cleanApprovalsToLift) {
+          rec.active = false;
+          rec.totalEscalations = 0;
+          rec.cleanApprovals = 0;
+        }
+      }
+    },
+  };
+}
