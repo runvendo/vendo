@@ -49,6 +49,21 @@ describe("createSourceResolver", () => {
     expect(reads).toHaveLength(1); // no request-time filesystem reads in prod
   });
 
+  it("rejects a traversal file path and falls back to the captured copy (Codex review)", () => {
+    const reads: string[] = [];
+    const resolve = createSourceResolver({
+      captured: { x: record({ file: "../../etc/passwd", source: "CAPTURED" }) },
+      readFile: (file) => {
+        reads.push(file);
+        return "SECRET";
+      },
+      cwd: "/app",
+      env: { NODE_ENV: "development" },
+    });
+    expect(resolve("x")).toBe("CAPTURED"); // never read the traversal target
+    expect(reads).toHaveLength(0);
+  });
+
   it("dev read failure falls back to the captured copy; oversized sources truncate", () => {
     const resolve = createSourceResolver({
       captured: { x: record({ source: "CAPTURED" }) },

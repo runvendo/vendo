@@ -49,10 +49,19 @@ export function createSourceResolver(config: SourceResolverConfig): RemixSourceR
     const record = config.captured[anchorId];
     if (!record) return undefined;
     if (env["NODE_ENV"] !== "production") {
-      try {
-        return capSource(read(path.join(cwd, record.file)));
-      } catch {
-        /* file moved/deleted since capture — fall back to the captured copy */
+      // Bound the read to the project root — a captured `file` must never
+      // escape it via `../` traversal (Codex review). On any breach or read
+      // failure, fall back to the captured copy.
+      const root = path.resolve(cwd);
+      const target = path.resolve(root, record.file);
+      const rel = path.relative(root, target);
+      const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+      if (inside) {
+        try {
+          return capSource(read(target));
+        } catch {
+          /* file moved/deleted since capture — fall back to the captured copy */
+        }
       }
     }
     return capSource(record.source);

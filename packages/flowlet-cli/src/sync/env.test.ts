@@ -52,4 +52,19 @@ describe("sanitizeCss", () => {
     expect(css).not.toContain("evil.example");
     expect(hasFetchableUrl(css)).toBe(false);
   });
+
+  it("defeats the evasion forms Codex flagged: image-set, comment-split @import, EOF import, hex-escaped url", () => {
+    const inputs = [
+      `.a { background: image-set("https://x/a.png" 1x); }`,
+      `@import/**/"https://x/a.css";`,
+      `@import "https://x/a.css"`, // no trailing semicolon, at EOF
+      `.b { background: u\\72l("https://x/a.png"); }`, // \72 = 'r'
+      `.c { background:URL( 'https://x/b.png' ); }`, // uppercase, spaced, quoted
+    ];
+    for (const input of inputs) {
+      const { css } = sanitizeCss(input);
+      expect(hasFetchableUrl(css), input).toBe(false);
+      expect(css).not.toContain("https://x");
+    }
+  });
 });
