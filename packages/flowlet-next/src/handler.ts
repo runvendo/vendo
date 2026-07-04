@@ -160,6 +160,14 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       // `Store.grants`) persists the full settled list; stores without it
       // fall back to the old prefix delta, which is correct for append-only
       // turns and best-effort for continuations.
+      // ENG-193 review follow-up (queued gap): the Trust diary's audit
+      // read never saw client-executed host-tool calls (no server execute
+      // for the normal onExecuted hook to observe) — the engine now audits
+      // them itself from the run's incoming history. Same EMBEDDED_TENANT
+      // scoping every other audit write on this mount already uses
+      // (policy-stack.ts's `principalScope`).
+      audit,
+      auditPrincipal: (p) => ({ tenantId: EMBEDDED_TENANT, subject: p.userId }),
       onSettled: async ({ messages, threadId, principal }) => {
         const scope = { tenantId: EMBEDDED_TENANT, subject: principal.userId };
         // Skip runs whose threadId isn't a store-assigned thread (a direct

@@ -13,6 +13,13 @@
  * offered (never a client-supplied shape) and RE-CHECKS eligibility live —
  * a "no" or a decline landing between the offer and an accept must sour the
  * accept, never silently mint a grant anyway.
+ *
+ * ONE-SHOT ACCEPT (review follow-up): `resolveEligible` is a pure read, so
+ * the caller MUST call `consume` once its accept actually mints a grant —
+ * otherwise a double-click/network retry replays the same proposalId into a
+ * second grant, and a revoke-then-replay silently re-grants. `consume` only
+ * deletes the ONE offer; it never suppresses the shape (unlike `decline`),
+ * so a later approval pattern can still earn a fresh proposal.
  */
 import type { FadeShape } from "@flowlet/core";
 import { deriveFadeShape, shapeKey, computeProposalId } from "./policy/fade-shapes";
@@ -27,6 +34,10 @@ export interface FadeTrackerOptions {
 export interface FadeEligibility {
   shape: FadeShape;
   proposalId: string;
+  /** The in-window "yes" count for this shape at proposal time (review
+   *  follow-up) — carried through to the client so the fade card can render
+   *  an accurate ordinal instead of a hardcoded "third". */
+  count: number;
 }
 
 interface Decision {
@@ -59,6 +70,14 @@ export interface FadeTracker {
     principal: { tenantId: string; subject: string },
     proposalId: string,
   ): { tool: string; shape: FadeShape } | undefined;
+  /** Consume a successfully-accepted offer (review follow-up) — accept is
+   *  one-shot. Idempotent-safe: replaying an already-consumed or unknown id
+   *  is a no-op, never a throw. Does NOT suppress the shape (see `decline`
+   *  for that) — only this one offer is removed. */
+  consume(
+    principal: { tenantId: string; subject: string },
+    proposalId: string,
+  ): void;
 }
 
 function principalKey(p: { tenantId: string; subject: string }): string {
@@ -84,12 +103,15 @@ export function createFadeTracker(opts: FadeTrackerOptions = {}): FadeTracker {
     return state;
   }
 
+  function yesCount(state: PrincipalState, tool: string, key: string): number {
+    return state.decisions.filter((d) => d.tool === tool && d.shapeKey === key && d.decision === "yes").length;
+  }
+
   function isEligible(state: PrincipalState, tool: string, key: string): boolean {
     if (state.suppressed.has(suppressionKey(tool, key))) return false;
     const inWindow = state.decisions.filter((d) => d.tool === tool && d.shapeKey === key);
-    const yes = inWindow.filter((d) => d.decision === "yes").length;
     const no = inWindow.filter((d) => d.decision === "no").length;
-    return yes >= threshold && no === 0;
+    return yesCount(state, tool, key) >= threshold && no === 0;
   }
 
   return {
@@ -107,7 +129,7 @@ export function createFadeTracker(opts: FadeTrackerOptions = {}): FadeTracker {
       if (!isEligible(state, tool, key)) return null;
       const id = computeProposalId(principal, tool, shape);
       offered.set(id, { principalKey: principalKey(principal), tool, shape });
-      return { shape, proposalId: id };
+      return { shape, proposalId: id, count: yesCount(state, tool, key) };
     },
 
     resolveEligible(principal, proposalId) {
@@ -124,6 +146,12 @@ export function createFadeTracker(opts: FadeTrackerOptions = {}): FadeTracker {
       const state = stateFor(principal);
       state.suppressed.add(suppressionKey(offer.tool, shapeKey(offer.shape)));
       return { tool: offer.tool, shape: offer.shape };
+    },
+
+    consume(principal, proposalId) {
+      const offer = offered.get(proposalId);
+      if (!offer || offer.principalKey !== principalKey(principal)) return;
+      offered.delete(proposalId);
     },
   };
 }

@@ -5,7 +5,7 @@ import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
 import { SCHEMA_VERSION } from "@flowlet/core";
-import type { FlowletUIMessage } from "@flowlet/core";
+import type { AuditEvent, AuditLog, FlowletUIMessage } from "@flowlet/core";
 import { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
 import type { ApprovalPolicy, PolicyContext } from "./policy";
 import type { ComposioClient } from "./composio";
@@ -571,5 +571,139 @@ describe("createFlowletAgent", () => {
     // (both counted once via recordCall, needsApproval-only — see run-context.ts).
     expect(counts.some((c) => c["tool_a"] === 1 && c["tool_b"] === undefined)).toBe(true);
     expect(counts.some((c) => c["tool_a"] === 1 && c["tool_b"] === 1)).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------
+  // Client-executed tool audit (ENG-193 review follow-up — queued gap): the
+  // Trust diary read 0 tool_execution events despite live client-tool sends
+  // because there is no server-side `execute` for `auditPolicy.onExecuted`
+  // to observe. The engine scans the run's INCOMING messages for
+  // output-available client-tool parts and appends the event itself.
+  // ---------------------------------------------------------------------
+  describe("client-executed tool audit", () => {
+    function clientTool(annotations: Record<string, boolean>): Tool {
+      return {
+        description: "a host tool executed in the browser",
+        inputSchema: z.object({}),
+        annotations,
+        flowletExecutor: "client",
+      } as unknown as Tool;
+    }
+
+    function historyWithClientResult(toolCallId: string): FlowletUIMessage[] {
+      return [
+        { id: "m1", role: "user", parts: [{ type: "text", text: "send it" }] },
+        {
+          id: "m2",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-send_thing",
+              toolCallId,
+              state: "output-available",
+              input: { to: "a@b.com" },
+              output: { ok: true },
+            },
+          ],
+        },
+      ] as unknown as FlowletUIMessage[];
+    }
+
+    function makeAudit(): AuditLog & { events: AuditEvent[] } {
+      const events: AuditEvent[] = [];
+      return {
+        events,
+        append: vi.fn(async (event: AuditEvent) => {
+          events.push(event);
+        }),
+        query: vi.fn(async () => events),
+      };
+    }
+
+    it("appends exactly one tool_execution event for an output-available client-tool part", async () => {
+      const audit = makeAudit();
+      const agent = createFlowletAgent({
+        model: mockModel(),
+        policy: allowPolicy,
+        audit,
+        auditPrincipal: (p) => ({ tenantId: "t", subject: p.userId }),
+      });
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-client-1"),
+          tools: { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) },
+          principal: { userId: "user-1" },
+          signal: new AbortController().signal,
+        }),
+      );
+
+      const toolEvents = audit.events.filter((e) => e.kind === "tool_execution");
+      expect(toolEvents).toHaveLength(1);
+      expect(toolEvents[0]).toMatchObject({
+        kind: "tool_execution",
+        toolName: "send_thing",
+        toolCallId: "call-client-1",
+        mutating: true,
+        dangerous: false,
+        outcome: "ok",
+        principal: { tenantId: "t", subject: "user-1" },
+      });
+    });
+
+    it("never audits a SERVER-executed tool's output-available part (only client)", async () => {
+      const audit = makeAudit();
+      const agent = createFlowletAgent({
+        model: mockModel(),
+        policy: allowPolicy,
+        audit,
+        auditPrincipal: (p) => ({ tenantId: "t", subject: p.userId }),
+      });
+      const serverTool = tool({
+        description: "server tool",
+        inputSchema: z.object({}),
+        annotations: { readOnlyHint: false },
+        execute: async () => "done",
+      });
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-server-1"),
+          tools: { send_thing: serverTool },
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(0);
+    });
+
+    it("dedupes: running the SAME messages again through the SAME engine never double-audits", async () => {
+      const audit = makeAudit();
+      const agent = createFlowletAgent({
+        model: mockModel(),
+        policy: allowPolicy,
+        audit,
+        auditPrincipal: (p) => ({ tenantId: "t", subject: p.userId }),
+      });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+      const messages = historyWithClientResult("call-client-2");
+
+      await collect(agent.run({ messages, tools, signal: new AbortController().signal }));
+      await collect(agent.run({ messages, tools, signal: new AbortController().signal }));
+
+      expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(1);
+    });
+
+    it("is a no-op when no audit config is supplied (graceful default)", async () => {
+      const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+      const parts = await collect(
+        agent.run({
+          messages: historyWithClientResult("call-noop"),
+          tools: { send_thing: clientTool({ readOnlyHint: false }) },
+          signal: new AbortController().signal,
+        }),
+      );
+      expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+    });
   });
 });

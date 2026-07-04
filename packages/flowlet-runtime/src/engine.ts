@@ -24,7 +24,14 @@ import {
   type ToolSet,
   type UIMessageChunk,
 } from "ai";
-import type { FlowletAgent, RunInput, FlowletUIMessage, RegisteredComponent } from "@flowlet/core";
+import type {
+  AuditLog,
+  FlowletAgent,
+  Principal,
+  RunInput,
+  FlowletUIMessage,
+  RegisteredComponent,
+} from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
 import { createRenderViewTool } from "./render-view-tool";
@@ -37,7 +44,7 @@ import {
 } from "./composio";
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
-import type { ToolDescriptor } from "./descriptor";
+import { buildDescriptor, type ToolDescriptor } from "./descriptor";
 import { createRunPolicyContext } from "./policy/run-context";
 
 /** Canonical name of the engine's built-in composed-view tool (Tier 2.5). */
@@ -99,6 +106,102 @@ export interface FlowletAgentConfig {
    * before anything streams (ENG-186).
    */
   components?: RegisteredComponent[];
+  /**
+   * ENG-193 review follow-up (queued gap): audits client-executed tool calls
+   * (topology B host tools, ENG-202) that the run's INCOMING messages carry
+   * in `output-available` state. `wrapClientTool`'s `needsApproval` is the
+   * only server-side chokepoint for these tools — there is no server
+   * `execute` for `auditPolicy`'s `onExecuted` to observe (the browser is the
+   * executor) — so without this the Trust diary silently undercounts every
+   * client-tool execution. Absent -> no auditing, the same graceful no-op
+   * every other optional seam here has. Dedup is a bounded (~512) in-memory
+   * FIFO of toolCallIds PER ENGINE INSTANCE: a process restart forgets it, so
+   * a host that restarts between a tool's completion and its next turn could
+   * double-audit that one call — an accepted v1 limitation (the diary is a
+   * count, not a ledger of record).
+   */
+  audit?: AuditLog;
+  /**
+   * Maps the run's `FlowletPrincipal` onto the core audit `Principal` shape
+   * (mirrors `AutomationRunnerConfig.auditPrincipal` / flowlet-next's
+   * `policy-stack.ts` `principalScope`). Defaults to
+   * `{ tenantId: "", subject: principal.userId }` when `audit` is set
+   * without an explicit mapping.
+   */
+  auditPrincipal?: (principal: FlowletPrincipal) => Principal;
+}
+
+/** Default `auditPrincipal` mapping (see `FlowletAgentConfig.auditPrincipal`)
+ *  — an empty tenantId is a safe placeholder; hosts that set `audit` always
+ *  supply their own scoped mapping alongside it. */
+function defaultAuditPrincipal(principal: FlowletPrincipal): Principal {
+  return { tenantId: "", subject: principal.userId };
+}
+
+/** Bound on the client-tool-audit dedupe FIFO (see `FlowletAgentConfig.audit`). */
+const MAX_AUDITED_CLIENT_CALLS = 512;
+
+/** Structural view of the ai SDK tool-part shape scanned for client-executed
+ *  results — mirrors `consent.ts`'s `ApprovalPart`, keyed by `output-available`
+ *  instead of `approval-*`. */
+interface ClientResultPart {
+  type: string;
+  toolCallId?: string;
+  state?: string;
+}
+
+/** Merge `sources` into a name -> descriptor map WITHOUT policy-wrapping —
+ *  mirrors `buildToolset`'s own precedence-and-first-wins resolution, kept
+ *  separate so the audit scan never depends on (or is skipped by) a tool
+ *  failing to wrap. */
+function resolveSourceDescriptors(sources: ToolSourceInput[]): Map<string, ToolDescriptor> {
+  const map = new Map<string, ToolDescriptor>();
+  for (const { source, tools, descriptors } of sources) {
+    for (const [name, t] of Object.entries(tools)) {
+      if (map.has(name)) continue;
+      map.set(name, descriptors?.[name] ?? buildDescriptor(name, t, source));
+    }
+  }
+  return map;
+}
+
+/** Scan `messages` for output-available CLIENT-executed tool parts not yet
+ *  audited and append a `tool_execution` event for each (ENG-193 review
+ *  follow-up). `seen` both checks and marks — see `alreadyAuditedClientCall`.
+ *  Audit is a trail, not a gate: a write failure is swallowed, never thrown
+ *  into the run. */
+async function auditClientExecutedTools(args: {
+  messages: FlowletUIMessage[];
+  descriptors: Map<string, ToolDescriptor>;
+  audit: AuditLog;
+  principal: Principal;
+  seen: (toolCallId: string) => boolean;
+}): Promise<void> {
+  const { messages, descriptors, audit, principal, seen } = args;
+  for (const message of messages) {
+    for (const rawPart of message.parts) {
+      const part = rawPart as ClientResultPart;
+      if (!part.type.startsWith("tool-") || part.state !== "output-available" || !part.toolCallId) continue;
+      const toolName = part.type.slice("tool-".length);
+      const descriptor = descriptors.get(toolName);
+      if (!descriptor || descriptor.executor !== "client") continue;
+      if (seen(part.toolCallId)) continue;
+      try {
+        await audit.append({
+          at: new Date().toISOString(),
+          principal,
+          kind: "tool_execution",
+          toolName,
+          toolCallId: part.toolCallId,
+          mutating: descriptor.annotations.readOnlyHint !== true,
+          dangerous: descriptor.annotations.destructiveHint === true,
+          outcome: "ok",
+        });
+      } catch (err) {
+        console.error(`[flowlet] failed to audit client-executed tool "${toolName}":`, err);
+      }
+    }
+  }
 }
 
 /**
@@ -131,6 +234,21 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   // transient failure never permanently disables that user's tools.
   type Ingested = { toolset: ToolSet; descriptors: Record<string, ToolDescriptor> };
   const composioCache = new Map<string, Promise<Ingested>>();
+
+  // Client-tool audit dedupe (`FlowletAgentConfig.audit`): bounded FIFO of
+  // toolCallIds already audited, PER ENGINE INSTANCE — shared across every
+  // run() the same agent makes (not reset per turn), so a toolCallId seen on
+  // an earlier turn's history is never re-audited on a later one.
+  const auditedClientCalls = new Set<string>();
+  function alreadyAuditedClientCall(toolCallId: string): boolean {
+    if (auditedClientCalls.has(toolCallId)) return true;
+    auditedClientCalls.add(toolCallId);
+    if (auditedClientCalls.size > MAX_AUDITED_CLIENT_CALLS) {
+      const oldest = auditedClientCalls.values().next().value;
+      if (oldest !== undefined) auditedClientCalls.delete(oldest);
+    }
+    return false;
+  }
 
   /**
    * Normalize client-supplied history so a stale turn can't wedge the thread.
@@ -301,6 +419,21 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           },
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
         ];
+
+        // 4b. ENG-193 review follow-up (queued gap): audit client-executed
+        // tool calls the INCOMING history already carries resolved
+        // (output-available) — there is no server execute for the normal
+        // auditPolicy.onExecuted to observe for these. Absent `config.audit`
+        // this is a no-op, same as every other optional seam here.
+        if (config.audit) {
+          await auditClientExecutedTools({
+            messages: input.messages,
+            descriptors: resolveSourceDescriptors(sources),
+            audit: config.audit,
+            principal: (config.auditPrincipal ?? defaultAuditPrincipal)(principal),
+            seen: alreadyAuditedClientCall,
+          });
+        }
 
         // 5. Merge + uniformly policy-wrap every tool.
         const tools = buildToolset({

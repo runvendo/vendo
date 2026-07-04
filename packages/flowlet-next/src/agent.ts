@@ -191,6 +191,12 @@ export interface AgentFactoryConfig {
    * attribute each settled message list to the right conversation.
    */
   onSettled?: FlowletAgentConfig["onSettled"];
+  /** ENG-193 review follow-up — audits client-executed tool calls; see
+   *  `FlowletAgentConfig.audit`. Passed straight to every cached agent. */
+  audit?: FlowletAgentConfig["audit"];
+  /** Maps the run principal onto the audit Principal shape; see
+   *  `FlowletAgentConfig.auditPrincipal`. */
+  auditPrincipal?: FlowletAgentConfig["auditPrincipal"];
 }
 
 /**
@@ -215,6 +221,8 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         ...(config.tools ? { tools: config.tools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
         ...(config.onSettled ? { onSettled: config.onSettled } : {}),
+        ...(config.audit ? { audit: config.audit } : {}),
+        ...(config.auditPrincipal ? { auditPrincipal: config.auditPrincipal } : {}),
         components: config.components,
       });
       agents.set(key, agent);

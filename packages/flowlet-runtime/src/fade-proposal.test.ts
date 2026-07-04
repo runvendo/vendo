@@ -73,6 +73,28 @@ describe("handleFadeProposal", () => {
     expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
   });
 
+  it("INVARIANT: a second accept of the same proposalId is rejected; exactly one grant is minted", async () => {
+    const { tracker, offer } = offerEligible();
+    const d = deps(tracker);
+    const first = await handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true });
+    expect(first.ok).toBe(true);
+    const second = await handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true });
+    expect(second.ok).toBe(false);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
+  });
+
+  it("INVARIANT: replaying the proposalId after the minted grant was revoked never silently re-grants", async () => {
+    const { tracker, offer } = offerEligible();
+    const d = deps(tracker);
+    const first = await handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true });
+    expect(first.ok).toBe(true);
+    const [grant] = await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL");
+    await d.grants.revoke(scope, grant!.id);
+    const replay = await handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true });
+    expect(replay.ok).toBe(false);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+  });
+
   it("INVARIANT: refuses to mint for a tool whose LIVE descriptor is critical (defense in depth)", async () => {
     const tracker = createFadeTracker();
     for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) {

@@ -79,4 +79,38 @@ describe("FadeTracker", () => {
     const t = createFadeTracker();
     expect(t.decline(p, "unknown")).toBeUndefined();
   });
+
+  it("propose carries the in-window yes-count for the shape", () => {
+    const t = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    const offer = t.propose(p, "send_email", { to: "d@acme.co" });
+    expect(offer?.count).toBe(3);
+  });
+
+  it("consume deletes the offer (review follow-up: accept is one-shot)", () => {
+    const t = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    const offer = t.propose(p, "send_email", { to: "d@acme.co" })!;
+    t.consume(p, offer.proposalId);
+    expect(t.resolveEligible(p, offer.proposalId)).toBeUndefined();
+  });
+
+  it("consume is idempotent-safe against replay and unknown ids", () => {
+    const t = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    const offer = t.propose(p, "send_email", { to: "d@acme.co" })!;
+    t.consume(p, offer.proposalId);
+    expect(() => t.consume(p, offer.proposalId)).not.toThrow();
+    expect(() => t.consume(p, "not-a-real-id")).not.toThrow();
+  });
+
+  it("consume never suppresses — it only removes the ONE offer, not the shape", () => {
+    const t = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    const offer = t.propose(p, "send_email", { to: "d@acme.co" })!;
+    t.consume(p, offer.proposalId);
+    // A fresh yes still earns a fresh offer — consuming is not a decline.
+    t.record(p, "send_email", { to: "e@acme.co" }, "yes");
+    expect(t.propose(p, "send_email", { to: "f@acme.co" })).not.toBeNull();
+  });
 });

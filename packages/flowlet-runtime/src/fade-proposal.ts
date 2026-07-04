@@ -11,6 +11,11 @@
  * against the tool's LIVE descriptor tier (critical/unverified) guards
  * against the offer itself having been mis-gated — the same defense-in-depth
  * `grantManager.create` already applies at its own boundary.
+ *
+ * ONE-SHOT ACCEPT (review follow-up): a successful mint immediately consumes
+ * the tracker's offer, so a double-click/network retry of the same
+ * proposalId — or a replay after the minted grant is later revoked — finds
+ * no offer and fails closed instead of silently minting a duplicate grant.
  */
 import type { AuditLog, FadeProposalResolution, GrantStore, Principal } from "@flowlet/core";
 import type { ToolDescriptor } from "./descriptor";
@@ -86,5 +91,11 @@ export async function handleFadeProposal(
     const message = err instanceof Error ? err.message : String(err);
     return audited({ ok: false, status: 403, error: message });
   }
+  // One-shot accept (review follow-up): only consume the offer once the
+  // grant is ACTUALLY minted — a failed create above leaves the offer intact
+  // so a corrected retry can still succeed. Consuming makes a double-click/
+  // network retry, or a replay after the grant is later revoked, find no
+  // offer and fail closed instead of silently minting again.
+  deps.fadeTracker.consume(principal, req.proposalId);
   return audited({ ok: true });
 }

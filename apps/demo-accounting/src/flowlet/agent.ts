@@ -201,6 +201,13 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     tools: opts.extraTools,
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
+    // ENG-193 review follow-up (queued gap): the Trust diary read 0
+    // tool_execution events despite live client-tool sends (Gmail/Calendar
+    // and Cadence's own host tools all execute in the browser — there's no
+    // server execute for the normal onExecuted audit hook to observe). The
+    // engine now audits these itself from the run's incoming history.
+    audit: demoStore.audit,
+    auditPrincipal: (p) => ({ tenantId: CADENCE_SCOPE.tenantId, subject: p.userId }),
     // ENG-193 §6.2: persist each SETTLED run's full message list to the demo's
     // thread store. This is the SINGLE writer for thread messages —
     // chat-handler.ts deliberately does NOT persist the request body — the
