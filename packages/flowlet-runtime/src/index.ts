@@ -17,7 +17,8 @@ export type { FlowletPrincipal } from "./principal";
 export { FlowletError, policyDenied } from "./errors";
 export type { FlowletErrorCode, PolicyDeniedPayload } from "./errors";
 
-// Policy barrel (types, compose, annotation, natural-language, remember, principal-rules)
+// Policy barrel (types, compose, annotation, natural-language, principal-rules,
+// tier, grant-match, grant-policy)
 export * from "./policy";
 
 // Tool wrapping

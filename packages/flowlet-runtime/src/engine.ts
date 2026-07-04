@@ -68,8 +68,10 @@ export interface FlowletAgentConfig {
   /** Optional Composio ingestion. `client` is injectable for tests. */
   composio?: { config: ComposioConfig; client?: ComposioClient };
   /**
-   * Policy version string. Forwarded to policy layers that key on it (e.g. the
-   * ask-once `rememberDecisions` store). Not used by the engine itself.
+   * Policy version string. Reserved: the ask-once `rememberDecisions` layer
+   * that keyed on it is retired in favor of `grantPolicy` (ENG-193 §4.3),
+   * which doesn't version-key its suppression. Kept on the public config
+   * shape for source compatibility; not consulted by the engine itself.
    */
   policyVersion?: string;
   /** Max model->tool steps before the loop stops. Defaults to 8. */

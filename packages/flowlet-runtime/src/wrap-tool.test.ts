@@ -3,7 +3,9 @@ import { z } from "zod";
 import { tool, type Tool, type ToolExecutionOptions } from "ai";
 import { wrapTool } from "./wrap-tool";
 import type { ApprovalDecision, ApprovalPolicy } from "./policy";
-import { canonicalKey, createInMemoryDecisionStore, rememberDecisions } from "./policy";
+import { grantPolicy, hashInput } from "./policy";
+import { createInMemoryGrantStore } from "./grant-store";
+import { hashDescriptor } from "./automations/grants";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
 import { FlowletError } from "./errors";
@@ -290,45 +292,59 @@ describe("wrapTool", () => {
     expect(onExecuted).not.toHaveBeenCalled();
   });
 
-  it("integration: rememberDecisions records on execute and suppresses the next prompt", async () => {
-    const store = createInMemoryDecisionStore();
+  it("integration: an exact-scope grant suppresses the re-prompt for a matching input only", async () => {
+    const store = createInMemoryGrantStore();
     const spy = vi.fn(async () => "ran");
-    const policy = rememberDecisions(fixedPolicy("approve"), store);
+    const descriptor = descriptorFor(true);
     const input = { v: 1 };
+    const grantScope = { tenantId: "t", subject: principal.userId };
+    await store.create(grantScope, {
+      tool: "t",
+      descriptorHash: hashDescriptor(descriptor),
+      scope: { kind: "exact", inputHash: hashInput(input), inputPreview: "v:1" },
+      duration: "standing",
+      source: { kind: "fade" },
+    });
+    const policy = grantPolicy(fixedPolicy("approve"), store, {
+      principalScope: () => grantScope,
+    });
     const w = wrapTool({
       name: "t",
       tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
-      descriptor: descriptorFor(true),
+      descriptor,
       policy,
       principal,
     });
 
-    // Ask turn: needs approval, nothing recorded yet.
-    expect(await callNeedsApproval(w, input)).toBe(true);
-    const key = canonicalKey(
-      { toolName: "t", input, descriptor: descriptorFor(true), principal },
-      "v1",
-    );
-    expect(await store.get(key)).toBeUndefined();
-
-    // Execute turn (post-approval): runs the tool AND records via onExecuted.
+    // Matching input is suppressed by the seeded grant — no approval needed.
+    expect(await callNeedsApproval(w, input)).toBe(false);
     expect(await callExecute(w, input, opts)).toBe("ran");
     expect(spy).toHaveBeenCalledOnce();
-    expect(await store.get(key)).toBe("approve");
 
-    // Next identical call no longer needs approval (suppressed).
-    expect(await callNeedsApproval(w, input)).toBe(false);
+    // A different input is outside the exact grant's scope — still prompts.
+    expect(await callNeedsApproval(w, { v: 2 })).toBe(true);
   });
 
-  it("integration: a deny decision does NOT record and does NOT run the tool", async () => {
-    const store = createInMemoryDecisionStore();
+  it("integration: a deny decision still denies and does NOT run the tool despite a matching grant", async () => {
+    const store = createInMemoryGrantStore();
     const spy = vi.fn(async () => "ran");
-    const policy = rememberDecisions(fixedPolicy("deny"), store);
+    const descriptor = descriptorFor(true);
     const input = { v: 1 };
+    const grantScope = { tenantId: "t", subject: principal.userId };
+    await store.create(grantScope, {
+      tool: "t",
+      descriptorHash: hashDescriptor(descriptor),
+      scope: { kind: "exact", inputHash: hashInput(input), inputPreview: "v:1" },
+      duration: "standing",
+      source: { kind: "fade" },
+    });
+    const policy = grantPolicy(fixedPolicy("deny"), store, {
+      principalScope: () => grantScope,
+    });
     const w = wrapTool({
       name: "t",
       tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
-      descriptor: descriptorFor(true),
+      descriptor,
       policy,
       principal,
     });
@@ -336,11 +352,6 @@ describe("wrapTool", () => {
     const res = await callExecute(w, input, opts);
     expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
     expect(spy).not.toHaveBeenCalled();
-    const key = canonicalKey(
-      { toolName: "t", input, descriptor: descriptorFor(true), principal },
-      "v1",
-    );
-    expect(await store.get(key)).toBeUndefined();
   });
 
   it("execute re-evaluates the composed policy: a policy that flips allow→deny between needsApproval and execute is enforced (deny), original NEVER runs", async () => {
