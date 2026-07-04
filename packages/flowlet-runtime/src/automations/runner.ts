@@ -298,8 +298,16 @@ export class AutomationRunner {
     return finalized;
   }
 
-  /** Resume a waiting_approval run with the user's decision. */
-  resume(scope: Principal, runId: string, approved: boolean): Promise<AutomationRun | undefined> {
+  /** Resume a waiting_approval run with the user's decision. When
+   *  `expectedStepId` is given (an approval surface acting on a specific
+   *  pause), a run now paused on a DIFFERENT step answers undefined (stale)
+   *  instead of approving something the user never saw. */
+  resume(
+    scope: Principal,
+    runId: string,
+    approved: boolean,
+    expectedStepId?: string,
+  ): Promise<AutomationRun | undefined> {
     return (async () => {
       // The outside read is ONLY for the queue key. The authoritative check
       // happens inside the per-automation queue: two rapid approvals would
@@ -313,6 +321,9 @@ export class AutomationRunner {
           return undefined; // already resumed, cancelled, or finished
         }
         const pending = run.pendingApproval;
+        if (expectedStepId !== undefined && pending.stepId !== expectedStepId) {
+          return undefined; // stale: the run moved on to a different pause
+        }
         const automation = await this.config.store.get(scope, run.automationId);
         const version = automation
           ? await this.config.store.getVersion(scope, run.automationId, run.version)

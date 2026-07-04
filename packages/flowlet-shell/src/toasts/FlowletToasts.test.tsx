@@ -8,11 +8,11 @@ import { FlowletToasts, OPEN_OVERLAY_EVENT } from "./FlowletToasts";
 
 function fakeNotifications(seed: AutomationNotice[], resume: ResumeOutcome = "resumed") {
   const notices = [...seed];
-  const resumeCalls: Array<{ runId: string; approved: boolean }> = [];
+  const resumeCalls: Array<{ runId: string; approved: boolean; stepId?: string }> = [];
   const client: FlowletNotifications = {
     listSince: async (since) => notices.filter((n) => n.cursor > since),
-    resume: async (runId, approved) => {
-      resumeCalls.push({ runId, approved });
+    resume: async (runId, approved, stepId) => {
+      resumeCalls.push({ runId, approved, ...(stepId !== undefined ? { stepId } : {}) });
       return resume;
     },
   };
@@ -102,7 +102,10 @@ describe("FlowletToasts", () => {
     const fresh = fakeNotifications([approval(1)]);
     const { unmount } = mount(fresh.client);
     fireEvent.click(await screen.findByText("Approve"));
-    await waitFor(() => expect(fresh.resumeCalls).toEqual([{ runId: "r1", approved: true }]));
+    // stepId rides along so a run paused on a DIFFERENT step answers stale.
+    await waitFor(() =>
+      expect(fresh.resumeCalls).toEqual([{ runId: "r1", approved: true, stepId: "s1" }]),
+    );
     await waitFor(() => expect(document.querySelector(".fl-toasts")).toBeNull());
     unmount();
 
@@ -121,6 +124,17 @@ describe("FlowletToasts", () => {
     mount(client);
     fireEvent.click(await screen.findByText("View"));
     expect(opened).toHaveBeenCalledTimes(1);
+    // A non-persistent (completed) toast is done once viewed.
+    await waitFor(() => expect(document.querySelector(".fl-toasts")).toBeNull());
     window.removeEventListener(OPEN_OVERLAY_EVENT, opened);
+  });
+
+  it("View keeps a pending approval toast on screen (peeking must not discard the decision)", async () => {
+    localStorage.setItem("flowlet:toasts-cursor:test", "0");
+    const { client } = fakeNotifications([approval(1)]);
+    mount(client);
+    fireEvent.click(await screen.findByText("View"));
+    expect(screen.getByText("Approve")).toBeTruthy();
+    expect(document.querySelectorAll(".fl-toasts-card")).toHaveLength(1);
   });
 });

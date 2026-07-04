@@ -334,6 +334,27 @@ describe("channel deliveries (FlowletToasts, 2026-07-04 spec)", () => {
     expect(delivered).toHaveLength(countAfterResume);
   });
 
+  it("resume with a mismatched expectedStepId is stale: nothing executes, nothing delivers", async () => {
+    const freeze = makeTool("freeze_card");
+    const { runner, automation, delivered } = await setup({
+      spec: gatedSpec(),
+      tools: { freeze_card: freeze, send_msg: makeTool("send_msg") },
+      policy: approveFor("freeze_card"),
+    });
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    const before = delivered.length;
+
+    // A toast minted for some other pause must not approve THIS one.
+    expect(await runner.resume(scope, paused!.id, true, "some-other-step")).toBeUndefined();
+    expect(freeze.calls).toHaveLength(0);
+    expect(delivered).toHaveLength(before);
+
+    // The matching stepId still resumes.
+    const resumed = await runner.resume(scope, paused!.id, true, "freeze");
+    expect(resumed?.status).toBe("succeeded");
+    expect(freeze.calls).toHaveLength(1);
+  });
+
   it("delivers completed (cancelled) when a pending approval expires", async () => {
     let clock = Date.parse(NOW);
     const { runner, automation, delivered } = await setup({

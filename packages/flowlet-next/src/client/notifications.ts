@@ -32,11 +32,11 @@ export function createServerNotifications(basePath: string): FlowletNotification
       }
       return notices;
     },
-    async resume(runId, approved) {
+    async resume(runId, approved, stepId) {
       const res = await fetch(`${basePath}/resume`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId, approved }),
+        body: JSON.stringify({ runId, approved, ...(stepId !== undefined ? { stepId } : {}) }),
       });
       if (!res.ok) throw new Error(`[flowlet] resume request failed (${res.status})`);
       const body = (await res.json()) as { stale?: boolean };

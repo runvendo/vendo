@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { validateGeneratedPayload, type UINode } from "@flowlet/core";
 import { useShell } from "../context";
 import { diffHostComponents } from "../component-drift";
@@ -29,6 +37,28 @@ type PinnedState =
   | { kind: "ready"; node: UINode }
   | { kind: "broken" };
 
+/** Fail-open guarantee at render time: a pinned view that THROWS while
+ *  rendering must fall back to the host's original children, never take the
+ *  host page down. (Async failures inside the sandbox iframe render the
+ *  stage's own contained error; surfacing those needs a renderNode failure
+ *  callback — declared follow-up.) */
+class RemixBoundary extends Component<
+  { fallback: ReactNode; onBroken: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  override state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  override componentDidCatch(error: unknown) {
+    console.warn("[flowlet] pinned remix failed to render; showing the host default", error);
+    this.props.onBroken();
+  }
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
 /**
  * FlowletRemix (2026-07-04 spec): wrap any host component; it renders exactly
  * as-is by default. A ✦ affordance (hover/focus) opens the shared overlay
@@ -53,16 +83,28 @@ export function FlowletRemix({ id, label, context, className, children }: Flowle
     });
   }, [registry, id, label, context]);
 
+  // Guarded against unmount/id changes: a slow store resolving late must not
+  // set a stale pin, and a pin for a different anchor never renders here.
+  const loadToken = useRef(0);
   const reload = useCallback(() => {
+    const token = ++loadToken.current;
     remixes
       .get(id)
-      .then(setPin)
+      .then((loaded) => {
+        if (loadToken.current !== token) return;
+        setPin(loaded && loaded.anchorId === id ? loaded : null);
+      })
       .catch((err) => {
         console.warn(`[flowlet] failed to load remix pin for "${id}"`, err);
-        setPin(null);
+        if (loadToken.current === token) setPin(null);
       });
   }, [remixes, id]);
-  useEffect(reload, [reload]);
+  useEffect(() => {
+    reload();
+    return () => {
+      loadToken.current++; // invalidate in-flight loads on unmount/id change
+    };
+  }, [reload]);
   useEffect(() => {
     const onChange = (e: Event) => {
       if ((e as CustomEvent<{ anchorId?: string }>).detail?.anchorId === id) reload();
@@ -110,14 +152,25 @@ export function FlowletRemix({ id, label, context, className, children }: Flowle
       .catch((err) => console.warn(`[flowlet] failed to reset remix for "${id}"`, err));
   };
 
+  // A render-time crash inside the pinned view flips it to broken (fail-open).
+  const [renderBroken, setRenderBroken] = useState(false);
+  useEffect(() => setRenderBroken(false), [pin]);
+
   const customized = mounted && pin !== null;
+  const showPinned = customized && pinned.kind === "ready" && !renderBroken;
   return (
     <div
       className={className ? `fl-remix ${className}` : "fl-remix"}
       data-flowlet-remix={id}
     >
       <div ref={hostRef} className="fl-remix-host">
-        {customized && pinned.kind === "ready" ? renderNode(pinned.node) : children}
+        {showPinned ? (
+          <RemixBoundary fallback={children} onBroken={() => setRenderBroken(true)}>
+            {renderNode(pinned.node)}
+          </RemixBoundary>
+        ) : (
+          children
+        )}
       </div>
       {mounted && (
         <button
@@ -131,9 +184,9 @@ export function FlowletRemix({ id, label, context, className, children }: Flowle
         </button>
       )}
       {customized && (
-        <div className="fl-remix-pill" data-state={pinned.kind === "ready" ? "active" : "broken"}>
-          <span>✦ {pinned.kind === "ready" ? "customized" : "customization unavailable"}</span>
-          {pinned.kind === "broken" && (
+        <div className="fl-remix-pill" data-state={showPinned ? "active" : "broken"}>
+          <span>✦ {showPinned ? "customized" : "customization unavailable"}</span>
+          {!showPinned && (
             <button type="button" className="fl-remix-pill-act" onClick={openScoped}>
               retry
             </button>

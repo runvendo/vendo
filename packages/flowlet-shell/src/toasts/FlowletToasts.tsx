@@ -67,9 +67,21 @@ export function FlowletToasts({
   // with one, a backlog of completions collapses into a single digest while
   // approvals always surface individually.
   const firstBatch = useRef(true);
+  const inFlight = useRef(false);
   useEffect(() => {
     let disposed = false;
     const poll = async () => {
+      // Serialize: an overlapping poll could double-read the same cursor and
+      // toast notices the first pass already handled (or baselined).
+      if (inFlight.current) return;
+      inFlight.current = true;
+      try {
+        await pollOnce();
+      } finally {
+        inFlight.current = false;
+      }
+    };
+    const pollOnce = async () => {
       const cursor = readCursor(namespace);
       try {
         const notices = await notifications.listSince(cursor ?? 0);
@@ -149,7 +161,7 @@ export function FlowletToasts({
   const approve = (toast: Toast) => {
     queue.setState(toast.key, "approving");
     notifications
-      .resume(toast.runId ?? "", true)
+      .resume(toast.runId ?? "", true, toast.stepId)
       .then((outcome) => {
         if (outcome === "resumed") queue.dismiss(toast.key);
         else queue.setState(toast.key, "stale");
@@ -159,7 +171,9 @@ export function FlowletToasts({
 
   const view = (toast: Toast) => {
     window.dispatchEvent(new CustomEvent(OPEN_OVERLAY_EVENT));
-    queue.dismiss(toast.key);
+    // Peeking must not discard a pending decision: approval toasts stay until
+    // acted on (approve, or an explicit dismiss).
+    if (!toast.persistent) queue.dismiss(toast.key);
   };
 
   if (toasts.length === 0) return null;

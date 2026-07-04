@@ -67,11 +67,11 @@ const notifications: FlowletNotifications = {
         : [],
     );
   },
-  async resume(runId, approved) {
+  async resume(runId, approved, stepId) {
     const res = await fetch("/api/flowlet/resume", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId, approved }),
+      body: JSON.stringify({ runId, approved, ...(stepId !== undefined ? { stepId } : {}) }),
     });
     if (!res.ok) throw new Error(`resume request failed (${res.status})`);
     return ((await res.json()) as { stale?: boolean }).stale === true ? "stale" : "resumed";

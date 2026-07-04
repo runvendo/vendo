@@ -25,9 +25,11 @@ export type ResumeOutcome = "resumed" | "stale";
 export interface FlowletNotifications {
   /** All notices with cursor > `since`, oldest first. */
   listSince(since: number): Promise<AutomationNotice[]>;
-  /** Approve/deny the paused run behind an approval notice. `stale` means the
-   *  run was no longer waiting (expired, cancelled, resumed elsewhere). */
-  resume(runId: string, approved: boolean): Promise<ResumeOutcome>;
+  /** Approve/deny the paused run behind an approval notice. Pass the notice's
+   *  `stepId` so a run that has since paused on a DIFFERENT step answers
+   *  `stale` instead of approving something the user never saw. `stale` also
+   *  covers expired, cancelled, and already-resumed runs. */
+  resume(runId: string, approved: boolean, stepId?: string): Promise<ResumeOutcome>;
 }
 
 /** Inert local default: seeded notices, resumes always stale. */

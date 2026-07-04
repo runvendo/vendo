@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FlowletThread, type FlowletThreadProps } from "../FlowletThread";
 import { OverlayPanel } from "../components/OverlayPanel";
 import { useShell } from "../context";
@@ -56,6 +56,16 @@ export function FlowletOverlay({
     // clears exactly once, on actual close.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeScope]);
+
+  // EVERY close path clears the scope — including Cmd/Ctrl+K toggles and a
+  // controlling parent flipping `open` — or the next plain send would still
+  // carry the old anchor's snapshot (Codex review, 2026-07-04). Transition-
+  // detected so a scope set moments before the overlay opens is not wiped.
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current && !open) scope.clear();
+    wasOpen.current = open;
+  }, [open, scope]);
 
   const close = () => {
     setOpen(false);
