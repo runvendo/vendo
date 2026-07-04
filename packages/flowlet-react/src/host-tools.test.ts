@@ -129,6 +129,21 @@ describe("hostAwareSendAutomaticallyWhen", () => {
     expect(when({ messages: [declined] })).toBe(true);
   });
 
+  it("fires on an approved DYNAMIC server tool (MCP tools stream as dynamic-tool parts)", () => {
+    const dynamicApproved = assistant([
+      stepStart,
+      {
+        type: "dynamic-tool",
+        toolName: "everything_echo",
+        toolCallId: "c9",
+        state: "approval-responded",
+        input: { message: "hi" },
+        approval: { id: "ap-d", approved: true },
+      },
+    ]);
+    expect(when({ messages: [dynamicApproved] })).toBe(true);
+  });
+
   it("keeps the existing server-tool approval behaviour", () => {
     const serverApproved = assistant([
       stepStart,

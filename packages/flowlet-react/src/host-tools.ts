@@ -34,6 +34,7 @@ export interface PendingHostToolCall {
 
 interface ToolPartView {
   type: string;
+  toolName?: string;
   toolCallId?: string;
   state?: string;
   input?: unknown;
@@ -42,11 +43,15 @@ interface ToolPartView {
 }
 
 function toolName(part: ToolPartView): string {
-  return part.type.slice("tool-".length);
+  // Dynamic tools (MCP servers) carry their name in `toolName`; static tool
+  // parts encode it in the part type.
+  return part.type === "dynamic-tool"
+    ? String(part.toolName ?? "")
+    : part.type.slice("tool-".length);
 }
 
 function isToolPart(part: { type: string }): part is ToolPartView {
-  return part.type.startsWith("tool-");
+  return part.type.startsWith("tool-") || part.type === "dynamic-tool";
 }
 
 /** Ready-to-execute host tool calls on the (settled) last assistant message. */
