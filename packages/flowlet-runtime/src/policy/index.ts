@@ -5,3 +5,4 @@ export * from "./natural-language";
 export * from "./remember";
 export * from "./principal-rules";
 export * from "./tier";
+export * from "./grant-match";
