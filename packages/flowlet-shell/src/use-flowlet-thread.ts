@@ -24,8 +24,22 @@ export type ThreadItem =
       input?: unknown;
       output?: unknown;
       errorText?: string;
+      /** From the sibling data-consent part (ENG-193 §4.1/§4.5). Absent for
+       *  read-tier calls and for messages from before this shipped. */
+      tier?: "act" | "critical";
+      unverified?: boolean;
     }
-  | { kind: "approval"; key: string; messageId: string; approvalId: string; toolName: string; input: unknown }
+  | {
+      kind: "approval";
+      key: string;
+      messageId: string;
+      approvalId: string;
+      toolCallId?: string;
+      toolName: string;
+      input: unknown;
+      tier?: "act" | "critical";
+      unverified?: boolean;
+    }
   | { kind: "ui"; key: string; messageId: string; node: UINode }
   | { kind: "skeleton"; key: string; messageId: string; name?: string }
   | { kind: "error"; key: string; messageId: string; message: string };
@@ -36,7 +50,8 @@ export type ToolItem = Extract<ThreadItem, { kind: "tool" }>;
 /** A render unit: either a plain item or a group of a turn's tool calls. */
 export type RenderItem =
   | ThreadItem
-  | { kind: "activity"; key: string; messageId: string; steps: ToolItem[] };
+  | { kind: "activity"; key: string; messageId: string; steps: ToolItem[] }
+  | { kind: "approval-batch"; key: string; messageId: string; toolName: string; items: Extract<ThreadItem, { kind: "approval" }>[] };
 
 /**
  * Built-in tools whose product is a `data-ui` node (the rendered view, or the
@@ -61,6 +76,20 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
   for (const message of messages) {
     const role = message.role === "user" ? "user" : "assistant";
     const messageId = message.id;
+    // First pass: index this message's data-consent parts by toolCallId
+    // (ENG-193 §4.5) — a tool part and its tier metadata can arrive in either
+    // order within the same message, so both branches below read this map
+    // rather than assuming ordering.
+    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean }>();
+    for (const rawPart of message.parts) {
+      const part = rawPart as { type: string; data?: { toolCallId?: string; tier?: string; unverified?: boolean } };
+      if (part.type === "data-consent" && part.data?.toolCallId) {
+        tierByToolCallId.set(part.data.toolCallId, {
+          tier: part.data.tier as "act" | "critical",
+          unverified: Boolean(part.data.unverified),
+        });
+      }
+    }
     message.parts.forEach((rawPart, index) => {
       const part = rawPart as { type: string; [k: string]: unknown };
       const key = `${message.id}:${index}`;
@@ -83,11 +112,18 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
         items.push({ kind: "error", key, messageId, message: text });
       } else if (part.type === "data-ui") {
         items.push({ kind: "ui", key, messageId, node: part.data as UINode });
+      } else if (part.type === "data-consent") {
+        // Consumed via tierByToolCallId above — never its own render item.
       } else if (part.type.startsWith("tool-")) {
         const toolName = part.type.slice("tool-".length);
+        const toolCallId = part.toolCallId as string | undefined;
+        const tierInfo = toolCallId ? tierByToolCallId.get(toolCallId) : undefined;
         if (part.state === "approval-requested") {
           const approval = part.approval as { id: string };
-          items.push({ kind: "approval", key, messageId, approvalId: approval.id, toolName, input: part.input });
+          items.push({
+            kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+          });
         } else if (RENDER_TOOLS.has(toolName)) {
           // A render tool's finished output is the sibling data-ui node (so no chip).
           // While render_view is still streaming/pending, show a skeleton in its
@@ -110,11 +146,12 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
             key,
             messageId,
             toolName,
-            toolCallId: part.toolCallId as string | undefined,
+            toolCallId,
             state: String(part.state ?? ""),
             input: part.input,
             output: part.output,
             errorText: part.errorText as string | undefined,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
           });
         }
       }
@@ -127,11 +164,17 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
  * Collapses each turn's consecutive tool calls into a single `activity` group so
  * the message list can render one activity panel per turn instead of a chip per
  * tool. Non-tool items pass through in place; the group takes the position of the
- * turn's first tool call.
+ * turn's first tool call. Sibling approval-requested items of the SAME tool in
+ * the SAME message also collapse into one `approval-batch` (ENG-193 §3 Moment
+ * 4 — "ten at once → one decision"); a lone approval stays a plain `approval`
+ * item so the existing single-card path renders it unchanged.
  */
 export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
   const out: RenderItem[] = [];
   const groupIndexByMessage = new Map<string, number>();
+  // key = `${messageId}::${toolName}` -> index into `out` of its approval-batch
+  const approvalGroupIndex = new Map<string, number>();
+
   for (const item of items) {
     if (item.kind === "tool") {
       const existing = groupIndexByMessage.get(item.messageId);
@@ -141,8 +184,47 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
         groupIndexByMessage.set(item.messageId, out.length);
         out.push({ kind: "activity", key: `activity:${item.messageId}`, messageId: item.messageId, steps: [item] });
       }
+    } else if (item.kind === "approval") {
+      const groupKey = `${item.messageId}::${item.toolName}`;
+      const existing = approvalGroupIndex.get(groupKey);
+      if (existing !== undefined) {
+        // A sibling of an already-seen tool in this message: never pushed as
+        // its own render item. The second pass below collects every sibling
+        // straight from `items` (not `out`) and promotes the FIRST sighting's
+        // placeholder into the batch, so this one doesn't need its own slot.
+        const group = out[existing] as { kind: string; items?: typeof item[] };
+        if (group.kind === "approval-batch") group.items!.push(item);
+        continue;
+      }
+      // First sighting: hold a place. It gets promoted to a real
+      // "approval-batch" only if a SECOND sibling of the same tool shows up
+      // (below) — a lone approval stays a plain "approval" render item so
+      // ApprovalCard (not ApprovalBatchCard) renders it, unchanged from today.
+      approvalGroupIndex.set(groupKey, out.length);
+      out.push(item);
     } else {
       out.push(item);
+    }
+  }
+
+  // Second pass: promote any placeholder that gained siblings into a real
+  // "approval-batch" — done as a pass rather than inline above so a batch's
+  // FIRST item (already pushed as a plain "approval") converts cleanly once
+  // its second sibling is seen, without special-casing index 0 vs index 1+.
+  for (const [groupKey, index] of approvalGroupIndex) {
+    const entry = out[index];
+    if (entry && entry.kind === "approval") {
+      const toolName = groupKey.slice(groupKey.indexOf("::") + 2);
+      const siblings = items.filter(
+        (i): i is Extract<ThreadItem, { kind: "approval" }> =>
+          i.kind === "approval" && i.messageId === entry.messageId && i.toolName === toolName,
+      );
+      if (siblings.length > 1) {
+        out[index] = {
+          kind: "approval-batch", key: `approval-batch:${entry.messageId}:${toolName}`,
+          messageId: entry.messageId, toolName, items: siblings,
+        };
+      }
     }
   }
   return out;

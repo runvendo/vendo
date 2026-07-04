@@ -108,6 +108,66 @@ describe("groupThreadItems", () => {
   });
 });
 
+describe("toThreadItems — consent tier correlation", () => {
+  it("attaches tier/unverified/toolCallId to an approval item from its sibling data-consent part", () => {
+    const items = toThreadItems([
+      msg("m1", "assistant", [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "call-1", state: "approval-requested",
+          input: { to: "a@b.com" }, approval: { id: "ap-1" } },
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "act", unverified: true } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect(approval).toMatchObject({ toolCallId: "call-1", tier: "act", unverified: true });
+  });
+
+  it("an approval with no matching data-consent part gets no tier (defensive — never crashes)", () => {
+    const items = toThreadItems([
+      msg("m2", "assistant", [{ type: "tool-x", toolCallId: "call-2", state: "approval-requested", input: {}, approval: { id: "ap-2" } }]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect(approval).toMatchObject({ toolCallId: "call-2" });
+    expect((approval as { tier?: string }).tier).toBeUndefined();
+  });
+
+  it("a settled tool item also carries tier from its data-consent part (receipts)", () => {
+    const items = toThreadItems([
+      msg("m3", "assistant", [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "call-3", state: "output-available", input: { to: "a@b.com" }, output: "sent" },
+        { type: "data-consent", data: { toolCallId: "call-3", tier: "act", unverified: false } },
+      ]),
+    ]);
+    const tool = items.find((i) => i.kind === "tool");
+    expect(tool).toMatchObject({ tier: "act" });
+  });
+});
+
+describe("groupThreadItems — batching sibling approvals", () => {
+  it("groups 2+ approval-requested items of the SAME tool in the SAME message into one approval-batch", () => {
+    const items = toThreadItems([
+      msg("m4", "assistant", [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c1", state: "approval-requested", input: { to: "a@b.com" }, approval: { id: "ap1" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c2", state: "approval-requested", input: { to: "c@d.com" }, approval: { id: "ap2" } },
+      ]),
+    ]);
+    const grouped = groupThreadItems(items);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]).toMatchObject({ kind: "approval-batch", toolName: "GMAIL_SEND_EMAIL" });
+    expect((grouped[0] as { items: unknown[] }).items).toHaveLength(2);
+  });
+
+  it("does NOT batch a single approval, or approvals of DIFFERENT tools", () => {
+    const items = toThreadItems([
+      msg("m5", "assistant", [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c1", state: "approval-requested", input: {}, approval: { id: "ap1" } },
+        { type: "tool-GOOGLECALENDAR_CREATE_EVENT", toolCallId: "c2", state: "approval-requested", input: {}, approval: { id: "ap2" } },
+      ]),
+    ]);
+    const grouped = groupThreadItems(items);
+    expect(grouped.every((g) => g.kind !== "approval-batch")).toBe(true);
+  });
+});
+
 describe("originatingPrompt", () => {
   it("finds the nearest preceding user text", () => {
     const items = [
