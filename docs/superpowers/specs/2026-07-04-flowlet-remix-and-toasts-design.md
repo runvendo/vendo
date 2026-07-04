@@ -85,7 +85,7 @@ The locked architecture reaches users off-thread through the `Channels` seam (`d
 
 ### Events (exactly two)
 
-1. `completed`: any run finished, scheduled or trigger-fired, with outcome summary and click-through to the run. Trigger-driven reactions are just completions of trigger-started runs; they are not a separate event type (decided: a third event type was cut as redundant).
+1. `completed`: any run that finished doing something (`succeeded`, `failed`, `cancelled`), scheduled or trigger-fired, with outcome summary and click-through to the run. Guard-false `skipped` runs are deliberately silent: a poll that decided not to act is routine, and toasting it would be spam. Trigger-driven reactions are just completions of trigger-started runs; they are not a separate event type (decided: a third event type was cut as redundant).
 2. `approval-required`: a run is paused waiting on the user. Inline Approve / View. Approve bridges to the automation runner's resume (`resumeTarget { stepId, approved }`), not to chat tool-approval parts; idempotent per `(runId, stepId)`. If the run is no longer waiting (expired, cancelled, already resumed elsewhere), the toast flips to a stale state that links to the run. Adopts the ENG-193 consent channel when it lands.
 
 ### Policy (hard-coded v1)
