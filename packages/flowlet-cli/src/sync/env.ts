@@ -69,12 +69,23 @@ export async function buildEnvironment(
     const perImport: Record<string, ReturnType<typeof toManifestStatus>> = {};
     for (const specifier of importSpecifiers(record.source, record.file)) {
       const cls = classifyImport(specifier);
-      perImport[specifier] = toManifestStatus(cls);
-      if (cls.kind === "vendor-npm") npmToVendor.set(specifier, `${slug(specifier)}.js`);
-      else if (cls.kind === "shimmed" && specifier in SHIM_ENTRIES) shimsToVendor.add(specifier);
-      // Local modules are vendored from the app source tree; resolution reuses
-      // the capture resolver conventions, deferred to a follow-up — for now
-      // they are marked real and the raw source is inlined by the model.
+      if (cls.kind === "vendor-npm") {
+        perImport[specifier] = toManifestStatus(cls);
+        npmToVendor.set(specifier, `${slug(specifier)}.js`);
+      } else if (cls.kind === "shimmed" && specifier in SHIM_ENTRIES) {
+        perImport[specifier] = toManifestStatus(cls);
+        shimsToVendor.add(specifier);
+      } else if (cls.kind === "vendor-local") {
+        // Local-closure vendoring isn't built yet — do NOT tell the model these
+        // resolve (Codex review: the manifest was claiming "real" while env
+        // never vendored them). Instruct inlining the helper instead.
+        perImport[specifier] = {
+          kind: "absent",
+          alternative: "app-local helper not vendored — inline its logic from the source",
+        };
+      } else {
+        perImport[specifier] = toManifestStatus(cls);
+      }
     }
     anchors[anchorId] = perImport;
   }
@@ -88,21 +99,30 @@ export async function buildEnvironment(
   // 2. Vendor pure-npm deps as ESM (react/react-dom externalized to the shim).
   const vendorSizes: Record<string, number> = {};
   let vendorTotal = 0;
+  const vendorOne = async (contents: string) =>
+    build({
+      stdin: { contents, resolveDir: targetDir, loader: "js" },
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      write: false,
+      external: ["react", "react-dom", "react/jsx-runtime"],
+      logLevel: "silent",
+    });
   for (const [specifier, outName] of npmToVendor) {
     try {
-      const result = await build({
-        stdin: {
-          contents: `export * from ${JSON.stringify(specifier)};\nexport { default } from ${JSON.stringify(specifier)};`,
-          resolveDir: targetDir,
-          loader: "js",
-        },
-        bundle: true,
-        format: "esm",
-        platform: "browser",
-        write: false,
-        external: ["react", "react-dom", "react/jsx-runtime"],
-        logLevel: "silent",
-      });
+      // Re-export named AND default. Named-only packages (lucide-react,
+      // date-fns) have no default, so esbuild errors on the default line —
+      // retry with `export *` alone rather than marking the package absent
+      // (Codex review).
+      let result;
+      try {
+        result = await vendorOne(
+          `export * from ${JSON.stringify(specifier)};\nexport { default } from ${JSON.stringify(specifier)};`,
+        );
+      } catch {
+        result = await vendorOne(`export * from ${JSON.stringify(specifier)};`);
+      }
       const code = result.outputFiles[0]!.text;
       writeFileSync(path.join(vendorDir, outName), code);
       vendorSizes[specifier] = code.length;
@@ -172,17 +192,45 @@ export async function buildEnvironment(
 
   // 4. Host CSS from source, sanitized to zero fetchable URLs.
   const cssEntry = findCssEntry(targetDir);
+  let hasCss = false;
   if (cssEntry) {
     const raw = opts.compileCss ? opts.compileCss(cssEntry) : readFileSync(cssEntry, "utf8");
     const { css, dropped } = sanitizeCss(raw);
     writeFileSync(path.join(envDir, "host.css"), css);
+    hasCss = true;
     report.push(`env: host.css from ${path.relative(targetDir, cssEntry)}${dropped.length ? ` (dropped ${dropped.length} fetchable url(s))` : ""}`);
   } else {
     report.push("env: no globals.css found — sandbox keeps --flowlet-* vars only");
   }
 
+  // 4b. Tailwind JIT runtime (arbitrary utilities compile in-sandbox). Shipped
+  //     only when @tailwindcss/browser resolves — the manifest records exactly
+  //     what shipped so the prompt never claims a capability that is absent.
+  let hasTailwind = false;
+  try {
+    const requireFrom = createRequire(import.meta.url);
+    const twEntry = requireFrom.resolve("@tailwindcss/browser");
+    const built = await build({
+      entryPoints: [twEntry],
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      write: false,
+      logLevel: "silent",
+    });
+    writeFileSync(path.join(envDir, "tailwind.js"), built.outputFiles[0]!.text);
+    hasTailwind = true;
+    report.push(`env: tailwind.js (${kb(built.outputFiles[0]!.text.length)})`);
+  } catch (err) {
+    report.push(`env: Tailwind JIT not shipped (${err instanceof Error ? err.message : String(err)}) — prompt will not claim it`);
+  }
+
   // 5. Manifest.
-  const manifest: EnvManifest = { anchors, vendorSizes };
+  const manifest: EnvManifest = {
+    anchors,
+    vendorSizes,
+    styles: { css: hasCss, tailwind: hasTailwind },
+  };
   writeFileSync(path.join(envDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
   // 6. Copy runtime artifacts into public/flowlet/env for the stage to fetch.

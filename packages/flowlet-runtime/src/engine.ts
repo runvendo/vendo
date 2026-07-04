@@ -132,7 +132,10 @@ const BARE_SANDBOX_STYLE_WARNING =
   "flexbox gaps, explicit font sizes, no absolute positioning unless the baseline " +
   "truly overlaps).";
 
-function envSection(imports: Record<string, EnvImportStatus>): string[] {
+function envSection(
+  imports: Record<string, EnvImportStatus>,
+  styles?: { css: boolean; tailwind: boolean },
+): string[] {
   const real: string[] = [];
   const shimmed: string[] = [];
   const absent: string[] = [];
@@ -141,9 +144,16 @@ function envSection(imports: Record<string, EnvImportStatus>): string[] {
     else if (status.kind === "shimmed") shimmed.push(`${specifier} — ${status.note}`);
     else absent.push(`${specifier} — ${status.alternative}`);
   }
+  // Claim ONLY the styling that actually shipped (Codex review): the app's
+  // classes resolve when host.css shipped; ARBITRARY new utilities compile
+  // only when the Tailwind JIT shipped too.
+  const styleLine = styles?.tailwind
+    ? "The app's stylesheet AND a Tailwind JIT are available — keep the original class names and you may use new Tailwind utilities."
+    : styles?.css
+      ? "The app's stylesheet is available — keep the original class names (only classes the app already uses are guaranteed; for anything new, use inline styles + --flowlet-* vars)."
+      : "No host stylesheet is loaded — style with inline styles + --flowlet-* vars; do NOT rely on the app's class names.";
   return [
-    "Sandbox environment for this component (the app's stylesheet and Tailwind utilities ARE " +
-      "available — keep the original class names):",
+    `Sandbox environment for this component. ${styleLine}`,
     ...(real.length > 0 ? [`- Imports that resolve for REAL: ${real.join(", ")}`] : []),
     ...(shimmed.length > 0
       ? ["- Imports SHIMMED with the same API:", ...shimmed.map((s) => `  - ${s}`)]
@@ -179,7 +189,7 @@ function anchorSection(anchors: AnchorContextBlock, envManifest?: EnvManifest): 
       if (!anchorEnv) lines.push(BARE_SANDBOX_STYLE_WARNING);
     }
     if (scoped.source) lines.push(...sourceSection(scoped.source));
-    if (anchorEnv) lines.push(...envSection(anchorEnv));
+    if (anchorEnv) lines.push(...envSection(anchorEnv, envManifest?.styles));
   }
   if (ambient && ambient.length > 0) {
     lines.push(

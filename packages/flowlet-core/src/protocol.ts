@@ -69,6 +69,9 @@ export interface EnvManifest {
   anchors: Record<string, Record<string, EnvImportStatus>>;
   /** Vendored bundle sizes in bytes, keyed by import-map specifier. */
   vendorSizes?: Record<string, number>;
+  /** What styling the sandbox actually got — the prompt only claims what
+   *  shipped (host.css and/or the Tailwind JIT), never more. */
+  styles?: { css: boolean; tailwind: boolean };
 }
 
 export type EnvImportStatus =

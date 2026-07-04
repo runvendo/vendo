@@ -46,6 +46,7 @@ const envImportStatusSchema = z.union([
 const envManifestSchema = z.object({
   anchors: z.record(z.string(), z.record(z.string(), envImportStatusSchema)),
   vendorSizes: z.record(z.string(), z.number()).optional(),
+  styles: z.object({ css: z.boolean(), tailwind: z.boolean() }).optional(),
 });
 
 const EMPTY_MANIFEST: ToolsManifest = { version: 1, tools: [], events: [] };

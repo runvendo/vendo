@@ -2,9 +2,14 @@
   "anchors": {
     "upcoming-deadlines": {
       "@/lib/cn": {
-        "kind": "real"
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
       }
     }
   },
-  "vendorSizes": {}
+  "vendorSizes": {},
+  "styles": {
+    "css": true,
+    "tailwind": true
+  }
 }

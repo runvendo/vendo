@@ -519,6 +519,7 @@ describe("createFlowletAgent", () => {
               "next/headers": { kind: "absent", alternative: "server-only" },
             },
           },
+          styles: { css: true, tailwind: true },
         },
       });
       await collect(
@@ -536,6 +537,30 @@ describe("createFlowletAgent", () => {
       expect(sys).not.toContain("copying them produces unstyled");
       // Default-exported source: no named-export conversion callout.
       expect(sys).not.toContain("named export");
+    });
+
+    it("claims ONLY the styling that actually shipped (Codex review)", async () => {
+      const run = async (styles?: { css: boolean; tailwind: boolean }) => {
+        const { holder, model } = captureSystem();
+        const agent = createFlowletAgent({
+          model,
+          policy: allowPolicy,
+          envManifest: { anchors: { "invoices-widget": {} }, ...(styles ? { styles } : {}) },
+        });
+        await collect(
+          agent.run({
+            messages: sourcedTurn("export default function W() { return null }"),
+            tools: {},
+            signal: new AbortController().signal,
+          }),
+        );
+        return holder.system;
+      };
+      expect(await run({ css: true, tailwind: true })).toContain("Tailwind JIT are available");
+      const cssOnly = await run({ css: true, tailwind: false });
+      expect(cssOnly).toContain("stylesheet is available");
+      expect(cssOnly).not.toContain("Tailwind JIT are available");
+      expect(await run(undefined)).toContain("No host stylesheet is loaded");
     });
 
     it("without env, the bare-sandbox styling warning remains; without source, no source block", async () => {
