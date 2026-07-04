@@ -209,15 +209,24 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     // any next chat turn. Mirrors packages/flowlet-next/src/handler.ts's
     // onSettled wiring (ENG-193 review 2026-07-04).
     //
-    // Delta-append prefix assumption (single-client v1, same as flowlet-next):
-    // the settled list is treated as a strict extension of what's stored — we
-    // append only `messages.slice(storedCount)` because `appendMessages` is
-    // append-only by the frozen seam.
+    // Continuation turns (host-tool resumes, approval resumes) REVISE the
+    // trailing assistant message in place — ai's onFinish returns
+    // `[...originalMessages.slice(0, -1), state.message]`, the SAME length as
+    // what a previous settle stored — so an append-only prefix delta silently
+    // drops the revision (live-verification bug, 2026-07-04: the
+    // approval-requested part never reached the store and consent 404'd).
+    // `ThreadStore.replaceMessages` (optional seam member) persists the full
+    // settled list; the append-only fallback stays for stores without it
+    // (same shape as flowlet-next's handler.ts).
     onSettled: async ({ messages, threadId }) => {
       // Skip runs whose threadId isn't a store-assigned thread (e.g. a direct
-      // agent.run() test caller with no resolved thread) — appendMessages
-      // throws on unknown ids and the engine would just log the noise.
+      // agent.run() test caller with no resolved thread) — the writes below
+      // throw on unknown ids and the engine would just log the noise.
       if (!(await demoStore.threads.get(CADENCE_SCOPE, threadId))) return;
+      if (demoStore.threads.replaceMessages) {
+        await demoStore.threads.replaceMessages(CADENCE_SCOPE, threadId, messages);
+        return;
+      }
       const existing = await demoStore.threads.getMessages(CADENCE_SCOPE, threadId);
       const toAppend = messages.slice(existing.length);
       if (toAppend.length > 0) {

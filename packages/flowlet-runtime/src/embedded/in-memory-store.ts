@@ -91,6 +91,24 @@ export class InMemoryThreadStore implements ThreadStore {
     const thread = this.owned(scope, this.threads.get(threadId));
     return thread ? structuredClone(thread.messages) : [];
   }
+
+  /** Full-list replace for settle hooks (see the seam docstring): continuation
+   *  turns revise the trailing assistant message in place, which append-only
+   *  deltas can never persist. */
+  async replaceMessages(
+    scope: Principal,
+    threadId: string,
+    messages: FlowletUIMessage[],
+  ): Promise<void> {
+    const thread = this.owned(scope, this.threads.get(threadId));
+    if (!thread) {
+      throw new Error(
+        `unknown thread "${threadId}" for scope ${scope.tenantId}/${scope.subject}`,
+      );
+    }
+    thread.messages = structuredClone(messages);
+    thread.updatedAt = this.clock();
+  }
 }
 
 interface OwnedFlowlet extends SavedFlowlet {

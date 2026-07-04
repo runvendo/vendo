@@ -166,6 +166,105 @@ describe("createFlowletHandler", () => {
     expect(await grants.findForTool(scope, "send_email")).toHaveLength(1);
   });
 
+  it("REGRESSION: an approval streamed on a CONTINUATION turn is persisted, so consent mints its grant (live-verification 2026-07-04)", async () => {
+    // The live failing sequence: turn 1 settles [user, assistant@v1]; turn 2
+    // is a continuation (the transport resubmits ending with that assistant
+    // message, and ai's onFinish returns [...original.slice(0,-1), revised] —
+    // SAME length). The old prefix delta appended nothing, so the revised
+    // message's approval-requested part never reached the store and the
+    // consent POST 404'd. `replaceMessages` must persist the revision.
+    const grants = createInMemoryGrantStore();
+    const threads = new InMemoryThreadStore(() => new Date().toISOString());
+    const zeroUsage = {
+      inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 0, text: 0, reasoning: 0 },
+    };
+    let call = 0;
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks:
+            ++call === 1
+              ? [
+                  // Turn 1: a plain text turn — settles [user, assistant@v1].
+                  { type: "text-start", id: "t1" },
+                  { type: "text-delta", id: "t1", delta: "Looked it up." },
+                  { type: "text-end", id: "t1" },
+                  { type: "finish", usage: zeroUsage, finishReason: { unified: "stop", raw: undefined } },
+                ]
+              : [
+                  // Turn 2 (continuation): the gated call pauses at approval.
+                  { type: "tool-call", toolCallId: "call-2", toolName: "send_email", input: "{}" },
+                  { type: "finish", usage: zeroUsage, finishReason: { unified: "tool-calls", raw: undefined } },
+                ],
+        }),
+      }),
+    });
+    const { POST } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      automations: false,
+      model: model as never,
+      tools: {
+        send_email: {
+          description: "send an email",
+          inputSchema: z.object({}),
+          annotations: { destructiveHint: false },
+          execute: async () => "ok",
+        } as never,
+      },
+      store: { grants, threads },
+    });
+    const scope = { tenantId: "flowlet-embedded", subject: "flowlet-default-user" };
+    const user = { id: "u1", role: "user", parts: [{ type: "text", text: "send it" }] };
+
+    // Turn 1.
+    await (
+      await POST(req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ id: "chat-c1", messages: [user] }) }))
+    ).text();
+    let assistant: unknown;
+    await vi.waitFor(async () => {
+      const records = await threads.list(scope);
+      expect(records).toHaveLength(1);
+      const stored = await threads.getMessages(scope, records[0]!.id);
+      expect(stored).toHaveLength(2);
+      assistant = stored[1];
+    });
+
+    // Turn 2: resubmit ending with the stored assistant message — exactly what
+    // DefaultChatTransport does on a continuation.
+    await (
+      await POST(
+        req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ id: "chat-c1", messages: [user, assistant] }) }),
+      )
+    ).text();
+    await vi.waitFor(async () => {
+      const records = await threads.list(scope);
+      const stored = await threads.getMessages(scope, records[0]!.id);
+      expect(stored).toHaveLength(2); // continuation REVISED the assistant message, not appended
+      const parts = stored[1]!.parts as Array<{ type: string; toolCallId?: string; state?: string }>;
+      const part = parts.find((p) => p.toolCallId === "call-2");
+      expect(part?.state).toBe("approval-requested");
+    });
+
+    const consentRes = await POST(
+      req("/api/flowlet/consent", {
+        method: "POST",
+        body: JSON.stringify({
+          id: "chat-c1",
+          toolCallId: "call-2",
+          toolName: "send_email",
+          response: {
+            id: "call-2",
+            decision: "yes",
+            grant: { tool: "send_email", scope: { kind: "tool" }, duration: "standing" },
+          },
+        }),
+      }),
+    );
+    expect(consentRes.status).toBe(200);
+    expect(await grants.findForTool(scope, "send_email")).toHaveLength(1);
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");

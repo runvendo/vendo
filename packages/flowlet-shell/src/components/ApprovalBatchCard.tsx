@@ -37,10 +37,17 @@ function summarize(input: unknown): string {
  */
 export function ApprovalBatchCard({ toolName, items, onApproveAll, onApproveSubset, onDeclineAll }: ApprovalBatchCardProps) {
   const [picking, setPicking] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(() => new Set(items.map((i) => i.approvalId)));
+  // Live-verification fix (2026-07-04): sibling approvals STREAM in — a set
+  // seeded once at mount silently excluded later arrivals (an untouched
+  // "Approve selected" then approved the first siblings and DECLINED the
+  // rest). Until the user touches a checkbox, every current item counts as
+  // checked; the explicit set only takes over after the first interaction.
+  const [touched, setTouched] = useState(false);
+  const [checkedState, setChecked] = useState<Set<string>>(new Set());
   const action = toolAction(toolName);
   const allApprovalIds = items.map((i) => i.approvalId);
   const allToolCallIds = items.map((i) => i.toolCallId).filter((id): id is string => !!id);
+  const checked = touched ? checkedState : new Set(allApprovalIds);
 
   return (
     <div className="fl-approval" role="group" aria-label={`Approve ${items.length} ${action.done.toLowerCase()}`}>
@@ -61,10 +68,13 @@ export function ApprovalBatchCard({ toolName, items, onApproveAll, onApproveSubs
                     aria-label={summarize(item.input) || item.toolCallId || item.approvalId}
                     checked={checked.has(item.approvalId)}
                     onChange={(e) => {
+                      // Seed from the derived all-checked view on first touch
+                      // so the user's change applies to what they were seeing.
                       const next = new Set(checked);
                       if (e.target.checked) next.add(item.approvalId);
                       else next.delete(item.approvalId);
                       setChecked(next);
+                      setTouched(true);
                     }}
                   />
                   {summarize(item.input) || action.request}

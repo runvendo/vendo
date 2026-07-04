@@ -133,18 +133,26 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       // resolved and passed into run(), so the fixed hook can attribute each
       // settled list to the right thread.
       //
-      // Delta-append prefix assumption (single-client v1): the settled list is
-      // treated as a strict extension of what's stored — we append only
-      // `messages.slice(storedCount)` because ThreadStore.appendMessages is
-      // append-only by the frozen seam. Two clients interleaving turns on one
-      // thread could violate the prefix assumption; revisit alongside a
-      // replace/compact API when multi-client threads become real.
+      // Continuation turns (host-tool resumes, approval resumes) REVISE the
+      // trailing assistant message in place — ai's onFinish returns
+      // `[...originalMessages.slice(0, -1), state.message]`, the SAME length
+      // as what a previous settle stored — so an append-only prefix delta
+      // silently drops the revision (live-verification bug, 2026-07-04: the
+      // approval-requested part never reached the store and consent 404'd).
+      // `ThreadStore.replaceMessages` (optional seam member, additive like
+      // `Store.grants`) persists the full settled list; stores without it
+      // fall back to the old prefix delta, which is correct for append-only
+      // turns and best-effort for continuations.
       onSettled: async ({ messages, threadId, principal }) => {
         const scope = { tenantId: EMBEDDED_TENANT, subject: principal.userId };
         // Skip runs whose threadId isn't a store-assigned thread (a direct
-        // getAgent().run caller with no resolved thread) — appendMessages
-        // throws on unknown ids and the engine would just log the noise.
+        // getAgent().run caller with no resolved thread) — the writes below
+        // throw on unknown ids and the engine would just log the noise.
         if (!(await threads.get(scope, threadId))) return;
+        if (threads.replaceMessages) {
+          await threads.replaceMessages(scope, threadId, messages);
+          return;
+        }
         const existing = await threads.getMessages(scope, threadId);
         const toAppend = messages.slice(existing.length);
         if (toAppend.length > 0) {

@@ -35,6 +35,22 @@ describe("InMemoryThreadStore", () => {
       /unknown thread/i,
     );
   });
+
+  it("replaceMessages swaps the FULL list (continuation turns revise the trailing message)", async () => {
+    const store = createInMemoryStore({ now });
+    const thread = await store.threads.create(scope);
+    const msg = (id: string, extra = {}) => ({ id, role: "assistant", parts: [], ...extra }) as never;
+    await store.threads.appendMessages(scope, thread.id, [msg("u1"), msg("a1")]);
+    // Same length, revised trailing message — the case appendMessages can't express.
+    const revised = [msg("u1"), msg("a1", { metadata: { revised: true } })];
+    await store.threads.replaceMessages(scope, thread.id, revised);
+    const messages = await store.threads.getMessages(scope, thread.id);
+    expect(messages).toHaveLength(2);
+    expect((messages[1] as { metadata?: { revised?: boolean } }).metadata?.revised).toBe(true);
+    await expect(store.threads.replaceMessages(other, thread.id, [])).rejects.toThrow(
+      /unknown thread/i,
+    );
+  });
 });
 
 describe("InMemorySavedFlowletStore", () => {
