@@ -7,6 +7,7 @@ export * from "./tier";
 export * from "./grant-match";
 export * from "./rule-match";
 export * from "./grant-policy";
+export * from "./compiled-rules-policy";
 export * from "./audit-policy";
 export * from "./run-context";
 export * from "./judge-policy";
