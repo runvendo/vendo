@@ -10,3 +10,4 @@ export * from "./audit-policy";
 export * from "./run-context";
 export * from "./judge-policy";
 export * from "./breakers";
+export * from "./fade-shapes";
