@@ -68,6 +68,7 @@ export * from "./automations";
 export {
   createInMemoryStore,
   InMemoryAuditLog,
+  InMemoryRemixStore,
   InMemorySavedFlowletStore,
   InMemoryThreadStore,
   type InMemoryStore,
@@ -77,4 +78,8 @@ export {
   type InProcessCredentialBrokerConfig,
 } from "./embedded/in-process-credential-broker";
 export { InProcessExecutor, type InProcessToolFn } from "./embedded/in-process-executor";
-export { InAppChannels, type InAppChannelsConfig } from "./embedded/in-app-channels";
+export {
+  InAppChannels,
+  type InAppChannelsConfig,
+  type RetainedDelivery,
+} from "./embedded/in-app-channels";

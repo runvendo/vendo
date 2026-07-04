@@ -25,6 +25,9 @@ export interface RenderViewToolOptions {
    *  correctable tool errors the model can repair, instead of only degrading
    *  to placeholders in the stage (ENG-186). */
   components?: RegisteredComponent[];
+  /** The FlowletRemix anchor this conversation is scoped to, if any. Views
+   *  rendered under a scope are tagged as remix candidates for that anchor. */
+  remixAnchorId?: string;
 }
 
 const genNodeSchema = z.object({
@@ -108,6 +111,7 @@ export function createRenderViewTool(writer: FlowletWriter, options: RenderViewT
         id: mintId(),
         kind: "generated",
         payload: shipped,
+        ...(options.remixAnchorId ? { remixAnchorId: options.remixAnchorId } : {}),
       };
       writer.write({ type: "data-ui", id: node.id, data: node });
       return "rendered";
