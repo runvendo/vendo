@@ -383,6 +383,57 @@ describe("createFlowletAgent", () => {
     expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
   });
 
+  it("coerces a broken-JSON tool input in history to {} so the provider does not reject every later turn", async () => {
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "ok"),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createFlowletAgent({ model, policy: allowPolicy });
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "remix it" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          {
+            // Streamed render_view input that broke mid-flight: a string, not an object.
+            type: "tool-render_view",
+            toolCallId: "call-broken",
+            state: "output-available",
+            input: '{"formatVersion":"flowlet-genui/v1","root"',
+            output: "rendered",
+          },
+        ],
+      },
+      { id: "m3", role: "user", parts: [{ type: "text", text: "again" }] },
+    ] as unknown as FlowletUIMessage[];
+
+    const parts = await collect(
+      agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
+    );
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+    // The broken call reached the model with an OBJECT input (coerced to {}),
+    // so the provider would not 400 on it.
+    const brokenCall = seenPrompt
+      .filter((m) => m.role === "assistant")
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+      .find((c) => (c as { toolCallId?: string }).toolCallId === "call-broken") as
+      | { input?: unknown }
+      | undefined;
+    expect(brokenCall).toBeDefined();
+    expect(typeof brokenCall!.input).toBe("object");
+  });
+
   describe("anchor context (FlowletRemix, 2026-07-04 spec)", () => {
     const scopedTurn = (payload?: unknown): FlowletUIMessage[] => [
       {

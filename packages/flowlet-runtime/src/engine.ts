@@ -284,6 +284,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         const part = rawPart as {
           type: string;
           state?: string;
+          input?: unknown;
           approval?: { id: string; approved?: boolean | null; reason?: string };
         };
         if (
@@ -302,6 +303,21 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
               reason: "Not approved — the user moved on without answering.",
             },
           } as typeof rawPart;
+        }
+        // A tool call whose streamed input JSON broke (e.g. a large render_view
+        // that truncated) lands in history with a non-object `input`. The
+        // provider rejects the whole request ("tool_use.input: Input should be
+        // an object") on EVERY later turn, wedging the thread. Coerce the
+        // historical input to `{}` so the record stays valid — it is a past
+        // call with its output already present, never re-executed, so an empty
+        // input is harmless.
+        if (
+          part.type.startsWith("tool-") &&
+          "input" in part &&
+          (typeof part.input !== "object" || part.input === null)
+        ) {
+          changed = true;
+          return { ...rawPart, input: {} } as typeof rawPart;
         }
         return rawPart;
       });
