@@ -167,7 +167,7 @@ const integrationTools: VoiceToolDef[] = [
   {
     name: "request_connect",
     description:
-      "Put a Connect card on screen so the user can link an integration (OAuth). Use when the user asks to connect a toolkit. The user completes the connection by tapping the card.",
+      "Put a Connect card on screen so the user can link an integration (OAuth). ONLY for toolkits that are NOT already connected — if a toolkit's tools (GMAIL_*, SLACK_*, …) are in your tool list, it IS connected: use them directly, never show this card.",
     parameters: {
       type: "object",
       properties: {
@@ -206,12 +206,42 @@ const INSTRUCTIONS = [
   "You can read the user's real accounts, transactions, cards, insights and payees through your tools; the data comes back as JSON from Maple's own API.",
   "Money amounts in the API are integer CENTS — always convert and display as dollars (941220 → $9,412.20), on screen and aloud.",
   "When data is worth seeing, put it on screen with show_table or show_key_value and speak only the headline (totals, the outlier, what to do next). Never read rows aloud.",
-  "Integrations: you can list them and put a Connect card on screen (request_connect) for the user to link one. You can NOT yet act through integrations (send email/Slack) in voice — if asked, say that part works in chat for now.",
+  "Integrations: if a toolkit's tools (GMAIL_*, SLACK_*, …) appear in your tool list, that integration IS connected — call them directly. Only when a requested toolkit has no tools in your list do you use request_connect to put a Connect card on screen. Gated actions ask the user's permission like everything else.",
   "Keep spoken turns to one or two sentences.",
 ].join(" ");
 
 const GREETING =
   "Greet the user in ONE short sentence: you're Maple's voice assistant, ask what they need. Do not list capabilities.";
+
+/** Integration (Composio) tools for the connected toolkits — executed via the
+ *  server bridge (the browser can't run Composio; see the route's header). */
+async function fetchIntegrationVoiceTools(): Promise<VoiceToolDef[]> {
+  try {
+    const res = await fetch("/api/flowlet/voice/tools");
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      tools?: Array<{ name: string; description: string; parameters: Record<string, unknown>; tier: string }>;
+    };
+    return (body.tools ?? []).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      tier: tool.tier === "read" ? "read" : tool.tier === "critical" ? "critical" : "act",
+      execute: async (input) => {
+        const exec = await fetch("/api/flowlet/voice/tools", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tool: tool.name, input }),
+        });
+        const json = (await exec.json()) as { result?: unknown; error?: string };
+        if (!exec.ok) throw new Error(json.error ?? `integration tool failed (${exec.status})`);
+        return json.result;
+      },
+    }));
+  } catch {
+    return []; // integrations stay chat-only this session — never fatal
+  }
+}
 
 /**
  * Mint-and-fallback: mint the session grant up front; with a grant, run the
@@ -242,11 +272,14 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
           adopt(scriptedFallback.start(emit));
           return;
         }
-        const grant = (await res.json()) as { clientSecret: string; model?: string };
+        const [grant, composioTools] = await Promise.all([
+          res.json() as Promise<{ clientSecret: string; model?: string }>,
+          fetchIntegrationVoiceTools(),
+        ]);
         if (stopped) return;
         const driver = createRealtimeVoiceDriver({
           getSession: async () => grant,
-          tools: [...displayTools, ...integrationTools, demoTransferTool, ...hostVoiceTools],
+          tools: [...displayTools, ...integrationTools, ...composioTools, demoTransferTool, ...hostVoiceTools],
           instructions: INSTRUCTIONS,
           greeting: GREETING,
         });
