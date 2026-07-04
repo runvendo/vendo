@@ -80,6 +80,22 @@ describe("createFlowletHandler", () => {
     expect(res.status).toBe(400);
   });
 
+  it("500s a boot failure and retries assembly once the config is fixed", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("FLOWLET_MODEL", "grok/whatever");
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
+
+    const broken = await GET(req("/api/flowlet/capabilities"));
+    expect(broken.status).toBe(500);
+    expect(((await broken.json()) as { error: string }).error).toMatch(/Flowlet/);
+
+    // Fixing the env must NOT keep serving the cached rejection.
+    vi.stubEnv("FLOWLET_MODEL", "");
+    const fixed = await GET(req("/api/flowlet/capabilities"));
+    expect(fixed.status).toBe(200);
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false });
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");

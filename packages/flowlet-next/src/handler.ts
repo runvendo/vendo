@@ -126,10 +126,36 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       approvals: createApprovalStore(),
     };
   }
-  const state = () => (assembled ??= assemble());
+  // Memoize the assembly promise, but drop it on rejection so the next
+  // request retries fresh (the old sync code threw before assignment, so a
+  // boot failure — bad FLOWLET_MODEL, missing peer — was never cached). The
+  // identity check keeps a late rejection from clobbering a newer assembly.
+  const state = () => {
+    if (!assembled) {
+      const p = assemble();
+      p.catch(() => {
+        if (assembled === p) assembled = null;
+      });
+      assembled = p;
+    }
+    return assembled;
+  };
+
+  /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection. */
+  function bootError(err: unknown): Response {
+    return Response.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
 
   async function GET(req: Request): Promise<Response> {
-    const s = await state();
+    let s: Awaited<ReturnType<typeof assemble>>;
+    try {
+      s = await state();
+    } catch (err) {
+      return bootError(err);
+    }
     switch (subPath(req)) {
       case "capabilities":
         return Response.json(s.capabilities);
@@ -145,7 +171,12 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
   }
 
   async function POST(req: Request): Promise<Response> {
-    const s = await state();
+    let s: Awaited<ReturnType<typeof assemble>>;
+    try {
+      s = await state();
+    } catch (err) {
+      return bootError(err);
+    }
     switch (subPath(req)) {
       case "chat":
         return handleChat(req, {
