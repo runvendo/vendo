@@ -19,7 +19,7 @@ import { annotationPolicy } from "./annotation";
 import { composePolicy } from "./compose";
 import { grantPolicy } from "./grant-policy";
 import { roleRule } from "./principal-rules";
-import { dangerTier } from "./tier";
+import { dangerTier, isUnverified } from "./tier";
 import type { PolicyContext } from "./types";
 import { judgePolicy } from "./judge-policy";
 import { cautionBreaker, createBreakerState, volumeBreaker } from "./breakers";
@@ -29,6 +29,9 @@ import type { FlowletUIMessage } from "@flowlet/core";
 import { createFadeTracker } from "../fade-tracker";
 import { handleConsent } from "../consent";
 import { handleFadeProposal } from "../fade-proposal";
+import { compiledRulesPolicy } from "./compiled-rules-policy";
+import { createInMemoryCompiledRuleStore } from "../rule-store";
+import { createSteeringTools } from "../steering-tools";
 
 const scope: Principal = { tenantId: "t", subject: "u" };
 
@@ -340,5 +343,96 @@ describe("ENG-193 §7 — fade invariants (item 5)", () => {
     // grant-policy consults the live store on EVERY evaluate — this pins that
     // contract so a future caching layer can't quietly break revocation.
     expect(await policy.evaluate(ctxFor(actDesc))).toBe("approve");
+  });
+});
+
+/** Minimal SteeringToolsConfig for the invariant checks below — a fresh
+ *  rule/grant store + audit log per test, matching steering-tools.test.ts's
+ *  own harness. */
+function steeringHarness(resolveDescriptor: (name: string) => ToolDescriptor | undefined) {
+  return createSteeringTools({
+    principal: scope,
+    rules: createInMemoryCompiledRuleStore(),
+    grants: createInMemoryGrantStore(),
+    audit: new InMemoryAuditLog(),
+    resolveDescriptor,
+  });
+}
+
+describe("ENG-193 §8/item-6 — steering invariants", () => {
+  it("INVARIANT: an always_ask rule beats an allowing sibling (grant/judge/breaker) unconditionally", async () => {
+    const store = createInMemoryCompiledRuleStore();
+    await store.create(scope, { kind: "always_ask", toolPattern: actDesc.name, plainText: "p" });
+    const alwaysAllow: ApprovalPolicy = { evaluate: () => "allow" };
+    const composed = composePolicy(alwaysAllow, compiledRulesPolicy(store, { principalScope: () => scope }));
+    expect(await composed.evaluate(ctxFor(actDesc))).toBe("approve");
+  });
+
+  it("INVARIANT: an always_ask rule never escalates a read-tier tool, however broad its glob", async () => {
+    const store = createInMemoryCompiledRuleStore();
+    await store.create(scope, { kind: "always_ask", toolPattern: "*", plainText: "p" });
+    const policy = compiledRulesPolicy(store, { principalScope: () => scope });
+    expect(await policy.evaluate(ctxFor(readDesc))).toBe("allow");
+  });
+
+  it("INVARIANT: stop_asking_about's own descriptor is critical tier", () => {
+    const tools = steeringHarness(() => undefined);
+    const descriptor = buildDescriptor("stop_asking_about", tools["stop_asking_about"], "engine");
+    expect(dangerTier(descriptor)).toBe("critical");
+  });
+
+  it("INVARIANT: always_ask_before's own descriptor is act tier, not unverified", () => {
+    const tools = steeringHarness(() => undefined);
+    const descriptor = buildDescriptor("always_ask_before", tools["always_ask_before"], "engine");
+    expect(dangerTier(descriptor)).toBe("act");
+    expect(isUnverified(descriptor)).toBe(false);
+  });
+
+  it("INVARIANT: stop_asking_about refuses to mint a grant for a critical target, by construction", async () => {
+    const grants = createInMemoryGrantStore();
+    const tools = createSteeringTools({
+      principal: scope,
+      rules: createInMemoryCompiledRuleStore(),
+      grants,
+      audit: new InMemoryAuditLog(),
+      resolveDescriptor: (n) => (n === criticalDesc.name ? criticalDesc : undefined),
+    });
+    const result = await tools["stop_asking_about"]!.execute!(
+      { toolName: criticalDesc.name, plainText: "transferring money" },
+      { toolCallId: "c1", messages: [] } as never,
+    );
+    expect(result).toMatchObject({ ok: false });
+    expect(await grants.findForTool(scope, criticalDesc.name)).toHaveLength(0);
+  });
+
+  it("INVARIANT: stop_asking_about refuses to mint a grant for an unverified target", async () => {
+    const unverifiedDesc: ToolDescriptor = {
+      name: "mystery_tool", source: "caller", annotations: {}, hasExecute: true, kind: "function",
+    };
+    const grants = createInMemoryGrantStore();
+    const tools = createSteeringTools({
+      principal: scope,
+      rules: createInMemoryCompiledRuleStore(),
+      grants,
+      audit: new InMemoryAuditLog(),
+      resolveDescriptor: (n) => (n === unverifiedDesc.name ? unverifiedDesc : undefined),
+    });
+    const result = await tools["stop_asking_about"]!.execute!(
+      { toolName: unverifiedDesc.name, plainText: "using the mystery tool" },
+      { toolCallId: "c1", messages: [] } as never,
+    );
+    expect(result).toMatchObject({ ok: false });
+    expect(await grants.findForTool(scope, unverifiedDesc.name)).toHaveLength(0);
+  });
+
+  it("INVARIANT: rules are principal-scoped — one principal's rules never leak into another's match", async () => {
+    const principalA: Principal = { tenantId: "t", subject: "a" };
+    const principalB: Principal = { tenantId: "t", subject: "b" };
+    const store = createInMemoryCompiledRuleStore();
+    await store.create(principalA, { kind: "always_ask", toolPattern: actDesc.name, plainText: "p" });
+    expect(await store.list(principalB)).toHaveLength(0);
+
+    const policy = compiledRulesPolicy(store, { principalScope: () => principalB });
+    expect(await policy.evaluate(ctxFor(actDesc))).toBe("allow");
   });
 });
