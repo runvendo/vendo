@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   addDependency,
+  addPrebuildSync,
   productNameFrom,
   wireNextApp,
   wrapLayoutChildren,
@@ -158,6 +159,25 @@ describe("addDependency", () => {
 
   it("returns null on unparsable package.json", () => {
     expect(addDependency("{nope", "@flowlet/next", "latest")).toBeNull();
+  });
+});
+
+describe("addPrebuildSync", () => {
+  it("creates a prebuild script, extends an existing one, and is idempotent", () => {
+    const created = addPrebuildSync(JSON.stringify({ name: "x" }))!;
+    expect(JSON.parse(created).scripts.prebuild).toBe("flowlet sync");
+
+    const extended = addPrebuildSync(
+      JSON.stringify({ name: "x", scripts: { prebuild: "generate-types" } }),
+    )!;
+    expect(JSON.parse(extended).scripts.prebuild).toBe("generate-types && flowlet sync");
+
+    // Re-run leaves it alone.
+    expect(addPrebuildSync(extended)).toBe(extended);
+  });
+
+  it("returns null on unparsable package.json", () => {
+    expect(addPrebuildSync("{nope")).toBeNull();
   });
 });
 
