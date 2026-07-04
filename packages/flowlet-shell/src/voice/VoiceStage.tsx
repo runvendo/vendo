@@ -106,14 +106,21 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   const mutedLive = muted && (status === "listening" || status === "speaking" || status === "thinking");
   const visibleLabel = mutedLive ? "Muted" : status === "connecting" ? STATUS_COPY.connecting : undefined;
 
-  // Feed auto-follows the newest entry (the stage keeps "one thing at a time"
-  // attention even though history stays scrollable above).
+  // Feed auto-follows the newest entry, landing its TOP under the blob (the
+  // snap resting position) rather than approximately-bottom — the stage keeps
+  // "one thing at a time" attention even though history stays scrollable.
   useEffect(() => {
     const el = feedRef.current;
     if (!el) return;
     const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (typeof el.scrollTo === "function") el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-    else el.scrollTop = el.scrollHeight;
+    const last = el.lastElementChild;
+    if (last && typeof last.scrollIntoView === "function") {
+      last.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    } else if (typeof el.scrollTo === "function") {
+      el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [feed.length]);
 
   // The exit beat: linger briefly on "ended" so the stage settles instead of

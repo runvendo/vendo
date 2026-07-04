@@ -718,6 +718,10 @@
   -webkit-mask-image: linear-gradient(0deg, #000 30%, transparent);
   mask-image: linear-gradient(0deg, #000 30%, transparent); }
 .fl-voice-feed { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  /* Proximity snap: scrolling stays continuous, but resting near a boundary
+     settles a card cleanly under the blob — never half-between two views.
+     (mandatory would fight reading tall cards; proximity only nudges.) */
+  scroll-snap-type: y proximity;
   display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 20px; scrollbar-width: none;
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 30px), transparent);
   mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 30px), transparent); }
@@ -728,6 +732,7 @@
   .fl-voice-feed > * { animation: fl-item-in .36s cubic-bezier(.22, 1, .36, 1) both; }
 }
 .fl-voice-card { align-self: center; width: min(560px, 100%); border-radius: var(--flowlet-radius);
+  scroll-snap-align: start; scroll-margin-top: 10px;
   transition: opacity .35s ease, transform .35s ease; }
 /* Older views recede — attention stays on the newest thing (the decided
    stacked-feed register: scrollable history, one thing in focus). */
