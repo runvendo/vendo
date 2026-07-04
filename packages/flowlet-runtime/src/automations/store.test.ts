@@ -257,6 +257,35 @@ describe("runs", () => {
   });
 });
 
+describe("listEnabledSchedules", () => {
+  it("lists enabled schedule-triggered automations across scopes with their stored principal", async () => {
+    const store = makeStore();
+    const tenantAUser1: Principal = { tenantId: "tenant-a", subject: "user1" };
+    const tenantBUser2: Principal = { tenantId: "tenant-b", subject: "user2" };
+
+    const scheduleSpec = spec({
+      trigger: { type: "schedule", cron: "0 9 * * *", timezone: "America/New_York" },
+    });
+    const { automation: scheduled } = await store.create(tenantAUser1, {
+      spec: scheduleSpec,
+      grants: [],
+    });
+    await store.create(tenantBUser2, { spec: spec(), grants: [] }); // host_event, different scope
+
+    const entries = await store.listEnabledSchedules();
+    expect(entries).toEqual([
+      {
+        automationId: scheduled.id,
+        trigger: scheduleSpec.trigger,
+        principal: tenantAUser1,
+      },
+    ]);
+
+    await store.setStatus(tenantAUser1, scheduled.id, "paused");
+    expect(await store.listEnabledSchedules()).toEqual([]);
+  });
+});
+
 describe("lifecycle", () => {
   it("finds only enabled automations matching kind+key within the scope", async () => {
     const store = makeStore();

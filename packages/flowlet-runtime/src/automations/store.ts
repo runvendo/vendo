@@ -319,6 +319,15 @@ export interface AutomationEngineStore extends CoreAutomationStore {
     resolution: ParkedActionResolution,
     resolvedAt: string,
   ): Promise<ParkedAction>;
+
+  /** Cross-scope listing used ONLY for boot rehydration of the scheduler. */
+  listEnabledSchedules(): Promise<
+    Array<{
+      automationId: string;
+      trigger: Extract<AutomationSpec["trigger"], { type: "schedule" }>;
+      principal: Principal;
+    }>
+  >;
 }
 
 function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: string | null } {
@@ -742,6 +751,29 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
     const next: ParkedAction = { ...action, resolution, resolvedAt };
     this.parkedActions.set(id, next);
     return next;
+  }
+
+  async listEnabledSchedules(): Promise<
+    Array<{
+      automationId: string;
+      trigger: Extract<AutomationSpec["trigger"], { type: "schedule" }>;
+      principal: Principal;
+    }>
+  > {
+    const entries: Array<{
+      automationId: string;
+      trigger: Extract<AutomationSpec["trigger"], { type: "schedule" }>;
+      principal: Principal;
+    }> = [];
+    for (const a of this.automations.values()) {
+      if (a.status !== "enabled" || a.spec.trigger.type !== "schedule") continue;
+      entries.push({
+        automationId: a.id,
+        trigger: a.spec.trigger,
+        principal: { tenantId: a.tenantId, subject: a.subject },
+      });
+    }
+    return entries;
   }
 
   private mustGet(scope: Principal, id: string): AutomationRecord {
