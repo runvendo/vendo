@@ -382,6 +382,54 @@ describe("createFlowletAgent", () => {
     }
     expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
   });
+
+  it("repairs a stale DYNAMIC tool approval (MCP tools) the same way", async () => {
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "Continuing."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createFlowletAgent({ model, policy: allowPolicy });
+
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "echo something" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          // An MCP tool call (dynamic-tool part) the user typed past.
+          {
+            type: "dynamic-tool",
+            toolName: "everything_echo",
+            toolCallId: "call-stale-dyn",
+            state: "approval-requested",
+            input: { message: "hi" },
+            approval: { id: "appr-dyn" },
+          },
+        ],
+      },
+      { id: "m3", role: "user", parts: [{ type: "text", text: "never mind" }] },
+    ] as unknown as FlowletUIMessage[];
+
+    const parts = await collect(
+      agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
+    );
+
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+    const results = seenPrompt
+      .filter((m) => m.role === "tool")
+      .flatMap((m) => m.content as { type: string; toolCallId: string }[]);
+    expect(results.some((r) => r.type === "tool-result" && r.toolCallId === "call-stale-dyn")).toBe(true);
+  });
 });
 
 describe("MCP ingestion wiring", () => {

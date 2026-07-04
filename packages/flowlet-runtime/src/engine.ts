@@ -149,7 +149,10 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           approval?: { id: string; approved?: boolean | null; reason?: string };
         };
         if (
-          part.type.startsWith("tool-") &&
+          // Static tool parts are "tool-<name>"; dynamic tools (MCP) are
+          // "dynamic-tool" with the name in `toolName`. Both can strand an
+          // unanswered approval.
+          (part.type.startsWith("tool-") || part.type === "dynamic-tool") &&
           part.state === "approval-requested" &&
           part.approval != null &&
           part.approval.approved == null
