@@ -34,6 +34,9 @@ export interface FlowletStageProps {
   node: UINode | null;
   bundleSource?: string;
   reactSource?: string;
+  /** Furnished sandbox environment (remix-fidelity): vendored module sources,
+   *  host CSS, Tailwind JIT — mount-only, blobbed by the stage (CSP untouched). */
+  env?: import("@flowlet/stage").StageEnv;
   theme?: Record<string, string>;
   state?: Record<string, unknown>;
   onAction?: OnAction;
@@ -48,6 +51,7 @@ export function FlowletStage({
   node,
   bundleSource = "",
   reactSource,
+  env,
   theme = {},
   state = {},
   onAction,
@@ -76,7 +80,7 @@ export function FlowletStage({
     if (!slotRef.current || ctrlRef.current) return;
     const { iframe, endpoints, dispose: disposeStage } = createStage(
       slotRef.current,
-      reactSource ? { reactSource } : undefined,
+      reactSource || env ? { ...(reactSource ? { reactSource } : {}), ...(env ? { env } : {}) } : undefined,
     );
     ctrlRef.current = connectStage(endpoints, {
       onAction: (req) => (onActionRef.current ?? (async () => ({ result: null as unknown })))(req),

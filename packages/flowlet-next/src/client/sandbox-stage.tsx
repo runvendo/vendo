@@ -15,9 +15,51 @@ import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@flowlet/co
 import type { BrandTokens } from "@flowlet/components/theme";
 import { NAVIGATE_ACTION, isSafeAppPath } from "./navigate";
 
+interface StageEnv {
+  modules?: Record<string, string>;
+  css?: string;
+  tailwindRuntimeSrc?: string;
+}
+
 interface Sources {
   react: string;
   bundle: string;
+  /** Furnished environment (remix-fidelity), when `flowlet sync` produced one.
+   *  Fetched HOST-side and passed as strings; the stage blobs them so the
+   *  iframe CSP never changes. Absent → bare sandbox, byte-identical to before. */
+  env?: StageEnv;
+}
+
+interface EnvImportMap {
+  imports?: Record<string, string>;
+}
+
+/** Fetch the flowlet-sync env (import map + vendored modules + host CSS) on the
+ *  host origin. Missing env is normal (fresh install / no sync) — returns
+ *  undefined, never throws. */
+async function loadEnv(): Promise<StageEnv | undefined> {
+  const mapRes = await fetch("/flowlet/env/import-map.json").catch(() => null);
+  const css = await fetch("/flowlet/env/host.css")
+    .then((r) => (r.ok ? r.text() : undefined))
+    .catch(() => undefined);
+  const tw = await fetch("/flowlet/env/tailwind.js")
+    .then((r) => (r.ok ? r.text() : undefined))
+    .catch(() => undefined);
+  let modules: Record<string, string> | undefined;
+  if (mapRes?.ok) {
+    const map = (await mapRes.json().catch(() => ({}))) as EnvImportMap;
+    const entries = await Promise.all(
+      Object.entries(map.imports ?? {}).map(async ([specifier, rel]) => {
+        const url = rel.replace(/^\.\//, "/flowlet/env/");
+        const src = await fetch(url).then((r) => (r.ok ? r.text() : undefined)).catch(() => undefined);
+        return src !== undefined ? ([specifier, src] as const) : null;
+      }),
+    );
+    const kept = entries.filter((e): e is readonly [string, string] => e !== null);
+    if (kept.length > 0) modules = Object.fromEntries(kept);
+  }
+  if (!modules && !css && !tw) return undefined;
+  return { ...(modules ? { modules } : {}), ...(css ? { css } : {}), ...(tw ? { tailwindRuntimeSrc: tw } : {}) };
 }
 
 let sourcesPromise: Promise<Sources> | null = null;
@@ -33,7 +75,8 @@ function loadSources(): Promise<Sources> {
         if (!r.ok) throw new Error("components bundle missing — run `flowlet init` to copy sandbox assets into public/flowlet/");
         return r.text();
       }),
-    ]).then(([react, bundle]) => ({ react, bundle }));
+      loadEnv(),
+    ]).then(([react, bundle, env]) => ({ react, bundle, ...(env ? { env } : {}) }));
     sourcesPromise.catch(() => {
       sourcesPromise = null; // allow retry on failure
     });
@@ -162,6 +205,7 @@ export function SandboxStage({ node, brand, components, basePath, onNavigate }: 
         components={[...prewiredComponents, ...components]}
         reactSource={sources.react}
         bundleSource={sources.bundle}
+        {...(sources.env ? { env: sources.env } : {})}
         onAction={onAction}
         theme={brandToCssVars(brand)}
         componentTheme={{ theme: mapBrandToTheme(brand), mode: brand.mode ?? "light" }}

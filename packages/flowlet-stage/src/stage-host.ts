@@ -34,7 +34,23 @@ const CSP_BASE = [
  * Without `reactRuntimeSrc` the original self-contained bundle path is used
  * unchanged (the bundle ships its own React and sets window.__React).
  */
-export function buildSrcdoc(reactRuntimeSrc?: string): string {
+/**
+ * Furnished sandbox environment (remix-fidelity epic). All sources are STRINGS
+ * the host fetched on its own origin — they are blobbed here so the iframe's
+ * CSP (`connect-src 'none'`, nonce/blob scripts only) never changes. Static
+ * `/flowlet/env/*` URLs would be blocked inside the iframe by design.
+ */
+export interface StageEnv {
+  /** Import specifier → module SOURCE (e.g. "lucide-react" → vendored ESM). */
+  modules?: Record<string, string>;
+  /** Host stylesheet, already sanitized to zero fetchable URLs by flowlet sync. */
+  css?: string;
+  /** @tailwindcss/browser runtime source (blobbed + loaded so arbitrary host
+   *  utility classes compile in-sandbox). */
+  tailwindRuntimeSrc?: string;
+}
+
+export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
   const nonce = crypto.randomUUID().replace(/-/g, "");
   // No 'strict-dynamic': it lets trusted scripts dynamically load ANY script
   // URL (allowlists are ignored), which is a data-exfil channel once generated
@@ -45,34 +61,59 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
   // strict-dynamic no longer propagates trust to inserted scripts.
   const csp = `script-src 'nonce-${nonce}' blob:; ${CSP_BASE}`;
 
+  const safeInline = (s: string) => JSON.stringify(s).replace(/</g, "\\u003c");
   let reactSetupScript = "";
   if (reactRuntimeSrc) {
     // Embed the shim source as a JSON string literal safe for inline HTML.
     // Escape < so "</script>" cannot appear inside the <script> body.
-    const safeJson = JSON.stringify(reactRuntimeSrc).replace(/</g, "\\u003c");
+    const safeJson = safeInline(reactRuntimeSrc);
+    // Env modules: each vendored source becomes its own blob, added to the
+    // import map alongside React. Blob-only — the CSP is untouched.
+    const envModuleEntries = Object.entries(env?.modules ?? {});
+    const envMapSetup = envModuleEntries
+      .map(
+        ([specifier], i) =>
+          `var _e${i}=URL.createObjectURL(new Blob([${safeInline(env!.modules![specifier]!)}],{type:"text/javascript"}));`,
+      )
+      .join("");
+    const envMapImports = envModuleEntries
+      .map(([specifier], i) => `${JSON.stringify(specifier)}:_e${i}`)
+      .join(",");
     reactSetupScript =
       `<script nonce="${nonce}">` +
       `(function(){` +
       `var _s=${safeJson};` +
       `var _u=URL.createObjectURL(new Blob([_s],{type:"text/javascript"}));` +
       `window.__FLOWLET_REACT_URL=_u;` +
+      envMapSetup +
       `var _im=document.createElement('script');` +
       `_im.type='importmap';` +
-      // Without 'strict-dynamic' this inserted script needs its own nonce.
-      // Escaped for parity with safeJson (the nonce is hex so this is a no-op).
-      `_im.nonce=${JSON.stringify(nonce).replace(/</g, "\\u003c")};` +
+      `_im.nonce=${safeInline(nonce)};` +
       `_im.textContent=JSON.stringify({imports:{` +
       `"react":_u,` +
       `"react-dom":_u,` +
       `"react-dom/client":_u,` +
       `"react/jsx-runtime":_u` +
+      (envMapImports ? `,${envMapImports}` : ``) +
       `}});` +
       `document.head.appendChild(_im);` +
-      // Eagerly import the shim so its module is registered+evaluated, then revoke
-      // the blob URL. Later bare "react" imports resolve via the import map to the
-      // already-cached module, so revocation does not break them.
       `import(_u).then(function(){URL.revokeObjectURL(_u);}).catch(function(){});` +
       `})();` +
+      `<\/script>`;
+  }
+
+  // Host CSS (already sanitized to zero fetchable URLs) + optional Tailwind JIT.
+  // host.css first so its declarations lose to JIT-generated utilities only
+  // where the JIT actually produces them.
+  let envStyleScript = "";
+  if (env?.css) {
+    envStyleScript += `<style data-flowlet-host-css>${env.css.replace(/<\/style/gi, "<\\/style")}</style>`;
+  }
+  if (env?.tailwindRuntimeSrc) {
+    envStyleScript +=
+      `<script type="module" nonce="${nonce}">` +
+      `var _t=URL.createObjectURL(new Blob([${safeInline(env.tailwindRuntimeSrc)}],{type:"text/javascript"}));` +
+      `import(_t).catch(function(){});` +
       `<\/script>`;
   }
   // Baseline document styles: consume the injected --flowlet-* brand vars so
@@ -96,6 +137,7 @@ export function buildSrcdoc(reactRuntimeSrc?: string): string {
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<title>Flowlet Stage</title>` +
     baselineStyle +
+    envStyleScript +
     `</head><body>${reactSetupScript}` +
     `<script type="module" nonce="${nonce}">${STAGE_RUNTIME_SRC}<\/script>` +
     `</body></html>`
@@ -128,7 +170,7 @@ const DEFAULT_MAX_STAGE_HEIGHT = 8192;
 
 export function createStage(
   slot: HTMLElement,
-  opts?: { reactSource?: string; maxStageHeight?: number },
+  opts?: { reactSource?: string; maxStageHeight?: number; env?: StageEnv },
 ): {
   iframe: HTMLIFrameElement;
   endpoints: StageEndpoints;
@@ -140,7 +182,7 @@ export function createStage(
   iframe.id = "flowlet-stage";
   iframe.title = "Flowlet stage";
   iframe.setAttribute("sandbox", "allow-scripts"); // no allow-same-origin → opaque origin
-  iframe.srcdoc = buildSrcdoc(opts?.reactSource);
+  iframe.srcdoc = buildSrcdoc(opts?.reactSource, opts?.env);
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
 
