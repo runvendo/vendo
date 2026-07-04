@@ -48,6 +48,45 @@ describe("grantMatches", () => {
     expect(grantMatches(g, { ...ctx, input: { to: "a@acme.co", amount: 900 } })).toBe(false);
     expect(grantMatches(g, { ...ctx, input: { amount: 100 } })).toBe(false); // missing field
   });
+  it("constrained scope: type mismatches fail closed", () => {
+    const constrained = (
+      c: { path: string; op: "eq" | "lte" | "gte" | "matches"; value: string | number | boolean },
+    ): PermissionGrant => ({ ...base, scope: { kind: "constrained", constraints: [c] } });
+    // lte with a string actual → false, even when numerically "comparable".
+    expect(
+      grantMatches(constrained({ path: "amount", op: "lte", value: 500 }), { ...ctx, input: { amount: "100" } }),
+    ).toBe(false);
+    // eq is strict: "5" never equals 5.
+    expect(
+      grantMatches(constrained({ path: "amount", op: "eq", value: 5 }), { ...ctx, input: { amount: "5" } }),
+    ).toBe(false);
+    // matches against a non-string actual → false.
+    expect(
+      grantMatches(constrained({ path: "amount", op: "matches", value: "1*" }), { ...ctx, input: { amount: 100 } }),
+    ).toBe(false);
+    // eq and gte happy paths.
+    expect(
+      grantMatches(constrained({ path: "amount", op: "eq", value: 100 }), ctx),
+    ).toBe(true);
+    expect(
+      grantMatches(constrained({ path: "amount", op: "gte", value: 50 }), ctx),
+    ).toBe(true);
+  });
+  it("glob metacharacters are escaped: 'a.c' does not match 'abc'", () => {
+    const g: PermissionGrant = {
+      ...base,
+      scope: { kind: "constrained", constraints: [{ path: "to", op: "matches", value: "a.c" }] },
+    };
+    expect(grantMatches(g, { ...ctx, input: { to: "abc" } })).toBe(false);
+    expect(grantMatches(g, { ...ctx, input: { to: "a.c" } })).toBe(true);
+  });
+  it("patterns with more than 8 wildcards fail closed (ReDoS guard)", () => {
+    const g: PermissionGrant = {
+      ...base,
+      scope: { kind: "constrained", constraints: [{ path: "to", op: "matches", value: "*a*a*a*a*a*a*a*a*" }] },
+    };
+    expect(grantMatches(g, { ...ctx, input: { to: "aaaaaaaaaa" } })).toBe(false);
+  });
   it("session/task grants need the matching contextKey", () => {
     const g: PermissionGrant = { ...base, duration: "session", contextKey: "sess-1" };
     expect(grantMatches(g, { ...ctx, contextKey: "sess-1" })).toBe(true);

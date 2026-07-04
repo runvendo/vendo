@@ -32,6 +32,9 @@ function getByPath(obj: unknown, dotPath: string): unknown {
 
 /** Glob with `*` wildcards only, anchored both ends, case-insensitive. */
 function globMatches(pattern: string, value: string): boolean {
+  // ReDoS guard: absurd wildcard counts fail closed (no match → the call
+  // simply asks) instead of building a pathological regex.
+  if ((pattern.match(/\*/g)?.length ?? 0) > 8) return false;
   const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, (c) => (c === "*" ? ".*" : `\\${c}`));
   return new RegExp(`^${escaped}$`, "i").test(value);
 }

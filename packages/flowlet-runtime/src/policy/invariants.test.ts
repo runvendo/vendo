@@ -115,12 +115,11 @@ describe("ENG-193 §8 permanent invariants", () => {
         scope,
         {
           tool: criticalDesc.name,
-          descriptorHash: hashDescriptor(criticalDesc),
           scope: { kind: "tool" },
           duration: "standing",
           source: { kind: "chat" },
         },
-        { critical: true },
+        criticalDesc,
       ),
     ).rejects.toThrow(/critical/);
   });
