@@ -21,6 +21,7 @@ import { cadenceHostComponents } from "@/flowlet/host-components/descriptors";
 import { cadenceHostToolDefs } from "@/flowlet/host-tools";
 import { renderNode } from "./render-node";
 import { runQuery } from "./run-query";
+import { listParkedActions, resolveParkedAction } from "./parked-actions";
 
 // The real embedded-mode store (ENG-183): saved flowlets survive reloads. One
 // module-scope instance so every surface shares it; it only touches
@@ -72,6 +73,7 @@ export function FlowletRoot({
           integrations={integrations}
           store={store}
           runQuery={runQuery}
+          parkedActions={{ list: listParkedActions, resolve: resolveParkedAction }}
           // Same registry as FlowletProvider — reopened saved views diff their
           // host-component stamp against it and surface drift (ENG-186).
           components={[...prewiredComponents, ...cadenceHostComponents]}

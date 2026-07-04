@@ -18,6 +18,7 @@ export * from "./seams/integrations";
 export * from "./components/StreamingText";
 export * from "./components/ToolCall";
 export * from "./components/tool-labels";
+export * from "./components/field-rows";
 export * from "./components/ActivityPanel";
 export * from "./components/ActivityStep";
 export * from "./components/TurnActions";

@@ -9,7 +9,16 @@
  * (see FlowletLayer).
  */
 import { useEffect, useState } from "react"
-import { FlowletThread, FlowletToast, useFlowletThread, useShell, useReopenFlowlet, type Flowlet } from "@flowlet/shell"
+import {
+  FlowletThread,
+  FlowletToast,
+  useFlowletThread,
+  useShell,
+  useReopenFlowlet,
+  useParkedActions,
+  WaitingList,
+  type Flowlet,
+} from "@flowlet/shell"
 import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
 import { deriveSavedDrafts } from "@/flowlet/saved-flowlets"
 
@@ -24,6 +33,7 @@ const CHAT = "chat"
 function PageSurface() {
   const chat = useFlowletThread()
   const { store } = useShell()
+  const parked = useParkedActions()
   const [active, setActive] = useState<string>(CHAT)
   const [saved, setSaved] = useState<Flowlet[]>([])
 
@@ -109,6 +119,9 @@ function PageSurface() {
 
   return (
     <div className="fl-page">
+      {parked.count > 0 && (
+        <WaitingList actions={parked.actions} onApprove={parked.approve} onDecline={parked.decline} />
+      )}
       <div className="fl-tabbar" role="tablist">
         <button
           type="button"
