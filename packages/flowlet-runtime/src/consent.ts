@@ -16,9 +16,11 @@
  * append a "consent" audit event regardless of outcome (the audit trail
  * records EVERY decision, not just the ones that minted a grant).
  */
-import type { AuditLog, ConsentResponse, FlowletUIMessage, GrantStore, Principal } from "@flowlet/core";
+import type { AuditLog, ConsentResponse, FlowletUIMessage, GrantStore, Principal, FadeShape } from "@flowlet/core";
 import type { ToolDescriptor } from "./descriptor";
+import type { FadeTracker } from "./fade-tracker";
 import { createGrantManager } from "./grant-manager";
+import { dangerTier, isUnverified } from "./policy/tier";
 
 export interface HandleConsentDeps {
   grants: GrantStore;
@@ -26,6 +28,9 @@ export interface HandleConsentDeps {
   resolveDescriptor: (toolName: string) => ToolDescriptor | undefined;
   /** Loads the thread's persisted messages (Task 3's onSettled writes them). */
   getMessages: (principal: Principal, threadId: string) => Promise<FlowletUIMessage[]>;
+  /** ENG-193 §4.4 — optional (absent -> no fade tracking, the same graceful
+   *  no-op every other optional seam in this codebase has). */
+  fadeTracker?: FadeTracker;
   now?: () => string;
 }
 
@@ -37,7 +42,7 @@ export interface HandleConsentRequest {
 }
 
 export type HandleConsentResult =
-  | { ok: true }
+  | { ok: true; fadeEligible?: { shape: FadeShape; proposalId: string } }
   | { ok: false; status: 400 | 403 | 404; error: string };
 
 /** Structural view of the ai SDK tool-part shape this reads — matches
@@ -101,6 +106,22 @@ export async function handleConsent(
     });
   }
 
+  let fadeEligible: { shape: FadeShape; proposalId: string } | undefined;
+  if (deps.fadeTracker) {
+    const fadeDescriptor = deps.resolveDescriptor(req.toolName);
+    // Fade eligibility is act-tier, verified-tool territory ONLY (ENG-193 §4.4
+    // invariant — checked here structurally, not by convention: critical and
+    // unverified tools never even reach `record`/`propose`).
+    if (fadeDescriptor && dangerTier(fadeDescriptor) === "act" && !isUnverified(fadeDescriptor)) {
+      const signal = req.response.decision === "no" ? "no" : "yes"; // "subset" reads as a yes
+      deps.fadeTracker.record(principal, req.toolName, part.input, signal);
+      if (signal === "yes") {
+        const eligible = deps.fadeTracker.propose(principal, req.toolName, part.input);
+        if (eligible) fadeEligible = eligible;
+      }
+    }
+  }
+
   if (req.response.decision === "yes" && req.response.grant) {
     // Bind the grant to the consented tool SERVER-SIDE: `grant.tool` is
     // client-authored, and without this check a consent gesture shown for one
@@ -133,5 +154,5 @@ export async function handleConsent(
     }
   }
 
-  return audited({ ok: true });
+  return audited({ ok: true, ...(fadeEligible ? { fadeEligible } : {}) });
 }

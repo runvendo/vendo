@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { handleConsent } from "./consent";
 import { createInMemoryGrantStore } from "./grant-store";
 import { InMemoryAuditLog, InMemoryThreadStore } from "./embedded/in-memory-store";
+import { createFadeTracker } from "./fade-tracker";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletUIMessage } from "@flowlet/core";
 
@@ -25,12 +26,21 @@ function deps(threadMessages: FlowletUIMessage[]) {
     grants, audit, threads,
     resolveDescriptor: (name: string): ToolDescriptor | undefined =>
       name === "GMAIL_SEND_EMAIL"
-        ? { name, source: "composio", annotations: {}, hasExecute: true, kind: "function" }
+        ? // ENG-193 §4.4 (Task 4 deviation): explicit readOnlyHint: false marks
+          // this descriptor VERIFIED — an all-{} annotations object is
+          // "unverified" per policy/tier.ts's `isUnverified` (landed item 3),
+          // which would otherwise make this fixture ineligible for fade
+          // tracking despite being the plan's own act-tier fade fixture.
+          { name, source: "composio", annotations: { readOnlyHint: false }, hasExecute: true, kind: "function" }
         : name === "transfer_money"
           ? { name, source: "caller", annotations: { destructiveHint: true }, hasExecute: true, kind: "function" }
           : undefined,
     async getMessages() { return threadMessages; },
   };
+}
+
+function depsWithFade(threadMessages: FlowletUIMessage[]) {
+  return { ...deps(threadMessages), fadeTracker: createFadeTracker() };
 }
 
 describe("handleConsent", () => {
@@ -124,5 +134,58 @@ describe("handleConsent", () => {
     });
     expect(result.ok).toBe(true);
     expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+  });
+});
+
+describe("handleConsent — fade eligibility (ENG-193 §4.4)", () => {
+  it("offers fadeEligible on the 3rd yes of the same shape for an act-tier tool", async () => {
+    const d = depsWithFade(threadWith({}));
+    for (const to of ["a@example.com", "b@example.com"]) {
+      await handleConsent(d, scope, {
+        threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+        response: { id: "call-1", decision: "yes" },
+      });
+    }
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.fadeEligible?.proposalId).toBeTruthy();
+  });
+
+  it("never offers fadeEligible for a critical tool, even after repeated yeses", async () => {
+    const d = depsWithFade(threadWith({ type: "tool-transfer_money", input: {} }));
+    for (let i = 0; i < 3; i++) {
+      await handleConsent(d, scope, {
+        threadId: "th-1", toolCallId: "call-1", toolName: "transfer_money",
+        response: { id: "call-1", decision: "no" }, // avoid the grant-refusal 403 path
+      });
+    }
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "transfer_money",
+      response: { id: "call-1", decision: "no" },
+    });
+    expect(result.ok && result.fadeEligible).toBeUndefined();
+  });
+
+  it("no fadeEligible without a fadeTracker dependency (optional seam, no-op absent)", async () => {
+    const d = deps(threadWith({}));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    expect(result.ok && result.fadeEligible).toBeUndefined();
+  });
+
+  it("a 'no' decision records but never offers", async () => {
+    const d = depsWithFade(threadWith({}));
+    for (let i = 0; i < 5; i++) {
+      const result = await handleConsent(d, scope, {
+        threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+        response: { id: "call-1", decision: "no" },
+      });
+      expect(result.ok && result.fadeEligible).toBeUndefined();
+    }
   });
 });
