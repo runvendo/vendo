@@ -37,7 +37,7 @@ import {
   buildInstructions,
   createAgentCache,
   createAutomationsWorld,
-  defaultModel,
+  resolveModel,
   type FlowletAutomationsWorld,
   defaultFlowletPolicy,
   resolvePrincipal,
@@ -62,13 +62,15 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
 
   // Everything below is built lazily on first request: `next build` imports
   // route modules at build time, and reading `.flowlet/` or requiring keys
-  // there would break builds in clean CI environments.
+  // there would break builds in clean CI environments. `assemble` is async
+  // because provider resolution loads optional peer packages via dynamic
+  // import; the memoized promise keeps the lazy-on-first-request behavior.
   let assembled: ReturnType<typeof assemble> | null = null;
-  function assemble() {
+  async function assemble() {
     const capabilities = detectCapabilities();
     const loaded = loadFlowletDir(options.flowletDir);
     const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
-    const model = options.model ?? defaultModel();
+    const model = options.model ?? (await resolveModel());
     const policy = options.policy ?? defaultFlowletPolicy;
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
@@ -127,7 +129,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
   const state = () => (assembled ??= assemble());
 
   async function GET(req: Request): Promise<Response> {
-    const s = state();
+    const s = await state();
     switch (subPath(req)) {
       case "capabilities":
         return Response.json(s.capabilities);
@@ -143,7 +145,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
   }
 
   async function POST(req: Request): Promise<Response> {
-    const s = state();
+    const s = await state();
     switch (subPath(req)) {
       case "chat":
         return handleChat(req, {

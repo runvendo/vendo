@@ -16,7 +16,6 @@
  * front their own per-user store/world. (Documented in docs/quickstart.md →
  * Deploying.)
  */
-import { anthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel, ToolSet } from "ai";
 import type { Principal } from "@flowlet/core";
 import {
@@ -77,9 +76,4 @@ export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutoma
       }),
     tick: () => scheduler.tick(),
   };
-}
-
-/** Default model factory shared by the agent and agent-step runner. */
-export function defaultModel(env: Record<string, string | undefined> = process.env): LanguageModel {
-  return anthropic(env["FLOWLET_MODEL"] ?? "claude-sonnet-4-6");
 }

@@ -26,7 +26,14 @@ export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
 export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
 export { manifestToolsToHostTools } from "./manifest-tools";
 export { buildInstructions, createAgentCache, type BuildInstructionsInput, type AgentFactoryConfig } from "./agent";
-export { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld, type CreateWorldConfig } from "./world";
+export { createAutomationsWorld, type FlowletAutomationsWorld, type CreateWorldConfig } from "./world";
+export {
+  resolveModel,
+  resolveModelChoice,
+  type ModelChoice,
+  type ModelProvider,
+  type ResolveModelDeps,
+} from "./model";
 export { defaultFlowletPolicy } from "./default-policy";
 export { resolvePrincipal, DEFAULT_PRINCIPAL, type GuardResult } from "./guard";
 export { parseHandlerOptions, type FlowletHandlerOptions, type IntegrationCatalogEntry } from "./options";
