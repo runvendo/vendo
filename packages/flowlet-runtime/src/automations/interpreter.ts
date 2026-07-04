@@ -431,10 +431,11 @@ function gateAgentTool(
         };
       }
       if (decision === "approve") {
+        const critical = dangerTier(tool.descriptor) === "critical";
         // Critical is unsuppressible by type (ENG-193 §4.1): a grant for a
         // dangerous tool — however it got into the store — never runs unattended.
         const granted =
-          dangerTier(tool.descriptor) !== "critical" &&
+          !critical &&
           hasValidGrant(ctx.grants, {
             tool: name,
             descriptor: tool.descriptor,
@@ -442,11 +443,29 @@ function gateAgentTool(
             step: grantStep,
           });
         if (!granted) {
+          // ENG-193 §4.6(b): park the action — the run's summary can say
+          // what's waiting — and tell the model plainly to continue without
+          // it (never a dead error it might retry into a loop).
+          ctx.parkedActions.push({
+            stepId: grantStep?.id ?? "agent",
+            tool: name,
+            input: input as Record<string, unknown>,
+            ...(grantStep && grantStep.type !== "branch" && grantStep.type !== "for_each" && grantStep.if !== undefined
+              ? { guardExpr: grantStep.if }
+              : {}),
+            ...(Object.keys(ctx.bindings).length > 0 ? { guardBindings: { ...ctx.bindings } } : {}),
+            reason: critical ? "critical" : "ungranted",
+            tier: critical ? "critical" : "act",
+            descriptorHash: hashDescriptor(tool.descriptor),
+            requestedAt: ctx.now(),
+          });
           return {
             ok: false,
             error: {
               code: "approval_required",
-              message: `tool "${name}" needs user approval and has no grant for unattended runs`,
+              message:
+                `tool "${name}" needs the user's approval and has no grant for unattended runs — ` +
+                "approval requested from the user; continue without it.",
             },
           };
         }

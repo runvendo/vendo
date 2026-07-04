@@ -749,6 +749,106 @@ describe("agent steps and agentic mode", () => {
   });
 });
 
+describe("ENG-193 §4.6(b) — agent-step tool calls park too", () => {
+  it("§4.6(b): an agent step's ungranted tool call PARKS and returns an ok:false result the model can route around", async () => {
+    const sendEmail = makeTool("send_email");
+    const spec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Send it", tools: ["send_email"] }],
+    });
+    let callOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        callOutcome = await req.tools["send_email"]!.execute(
+          { to: "acme@example.com" },
+          { idempotencyKey: "k" },
+        );
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(sendEmail.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(1);
+    expect(outcome.parkedActions[0]!.stepId).toBe("act");
+    expect(outcome.parkedActions[0]!.tool).toBe("send_email");
+    expect(outcome.parkedActions[0]!.reason).toBe("ungranted");
+    expect(callOutcome?.ok).toBe(false);
+    if (callOutcome?.ok !== false) throw new Error("unreachable");
+    expect(callOutcome.error.code).toBe("approval_required");
+    expect(callOutcome.error.message).toMatch(/approval requested from the user.*continue without it/i);
+  });
+
+  it("§4.6(b): a top-level agentic-mode tool call (stepId 'agent') also parks", async () => {
+    const sendEmail = makeTool("send_email");
+    const spec = specOf({ mode: "agent", goal: "Handle it", tools: ["send_email"], maxToolCalls: 5 });
+    let callOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        callOutcome = await req.tools["send_email"]!.execute(
+          { to: "acme@example.com" },
+          { idempotencyKey: "k" },
+        );
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(sendEmail.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(1);
+    expect(outcome.parkedActions[0]!.stepId).toBe("agent");
+    expect(callOutcome?.ok).toBe(false);
+  });
+
+  it("every InterpretOutcome variant (succeeded/failed/waiting_approval) carries parkedActions", async () => {
+    // succeeded, with a park.
+    const sendEmail = makeTool("send_email");
+    const succeededSpec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Send it", tools: ["send_email"] }],
+    });
+    const succeeded = await interpret({
+      ...baseInput(succeededSpec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        await req.tools["send_email"]!.execute({ to: "acme@example.com" }, { idempotencyKey: "k" });
+        return { done: true };
+      },
+    });
+    expect(succeeded.status).toBe("succeeded");
+    expect(Array.isArray(succeeded.parkedActions)).toBe(true);
+    expect(succeeded.parkedActions.length).toBeGreaterThan(0);
+
+    // failed.
+    const send = makeTool("send_msg");
+    const failedSpec = specOf({
+      mode: "steps",
+      steps: [{ id: "send", type: "tool", tool: "send_msg" }],
+    });
+    const failed = await interpret({
+      ...baseInput(failedSpec, { send_msg: send }),
+      policy: denyFor("send_msg"),
+    });
+    expect(failed.status).toBe("failed");
+    expect(Array.isArray(failed.parkedActions)).toBe(true);
+
+    // waiting_approval.
+    const freeze = makeTool("freeze_card");
+    const waitingSpec = specOf({
+      mode: "steps",
+      steps: [{ id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "c1" } }],
+    });
+    const waiting = await interpret({
+      ...baseInput(waitingSpec, { freeze_card: freeze }),
+      policy: approveFor("freeze_card"),
+    });
+    expect(waiting.status).toBe("waiting_approval");
+    expect(Array.isArray(waiting.parkedActions)).toBe(true);
+  });
+});
+
 describe("run guards", () => {
   it("fails the run when the wall clock exceeds the limit", async () => {
     let tick = 0;
