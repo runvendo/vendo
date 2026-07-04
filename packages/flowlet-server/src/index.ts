@@ -41,3 +41,4 @@ export {
 export { defaultFlowletPolicy } from "./default-policy";
 export { resolvePrincipal, DEFAULT_PRINCIPAL, type GuardResult } from "./guard";
 export { parseHandlerOptions, type FlowletHandlerOptions, type IntegrationCatalogEntry } from "./options";
+export { createFlowletFetchHandler, type FlowletFetchHandler } from "./fetch-handler";
