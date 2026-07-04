@@ -8,6 +8,7 @@ export * from "./use-flowlet-thread";
 export * from "./use-attachments";
 export * from "./voice/voice-session";
 export * from "./voice/scripted-driver";
+export * from "./voice/realtime-driver";
 export * from "./voice/voice-messages";
 export * from "./voice/use-voice-session";
 export * from "./voice/VoiceBlob";
