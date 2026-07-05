@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     // Built sandbox bundles copied into public/ at build time (git-ignored).
     "public/flowlet/**",
     "flowlet-sandbox/dist/**",
+    ".flowlet/env/**",
   ]),
 ]);
 

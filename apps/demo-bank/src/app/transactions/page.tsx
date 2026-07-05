@@ -66,6 +66,7 @@ export default function TransactionsPage() {
   React.useEffect(() => {
     if (!data) return
     if (!cursor) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync SWR page data into the paginated accumulator.
       setRows(data.data)
     } else {
       setRows((prev) => {

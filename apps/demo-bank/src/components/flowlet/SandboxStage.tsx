@@ -83,8 +83,12 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
   // review finding). settleOne is idempotent per id.
   const [pending, setPending] = useState<Map<string, PendingApproval>>(new Map());
   const pendingRef = useRef(pending);
-  pendingRef.current = pending;
   const mounted = useRef(true);
+
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+
   // Reset on every (re)mount: StrictMode dev runs mount → cleanup → mount, and
   // a cleanup-only effect would leave `mounted` false forever, so the sources
   // `.then` below would never commit and the stage would hang at "loading".
