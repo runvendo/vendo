@@ -17,6 +17,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import type { RemixSourceRecord } from "@flowlet/core";
+import { prepareBaseline } from "./prepare.js";
 
 export const SOURCE_CAP_BYTES = 48 * 1024;
 
@@ -244,14 +245,20 @@ export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}
         ? `${content.slice(0, SOURCE_CAP_BYTES)}\n[truncated]`
         : content;
     if (anchorId in records) report.push(`note ${anchorId}: multiple wrappers share this id — last capture wins`);
+    // Sandbox preparation (deterministic AST transform): the mechanical
+    // first-remix glue done once at sync instead of per user per remix.
+    const prepared = content.length <= SOURCE_CAP_BYTES ? prepareBaseline(content) : undefined;
     records[anchorId] = {
       file: path.relative(targetDir, file),
       ...(exportName !== undefined ? { exportName } : {}),
       source: capped,
+      ...(prepared !== undefined ? { prepared } : {}),
       sourceHash: createHash("sha256").update(content).digest("hex").slice(0, 16),
       capturedAt: now(),
     };
-    report.push(`captured ${anchorId} ← ${path.relative(targetDir, file)}${exportName ? ` (${exportName})` : ""}`);
+    report.push(
+      `captured ${anchorId} ← ${path.relative(targetDir, file)}${exportName ? ` (${exportName})` : ""}${prepared !== undefined ? " [prepared]" : ""}`,
+    );
   };
 
   for (const [anchorId, override] of overrides) {

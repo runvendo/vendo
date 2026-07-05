@@ -55,6 +55,37 @@ describe("createSourceResolver", () => {
     expect(opt.sourceHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("prepared baselines survive only while the file matches the captured hash", () => {
+    const src = "export function DeadlineList() { return null }";
+    const { createHash } = require("node:crypto") as typeof import("node:crypto");
+    const hash = createHash("sha256").update(src, "utf8").digest("hex").slice(0, 16);
+    const captured = {
+      x: record({ source: src, sourceHash: hash, prepared: "PREPARED_TEXT" }),
+    };
+    // Prod: prepared rides the captured record.
+    expect(
+      createSourceResolver({ captured, env: { NODE_ENV: "production" } })("x")?.prepared,
+    ).toBe("PREPARED_TEXT");
+    // Dev, file unchanged: prepared still valid.
+    expect(
+      createSourceResolver({
+        captured,
+        env: { NODE_ENV: "development" },
+        readFile: () => src,
+        cwd: "/app",
+      })("x")?.prepared,
+    ).toBe("PREPARED_TEXT");
+    // Dev, file EDITED: prepared dropped (model does the glue on fresh text).
+    const edited = createSourceResolver({
+      captured,
+      env: { NODE_ENV: "development" },
+      readFile: () => `${src} // edited`,
+      cwd: "/app",
+    })("x")!;
+    expect(edited.prepared).toBeUndefined();
+    expect(edited.source).toContain("// edited");
+  });
+
   it("dev mode re-reads the mapped file; production uses the captured copy", () => {
     const reads: string[] = [];
     const config = {

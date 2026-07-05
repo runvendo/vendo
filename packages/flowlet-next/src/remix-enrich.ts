@@ -35,10 +35,16 @@ function sha256(text: string): string {
 }
 
 /** Resolve a raw source text into the record the engine consumes. */
-function resolved(raw: string, exportName?: string, sourceHash?: string): ResolvedRemixSource {
+function resolved(
+  raw: string,
+  exportName?: string,
+  sourceHash?: string,
+  prepared?: string,
+): ResolvedRemixSource {
   const capped = capSource(raw);
   return {
     source: capped,
+    ...(prepared !== undefined ? { prepared } : {}),
     ...(exportName !== undefined ? { exportName } : {}),
     sourceHash: sourceHash ?? sha256(raw),
     truncated: capped !== raw,
@@ -79,13 +85,19 @@ export function createSourceResolver(config: SourceResolverConfig): RemixSourceR
       const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
       if (inside) {
         try {
-          return resolved(read(target), record.exportName);
+          const fresh = read(target);
+          // The sync-prepared baseline is only valid for the EXACT captured
+          // content; an edited file falls back to the raw text (the model
+          // does the glue, as before preparation existed).
+          const freshHash = createHash("sha256").update(fresh, "utf8").digest("hex").slice(0, 16);
+          const preparedStillValid = freshHash === record.sourceHash ? record.prepared : undefined;
+          return resolved(fresh, record.exportName, undefined, preparedStillValid);
         } catch {
           /* file moved/deleted since capture — fall back to the captured copy */
         }
       }
     }
-    return resolved(record.source, record.exportName, record.sourceHash);
+    return resolved(record.source, record.exportName, record.sourceHash, record.prepared);
   };
 }
 

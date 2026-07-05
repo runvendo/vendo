@@ -1,4 +1,4 @@
-// packages/flowlet-sandbox-shims/dist/swr.js
+// ../../packages/flowlet-sandbox-shims/dist/swr.js
 function resolveKey(key) {
   if (typeof key === "string")
     return key;

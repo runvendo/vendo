@@ -66,10 +66,10 @@ export interface EditViewToolOptions {
 }
 
 /** Always resolvable: the stage's shared shim provides these. */
-const STAGE_IMPORTS = new Set(["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"]);
+export const STAGE_IMPORTS = new Set(["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"]);
 
 /** import/export-from/dynamic-import specifiers in an authored source. */
-function importSpecifiers(source: string): string[] {
+export function importSpecifiers(source: string): string[] {
   const out = new Set<string>();
   for (const match of source.matchAll(
     /(?:^|\n)\s*(?:import|export)\s[^"'\n]*?from\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|(?:^|\n)\s*import\s*["']([^"']+)["']/g,

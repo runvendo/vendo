@@ -49,6 +49,9 @@ export interface ResolvedRemixSource {
   /** Source text, LF-normalized by the resolver's cap step or not at all —
    *  the engine's baseline normalizer owns canonicalization. */
   source: string;
+  /** Sync-prepared sandbox-ready variant, when still fresh (the resolver
+   *  drops it if the file on disk drifted from the captured hash). */
+  prepared?: string;
   /** Non-default export the capture resolved to, when known. */
   exportName?: string;
   /** Hash of the captured file content (staleness signal, not the baseHash). */
@@ -112,6 +115,11 @@ export interface RemixSourceRecord {
   exportName?: string;
   /** Verbatim file content (48 KB cap, truncated with a visible marker). */
   source: string;
+  /** Sandbox-PREPARED variant (remix fast-edits): the mechanical first-remix
+   *  glue (shell-import strip + FlowletRemix unwrap) applied at sync time so
+   *  the model's first edit is only the user's ask. Absent when the transform
+   *  had nothing to do or refused (non-mechanical usage). */
+  prepared?: string;
   sourceHash: string;
   capturedAt: string;
 }

@@ -530,6 +530,7 @@ describe("createFlowletAgent", () => {
       truncated = false,
       exportName?: string,
       pinBase?: VerifiedPinBase,
+      prepared?: string,
     ): FlowletUIMessage[] => [
       {
         id: "m1",
@@ -549,6 +550,7 @@ describe("createFlowletAgent", () => {
                 sourceHash: "h-test",
                 truncated,
                 ...(exportName ? { exportName } : {}),
+                ...(prepared !== undefined ? { prepared } : {}),
               },
               ...(pinBase ? { pinBase } : {}),
             },
@@ -716,6 +718,41 @@ describe("createFlowletAgent", () => {
         expect(holder.system).toMatch(/render_view.*only|only.*render_view/i);
         // Baseline available → the snapshot's remix guidance points at edit_view.
         expect(holder.system).not.toContain("render a view via render_view that");
+      });
+
+      it("a PREPARED baseline is announced sandbox-ready (imports permitting) and shown as the text", async () => {
+        const raw =
+          'import { FlowletRemix } from "@flowlet/shell"\n' +
+          "export function DeadlineList() { return <FlowletRemix id=\"x\"><div/></FlowletRemix> }";
+        const prepared = "export function DeadlineList() { return <div/> }";
+        const { holder, model } = captureTools();
+        const agent = createFlowletAgent({ model, policy: allowPolicy });
+        await collect(
+          agent.run({
+            messages: sourcedTurn(raw, false, "DeadlineList", undefined, prepared),
+            tools: {},
+            signal: new AbortController().signal,
+          }),
+        );
+        expect(holder.system).toContain("SANDBOX-READY");
+        expect(holder.system).not.toContain("IMPORTS RULE");
+        expect(holder.system).not.toContain("UNWRAP the element");
+        // The numbered baseline is the PREPARED text (no wrapper).
+        expect(holder.system).toMatch(/\d+\| export default function DeadlineList/);
+
+        // …but a prepared text whose imports DON'T resolve is not oversold.
+        const preparedWithImport =
+          'import { cn } from "@/lib/cn"\nexport function DeadlineList(){ return <div/> }';
+        const { holder: h2, model: m2 } = captureTools();
+        await collect(
+          createFlowletAgent({ model: m2, policy: allowPolicy }).run({
+            messages: sourcedTurn(raw, false, "DeadlineList", undefined, preparedWithImport),
+            tools: {},
+            signal: new AbortController().signal,
+          }),
+        );
+        expect(h2.system).not.toContain("SANDBOX-READY");
+        expect(h2.system).toContain("IMPORTS RULE");
       });
 
       it("a baseline containing its own FlowletRemix wrapper gets the unwrap instruction", async () => {

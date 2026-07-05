@@ -91,6 +91,13 @@ export function DeadlineList() {
     expect(record.file).toBe(path.join("src", "components", "dashboard", "deadline-list.tsx"));
     expect(record.exportName).toBe("DeadlineList");
     expect(report.join("\n")).toContain("config override");
+    // The file wraps itself in FlowletRemix → sync PREPARES the baseline:
+    // shell import stripped, wrapper unwrapped, verbatim source kept too.
+    expect(record.prepared).toBeDefined();
+    expect(record.prepared).not.toContain("FlowletRemix");
+    expect(record.prepared).toContain("<Card />");
+    expect(record.source).toContain("FlowletRemix");
+    expect(report.join("\n")).toContain("[prepared]");
   });
 
   it("config overrides still obey the refusal rules (server-only files never captured)", () => {

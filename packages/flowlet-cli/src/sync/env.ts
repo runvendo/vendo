@@ -90,7 +90,9 @@ export async function buildEnvironment(
   // 1. Classify per anchor; collect what to vendor.
   for (const [anchorId, record] of Object.entries(records)) {
     const perImport: Record<string, ReturnType<typeof toManifestStatus>> = {};
-    for (const specifier of importSpecifiers(record.source, record.file)) {
+    // Classify the PREPARED text when sync produced one — that is the baseline
+    // the model will actually patch (no phantom wrapper import).
+    for (const specifier of importSpecifiers(record.prepared ?? record.source, record.file)) {
       const cls = classifyImport(specifier);
       if (cls.kind === "vendor-npm") {
         perImport[specifier] = toManifestStatus(cls);

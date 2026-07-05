@@ -26,7 +26,12 @@ import {
   type UIMessageChunk,
 } from "ai";
 import { jsonRepairMiddleware } from "./json-repair";
-import { createEditViewTool, EDIT_VIEW_TOOL_NAME } from "./edit-view-tool";
+import {
+  createEditViewTool,
+  EDIT_VIEW_TOOL_NAME,
+  importSpecifiers,
+  STAGE_IMPORTS,
+} from "./edit-view-tool";
 import { normalizeBaseline, numberedLines } from "./remix/baseline";
 import type { RemixSealer } from "./remix/envelope";
 import type {
@@ -129,6 +134,8 @@ interface RemixContext {
     baseHash: string;
     sourceHash: string;
     componentName: string;
+    /** True when this text is the sync-PREPARED variant (runs as written). */
+    prepared?: boolean;
     /** Scoped context, seeded into the skeleton's data.anchor (preview data). */
     context?: unknown;
   };
@@ -182,10 +189,19 @@ function baselineSection(
       "the \"Element data\" JSON above — match it precisely (e.g. if Element data is " +
       "{ clients: [...] }, read props.anchor.clients, never treat props.anchor as the array). " +
       "If the component fetches or reads other props, add hunks adapting it to `props.anchor`.",
-    "IMPORTS RULE — the sandbox resolves ONLY react and the imports the environment section " +
-      "lists as real or shimmed. Your FIRST hunks must remove or inline every other import " +
-      "(delete the import lines; replace helpers with small inline versions; replace missing " +
-      "components with plain JSX). The server rejects the edit otherwise, naming the offenders.",
+    ...(baseline.prepared
+      ? [
+          "This baseline is SANDBOX-READY: it was prepared at build time and runs in the " +
+            "sandbox as written. Do NOT restructure imports or unwrap anything — emit ONLY " +
+            "the hunks the user's request needs.",
+        ]
+      : [
+          "IMPORTS RULE — the sandbox resolves ONLY react and the imports the environment " +
+            "section lists as real or shimmed. Your FIRST hunks must remove or inline every " +
+            "other one: delete those import lines, replace helpers with small inline " +
+            "versions, replace missing components with plain JSX. The server rejects the " +
+            "edit otherwise, naming the offenders.",
+        ]),
     ...(baseline.text.includes("FlowletRemix")
       ? [
           "This baseline contains its own <FlowletRemix> wrapper. The sandbox has no " +
@@ -533,15 +549,37 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         // Remix fast-edits: normalize the captured source into the hunk
         // baseline (truncated captures are withheld — the model cannot patch
         // lines it cannot see) and pick up the seal-verified pin state.
+        // Imports that resolve in this anchor's sandbox: env-manifest entries
+        // classified real or shimmed. Everything else must be edited away.
+        const anchorImports = scoped ? config.envManifest?.anchors[scoped.anchorId] : undefined;
+        const sandboxImports = new Set(
+          Object.entries(anchorImports ?? {})
+            .filter(([, status]) => status.kind === "real" || status.kind === "shimmed")
+            .map(([specifier]) => specifier),
+        );
         const remix: RemixContext = {};
         if (scoped?.remixSource && !scoped.remixSource.truncated) {
           const record = scoped.remixSource;
-          const normalized = normalizeBaseline(record.source, record.exportName);
+          // Prefer the sync-PREPARED text: the mechanical glue (wrapper
+          // unwrap, shell-import strip) is already done, so the model's first
+          // edit is only the user's ask.
+          const normalized = normalizeBaseline(
+            record.prepared ?? record.source,
+            record.exportName,
+          );
+          // "Runs as written" is only claimed when EVERY import of the
+          // prepared text actually resolves in this anchor's sandbox.
+          const prepared =
+            record.prepared !== undefined &&
+            importSpecifiers(normalized.text).every(
+              (s) => STAGE_IMPORTS.has(s) || sandboxImports.has(s),
+            );
           remix.baseline = {
             text: normalized.text,
             baseHash: normalized.baseHash,
             sourceHash: record.sourceHash,
             componentName: record.exportName ?? "HostComponent",
+            prepared,
             ...(scoped.context !== undefined ? { context: scoped.context } : {}),
           };
         }
@@ -557,14 +595,6 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ? { seal: { ...seal, sourceHash: remixSourceHash } }
             : {}),
         });
-        // Imports that resolve in this anchor's sandbox: env-manifest entries
-        // classified real or shimmed. Everything else must be edited away.
-        const anchorImports = scoped ? config.envManifest?.anchors[scoped.anchorId] : undefined;
-        const sandboxImports = new Set(
-          Object.entries(anchorImports ?? {})
-            .filter(([, status]) => status.kind === "real" || status.kind === "shimmed")
-            .map(([specifier]) => specifier),
-        );
         const editViewTool =
           scoped && (remix.baseline || remix.pinBase)
             ? createEditViewTool(writer, {
