@@ -154,7 +154,7 @@ function baselineSection(
         hunks: [
           {
             startLine: 12,
-            oldLines: ["  <h2>{title}</h2>"],
+            endLine: 12,
             newLines: ["  <h2 style={{ color: 'var(--flowlet-accent)' }}>{title}</h2>"],
           },
         ],
@@ -173,9 +173,10 @@ function baselineSection(
     delims.close,
     UNTRUSTED_FRAMING(delims.label),
     `To customize this element, call edit_view with base:"anchor": emit ONLY line hunks ` +
-      "against this numbered baseline — never retype unchanged code. Copy oldLines EXACTLY " +
-      "(without the number labels), use ORIGINAL line numbers for every hunk, and pass the " +
-      "base hash above verbatim.",
+      "against this numbered baseline — never retype unchanged code. PREFER coordinate " +
+      "hunks ({ startLine, endLine, newLines } — no oldLines needed; the base hash you pass " +
+      "verbatim already guarantees the text). Use ORIGINAL line numbers for every hunk. " +
+      "oldLines is only for when you want the server to double-check your quote.",
     "The rendered view receives the element's live data as `props.anchor` (the root node is " +
       "prewired with anchor={ $path: \"/anchor\" }). `props.anchor` has EXACTLY the shape of " +
       "the \"Element data\" JSON above — match it precisely (e.g. if Element data is " +
@@ -194,6 +195,8 @@ function baselineSection(
       : []),
     "Use render_view for this element only when edit_view failed twice, or the request " +
       "needs a multi-component composition the baseline cannot express.",
+    "After a successful edit_view, reply with ONE short sentence. The rendered view IS the " +
+      "answer — do not enumerate the changes.",
     "Do not reproduce this source verbatim in prose replies; use it only to build the view.",
   ];
 }

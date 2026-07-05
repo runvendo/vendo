@@ -101,6 +101,63 @@ describe("applyHunks", () => {
   });
 });
 
+describe("applyHunks — coordinate mode (endLine, no oldLines)", () => {
+  it("replaces an explicit range trusting the base hash", () => {
+    const hunks: Hunk[] = [{ startLine: 2, endLine: 3, newLines: ["TWO"] }];
+    expect(ok(applyHunks(BASE, hunks))).toBe(["one", "TWO", "four", "five"].join("\n"));
+  });
+
+  it("deletes a range with empty newLines; single-line range via endLine=startLine", () => {
+    expect(ok(applyHunks(BASE, [{ startLine: 2, endLine: 2, newLines: [] }]))).toBe(
+      ["one", "three", "four", "five"].join("\n"),
+    );
+  });
+
+  it("mixes coordinate and exact-match hunks in one call (original coordinates)", () => {
+    const hunks: Hunk[] = [
+      { startLine: 1, endLine: 1, newLines: ["1a", "1b"] },
+      { startLine: 4, oldLines: ["four"], newLines: ["FOUR"] },
+    ];
+    expect(ok(applyHunks(BASE, hunks))).toBe(
+      ["1a", "1b", "two", "three", "FOUR", "five"].join("\n"),
+    );
+  });
+
+  it("rejects a hunk with NEITHER oldLines nor endLine, and endLine < startLine", () => {
+    const neither = applyHunks(BASE, [{ startLine: 2, newLines: ["x"] } as Hunk]);
+    expect(neither.ok).toBe(false);
+    if (!neither.ok) expect(neither.error.code).toBe("range");
+    const inverted = applyHunks(BASE, [{ startLine: 3, endLine: 2, newLines: ["x"] }]);
+    expect(inverted.ok).toBe(false);
+  });
+
+  it("rejects BOTH oldLines and endLine when they disagree; accepts when consistent", () => {
+    const disagree = applyHunks(BASE, [
+      { startLine: 2, endLine: 4, oldLines: ["two"], newLines: ["x"] },
+    ]);
+    expect(disagree.ok).toBe(false);
+    const agree = applyHunks(BASE, [
+      { startLine: 2, endLine: 3, oldLines: ["two", "three"], newLines: ["x"] },
+    ]);
+    expect(agree.ok).toBe(true);
+  });
+
+  it("rejects out-of-range endLine", () => {
+    const past = applyHunks(BASE, [{ startLine: 5, endLine: 6, newLines: ["x"] }]);
+    expect(past.ok).toBe(false);
+    if (!past.ok) expect(past.error.code).toBe("range");
+  });
+
+  it("overlap detection covers coordinate-mode ranges", () => {
+    const overlap = applyHunks(BASE, [
+      { startLine: 1, endLine: 2, newLines: [] },
+      { startLine: 2, endLine: 3, newLines: [] },
+    ]);
+    expect(overlap.ok).toBe(false);
+    if (!overlap.ok) expect(overlap.error.code).toBe("overlap");
+  });
+});
+
 describe("validateHunkLines", () => {
   it("rejects embedded newlines and carriage returns anywhere", () => {
     expect(validateHunkLines(["fine"])).toBeUndefined();

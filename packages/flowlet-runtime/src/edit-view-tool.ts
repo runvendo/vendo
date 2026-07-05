@@ -87,13 +87,21 @@ const singleLine = z
     message: "line strings must be single lines — split newlines into separate entries",
   });
 
-const hunkSchema = z.object({
-  startLine: z.number().int().min(1)
-    .describe("1-based line number in the numbered base shown in your context."),
-  oldLines: z.array(singleLine)
-    .describe("The exact current lines being replaced (empty = insert before startLine)."),
-  newLines: z.array(singleLine).describe("Replacement lines (empty = delete)."),
-});
+const hunkSchema = z
+  .object({
+    startLine: z.number().int().min(1)
+      .describe("1-based line number in the numbered base shown in your context."),
+    endLine: z.number().int().min(1).optional()
+      .describe("Inclusive end of the replaced range. PREFERRED: with endLine you do not " +
+        "quote oldLines — the base hash already guarantees the text."),
+    oldLines: z.array(singleLine).optional()
+      .describe("Exact current lines being replaced (alternative to endLine; [] = insert " +
+        "before startLine)."),
+    newLines: z.array(singleLine).describe("Replacement lines (empty = delete)."),
+  })
+  .refine((h) => h.endLine !== undefined || h.oldLines !== undefined, {
+    message: "each hunk needs endLine (coordinate mode) or oldLines (exact-match mode)",
+  });
 
 const editSourceSchema = z.object({
   component: z.string().describe("Name of the component whose source to edit."),
