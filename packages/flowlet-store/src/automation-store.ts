@@ -357,10 +357,22 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
     // insert: a crash between the insert and the pointer bump would otherwise
     // wedge every later update on the (automation_id, version) PK forever.
     return this.withTransaction(async (tx) => {
+      // `FOR UPDATE` row-locks this automation for the rest of the
+      // transaction: two concurrent update() calls both reading
+      // currentVersion before either commits would otherwise compute the
+      // SAME nextVersion and race on the (automation_id, version) PK — one
+      // throws a 23505 instead of correctly serializing to versions N+1 and
+      // N+2. The second concurrent caller now blocks here until the first
+      // commits, then reads the POST-update currentVersion. PGlite runs every
+      // `.transaction()` under an internal exclusive lock (one connection),
+      // so this is a no-op there — real concurrent Postgres is what the lock
+      // is for; a true concurrent-PG test isn't runnable in this test
+      // environment (see thread-store.ts's analogous note).
       const rows = await tx
         .select()
         .from(automations)
-        .where(and(eq(automations.id, id), eq(automations.tenantId, scope.tenantId), eq(automations.subject, scope.subject)));
+        .where(and(eq(automations.id, id), eq(automations.tenantId, scope.tenantId), eq(automations.subject, scope.subject)))
+        .for("update");
       if (!rows[0]) throw new Error(`automation "${id}" not found`);
       const automation = rowToAutomation(rows[0]);
       const nextVersion = automation.currentVersion + 1;
