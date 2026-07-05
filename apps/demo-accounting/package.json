@@ -1,6 +1,7 @@
 {
   "name": "demo-accounting",
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "predev": "pnpm --filter @vendoai/stage build:react-shim && pnpm run build:vendo-sandbox && node scripts/copy-vendo-sandbox.mjs && pnpm --filter @vendoai/cli build && node ../../packages/vendo-cli/dist/cli.js sync .",
