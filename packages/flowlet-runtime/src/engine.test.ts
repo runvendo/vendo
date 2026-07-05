@@ -1,14 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
 import { tool } from "ai";
-import type { ToolSet } from "ai";
+import type { Tool, ToolSet } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
 import { SCHEMA_VERSION } from "@flowlet/core";
-import type { FlowletUIMessage } from "@flowlet/core";
+import type { AuditEvent, AuditLog, FlowletUIMessage } from "@flowlet/core";
 import { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
-import type { ApprovalPolicy } from "./policy";
+import { auditPolicy, composePolicy, volumeBreaker, cautionBreaker, createBreakerState } from "./policy";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy";
 import type { ComposioClient } from "./composio";
+import type { ToolDescriptor } from "./descriptor";
 
 // Replace `createComposioClient` with a spy so we can assert the engine builds
 // the client ONCE and reuses it across runs (Finding 4). `ingestComposioTools`
@@ -381,6 +383,525 @@ describe("createFlowletAgent", () => {
       expect(results.some((r) => r.type === "tool-result" && r.toolCallId === call.toolCallId)).toBe(true);
     }
     expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
+  });
+
+  it("writes a data-consent part for a gated tool call", async () => {
+    const gatedTool = {
+      description: "mutate something",
+      inputSchema: z.object({}),
+      annotations: { destructiveHint: false },
+      execute: async () => "done",
+    } as unknown as Tool;
+    const approvePolicy: ApprovalPolicy = { evaluate: () => "approve" };
+
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: "mutate_thing", input: {} }),
+      policy: approvePolicy,
+      tools: { mutate_thing: gatedTool },
+    });
+
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+    const consentParts = parts.filter((p) => (p as { type: string }).type === "data-consent");
+    expect(consentParts).toHaveLength(1);
+  });
+
+  it("calls onSettled with the run's final messages and threadId once the stream finishes", async () => {
+    const onSettled = vi.fn();
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      onSettled,
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        signal: new AbortController().signal,
+        threadId: "conv-42",
+      }),
+    );
+
+    expect(onSettled).toHaveBeenCalledOnce();
+    const settled = onSettled.mock.calls[0]![0] as {
+      messages: FlowletUIMessage[];
+      threadId: string;
+    };
+    // The hook receives the SAME threadId run() resolved — the caller's id
+    // when supplied — so a host can attribute persistence per conversation.
+    expect(settled.threadId).toBe("conv-42");
+    // ai@6.0.28's handleUIMessageStreamFinish returns [...originalMessages,
+    // state.message] — the FULL updated list, not just the new turn. Assert
+    // the prior user message survives alongside the new assistant reply.
+    expect(settled.messages).toContainEqual(userTurn[0]);
+    expect(
+      settled.messages.some(
+        (m) =>
+          m.role === "assistant" &&
+          m.parts.some((p) => (p as { type: string; text?: string }).type === "text" && (p as { text?: string }).text === "All done."),
+      ),
+    ).toBe(true);
+  });
+
+  it("onSettled receives the engine's minted threadId when the caller supplies none", async () => {
+    const onSettled = vi.fn();
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      onSettled,
+    });
+
+    await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+
+    expect(onSettled).toHaveBeenCalledOnce();
+    const settled = onSettled.mock.calls[0]![0] as { threadId: string };
+    expect(settled.threadId).toMatch(/^thread-\d+$/);
+  });
+
+  it("threads a caller-supplied threadId into PolicyContext (contextKey)", async () => {
+    const seenThreadIds: (string | undefined)[] = [];
+    const policy: ApprovalPolicy = {
+      evaluate: (ctx) => {
+        seenThreadIds.push(ctx.threadId);
+        return "allow";
+      },
+    };
+    const payload = {
+      formatVersion: "flowlet-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Text", props: { text: "Hi" } }],
+    };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
+      policy,
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {},
+        threadId: "conv-1",
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(seenThreadIds).toContain("conv-1");
+  });
+
+  it("falls back to its own minted threadId when the caller supplies none", async () => {
+    const seenThreadIds: (string | undefined)[] = [];
+    const policy: ApprovalPolicy = {
+      evaluate: (ctx) => {
+        seenThreadIds.push(ctx.threadId);
+        return "allow";
+      },
+    };
+    const payload = {
+      formatVersion: "flowlet-genui/v1",
+      root: "r",
+      nodes: [{ id: "r", component: "Text", props: { text: "Hi" } }],
+    };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
+      policy,
+    });
+
+    await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+
+    expect(seenThreadIds.some((id) => /^thread-\d+$/.test(id ?? ""))).toBe(true);
+  });
+
+  it("assembles PolicyContext.request from the latest user message", async () => {
+    const seen: PolicyContext[] = [];
+    const spyPolicy: ApprovalPolicy = { evaluate: (ctx) => { seen.push(ctx); return "allow"; } };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: "some_tool", input: {} }),
+      policy: spyPolicy,
+      tools: { some_tool: tool({ inputSchema: z.object({}), execute: async () => "ok" }) },
+    });
+    await collect(agent.run({
+      messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "email Jim that I'm running late" }] }],
+      tools: {},
+      signal: new AbortController().signal,
+    }));
+    const seenWithRequest = seen.find((ctx) => ctx.toolName === "some_tool");
+    expect(seenWithRequest?.request).toEqual({ text: "email Jim that I'm running late", messageId: "m1" });
+  });
+
+  it("counters increment across multiple tool calls within the SAME run", async () => {
+    // Mock model: turn 1 calls tool A, turn 2 (prompt now carries A's tool-call)
+    // calls tool B, turn 3 finishes. Reuses this file's mockModel shape but
+    // needs a two-call sequence — write a small dedicated mock inline here
+    // rather than extending the shared `mockModel` (it only supports one call).
+    const counts: Record<string, number>[] = [];
+    const spyPolicy: ApprovalPolicy = {
+      evaluate: (ctx) => { counts.push({ ...ctx.counters!.perTool }); return "allow"; },
+    };
+    const twoStepModel = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        const calls = prompt.filter(
+          (m) => m.role === "assistant" && Array.isArray(m.content) &&
+            m.content.some((c) => (c as { type?: string }).type === "tool-call"),
+        ).length;
+        const chunks: LanguageModelV3StreamPart[] =
+          calls === 0
+            ? [{ type: "tool-call", toolCallId: "c1", toolName: "tool_a", input: "{}" },
+               { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } }]
+            : calls === 1
+              ? [{ type: "tool-call", toolCallId: "c2", toolName: "tool_b", input: "{}" },
+                 { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } }]
+              : [...textChunks("t", "done"), { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } }];
+        return { stream: simulateReadableStream({ chunks }) };
+      },
+    });
+    const agent = createFlowletAgent({
+      model: twoStepModel,
+      policy: spyPolicy,
+      tools: {
+        tool_a: tool({ inputSchema: z.object({}), execute: async () => "a" }),
+        tool_b: tool({ inputSchema: z.object({}), execute: async () => "b" }),
+      },
+    });
+    await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+    // tool_a's needsApproval sees {tool_a:1}; tool_b's sees {tool_a:1, tool_b:1}
+    // (both counted once via recordCall, needsApproval-only — see run-context.ts).
+    expect(counts.some((c) => c["tool_a"] === 1 && c["tool_b"] === undefined)).toBe(true);
+    expect(counts.some((c) => c["tool_a"] === 1 && c["tool_b"] === 1)).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------
+  // Client-executed tool audit (ENG-193 review follow-up — queued gap): the
+  // Trust diary read 0 tool_execution events despite live client-tool sends
+  // because there is no server-side `execute` for `auditPolicy.onExecuted`
+  // to observe. The engine scans the run's INCOMING messages for
+  // output-available client-tool parts and appends the event itself.
+  // ---------------------------------------------------------------------
+  describe("client-executed tool audit", () => {
+    function clientTool(annotations: Record<string, boolean>): Tool {
+      return {
+        description: "a host tool executed in the browser",
+        inputSchema: z.object({}),
+        annotations,
+        flowletExecutor: "client",
+      } as unknown as Tool;
+    }
+
+    function historyWithClientResult(
+      toolCallId: string,
+      approval?: { id: string; approved: boolean; reason?: string },
+    ): FlowletUIMessage[] {
+      return [
+        { id: "m1", role: "user", parts: [{ type: "text", text: "send it" }] },
+        {
+          id: "m2",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-send_thing",
+              toolCallId,
+              state: "output-available",
+              input: { to: "a@b.com" },
+              output: { ok: true },
+              ...(approval ? { approval } : {}),
+            },
+          ],
+        },
+      ] as unknown as FlowletUIMessage[];
+    }
+
+    function makeAudit(): AuditLog & { events: AuditEvent[] } {
+      const events: AuditEvent[] = [];
+      return {
+        events,
+        append: vi.fn(async (event: AuditEvent) => {
+          events.push(event);
+        }),
+        query: vi.fn(async () => events),
+      };
+    }
+
+    // ENG-193 PR #40 review (item G): client-tool auditing now happens by
+    // routing through the COMPOSED `policy`'s own `onExecuted` (auditPolicy
+    // appends the event, volumeBreaker counts) instead of the engine
+    // appending to a separately-wired `audit` log — so every test below
+    // composes `auditPolicy` into `policy` itself, exactly as a real host's
+    // policy stack does (`composeProductionPolicy`/`demoPolicy` both already
+    // wire `auditPolicy` this way).
+    function policyWithAudit(audit: AuditLog): ApprovalPolicy {
+      return composePolicy(allowPolicy, auditPolicy(audit, { principalScope: (ctx) => ({ tenantId: "t", subject: ctx.principal.userId }) }));
+    }
+
+    it("appends exactly one tool_execution event for an output-available client-tool part", async () => {
+      const audit = makeAudit();
+      const agent = createFlowletAgent({
+        model: mockModel(),
+        policy: policyWithAudit(audit),
+      });
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-client-1"),
+          tools: { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) },
+          principal: { userId: "user-1" },
+          signal: new AbortController().signal,
+        }),
+      );
+
+      const toolEvents = audit.events.filter((e) => e.kind === "tool_execution");
+      expect(toolEvents).toHaveLength(1);
+      expect(toolEvents[0]).toMatchObject({
+        kind: "tool_execution",
+        toolName: "send_thing",
+        toolCallId: "call-client-1",
+        mutating: true,
+        dangerous: false,
+        outcome: "ok",
+        principal: { tenantId: "t", subject: "user-1" },
+      });
+    });
+
+    it("never audits a SERVER-executed tool's output-available part (only client)", async () => {
+      const audit = makeAudit();
+      const agent = createFlowletAgent({
+        model: mockModel(),
+        policy: policyWithAudit(audit),
+      });
+      const serverTool = tool({
+        description: "server tool",
+        inputSchema: z.object({}),
+        annotations: { readOnlyHint: false },
+        execute: async () => "done",
+      });
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-server-1"),
+          tools: { send_thing: serverTool },
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(0);
+    });
+
+    it("dedupes: running the SAME messages again through the SAME engine never double-audits", async () => {
+      const audit = makeAudit();
+      const agent = createFlowletAgent({
+        model: mockModel(),
+        policy: policyWithAudit(audit),
+      });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+      const messages = historyWithClientResult("call-client-2");
+
+      await collect(agent.run({ messages, tools, signal: new AbortController().signal }));
+      await collect(agent.run({ messages, tools, signal: new AbortController().signal }));
+
+      expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(1);
+    });
+
+    it("REGRESSION (ENG-193 PR #40 review — item G): a client-tool execution now counts toward volumeBreaker's threshold", async () => {
+      const audit = makeAudit();
+      const state = createBreakerState();
+      const policy = volumeBreaker(policyWithAudit(audit), state, { threshold: 1 });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+      const agent = createFlowletAgent({ model: mockModel(), policy });
+
+      // First call executes under the threshold...
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-vol-1"),
+          tools,
+          principal: { userId: "user-1" },
+          threadId: "th-1",
+          signal: new AbortController().signal,
+        }),
+      );
+      // ...a SECOND client tool call in the same thread is now past threshold
+      // 1 and must be forced to "approve" by volumeBreaker's evaluate — proof
+      // the first call was actually COUNTED via onExecuted.
+      const forced = await policy.evaluate({
+        toolName: "send_thing",
+        input: {},
+        descriptor: { name: "send_thing", source: "caller", annotations: { readOnlyHint: false }, hasExecute: false, kind: "function", executor: "client" },
+        principal: { userId: "user-1" },
+        threadId: "th-1",
+      });
+      expect(forced).toBe("approve");
+      expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(1);
+    });
+
+    it("FINDING 3: reports 'approve' (not 'allow') to onExecuted when the client part carries approval.approved === true", async () => {
+      const decisions: ApprovalDecision[] = [];
+      const spyPolicy: ApprovalPolicy = {
+        evaluate: async () => "allow",
+        onExecuted: async (_ctx, decision) => {
+          decisions.push(decision);
+        },
+      };
+      const agent = createFlowletAgent({ model: mockModel(), policy: spyPolicy });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-approved-1", { id: "a1", approved: true }),
+          tools,
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(decisions).toEqual(["approve"]);
+    });
+
+    it("FINDING 3: reports 'allow' when the client part carries no approval metadata (auto-allowed, never asked)", async () => {
+      const decisions: ApprovalDecision[] = [];
+      const spyPolicy: ApprovalPolicy = {
+        evaluate: async () => "allow",
+        onExecuted: async (_ctx, decision) => {
+          decisions.push(decision);
+        },
+      };
+      const agent = createFlowletAgent({ model: mockModel(), policy: spyPolicy });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-allowed-1"),
+          tools,
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(decisions).toEqual(["allow"]);
+    });
+
+    it("FINDING 3 knock-on: only an 'approve' report (not 'allow') lets a client-tool execution count toward cautionBreaker's clean-approval lift", async () => {
+      // Mirrors breakers.test.ts's own "5 clean human approvals lift caution"
+      // pattern, but against a CLIENT-executor descriptor — the shape
+      // `auditClientExecutedTools` actually reports onExecuted for. Proves the
+      // fix's downstream effect: before it, every client execution reported
+      // "allow" unconditionally, so cautionBreaker.onExecuted's own
+      // `decision === "approve"` gate (breakers.ts line ~253) NEVER counted a
+      // client-tool's clean approval — caution could trip from a client tool
+      // but never lift via one.
+      const state = createBreakerState();
+      const flaggedDescriptor: ToolDescriptor = {
+        name: "risky_tool", source: "caller", annotations: { readOnlyHint: false }, hasExecute: true, kind: "function",
+      };
+      const clientDescriptor: ToolDescriptor = {
+        name: "send_thing", source: "caller", annotations: { readOnlyHint: false, destructiveHint: false },
+        hasExecute: false, kind: "function", executor: "client",
+      };
+      const flaggedCtx = (): PolicyContext => ({
+        toolName: "risky_tool", input: {}, descriptor: flaggedDescriptor, principal: { userId: "u" }, threadId: "th-1",
+      });
+      const clientCtx = (): PolicyContext => ({
+        toolName: "send_thing", input: {}, descriptor: clientDescriptor, principal: { userId: "u" }, threadId: "th-1",
+      });
+
+      // Arm caution: 1 judge-verdict escalation (consecutiveThreshold: 1).
+      const { setEscalationReason } = await import("./policy/escalation");
+      const escalatingJudge: ApprovalPolicy = {
+        evaluate: (ctx) => {
+          setEscalationReason(ctx, "judge escalation", "verdict");
+          return "approve";
+        },
+      };
+      const arm = cautionBreaker(escalatingJudge, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      const armCtx = flaggedCtx();
+      await arm.evaluate(armCtx);
+      await arm.onExecuted!(armCtx, "approve");
+
+      const check = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      expect(await check.evaluate(flaggedCtx())).toBe("approve"); // caution active, forcing.
+
+      // A client-tool execution reported "allow" (the PRE-FIX bug) never counts.
+      const noLift = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      await noLift.onExecuted!(clientCtx(), "allow");
+      const stillActive = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      expect(await stillActive.evaluate(flaggedCtx())).toBe("approve"); // still active.
+
+      // The SAME client-tool execution reported "approve" (post-fix, since
+      // the part carries approval.approved === true) DOES lift it.
+      const lift = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      await lift.onExecuted!(clientCtx(), "approve");
+      const after = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      expect(await after.evaluate(flaggedCtx())).toBe("allow"); // lifted.
+    });
+
+    it("is a no-op when no audit config is supplied (graceful default)", async () => {
+      const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+      const parts = await collect(
+        agent.run({
+          messages: historyWithClientResult("call-noop"),
+          tools: { send_thing: clientTool({ readOnlyHint: false }) },
+          signal: new AbortController().signal,
+        }),
+      );
+      expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+    });
+  });
+
+  describe("tool source labeling (ENG-193 PR #40 review — item A)", () => {
+    /** Records every descriptor.source the policy sees, keyed by tool name. */
+    function recordingPolicy(): { policy: ApprovalPolicy; sources: Record<string, string> } {
+      const sources: Record<string, string> = {};
+      return {
+        sources,
+        policy: {
+          evaluate: (ctx: PolicyContext) => {
+            sources[ctx.toolName] = ctx.descriptor.source;
+            return "allow";
+          },
+        },
+      };
+    }
+
+    it('config.tools (host-supplied server tools) land under source "engine", NOT the control-plane bucket', async () => {
+      const { policy, sources } = recordingPolicy();
+      const agent = createFlowletAgent({
+        model: mockModel({ toolName: "issue_refund", input: {} }),
+        policy,
+        tools: {
+          issue_refund: tool({ inputSchema: z.object({}), execute: async () => "ok" }),
+        },
+      });
+      await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+      expect(sources["issue_refund"]).toBe("engine");
+    });
+
+    it('config.controlTools (steering/authoring) land under source "control", alongside render_view/request_connect', async () => {
+      const { policy, sources } = recordingPolicy();
+      const agent = createFlowletAgent({
+        model: mockModel({ toolName: "always_ask_before", input: {} }),
+        policy,
+        controlTools: {
+          always_ask_before: tool({ inputSchema: z.object({}), execute: async () => "ok" }),
+        },
+      });
+      await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+      expect(sources["always_ask_before"]).toBe("control");
+    });
+
+    it("render_view and request_connect are always source \"control\", never \"engine\"", async () => {
+      const { policy, sources } = recordingPolicy();
+      const payload = {
+        formatVersion: "flowlet-genui/v1",
+        root: "r1",
+        nodes: [{ id: "r1", component: "Text", source: "prewired", props: { text: "hi" } }],
+      };
+      const agent = createFlowletAgent({
+        model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
+        policy,
+      });
+      await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+      expect(sources[RENDER_VIEW_TOOL_NAME]).toBe("control");
+    });
   });
 
   it("coerces a broken-JSON tool input in history to {} so the provider does not reject every later turn", async () => {

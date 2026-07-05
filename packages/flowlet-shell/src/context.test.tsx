@@ -9,6 +9,11 @@ function Probe() {
   return <div data-testid="probe">{[typeof shell.store.list, typeof shell.integrations.list, typeof shell.renderNode].join(",")}</div>;
 }
 
+function Probe2({ onRead }: { onRead: (v: unknown) => void }) {
+  onRead(useShell());
+  return null;
+}
+
 describe("FlowletShellProvider", () => {
   it("provides store, integrations, and renderNode defaults", () => {
     render(
@@ -43,5 +48,37 @@ describe("FlowletShellProvider", () => {
     const root = container.querySelector<HTMLElement>(".flowlet-root");
     expect(root).not.toBeNull();
     expect(root!.style.getPropertyValue("--flowlet-accent")).toBe("#123456");
+  });
+});
+
+describe("ShellContextValue — trust seam (ENG-193 §3 Moment 12)", () => {
+  it("passes `trust` through untouched, defaulting to undefined", () => {
+    let seen: { trust?: unknown } | undefined;
+    render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider>
+          <Probe2 onRead={(v) => { seen = v as { trust?: unknown }; }} />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    expect(seen?.trust).toBeUndefined();
+  });
+
+  it("passes a supplied `trust` object through", () => {
+    const trust = {
+      listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => [],
+      listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      // ENG-193 item 6 — the rules half of the seam rides through the same way.
+      listRules: async () => [], revokeRule: async () => {},
+    };
+    let seen: { trust?: unknown } | undefined;
+    render(
+      <FlowletProvider agent={createStubAgent()} components={[]}>
+        <FlowletShellProvider trust={trust}>
+          <Probe2 onRead={(v) => { seen = v as { trust?: unknown }; }} />
+        </FlowletShellProvider>
+      </FlowletProvider>,
+    );
+    expect(seen?.trust).toBe(trust);
   });
 });

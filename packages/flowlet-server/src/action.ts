@@ -22,7 +22,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { buildDescriptor } from "@flowlet/runtime";
-import type { ApprovalPolicy, FlowletPrincipal } from "@flowlet/runtime";
+import type { ApprovalPolicy, FlowletPrincipal, ToolDescriptor } from "@flowlet/runtime";
 import type { ToolSet } from "ai";
 import { resolvePrincipal } from "./guard";
 import type { FlowletHandlerOptions } from "./options";
@@ -79,6 +79,21 @@ export interface ActionDeps {
   policy: ApprovalPolicy;
   approvals: ApprovalStore;
   options: FlowletHandlerOptions;
+  /**
+   * Review follow-up: resolves the descriptor via the SAME source mapping the
+   * chat/consent path uses (`handler.ts`'s `resolveDescriptor` — host server
+   * tools -> "engine", control tools -> "control", client tools -> "caller").
+   * `hashDescriptor` (grant-match.ts) includes `source`, so a grant minted
+   * against the chat-side descriptor (e.g. from a steering utterance or an
+   * approved chat call) hashes differently than the "caller"-sourced
+   * descriptor this route used to build unconditionally — the SAME host
+   * server tool dispatched here never matched a standing grant minted from
+   * chat. Optional only so isolated unit tests that construct `ActionDeps`
+   * directly (not through the full handler assembly) don't need to wire it;
+   * falls back to `buildDescriptor(action, tool, "caller")` when absent or
+   * when the resolver doesn't know the name.
+   */
+  resolveDescriptor?: (toolName: string) => ToolDescriptor | undefined;
 }
 
 type ExecutableTool = { execute?: (input: unknown, opts: unknown) => Promise<unknown> };
@@ -97,13 +112,23 @@ export async function handleAction(req: Request, deps: ActionDeps): Promise<Resp
   const tool = tools[body.action];
   const payload = body.payload ?? {};
   const payloadJson = JSON.stringify(payload);
-
-  const decision = await deps.policy.evaluate({
+  // One id for this dispatch, threaded through evaluate, the real execute,
+  // AND onExecuted below — the SAME ctx wrapTool's own execute path builds
+  // once and reuses, so a policy layer keyed on toolCallId (breakers'
+  // escalation dedupe, audit's tool_execution event) sees a genuinely unique
+  // id per action rather than a shared literal every dispatch collided on.
+  const toolCallId = randomUUID();
+  const descriptor =
+    deps.resolveDescriptor?.(body.action) ?? buildDescriptor(body.action, tool, "caller");
+  const ctx = {
     toolName: body.action,
     input: payload,
-    descriptor: buildDescriptor(body.action, tool, "caller"),
+    descriptor,
     principal,
-  });
+    toolCallId,
+  };
+
+  const decision = await deps.policy.evaluate(ctx);
 
   if (decision === "deny") {
     return Response.json({ decision, error: "denied by policy" }, { status: 403 });
@@ -124,6 +149,15 @@ export async function handleAction(req: Request, deps: ActionDeps): Promise<Resp
   if (!tool?.execute) {
     return Response.json({ error: `unknown action "${body.action}"` }, { status: 404 });
   }
-  const result = await tool.execute(payload, { toolCallId: "stage-action", messages: [] });
+  const result = await tool.execute(payload, { toolCallId, messages: [] });
+  // Review follow-up: sandbox dispatches through /action called evaluate +
+  // execute but never onExecuted, so a successful dispatch was invisible to
+  // the Trust diary's audit trail and to volume-breaker counting — the ONLY
+  // execution path in this codebase that skipped it (wrapTool's execute
+  // always calls it; see wrap-tool.ts). Mirrors that contract exactly: fired
+  // only here, after a genuine successful execute, with the enforced
+  // decision — never for `deny` (returned above, tool never ran) and never
+  // if `tool.execute` throws (a throw propagates before this line runs).
+  await deps.policy.onExecuted?.(ctx, decision);
   return Response.json({ decision, result });
 }

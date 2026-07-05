@@ -26,6 +26,7 @@ import {
   createFlowletAgent,
   buildBrandGuidance,
   type ApprovalPolicy,
+  type FlowletAgentConfig,
   type InstructionContext,
   type McpServerConfig,
 } from "@flowlet/runtime";
@@ -138,8 +139,18 @@ export interface AgentFactoryConfig {
   /** String, or a per-run builder receiving the live tool summary (spec §1). */
   instructions: string | ((ctx: InstructionContext) => string);
   components: RegisteredComponent[];
-  /** Per-request extra server tools (authoring tools + host `tools` option). */
+  /**
+   * Per-request host-supplied server tools (the mount's `tools` option ONLY).
+   * Judged/breaker-gated normally (source "engine") — ENG-193 PR #40 review
+   * (item A): never merge authoring/steering tools in here.
+   */
   tools?: () => ToolSet;
+  /**
+   * Per-request Flowlet control-plane tools (automation authoring + steering)
+   * the handler assembles itself. Merged under source "control" — the ONLY
+   * source the judge/breakers exempt (ENG-193 PR #40 review — item A).
+   */
+  controlTools?: () => ToolSet;
   /** Connected Composio toolkits to ingest (undefined = Composio off). */
   toolkits?: () => string[];
   /** Host-declared MCP servers (already env-resolved). Empty/undefined = MCP off. */
@@ -149,6 +160,18 @@ export interface AgentFactoryConfig {
   maxSteps?: number;
   /** Sandbox environment manifest (flowlet sync) → engine prompt precision. */
   envManifest?: EnvManifest;
+  /**
+   * Settled-run persistence hook (ENG-193 §6.2), passed straight to every
+   * cached agent. It receives the run's threadId, so one fixed hook can
+   * attribute each settled message list to the right conversation.
+   */
+  onSettled?: FlowletAgentConfig["onSettled"];
+  /** ENG-193 review follow-up — audits client-executed tool calls; see
+   *  `FlowletAgentConfig.audit`. Passed straight to every cached agent. */
+  audit?: FlowletAgentConfig["audit"];
+  /** Maps the run principal onto the audit Principal shape; see
+   *  `FlowletAgentConfig.auditPrincipal`. */
+  auditPrincipal?: FlowletAgentConfig["auditPrincipal"];
 }
 
 /**
@@ -176,7 +199,11 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
           ? { mcp: { servers: config.mcpServers } }
           : {}),
         ...(config.tools ? { tools: config.tools() } : {}),
+        ...(config.controlTools ? { controlTools: config.controlTools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
+        ...(config.onSettled ? { onSettled: config.onSettled } : {}),
+        ...(config.audit ? { audit: config.audit } : {}),
+        ...(config.auditPrincipal ? { auditPrincipal: config.auditPrincipal } : {}),
         ...(config.envManifest ? { envManifest: config.envManifest } : {}),
         components: config.components,
       });

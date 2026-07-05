@@ -27,6 +27,9 @@ import { cadenceHostComponents } from "@/flowlet/host-components/descriptors";
 import { cadenceHostToolDefs } from "@/flowlet/host-tools";
 import { renderNode } from "./render-node";
 import { runQuery } from "./run-query";
+import { listParkedActions, resolveParkedAction } from "./parked-actions";
+import { createSendConsent } from "./consent";
+import { listGrants, revokeGrant, listRules, revokeRule, queryAudit, listCriticalTools, resolveFadeProposal } from "./trust";
 
 // The real embedded-mode store (ENG-183): saved flowlets survive reloads. One
 // module-scope instance so every surface shares it; it only touches
@@ -100,6 +103,10 @@ export function FlowletRoot({
     () => new DefaultChatTransport<FlowletUIMessage>({ api: "/api/flowlet/chat" }),
     [],
   );
+  // Consent-channel POST (ENG-193 §4.5), keyed to THIS surface's thread id —
+  // the same client id the transport sends, so the server resolves the same
+  // persisted thread record when it validates the decision.
+  const sendConsent = useMemo(() => createSendConsent(threadId), [threadId]);
 
   return (
     <FlowletProvider
@@ -125,6 +132,9 @@ export function FlowletRoot({
           remixes={remixes}
           notifications={notifications}
           runQuery={runQuery}
+          sendConsent={sendConsent}
+          parkedActions={{ list: listParkedActions, resolve: resolveParkedAction }}
+          trust={{ listGrants, revokeGrant, listRules, revokeRule, queryAudit, listCriticalTools, resolveFadeProposal }}
           // Same registry as FlowletProvider — reopened saved views diff their
           // host-component stamp against it and surface drift (ENG-186).
           components={[...prewiredComponents, ...cadenceHostComponents]}

@@ -94,7 +94,27 @@ describe("MessageList", () => {
     // (render_view/request_connect never reach here — they stay a skeleton).
     expect(screen.getByTestId("activity-panel")).toBeTruthy();
     expect(screen.getByTestId("ui-node")).toBeTruthy();
-    fireEvent.click(screen.getByText("Approve"));
+    fireEvent.click(screen.getByText("Send it"));
     expect(onApprove).toHaveBeenCalledWith("a1");
+  });
+
+  it("renders a batch of sibling approvals as ONE grouped card", () => {
+    const onApprove = vi.fn();
+    renderList([
+      { kind: "approval", key: "a", messageId: "m", approvalId: "ap1", toolCallId: "c1", toolName: "GMAIL_SEND_EMAIL", input: {}, tier: "act" },
+      { kind: "approval", key: "b", messageId: "m", approvalId: "ap2", toolCallId: "c2", toolName: "GMAIL_SEND_EMAIL", input: {}, tier: "act" },
+    ], onApprove);
+    expect(screen.getByText("Approve all 2")).toBeTruthy();
+    expect(screen.queryAllByText("Send it")).toHaveLength(0); // not the single-card path
+  });
+
+  it("REVIEW FOLLOW-UP: sibling approvals with an UNDEFINED tier never batch — each renders its own card", () => {
+    const onApprove = vi.fn();
+    renderList([
+      { kind: "approval", key: "a", messageId: "m", approvalId: "ap1", toolCallId: "c1", toolName: "GMAIL_SEND_EMAIL", input: {} },
+      { kind: "approval", key: "b", messageId: "m", approvalId: "ap2", toolCallId: "c2", toolName: "GMAIL_SEND_EMAIL", input: {} },
+    ], onApprove);
+    expect(screen.queryByText("Approve all 2")).toBeNull();
+    expect(screen.getAllByText("Send it")).toHaveLength(2);
   });
 });

@@ -10,9 +10,10 @@
  * consecutive failures the automation is parked: frozen status "paused" plus
  * disabledReason (the frozen status union stays untouched).
  */
-import type { AutomationDelivery, Channels, Principal } from "@flowlet/core";
+import type { AuditLog, AutomationDelivery, Channels, Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import { evaluateGuard } from "./expressions";
+import { hashDescriptor } from "./grants";
 import {
   interpret,
   type AgentStepRunner,
@@ -21,6 +22,7 @@ import {
 import type { AutomationSpec } from "./schema";
 import {
   DuplicateRunError,
+  PARKED_ACTION_TTL_MS,
   type AutomationEngineStore,
   type AutomationGrant,
   type AutomationRecord,
@@ -48,6 +50,13 @@ export interface AutomationRunnerConfig {
   nowMs?: () => number;
   /** Observer hook (demo toast, logging). Called after each finalized run. */
   onRunFinished?: (run: AutomationRun, automation: AutomationRecord) => void;
+  /** ENG-193 §6.2 — records parked-action resolutions on the SAME "consent"
+   *  audit event kind chat approvals already use (Task 5). Optional: tests
+   *  that don't care about the trail can omit it. */
+  audit?: AuditLog;
+  /** Maps the engine scope onto the core audit Principal shape — structurally
+   *  identical today ({tenantId, subject}); defaults to the identity. */
+  auditPrincipal?: (scope: Principal) => Principal;
   /** Off-thread delivery (FlowletToasts, 2026-07-04 spec): terminal runs and
    *  approval pauses go out as in-app messages. Best-effort — a down surface
    *  must never fail the run. Guard-false skips and bulk park-cancellations
@@ -258,11 +267,33 @@ export class AutomationRunner {
       resume,
     });
 
+    // ENG-193 §4.6: persist every parked draft this pass produced, regardless
+    // of the run's outcome — a run can park several actions before ALSO
+    // pausing at a later direct-step checkpoint (§4.6's own text: parking and
+    // run-checkpoint pausing coexist).
+    for (const draft of outcome.parkedActions) {
+      await this.config.store.createParkedAction(scope, {
+        automationId: automation.id,
+        runId: run.id,
+        stepId: draft.stepId,
+        tool: draft.tool,
+        input: draft.input,
+        ...(draft.guardExpr !== undefined ? { guardExpr: draft.guardExpr } : {}),
+        ...(draft.guardBindings !== undefined ? { guardBindings: draft.guardBindings } : {}),
+        reason: draft.reason,
+        tier: draft.tier,
+        descriptorHash: draft.descriptorHash,
+        requestedAt: draft.requestedAt,
+      });
+    }
+    const parkedCount = run.parkedCount + outcome.parkedActions.length;
+
     if (outcome.status === "waiting_approval") {
       const waiting = await this.config.store.updateRun(scope, run.id, {
         outcome: "waiting_approval",
         steps: outcome.steps,
         pendingApproval: outcome.pendingApproval,
+        parkedCount,
       });
       await this.notifyApproval(scope, waiting, automation, outcome.pendingApproval);
       return waiting;
@@ -271,6 +302,7 @@ export class AutomationRunner {
       status: outcome.status,
       steps: outcome.steps,
       error: outcome.status === "failed" ? outcome.error : undefined,
+      parkedCount,
     });
   }
 
@@ -278,10 +310,23 @@ export class AutomationRunner {
     scope: Principal,
     runId: string,
     automation: AutomationRecord,
-    input: { status: "succeeded" | "failed"; steps?: StepRecord[]; error?: string },
+    input: {
+      status: "succeeded" | "failed";
+      steps?: StepRecord[];
+      error?: string;
+      parkedCount?: number;
+    },
   ): Promise<AutomationRun> {
     const { store } = this.config;
     const finalized = await store.finalizeRun(scope, runId, input);
+
+    await this.config.audit?.append({
+      at: this.now(),
+      principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+      kind: "automation_firing",
+      automationId: automation.id,
+      runId: finalized.id,
+    });
 
     if (input.status === "failed") {
       const limit = this.config.consecutiveFailureLimit ?? CONSECUTIVE_FAILURE_LIMIT;
@@ -348,5 +393,168 @@ export class AutomationRunner {
         });
       });
     })();
+  }
+
+  /**
+   * Resolve a parked action (ENG-193 §4.6) — late, STANDALONE execution: no
+   * interpreter re-run, no re-resolution of input (frozen at park time).
+   * Reuses the SAME per-automation queue `resume()` relies on for its
+   * "two rapid approvals must not double-execute" guarantee (spec §8's
+   * parked-critical-executes-exactly-once invariant rides this, not a new
+   * mechanism — plan deviation #3).
+   */
+  async resolveParkedAction(
+    scope: Principal,
+    actionId: string,
+    decision: "approved" | "declined",
+  ): Promise<
+    | { ok: true; executed: boolean; skipped?: boolean; reason?: string; guardStale?: boolean }
+    | { ok: false; error: string }
+  > {
+    const peek = await this.config.store.getParkedAction(scope, actionId);
+    if (!peek) return { ok: false, error: `parked action "${actionId}" not found` };
+    if (peek.resolution !== undefined) {
+      return { ok: false, error: `parked action "${actionId}" is already resolved (${peek.resolution})` };
+    }
+    return this.enqueue(peek.automationId, async () => {
+      // Re-peek inside the queue: a sibling concurrent call may have resolved
+      // it while this one waited (the SAME race resume() guards against).
+      const action = await this.config.store.getParkedAction(scope, actionId);
+      if (!action || action.resolution !== undefined) {
+        return { ok: false, error: `parked action "${actionId}" is already resolved` };
+      }
+
+      if (decision === "declined") {
+        // A decline claims immediately — there is no execution whose outcome
+        // the resolution could misrepresent.
+        await this.config.store.resolveParkedAction(scope, actionId, "declined", this.now());
+        await this.appendConsentAudit(scope, actionId, "no");
+        return { ok: true, executed: false };
+      }
+
+      const automation = await this.config.store.get(scope, action.automationId);
+      if (!automation) return { ok: false, error: `automation "${action.automationId}" not found` };
+      const tools = await this.config.tools(scope, automation);
+      const tool = tools[action.tool];
+      if (!tool) return { ok: false, error: `tool "${action.tool}" is no longer registered` };
+
+      // Descriptor drift (spec §8.8): a tool whose safety identity changed
+      // since park time is never executed on the stale approval — the row
+      // stays UNRESOLVED (re-askable), not silently declined.
+      const liveHash = hashDescriptor(tool.descriptor);
+      if (liveHash !== action.descriptorHash) {
+        return {
+          ok: false,
+          error: `tool "${action.tool}" changed since this was parked — approval must be requested again`,
+        };
+      }
+
+      // Frozen-input integrity (review follow-up): an input cut at the storage
+      // cap can never be executed faithfully — executing the truncated remnant
+      // would silently do something OTHER than what the card showed. Fail
+      // closed like descriptor drift: refuse, leave the row unresolved.
+      if (action.inputTruncated === true) {
+        return {
+          ok: false,
+          error:
+            `the parked input for "${action.tool}" was truncated at park time and cannot be ` +
+            "executed safely — the action must be requested again",
+        };
+      }
+
+      // TTL holds on the raw API path too, not just the list sweep: a stale
+      // intent is never approvable by direct replay of a resolve request.
+      if (Date.parse(action.requestedAt) + PARKED_ACTION_TTL_MS <= this.nowMs()) {
+        await this.config.store.resolveParkedAction(scope, action.id, "expired", this.now());
+        return {
+          ok: false,
+          error: `this request expired ${PARKED_ACTION_TTL_MS / 86_400_000} days after it was parked — ask again if it is still wanted`,
+        };
+      }
+
+      // Policy is consulted at resolve time too (mirrors executeToolStep's
+      // own "deny" branch): a tenant/role deny always wins over the human's
+      // "approved" decision. Left UNRESOLVED like descriptor drift — a
+      // policy verdict can change, unlike a declined human answer.
+      const policyDecision = await this.config.policy.evaluate({
+        toolName: action.tool,
+        input: action.input,
+        descriptor: tool.descriptor,
+        principal: { userId: scope.subject },
+      });
+      if (policyDecision === "deny") {
+        return { ok: false, error: `policy denied tool "${action.tool}"` };
+      }
+
+      // Guard re-check (deviation #2): only when it's provably self-contained
+      // (no steps reference, dot OR bracket form) — otherwise flagged stale,
+      // never re-evaluated.
+      let guardStale = false;
+      if (action.guardExpr !== undefined && !/\bsteps\s*[.[]/.test(action.guardExpr)) {
+        const run = await this.config.store.getRun(scope, action.runId);
+        const scopeForGuard = {
+          trigger: run?.trigger.payload,
+          steps: {},
+          run: { id: action.runId, automationId: action.automationId, firedAt: run?.trigger.occurredAt ?? "" },
+          user: await this.claims(scope),
+          ...(action.guardBindings ?? {}),
+        };
+        const stillHolds = await evaluateGuard(action.guardExpr, scopeForGuard);
+        if (!stillHolds) {
+          // The human still said yes — the resolution is "approved"; only the
+          // execution is skipped (the design's own worked example: "the
+          // invoice may have been paid since").
+          await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
+          await this.appendConsentAudit(scope, actionId, "yes");
+          return { ok: true, executed: false, skipped: true, reason: "guard no longer holds" };
+        }
+      } else if (action.guardExpr !== undefined) {
+        // References steps — never re-checked (deviation #2). Executes with
+        // the frozen input; the WaitingList copy is responsible for saying
+        // its conditions can't be re-verified.
+        guardStale = true;
+      }
+
+      // Execute FIRST, claim AFTER (review follow-up): the per-automation
+      // queue already serializes resolves, so nothing can double-execute
+      // before the claim lands — and a FAILED execute must leave the row
+      // UNRESOLVED (re-askable) with no consent event claiming success. A
+      // retry reuses the SAME `parked-<id>` idempotency key, so an executor
+      // that dedupes by key cannot double-fire across retries either.
+      const idempotencyKey = `${action.runId}/${action.stepId}/parked-${action.id}`;
+      const outcome = await tool.execute(action.input as Record<string, unknown>, { idempotencyKey });
+      if (!outcome.ok) return { ok: false, error: outcome.error.message };
+
+      await this.config.audit?.append({
+        at: this.now(),
+        principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+        kind: "tool_execution",
+        toolName: action.tool,
+        toolCallId: `parked-${action.id}`,
+        mutating: true, // every parked action is a gated, non-read tool by construction
+        dangerous: action.tier === "critical",
+        outcome: "ok",
+      });
+
+      await this.config.store.resolveParkedAction(scope, actionId, "approved", this.now());
+      await this.appendConsentAudit(scope, actionId, "yes");
+      return { ok: true, executed: true, ...(guardStale ? { guardStale: true } : {}) };
+    });
+  }
+
+  /** One consent audit event per RESOLUTION (never before the outcome is
+   *  known — the trail must not claim an execution that then failed). */
+  private async appendConsentAudit(
+    scope: Principal,
+    actionId: string,
+    decision: "yes" | "no",
+  ): Promise<void> {
+    await this.config.audit?.append({
+      at: this.now(),
+      principal: (this.config.auditPrincipal ?? ((s) => s))(scope),
+      kind: "consent",
+      consentId: actionId,
+      decision,
+    });
   }
 }

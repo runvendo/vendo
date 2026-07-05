@@ -26,9 +26,11 @@ import {
 } from "ai";
 import type {
   AnchorContextBlock,
+  AuditLog,
   EnvImportStatus,
   EnvManifest,
   FlowletAgent,
+  Principal,
   RunInput,
   FlowletUIMessage,
   RegisteredComponent,
@@ -36,6 +38,7 @@ import type {
 } from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
+import { createPausedCallTracker } from "./wrap-tool";
 import { createRenderViewTool } from "./render-view-tool";
 import { createRequestConnectTool } from "./request-connect-tool";
 import {
@@ -50,9 +53,10 @@ import {
   type McpServerConfig,
   type McpToolSource,
 } from "./mcp";
-import type { ApprovalPolicy } from "./policy";
+import type { ApprovalDecision, ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
-import type { ToolDescriptor } from "./descriptor";
+import { buildDescriptor, type ToolDescriptor } from "./descriptor";
+import { createRunPolicyContext } from "./policy/run-context";
 
 /** Canonical name of the engine's built-in composed-view tool (Tier 2.5). */
 export const RENDER_VIEW_TOOL_NAME = "render_view";
@@ -237,8 +241,24 @@ export interface FlowletAgentConfig {
    *  an entry, the prompt lists exactly which imports are real/shimmed/absent
    *  and drops the bare-sandbox restyling warning. */
   envManifest?: EnvManifest;
-  /** The engine's own in-process tools (the render tool is always added). */
+  /**
+   * Host-supplied server-executed tools (a mount's `options.tools`, a demo's
+   * `extraTools`). Labeled `source: "engine"` — judged and breaker-gated
+   * exactly like any other tool. NEVER exempt from the judge/breakers; do not
+   * put steering or automation-authoring tools here (see `controlTools`).
+   */
   tools?: ToolSet;
+  /**
+   * Flowlet's OWN control-plane tools — conversational steering
+   * (`always_ask_before`/`stop_asking_about`) and automation authoring tools
+   * a mount assembles itself. Merged alongside the engine's built-in
+   * `render_view`/`request_connect` under `source: "control"` (ENG-193 PR #40
+   * review — item A), the ONLY source the judge/`cautionBreaker`/
+   * `volumeBreaker` exempt. A mount must NEVER put a host-supplied business
+   * tool here — that reopens the exact mislabeling this field was added to
+   * close (host tools riding the control-plane exemption via `config.tools`).
+   */
+  controlTools?: ToolSet;
   /** Optional Composio ingestion. `client` is injectable for tests. */
   composio?: { config: ComposioConfig; client?: ComposioClient };
   /**
@@ -250,12 +270,29 @@ export interface FlowletAgentConfig {
    */
   mcp?: { servers: McpServerConfig[]; source?: McpToolSource; retryDelayMs?: number };
   /**
-   * Policy version string. Forwarded to policy layers that key on it (e.g. the
-   * ask-once `rememberDecisions` store). Not used by the engine itself.
+   * Policy version string. Reserved: the ask-once `rememberDecisions` layer
+   * that keyed on it is retired in favor of `grantPolicy` (ENG-193 §4.3),
+   * which doesn't version-key its suppression. Kept on the public config
+   * shape for source compatibility; not consulted by the engine itself.
    */
   policyVersion?: string;
   /** Max model->tool steps before the loop stops. Defaults to 8. */
   maxSteps?: number;
+  /**
+   * Called once the run's stream settles with the FULL updated message list
+   * (ENG-193 §6.2 — persistence for the consent endpoint's "load the thread's
+   * messages" step). `threadId` is the same id `run()` resolved for the turn
+   * (the caller-supplied `RunInput.threadId`, or the engine's minted fallback
+   * when none was supplied) — this hook is fixed once at agent construction,
+   * so the threadId is how a host attributes the settled list to the right
+   * conversation. Errors thrown here are logged, never surfaced to the model
+   * or the client — persistence must not take down a finished run.
+   */
+  onSettled?: (settled: {
+    messages: FlowletUIMessage[];
+    threadId: string;
+    principal: FlowletPrincipal;
+  }) => void | Promise<void>;
   /**
    * F1 component registry (prewired + host). When provided, `render_view`
    * validates `source:"host"` nodes server-side — unknown names and
@@ -263,6 +300,126 @@ export interface FlowletAgentConfig {
    * before anything streams (ENG-186).
    */
   components?: RegisteredComponent[];
+  /**
+   * UNUSED by the engine itself since ENG-193 PR #40 review (item G) — kept
+   * on the public config shape for source compatibility with existing mounts
+   * (mirrors `policyVersion` above). Client-executed tool calls (topology B
+   * host tools, ENG-202) that the run's INCOMING messages carry in
+   * `output-available` state are now audited by routing them through
+   * `policy`'s OWN `onExecuted` (see `auditClientExecutedTools` below) — the
+   * SAME composed policy every other tool's execution already flows through
+   * — rather than appending to a separately-wired log here. A host's
+   * `policy` must itself compose an `auditPolicy` (both `@flowlet/next` and
+   * the demo hosts already do) for this trail to appear; passing `audit`
+   * here no longer does anything on its own.
+   */
+  audit?: AuditLog;
+  /** UNUSED by the engine itself — see `audit` above. Kept for source
+   *  compatibility only. */
+  auditPrincipal?: (principal: FlowletPrincipal) => Principal;
+}
+
+/** Bound on the client-tool-audit dedupe FIFO (see `auditClientExecutedTools`
+ *  below). Sized so a long-lived instance can't realistically evict a live id
+ *  and double-count within one process lifetime (PR #40 review). */
+const MAX_AUDITED_CLIENT_CALLS = 4096;
+
+/** Structural view of the ai SDK tool-part shape scanned for client-executed
+ *  results — mirrors `consent.ts`'s `ApprovalPart`, keyed by `output-available`
+ *  instead of `approval-*`. `approval` mirrors the SDK's own
+ *  `output-available` part shape (ai@6.0.28's `UIToolInvocation`): present
+ *  ONLY when the call actually went through the native approval round-trip,
+ *  with `approved: true` (finding 3 — a call the SDK auto-allowed with no
+ *  approval request carries no `approval` field at all). */
+interface ClientResultPart {
+  type: string;
+  toolCallId?: string;
+  state?: string;
+  input?: unknown;
+  approval?: { id: string; approved?: boolean; reason?: string };
+}
+
+/** Merge `sources` into a name -> descriptor map WITHOUT policy-wrapping —
+ *  mirrors `buildToolset`'s own precedence-and-first-wins resolution, kept
+ *  separate so the audit scan never depends on (or is skipped by) a tool
+ *  failing to wrap. */
+function resolveSourceDescriptors(sources: ToolSourceInput[]): Map<string, ToolDescriptor> {
+  const map = new Map<string, ToolDescriptor>();
+  for (const { source, tools, descriptors } of sources) {
+    for (const [name, t] of Object.entries(tools)) {
+      if (map.has(name)) continue;
+      map.set(name, descriptors?.[name] ?? buildDescriptor(name, t, source));
+    }
+  }
+  return map;
+}
+
+/**
+ * Scan `messages` for output-available CLIENT-executed tool parts not yet
+ * observed and route each one through `policy.onExecuted` (ENG-193 review
+ * follow-up; PR #40 review — item G). `wrapClientTool.needsApproval` is the
+ * only server-side chokepoint for these tools — there is no server `execute`
+ * for the SDK to call `onExecuted` from — so without this scan a client-tool
+ * success never reaches the policy stack's `onExecuted` at all: `auditPolicy`
+ * never appends its `tool_execution` event for these, AND `volumeBreaker`
+ * never counts them toward its threshold.
+ *
+ * Routing through `policy.onExecuted` (rather than appending an audit event
+ * directly, the old shape) means this ONE call now drives both effects
+ * uniformly — no separate, parallel bookkeeping to keep in sync. `seen` is
+ * the ONLY dedupe gate: `auditPolicy.onExecuted` itself appends
+ * `tool_execution` unconditionally on every call (no toolCallId dedupe of its
+ * own — only its ESCALATION append is deduped, see audit-policy.ts), so
+ * calling this scan again over the SAME settled history must never re-invoke
+ * `onExecuted` for a toolCallId it already processed, or every re-scan would
+ * double-append.
+ *
+ * `seen` both checks and marks — see `alreadyAuditedClientCall`. A failure is
+ * swallowed, never thrown into the run — this is a trail/counter, not a gate.
+ */
+async function auditClientExecutedTools(args: {
+  messages: FlowletUIMessage[];
+  descriptors: Map<string, ToolDescriptor>;
+  policy: ApprovalPolicy;
+  principal: FlowletPrincipal;
+  threadId?: string;
+  seen: (toolCallId: string) => boolean;
+}): Promise<void> {
+  const { messages, descriptors, policy, principal, threadId, seen } = args;
+  for (const message of messages) {
+    for (const rawPart of message.parts) {
+      const part = rawPart as ClientResultPart;
+      if (!part.type.startsWith("tool-") || part.state !== "output-available" || !part.toolCallId) continue;
+      const toolName = part.type.slice("tool-".length);
+      const descriptor = descriptors.get(toolName);
+      if (!descriptor || descriptor.executor !== "client") continue;
+      if (seen(part.toolCallId)) continue;
+      // Finding 3: derive the decision from the part itself rather than
+      // hardcoding "allow" — a human-APPROVED client call (the part carries
+      // `approval.approved === true` because it went through the SDK's
+      // native approval round-trip) must report "approve", or it never counts
+      // as a clean human approval for `cautionBreaker`'s `onExecuted` lift
+      // (breakers.ts only increments `cleanApprovals` on `decision ===
+      // "approve"`). A call the SDK auto-allowed (no `approval` field at all)
+      // correctly stays "allow".
+      const decision: ApprovalDecision = part.approval?.approved === true ? "approve" : "allow";
+      try {
+        await policy.onExecuted?.(
+          {
+            toolName,
+            input: part.input,
+            descriptor,
+            principal,
+            threadId,
+            toolCallId: part.toolCallId,
+          },
+          decision,
+        );
+      } catch (err) {
+        console.error(`[flowlet] failed to audit client-executed tool "${toolName}":`, err);
+      }
+    }
+  }
 }
 
 /**
@@ -295,6 +452,29 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   // transient failure never permanently disables that user's tools.
   type Ingested = { toolset: ToolSet; descriptors: Record<string, ToolDescriptor> };
   const composioCache = new Map<string, Promise<Ingested>>();
+
+  // Client-tool audit dedupe (`FlowletAgentConfig.audit`): bounded FIFO of
+  // toolCallIds already audited, PER ENGINE INSTANCE — shared across every
+  // run() the same agent makes (not reset per turn), so a toolCallId seen on
+  // an earlier turn's history is never re-audited on a later one.
+  const auditedClientCalls = new Set<string>();
+  function alreadyAuditedClientCall(toolCallId: string): boolean {
+    if (auditedClientCalls.has(toolCallId)) return true;
+    auditedClientCalls.add(toolCallId);
+    if (auditedClientCalls.size > MAX_AUDITED_CLIENT_CALLS) {
+      const oldest = auditedClientCalls.values().next().value;
+      if (oldest !== undefined) auditedClientCalls.delete(oldest);
+    }
+    return false;
+  }
+
+  // Review follow-up (wrap-tool.ts item 3): PER ENGINE INSTANCE, same
+  // survives-across-turns reasoning as `auditedClientCalls` above —
+  // `needsApproval` (this turn) and `execute` (a LATER turn, after the
+  // toolset below is rebuilt from scratch) must share ONE tracker or
+  // `wrapTool`'s fail-closed escalation check would see every approved resume
+  // as an unrecorded pause and wrongly refuse to run it.
+  const pausedCalls = createPausedCallTracker();
 
   // MCP tools are HOST-level (declared by the host, shared across users), so
   // one ingestion serves every principal — unlike the per-user Composio cache.
@@ -364,12 +544,42 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
     });
   }
 
+  /** The latest user message's text, for the judge's PolicyContext.request
+   *  (ENG-193 §4.2). Absent when there is no user message yet (shouldn't
+   *  happen in practice — every turn starts from a user message — but a
+   *  missing request degrades to "no signal", never a crash). */
+  function latestUserRequest(messages: FlowletUIMessage[]): { text: string; messageId: string } | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i]!;
+      if (message.role !== "user") continue;
+      const text = message.parts
+        .filter((p): p is { type: "text"; text: string } => (p as { type: string }).type === "text")
+        .map((p) => p.text)
+        .join("\n")
+        .trim();
+      if (text.length > 0) return { text, messageId: message.id };
+    }
+    return undefined;
+  }
+
   function run(input: RunInput): ReadableStream<UIMessageChunk> {
     const ordinal = ++runCounter;
     const runId = `run-${ordinal}`;
-    const threadId = `thread-${ordinal}`;
+    const threadId = input.threadId ?? `thread-${ordinal}`;
+    // Hoisted so `onFinish` (a SIBLING of `execute` in the object below, not
+    // nested inside it) can read the principal `execute` resolves. Both
+    // callbacks close over this one binding; `execute` assigns it before any
+    // tool runs, and the stream can't finish before `execute` has started.
+    let settledPrincipal: FlowletPrincipal = { userId: "" };
 
     return createUIMessageStream<FlowletUIMessage>({
+      // Verified against ai@6.0.28's handleUIMessageStreamFinish: without this,
+      // `originalMessages` defaults to `[]` and onFinish's `messages` would be
+      // JUST the new assistant message, not the full thread. Passing the run's
+      // input messages here makes onFinish's `messages` the FULL updated list
+      // ([...originalMessages, state.message]) — what a Store-backed
+      // persistence hook (Task 4/5) actually needs to write.
+      originalMessages: input.messages,
       // Route execute failures (bad prompt, provider/Composio errors) into the
       // stream as an error part instead of an unhandled rejection — one crashed
       // run must never take the host process down with it.
@@ -377,6 +587,19 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         console.error(`[flowlet] run ${runId} failed:`, error);
         return error instanceof Error ? error.message : "The agent run failed.";
       },
+      // ENG-193 §6.2: persistence for the consent endpoint's "load the
+      // thread's messages" step. A throwing/rejecting hook is caught here,
+      // never surfaced to the model or the client stream. Only registered when
+      // the caller supplied `onSettled` — no behavior change when it's omitted.
+      onFinish: config.onSettled
+        ? ({ messages }) => {
+            Promise.resolve(
+              config.onSettled!({ messages, threadId, principal: settledPrincipal }),
+            ).catch((err) =>
+              console.error(`[flowlet] onSettled failed for run ${runId}:`, err),
+            );
+          }
+        : undefined,
       execute: async ({ writer }) => {
         // 1. Resolve the principal. A missing/empty userId fails Composio closed
         //    (no external tools) — the safe default.
@@ -387,6 +610,12 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           candidate.userId.length > 0
             ? candidate
             : { userId: "" };
+        settledPrincipal = principal;
+
+        // 1b. One judge-context instance for this ENTIRE run (ENG-193 §4.2) —
+        // provenance/counters accumulate across every tool call the run
+        // makes, across however many model->tool steps it takes.
+        const runPolicyContext = createRunPolicyContext(latestUserRequest(input.messages));
 
         // 2. The render + connect tools, bound to this run's stream writer.
         //    A FlowletRemix-scoped conversation tags every rendered view as a
@@ -472,21 +701,48 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           mcpDescriptors = ingested.descriptors;
         }
 
-        // 4. Sources in precedence order: caller > engine > composio > mcp.
+        // 4. Sources in precedence order: caller > control > engine >
+        //    composio > mcp. `control` (steering/authoring + the engine's own
+        //    render/connect tools) sits ABOVE `engine` (host-supplied server
+        //    tools) so a host tool can never shadow a control-plane name
+        //    (ENG-193 PR #40 review — item A: these two buckets must stay
+        //    SEPARATE — merging a host's tools into `control` is exactly the
+        //    mislabeling that let host tools ride the judge/breaker exemption).
         const sources: ToolSourceInput[] = [
           // Defensive: a non-TS caller may omit `tools` entirely.
           { source: "caller", tools: input.tools ?? {} },
           {
-            source: "engine",
+            source: "control",
             tools: {
-              ...config.tools,
+              ...config.controlTools,
               [RENDER_VIEW_TOOL_NAME]: renderViewTool,
               [REQUEST_CONNECT_TOOL_NAME]: requestConnectTool,
             },
           },
+          { source: "engine", tools: config.tools ?? {} },
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
           { source: "mcp", tools: mcpTools, descriptors: mcpDescriptors },
         ];
+
+        // 4b. ENG-193 review follow-up (queued gap) + PR #40 review (item G):
+        // client-executed tool calls the INCOMING history already carries
+        // resolved (output-available) never reach `onExecuted` any other way
+        // — there is no server `execute` for the SDK to call it from. Routed
+        // through `config.policy.onExecuted` (not gated on `config.audit`
+        // anymore, unlike the old audit-only shape): this is what lets
+        // `auditPolicy` append its `tool_execution` trail AND `volumeBreaker`
+        // count these calls toward its threshold, for every host regardless
+        // of whether it wires an audit log. `resolveSourceDescriptors` and the
+        // dedupe below make this cheap even when nothing in the composed
+        // policy consumes `onExecuted`.
+        await auditClientExecutedTools({
+          messages: input.messages,
+          descriptors: resolveSourceDescriptors(sources),
+          policy: config.policy,
+          principal,
+          threadId,
+          seen: alreadyAuditedClientCall,
+        });
 
         // 5. Merge + uniformly policy-wrap every tool.
         const registered: ToolDescriptor[] = [];
@@ -494,6 +750,10 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           sources,
           policy: config.policy,
           principal,
+          threadId,
+          writer,
+          runContext: runPolicyContext,
+          pausedCalls,
           // Surface dropped tools rather than discarding them silently.
           onCollision: (name, kept, dropped) =>
             console.warn(

@@ -38,7 +38,9 @@ export type StepStatus =
   | "failed"
   | "skipped"
   | "simulated"
-  | "waiting_approval";
+  | "waiting_approval"
+  | "parked"; // ENG-193 §4.6: an ungranted/critical gated tool inside a
+              // for_each or agent step — the run continues, this one waits.
 
 export type TriggerKind = "schedule" | "host_event" | "composio";
 
@@ -112,6 +114,11 @@ export interface StepRecord {
   outputBytes?: number;
   error?: string;
   attempts?: number;
+  /** Human-readable annotation for a non-obvious "skipped" (review
+   *  follow-up) — e.g. a sibling skipped because it depended on a step
+   *  parked earlier in the SAME for_each iteration. Additive/optional; a
+   *  plain guard-false skip leaves it unset. */
+  note?: string;
   /** Deterministic: `<run id>/<step id>/<attempt>`. */
   idempotencyKey: string;
 }
@@ -137,6 +144,77 @@ export interface AutomationRun extends CoreAutomationRun {
   steps: StepRecord[];
   pendingApproval?: PendingApproval;
   isTest: boolean;
+  /** ENG-193 §4.6 — count of ParkedAction rows this run's execute() calls
+   *  have created (cumulative across resumes). Stamped by the runner in the
+   *  SAME call that persists the drafts — see plan deviation #7. */
+  parkedCount: number;
+}
+
+/** ENG-193 §4.6 — an action a for_each iteration or agent step couldn't run
+ *  unattended, parked instead of failing the run. Resolved standalone, later,
+ *  by `AutomationRunner.resolveParkedAction` (runner.ts) — never by re-running
+ *  the interpreter. */
+export type ParkedActionReason = "ungranted" | "critical";
+/** Parked actions expire after the SAME 7-day TTL as `PendingApproval`
+ *  (interpreter.ts `PENDING_APPROVAL_TTL_MS`) — week-old frozen intent is
+ *  never executable. Swept lazily by `listParkedActions` (every surface reads
+ *  through list), stamped `resolution: "expired"`. */
+export const PARKED_ACTION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export type ParkedActionResolution = "approved" | "declined" | "expired";
+
+export interface ParkedAction {
+  id: string;
+  tenantId: string;
+  subject: string;
+  automationId: string;
+  runId: string;
+  /** The step id, or "agent" for the top-level agentic-mode block. */
+  stepId: string;
+  tool: string;
+  /** Resolved (evaluated) input at park time — FROZEN, never re-resolved. */
+  input: unknown;
+  /** True when `input` was cut at MAX_STEP_OUTPUT_BYTES (mirrors StepRecord). */
+  inputTruncated?: boolean;
+  inputBytes?: number;
+  /** The step's own `if`, when it had one — reserved for the resolve-time
+   *  guard re-check (ENG-193 §4.6/§8.7, "deviation #2" v1 semantics). */
+  guardExpr?: string;
+  /** Loop bindings in scope when this action parked (as-name -> item, plus
+   *  `index`, plus any enclosing loop's own bindings) — the ONLY per-run
+   *  context a guard re-check can use without reconstructing full step
+   *  history (deviation #2). Absent for a non-looped agent-step park. */
+  guardBindings?: Record<string, unknown>;
+  reason: ParkedActionReason;
+  tier: "act" | "critical";
+  /** Stamped at park time; resolve-time drift forces a re-ask (spec §8.8). */
+  descriptorHash: string;
+  requestedAt: string;
+  resolvedAt?: string;
+  resolution?: ParkedActionResolution;
+  /** True when an existing guard was NOT re-checked at resolve time because
+   *  it referenced other steps' outputs (deviation #2) — the WaitingList/
+   *  ceremony copy surfaces this ("reviewed Xh after the run"). */
+  guardStale?: boolean;
+}
+
+export interface CreateParkedActionInput {
+  automationId: string;
+  runId: string;
+  stepId: string;
+  tool: string;
+  input: unknown;
+  guardExpr?: string;
+  guardBindings?: Record<string, unknown>;
+  reason: ParkedActionReason;
+  tier: "act" | "critical";
+  descriptorHash: string;
+  requestedAt: string;
+}
+
+export interface ListParkedActionsFilter {
+  automationId?: string;
+  runId?: string;
+  unresolvedOnly?: boolean;
 }
 
 /** Deterministic run identity: redelivered events become duplicate-key no-ops. */
@@ -182,6 +260,8 @@ export interface FinalizeRunInput {
   outcome?: RunOutcome;
   steps?: StepRecord[];
   error?: string;
+  /** ENG-193 §4.6 — additive patch to the run's parkedCount (plan deviation #7). */
+  parkedCount?: number;
 }
 
 /**
@@ -223,12 +303,22 @@ export interface AutomationEngineStore extends CoreAutomationStore {
   updateRun(
     scope: Principal,
     id: string,
-    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error">>,
+    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error" | "parkedCount">>,
   ): Promise<AutomationRun>;
   finalizeRun(scope: Principal, id: string, input: FinalizeRunInput): Promise<AutomationRun>;
   getRun(scope: Principal, id: string): Promise<AutomationRun | undefined>;
   /** waiting_approval runs are cancelled on pause/edit/delete (amendment 7). */
   cancelPendingRuns(scope: Principal, automationId: string): Promise<void>;
+
+  createParkedAction(scope: Principal, input: CreateParkedActionInput): Promise<ParkedAction>;
+  listParkedActions(scope: Principal, filter: ListParkedActionsFilter): Promise<ParkedAction[]>;
+  getParkedAction(scope: Principal, id: string): Promise<ParkedAction | undefined>;
+  resolveParkedAction(
+    scope: Principal,
+    id: string,
+    resolution: ParkedActionResolution,
+    resolvedAt: string,
+  ): Promise<ParkedAction>;
 }
 
 function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: string | null } {
@@ -267,6 +357,12 @@ function capEnvelope(envelope: TriggerEnvelope): TriggerEnvelope {
   return { ...envelope, payload: truncateValue(envelope.payload, MAX_TRIGGER_PAYLOAD_BYTES) };
 }
 
+function capParkedInput(input: unknown): { input: unknown; truncated?: boolean; bytes?: number } {
+  const bytes = jsonBytes(input);
+  if (bytes <= MAX_STEP_OUTPUT_BYTES) return { input };
+  return { input: truncateValue(input, MAX_STEP_OUTPUT_BYTES), truncated: true, bytes };
+}
+
 /** Coarse status for an engine outcome (the frozen union stays exhaustive). */
 function coarseStatus(input: FinalizeRunInput): CoreAutomationRun["status"] {
   if (input.outcome === "skipped") return "succeeded";
@@ -284,7 +380,9 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
   private automations = new Map<string, AutomationRecord>();
   private versions = new Map<string, AutomationVersion>();
   private runs = new Map<string, AutomationRun>();
+  private parkedActions = new Map<string, ParkedAction>();
   private idCounter = 0;
+  private parkedIdCounter = 0;
   private readonly clock: () => string;
 
   constructor(opts: { now?: () => string } = {}) {
@@ -347,6 +445,7 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
       },
       steps: [],
       isTest: false,
+      parkedCount: 0,
     });
   }
 
@@ -489,6 +588,7 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
       steps: [],
       isTest: input.isTest,
       startedAt: this.clock(),
+      parkedCount: 0,
     };
     this.runs.set(id, run);
     return run;
@@ -497,7 +597,7 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
   async updateRun(
     scope: Principal,
     id: string,
-    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error">>,
+    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error" | "parkedCount">>,
   ): Promise<AutomationRun> {
     const run = this.mustGetRun(scope, id);
     const next: AutomationRun = {
@@ -523,6 +623,7 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
       steps,
       error: input.error,
       finishedAt: now,
+      parkedCount: input.parkedCount ?? run.parkedCount,
     };
     delete finalized.pendingApproval;
     this.runs.set(id, finalized);
@@ -573,6 +674,74 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
         this.runs.set(run.id, cancelled);
       }
     }
+  }
+
+  async createParkedAction(scope: Principal, input: CreateParkedActionInput): Promise<ParkedAction> {
+    const id = `parked-${++this.parkedIdCounter}`;
+    const { input: cappedInput, truncated, bytes } = capParkedInput(input.input);
+    const action: ParkedAction = {
+      id,
+      tenantId: scope.tenantId,
+      subject: scope.subject,
+      automationId: input.automationId,
+      runId: input.runId,
+      stepId: input.stepId,
+      tool: input.tool,
+      input: cappedInput,
+      ...(truncated ? { inputTruncated: true, inputBytes: bytes } : {}),
+      ...(input.guardExpr !== undefined ? { guardExpr: input.guardExpr } : {}),
+      ...(input.guardBindings !== undefined ? { guardBindings: input.guardBindings } : {}),
+      reason: input.reason,
+      tier: input.tier,
+      descriptorHash: input.descriptorHash,
+      requestedAt: input.requestedAt,
+    };
+    this.parkedActions.set(id, action);
+    return action;
+  }
+
+  async listParkedActions(scope: Principal, filter: ListParkedActionsFilter): Promise<ParkedAction[]> {
+    // Lazy expiry sweep (review follow-up): stale parked intent must never
+    // surface as approvable — 7-day TTL matching PendingApproval's.
+    const nowMs = Date.parse(this.clock());
+    for (const [id, action] of this.parkedActions) {
+      if (
+        action.resolution === undefined &&
+        Date.parse(action.requestedAt) + PARKED_ACTION_TTL_MS <= nowMs
+      ) {
+        this.parkedActions.set(id, { ...action, resolution: "expired", resolvedAt: this.clock() });
+      }
+    }
+    return [...this.parkedActions.values()].filter(
+      (a) =>
+        a.tenantId === scope.tenantId &&
+        a.subject === scope.subject &&
+        (filter.automationId === undefined || a.automationId === filter.automationId) &&
+        (filter.runId === undefined || a.runId === filter.runId) &&
+        (filter.unresolvedOnly !== true || a.resolution === undefined),
+    );
+  }
+
+  async getParkedAction(scope: Principal, id: string): Promise<ParkedAction | undefined> {
+    const action = this.parkedActions.get(id);
+    if (!action || action.tenantId !== scope.tenantId || action.subject !== scope.subject) return undefined;
+    return action;
+  }
+
+  async resolveParkedAction(
+    scope: Principal,
+    id: string,
+    resolution: ParkedActionResolution,
+    resolvedAt: string,
+  ): Promise<ParkedAction> {
+    const action = await this.getParkedAction(scope, id);
+    if (!action) throw new Error(`parked action "${id}" not found`);
+    if (action.resolution !== undefined) {
+      throw new Error(`parked action "${id}" is already resolved (${action.resolution})`);
+    }
+    const next: ParkedAction = { ...action, resolution, resolvedAt };
+    this.parkedActions.set(id, next);
+    return next;
   }
 
   private mustGet(scope: Principal, id: string): AutomationRecord {

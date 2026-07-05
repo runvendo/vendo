@@ -18,6 +18,7 @@
  */
 import type { ToolCallOutcome } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
+import { dangerTier } from "../policy/tier";
 import type { FlowletPrincipal } from "../principal";
 import type { ToolDescriptor } from "../descriptor";
 import {
@@ -25,7 +26,7 @@ import {
   resolveInput,
   type ExpressionScope,
 } from "./expressions";
-import { canonicalJson, fnv1a64, hasValidGrant } from "./grants";
+import { canonicalJson, fnv1a64, hashDescriptor, hasValidGrant } from "./grants";
 import type {
   AgentExecution,
   AutomationSpec,
@@ -109,13 +110,30 @@ export interface InterpretInput {
   resume?: { checkpoint: unknown; approved: boolean };
 }
 
+/** What the interpreter can observe and record about a park — no I/O, no
+ *  store access (this module stays pure; the runner persists, per its own
+ *  docstring's rule). One-to-one with store.ts's CreateParkedActionInput,
+ *  minus automationId/runId (the runner already has those from InterpretInput). */
+export interface ParkedActionDraft {
+  stepId: string;
+  tool: string;
+  input: Record<string, unknown>;
+  guardExpr?: string;
+  guardBindings?: Record<string, unknown>;
+  reason: "ungranted" | "critical";
+  tier: "act" | "critical";
+  descriptorHash: string;
+  requestedAt: string;
+}
+
 export type InterpretOutcome =
-  | { status: "succeeded"; steps: StepRecord[] }
-  | { status: "failed"; steps: StepRecord[]; error: string }
+  | { status: "succeeded"; steps: StepRecord[]; parkedActions: ParkedActionDraft[] }
+  | { status: "failed"; steps: StepRecord[]; error: string; parkedActions: ParkedActionDraft[] }
   | {
       status: "waiting_approval";
       steps: StepRecord[];
       pendingApproval: PendingApproval;
+      parkedActions: ParkedActionDraft[];
     };
 
 /** Internal control-flow signals. */
@@ -161,6 +179,53 @@ interface ExecContext {
   nowMs: () => number;
   now: () => string;
   grants: AutomationGrant[];
+  /** ENG-193 §4.6 — accumulates across the WHOLE run, including every
+   *  for_each iteration (shared by reference into iterationCtx, unlike
+   *  `records`, which is deliberately per-iteration). */
+  parkedActions: ParkedActionDraft[];
+  /** Review follow-up: step ids parked so far in the CURRENT for_each
+   *  iteration. A later step in that SAME iteration whose unresolved input
+   *  mapping or guard references one of these ids is soft-skipped instead of
+   *  running with an undefined value (the parked step never produced an
+   *  output). Fresh per iteration (see `executeForEach`) — shared by
+   *  reference with nested branches WITHIN that iteration (branch recursion
+   *  passes the same `ExecContext`, unlike for_each, which spreads a new
+   *  one). Always empty outside a loop: parking itself never happens there
+   *  (an ungranted call outside a loop raises `PauseSignal`, not a park). */
+  parkedStepIdsThisIteration: Set<string>;
+}
+
+/** Escape a string for literal use inside a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Does `step`'s (still-unresolved) guard or input mapping reference one of
+ * `parkedIds` as a `steps.<id>` (or `steps["<id>"]`/`steps['<id>']`)
+ * expression? Reuses the id-agnostic `/\bsteps\s*[.[]/` shape `runner.ts`
+ * already scans guardExprs with, made id-SPECIFIC here: any reference at
+ * all is too broad (it would also flag a sibling reading a step that
+ * completed fine). Input mappings are JSON-serialized wholesale rather than
+ * walked field-by-field — the `{{ ... }}` templates survive JSON.stringify
+ * as literal substrings, and a false positive here only costs an extra
+ * (harmless) skip, never a wrong execute.
+ */
+function referencesParkedStep(step: AutomationStep, parkedIds: ReadonlySet<string>): string | undefined {
+  if (parkedIds.size === 0) return undefined;
+  const texts: string[] = [];
+  if (step.if !== undefined) texts.push(step.if);
+  if (step.type === "tool" || step.type === "agent") {
+    if (step.input !== undefined) texts.push(JSON.stringify(step.input));
+  } else if (step.type === "for_each") {
+    texts.push(step.items);
+  }
+  if (texts.length === 0) return undefined;
+  for (const id of parkedIds) {
+    const re = new RegExp(`\\bsteps\\s*[.[]\\s*['"\`]?${escapeRegExp(id)}\\b`);
+    if (texts.some((text) => re.test(text))) return id;
+  }
+  return undefined;
 }
 
 function specHasAgent(spec: AutomationSpec): boolean {
@@ -274,19 +339,43 @@ async function executeToolStep(ctx: ExecContext, step: ToolStep): Promise<void> 
     if (decision === "approve") {
       const resumeApproved =
         ctx.resumeTarget?.stepId === step.id && ctx.resumeTarget.approved;
-      const granted = hasValidGrant(ctx.grants, {
-        tool: step.tool,
-        descriptor: tool.descriptor,
-        spec: ctx.input.spec,
-        step,
-      });
+      // Critical is unsuppressible by type (ENG-193 §4.1): a grant for a
+      // dangerous tool — however it got into the store — never runs unattended.
+      const granted =
+        dangerTier(tool.descriptor) !== "critical" &&
+        hasValidGrant(ctx.grants, {
+          tool: step.tool,
+          descriptor: tool.descriptor,
+          spec: ctx.input.spec,
+          step,
+        });
       if (!granted && !resumeApproved) {
         if (ctx.insideLoop) {
-          throw new StepFailure(
-            step.id,
-            `approval-gated tool "${step.tool}" inside for_each requires a grant ` +
-              "(per-iteration pauses are not supported)",
-          );
+          // ENG-193 §4.6: park the action, not the run — record it and treat
+          // this step as a soft-skip (deviation #6: sibling steps in the same
+          // iteration still run; a later step reading this one's output sees
+          // undefined, the spec author's responsibility to guard against).
+          const critical = dangerTier(tool.descriptor) === "critical";
+          ctx.parkedActions.push({
+            stepId: step.id,
+            tool: step.tool,
+            input: resolved,
+            ...(step.if !== undefined ? { guardExpr: step.if } : {}),
+            ...(Object.keys(ctx.bindings).length > 0 ? { guardBindings: { ...ctx.bindings } } : {}),
+            reason: critical ? "critical" : "ungranted",
+            tier: critical ? "critical" : "act",
+            descriptorHash: hashDescriptor(tool.descriptor),
+            requestedAt: ctx.now(),
+          });
+          ctx.records.push({
+            id: step.id,
+            status: "parked",
+            startedAt,
+            finishedAt: ctx.now(),
+            idempotencyKey: `${ctx.input.runId}/${step.id}/0`,
+          });
+          ctx.parkedStepIdsThisIteration.add(step.id);
+          return;
         }
         throw new PauseSignal(step.id, step.tool, resolved);
       }
@@ -386,18 +475,51 @@ function gateAgentTool(
         };
       }
       if (decision === "approve") {
-        const granted = hasValidGrant(ctx.grants, {
-          tool: name,
-          descriptor: tool.descriptor,
-          spec: ctx.input.spec,
-          step: grantStep,
-        });
+        const critical = dangerTier(tool.descriptor) === "critical";
+        // Critical is unsuppressible by type (ENG-193 §4.1): a grant for a
+        // dangerous tool — however it got into the store — never runs unattended.
+        const granted =
+          !critical &&
+          hasValidGrant(ctx.grants, {
+            tool: name,
+            descriptor: tool.descriptor,
+            spec: ctx.input.spec,
+            step: grantStep,
+          });
         if (!granted) {
+          // ENG-193 §4.6(b): park the action — the run's summary can say
+          // what's waiting — and tell the model plainly to continue without
+          // it (never a dead error it might retry into a loop).
+          // Dedup within the run (review follow-up): a model that retries the
+          // SAME refused call must not stack duplicate parked rows — one row
+          // per distinct (tool, input) pair.
+          const inputKey = canonicalJson(input);
+          const alreadyParked = ctx.parkedActions.some(
+            (p) => p.tool === name && canonicalJson(p.input) === inputKey,
+          );
+          if (!alreadyParked) {
+            ctx.parkedActions.push({
+              stepId: grantStep?.id ?? "agent",
+              tool: name,
+              input: input as Record<string, unknown>,
+              ...(grantStep && grantStep.type !== "branch" && grantStep.type !== "for_each" && grantStep.if !== undefined
+                ? { guardExpr: grantStep.if }
+                : {}),
+              ...(Object.keys(ctx.bindings).length > 0 ? { guardBindings: { ...ctx.bindings } } : {}),
+              reason: critical ? "critical" : "ungranted",
+              tier: critical ? "critical" : "act",
+              descriptorHash: hashDescriptor(tool.descriptor),
+              requestedAt: ctx.now(),
+            });
+          }
           return {
             ok: false,
             error: {
               code: "approval_required",
-              message: `tool "${name}" needs user approval and has no grant for unattended runs`,
+              message:
+                `tool "${name}" needs the user's approval and has no grant for unattended runs — ` +
+                "approval requested from the user; the action is parked as WAITING (never report " +
+                "it as done or sent), continue without it.",
             },
           };
         }
@@ -480,6 +602,9 @@ async function executeForEach(ctx: ExecContext, step: ForEachStep): Promise<void
       records: [],
       bindings: { ...ctx.bindings, [step.as]: bounded[index], index },
       insideLoop: true,
+      // Fresh per iteration (review follow-up) — a park in iteration N must
+      // not skip an identically-named step in iteration N+1.
+      parkedStepIdsThisIteration: new Set(),
     };
     await executeSteps(iterationCtx, step.steps);
     const iterationOutputs: Record<string, unknown> = {};
@@ -514,6 +639,25 @@ async function executeSteps(ctx: ExecContext, steps: readonly AutomationStep[]):
     }
     if (ctx.resumeTarget?.stepId === step.id && !ctx.resumeTarget.approved) {
       throw new StepFailure(step.id, "approval declined by the user");
+    }
+
+    // Review follow-up: a sibling in the SAME for_each iteration whose
+    // (unresolved) guard or input mapping references an already-parked
+    // step's output is soft-skipped — evaluating or executing it would run
+    // on an undefined value the parked step never produced (e.g. "we paid
+    // $undefined"). Checked BEFORE the guard evaluation below so this never
+    // even attempts to evaluate an expression against a missing binding.
+    const dependsOnParked = referencesParkedStep(step, ctx.parkedStepIdsThisIteration);
+    if (dependsOnParked !== undefined) {
+      ctx.records.push({
+        id: step.id,
+        status: "skipped",
+        startedAt: ctx.now(),
+        finishedAt: ctx.now(),
+        note: `dependent on parked step "${dependsOnParked}"`,
+        idempotencyKey: `${ctx.input.runId}/${step.id}/0`,
+      });
+      continue;
     }
 
     // Per-step guard.
@@ -589,6 +733,8 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
     nowMs,
     now,
     grants: input.grants ?? [],
+    parkedActions: [],
+    parkedStepIdsThisIteration: new Set(),
   };
 
   try {
@@ -597,7 +743,7 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
     } else {
       await executeSteps(ctx, input.spec.execution.steps);
     }
-    return { status: "succeeded", steps: ctx.records };
+    return { status: "succeeded", steps: ctx.records, parkedActions: ctx.parkedActions };
   } catch (err) {
     if (err instanceof PauseSignal) {
       const requestedAtMs = nowMs();
@@ -617,9 +763,10 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
             steps: ctx.records,
           } satisfies Checkpoint,
         },
+        parkedActions: ctx.parkedActions,
       };
     }
-    return { status: "failed", steps: ctx.records, error: errorMessage(err) };
+    return { status: "failed", steps: ctx.records, error: errorMessage(err), parkedActions: ctx.parkedActions };
   }
 }
 

@@ -6,9 +6,18 @@
  */
 import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
-import type { HostToolDefinition, RegisteredComponent } from "@flowlet/core";
+import type {
+  AuditLog,
+  CompiledRuleStore,
+  GrantStore,
+  HostToolDefinition,
+  RegisteredComponent,
+  ThreadStore,
+} from "@flowlet/core";
 import type {
   ApprovalPolicy,
+  BreakerState,
+  FadeTracker,
   FlowletPrincipal,
   InstructionContext,
   McpServerConfig,
@@ -76,6 +85,26 @@ export interface FlowletHandlerOptions {
    *  consulted before `.flowlet/remix-sources.json` (`undefined` falls
    *  through). Values are raw component source strings. */
   remixSources?: Record<string, string> | ((anchorId: string) => string | undefined);
+  /**
+   * Store seam members backing grants, audit, thread persistence, and
+   * breaker state (ENG-193 §6.1/§6.2/§4.7). Defaults: fresh in-memory
+   * instances (reset on process restart). Inject when the host persists
+   * these elsewhere.
+   */
+  store?: {
+    grants?: GrantStore;
+    audit?: AuditLog;
+    threads?: ThreadStore;
+    breakers?: BreakerState;
+    /** ENG-193 §4.4 — inject to share fade tracking with a host-owned instance. */
+    fadeTracker?: FadeTracker;
+    /** ENG-193 item 6 — inject to persist compiled always-ask rules elsewhere. */
+    rules?: CompiledRuleStore;
+  };
+  /** The judge model (ENG-193 §4.2). Default: undefined — the judge is
+   *  IDENTITY (fail-safe rollout; item-2 behavior, unchanged) until a host
+   *  opts in. */
+  judgeModel?: LanguageModel;
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
@@ -112,6 +141,18 @@ const optionsSchema = z
       .union([z.record(z.string(), z.string()), fn<(anchorId: string) => string | undefined>()])
       .optional(),
     maxSteps: z.number().int().positive().optional(),
+    store: z
+      .object({
+        grants: z.custom<GrantStore>((v) => typeof v === "object" && v !== null).optional(),
+        audit: z.custom<AuditLog>((v) => typeof v === "object" && v !== null).optional(),
+        threads: z.custom<ThreadStore>((v) => typeof v === "object" && v !== null).optional(),
+        breakers: z.custom<BreakerState>((v) => typeof v === "object" && v !== null).optional(),
+        fadeTracker: z.custom<FadeTracker>((v) => typeof v === "object" && v !== null).optional(),
+        rules: z.custom<CompiledRuleStore>((v) => typeof v === "object" && v !== null).optional(),
+      })
+      .strict()
+      .optional(),
+    judgeModel: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
   })
   .strict();
 

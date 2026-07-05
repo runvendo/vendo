@@ -75,8 +75,8 @@ describe("FlowletSlot", () => {
     // Drive the stub agent to render a node.
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "show me a card" } });
     fireEvent.click(screen.getByLabelText("Send"));
-    await waitFor(() => screen.getByText("Approve"));
-    fireEvent.click(screen.getByText("Approve"));
+    await waitFor(() => screen.getByText("Send it"));
+    fireEvent.click(screen.getByText("Send it"));
     await waitFor(() => screen.getByTestId("demo-card"));
 
     // Pin the latest view -> overlay closes, card shows the view.

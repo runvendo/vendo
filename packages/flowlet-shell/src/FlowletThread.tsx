@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FileUIPart } from "ai";
-import type { AnchorContextBlock, FlowletMetadata, UINode } from "@flowlet/core";
+import type { AnchorContextBlock, ConsentResponse, FlowletMetadata, UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
 import { REMIX_CHANGED_EVENT } from "./remix/FlowletRemix";
 import { stampHostComponents } from "./component-drift";
 import type { Feedback } from "./components/TurnActions";
-import { useShell } from "./context";
+import { useShell, type SendConsentResult } from "./context";
 import type { Flowlet } from "./seams/store";
 import type { Integration } from "./seams/integrations";
 import { Landing } from "./components/Landing";
@@ -21,6 +21,33 @@ import { useVoiceSession } from "./voice/use-voice-session";
 import { voiceSessionMessages } from "./voice/voice-messages";
 import { voiceSessionBrief } from "./voice/session-brief";
 import type { VoiceDriver, VoiceToolDef } from "./voice/voice-session";
+
+/**
+ * ENG-193 PR #40 review — item B: nothing requires the SDK's approval resume
+ * to wait on the consent POST — `fadeEligible` is purely client-side state
+ * applied whenever the POST later settles, so `approve()` fires the POST and
+ * resumes the SDK IMMEDIATELY, in parallel. This timeout still bounds how
+ * long we keep watching a slow/HUNG POST for a `fadeEligible` result before
+ * giving up on it — the same "best-effort, never blocking" posture this
+ * module's docstring already promises for a failed POST, just no longer
+ * gating the resume itself. */
+const CONSENT_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(undefined);
+      },
+    );
+  });
+}
 
 export interface FlowletThreadProps {
   greeting?: string;
@@ -61,9 +88,10 @@ export function FlowletThread({
   heroComposer = false, onPin, onFeedback, voice,
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
-  const { integrations, registry, scope, remixes, components } = useShell();
+  const { integrations, sendConsent, trust, registry, scope, remixes, components } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [fadeProposal, setFadeProposal] = useState<{ messageId: string; toolName: string; proposalId: string; count?: number } | null>(null);
   const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
   const voiceSession = useVoiceSession(voice);
 
@@ -171,9 +199,143 @@ export function FlowletThread({
       })
       .catch((err) => console.warn(`[flowlet] failed to apply remix for "${anchorId}"`, err));
   };
-  const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
-  const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
+
+  const findApproval = (approvalId: string) =>
+    chat.items.find((i): i is Extract<typeof chat.items[number], { kind: "approval" }> =>
+      i.kind === "approval" && i.approvalId === approvalId,
+    );
+
+  const findApprovalByCall = (toolCallId: string) =>
+    chat.items.find((i): i is Extract<typeof chat.items[number], { kind: "approval" }> =>
+      i.kind === "approval" && i.toolCallId === toolCallId,
+    );
+
+  // Consent-channel POSTs are best-effort (ENG-193 §4.5): a failed or absent
+  // POST must never block or break the SDK's native approval resume, so every
+  // send is swallowed here and the SDK response proceeds either way. toolName
+  // rides beside the response — the consent endpoints require the client's
+  // tool-name assertion to cross-check against the pending part.
+  // ENG-193 §4.4: `sendConsent` resolves `SendConsentResult | void` (the
+  // fade-eligibility passthrough) — `approve` below is the real consumer,
+  // stashing a returned `fadeEligible` against the approval's turn.
+  const postConsent = (response: ConsentResponse, toolName: string): Promise<SendConsentResult | void> =>
+    sendConsent ? sendConsent(response, { toolName }).catch(() => undefined) : Promise.resolve(undefined);
+
+  const approve = (approvalId: string) => {
+    const item = findApproval(approvalId);
+    // ENG-193 PR #40 review — item B: resume the SDK approval IMMEDIATELY —
+    // nothing orders it after the consent POST. The POST (and any
+    // `fadeEligible` it returns) proceeds independently in the background.
+    chat.addToolApprovalResponse({ id: approvalId, approved: true });
+    if (!item?.toolCallId) return;
+    const consentPost = withTimeout(
+      postConsent({ id: item.toolCallId, decision: "yes" }, item.toolName),
+      CONSENT_TIMEOUT_MS,
+    );
+    void consentPost.then((result) => {
+      if (result?.fadeEligible) {
+        setFadeProposal({
+          messageId: item.messageId,
+          toolName: item.toolName,
+          proposalId: result.fadeEligible.proposalId,
+          count: result.fadeEligible.count,
+        });
+      }
+    });
+  };
+  // Batch consent posts settle in parallel; this surfaces the FIRST
+  // fadeEligible among them via the SAME fade-proposal state the single-card
+  // `approve()` path above uses (review follow-up — previously the batch
+  // paths fired the POSTs and threw away every response, so a fade proposal
+  // earned by (say) the 3rd "yes" inside a batch never rendered). "First" is
+  // array order (the batch's own toolCallId order), not resolution order —
+  // `Promise.all` preserves that regardless of which POST settles first.
+  const applyFirstFadeEligible = (
+    settled: { result: SendConsentResult | void; item: ReturnType<typeof findApproval> }[],
+  ) => {
+    for (const { result, item } of settled) {
+      if (result?.fadeEligible && item) {
+        setFadeProposal({
+          messageId: item.messageId,
+          toolName: item.toolName,
+          proposalId: result.fadeEligible.proposalId,
+          count: result.fadeEligible.count,
+        });
+        return;
+      }
+    }
+  };
+  const resolveFade = (accept: boolean) => {
+    if (!fadeProposal) return;
+    const { proposalId } = fadeProposal;
+    setFadeProposal(null);
+    void trust?.resolveFadeProposal(proposalId, accept);
+  };
+  const decline = (approvalId: string) => {
+    // Declines reach the consent channel too (spec §4.4/§4.5 — the audit
+    // trail records EVERY decision, and fades need the "no" signal).
+    // Fire-and-forget: the SDK boolean never waits on the POST.
+    const item = findApproval(approvalId);
+    if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" }, item.toolName);
+    void chat.addToolApprovalResponse({ id: approvalId, approved: false });
+  };
+
+  // Batch semantics: the consent `subset` field lists the BATCH's toolCallIds
+  // for audit context, while the per-id SDK responses below carry the actual
+  // approve/decline split.
+  // ENG-193 PR #40 review — item B: batch approvals resume the SDK
+  // IMMEDIATELY too, same as the single `approve()` above — the consent
+  // POSTs fire in parallel, fire-and-forget (mirrors `declineBatch` below,
+  // which never waited on them either).
+  const approveBatch = (approvalIds: string[], toolCallIds: string[]) => {
+    approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
+    // Review follow-up: inspect the settled responses (instead of discarding
+    // them) so a fadeEligible earned inside the batch can still surface.
+    const posts = toolCallIds.map((id) => {
+      const item = findApprovalByCall(id);
+      return postConsent({ id, decision: "yes", subset: toolCallIds }, item?.toolName ?? "").then(
+        (result) => ({ result, item }),
+      );
+    });
+    void Promise.all(posts).then(applyFirstFadeEligible);
+  };
+  const approveSubset = (
+    approvalIds: string[], toolCallIds: string[], allApprovalIds: string[], allToolCallIds: string[],
+  ) => {
+    // Declined siblings = the batch's own ids minus the selected ones — keyed
+    // by approvalId so an item with no toolCallId still gets its SDK decline.
+    const declinedApprovalIds = allApprovalIds.filter((id) => !approvalIds.includes(id));
+    const declinedToolCallIds = declinedApprovalIds
+      .map((id) => findApproval(id)?.toolCallId)
+      .filter((id): id is string => !!id);
+    approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
+    declinedApprovalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: false }));
+    // Review follow-up: same as approveBatch — inspect the accepted subset's
+    // settled responses for a fadeEligible instead of discarding them. The
+    // declined siblings post "no" (never fade-eligible — consent.ts only
+    // offers on a "yes" signal), so only the accepted ids need collecting.
+    const posts = toolCallIds.map((id) => {
+      const item = findApprovalByCall(id);
+      return postConsent({ id, decision: "subset", subset: allToolCallIds }, item?.toolName ?? "").then(
+        (result) => ({ result, item }),
+      );
+    });
+    declinedToolCallIds.forEach((id) =>
+      void postConsent(
+        { id, decision: "no", subset: allToolCallIds },
+        findApprovalByCall(id)?.toolName ?? "",
+      ),
+    );
+    void Promise.all(posts).then(applyFirstFadeEligible);
+  };
+  const declineBatch = (approvalIds: string[]) => {
+    approvalIds.forEach((approvalId) => {
+      const item = findApproval(approvalId);
+      if (item?.toolCallId) void postConsent({ id: item.toolCallId, decision: "no" }, item.toolName);
+      void chat.addToolApprovalResponse({ id: approvalId, approved: false });
+    });
+  };
 
   const empty = chat.items.length === 0;
   // The connect-tools entry lives in the bar (ENG-205): a dock button beside
@@ -255,8 +417,14 @@ export function FlowletThread({
             status={chat.status}
             onApprove={approve}
             onDecline={decline}
+            onApproveBatch={approveBatch}
+            onApproveSubset={approveSubset}
+            onDeclineBatch={declineBatch}
             onRegenerate={regenerate}
             onFeedback={onFeedback}
+            fadeProposal={fadeProposal}
+            onAcceptFade={() => resolveFade(true)}
+            onDeclineFade={() => resolveFade(false)}
             onApplyRemix={applyRemix}
           />
         </ThreadErrorBoundary>

@@ -37,6 +37,7 @@ function makeTool(
   opts: {
     readOnly?: boolean;
     idempotent?: boolean;
+    destructive?: boolean;
     result?: unknown;
     failTimes?: number;
     inputSchema?: RegisteredTool["inputSchema"];
@@ -51,6 +52,7 @@ function makeTool(
       annotations: {
         readOnlyHint: opts.readOnly ?? false,
         idempotentHint: opts.idempotent ?? false,
+        destructiveHint: opts.destructive ?? false,
       },
       hasExecute: true,
       kind: "function",
@@ -315,6 +317,69 @@ describe("approvals, grants, pause/resume", () => {
     expect(staleOutcome.status).toBe("waiting_approval");
   });
 
+  // The act-tier control for the two invariant tests below is the
+  // "executes unattended with a valid scope-hashed grant" test above:
+  // identical setup minus destructiveHint → the step executes.
+  it("INVARIANT §8.1: a dangerous tool with a matching grant still pauses", async () => {
+    const spec = freezeSpec();
+    const freeze = makeTool("freeze_card", { destructive: true });
+    const step = (spec.execution as { steps: Array<{ id: string }> }).steps[1]!;
+    const grant: AutomationGrant = computeGrant({
+      tool: "freeze_card",
+      descriptor: freeze.descriptor,
+      spec,
+      step: step as never,
+      now: NOW,
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, {
+        fetch_rows: makeTool("fetch_rows"),
+        freeze_card: freeze,
+        send_msg: makeTool("send_msg"),
+      }),
+      policy: approveFor("freeze_card"),
+      grants: [grant],
+    });
+    expect(outcome.status).toBe("waiting_approval");
+    expect(freeze.calls).toHaveLength(0);
+    if (outcome.status !== "waiting_approval") throw new Error("unreachable");
+    expect(outcome.pendingApproval.stepId).toBe("freeze");
+  });
+
+  it("INVARIANT §8.1: a dangerous tool with a matching grant is rejected inside agent steps", async () => {
+    const freeze = makeTool("freeze_card", { destructive: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Handle it", tools: ["freeze_card"] }],
+    });
+    const step = (spec.execution as { steps: Array<{ id: string }> }).steps[0]!;
+    const grant: AutomationGrant = computeGrant({
+      tool: "freeze_card",
+      descriptor: freeze.descriptor,
+      spec,
+      step: step as never,
+      now: NOW,
+    });
+    let callOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { freeze_card: freeze }),
+      policy: approveFor("freeze_card"),
+      grants: [grant],
+      agentRunner: async (req) => {
+        callOutcome = await req.tools["freeze_card"]!.execute(
+          { cardId: "c1" },
+          { idempotencyKey: "k" },
+        );
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded"); // the agent handled the rejection
+    expect(freeze.calls).toHaveLength(0);
+    expect(callOutcome?.ok).toBe(false);
+    if (callOutcome?.ok !== false) throw new Error("unreachable");
+    expect(callOutcome.error.message).toMatch(/approval|grant/i);
+  });
+
   it("resume(approved) continues from the paused step without re-running earlier steps", async () => {
     const fetch = makeTool("fetch_rows");
     const freeze = makeTool("freeze_card");
@@ -368,6 +433,223 @@ describe("approvals, grants, pause/resume", () => {
     });
     expect(outcome.status).toBe("failed");
     expect(send.calls).toHaveLength(0);
+  });
+});
+
+describe("ENG-193 §4.6 — for_each parks instead of failing", () => {
+  it("§4.6: an ungranted gated tool inside for_each PARKS the iteration's step and the run still succeeds", async () => {
+    const notify = makeTool("notify_act");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [{ id: "notify", type: "tool", tool: "notify_act", input: { row: "{{ item }}" } }],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { notify_act: notify }),
+      policy: approveFor("notify_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(notify.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(2);
+    expect(outcome.parkedActions.map((p) => p.input)).toEqual([{ row: "a" }, { row: "b" }]);
+    for (const parked of outcome.parkedActions) {
+      expect(parked.stepId).toBe("notify");
+      expect(parked.tool).toBe("notify_act");
+      expect(parked.reason).toBe("ungranted");
+      expect(parked.tier).toBe("act");
+    }
+    const loop = outcome.steps.find((s) => s.id === "loop")!;
+    expect(loop.status).toBe("succeeded");
+    const output = loop.output as { iterations: unknown[] };
+    expect(output.iterations).toHaveLength(2);
+  });
+
+  it("§4.6/§8: a CRITICAL tool inside for_each ALWAYS parks, even with a matching grant", async () => {
+    const freeze = makeTool("freeze_card", { destructive: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 1,
+          steps: [{ id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "{{ item }}" } }],
+        },
+      ],
+    });
+    const nested = (
+      (spec.execution as { steps: Array<{ steps: Array<{ id: string }> }> }).steps[0]
+    ).steps[0]!;
+    const grant: AutomationGrant = computeGrant({
+      tool: "freeze_card",
+      descriptor: freeze.descriptor,
+      spec,
+      step: nested as never,
+      now: NOW,
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { freeze_card: freeze }),
+      policy: approveFor("freeze_card"),
+      grants: [grant],
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(freeze.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(1);
+    expect(outcome.parkedActions[0]!.reason).toBe("critical");
+    expect(outcome.parkedActions[0]!.tier).toBe("critical");
+  });
+
+  it("a parked step's sibling steps in the SAME iteration still run (deviation #6)", async () => {
+    const gated = makeTool("gated_act");
+    const after = makeTool("after_tool", { readOnly: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [
+            { id: "gate", type: "tool", tool: "gated_act", input: { row: "{{ item }}" } },
+            { id: "after", type: "tool", tool: "after_tool", input: { row: "{{ item }}" } },
+          ],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { gated_act: gated, after_tool: after }),
+      policy: approveFor("gated_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(after.calls).toHaveLength(2);
+    expect(outcome.parkedActions).toHaveLength(2);
+  });
+
+  it("a parked step's own StepRecord has status 'parked', not 'failed' (never aborts the run)", async () => {
+    // NOTE (deviation): per-iteration StepRecords (including `.status`) are
+    // NOT surfaced through the public interpret() API — executeForEach folds
+    // only `record.output` into `iterations[i].steps` (pre-existing, unchanged
+    // by this task). This asserts the equivalent black-box-observable
+    // distinction: unlike a real StepFailure inside for_each (which propagates
+    // and fails the WHOLE run — see "denied tools fail the step outright"),
+    // a parked step leaves the run "succeeded", the loop's own record
+    // "succeeded", and records exactly one parked draft.
+    const gated = makeTool("gated_act");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 1,
+          steps: [{ id: "gate", type: "tool", tool: "gated_act", input: { row: "{{ item }}" } }],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { gated_act: gated }),
+      policy: approveFor("gated_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(gated.calls).toHaveLength(0);
+    const loop = outcome.steps.find((s) => s.id === "loop")!;
+    expect(loop.status).toBe("succeeded");
+    expect(outcome.parkedActions).toHaveLength(1);
+  });
+
+  it("REVIEW FOLLOW-UP: a sibling step whose INPUT MAPPING references the parked step's output is soft-skipped, never run with undefined", async () => {
+    const gated = makeTool("gated_act");
+    const dependent = makeTool("dependent_tool");
+    const independent = makeTool("independent_tool", { readOnly: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [
+            { id: "gate", type: "tool", tool: "gated_act", input: { row: "{{ item }}" } },
+            // References the parked step's output — must never execute.
+            { id: "dependent", type: "tool", tool: "dependent_tool", input: { amount: "{{ steps.gate.output.amount }}" } },
+            // Does NOT reference "gate" — must run every iteration regardless.
+            { id: "independent", type: "tool", tool: "independent_tool", input: { row: "{{ item }}" } },
+          ],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { gated_act: gated, dependent_tool: dependent, independent_tool: independent }),
+      policy: approveFor("gated_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(gated.calls).toHaveLength(0); // parked, both iterations
+    expect(dependent.calls).toHaveLength(0); // dependent sibling: soft-skipped, never runs on undefined
+    expect(independent.calls).toHaveLength(2); // independent sibling: unaffected, runs both iterations
+    expect(outcome.parkedActions).toHaveLength(2);
+  });
+
+  it("REVIEW FOLLOW-UP: a park in one iteration never skips the SAME-named step in the NEXT iteration", async () => {
+    // The parked-ids tracking is per-iteration, not per-run: a step called
+    // "dependent" that happens to reference a DIFFERENT step must still run
+    // in every iteration where that other step didn't park.
+    const readable = makeTool("readable_act", { readOnly: true });
+    const dependent = makeTool("dependent_tool");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [
+            { id: "fetch", type: "tool", tool: "readable_act", input: { row: "{{ item }}" } },
+            { id: "dependent", type: "tool", tool: "dependent_tool", input: { amount: "{{ steps.fetch.output.amount }}" } },
+          ],
+        },
+      ],
+    });
+    // Nothing here parks at all — "fetch" is read-tier, never gated.
+    const outcome = await interpret({
+      ...baseInput(spec, { readable_act: readable, dependent_tool: dependent }),
+      policy: allowAll,
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(dependent.calls).toHaveLength(2); // runs every iteration — nothing ever parked
+    expect(outcome.parkedActions).toHaveLength(0);
+  });
+
+  it("direct (non-loop) steps are UNCHANGED: an ungranted gated tool still PauseSignal-checkpoints, never parks", async () => {
+    const fetch = makeTool("fetch_rows");
+    const freeze = makeTool("freeze_card");
+    const send = makeTool("send_msg");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        { id: "first", type: "tool", tool: "fetch_rows" },
+        { id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "c1" } },
+        { id: "notify", type: "tool", tool: "send_msg" },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { fetch_rows: fetch, freeze_card: freeze, send_msg: send }),
+      policy: approveFor("freeze_card"),
+    });
+    expect(outcome.status).toBe("waiting_approval");
+    expect(freeze.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toEqual([]);
   });
 });
 
@@ -528,6 +810,132 @@ describe("agent steps and agentic mode", () => {
     expect(outcome.status).toBe("succeeded");
     expect(outcome.steps).toHaveLength(1);
     expect(outcome.steps[0]!.id).toBe("agent");
+  });
+});
+
+describe("ENG-193 §4.6(b) — agent-step tool calls park too", () => {
+  it("§4.6(b): an agent step's ungranted tool call PARKS and returns an ok:false result the model can route around", async () => {
+    const sendEmail = makeTool("send_email");
+    const spec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Send it", tools: ["send_email"] }],
+    });
+    let callOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        callOutcome = await req.tools["send_email"]!.execute(
+          { to: "acme@example.com" },
+          { idempotencyKey: "k" },
+        );
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(sendEmail.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(1);
+    expect(outcome.parkedActions[0]!.stepId).toBe("act");
+    expect(outcome.parkedActions[0]!.tool).toBe("send_email");
+    expect(outcome.parkedActions[0]!.reason).toBe("ungranted");
+    expect(callOutcome?.ok).toBe(false);
+    if (callOutcome?.ok !== false) throw new Error("unreachable");
+    expect(callOutcome.error.code).toBe("approval_required");
+    expect(callOutcome.error.message).toMatch(/approval requested from the user.*continue without it/i);
+  });
+
+  it("a model retrying the SAME refused call parks ONCE — one row per distinct (tool, input) pair (review follow-up)", async () => {
+    const sendEmail = makeTool("send_email");
+    const spec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Send it", tools: ["send_email"] }],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        // Retry loop on the identical call, then one genuinely new call.
+        await req.tools["send_email"]!.execute({ to: "acme@example.com" }, { idempotencyKey: "k1" });
+        await req.tools["send_email"]!.execute({ to: "acme@example.com" }, { idempotencyKey: "k2" });
+        await req.tools["send_email"]!.execute({ to: "other@example.com" }, { idempotencyKey: "k3" });
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(sendEmail.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(2);
+    expect(outcome.parkedActions.map((p) => p.input)).toEqual([
+      { to: "acme@example.com" },
+      { to: "other@example.com" },
+    ]);
+  });
+
+  it("§4.6(b): a top-level agentic-mode tool call (stepId 'agent') also parks", async () => {
+    const sendEmail = makeTool("send_email");
+    const spec = specOf({ mode: "agent", goal: "Handle it", tools: ["send_email"], maxToolCalls: 5 });
+    let callOutcome: Awaited<ReturnType<RegisteredTool["execute"]>> | undefined;
+    const outcome = await interpret({
+      ...baseInput(spec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        callOutcome = await req.tools["send_email"]!.execute(
+          { to: "acme@example.com" },
+          { idempotencyKey: "k" },
+        );
+        return { done: true };
+      },
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(sendEmail.calls).toHaveLength(0);
+    expect(outcome.parkedActions).toHaveLength(1);
+    expect(outcome.parkedActions[0]!.stepId).toBe("agent");
+    expect(callOutcome?.ok).toBe(false);
+  });
+
+  it("every InterpretOutcome variant (succeeded/failed/waiting_approval) carries parkedActions", async () => {
+    // succeeded, with a park.
+    const sendEmail = makeTool("send_email");
+    const succeededSpec = specOf({
+      mode: "steps",
+      steps: [{ id: "act", type: "agent", goal: "Send it", tools: ["send_email"] }],
+    });
+    const succeeded = await interpret({
+      ...baseInput(succeededSpec, { send_email: sendEmail }),
+      policy: approveFor("send_email"),
+      agentRunner: async (req) => {
+        await req.tools["send_email"]!.execute({ to: "acme@example.com" }, { idempotencyKey: "k" });
+        return { done: true };
+      },
+    });
+    expect(succeeded.status).toBe("succeeded");
+    expect(Array.isArray(succeeded.parkedActions)).toBe(true);
+    expect(succeeded.parkedActions.length).toBeGreaterThan(0);
+
+    // failed.
+    const send = makeTool("send_msg");
+    const failedSpec = specOf({
+      mode: "steps",
+      steps: [{ id: "send", type: "tool", tool: "send_msg" }],
+    });
+    const failed = await interpret({
+      ...baseInput(failedSpec, { send_msg: send }),
+      policy: denyFor("send_msg"),
+    });
+    expect(failed.status).toBe("failed");
+    expect(Array.isArray(failed.parkedActions)).toBe(true);
+
+    // waiting_approval.
+    const freeze = makeTool("freeze_card");
+    const waitingSpec = specOf({
+      mode: "steps",
+      steps: [{ id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "c1" } }],
+    });
+    const waiting = await interpret({
+      ...baseInput(waitingSpec, { freeze_card: freeze }),
+      policy: approveFor("freeze_card"),
+    });
+    expect(waiting.status).toBe("waiting_approval");
+    expect(Array.isArray(waiting.parkedActions)).toBe(true);
   });
 });
 

@@ -128,9 +128,9 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    // The generic ApprovalCard (post-#20 redesign): request-tense title +
-    // the input rendered as labelled fields.
-    expect(screen.getByText("Create an automation")).toBeTruthy();
+    // The generic ApprovalCard (post-#20 redesign, question-form title —
+    // ENG-193 §3 Moment 3): the input rendered as labelled fields.
+    expect(screen.getByText("Create an automation?")).toBeTruthy();
     expect(screen.getByText("Nonsense")).toBeTruthy();
     expect(screen.getByText("true")).toBeTruthy();
   });

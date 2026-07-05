@@ -4,9 +4,11 @@ import { wrapClientTool } from "./wrap-client-tool";
 import { buildToolset } from "./toolset";
 import { hostToolset } from "./host-toolset";
 import type { HostToolDefinition } from "@flowlet/core";
-import type { ApprovalPolicy, ApprovalDecision } from "./policy";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy";
 import type { ToolDescriptor } from "./descriptor";
 import { FlowletError } from "./errors";
+import { createRunPolicyContext } from "./policy/run-context";
+import { setEscalationReason } from "./policy/escalation";
 
 const PRINCIPAL = { userId: "user-1" };
 
@@ -36,8 +38,11 @@ describe("wrapClientTool", () => {
       policy: fixedPolicy("approve"),
       principal: PRINCIPAL,
     });
-    const needsApproval = wrapped.needsApproval as (input: unknown) => Promise<boolean>;
-    await expect(needsApproval({})).resolves.toBe(true);
+    const needsApproval = wrapped.needsApproval as (
+      input: unknown,
+      options: { toolCallId: string },
+    ) => Promise<boolean>;
+    await expect(needsApproval({}, { toolCallId: "call-test" })).resolves.toBe(true);
   });
 
   it("maps policy 'allow' to needsApproval=false", async () => {
@@ -48,8 +53,11 @@ describe("wrapClientTool", () => {
       policy: fixedPolicy("allow"),
       principal: PRINCIPAL,
     });
-    const needsApproval = wrapped.needsApproval as (input: unknown) => Promise<boolean>;
-    await expect(needsApproval({})).resolves.toBe(false);
+    const needsApproval = wrapped.needsApproval as (
+      input: unknown,
+      options: { toolCallId: string },
+    ) => Promise<boolean>;
+    await expect(needsApproval({}, { toolCallId: "call-test" })).resolves.toBe(false);
   });
 
   it("fails closed on policy 'deny': needsApproval throws a policy error", async () => {
@@ -60,9 +68,12 @@ describe("wrapClientTool", () => {
       policy: fixedPolicy("deny"),
       principal: PRINCIPAL,
     });
-    const needsApproval = wrapped.needsApproval as (input: unknown) => Promise<boolean>;
-    await expect(needsApproval({})).rejects.toThrow(FlowletError);
-    await expect(needsApproval({})).rejects.toThrow(/denied/);
+    const needsApproval = wrapped.needsApproval as (
+      input: unknown,
+      options: { toolCallId: string },
+    ) => Promise<boolean>;
+    await expect(needsApproval({}, { toolCallId: "call-test" })).rejects.toThrow(FlowletError);
+    await expect(needsApproval({}, { toolCallId: "call-test" })).rejects.toThrow(/denied/);
   });
 
   it("never adds an execute (the browser owns execution)", () => {
@@ -90,6 +101,129 @@ describe("wrapClientTool", () => {
         principal: PRINCIPAL,
       }),
     ).toThrow(/execute/);
+  });
+
+  it("writes ONE data-consent part at needsApproval time for a non-read tool, decision 'approve'", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("approve"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-1", messages: [] } as never);
+    expect(writes).toEqual([
+      { type: "data-consent", id: "consent-call-1", data: { toolCallId: "call-1", tier: "act", unverified: false } },
+    ]);
+  });
+
+  it("writes the data-consent part even when the decision is 'allow' (receipts, Moment 2)", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("allow"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-2", messages: [] } as never);
+    expect(writes).toHaveLength(1);
+    expect((writes[0] as { data: { tier: string } }).data.tier).toBe("act");
+  });
+
+  it("writes NOTHING for a read-tier tool", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const readDescriptor: ToolDescriptor = {
+      ...clientDescriptor("get_x"),
+      annotations: { readOnlyHint: true },
+    };
+    const wrapped = wrapClientTool({
+      name: "get_x",
+      tool: bareTool,
+      descriptor: readDescriptor,
+      policy: fixedPolicy("allow"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-3", messages: [] } as never);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("works with no writer at all (no card client, no crash)", async () => {
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("approve"),
+      principal: PRINCIPAL,
+    });
+    await expect(wrapped.needsApproval!({}, { toolCallId: "call-4", messages: [] } as never)).resolves.toBe(true);
+  });
+
+  it("a throwing writer still resolves needsApproval normally (consent write must never break the tool call)", async () => {
+    const writer = {
+      write: () => {
+        throw new Error("stream torn down");
+      },
+    } as never;
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: fixedPolicy("approve"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await expect(
+      wrapped.needsApproval!({}, { toolCallId: "call-5", messages: [] } as never),
+    ).resolves.toBe(true);
+  });
+
+  it("threads request/provenance/counters from a RunPolicyContext into evaluate", async () => {
+    const seen: PolicyContext[] = [];
+    const spyPolicy: ApprovalPolicy = { evaluate: (ctx) => { seen.push(ctx); return "allow"; } };
+    const runContext = createRunPolicyContext({ text: "email jim", messageId: "m1" });
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: spyPolicy,
+      principal: PRINCIPAL,
+      runContext,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-6", messages: [] } as never);
+    expect(seen[0]!.request).toEqual({ text: "email jim", messageId: "m1" });
+    expect(seen[0]!.counters).toEqual({ toolCallsThisTurn: 1, perTool: { send_email: 1 } });
+    expect(seen[0]!.provenance).toEqual({ taintedSources: [] });
+  });
+
+  it("writes the escalation reason onto the data-consent part when the policy stamped one", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const reasonPolicy: ApprovalPolicy = {
+      evaluate(ctx) {
+        setEscalationReason(ctx, "an email I read asked for this");
+        return "approve";
+      },
+    };
+    const wrapped = wrapClientTool({
+      name: "send_email",
+      tool: bareTool,
+      descriptor: clientDescriptor("send_email"),
+      policy: reasonPolicy,
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-7", messages: [] } as never);
+    expect(writes).toEqual([
+      { type: "data-consent", id: "consent-call-7", data: { toolCallId: "call-7", tier: "act", unverified: false, reason: "an email I read asked for this" } },
+    ]);
   });
 });
 

@@ -1,80 +1,60 @@
 import { toolAction } from "./tool-labels";
+import { approvalRows } from "./field-rows";
 
 export interface ApprovalCardProps {
   toolName: string;
   input: unknown;
-  onApprove: () => void;
-  onDecline: () => void;
-  /** ENG-193 danger register. "critical" renders the amber always-confirm
-   *  treatment: consequence line + a button named after the action. */
+  /** ENG-193 §4.1 — from the sibling data-consent part. Defaults to "act". */
   tier?: "act" | "critical";
+  /** Yousef ruling: unknown-annotation tools land in act but are flagged. */
+  unverified?: boolean;
+  /** The judge/breaker's plain-language escalation reason (ENG-193 §4.2/§4.7),
+   *  from the sibling data-consent part. Absent for an ordinary approval. */
+  reason?: string;
   /** Voice sessions (ENG-185): a soft listening ring while a spoken yes is
    *  acceptable. Critical-tier cards never listen — voice only announces. */
   listening?: boolean;
   /** Settled state — the card becomes a receipt of how consent was given. */
   resolution?: "voice" | "tap" | "declined";
-  /** Consequence line for critical-tier cards ("This can't be undone."). */
+  /** Consequence line override for critical-tier cards. Default:
+   *  "This can't be undone." */
   consequence?: string;
+  onApprove: () => void;
+  onDecline: () => void;
 }
 
-const MAX_ROWS = 8;
 const MAX_VALUE_CHARS = 160;
 
-interface FieldRow {
-  label: string;
-  value: string;
-}
-
-/** "recipient_email" -> "Recipient email". */
-function fieldLabel(key: string): string {
-  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim().toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-function fieldValue(value: unknown): string {
-  const text =
-    typeof value === "string"
-      ? value
-      : typeof value === "number" || typeof value === "boolean"
-        ? String(value)
-        : JSON.stringify(value);
-  return text.length > MAX_VALUE_CHARS ? `${text.slice(0, MAX_VALUE_CHARS)}…` : text;
-}
-
-/** True for values that carry no information worth confirming. */
-function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined || value === "") return true;
-  if (Array.isArray(value) && value.length === 0) return true;
-  if (typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length === 0) return true;
-  return false;
-}
-
-/** Flatten the tool input into readable label/value rows for confirmation. */
-function approvalRows(input: unknown): { rows: FieldRow[]; more: number } {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return isEmpty(input) ? { rows: [], more: 0 } : { rows: [{ label: "Input", value: fieldValue(input) }], more: 0 };
-  }
-  const entries = Object.entries(input as Record<string, unknown>).filter(([, v]) => !isEmpty(v));
-  const rows = entries.slice(0, MAX_ROWS).map(([k, v]) => ({ label: fieldLabel(k), value: fieldValue(v) }));
-  return { rows, more: Math.max(0, entries.length - MAX_ROWS) };
-}
-
 /**
- * The consent moment: the agent wants to run a gated action and is asking
- * first. Reads as a plain-language request — friendly action title + the
- * parameters as labelled fields — never a tool slug and never raw JSON.
+ * The consent moment (spec §3 Moments 3, 6 & 9): a plain yes/no card for an
+ * act-tier action, the ceremony variant for critical (money/irreversible)
+ * actions, or — new in ENG-193 item 3 — the ESCALATION register when the
+ * judge or a breaker stopped to check: a reason line and the SAFE action
+ * (decline) made primary instead of approve (spec Moment 9's button-priority
+ * flip). Critical's own ceremony register always wins over the escalation
+ * register — money/irreversible ceremony doesn't need a reason to already
+ * be maximally careful.
+ *
+ * Voice sessions (ENG-185) layer on top: `listening` adds a soft ring while
+ * a spoken yes is acceptable, and a `resolution` turns the card into a
+ * receipt of how consent was given (buttons collapse into an outcome line).
  */
 export function ApprovalCard({
-  toolName, input, onApprove, onDecline, tier = "act", listening = false, resolution, consequence,
+  toolName, input, tier = "act", unverified = false, reason, listening = false, resolution, consequence, onApprove, onDecline,
 }: ApprovalCardProps) {
   const action = toolAction(toolName);
-  const title = action.request;
-  const { rows, more } = approvalRows(input);
   const critical = tier === "critical";
+  const escalated = Boolean(reason) && !critical;
   const settled = resolution !== undefined;
+  const { rows, more } = approvalRows(input, critical ? null : MAX_VALUE_CHARS);
+  const confirmLabel = critical ? `Confirm ${action.request.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : "Send it";
+  const declineLabel = critical ? "Cancel" : "No";
+  const approveClass = critical ? "fl-btn-ceremony" : escalated ? "fl-btn" : "fl-btn-primary";
+  const declineClass = escalated ? "fl-btn fl-btn-primary" : "fl-btn";
   const classes = [
     "fl-approval",
-    critical && "fl-approval-critical",
+    critical && "fl-approval--ceremony",
+    escalated && "fl-approval--escalation",
     listening && !settled && "fl-approval-listening",
     settled && (resolution === "declined" ? "fl-approval-declined" : "fl-approval-approved"),
   ]
@@ -82,7 +62,11 @@ export function ApprovalCard({
     .join(" ");
 
   return (
-    <div className={classes} role="group" aria-label={`Approval request: ${title}`}>
+    <div
+      className={classes}
+      role="group"
+      aria-label={`Approval request: ${action.question}`}
+    >
       <div className="fl-approval-head">
         <span className="fl-approval-ic" aria-hidden="true">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -91,12 +75,18 @@ export function ApprovalCard({
           </svg>
         </span>
         <div className="fl-approval-heading">
-          <div className="fl-approval-eyebrow">{critical ? "Confirm on screen" : "Needs your approval"}</div>
-          <div className="fl-approval-title">{title}</div>
+          <div className="fl-approval-eyebrow">
+            {/* Tier-generic (live-verification polish 2026-07-04): critical
+                covers money AND irreversible/permission-changing tools — the
+                spec's Trust-screen phrase, not money-specific copy. */}
+            {critical ? "Always needs you" : escalated ? "Hold on — checking with you first" : "Needs your approval"}
+            {unverified && <span className="fl-approval-unverified">Unverified tool</span>}
+          </div>
+          <div className="fl-approval-title">{action.question}</div>
         </div>
       </div>
-      {critical && !settled && (
-        <div className="fl-approval-consequence">{consequence ?? "This needs your explicit confirmation."}</div>
+      {escalated && (
+        <div className="fl-approval-reason">Hold on — I stopped to check: {reason}</div>
       )}
       {rows.length > 0 && (
         <dl className="fl-approval-fields">
@@ -109,6 +99,9 @@ export function ApprovalCard({
           {more > 0 && <div className="fl-approval-more">+{more} more</div>}
         </dl>
       )}
+      {critical && !settled && (
+        <div className="fl-approval-consequence">{consequence ?? "This can't be undone."}</div>
+      )}
       {settled ? (
         <div className={`fl-approval-outcome ${resolution === "declined" ? "is-declined" : "is-approved"}`} role="status">
           {resolution === "declined"
@@ -117,14 +110,17 @@ export function ApprovalCard({
         </div>
       ) : (
         <div className="fl-approval-actions">
-          <button
-            type="button"
-            className={`fl-btn fl-btn-primary ${critical ? "fl-btn-critical" : ""}`}
-            onClick={onApprove}
-          >
-            {critical ? `Confirm — ${title.toLowerCase()}` : "Approve"}
-          </button>
-          <button type="button" className="fl-btn" onClick={onDecline}>Decline</button>
+          {escalated ? (
+            <>
+              <button type="button" className={declineClass} onClick={onDecline}>{declineLabel}</button>
+              <button type="button" className={`fl-btn ${approveClass}`} onClick={onApprove}>{confirmLabel}</button>
+            </>
+          ) : (
+            <>
+              <button type="button" className={`fl-btn ${approveClass}`} onClick={onApprove}>{confirmLabel}</button>
+              <button type="button" className={declineClass} onClick={onDecline}>{declineLabel}</button>
+            </>
+          )}
         </div>
       )}
     </div>
