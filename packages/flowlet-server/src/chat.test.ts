@@ -88,6 +88,10 @@ describe("handleChat", () => {
       chatEnabled: false,
     });
     expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error:
+        "chat is unavailable — set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY",
+    });
     expect(run).not.toHaveBeenCalled();
   });
 });

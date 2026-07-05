@@ -73,9 +73,10 @@ The client reads `GET /api/flowlet/capabilities` and gates its UI on the
 answer, so the integrations tray simply doesn't offer connections until the
 Composio key exists.
 
-**Choosing a model.** With no key set, precedence is Anthropic > OpenAI >
-Google, using per-provider defaults (`claude-sonnet-5`, `gpt-5.5`,
-`gemini-3.5-flash`). Override with `FLOWLET_MODEL`, either form:
+**Choosing a model.** Absent a `FLOWLET_MODEL` override, Flowlet picks a
+provider from whichever keys are set (precedence Anthropic > OpenAI > Google)
+and uses its default model (`claude-sonnet-5`, `gpt-5.5`, `gemini-3.5-flash`
+respectively). Override with `FLOWLET_MODEL`, either form:
 
 ```bash
 FLOWLET_MODEL=openai/gpt-5.5-mini   # provider/model: picks the provider outright
