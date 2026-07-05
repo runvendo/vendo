@@ -191,3 +191,66 @@ describe("host-event ingest (non-Scheduler path)", () => {
     expect(send.calls).toHaveLength(1);
   });
 });
+
+describe("tick error isolation", () => {
+  function bareScheduler(startIso: string) {
+    let nowIso = startIso;
+    const clock = { set: (iso: string) => (nowIso = iso), nowMs: () => Date.parse(nowIso) };
+    const errors: Array<{ automationId: string; error: unknown }> = [];
+    const scheduler = new InProcessScheduler({
+      nowMs: clock.nowMs,
+      onFireError: (automationId, error) => errors.push({ automationId, error }),
+    });
+    return { scheduler, clock, errors };
+  }
+
+  it("a failing handler neither rejects tick() nor skips other due schedules", async () => {
+    const { scheduler, clock, errors } = bareScheduler("2026-07-15T15:59:00.000Z");
+    const fired: string[] = [];
+    scheduler.onFire(async (firing) => {
+      if (firing.automationId === "auto-bad") throw new Error("db down");
+      fired.push(firing.automationId);
+    });
+    // bad first so a bail-out would skip good
+    await scheduler.schedule("auto-bad", { kind: "at", at: "2026-07-15T16:00:00.000Z" }, alice);
+    await scheduler.schedule("auto-good", { kind: "at", at: "2026-07-15T16:00:00.000Z" }, alice);
+
+    clock.set("2026-07-15T16:00:30.000Z");
+    await expect(scheduler.tick()).resolves.toBeUndefined();
+    expect(fired).toEqual(["auto-good"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.automationId).toBe("auto-bad");
+  });
+
+  it("a recurring schedule keeps firing on later ticks after one failure", async () => {
+    const { scheduler, clock } = bareScheduler("2026-07-15T16:00:30.000Z");
+    let attempts = 0;
+    scheduler.onFire(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("transient");
+    });
+    await scheduler.schedule("auto-cron", { kind: "cron", expression: "* * * * *" }, alice);
+
+    clock.set("2026-07-15T16:01:30.000Z");
+    await scheduler.tick(); // fails
+    clock.set("2026-07-15T16:02:30.000Z");
+    await scheduler.tick(); // must still fire
+    expect(attempts).toBe(2);
+  });
+
+  it("a failed one-shot is consumed, not retried (missed fires are skipped)", async () => {
+    const { scheduler, clock } = bareScheduler("2026-07-15T15:59:00.000Z");
+    let attempts = 0;
+    scheduler.onFire(async () => {
+      attempts += 1;
+      throw new Error("always fails");
+    });
+    await scheduler.schedule("auto-once", { kind: "at", at: "2026-07-15T16:00:00.000Z" }, alice);
+
+    clock.set("2026-07-15T16:00:30.000Z");
+    await scheduler.tick();
+    clock.set("2026-07-15T16:01:30.000Z");
+    await scheduler.tick();
+    expect(attempts).toBe(1);
+  });
+});
