@@ -54,6 +54,28 @@ describe("useTrustData", () => {
     expect(result.current.diary).toMatchObject({ reads: 1, approved: 1, automationRuns: 1, bigActions: 1 });
   });
 
+  it("a declined approval never counts as an approved action (its trail rows are not executions)", async () => {
+    // What a decline actually leaves behind: NO tool_execution (the tool
+    // never ran) — only trail rows like the judge escalation and the consent
+    // decision. None of them may inflate the diary. The read rows alongside
+    // must still count as reads.
+    const rows: TrustAuditRow[] = [
+      { at: "1", kind: "judge_escalation", toolName: "send_email" },
+      { at: "2", kind: "consent" },
+      { at: "3", kind: "approval" },
+      { at: "4", kind: "tool_execution", toolName: "get_clients", mutating: false },
+      { at: "5", kind: "tool_execution", toolName: "get_deadlines", mutating: false },
+    ];
+    const trust: TrustSeam = {
+      listGrants: async () => [], revokeGrant: async () => {}, queryAudit: async () => rows,
+      listCriticalTools: async () => [], resolveFadeProposal: async () => {},
+      listRules: async () => [], revokeRule: async () => {},
+    };
+    const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
+    await waitFor(() => expect(result.current.diary.total).toBe(2));
+    expect(result.current.diary).toMatchObject({ reads: 2, approved: 0, bigActions: 0 });
+  });
+
   it("a week of ONLY big actions is never counted as 0 (review nit)", async () => {
     const rows: TrustAuditRow[] = [
       { at: "1", kind: "tool_execution", toolName: "transfer_money", mutating: true, dangerous: true },
