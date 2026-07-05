@@ -83,7 +83,10 @@ export function DeadlineList({ className }: { className?: string }) {
     <FlowletRemix
       id="upcoming-deadlines"
       label="Upcoming deadlines"
-      context={{ clients: entries }}
+      // Keyed by the component's own fetch key: the sandbox's swr shim resolves
+      // useSWR("/api/deadlines") straight from this object, so the prepared
+      // baseline renders live data without adaptation.
+      context={{ "/api/deadlines": data }}
       className={className}
     >
     <Card className="overflow-hidden">

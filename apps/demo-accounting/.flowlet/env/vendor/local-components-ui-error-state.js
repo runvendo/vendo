@@ -1,7 +1,7 @@
-// apps/demo-accounting/src/components/ui/error-state.tsx
+// src/components/ui/error-state.tsx
 import { AlertCircle } from "lucide-react";
 
-// node_modules/.pnpm/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs
+// ../../node_modules/.pnpm/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs
 function r(e) {
   var t, f, n = "";
   if ("string" == typeof e || "number" == typeof e) n += e;
@@ -16,7 +16,7 @@ function clsx() {
   return n;
 }
 
-// node_modules/.pnpm/tailwind-merge@3.6.0/node_modules/tailwind-merge/dist/bundle-mjs.mjs
+// ../../node_modules/.pnpm/tailwind-merge@3.6.0/node_modules/tailwind-merge/dist/bundle-mjs.mjs
 var concatArrays = (array1, array2) => {
   const combinedArray = new Array(array1.length + array2.length);
   for (let i = 0; i < array1.length; i++) {
@@ -3270,12 +3270,12 @@ var getDefaultConfig = () => {
 };
 var twMerge = /* @__PURE__ */ createTailwindMerge(getDefaultConfig);
 
-// apps/demo-accounting/src/lib/cn.ts
+// src/lib/cn.ts
 function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-// apps/demo-accounting/src/components/ui/empty-state.tsx
+// src/components/ui/empty-state.tsx
 import { jsx, jsxs } from "react/jsx-runtime";
 function EmptyState({
   icon: Icon,
@@ -3302,7 +3302,7 @@ function EmptyState({
   ] });
 }
 
-// apps/demo-accounting/src/components/ui/error-state.tsx
+// src/components/ui/error-state.tsx
 import { jsx as jsx2 } from "react/jsx-runtime";
 function ErrorState({
   title = "Couldn't load this data",

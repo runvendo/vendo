@@ -1,7 +1,7 @@
-// packages/flowlet-sandbox-shims/dist/next-link.js
+// ../../packages/flowlet-sandbox-shims/dist/next-link.js
 import { createElement } from "react";
 
-// packages/flowlet-sandbox-shims/dist/dispatch.js
+// ../../packages/flowlet-sandbox-shims/dist/dispatch.js
 var NAVIGATE_ACTION = "flowlet.navigate";
 function dispatch(action, payload) {
   const fn = globalThis.__flowletDispatch;
@@ -15,7 +15,7 @@ function navigate(href) {
   dispatch(NAVIGATE_ACTION, { href });
 }
 
-// packages/flowlet-sandbox-shims/dist/next-link.js
+// ../../packages/flowlet-sandbox-shims/dist/next-link.js
 function hrefString(href) {
   return typeof href === "string" ? href : href.pathname ?? "";
 }

@@ -337,6 +337,9 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // Full render: load bundle, create or reuse root, inject theme.
   async function render(params) {
     currentParams = params;
+    // Anchor data feed for the swr shim (set BEFORE any generated module
+    // evaluates or renders — useSWR reads it synchronously).
+    window.__flowletAnchorData = params.anchorData || {};
     injectTheme(params.theme || {});
     cachedHost = await loadBundle(params.bundleSource);
     var gen = await loadGeneratedComponents(params.generatedComponents);
@@ -427,6 +430,12 @@ export const STAGE_RUNTIME_SRC = String.raw`
       // Apply state patch.
       if (p.state) {
         currentParams = Object.assign({}, currentParams, { state: p.state });
+      }
+
+      // Refresh the swr shim's anchor data (live context re-patch).
+      if (p.anchorData) {
+        currentParams = Object.assign({}, currentParams, { anchorData: p.anchorData });
+        window.__flowletAnchorData = p.anchorData;
       }
 
       // Apply node patch (find-and-replace by id, including root).
