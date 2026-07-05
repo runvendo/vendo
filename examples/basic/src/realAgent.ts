@@ -1,29 +1,29 @@
 /**
  * Offline real-agent wiring for the basic example.
  *
- * `createExampleAgent()` returns a genuine `createFlowletAgent` instance driven
+ * `createExampleAgent()` returns a genuine `createVendoAgent` instance driven
  * entirely by scripted mock models — no network or API keys required.
  *
  * - The main model emits a `render_view` tool call on turn 1 and closing text on
- *   the follow-up turn (identical pattern to `@flowlet/core`'s stub-agent).
+ *   the follow-up turn (identical pattern to `@vendoai/core`'s stub-agent).
  * - The judge model always returns "allow", so the policy clears every tool call
  *   automatically — no human-approval prompt is shown.
  * - An `echo` tool illustrates registering app-defined in-process tools.
  */
 
 import {
-  createFlowletAgent,
+  createVendoAgent,
   composePolicy,
   naturalLanguagePolicy,
   RENDER_VIEW_TOOL_NAME,
-} from "@flowlet/runtime";
+} from "@vendoai/runtime";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart, LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import { tool } from "ai";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
-// Shared helpers (mirrored from @flowlet/core stub-agent for the same pattern)
+// Shared helpers (mirrored from @vendoai/core stub-agent for the same pattern)
 // ---------------------------------------------------------------------------
 
 const ZERO_USAGE = {
@@ -54,7 +54,7 @@ function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolea
 // ---------------------------------------------------------------------------
 
 /**
- * Build a Flowlet agent wired entirely offline with mock models.
+ * Build a Vendo agent wired entirely offline with mock models.
  *
  * Turn 1: the main model emits text + a `render_view` tool call rendering a
  * minimal generated view (a single Text node). Because the policy returns
@@ -88,7 +88,7 @@ export function createExampleAgent() {
               toolCallId: "call-1",
               toolName: RENDER_VIEW_TOOL_NAME,
               input: JSON.stringify({
-                formatVersion: "flowlet-genui/v1",
+                formatVersion: "vendo-genui/v1",
                 root: "r",
                 nodes: [
                   {
@@ -135,5 +135,5 @@ export function createExampleAgent() {
     execute: async ({ message }) => message,
   });
 
-  return createFlowletAgent({ model, policy, tools: { echo: echoTool } });
+  return createVendoAgent({ model, policy, tools: { echo: echoTool } });
 }

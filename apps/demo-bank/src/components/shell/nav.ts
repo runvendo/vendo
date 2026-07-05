@@ -8,7 +8,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { label: "Cards", href: "/cards", icon: CreditCard },
   { label: "Payments", href: "/payments", icon: Send },
   { label: "Insights", href: "/insights", icon: PieChart },
-  { label: "Ask Maple", href: "/flowlet", icon: Sparkles },
+  { label: "Ask Maple", href: "/vendo", icon: Sparkles },
 ]
 export const SECONDARY_NAV: NavItem[] = [
   { label: "Activity", href: "/activity", icon: Bell },

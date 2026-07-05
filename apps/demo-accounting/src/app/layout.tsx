@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { Hanken_Grotesk, Spline_Sans_Mono } from "next/font/google"
 import { AppShell } from "@/components/shell/app-shell"
-import { FlowletLayer } from "@/components/flowlet/FlowletLayer"
+import { VendoLayer } from "@/components/vendo/VendoLayer"
 import "./globals.css"
 
 const hanken = Hanken_Grotesk({ subsets: ["latin"], variable: "--font-hanken" })
@@ -17,12 +17,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${hanken.variable} ${splineMono.variable}`}>
       <body className="min-h-screen antialiased">
-        {/* Flowlet's layer WRAPS the app: the Cmd/Ctrl+K overlay, automation
-            toasts, and the shared provider that FlowletRemix wrappers inside
+        {/* Vendo's layer WRAPS the app: the Cmd/Ctrl+K overlay, automation
+            toasts, and the shared provider that VendoRemix wrappers inside
             the page reach for scoping and pinned remixes. */}
-        <FlowletLayer>
+        <VendoLayer>
           <AppShell>{children}</AppShell>
-        </FlowletLayer>
+        </VendoLayer>
       </body>
     </html>
   )

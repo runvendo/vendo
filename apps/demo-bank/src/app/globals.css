@@ -20,7 +20,7 @@
   --font-sans: var(--font-inter);
 }
 
-/* The dock is Flowlet's visible surface; the overlay is Cmd/Ctrl+K-only, so its
+/* The dock is Vendo's visible surface; the overlay is Cmd/Ctrl+K-only, so its
    floating launcher button is hidden in the demo. */
 .fl-launcher {
   display: none !important;
@@ -58,7 +58,7 @@ body {
   }
 }
 
-/* Flowlet stage approval: the shell's approved ApprovalCard materializes
+/* Vendo stage approval: the shell's approved ApprovalCard materializes
    in-flow beneath the generated view (brand-tier pick). */
 .maple-approval-inflow .fl-approval { animation: maple-approval-in 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes maple-approval-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

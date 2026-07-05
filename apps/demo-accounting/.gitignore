@@ -40,5 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# flowlet sandbox assets (build artifacts, copied by scripts/copy-flowlet-sandbox.mjs)
-/public/flowlet/
+# vendo sandbox assets (build artifacts, copied by scripts/copy-vendo-sandbox.mjs)
+/public/vendo/

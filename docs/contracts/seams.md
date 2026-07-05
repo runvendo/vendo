@@ -1,10 +1,10 @@
 # Runtime seam contracts
 
-The portable runtime (`@flowlet/runtime`, architecture Decision 1) never imports a database, queue, or HTTP server — it depends on five injected seams. Interfaces live in `packages/flowlet-core/src/seams/`; embedded (in-memory/in-process) implementations of all five ship in `@flowlet/runtime`'s `embedded` module, and the runtime's dependency-guard test (`packages/flowlet-runtime/src/dependency-guard.test.ts`) plus demo-bank keep the embedded guarantee honest in CI.
+The portable runtime (`@vendoai/runtime`, architecture Decision 1) never imports a database, queue, or HTTP server — it depends on five injected seams. Interfaces live in `packages/vendo-core/src/seams/`; embedded (in-memory/in-process) implementations of all five ship in `@vendoai/runtime`'s `embedded` module, and the runtime's dependency-guard test (`packages/vendo-runtime/src/dependency-guard.test.ts`) plus demo-bank keep the embedded guarantee honest in CI.
 
 | Seam | Purpose | Embedded impl | Cloud impl |
 |---|---|---|---|
-| `Store` | threads, saved flowlets, automations, audit | host's choice (in-memory/SQLite in CI) | Postgres in apps/cloud |
+| `Store` | threads, saved vendos, automations, audit | host's choice (in-memory/SQLite in CI) | Postgres in apps/cloud |
 | `CredentialBroker` | how a tool call gets user identity | host session, in-process | vouch JWT + RFC 8693 token exchange |
 | `Executor` | where a tool call physically runs | in-process | client executor (browser) / server executor (worker) |
 | `Scheduler` | firing automations when the user is away | none or host cron | pg-boss worker |
@@ -14,7 +14,7 @@ Everything is scoped by `Principal` (`tenantId` + `subject` + vouch claims). Tim
 
 ## Store
 
-Aggregates one sub-store per concern: `threads` (persisted `FlowletUIMessage` streams), `flowlets` (saved UI tree + bound tool query + originating prompt), `automations` (records + run history), `audit` (append-only `AuditEvent` union: tool execution, approval, grant exchange, firing — written from day 1, ENG-194 is UI over it). The store owns identity and timestamps: `create`/`save` callers never supply `id`, `createdAt`, or `updatedAt`.
+Aggregates one sub-store per concern: `threads` (persisted `VendoUIMessage` streams), `vendos` (saved UI tree + bound tool query + originating prompt), `automations` (records + run history), `audit` (append-only `AuditEvent` union: tool execution, approval, grant exchange, firing — written from day 1, ENG-194 is UI over it). The store owns identity and timestamps: `create`/`save` callers never supply `id`, `createdAt`, or `updatedAt`.
 
 Deferred on purpose: the automation `spec` field is `unknown` until ENG-188 freezes the DSL; memory (ENG-189) has no member yet — adding one later is additive.
 

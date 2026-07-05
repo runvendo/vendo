@@ -1,8 +1,8 @@
 # Manifest contract
 
-The dev tool (`npx flowlet init`, ENG-197) emits three artifacts into `.flowlet/` in the host repo (architecture Decision 3). `flowlet publish` assembles and uploads them as one immutable manifest to the cloud registry; sessions bind to a published manifest at init. Embedded mode reads `.flowlet/` from disk; publish is a no-op.
+The dev tool (`npx vendo init`, ENG-197) emits three artifacts into `.vendo/` in the host repo (architecture Decision 3). `vendo publish` assembles and uploads them as one immutable manifest to the cloud registry; sessions bind to a published manifest at init. Embedded mode reads `.vendo/` from disk; publish is a no-op.
 
-Source of truth: zod schemas in `packages/flowlet-core/src/manifest/`. Language-neutral JSON Schema artifacts are generated into `packages/flowlet-core/schemas/` (`pnpm --filter @flowlet/core generate:schemas`; a test fails CI if they drift).
+Source of truth: zod schemas in `packages/vendo-core/src/manifest/`. Language-neutral JSON Schema artifacts are generated into `packages/vendo-core/schemas/` (`pnpm --filter @vendoai/core generate:schemas`; a test fails CI if they drift).
 
 Validation semantics (zod and AJV agree, parity-tested):
 
@@ -12,7 +12,7 @@ Validation semantics (zod and AJV agree, parity-tested):
 
 ## theme.json
 
-Extracted host design tokens, fully resolved primitives only (the sandbox has no host CSS vars or fonts). Identical in shape to `BrandTokens` v1 in `@flowlet/components`; a conformance test keeps them in sync.
+Extracted host design tokens, fully resolved primitives only (the sandbox has no host CSS vars or fonts). Identical in shape to `BrandTokens` v1 in `@vendoai/components`; a conformance test keeps them in sync.
 
 ```json
 {
@@ -78,4 +78,4 @@ Dot-namespaced names (`invoice.paid`). Delivered at runtime as signed webhooks f
 
 ## Published manifest and binding
 
-`FlowletManifest` = `{ schemaVersion, theme, tools, events, components }`. Registry rows are immutable — a re-publish is a new row, keyed by tenant + version + content hash (`ManifestRef`), with an active pointer per environment. Sessions carry a `ManifestRef`, never a mutable manifest. Enterprise approval/diff (ENG-194) is a review queue over these rows.
+`VendoManifest` = `{ schemaVersion, theme, tools, events, components }`. Registry rows are immutable — a re-publish is a new row, keyed by tenant + version + content hash (`ManifestRef`), with an active pointer per environment. Sessions carry a `ManifestRef`, never a mutable manifest. Enterprise approval/diff (ENG-194) is a review queue over these rows.

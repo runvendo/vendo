@@ -1,12 +1,12 @@
 {
-  "name": "@flowlet/example-shell",
+  "name": "@vendoai/example-shell",
   "private": true,
   "type": "module",
   "scripts": { "dev": "vite", "build": "vite build", "typecheck": "tsc --noEmit" },
   "dependencies": {
-    "@flowlet/core": "workspace:*",
-    "@flowlet/react": "workspace:*",
-    "@flowlet/shell": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/react": "workspace:*",
+    "@vendoai/shell": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "zod": "^3.24.0"

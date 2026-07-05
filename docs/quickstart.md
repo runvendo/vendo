@@ -1,19 +1,19 @@
-# Flowlet Quickstart
+# Vendo Quickstart
 
 Zero infra. Bring your own keys. One command.
 
-Flowlet embeds an AI assistant in your Next.js app that chats, calls your own
+Vendo embeds an AI assistant in your Next.js app that chats, calls your own
 API as the signed-in user, and renders generated UI in a sandboxed,
 brand-native surface — all served from your app's own server. There is no
-Flowlet cloud in this path: your model key talks straight to your chosen
+Vendo cloud in this path: your model key talks straight to your chosen
 provider (Anthropic, OpenAI, or Google), and everything else stays in your
 process.
 
-> **Status honesty:** the `@flowlet/*` packages are not published to npm yet
+> **Status honesty:** the `@vendoai/*` packages are not published to npm yet
 > (publishing lands with the registry work, ENG-198). Today you install them
 > from packed tarballs or the monorepo workspace. Everything below is the
 > exact flow we verify end-to-end on a fresh `create-next-app` — including the
-> tarball install — it just isn't `npm i @flowlet/next` from the public
+> tarball install — it just isn't `npm i @vendoai/next` from the public
 > registry yet.
 
 ## Install (Next.js App Router)
@@ -21,28 +21,28 @@ process.
 ```bash
 npx create-next-app@latest my-app     # or your existing app
 cd my-app
-npm install @flowlet/next             # (from tarball/workspace until ENG-198)
-npm install -D @flowlet/cli
-npx flowlet init .
+npm install @vendoai/next             # (from tarball/workspace until ENG-198)
+npm install -D @vendoai/cli
+npx vendo init .
 ```
 
-`flowlet init` is a codemod, not a scaffold. On a Next.js App Router app it:
+`vendo init` is a codemod, not a scaffold. On a Next.js App Router app it:
 
-- extracts your **theme, tools, and components** into `.flowlet/` (the
+- extracts your **theme, tools, and components** into `.vendo/` (the
   reviewable source of truth — edit these files);
-- writes `app/api/flowlet/[...path]/route.ts` containing
-  `createFlowletHandler()` — one catch-all serving `chat`, `action`,
+- writes `app/api/vendo/[...path]/route.ts` containing
+  `createVendoHandler()` — one catch-all serving `chat`, `action`,
   `integrations`, `capabilities`, `tick`, `webhooks/composio`, `threads` /
-  `threads/<id>`, and `flowlets` / `flowlets/<id>` / `flowlets/<id>/delete`;
-- writes `app/flowlet-root.tsx` (a small client wrapper) and wraps your root
+  `threads/<id>`, and `vendos` / `vendos/<id>` / `vendos/<id>/delete`;
+- writes `app/vendo-root.tsx` (a small client wrapper) and wraps your root
   layout's `{children}` with it — idempotently, respecting existing providers;
 - writes `instrumentation.ts` (or `src/instrumentation.ts`, next to a
   `src/app`) that boots the automation scheduler on server start;
 - drops `.env.example` documenting the capability-additive key ladder (see
   below) plus the storage and scheduler env vars (see
   [Persistence](#persistence));
-- copies the sandbox runtime assets into `public/flowlet/`;
-- adds `@flowlet/next` to your dependencies.
+- copies the sandbox runtime assets into `public/vendo/`;
+- adds `@vendoai/next` to your dependencies.
 
 It never breaks existing code: any step it can't perform with certainty (an
 unusual layout, an unparsable package.json) is skipped and printed as an exact
@@ -74,21 +74,21 @@ hides that surface — nothing errors.
 | `+ COMPOSIO_API_KEY` | Integrations: Gmail, Slack, Notion, … via OAuth connect cards |
 | `+ MCP servers declared` | Any remote MCP server's tools, policy-governed (config, not a key — see below) |
 
-The client reads `GET /api/flowlet/capabilities` and gates its UI on the
+The client reads `GET /api/vendo/capabilities` and gates its UI on the
 answer, so the integrations tray simply doesn't offer connections until the
 Composio key exists.
 
-**Choosing a model.** Absent a `FLOWLET_MODEL` override, Flowlet picks a
+**Choosing a model.** Absent a `VENDO_MODEL` override, Vendo picks a
 provider from whichever keys are set (precedence Anthropic > OpenAI > Google)
 and uses its default model (`claude-sonnet-5`, `gpt-5.5`, `gemini-3.5-flash`
-respectively). Override with `FLOWLET_MODEL`, either form:
+respectively). Override with `VENDO_MODEL`, either form:
 
 ```bash
-FLOWLET_MODEL=openai/gpt-5.5-mini   # provider/model: picks the provider outright
-FLOWLET_MODEL=claude-sonnet-4-6     # bare id: applied to whichever provider key is set
+VENDO_MODEL=openai/gpt-5.5-mini   # provider/model: picks the provider outright
+VENDO_MODEL=claude-sonnet-4-6     # bare id: applied to whichever provider key is set
 ```
 
-`FLOWLET_MODEL` alone names a model, not a credential: without a real
+`VENDO_MODEL` alone names a model, not a credential: without a real
 provider key (or a code-injected `model`), chat stays off. OpenAI and Google
 are optional peers (`@ai-sdk/openai`, `@ai-sdk/google`): resolving to one
 without its package installed fails fast with an actionable `npm i` hint, not
@@ -96,13 +96,13 @@ a silent fallback.
 
 ## MCP servers
 
-Point Flowlet at any remote MCP server and its tools become agent tools,
+Point Vendo at any remote MCP server and its tools become agent tools,
 governed by the same approval policy as everything else.
 
 Either declare them in code:
 
 ```ts
-export const { GET, POST } = createFlowletHandler({
+export const { GET, POST } = createVendoHandler({
   mcpServers: [
     {
       name: "weather",                    // tools appear as weather_<tool>
@@ -114,7 +114,7 @@ export const { GET, POST } = createFlowletHandler({
 });
 ```
 
-or in `.flowlet/mcp.json` (the code option wins entirely if both exist):
+or in `.vendo/mcp.json` (the code option wins entirely if both exist):
 
 ```json
 {
@@ -138,7 +138,7 @@ for approval.
 
 ## Your API as the agent's hands
 
-`.flowlet/tools.json` is your API surface as tool descriptors (extracted from
+`.vendo/tools.json` is your API surface as tool descriptors (extracted from
 your OpenAPI spec when you have one, or an LLM route-scan when you don't).
 Two properties matter:
 
@@ -152,7 +152,7 @@ Two properties matter:
 
 ## Customizing
 
-`createFlowletHandler()` is zero-config by default and takes validated
+`createVendoHandler()` is zero-config by default and takes validated
 options when you outgrow that: `model`, `instructions`/`instructionsExtra`,
 `policy`, server-side `tools`, host `components`, an `integrations` catalog,
 `connections` (bring your own store), `cacheKey`, `automations`, `storage`
@@ -160,7 +160,7 @@ options when you outgrow that: `model`, `instructions`/`instructionsExtra`,
 in-memory). Our own demo-bank app runs entirely on this handler, with its
 custom policy, prompt, and demo world injected through those options.
 
-Prompts are assembled from a shared core in `@flowlet/core` (`buildChatInstructions`
+Prompts are assembled from a shared core in `@vendoai/core` (`buildChatInstructions`
 / `buildVoiceInstructions`): the platform owns the behavioral rules (when to
 render vs. talk, register, consent, capability talk, closing guardrails) and
 your app supplies identity, brand, catalogs, and free-form `extras` on both
@@ -175,43 +175,43 @@ before they reach the model.
 
 ## Not using Next.js?
 
-Next.js is the first adapter, not a requirement. `@flowlet/next` is a thin
-wrapper around `@flowlet/server`, the framework-agnostic handler core: a
+Next.js is the first adapter, not a requirement. `@vendoai/next` is a thin
+wrapper around `@vendoai/server`, the framework-agnostic handler core: a
 plain `(Request) => Promise<Response>` function you can mount anywhere.
 
 ```bash
-npm install @flowlet/server   # (from tarball/workspace until ENG-198, same as @flowlet/next)
+npm install @vendoai/server   # (from tarball/workspace until ENG-198, same as @vendoai/next)
 ```
 
 ```js
 import { createServer } from "node:http";
-import { createFlowletFetchHandler, toNodeHandler } from "@flowlet/server";
+import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
 
-createServer(toNodeHandler(createFlowletFetchHandler())).listen(3000);
+createServer(toNodeHandler(createVendoFetchHandler())).listen(3000);
 ```
 
-`createFlowletFetchHandler(options)` takes the same options as
-`createFlowletHandler()` above. `toNodeHandler()` bridges the fetch handler
+`createVendoFetchHandler(options)` takes the same options as
+`createVendoHandler()` above. `toNodeHandler()` bridges the fetch handler
 onto `node:http` (streaming-safe, so SSE chat works); Express mounting is one
 line:
 
 ```js
-app.all("/api/flowlet/*", toNodeHandler(createFlowletFetchHandler()));
+app.all("/api/vendo/*", toNodeHandler(createVendoFetchHandler()));
 ```
 
 Fetch-native runtimes skip the bridge entirely: Hono mounts the handler
 directly.
 
 ```js
-const flowlet = createFlowletFetchHandler();
-app.all("/api/flowlet/*", (c) => flowlet(c.req.raw));
+const vendo = createVendoFetchHandler();
+app.all("/api/vendo/*", (c) => vendo(c.req.raw));
 ```
 
 See `examples/node` for a full working server (plain `node:http` plus a Vite
 client) including serving the sandbox runtime assets that Next.js handles
 implicitly.
 
-> **Status honesty:** `@flowlet/server` isn't published to npm yet either
+> **Status honesty:** `@vendoai/server` isn't published to npm yet either
 > (ENG-198). And unlike a published package, the workspace's built output is
 > bundler-format ESM, not directly Node-loadable: `examples/node` runs its
 > server through `tsx` for that reason (same trick `apps/gmail` uses). Plain
@@ -219,15 +219,15 @@ implicitly.
 
 ## Persistence
 
-Storage is durable by default: with no `storage` option, `createFlowletHandler`
-opens an embedded PGlite database at `.flowlet/data` and persists automations
+Storage is durable by default: with no `storage` option, `createVendoHandler`
+opens an embedded PGlite database at `.vendo/data` and persists automations
 (with their versions, grants, and run history), approval decisions, chat
-threads, and saved flowlets — all of it survives a server restart. Point
+threads, and saved vendos — all of it survives a server restart. Point
 `DATABASE_URL` at a hosted Postgres (Supabase, Neon, RDS) to move off PGlite,
 or pass `storage: false` to opt back into in-memory. The scheduler that fires
 schedules without a browser open boots from the `instrumentation.ts` the
 codemod wrote for you; the same handler also has a signature-verified
-Composio webhook route (`POST /api/flowlet/webhooks/composio`) so triggers
+Composio webhook route (`POST /api/vendo/webhooks/composio`) so triggers
 fire without polling. Full detail — scheduler modes for serverless deploys,
 the webhook setup, and the single-writer/single-tenant posture you should
 know before deploying — lives in
@@ -240,17 +240,17 @@ its default policy auto-runs read tools, so a bare deployment answering
 anonymous internet traffic would be wrong. Going live safely:
 
 - **Recommended — gate with a `principal` resolver:**
-  `createFlowletHandler({ principal: async (req) => yourAuth(req) ?? null })`.
+  `createVendoHandler({ principal: async (req) => yourAuth(req) ?? null })`.
   Your app's auth becomes the gate (return `null` → 403). **Do this for
   anything internet-reachable.** The built-in local-only fallback keys off the
   `Host` header, which a client can spoof and a reverse proxy can rewrite — it
   is a dev convenience, not a production control. A real `principal` resolver
   replaces it entirely.
-- **Escape hatch:** `FLOWLET_ALLOW_REMOTE=1` disables the local guard with no
+- **Escape hatch:** `VENDO_ALLOW_REMOTE=1` disables the local guard with no
   replacement — use only for a throwaway internal preview you trust.
 
 **Single-tenant, single-process by default.** The automations world's engine
-store is durable by default (PGlite under `.flowlet/data`, or a Postgres
+store is durable by default (PGlite under `.vendo/data`, or a Postgres
 `DATABASE_URL`) — pass `storage: false` to opt back into in-memory. The
 built-in connections store and approval-token store are still in-memory. None
 of them are keyed by user, so:
@@ -270,13 +270,13 @@ scheduler and Composio webhook setup you'll want on a real deployment.
 
 ## Troubleshooting
 
-- **"Sandbox unavailable / react shim missing"** — `public/flowlet/` is
-  missing its two assets; re-run `npx flowlet init . --force` or copy them
+- **"Sandbox unavailable / react shim missing"** — `public/vendo/` is
+  missing its two assets; re-run `npx vendo init . --force` or copy them
   from the CLI's `dist/assets/`.
 - **Chat answers 403 on a deployment** — that's the local-only default; see
   Deploying above.
 - **Chat errors immediately** — check that one of `ANTHROPIC_API_KEY`,
   `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` is set in `.env.local`
-  and restart the dev server; `GET /api/flowlet/capabilities` tells you what
-  the server sees. A `FLOWLET_MODEL` alone doesn't count: it isn't a key.
+  and restart the dev server; `GET /api/vendo/capabilities` tells you what
+  the server sees. A `VENDO_MODEL` alone doesn't count: it isn't a key.
 - **Integrations tray is empty** — expected without `COMPOSIO_API_KEY`.

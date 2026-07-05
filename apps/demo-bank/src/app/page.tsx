@@ -6,7 +6,7 @@ import { RecentActivity } from "@/components/home/recent-activity"
 import { CashflowCard } from "@/components/home/cashflow-card"
 import { UpcomingBills } from "@/components/home/upcoming-bills"
 import { GoalsCard } from "@/components/home/goals-card"
-import { FlowletCard } from "@/components/home/flowlet-card"
+import { VendoCard } from "@/components/home/vendo-card"
 
 export default function HomePage() {
   return (
@@ -23,7 +23,7 @@ export default function HomePage() {
           <RecentActivity />
         </div>
         <div className="space-y-6">
-          <FlowletCard />
+          <VendoCard />
           <CashflowCard />
           <UpcomingBills />
           <GoalsCard />

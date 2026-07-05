@@ -5,12 +5,12 @@
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
     "@ai-sdk/react": "3.0.30",
-    "@flowlet/components": "workspace:*",
-    "@flowlet/core": "workspace:*",
-    "@flowlet/react": "workspace:*",
-    "@flowlet/runtime": "workspace:*",
-    "@flowlet/shell": "workspace:*",
-    "@flowlet/stage": "workspace:*",
+    "@vendoai/components": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/react": "workspace:*",
+    "@vendoai/runtime": "workspace:*",
+    "@vendoai/shell": "workspace:*",
+    "@vendoai/stage": "workspace:*",
     "ai": "6.0.28",
     "express": "^4.21.2",
     "framer-motion": "^3.10.3",
@@ -34,9 +34,9 @@
     "dev:server": "tsx watch server/index.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.server.json --noEmit",
-    "predev": "pnpm --filter @flowlet/stage build:react-shim && pnpm run build:flowlet-sandbox && node scripts/copy-flowlet-sandbox.mjs",
-    "prebuild": "pnpm --filter @flowlet/stage build:react-shim && pnpm run build:flowlet-sandbox && node scripts/copy-flowlet-sandbox.mjs",
-    "build:flowlet-sandbox": "vite build -c flowlet-sandbox/vite.config.mts"
+    "predev": "pnpm --filter @vendoai/stage build:react-shim && pnpm run build:vendo-sandbox && node scripts/copy-vendo-sandbox.mjs",
+    "prebuild": "pnpm --filter @vendoai/stage build:react-shim && pnpm run build:vendo-sandbox && node scripts/copy-vendo-sandbox.mjs",
+    "build:vendo-sandbox": "vite build -c vendo-sandbox/vite.config.mts"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

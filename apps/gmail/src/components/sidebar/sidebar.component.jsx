@@ -74,10 +74,10 @@ const SideBar = ({ shouldMessageShow, unreadCount }) => {
             </SideNavList>
           </Link>
 
-          <Link to="/flowlet">
+          <Link to="/vendo">
             <SideNavList
-              className={hightlight === "flowlet" ? "highlight" : ""}
-              onClick={() => setHighlight("flowlet")}
+              className={hightlight === "vendo" ? "highlight" : ""}
+              onClick={() => setHighlight("vendo")}
             >
               <span>
                 {/* Inline sparkle — Vendo has no gstatic asset. */}

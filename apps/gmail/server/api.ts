@@ -1,5 +1,5 @@
 /**
- * The Gmail clone's own REST API — the host contract Flowlet's agent acts
+ * The Gmail clone's own REST API — the host contract Vendo's agent acts
  * through as the signed-in user (ENG-202). Routes mirror openapi.json exactly;
  * the spec is the reviewable source of truth for the tool surface.
  */

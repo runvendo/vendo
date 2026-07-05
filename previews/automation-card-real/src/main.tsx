@@ -1,11 +1,11 @@
 import React, { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createStubAgent } from "../../../packages/flowlet-core/src/stub-agent";
-import { FlowletProvider } from "../../../packages/flowlet-react/src/index";
-import "../../../packages/flowlet-shell/src/styles.css";
-import { FlowletShellProvider } from "../../../packages/flowlet-shell/src/context";
-import { MessageList } from "../../../packages/flowlet-shell/src/components/MessageList";
-import type { ThreadItem } from "../../../packages/flowlet-shell/src/use-flowlet-thread";
+import { createStubAgent } from "../../../packages/vendo-core/src/stub-agent";
+import { VendoProvider } from "../../../packages/vendo-react/src/index";
+import "../../../packages/vendo-shell/src/styles.css";
+import { VendoShellProvider } from "../../../packages/vendo-shell/src/context";
+import { MessageList } from "../../../packages/vendo-shell/src/components/MessageList";
+import type { ThreadItem } from "../../../packages/vendo-shell/src/use-vendo-thread";
 import "./preview.css";
 
 const receiptSpec = {
@@ -72,7 +72,7 @@ function PreviewApp() {
   const replay = () => {
     setApproved(false);
     window.setTimeout(() => {
-      document.querySelector<HTMLButtonElement>(".preview-flowlet .fl-btn-primary")?.click();
+      document.querySelector<HTMLButtonElement>(".preview-vendo .fl-btn-primary")?.click();
     }, 360);
   };
 
@@ -81,12 +81,12 @@ function PreviewApp() {
   };
 
   return (
-    <main className="real-preview" data-phase={approved ? "approved" : "proposal"} aria-label="Real Flowlet automation card preview">
+    <main className="real-preview" data-phase={approved ? "approved" : "proposal"} aria-label="Real Vendo automation card preview">
       <section className="preview-host" aria-label="Cove banking workspace">
         <div className="preview-host-bar">
           <div>
             <h1>Cove operating account</h1>
-            <p>Real Flowlet shell component, shown over a restrained host surface.</p>
+            <p>Real Vendo shell component, shown over a restrained host surface.</p>
           </div>
           <div className="preview-host-actions">
             <button type="button" onClick={backToProposal}>Show proposal</button>
@@ -109,20 +109,20 @@ function PreviewApp() {
         </div>
       </section>
 
-      <section className="flowlet-root preview-flowlet" aria-label="Flowlet thread">
+      <section className="vendo-root preview-vendo" aria-label="Vendo thread">
         <div className="fl-thread">
-          <FlowletProvider agent={createStubAgent()} components={[]}>
-            <FlowletShellProvider>
+          <VendoProvider agent={createStubAgent()} components={[]}>
+            <VendoShellProvider>
               <MessageList
                 items={items}
                 status="ready"
                 onApprove={() => setApproved(true)}
                 onDecline={() => setApproved(false)}
               />
-            </FlowletShellProvider>
-          </FlowletProvider>
+            </VendoShellProvider>
+          </VendoProvider>
           <div className="preview-composer">
-            <span>Ask Flowlet anything...</span>
+            <span>Ask Vendo anything...</span>
             <button type="button">Send</button>
           </div>
         </div>

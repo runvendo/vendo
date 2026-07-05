@@ -1,5 +1,5 @@
 /**
- * CRA override: the @flowlet/* workspace dists are strict ESM with
+ * CRA override: the @vendoai/* workspace dists are strict ESM with
  * extensionless relative imports (tsc output). webpack 5 requires fully
  * specified requests inside ESM packages — relax that for node_modules JS so
  * the packages resolve exactly as they do under Next/Vite.

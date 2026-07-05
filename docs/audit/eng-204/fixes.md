@@ -13,8 +13,8 @@ Implements the Yousef-approved P0+P1 list (P2s deferred). Every fix verified in 
 | P0-8 server died on empty-messages request | server crash log (`AI_InvalidPromptError` killed the process) | 400 + safe stream errors | chat-handler rejects empty `messages` with 400; engine `createUIMessageStream` gained `onError` so no execute failure can crash the process. |
 | P1-1 stale error banner survived New chat | `08-page-new-chat-reset.png` | `55-after-newchat-clears.png` | Banner hidden on empty threads; demo-bank New chat now runs `stop() + clearError() + setMessages([])` — also the recovery path for a wedged stream. |
 | P1-2 crude tool labels | "Renderdemocard" (`17`) | "Creating Gmail email draft", "Listing Google Calendar events", "Rendering demo card" | Generic toolkit+verb+object labeller for all Composio toolkits, camelCase-aware host-tool verbs, imperative form for approval titles. Tests: `tool-labels.test.ts`. |
-| P1-3/P1-6 brand leak + naming inconsistency | "What can **Vendo** build here?" hardcoded in shell (`20`); Vendo/Ask Maple/Chat mix | shell ships zero brand strings; host passes `productName` | New `productName` seam on `FlowletShellProvider`; slot default greeting derives from it. Demo-bank passes "Maple" and renames its surfaces to "Ask Maple" (nav, agent prompt). |
-| P1-5 default blue focus ring | `12-overlay-cmdk-open.png` | brand accent ring | `.fl-chip:focus-visible` uses `--flowlet-accent`. |
+| P1-3/P1-6 brand leak + naming inconsistency | "What can **Vendo** build here?" hardcoded in shell (`20`); Vendo/Ask Maple/Chat mix | shell ships zero brand strings; host passes `productName` | New `productName` seam on `VendoShellProvider`; slot default greeting derives from it. Demo-bank passes "Maple" and renames its surfaces to "Ask Maple" (nav, agent prompt). |
+| P1-5 default blue focus ring | `12-overlay-cmdk-open.png` | brand accent ring | `.fl-chip:focus-visible` uses `--vendo-accent`. |
 | P1-4 Composio status | — | — | **No change needed**: live-verified working as designed — toolkits start disconnected on purpose; one click fast-path connects (`28-live-integrations-connected.png`). |
 
 ## Live-verified gap list (was: 7 unverifiable gaps)
@@ -31,4 +31,4 @@ Implements the Yousef-approved P0+P1 list (P2s deferred). Every fix verified in 
 
 - After a decline, the model tends to misread the denial as "Gmail isn't connected" and renders a Connect card. UI now clearly shows ⊘ Declined; fixing the model's interpretation means a line in the engine instructions ("a denied approval is a user choice — don't request re-connect, acknowledge it"). Say the word and it's a one-liner in the agent prompt.
 - The `request_connect` card auto-saves as a "Connect" tab on the page surface (saved tabs were meant for built views) — P2 territory.
-- `apps/demo-bank/public/flowlet/components-sandbox.js` (generated bundle) produces ~238 pre-existing lint errors — it should be eslint-ignored; left untouched as out of scope.
+- `apps/demo-bank/public/vendo/components-sandbox.js` (generated bundle) produces ~238 pre-existing lint errors — it should be eslint-ignored; left untouched as out of scope.

@@ -1,6 +1,6 @@
 # Maple
 
-Maple is a demo consumer neobank. It is the host app for the Flowlet "$87 Mystery" product demo: a polished, believable banking UI that the Flowlet agent embeds into. It is disposable and self-contained, kept separate from flowlet-core so it can be reshaped or thrown away without touching the core product.
+Maple is a demo consumer neobank. It is the host app for the Vendo "$87 Mystery" product demo: a polished, believable banking UI that the Vendo agent embeds into. It is disposable and self-contained, kept separate from vendo-core so it can be reshaped or thrown away without touching the core product.
 
 ## Stack
 
@@ -73,25 +73,25 @@ Home, Accounts, Transactions, Cards, Payments, Insights, Activity, Settings.
 
 ## The planted charge
 
-The demo anchors on one transaction: `txn_doordash_87`, an $87.00 DoorDash charge at 1:14 AM on Maple Checking (`amount: -8700`, `category: dining`, descriptor `DOORDASH*ORDER 8742 CA`). It is the most recent transaction in the seed and the thing the Flowlet "$87 Mystery" demo investigates. The seed is deterministic, so the charge and surrounding data are identical on every run.
+The demo anchors on one transaction: `txn_doordash_87`, an $87.00 DoorDash charge at 1:14 AM on Maple Checking (`amount: -8700`, `category: dining`, descriptor `DOORDASH*ORDER 8742 CA`). It is the most recent transaction in the seed and the thing the Vendo "$87 Mystery" demo investigates. The seed is deterministic, so the charge and surrounding data are identical on every run.
 
-## Flowlet sandbox and generated views
+## Vendo sandbox and generated views
 
 There is ONE UI tool, `render_view`, and its output always renders in the sandbox. Pre-built catalog components are building blocks placed inside a generated view; even a single component is a one-node generated view rendered in the box. The path:
 
-- The agent calls `render_view` with a `GeneratedPayload` (a flat `nodes` array plus a `root` id; nodes can be prewired primitives, host catalog components, or novel generated code). That becomes a `kind: "generated"` UI node, which `SandboxStage` mounts into the egress-jailed stage. The stage loads the components host bundle plus the React shim, copied into `public/flowlet/` by the `predev`/`prebuild` hook (`scripts/copy-flowlet-sandbox.mjs`).
+- The agent calls `render_view` with a `GeneratedPayload` (a flat `nodes` array plus a `root` id; nodes can be prewired primitives, host catalog components, or novel generated code). That becomes a `kind: "generated"` UI node, which `SandboxStage` mounts into the egress-jailed stage. The stage loads the components host bundle plus the React shim, copied into `public/vendo/` by the `predev`/`prebuild` hook (`scripts/copy-vendo-sandbox.mjs`).
 - The one host-rendered exception is the Connect card, emitted by `request_connect`. OAuth needs host privileges, so this card is rendered and trusted directly by the demo host rather than in the sandbox.
-- The demo runs a real guardrail policy (`src/flowlet/policy.ts`), replacing the old allow-all. The UI tools plus in-process reads (`render_view`, `request_connect`, `get_transactions`, `list_automations`, `get_automation_runs`) and read-shaped Composio tools (FETCH, GET, LIST, SEARCH, FIND, READ) resolve to `allow`. Write-shaped or unknown tools — including `create_automation` and the other authoring writes — resolve to `approve`. The same policy governs automation firings: the interpreter evaluates it per step, and approve-gated steps run unattended only under a scope-hashed grant.
-- Actions from a sandbox component (`flowlet.dispatch`) route through `POST /api/flowlet/action`, which runs them through the SAME `demoPolicy` before executing.
+- The demo runs a real guardrail policy (`src/vendo/policy.ts`), replacing the old allow-all. The UI tools plus in-process reads (`render_view`, `request_connect`, `get_transactions`, `list_automations`, `get_automation_runs`) and read-shaped Composio tools (FETCH, GET, LIST, SEARCH, FIND, READ) resolve to `allow`. Write-shaped or unknown tools — including `create_automation` and the other authoring writes — resolve to `approve`. The same policy governs automation firings: the interpreter evaluates it per step, and approve-gated steps run unattended only under a scope-hashed grant.
+- Actions from a sandbox component (`vendo.dispatch`) route through `POST /api/vendo/action`, which runs them through the SAME `demoPolicy` before executing.
 
 ### Theming
 
-One `BrandTokens` object, `mapleBrand` (`src/flowlet/brand.ts`), is the single brand source of truth for both surfaces. Two derivations run off it:
+One `BrandTokens` object, `mapleBrand` (`src/vendo/brand.ts`), is the single brand source of truth for both surfaces. Two derivations run off it:
 
-- `brandToCssVars(mapleBrand)` produces the canonical `--flowlet-*` CSS variables (accent, bg, surface, fg, border, shadow, skeleton). These are applied to the host shell chrome (via `FlowletThemeProvider` / `.flowlet-root`) and injected into the sandbox stage as its `theme`.
+- `brandToCssVars(mapleBrand)` produces the canonical `--vendo-*` CSS variables (accent, bg, surface, fg, border, shadow, skeleton). These are applied to the host shell chrome (via `VendoThemeProvider` / `.vendo-root`) and injected into the sandbox stage as its `theme`.
 - `mapBrandToTheme(mapleBrand)` produces the OpenUI component theme, passed to the sandbox as `componentTheme` and mounted there by the bundle's ThemeProvider wrapper.
 
-So the shell and the generated/sandbox UI render from the same brand and cannot drift. There is no `--brand-*` scope anymore; `--flowlet-*` is the only token namespace.
+So the shell and the generated/sandbox UI render from the same brand and cannot drift. There is no `--brand-*` scope anymore; `--vendo-*` is the only token namespace.
 
 ### Known limitations
 
@@ -103,7 +103,7 @@ So the shell and the generated/sandbox UI render from the same brand and cannot 
 
 ## Out of scope (this issue)
 
-- The Flowlet embed and agent
+- The Vendo embed and agent
 - Gmail receipt lookup
 - Slack integration
 - API writes and mutations

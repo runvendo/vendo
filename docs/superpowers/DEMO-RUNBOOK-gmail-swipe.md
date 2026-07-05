@@ -1,4 +1,4 @@
-# Demo runbook — Gmail × Flowlet "Tinder for your inbox"
+# Demo runbook — Gmail × Vendo "Tinder for your inbox"
 
 The one beat: type a prompt, watch Vendo generate a swipe deck over the real unread inbox, and swipe to delete / reply / post-to-Slack — each behind an approval card that shows exactly what will happen.
 
@@ -9,22 +9,22 @@ pnpm demo:gmail   # from the repo root
 ```
 
 This runs, under Infisical (secrets injected):
-- the backend on **127.0.0.1:3198** (mail API + Flowlet runtime), and
+- the backend on **127.0.0.1:3198** (mail API + Vendo runtime), and
 - the web app on **http://localhost:3199**.
 
-Open **http://localhost:3199**. The AI page is **"Vendo"** in the left nav (`/flowlet`); the overlay is **Cmd/Ctrl+K** anywhere; there's also a generative slot at the top of the inbox.
+Open **http://localhost:3199**. The AI page is **"Vendo"** in the left nav (`/vendo`); the overlay is **Cmd/Ctrl+K** anywhere; there's also a generative slot at the top of the inbox.
 
 ### Networking gotcha (read this if a swipe 403s)
 
 The backend binds to **loopback only** and the chat/action routes reject non-local hosts. This is the security boundary — the agent posts to a real Slack workspace, so it must not be drivable from off-box.
 
 - Running on your own machine at `localhost` → works out of the box.
-- Demoing over a **tunnel or LAN** (ngrok, a shared URL, a different host in the Host header) → every swipe returns 403. Set **`FLOWLET_DEMO_PUBLIC=1`** in the environment before `pnpm demo:gmail` to opt in. Only do this for a trusted demo — it removes the host guard (the loopback bind still applies, so you still need the tunnel to terminate on this box).
+- Demoing over a **tunnel or LAN** (ngrok, a shared URL, a different host in the Host header) → every swipe returns 403. Set **`VENDO_DEMO_PUBLIC=1`** in the environment before `pnpm demo:gmail` to opt in. Only do this for a trusted demo — it removes the host guard (the loopback bind still applies, so you still need the tunnel to terminate on this box).
 
 ## Prerequisites
 
 - **Anthropic** — `ANTHROPIC_API_KEY` (in the Infisical `dev` env). Drives the agent, the reply drafting, and the Slack-summary writing.
-- **Slack** — the `flowlet-demo` Composio account must have an **active** Slack connection (same one demo-bank uses). The summary posts to **#general** (`C09U93V4ER3`). If the connection has dropped, the up-swipe fails **loudly** on the approval card ("Slack post failed: …") — it never fakes success. Reconnect with `pnpm composio:connect` and re-authorize Slack.
+- **Slack** — the `vendo-demo` Composio account must have an **active** Slack connection (same one demo-bank uses). The summary posts to **#general** (`C09U93V4ER3`). If the connection has dropped, the up-swipe fails **loudly** on the approval card ("Slack post failed: …") — it never fakes success. Reconnect with `pnpm composio:connect` and re-authorize Slack.
 
 ## The beat — type this verbatim into Vendo
 
@@ -58,7 +58,7 @@ Approve to proceed; decline to cancel. The card's content is what actually runs 
 ## Reset between takes
 
 ```sh
-curl -X POST http://localhost:3199/api/flowlet/reset
+curl -X POST http://localhost:3199/api/vendo/reset
 ```
 
 Reseeds the mailbox (7 unread, empty-ish Sent) and clears the reply/Slack dedup guards so you can run the beat again cleanly. Reload the page afterwards.

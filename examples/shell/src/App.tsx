@@ -1,35 +1,35 @@
 import type { ComponentType } from "react";
 import { z } from "zod";
-import { type UINode } from "@flowlet/core";
-import { createStubAgent } from "@flowlet/core/testing";
-import { FlowletProvider } from "@flowlet/react";
+import { type UINode } from "@vendoai/core";
+import { createStubAgent } from "@vendoai/core/testing";
+import { VendoProvider } from "@vendoai/react";
 import {
-  FlowletShellProvider,
-  FlowletPage,
-  FlowletOverlay,
-  FlowletSlot,
+  VendoShellProvider,
+  VendoPage,
+  VendoOverlay,
+  VendoSlot,
   createLocalIntegrations,
-} from "@flowlet/shell";
+} from "@vendoai/shell";
 
 /** A stand-in "generated" card so rendered UI nodes look real in the demo. */
 function DemoCard({ title }: { title: string }) {
   return (
     <div
       style={{
-        border: "1px solid var(--flowlet-border)",
-        borderRadius: "var(--flowlet-radius)",
+        border: "1px solid var(--vendo-border)",
+        borderRadius: "var(--vendo-radius)",
         padding: 16,
-        background: "var(--flowlet-surface)",
-        boxShadow: "var(--flowlet-shadow)",
+        background: "var(--vendo-surface)",
+        boxShadow: "var(--vendo-shadow)",
       }}
     >
-      <div style={{ font: "500 10px/1 var(--flowlet-font-mono)", letterSpacing: ".06em", textTransform: "uppercase", color: "var(--flowlet-fg-muted)" }}>
+      <div style={{ font: "500 10px/1 var(--vendo-font-mono)", letterSpacing: ".06em", textTransform: "uppercase", color: "var(--vendo-fg-muted)" }}>
         {title}
       </div>
       <div style={{ fontSize: 27, fontWeight: 700, letterSpacing: "-.02em", marginTop: 7 }}>$1,840</div>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 7, height: 64, marginTop: 14 }}>
         {[34, 58, 44, 92, 54, 70, 48, 80].map((h, i) => (
-          <span key={i} style={{ flex: 1, height: `${h}%`, borderRadius: "4px 4px 0 0", background: "var(--flowlet-accent)", opacity: 0.88 }} />
+          <span key={i} style={{ flex: 1, height: `${h}%`, borderRadius: "4px 4px 0 0", background: "var(--vendo-accent)", opacity: 0.88 }} />
         ))}
       </div>
     </div>
@@ -53,7 +53,7 @@ const seededIntegrations = () =>
     { id: "notion", name: "Notion", connected: false },
   ]);
 
-const savedNode: UINode = { id: "ui-saved", kind: "component", source: "prewired", name: "DemoCard", props: { title: "June spending · flowlet" } };
+const savedNode: UINode = { id: "ui-saved", kind: "component", source: "prewired", name: "DemoCard", props: { title: "June spending · vendo" } };
 
 const suggestions = ["Show my spending", "Set a budget", "Pay a bill"];
 
@@ -71,10 +71,10 @@ function Section({ title, height, children }: { title: string; height: number; c
 export function App() {
   return (
     <div style={{ padding: "48px 24px 120px" }}>
-      <h1 style={{ maxWidth: 980, margin: "0 auto 28px", fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}>Flowlet Shell · live</h1>
+      <h1 style={{ maxWidth: 980, margin: "0 auto 28px", fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}>Vendo Shell · live</h1>
 
-      <Section title="Element 01 · FlowletPage" height={560}>
-        <FlowletPage
+      <Section title="Element 01 · VendoPage" height={560}>
+        <VendoPage
           agent={agent}
           components={components}
           impls={impls}
@@ -84,7 +84,7 @@ export function App() {
         />
       </Section>
 
-      <Section title="Element 02 · FlowletOverlay (click ‘Ask Maple’)" height={460}>
+      <Section title="Element 02 · VendoOverlay (click ‘Ask Maple’)" height={460}>
         <div style={{ position: "relative", height: "100%", background: "#f7f7f6", padding: 18 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
             {Array.from({ length: 6 }).map((_, i) => (
@@ -92,27 +92,27 @@ export function App() {
             ))}
           </div>
           <div style={{ position: "absolute", right: 18, bottom: 18 }}>
-            <FlowletProvider agent={agent} components={components}>
-              <FlowletShellProvider impls={impls} integrations={seededIntegrations()}>
-                <FlowletOverlay launcherLabel="Ask Maple" suggestions={suggestions} greeting="What can I help you build?" />
-              </FlowletShellProvider>
-            </FlowletProvider>
+            <VendoProvider agent={agent} components={components}>
+              <VendoShellProvider impls={impls} integrations={seededIntegrations()}>
+                <VendoOverlay launcherLabel="Ask Maple" suggestions={suggestions} greeting="What can I help you build?" />
+              </VendoShellProvider>
+            </VendoProvider>
           </div>
         </div>
       </Section>
 
-      <Section title="Element 03 · FlowletSlot (empty + filled)" height={320}>
+      <Section title="Element 03 · VendoSlot (empty + filled)" height={320}>
         <div style={{ height: "100%", background: "#f7f7f6", padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <FlowletProvider agent={agent} components={components}>
-            <FlowletShellProvider impls={impls} integrations={seededIntegrations()}>
-              <FlowletSlot flowletId="slot-empty" emptyLabel="Design a flowlet here" />
-            </FlowletShellProvider>
-          </FlowletProvider>
-          <FlowletProvider agent={agent} components={components}>
-            <FlowletShellProvider impls={impls} integrations={seededIntegrations()}>
-              <FlowletSlot flowletId="slot-filled" savedNode={savedNode} />
-            </FlowletShellProvider>
-          </FlowletProvider>
+          <VendoProvider agent={agent} components={components}>
+            <VendoShellProvider impls={impls} integrations={seededIntegrations()}>
+              <VendoSlot vendoId="slot-empty" emptyLabel="Design a vendo here" />
+            </VendoShellProvider>
+          </VendoProvider>
+          <VendoProvider agent={agent} components={components}>
+            <VendoShellProvider impls={impls} integrations={seededIntegrations()}>
+              <VendoSlot vendoId="slot-filled" savedNode={savedNode} />
+            </VendoShellProvider>
+          </VendoProvider>
         </div>
       </Section>
     </div>

@@ -7,12 +7,12 @@
  */
 
 /** Scope for every seed — matches WORLD_SCOPE in
- *  packages/flowlet-next/src/guard.ts, and the drill principal demo-bank's
- *  route.ts resolves to under FLOWLET_DRILL=1. */
-export const SCOPE = { tenantId: "flowlet-embedded", subject: "flowlet-default-user" };
+ *  packages/vendo-next/src/guard.ts, and the drill principal demo-bank's
+ *  route.ts resolves to under VENDO_DRILL=1. */
+export const SCOPE = { tenantId: "vendo-embedded", subject: "vendo-default-user" };
 
 /**
- * MUST byte-for-byte match apps/demo-bank/src/app/api/flowlet/[...path]/route.ts's
+ * MUST byte-for-byte match apps/demo-bank/src/app/api/vendo/[...path]/route.ts's
  * DRILL_ECHO_DESCRIPTOR. computeGrant hashes over this object; a mismatch
  * makes the grant invalid and the step would pause for approval instead of
  * running unattended (the drill's core assertion would fail).
@@ -38,7 +38,7 @@ export const AUTOMATION_SPEC_INPUT = {
   },
 };
 
-export const FLOWLET_ID = "drill-flowlet-1";
+export const VENDO_ID = "drill-vendo-1";
 
 export const THREAD_ID = "drill-thread-1";
 
@@ -49,12 +49,12 @@ export const THREAD_MESSAGES = [
 
 /** A minimal PolicyContext-shaped object — canonicalKey() only reads
  *  principal.userId, toolName, and input (see
- *  packages/flowlet-runtime/src/policy/remember.ts). */
+ *  packages/vendo-runtime/src/policy/remember.ts). */
 export const DECISION_CONTEXT = {
   principal: { userId: SCOPE.subject },
   toolName: "drill_decision_tool",
   input: { probe: "drill" },
 };
 
-/** Must match DECISION_POLICY_VERSION in packages/flowlet-next/src/handler.ts. */
+/** Must match DECISION_POLICY_VERSION in packages/vendo-next/src/handler.ts. */
 export const DECISION_POLICY_VERSION = "v1";

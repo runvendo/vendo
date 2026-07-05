@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openApiToHostTools } from "@flowlet/core";
+import { openApiToHostTools } from "@vendoai/core";
 import spec from "../../src/openapi.json";
 
 /**

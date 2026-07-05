@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { ArrowUpRight, CalendarCheck2 } from "lucide-react"
 import useSWR from "swr"
-import { FlowletRemix } from "@flowlet/shell"
+import { VendoRemix } from "@vendoai/shell"
 import { Badge, type BadgeVariant } from "@/components/ui/badge"
 import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -80,7 +80,7 @@ export function DeadlineList({ className }: { className?: string }) {
        affordance lets the user customize this widget via the shared overlay,
        with the live entries flowing into any pinned remix. The wrapper takes
        the layout className — it is the grid child now. */
-    <FlowletRemix
+    <VendoRemix
       id="upcoming-deadlines"
       label="Upcoming deadlines"
       // Keyed by the component's own fetch key: the sandbox's swr shim resolves
@@ -130,6 +130,6 @@ export function DeadlineList({ className }: { className?: string }) {
         </ul>
       )}
     </Card>
-    </FlowletRemix>
+    </VendoRemix>
   )
 }

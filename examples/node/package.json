@@ -1,9 +1,9 @@
 {
-  "name": "@flowlet/example-node",
+  "name": "@vendoai/example-node",
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "node scripts/copy-flowlet-sandbox.mjs",
+    "predev": "node scripts/copy-vendo-sandbox.mjs",
     "dev": "concurrently -k -n api,web \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:api": "tsx server.mjs",
     "dev:web": "vite",
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@flowlet/next": "workspace:*",
-    "@flowlet/server": "workspace:*",
+    "@vendoai/next": "workspace:*",
+    "@vendoai/server": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },

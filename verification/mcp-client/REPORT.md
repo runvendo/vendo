@@ -18,7 +18,7 @@ client's `protocolVersion`, `tools()` drops `annotations`, and the runtime
 (Streamable HTTP, `http://localhost:3001/mcp`):
 
 - 13 tools fetched (echo, get-sum, get-tiny-image, …), all with `execute`.
-- `echo` round-trip returned `{"content":[{"type":"text","text":"Echo: flowlet-smoke"}],"isError":false}`.
+- `echo` round-trip returned `{"content":[{"type":"text","text":"Echo: vendo-smoke"}],"isError":false}`.
 - This server build reports no annotations → every tool correctly fail-safes
   to "needs approval". SMOKE PASSED.
 
@@ -27,13 +27,13 @@ client's `protocolVersion`, `tools()` drops `annotations`, and the runtime
 `mcpServers: [{ name: "everything", url: "http://localhost:3001/mcp" }]` added
 to the demo-bank handler (local-only edit, reverted), `pnpm demo` on :3457:
 
-- `GET /api/flowlet/capabilities` → `{"chat":true,"integrations":true,"voice":true,"mcp":true}`.
-- Prompt: *Use the everything_echo tool to echo the message "flowlet mcp e2e"…*
+- `GET /api/vendo/capabilities` → `{"chat":true,"integrations":true,"voice":true,"mcp":true}`.
+- Prompt: *Use the everything_echo tool to echo the message "vendo mcp e2e"…*
 - The model called `everything_echo` (a `dynamic-tool` part); the policy
   paused it; the existing ApprovalCard rendered ("Needs your approval —
   Everything Echo", input shown) — `mcp-e2e-approval-card.png`.
 - Clicking Approve resubmitted the turn, the tool executed on the real MCP
-  server, and the model reported `Echo: flowlet mcp e2e` with the raw
+  server, and the model reported `Echo: vendo mcp e2e` with the raw
   content/isError detail — `mcp-e2e-success.png`.
 
 The first e2e attempt exposed (and this branch fixes) three `tool-*`-only

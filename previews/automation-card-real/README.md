@@ -1,6 +1,6 @@
 # Automation Created Preview
 
-Real Flowlet shell preview for the automation approval and created-to-running notification.
+Real Vendo shell preview for the automation approval and created-to-running notification.
 
 Run it from the repo root:
 

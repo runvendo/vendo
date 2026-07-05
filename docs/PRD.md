@@ -1,4 +1,4 @@
-# Flowlet PRD
+# Vendo PRD
 
 > Synced snapshot of the [Notion PRD](https://app.notion.com/p/PRD-391efc48a641803c94b8d95930e5ebd7) (2026-07-01). **Notion is the source of truth** — if this file and Notion disagree, Notion wins; re-sync this file when the PRD changes.
 
@@ -45,11 +45,11 @@
   - Sandbox → runs in the end-user's browser, egress-jailed; generated code never leaves the device at render time
   - Theme tokens + component registry → build artifacts in their repo
   - Host-API actions → run against their API with the user's own credentials, inside their existing security perimeter
-  - One-click dev tool → dev-time CLI on their codebase; extracts locally, then a build-time `flowlet publish` uploads a reviewable tool manifest (versioned + hash-keyed) to the Flowlet registry — sessions bind to a published manifest
-- **Flowlet cloud → ours:**
+  - One-click dev tool → dev-time CLI on their codebase; extracts locally, then a build-time `vendo publish` uploads a reviewable tool manifest (versioned + hash-keyed) to the Vendo registry — sessions bind to a published manifest
+- **Vendo cloud → ours:**
   - Agent runtime (LLM loop, tool-calling, policy evaluation). Their backend vouches for user identity, we run the loop. **BYOK later** so companies bring their own model key; the runtime stays ours.
   - Automations engine → fires when the user isn't in the app; their auth brokered server-side
-  - Memory + saved-flowlet store → cross-device, shareable, survives sessions
+  - Memory + saved-vendo store → cross-device, shareable, survives sessions
   - Concierge SMS channel + realtime voice relay
   - Enterprise layer (later) → governance, audit, analytics, cost metering
 - **Third-party regardless:** Composio (integration OAuth + tool execution), model provider

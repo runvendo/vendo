@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "allowJs": true
   },
-  "include": ["server/**/*.ts", "src/flowlet/host-components.js"]
+  "include": ["server/**/*.ts", "src/vendo/host-components.js"]
 }

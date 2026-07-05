@@ -115,20 +115,20 @@ button {
   background: color-mix(in srgb, #2e9e6b 5%, rgba(255, 255, 255, .6));
 }
 
-.preview-flowlet {
+.preview-vendo {
   position: relative;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: color-mix(in srgb, var(--flowlet-surface) 46%, transparent);
+  background: color-mix(in srgb, var(--vendo-surface) 46%, transparent);
   letter-spacing: -.011em;
 }
 
-.preview-flowlet .fl-msglist {
+.preview-vendo .fl-msglist {
   padding-bottom: 98px;
 }
 
-.preview-flowlet .fl-automation-approval {
+.preview-vendo .fl-automation-approval {
   max-width: 92%;
   min-width: min(360px, 92%);
 }
@@ -142,17 +142,17 @@ button {
   align-items: center;
   gap: 10px;
   padding: 10px 11px;
-  border: 1px solid var(--flowlet-border);
+  border: 1px solid var(--vendo-border);
   border-radius: 14px;
-  background: var(--flowlet-glass-strong);
-  -webkit-backdrop-filter: var(--flowlet-blur);
-  backdrop-filter: var(--flowlet-blur);
-  box-shadow: var(--flowlet-shadow);
+  background: var(--vendo-glass-strong);
+  -webkit-backdrop-filter: var(--vendo-blur);
+  backdrop-filter: var(--vendo-blur);
+  box-shadow: var(--vendo-shadow);
 }
 
 .preview-composer span {
   flex: 1;
-  color: var(--flowlet-fg-muted);
+  color: var(--vendo-fg-muted);
   font-size: 12.5px;
 }
 
@@ -160,8 +160,8 @@ button {
   border: 0;
   border-radius: 9px;
   padding: 8px 12px;
-  background: var(--flowlet-accent);
-  color: var(--flowlet-accent-fg);
+  background: var(--vendo-accent);
+  color: var(--vendo-accent-fg);
   font-size: 12.5px;
   font-weight: 650;
 }
@@ -181,7 +181,7 @@ button {
     display: none;
   }
 
-  .preview-flowlet {
+  .preview-vendo {
     min-height: 100vh;
   }
 }

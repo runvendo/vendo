@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest"
 import { placeOrder } from "./orders"
 import { listTransactions } from "./transactions"
-import { pacificHour } from "@/flowlet/time"
+import { pacificHour } from "@/vendo/time"
 import { __reseed } from "./store"
 
 // Freeze the store to the same fixed anchor used across the rest of the suite
