@@ -87,9 +87,14 @@ writes the code against the spec.
 **Files:**
 - Create: `packages/flowlet-core/src/prompt/capability-summary.ts` (+ test)
 
-- [ ] A pure function from a list of tool descriptors ({name, description, tier/annotations,
-      toolkit}) to the compact user-terms summary in spec §7, including the
-      connectable-but-unconnected toolkit list (passed in as a parameter).
+- [ ] Define an explicit `ToolSummaryInput` contract in this file:
+      `{ name, description, tier: 'read'|'act'|'critical', source: 'host'|'integration', toolkit? }`
+      plus a `connectable: string[]` parameter for the host's not-yet-connected toolkit
+      catalog. This is the shape BOTH consumers must produce (Codex plan-review finding:
+      today's runtime `ToolDescriptor` lacks description/toolkit and `VoiceToolDef` lacks
+      toolkit — Tasks 3.1/3.4 thread that metadata; do not assume it exists).
+- [ ] A pure function from `ToolSummaryInput[]` + `connectable` to the compact user-terms
+      summary in spec §7.
 - [ ] Commit.
 
 ## Phase 2 — Truncation (`capToolOutput`)
@@ -120,15 +125,22 @@ writes the code against the spec.
 
 ## Phase 3 — Migrate the three prompt consumers
 
-### Task 3.1: Per-run instruction assembly in the engine
+### Task 3.1: Per-run instruction assembly — engine AND the Next handler chain
 
 **Files:**
-- Modify: `packages/flowlet-runtime/src/engine.ts` (+ test)
+- Modify: `packages/flowlet-runtime/src/engine.ts`, `packages/flowlet-runtime/src/descriptor.ts` (+ tests)
+- Modify: `packages/flowlet-next/src/options.ts`, `packages/flowlet-next/src/handler.ts`, `packages/flowlet-next/src/agent.ts` (+ tests)
 
 - [ ] `createFlowletAgent` accepts `instructions: string | ((ctx: { toolSummary }) => string)`,
-      evaluated inside `run()` after Composio ingestion, where `toolSummary` describes the
-      actual merged toolset. Backwards compatible: plain strings behave exactly as today.
-- [ ] Commit.
+      evaluated inside `run()` after Composio ingestion, where `toolSummary` is
+      `ToolSummaryInput[]` (Task 1.4) describing the actual merged toolset — thread
+      description/toolkit metadata through the runtime descriptor layer to make that
+      possible. Backwards compatible: plain strings behave exactly as today.
+- [ ] The same string-or-function type flows through the whole `@flowlet/next` chain
+      (Codex finding: `options.ts` types/validates `instructions` as a string, the handler
+      builds the default prompt before per-run tools are known). Demo-bank's route override
+      switches from a static `buildInstructions()` string to a function in Task 3.2.
+- [ ] Commit (runtime and next changes may be separate commits).
 
 ### Task 3.2: demo-bank chat migration
 
@@ -169,6 +181,7 @@ writes the code against the spec.
 
 **Files:**
 - Create: `packages/flowlet-shell/src/voice/replay-registry.ts` (+ test)
+- Modify: `packages/flowlet-shell/src/index.ts` (export the registry — shell only exposes its root export)
 - Modify: `apps/demo-bank/src/components/flowlet/run-query.ts` (+ test) to consult it
 
 - [ ] A client-side registry mapping tool name → replay executor for read-tier tools:
@@ -214,14 +227,24 @@ writes the code against the spec.
       budget as constants; renders to text into `VoiceSessionInit.context`.
 - [ ] Commit.
 
-### Task 5.2: `open_saved_flowlet` voice tool
+### Task 5.2: `open_saved_flowlet` voice tool + session-tool seam
 
 **Files:**
-- Modify: `packages/flowlet-shell/src/FlowletThread.tsx`, `packages/flowlet-shell/src/voice/voice-session.ts` as needed (+ tests)
+- Modify: `packages/flowlet-shell/src/voice/voice-session.ts` (extend `VoiceSessionInit` with a `sessionTools` seam)
+- Modify: `packages/flowlet-shell/src/voice/realtime-driver.ts` (merge `init.sessionTools` into the driver's toolset)
+- Modify: `packages/flowlet-shell/src/FlowletThread.tsx` (contribute the tool, wired to `onOpenFlow`)
+- Modify: `apps/demo-bank/src/components/flowlet/voice-realtime.ts` (+ tests everywhere)
 
-- [ ] A shell-contributed read-tier voice tool taking a saved-flowlet id (from the brief)
-      and firing the same `onOpenFlow` callback the gallery uses. Companion prompt sentence
-      ships in `refreshableViewsSection`/brief guidance from Task 1.1.
+- [ ] Extend `VoiceSessionInit` with `sessionTools?: VoiceToolDef[]` and merge them into the
+      realtime driver's tool list (Codex finding: tools are currently fixed from
+      `options.tools` at driver creation; `VoiceSessionInit` only carries `context`).
+- [ ] **Fix the latent dropped-init bug**: demo-bank's `mapleRealtimeVoiceDriver.start(emit)`
+      neither accepts nor forwards `init`, so carry-over context never reaches the realtime
+      driver today — forward `init` through the mint-and-fallback wrapper (both the realtime
+      and scripted branches).
+- [ ] The shell contributes `open_saved_flowlet` (read tier) via `sessionTools`, taking a
+      saved-flowlet id (from the brief) and firing the same `onOpenFlow` callback the
+      gallery uses. Companion prompt sentence ships in the brief guidance from Task 1.1.
 - [ ] Commit.
 
 ### Task 5.3: Live browser verification
