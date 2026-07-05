@@ -123,6 +123,41 @@ describe("chat identity stability", () => {
     expect(seen.length).toBeGreaterThanOrEqual(3);
     expect(new Set(seen).size).toBe(1);
   });
+
+  it("keeps the same Chat when the definitions ARRAY identity changes but its content does not", () => {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useVendoContext().chat);
+      return null;
+    }
+    const ui = (nonce: number) => (
+      <VendoProvider
+        transport={transport}
+        components={[]}
+        // A fresh definitions ARRAY every render — a host that builds it
+        // inline (e.g. `hostTools={{ definitions: toHostTools(tools) }}`
+        // without memoizing) re-renders with a new identity but identical
+        // content. Keying the Chat on array identity wipes the ENTIRE
+        // conversation on such a re-render.
+        hostTools={{ definitions: [{ ...listAccountsDef }, { ...createOrderDef }] }}
+        key="stable"
+        data-nonce={nonce}
+      >
+        <Probe />
+      </VendoProvider>
+    );
+    const { rerender } = render(ui(1));
+    rerender(ui(2));
+    rerender(ui(3));
+
+    expect(seen.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(seen).size).toBe(1);
+  });
 });
 
 describe("host tool runner", () => {

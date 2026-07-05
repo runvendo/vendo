@@ -66,14 +66,17 @@ export function VendoProvider({ agent, transport, components, threadId, hostTool
     if (agent) return createLocalTransport(agent);
     throw new Error("VendoProvider requires either `agent` or `transport`");
   }, [agent, transport]);
-  // Keyed on the definitions ARRAY, not the config object: callers pass
-  // `hostTools={{ definitions }}` inline, so the config's identity changes on
-  // every parent render. A new Set here would rebuild the Chat below and wipe
-  // the SDK's message/approval state mid-turn.
+  // Keyed on a stable serialization of the tool NAMES, not on any object
+  // identity: callers pass `hostTools={{ definitions }}` inline (and often
+  // rebuild the definitions array itself each render), so identities change
+  // on every parent render. A new Set here would rebuild the Chat below and
+  // wipe the SDK's message/approval state — the entire conversation — on a
+  // plain re-render.
   const definitions = hostTools?.definitions;
+  const hostToolNamesKey = JSON.stringify((definitions ?? []).map((def) => def.name));
   const hostToolNames = useMemo(
-    () => new Set((definitions ?? []).map((def) => def.name)),
-    [definitions],
+    () => new Set(JSON.parse(hostToolNamesKey) as string[]),
+    [hostToolNamesKey],
   );
   // One Chat instance shared by every surface (dock, overlay, page) so they all
   // render the same thread. Surfaces consume it via useChat({ chat }).
