@@ -14,18 +14,22 @@
  * Capability-additive: the integrations tray only appears when the server
  * reports the Composio capability; voice stays behind its flag (ENG-185).
  */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { VendoUIMessage, ManifestTool, UINode } from "@vendoai/core";
 import { VendoProvider } from "@vendoai/react";
 import {
+  REMIX_CHANGED_EVENT,
   VendoOverlay,
   VendoShellProvider,
   VendoToasts,
   createLocalIntegrations,
   createWebRemixes,
   createWebStorage,
+  stampHostComponents,
+  useShell,
   type VendoIntegrations,
+  type VendoOverlayProps,
   type VendoToastsProps,
 } from "@vendoai/shell";
 import { createServerVendoStore } from "./server-store";
@@ -103,6 +107,32 @@ const LAUNCHER_STYLE: CSSProperties = {
   boxShadow: "0 10px 30px rgba(0,0,0,.18)",
   cursor: "pointer",
 };
+
+/**
+ * The overlay plus a scoped pin hook: when the overlay is scoped to a
+ * VendoRemix anchor (a \u2726 affordance click), pinning a view — including a
+ * voice-stage view — applies it to that anchor in place, exactly like the
+ * chat path's "Apply to page". Unscoped, the pin affordance stays hidden.
+ */
+function ScopedPinOverlay(props: VendoOverlayProps) {
+  const { scope, remixes, components } = useShell();
+  const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
+  const onPin = (node: UINode) => {
+    const anchor = scope.current();
+    if (!anchor || node.kind !== "generated") return;
+    const pinned = { ...node, remixAnchorId: anchor.anchorId };
+    const stamp = stampHostComponents(pinned, components ?? []);
+    void remixes
+      .pin({ anchorId: anchor.anchorId, node: pinned, ...(stamp ? { components: stamp } : {}) })
+      .then(() => {
+        window.dispatchEvent(
+          new CustomEvent(REMIX_CHANGED_EVENT, { detail: { anchorId: anchor.anchorId } }),
+        );
+      })
+      .catch((err) => console.warn("[vendo] failed to pin scoped view", err));
+  };
+  return <VendoOverlay {...props} {...(activeScope ? { onPin } : {})} />;
+}
 
 export function VendoRoot({
   theme,
@@ -230,7 +260,7 @@ export function VendoRoot({
         >
           {children}
           {chatEnabled && (
-            <VendoOverlay
+            <ScopedPinOverlay
               launcherLabel={`Ask ${productName}`}
               open={open}
               onOpenChange={setOpen}
