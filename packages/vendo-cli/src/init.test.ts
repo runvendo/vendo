@@ -39,7 +39,10 @@ describe("runInit e2e (mock model)", () => {
     const tools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
     expect(tools.tools[0].name).toBe("list_things");
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
-    await readFile(path.join(dir, ".vendo/README.md"), "utf8");
+    const readme = await readFile(path.join(dir, ".vendo/README.md"), "utf8");
+    expect(readme).toContain("## Events");
+    expect(readme).toContain('"name": "charge.posted"');
+    expect(readme).toContain("push at the source, relay webhooks, or poll upstream systems");
   });
 
   it("reports a clean error (not an unhandled rejection) when the model factory throws", async () => {

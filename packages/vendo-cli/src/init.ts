@@ -77,6 +77,31 @@ is LLM-read code and must not grant auto-allow); GETs with side-effect-shaped
 names are marked mutating even from OpenAPI. Relax annotations here by hand
 after review — this file is the reviewable source of truth.
 
+## Events
+
+Events are named payload contracts that automations can use as triggers. Add
+them to \`tools.json\` beside your tools:
+
+\`\`\`json
+{
+  "name": "charge.posted",
+  "description": "A card charge posted to an account.",
+  "payloadSchema": {
+    "type": "object",
+    "required": ["chargeId", "accountId", "amountCents"],
+    "properties": {
+      "chargeId": { "type": "string" },
+      "accountId": { "type": "string" },
+      "amountCents": { "type": "integer" },
+      "postedAt": { "type": "string", "format": "date-time" }
+    }
+  }
+}
+\`\`\`
+
+Producers can push at the source, relay webhooks, or poll upstream systems; all
+three feed the same Vendo ingest path.
+
 \`vendo publish\` uploads tools.json to the Vendo registry — stubbed until the
 registry ships (ENG-198). Embedded hosts read this directory from disk.
 `;
