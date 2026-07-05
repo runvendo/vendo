@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { FrameworkInfo } from "../detect.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
+import { collectNextFontVars } from "./next-fonts.js";
 import { extractTailwindVars } from "./tailwind-config.js";
 import { mapVarsToBrand, type BrandMappingResult } from "./map-to-brand.js";
 import { writeGenerated } from "../fsx.js";
@@ -29,6 +30,9 @@ export async function extractTheme(
     vars.push(...twVars);
     if (error) errors.push(error);
   }
+  // next/font injects --font-* vars at runtime; recover them from source so
+  // font var() chains resolve to the actual family.
+  if (info.framework === "next") vars.push(...(await collectNextFontVars(targetDir)));
 
   const result = mapVarsToBrand(vars);
   let written = false;

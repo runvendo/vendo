@@ -53,6 +53,56 @@ describe("mapVarsToBrand", () => {
     expect(result.unmapped.map((u) => u.name)).toContain("--color-primary");
   });
 
+  it("skips companion -bg tokens and falls back to surface for background", () => {
+    // Cadence-shaped: status tokens have paired *-bg tints, the real page
+    // background is --color-surface, and cards are --color-card.
+    const result = mapVarsToBrand([
+      v("--color-surface", "#f7f5f1"), v("--color-card", "#ffffff"), v("--color-ink", "#221e19"),
+      v("--color-status-missing", "#b45309"), v("--color-status-missing-bg", "#fdf0df"),
+      v("--color-status-overdue", "#b91c1c"), v("--color-status-overdue-bg", "#fdeae8"),
+    ]);
+    expect(result.brand?.background).toBe("#f7f5f1");
+    expect(result.matched["background"]).toBe("--color-surface");
+    expect(result.brand?.surface).toBe("#ffffff");
+    expect(result.matched["surface"]).toBe("--color-card");
+  });
+
+  it("picks the mid step of a single scale-named accent family", () => {
+    const result = mapVarsToBrand([
+      v("--color-bg", "#FFFFFF"),
+      v("--color-evergreen-100", "#d8ebe2"), v("--color-evergreen-300", "#85bda8"),
+      v("--color-evergreen-500", "#34816a"), v("--color-evergreen-700", "#205345"),
+      v("--color-evergreen-900", "#16362e"),
+    ]);
+    expect(result.brand?.accent).toBe("#34816a");
+    expect(result.matched["accent"]).toBe("--color-evergreen-500");
+  });
+
+  it("defaults accent when multiple scale families make the pick ambiguous", () => {
+    const result = mapVarsToBrand([
+      v("--color-bg", "#FFFFFF"),
+      v("--color-blue-300", "#93c5fd"), v("--color-blue-500", "#3b82f6"), v("--color-blue-700", "#1d4ed8"),
+      v("--color-rose-300", "#fda4af"), v("--color-rose-500", "#f43f5e"), v("--color-rose-700", "#be123c"),
+    ]);
+    expect(result.defaulted).toContain("accent");
+  });
+
+  it("does not treat neutral or status scales as an accent family", () => {
+    const result = mapVarsToBrand([
+      v("--color-bg", "#FFFFFF"),
+      v("--color-gray-300", "#d1d5db"), v("--color-gray-500", "#6b7280"), v("--color-gray-700", "#374151"),
+    ]);
+    expect(result.defaulted).toContain("accent");
+  });
+
+  it("still prefers literal accent names over a scale family", () => {
+    const result = mapVarsToBrand([
+      v("--color-bg", "#FFFFFF"), v("--color-accent", "#FF0000"),
+      v("--color-teal-300", "#5eead4"), v("--color-teal-500", "#14b8a6"), v("--color-teal-700", "#0f766e"),
+    ]);
+    expect(result.brand?.accent).toBe("#FF0000");
+  });
+
   it("flags a dark variant when dark-scoped vars exist", () => {
     const result = mapVarsToBrand([v("--color-bg", "#FFFFFF"), v("--color-bg", "#000000", true)]);
     expect(result.hasDarkVariant).toBe(true);

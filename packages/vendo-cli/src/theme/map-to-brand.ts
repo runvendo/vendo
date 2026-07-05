@@ -22,15 +22,48 @@ type ColorSlot = "accent" | "background" | "surface" | "text" | "mutedText";
  * Ordered name fragments per slot. mutedText is matched before text so
  * "--color-muted" is not claimed by the text slot's looser fragments, and
  * exact-suffix matches beat loose-contains so "--color-ink" wins over
- * "--color-ink-soft".
+ * "--color-ink-soft". background's trailing "surface" fragment is a fallback:
+ * token sets with no bg token (Cadence) use their surface color as the page
+ * background, and the surface slot then falls through to card/panel.
  */
 const COLOR_SLOTS: Array<{ slot: ColorSlot; fragments: string[] }> = [
   { slot: "accent", fragments: ["accent", "primary", "brand", "cta"] },
-  { slot: "background", fragments: ["background", "-bg", "bg"] },
+  { slot: "background", fragments: ["background", "-bg", "bg", "surface"] },
   { slot: "surface", fragments: ["surface", "card", "panel"] },
   { slot: "mutedText", fragments: ["fg-muted", "text-muted", "muted", "secondary-text"] },
   { slot: "text", fragments: ["-ink", "text", "-fg", "foreground"] },
 ];
+
+/** Tailwind-style scale steps. */
+const SCALE_STEPS = new Set([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]);
+/** Scale families that are never the brand accent. */
+const NON_ACCENT_FAMILY = /(gray|grey|neutral|slate|stone|zinc|status|success|warning|error|danger|info)/;
+
+/**
+ * Accent fallback for scale-named token sets (e.g. --color-evergreen-50..950):
+ * when exactly one non-neutral, non-status hex scale exists, its mid step is
+ * the brand accent. Zero or several candidate families is genuinely ambiguous
+ * — return nothing and let the slot default (fail-closed).
+ */
+function pickScaleAccent(vars: CssVarDecl[]): CssVarDecl | undefined {
+  const families = new Map<string, Map<number, CssVarDecl>>();
+  for (const v of vars) {
+    const m = v.name.match(/^(--[\w-]+?)-(\d{2,3})$/);
+    if (!m || !m[1] || !m[2]) continue;
+    const step = Number(m[2]);
+    if (!SCALE_STEPS.has(step) || !HEX.test(v.value)) continue;
+    const steps = families.get(m[1]) ?? new Map<number, CssVarDecl>();
+    steps.set(step, v);
+    families.set(m[1], steps);
+  }
+  const candidates = [...families.entries()].filter(
+    ([name, steps]) => steps.size >= 3 && !NON_ACCENT_FAMILY.test(name),
+  );
+  if (candidates.length !== 1) return undefined;
+  const steps = candidates[0]![1];
+  const mid = [...steps.keys()].sort((a, b) => Math.abs(a - 500) - Math.abs(b - 500) || a - b)[0]!;
+  return steps.get(mid);
+}
 
 function pick(
   vars: CssVarDecl[],
@@ -79,8 +112,16 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
   const defaulted: string[] = [];
   const draft: Record<string, unknown> = { version: 1, mode: "light" };
 
+  // "X-bg" alongside a declared "X" is a tinted companion of X (badge/status
+  // backgrounds like --color-status-missing-bg), never the page background.
+  const names = new Set(light.map((v) => v.name));
+  const isCompanionBg = (v: CssVarDecl) => v.name.endsWith("-bg") && names.has(v.name.slice(0, -"-bg".length));
+
   for (const { slot, fragments } of COLOR_SLOTS) {
-    const hit = pick(light.filter((v) => !used.has(v)), fragments, (val) => HEX.test(val));
+    let candidates = light.filter((v) => !used.has(v));
+    if (slot === "background") candidates = candidates.filter((v) => !isCompanionBg(v));
+    let hit = pick(candidates, fragments, (val) => HEX.test(val));
+    if (!hit && slot === "accent") hit = pickScaleAccent(candidates);
     if (hit) { used.add(hit); matched[slot] = hit.name; draft[slot] = hit.value; }
     else { defaulted.push(slot); draft[slot] = defaultBrand[slot]; }
   }
