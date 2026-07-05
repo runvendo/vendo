@@ -9,11 +9,14 @@ import { cliModel } from "./llm.js";
 import { renderReport, type InitReport } from "./report.js";
 import { writeGenerated } from "./fsx.js";
 import { wireNextApp, renderWiring } from "./next-wiring.js";
+import { installLocalVendoPackages, type LocalVendoInstallSummary } from "./local-pack.js";
 
 export interface InitOptions {
   targetDir: string;
   skipLlm: boolean;
   force: boolean;
+  /** Pack local Vendo workspace packages into the host app's vendor/ dir. */
+  localVendoDir?: string;
   /** test seam — pass null to force LLM-off, a mock to avoid the network */
   model?: LanguageModel | null;
   /** test seam — telemetry wiring overrides; omit in production for real env/key */
@@ -123,26 +126,40 @@ export async function runInit(opts: InitOptions): Promise<number> {
   // The install codemod (Next.js App Router): route handler, provider wrap,
   // .env.example, sandbox assets, dependency. Fail-open by design — anything
   // uncertain is skipped and reported, never guessed.
+  let wiringInstalled = false;
+  let localInstall: LocalVendoInstallSummary | null = null;
   try {
     failedStep = "wiring";
     const wiring = await wireNextApp(targetDir, info, { force: opts.force });
     const rendered = renderWiring(wiring);
     if (rendered) console.log(rendered);
-    if (wiring) {
+    wiringInstalled = wiring !== null;
+    if (opts.localVendoDir) {
+      localInstall = await installLocalVendoPackages(targetDir, opts.localVendoDir);
       console.log(
         [
-          "",
-          "Next steps:",
-          "  1. install deps (npm install / pnpm install)",
-          "  2. cp .env.example .env.local  and paste one provider API key (see comments)",
-          "  3. npm run dev — then hit the launcher (or Cmd/Ctrl+K) and ask for a view",
+          "local packages:",
+          `  wrote  ${localInstall.packages.length} @vendoai tarballs + fluidkit into ${path.relative(targetDir, localInstall.vendorDir)}`,
+          `  edited package.json with file:vendor/* dependencies and ${localInstall.packageManager === "pnpm" ? "pnpm.overrides" : "overrides"}`,
+          `  next  run ${localInstall.installCommand}`,
         ].join("\n"),
       );
     }
   } catch (err) {
-    console.error(`next wiring failed (review \`git diff\` — wiring writes are individually atomic): ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`init wiring failed (review \`git diff\` — writes are individually atomic): ${err instanceof Error ? err.message : String(err)}`);
     await t.track("init_failed", { framework, failedStep });
     return 1;
+  }
+  if (wiringInstalled) {
+    console.log(
+      [
+        "",
+        "Next steps:",
+        `  1. ${localInstall ? `run ${localInstall.installCommand}` : "install deps (npm install / pnpm install)"}`,
+        "  2. cp .env.example .env.local  and paste one provider API key (see comments)",
+        "  3. npm run dev — then hit the launcher (or Cmd/Ctrl+K) and ask for a view",
+      ].join("\n"),
+    );
   }
   await t.track("init_completed", {
     framework,
