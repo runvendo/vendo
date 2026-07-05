@@ -15,6 +15,29 @@ import { ConnectDock } from "./components/ConnectDock";
 import { ConnectTray } from "./components/ConnectTray";
 import { friendlyError, logErrorDetail } from "./components/error-copy";
 
+/** Review follow-up: `approve()` races the consent POST against this timeout
+ *  so a HUNG (not failed — `postConsent` above already swallows a rejection)
+ *  fetch can never block the SDK's own approval resume forever. On timeout,
+ *  `fadeEligible` is simply lost — the same "best-effort, never blocking"
+ *  posture this module's docstring already promises for a failed POST. */
+const CONSENT_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(undefined);
+      },
+    );
+  });
+}
+
 export interface FlowletThreadProps {
   greeting?: string;
   suggestions?: string[];
@@ -110,7 +133,7 @@ export function FlowletThread({
   const approve = (approvalId: string) => {
     const item = findApproval(approvalId);
     const consentPost = item?.toolCallId
-      ? postConsent({ id: item.toolCallId, decision: "yes" }, item.toolName)
+      ? withTimeout(postConsent({ id: item.toolCallId, decision: "yes" }, item.toolName), CONSENT_TIMEOUT_MS)
       : Promise.resolve(undefined);
     void consentPost.then((result) => {
       if (result?.fadeEligible && item) {

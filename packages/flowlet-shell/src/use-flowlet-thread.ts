@@ -172,9 +172,15 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
  * turn's first tool call. Sibling approval-requested items of the SAME tool in
  * the SAME message also collapse into one `approval-batch` (ENG-193 §3 Moment
  * 4 — "ten at once → one decision"); a lone approval stays a plain `approval`
- * item so the existing single-card path renders it unchanged. Critical-tier
- * approvals are exempt from batching entirely (spec §3 Moment 6/§4.1): each
- * always renders its own ceremony ApprovalCard.
+ * item so the existing single-card path renders it unchanged. Only tier
+ * "act" items are batchable (review follow-up): critical-tier approvals are
+ * exempt entirely (spec §3 Moment 6/§4.1, each always renders its own
+ * ceremony ApprovalCard) and so — same treatment, not a special case — is an
+ * approval whose tier is UNDEFINED. `tier` rides in on the sibling
+ * data-consent part (ENG-193 §4.1/§4.5); if that part was lost or never
+ * arrived, the item's true tier is simply unknown, and batching it as if it
+ * were a confirmed "act" call would be a false assurance — it renders its
+ * own individual card instead, same as critical.
  */
 export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
   const out: RenderItem[] = [];
@@ -192,11 +198,16 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
         out.push({ kind: "activity", key: `activity:${item.messageId}`, messageId: item.messageId, steps: [item] });
       }
     } else if (item.kind === "approval") {
-      // Critical-tier approvals NEVER enter batch collapse (spec §3 Moment
-      // 6/§4.1): every money/irreversible action renders its own ceremony
-      // card, one deliberate decision each — a batch "Approve all N" would
-      // bypass the ceremony register and its untruncated fields.
-      if (item.tier === "critical") {
+      // Only tier "act" ever enters batch collapse (review follow-up).
+      // Critical-tier approvals NEVER batch (spec §3 Moment 6/§4.1): every
+      // money/irreversible action renders its own ceremony card, one
+      // deliberate decision each — a batch "Approve all N" would bypass the
+      // ceremony register and its untruncated fields. An UNDEFINED tier gets
+      // the same treatment: it means the sibling data-consent part carrying
+      // the real tier was lost or never arrived, so this item's true
+      // dangerousness is simply unknown — batching it as if it were a
+      // confirmed "act" call would be a false assurance.
+      if (item.tier !== "act") {
         out.push(item);
         continue;
       }
@@ -231,10 +242,10 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
       const toolName = groupKey.slice(groupKey.indexOf("::") + 2);
       const siblings = items.filter(
         (i): i is Extract<ThreadItem, { kind: "approval" }> =>
-          // tier !== "critical" mirrors the skip above: a critical item that
-          // shares a message+tool with act siblings must not be pulled into
-          // their batch during promotion either.
-          i.kind === "approval" && i.tier !== "critical" &&
+          // tier === "act" mirrors the skip above: a critical OR undefined-tier
+          // item that shares a message+tool with act siblings must not be
+          // pulled into their batch during promotion either.
+          i.kind === "approval" && i.tier === "act" &&
           i.messageId === entry.messageId && i.toolName === toolName,
       );
       if (siblings.length > 1) {

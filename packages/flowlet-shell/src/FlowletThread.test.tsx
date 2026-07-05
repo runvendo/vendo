@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ConsentResponse } from "@flowlet/core";
 import { createStubAgent } from "@flowlet/core/testing";
 import { z } from "zod";
@@ -57,6 +57,8 @@ describe("FlowletThread end-to-end", () => {
 });
 
 describe("FlowletThread consent channel", () => {
+  afterEach(() => vi.useRealTimers());
+
   const mountWithConsent = (sendConsent: (response: ConsentResponse) => Promise<void>) =>
     render(
       <FlowletProvider
@@ -97,5 +99,24 @@ describe("FlowletThread consent channel", () => {
       { id: "call-1", decision: "no" },
       { toolName: "renderDemoCard" },
     );
+  });
+
+  it("REVIEW FOLLOW-UP: a never-settling consent POST still resolves the SDK approval (4s race timeout) — a HUNG fetch must never block it forever", async () => {
+    vi.useFakeTimers();
+    const sendConsent = vi.fn(() => new Promise<void>(() => {})); // never settles
+    mountWithConsent(sendConsent);
+    fireEvent.click(screen.getByText("show me a card"));
+    await vi.waitFor(() => screen.getByText("Send it"));
+    fireEvent.click(screen.getByText("Send it"));
+    await vi.waitFor(() => expect(sendConsent).toHaveBeenCalled());
+    // The consent POST is still pending — nothing has resolved it yet.
+    expect(screen.queryByTestId("demo-card")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    // Past the timeout, the SDK approval response still fires — the resume
+    // proceeds even though the consent POST never settled.
+    await vi.waitFor(() => screen.getByTestId("demo-card"));
+    vi.useRealTimers();
   });
 });
