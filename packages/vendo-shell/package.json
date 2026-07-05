@@ -26,7 +26,7 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp src/styles.css dist/styles.css",
+    "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -36,7 +36,6 @@
     "@vendoai/core": "workspace:*",
     "@vendoai/react": "workspace:*",
     "ai": "6.0.28",
-    "fluidkit": "file:../../vendor/fluidkit-0.5.0-656857b.tgz",
     "katex": "^0.16.11",
     "motion": "^12.41.0",
     "react-markdown": "^10.1.0",
@@ -48,9 +47,11 @@
     "@testing-library/react": "^16.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "fluidkit": "file:../../vendor/fluidkit-0.5.0-656857b.tgz",
     "jsdom": "^25.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
     "zod": "^3.24.0"
