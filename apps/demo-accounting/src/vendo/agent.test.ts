@@ -156,3 +156,13 @@ describe("createDemoAgent onSettled wiring", () => {
     expect(await demoStore.grants.findForTool(CADENCE_SCOPE, "SEND_TEST_EMAIL")).toHaveLength(1);
   });
 });
+
+describe("buildInstructions data fidelity", () => {
+  it("carries the platform DATA FIDELITY rules (dates never shift, divisors never guessed)", async () => {
+    const { buildInstructions } = await import("./agent");
+    const text = buildInstructions();
+    expect(text).toContain("DATA FIDELITY");
+    expect(text).toMatch(/NEVER guess a divisor/i);
+    expect(text).toMatch(/never timezone/i);
+  });
+});

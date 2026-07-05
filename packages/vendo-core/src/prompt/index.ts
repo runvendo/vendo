@@ -4,6 +4,7 @@ export {
   refreshableViewsSection,
   connectSection,
   consentSection,
+  dataFidelitySection,
   styleSection,
   registerSection,
   capabilitiesSection,

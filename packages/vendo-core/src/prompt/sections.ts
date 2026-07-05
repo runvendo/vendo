@@ -86,6 +86,36 @@ export function refreshableViewsSection(modality: PromptModality): string {
   ].join("\n");
 }
 
+/** Data-fidelity floor (prompt-hardening wave 5): the baseline number/date
+ *  rendering rules that hold even when a tool declares NO format hints.
+ *  Per-tool `RESULT FIELD FORMATS` blocks (format-hints.ts) refine these —
+ *  this section tells the model to defer to them and, absent a hint, to
+ *  never invent a money divisor or timezone-shift a calendar date. */
+export function dataFidelitySection(modality: PromptModality): string {
+  if (modality === "chat") {
+    return [
+      "DATA FIDELITY — numbers and dates in tool results are facts; render them faithfully:",
+      "- Calendar dates (YYYY-MM-DD strings) are literal calendar dates: render the named",
+      "  day as-is and never timezone-convert it (a Date parse can shift it by a day).",
+      "- ISO timestamps: format in the user's LOCAL time; never read the calendar date",
+      "  straight off the UTC string — it can be one day off.",
+      "- Money: NEVER guess a divisor. When a field name merely suggests money (amount,",
+      "  total, balance), present the raw value unchanged — unless the field name says",
+      "  cents (e.g. amountCents) or the tool's RESULT FIELD FORMATS rules declare a",
+      "  format; declared cents divide by exactly 100, nothing else.",
+      "- A total or stat tile must be computed from the same values as the rows it",
+      "  summarizes — a summary that disagrees with its own table is always wrong.",
+    ].join("\n");
+  }
+  return [
+    "DATA FIDELITY: dates in YYYY-MM-DD are literal calendar days — speak and display",
+    "the named day, never timezone-shift it; ISO timestamps read in the user's local",
+    "time. Never guess a money divisor: present raw values unless the field name says",
+    "cents or the tool's RESULT FIELD FORMATS declare one — declared cents divide by",
+    "exactly 100. A spoken total must match the rows on screen.",
+  ].join("\n");
+}
+
 /** The novel-codegen rules (source:'generated') — platform genui knowledge.
  *  `dispatchExample` lets a host show a real action name in the dispatch call. */
 export function novelComponentsSection(opts?: { dispatchExample?: string }): string {

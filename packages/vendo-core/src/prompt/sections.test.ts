@@ -3,6 +3,7 @@ import {
   capabilitiesSection,
   connectSection,
   consentSection,
+  dataFidelitySection,
   genuiFormatSection,
   guardrailSection,
   proactivitySection,
@@ -26,6 +27,8 @@ describe("prompt sections", () => {
       connectSection("voice"),
       consentSection("chat"),
       consentSection("voice"),
+      dataFidelitySection("chat"),
+      dataFidelitySection("voice"),
       styleSection({ noEmoji: true }),
       registerSection("chat"),
       registerSection("voice"),
@@ -83,6 +86,25 @@ describe("prompt sections", () => {
   it("consent(voice) is the yes-recency rule (driver protocol lives in consent-strings)", () => {
     const s = consentSection("voice");
     expect(s).toMatch(/MOST RECENT permission request/);
+  });
+
+  it("data fidelity (chat): literal calendar dates, no guessed money divisor, totals match rows", () => {
+    const s = dataFidelitySection("chat");
+    expect(s).toContain("DATA FIDELITY");
+    expect(s).toMatch(/YYYY-MM-DD/);
+    expect(s).toMatch(/never timezone/i);
+    expect(s).toMatch(/NEVER guess a divisor/i);
+    // The ambiguity rule: money-suggesting names stay raw without a hint.
+    expect(s).toMatch(/amount|total|balance/);
+    expect(s).toMatch(/raw value/i);
+    // The 100x stat-tile bug: summaries computed from the same values as rows.
+    expect(s).toMatch(/rows it summarizes|same values/i);
+  });
+
+  it("data fidelity (voice) carries the same date and divisor rules", () => {
+    const s = dataFidelitySection("voice");
+    expect(s).toMatch(/YYYY-MM-DD/);
+    expect(s).toMatch(/never guess a (money )?divisor/i);
   });
 
   it("guardrail says platform rules win", () => {
