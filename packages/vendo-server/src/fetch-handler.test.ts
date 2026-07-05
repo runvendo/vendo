@@ -40,7 +40,14 @@ describe("createVendoFetchHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const handler = createVendoFetchHandler({ vendoDir: emptyDir() });
     const res = await handler(req("/api/vendo/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
+  });
+
+  it("reports automations:false when the host disables automations", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir(), automations: false });
+    const res = await handler(req("/api/vendo/capabilities"));
+    expect(((await res.json()) as { automations: boolean }).automations).toBe(false);
   });
 
   it("keeps integrations inert without a Composio key", async () => {
@@ -121,7 +128,7 @@ describe("createVendoFetchHandler", () => {
     const handler = createVendoFetchHandler({ vendoDir: emptyDir(), model });
 
     const caps = await handler(req("/api/vendo/capabilities"));
-    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
 
     // The chatEnabled gate (503) fires before messages validation (400), so a
     // 400 on an empty messages array proves chat was NOT gated off.
@@ -157,7 +164,7 @@ describe("createVendoFetchHandler", () => {
     vi.stubEnv("VENDO_MODEL", "");
     const fixed = await handler(req("/api/vendo/capabilities"));
     expect(fixed.status).toBe(200);
-    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
     error.mockRestore();
   });
 

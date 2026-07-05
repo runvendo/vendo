@@ -738,10 +738,16 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           const guard = await resolvePrincipal(req, options);
           if (!guard.ok) return guard.response;
         }
-        // `storage` depends on the ASSEMBLED state (whether a durable handle
-        // was actually built), not an env key — detectCapabilities() alone
-        // can't know it, so it's merged in here.
-        return Response.json({ ...s.capabilities, storage: s.storage !== null });
+        // `storage`/`automations` depend on the ASSEMBLED state (whether a
+        // durable handle / an automations world was actually built), not an
+        // env key — detectCapabilities() alone can't know them, so they're
+        // merged in here. `automations: false` is what stops the client's
+        // deliveries poll from 404ing forever.
+        return Response.json({
+          ...s.capabilities,
+          storage: s.storage !== null,
+          automations: s.world !== null,
+        });
       }
       case "integrations":
         return handleIntegrationsGet(req, {

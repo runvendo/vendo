@@ -88,7 +88,7 @@ describe("createVendoHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { GET } = createVendoHandler({ vendoDir: emptyDir() });
     const res = await GET(req("/api/vendo/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
   it("capabilities.mcp is true when mcpServers option is set", async () => {
@@ -236,7 +236,7 @@ describe("createVendoHandler", () => {
     const { GET, POST } = createVendoHandler({ vendoDir: emptyDir(), model });
 
     const caps = await GET(req("/api/vendo/capabilities"));
-    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
 
     // The chatEnabled gate (503) fires before messages validation (400), so a
     // 400 on an empty messages array proves chat was NOT gated off.
@@ -268,7 +268,7 @@ describe("createVendoHandler", () => {
     vi.stubEnv("VENDO_MODEL", "");
     const fixed = await GET(req("/api/vendo/capabilities"));
     expect(fixed.status).toBe(200);
-    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
   it("resolves GET /capabilities after async assembly (async ripple smoke test)", async () => {
@@ -276,7 +276,7 @@ describe("createVendoHandler", () => {
     const { GET } = createVendoHandler({ vendoDir: emptyDir(), storage: false });
     const res = await GET(req("/api/vendo/capabilities"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
   it("reports storage:true once durable storage actually assembles (not just from an env key)", async () => {
@@ -286,7 +286,7 @@ describe("createVendoHandler", () => {
     });
     const res = await GET(req("/api/vendo/capabilities"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: true });
+    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: true, automations: true });
   });
 
   it("warns once, no matter how many requests, when running without durable storage in production", async () => {

@@ -282,7 +282,11 @@ export function VendoRoot({
               Ask {productName}
             </button>
           )}
-          {toasts && (
+          {/* The deliveries poll waits for capabilities and never starts when
+              the server says automations are off. An old server that omits
+              the flag still polls, and a 404 from /deliveries then stops the
+              loop for good (see createServerNotifications). */}
+          {toasts && capabilities !== null && capabilities.automations !== false && (
             <VendoToasts placement={toastPlacement} namespace={`vendo:${threadId}`} />
           )}
         </VendoShellProvider>

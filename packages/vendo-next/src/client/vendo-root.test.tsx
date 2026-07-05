@@ -64,6 +64,37 @@ describe("VendoRoot", () => {
     expect(offMock.mock.calls.some(([u]) => String(u).includes("/deliveries"))).toBe(false);
   });
 
+  it("never starts the deliveries poll when capabilities report automations:false", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/capabilities")) {
+        return new Response(
+          JSON.stringify({
+            chat: true,
+            integrations: false,
+            voice: false,
+            storage: false,
+            automations: false,
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("{}", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <VendoRoot productName="Acme">
+        <div />
+      </VendoRoot>,
+    );
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/capabilities"))).toBe(true),
+    );
+    // Give any (wrong) poll a beat to fire.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/deliveries"))).toBe(false);
+  });
+
   it("hides the launcher when launcher='none'", () => {
     vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false }));
     render(

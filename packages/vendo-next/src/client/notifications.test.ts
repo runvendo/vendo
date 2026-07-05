@@ -62,6 +62,17 @@ describe("createServerNotifications", () => {
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ runId: "r9", approved: true });
   });
 
+  it("answers 'disabled' on a 404 (automations off) so the poll loop can stop", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(JSON.stringify({ error: "automations are disabled" }), { status: 404 }),
+      ),
+    );
+    const client = createServerNotifications("/api/vendo");
+    expect(await client.listSince(0)).toBe("disabled");
+  });
+
   it("maps a resumed run answer to 'resumed' and rejects on HTTP failure", async () => {
     vi.stubGlobal(
       "fetch",
