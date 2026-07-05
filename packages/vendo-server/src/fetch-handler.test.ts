@@ -134,7 +134,11 @@ describe("createVendoFetchHandler", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
     vi.stubEnv("COMPOSIO_API_KEY", "ck_x");
     vi.stubEnv("NODE_ENV", "production"); // fail-closed in prod even for spoofed Host
-    const handler = createVendoFetchHandler({ vendoDir: emptyDir() });
+    // storage:false keeps this guard test off the durable path: NODE_ENV=production
+    // otherwise trips resolveStorage's real PGlite boot (the test-env safety net is
+    // NODE_ENV==="test"-only), whose WASM first-init is flaky here and would 500 the
+    // first request before it reaches the remote guard. This test is about the guard.
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir(), storage: false });
     for (const p of ["chat", "action", "tick", "integrations"]) {
       const res = await handler(
         new Request(`http://prod.example.com/api/vendo/${p}`, {
