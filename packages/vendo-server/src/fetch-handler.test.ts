@@ -270,10 +270,14 @@ describe("createVendoFetchHandler", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://api.openai.com/v1/realtime/client_secrets");
-    expect(init).toMatchObject({
-      method: "POST",
-      headers: { Authorization: "Bearer sk-voice", "Content-Type": "application/json" },
+    expect((init as RequestInit).method).toBe("POST");
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: "Bearer sk-voice",
+      "Content-Type": "application/json",
     });
+    expect(((init as RequestInit).headers as Record<string, string>)["OpenAI-Safety-Identifier"]).toMatch(
+      /^vendo_[a-f0-9]{64}$/,
+    );
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({
       session: {
         type: "realtime",
@@ -286,7 +290,10 @@ describe("createVendoFetchHandler", () => {
   it("502s /voice/session when the OpenAI mint fails", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-voice");
     const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ error: { message: "bad key" } }), { status: 401 }),
+      new Response(JSON.stringify({ error: { message: "bad key with account detail" } }), {
+        status: 401,
+        headers: { "x-request-id": "req_voice_123" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -295,9 +302,44 @@ describe("createVendoFetchHandler", () => {
     const res = await handler(req("/api/vendo/voice/session", { method: "POST" }));
 
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "bad key" });
+    expect(await res.json()).toEqual({ error: "mint failed" });
     expect(fetchMock).toHaveBeenCalledOnce();
+    const logged = err.mock.calls
+      .flat()
+      .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : String(arg)))
+      .join(" ");
+    expect(logged).toContain("401");
+    expect(logged).toContain("req_voice_123");
+    expect(logged).not.toContain("bad key");
+    expect(logged).not.toContain("account detail");
     err.mockRestore();
+  });
+
+  it("binds /voice/session mints to the guarded principal, not a browser-supplied safety id", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-voice");
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ value: "eph_secret" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const handler = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      model: modelStub(),
+      principal: async () => ({ userId: "user-42" }),
+    });
+
+    const res = await handler(
+      req("/api/vendo/voice/session", {
+        method: "POST",
+        headers: { host: "localhost:3000", "OpenAI-Safety-Identifier": "browser-forged" },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["OpenAI-Safety-Identifier"]).toMatch(/^vendo_[a-f0-9]{64}$/);
+    expect(headers["OpenAI-Safety-Identifier"]).not.toBe("browser-forged");
+    expect(headers["OpenAI-Safety-Identifier"]).not.toContain("user-42");
   });
 
   it("503s /voice/session without OPENAI_API_KEY and does not call upstream", async () => {
@@ -333,6 +375,32 @@ describe("createVendoFetchHandler", () => {
 
     expect(res.status).toBe(403);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("guards /voice/tools with the same production default request guard as other spend routes", async () => {
+    vi.stubEnv("COMPOSIO_API_KEY", "ck_x");
+    vi.stubEnv("NODE_ENV", "production");
+    const handler = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      model: modelStub(),
+      storage: false,
+    });
+
+    const get = await handler(
+      new Request("http://prod.example.com/api/vendo/voice/tools", {
+        headers: { host: "prod.example.com" },
+      }),
+    );
+    const post = await handler(
+      new Request("http://prod.example.com/api/vendo/voice/tools", {
+        method: "POST",
+        headers: { host: "prod.example.com", "content-type": "application/json" },
+        body: JSON.stringify({ tool: "GMAIL_FETCH_EMAILS", input: {} }),
+      }),
+    );
+
+    expect(get.status).toBe(403);
+    expect(post.status).toBe(403);
   });
 
   it("400s a chat request with no messages once a key is present", async () => {

@@ -5,6 +5,8 @@
  * OPENAI_API_KEY never leaves this server route. The caller guard lives in
  * fetch-handler.ts so voice mints share the same spend boundary as chat/action.
  */
+import { createHmac } from "node:crypto";
+import type { VendoPrincipal } from "@vendoai/runtime";
 
 const DEFAULT_REALTIME_MODEL = "gpt-realtime";
 const DEFAULT_REALTIME_VOICE = "marin";
@@ -13,11 +15,19 @@ const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 export interface VoiceSessionDeps {
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
+  principal?: VendoPrincipal;
 }
 
 function present(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function safetyIdentifier(principal: VendoPrincipal | undefined, env: Record<string, string | undefined>, apiKey: string): string | undefined {
+  if (!principal?.userId) return undefined;
+  const key = present(env["VENDO_OPENAI_SAFETY_SALT"]) ?? apiKey;
+  const digest = createHmac("sha256", key).update(principal.userId).digest("hex");
+  return `vendo_${digest}`;
 }
 
 export async function handleVoiceSessionPost(_req: Request, deps: VoiceSessionDeps = {}): Promise<Response> {
@@ -30,12 +40,17 @@ export async function handleVoiceSessionPost(_req: Request, deps: VoiceSessionDe
   const model = present(env["OPENAI_REALTIME_MODEL"]) ?? DEFAULT_REALTIME_MODEL;
   const voice = present(env["OPENAI_REALTIME_VOICE"]) ?? DEFAULT_REALTIME_VOICE;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const safetyId = safetyIdentifier(deps.principal, env, apiKey);
 
   let upstream: Response;
   try {
     upstream = await fetchImpl(CLIENT_SECRETS_URL, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...(safetyId ? { "OpenAI-Safety-Identifier": safetyId } : {}),
+      },
       body: JSON.stringify({
         session: {
           type: "realtime",
@@ -45,20 +60,25 @@ export async function handleVoiceSessionPost(_req: Request, deps: VoiceSessionDe
       }),
     });
   } catch (err) {
-    console.error("[vendo voice] client_secrets mint failed", err);
+    console.error("[vendo voice] client_secrets mint failed", { error: err instanceof Error ? err.name : "unknown" });
     return Response.json({ error: "mint failed" }, { status: 502 });
   }
 
-  const body = (await upstream.json().catch(() => ({}))) as {
-    value?: string;
-    error?: { message?: string };
-  };
-  if (!upstream.ok || !body.value) {
-    console.error("[vendo voice] client_secrets mint failed", upstream.status, body);
-    return Response.json(
-      { error: body.error?.message ?? `mint failed (${upstream.status})` },
-      { status: 502 },
-    );
+  if (!upstream.ok) {
+    console.error("[vendo voice] client_secrets mint failed", {
+      status: upstream.status,
+      requestId: upstream.headers.get("x-request-id") ?? upstream.headers.get("openai-request-id") ?? undefined,
+    });
+    return Response.json({ error: "mint failed" }, { status: 502 });
+  }
+
+  const body = (await upstream.json().catch(() => ({}))) as { value?: string };
+  if (!body.value) {
+    console.error("[vendo voice] client_secrets mint failed", {
+      status: upstream.status,
+      requestId: upstream.headers.get("x-request-id") ?? upstream.headers.get("openai-request-id") ?? undefined,
+    });
+    return Response.json({ error: "mint failed" }, { status: 502 });
   }
 
   return Response.json({ clientSecret: body.value, model });

@@ -11,6 +11,7 @@
  *   GET|POST /integrations — Composio connect flow (inert without the key)
  *   GET  /capabilities  — { chat, integrations, voice, mcp } from env-key/config presence
  *   POST /voice/session — ephemeral OpenAI Realtime client secret mint
+ *   GET|POST /voice/tools — connected integration tool bridge for voice
  *   GET  /deliveries    — in-app Channels feed for VendoToasts (single-tenant)
  *   POST /tick          — drives the automations scheduler
  *   POST /resume        — resumes a paused automation run (approval toast)
@@ -92,6 +93,7 @@ import { parseHandlerOptions, type VendoHandlerOptions } from "./options";
 import { devTelemetry, errorClassName } from "./telemetry-dev";
 import { handleComposioWebhook } from "./webhooks";
 import { handleVoiceSessionPost } from "./voice";
+import { handleVoiceToolsGet, handleVoiceToolsPost } from "./voice-tools";
 
 // Exported for vendos.ts's save-path id validation (a saved vendo's id
 // is caller-assigned, unlike threads' store-assigned UUIDs — see the
@@ -691,6 +693,15 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           enabled: s.capabilities.integrations,
           options,
         });
+      case "voice/tools": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return handleVoiceToolsGet(req, {
+          store: s.connections,
+          enabled: s.capabilities.integrations,
+          principal: guard.principal,
+        });
+      }
       case "deliveries": {
         // VendoToasts polls this: in-app Channels deliveries since a cursor.
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
@@ -801,7 +812,16 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
       case "voice/session": {
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
-        return handleVoiceSessionPost(req);
+        return handleVoiceSessionPost(req, { principal: guard.principal });
+      }
+      case "voice/tools": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return handleVoiceToolsPost(req, {
+          store: s.connections,
+          enabled: s.capabilities.integrations,
+          principal: guard.principal,
+        });
       }
       case "tick": {
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
