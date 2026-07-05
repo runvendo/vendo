@@ -39,6 +39,7 @@ import { VendoConnectNode } from "./connect-node";
 import { createServerIntegrations } from "./integrations";
 import { createServerNotifications } from "./notifications";
 import { createRunQuery } from "./run-query";
+import { createVendoVoice } from "./voice";
 import type { VoiceDriver } from "@vendoai/shell";
 
 export interface VendoRootProps {
@@ -61,10 +62,10 @@ export interface VendoRootProps {
   /** Corner for the toast stack. Default "bottom-left" (the launcher pill
    *  owns bottom-right). */
   toastPlacement?: VendoToastsProps["placement"];
-  /** Realtime voice driver (ENG-185). When provided, the overlay's composer
-   *  grows a mic. Build one with createRealtimeVoiceDriver from
-   *  @vendoai/shell against a host session-mint endpoint. */
-  voice?: VoiceDriver;
+  /** Realtime voice driver (ENG-185). Omit for zero-config voice when the
+   *  handler reports `voice:true`; pass `false` to opt out, or a custom
+   *  driver to override the packaged OpenAI Realtime wiring. */
+  voice?: VoiceDriver | false;
   children: ReactNode;
 }
 
@@ -178,6 +179,17 @@ export function VendoRoot({
   );
 
   const runQuery = useMemo(() => createRunQuery(basePath, manifestTools), [basePath, manifestTools]);
+  const effectiveVoice = useMemo<VoiceDriver | undefined>(() => {
+    if (voice === false) return undefined;
+    if (voice) return voice;
+    if (!capabilities?.voice) return undefined;
+    return createVendoVoice({
+      basePath,
+      productName,
+      hostTools: hostToolDefs,
+      integrations: capabilities.integrations,
+    });
+  }, [voice, capabilities?.voice, capabilities?.integrations, basePath, productName, hostToolDefs]);
 
   const renderNode = useMemo(() => {
     const render = (node: UINode): ReactNode => {
@@ -236,7 +248,7 @@ export function VendoRoot({
               onOpenChange={setOpen}
               {...(greeting !== undefined ? { greeting } : {})}
               {...(suggestions !== undefined ? { suggestions } : {})}
-              {...(voice !== undefined && capabilities?.voice ? { voice } : {})}
+              {...(effectiveVoice ? { voice: effectiveVoice } : {})}
             />
           )}
           {chatEnabled && launcher === "pill" && !open && (
