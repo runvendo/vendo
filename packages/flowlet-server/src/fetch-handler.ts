@@ -33,7 +33,7 @@
 import assert from "node:assert";
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
-import { DrizzleAutomationStore, setMeta } from "@flowlet/store";
+import { DrizzleAutomationStore, createDrizzleThreadStore, setMeta } from "@flowlet/store";
 import {
   buildDescriptor,
   createBreakerState,
@@ -71,7 +71,7 @@ import { resolveModel } from "./model";
 import { defaultFlowletPolicy } from "./default-policy";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
 import { createThreadIndex } from "./threads";
-import { resolvePrincipal, tickServiceAuth, DEFAULT_PRINCIPAL } from "./guard";
+import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL } from "./guard";
 import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
 import { handleComposioWebhook } from "./webhooks";
@@ -141,7 +141,14 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
     const grants = options.store?.grants ?? createInMemoryGrantStore();
     const rules = options.store?.rules ?? createInMemoryCompiledRuleStore();
     const audit = options.store?.audit ?? new InMemoryAuditLog();
-    const threads = options.store?.threads ?? new InMemoryThreadStore(() => new Date().toISOString());
+    // Thread persistence reuses the shared durable handle when storage is
+    // configured; an injected `store.threads` always wins; otherwise the
+    // in-memory fallback (nothing survives a restart, same posture as the
+    // engine store's in-memory fallback below).
+    const storage = await resolveStorage(options);
+    const threads =
+      options.store?.threads ??
+      (storage ? createDrizzleThreadStore(storage) : new InMemoryThreadStore(() => new Date().toISOString()));
     const threadIndex = createThreadIndex(threads);
     const breakers = options.store?.breakers ?? createBreakerState();
     const fadeTracker = options.store?.fadeTracker ?? createFadeTracker();
@@ -160,11 +167,8 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 
-    // The shared FlowletDb handle: `null` means in-memory (storage: false, or
-    // the NODE_ENV=test default — see storage.ts). Only the engine store is
-    // wired durably this task; decision/thread/flowlet/connections stores
-    // reuse this same handle in later tasks.
-    const storage = await resolveStorage(options);
+    // The shared FlowletDb handle (resolved above): `null` means in-memory
+    // (storage: false, or the NODE_ENV=test default — see storage.ts).
     if (storage === null && process.env["NODE_ENV"] === "production") {
       console.warn(
         "[flowlet] no durable storage configured in production (NODE_ENV=production) — " +
@@ -611,8 +615,21 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
         if (!guard.ok) return guard.response;
         return listCriticalToolsRoute(req, { toolNames: s.knownToolNames(), resolveDescriptor: s.resolveDescriptor });
       }
-      default:
+      case "threads": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return Response.json(await s.threads.list(threadScope(guard.principal)));
+      }
+      default: {
+        const tail = routeTail(req);
+        if (tail.startsWith("threads/")) {
+          const guard = await resolvePrincipal(req, options);
+          if (!guard.ok) return guard.response;
+          const threadId = decodeURIComponent(tail.slice("threads/".length));
+          return Response.json(await s.threads.getMessages(threadScope(guard.principal), threadId));
+        }
         return Response.json({ error: "not found" }, { status: 404 });
+      }
     }
   }
 
@@ -623,6 +640,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
           getAgent: s.getAgent,
           hostTools: s.hostTools,
           options,
+          threads: s.threads,
           resolveRemixSource: s.resolveRemixSource,
           ...(s.remixSealer ? { remixSealer: s.remixSealer } : {}),
           // capabilities.chat is the single source of truth: it already

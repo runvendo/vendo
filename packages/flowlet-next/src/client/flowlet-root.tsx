@@ -133,8 +133,12 @@ export function FlowletRoot({
   }, [basePath]);
 
   const transport = useMemo(
-    () => new DefaultChatTransport<FlowletUIMessage>({ api: `${basePath}/chat` }),
-    [basePath],
+    // Static `body` merges into every request the transport sends — this is
+    // how the server-side thread persistence (createFlowletHandler's /chat)
+    // knows which thread to upsert into. Surfaces sharing a threadId share a
+    // durable conversation, not just a client-side one.
+    () => new DefaultChatTransport<FlowletUIMessage>({ api: `${basePath}/chat`, body: { threadId } }),
+    [basePath, threadId],
   );
 
   // Saved flowlets survive reloads; only touches localStorage inside methods,

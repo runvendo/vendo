@@ -3,18 +3,38 @@
  * streamed UIMessage response. History normalization (dangling tool parts,
  * unanswered approvals) is engine-owned; this layer validates the body,
  * resolves the principal, and streams.
+ *
+ * Durable threads: the client's thread id (`threadId`, falling back to the
+ * ai SDK Chat's own `id`) resolves through the ThreadIndex to a store
+ * thread. Three writers cooperate, idempotently by message id:
+ *
+ *   1. Pre-stream, the incoming client messages are UPSERTED (so a resume's
+ *      mutated approval parts are captured even if the run never settles).
+ *   2. The engine's onSettled hook (registered in fetch-handler.ts) persists
+ *      each SETTLED run's full message list — including the streamed
+ *      assistant turn and approval-requested parts the consent endpoint
+ *      reads — via `replaceMessages` when the store has it, else an
+ *      append-only prefix delta.
+ *   3. The terminal assistant message is captured by TEEING the response
+ *      stream and upserted by id — this covers stores WITHOUT
+ *      `replaceMessages` on continuation turns (where the prefix delta
+ *      misses in-place revisions). Upsert-by-id makes 2 and 3 converge
+ *      instead of duplicating.
+ *
+ * Persistence failures are logged, never surfaced to the caller — a store
+ * outage must not break chat.
  */
-import { createUIMessageStreamResponse } from "ai";
+import { createUIMessageStreamResponse, readUIMessageStream, type UIMessageChunk } from "ai";
 import type {
   FlowletAgent,
   FlowletUIMessage,
   Principal,
   RemixSourceResolver,
+  ThreadStore,
 } from "@flowlet/core";
 import { hostToolset, type RemixSealer } from "@flowlet/runtime";
 import type { HostToolDefinition } from "@flowlet/core";
-import { resolvePrincipal } from "./guard";
-import { EMBEDDED_TENANT } from "./policy-stack";
+import { resolvePrincipal, threadScope } from "./guard";
 import type { ThreadIndex } from "./threads";
 import { applyVerifiedPinBase, enrichAnchorSources } from "./remix-enrich";
 import type { FlowletHandlerOptions } from "./options";
@@ -25,6 +45,9 @@ interface ChatRequestBody {
    *  thread when a caller (tests, an older client) omits it. */
   id?: string;
   messages?: FlowletUIMessage[];
+  /** Client-owned thread id (FlowletRoot's transport body). Preferred over
+   *  `id` when present — surfaces sharing a threadId share one conversation. */
+  threadId?: string;
 }
 
 export interface ChatDeps {
@@ -35,12 +58,36 @@ export interface ChatDeps {
   chatEnabled: boolean;
   /** Maps the client's chat id to a store thread id (ENG-193 §6.2). */
   threadIndex: ThreadIndex;
+  /** Durable (or in-memory) thread persistence. Optional — deps built before
+   *  thread persistence existed keep working with no request-side writes
+   *  (the engine's onSettled hook still persists settled runs). */
+  threads?: ThreadStore;
   /** Server-side anchor source lookup (remix-fidelity). Client-supplied
    *  `scoped.remixSource` is stripped regardless. */
   resolveRemixSource?: RemixSourceResolver;
   /** Verifies client-carried pin envelopes into `scoped.pinBase` (remix
    *  fast-edits). Absent → envelopes are dropped, pin editing unavailable. */
   remixSealer?: RemixSealer;
+}
+
+/** Reduces the UIMessage-chunk stream to its terminal message and upserts it.
+ *  Runs detached from the response (fire-and-forget): errors are logged, not
+ *  thrown — a persistence hiccup must never surface as a chat failure. */
+async function captureAssistantTurn(
+  stream: ReadableStream<UIMessageChunk>,
+  threads: ThreadStore,
+  scope: Principal,
+  threadId: string,
+): Promise<void> {
+  try {
+    let last: FlowletUIMessage | undefined;
+    for await (const message of readUIMessageStream({ stream })) {
+      last = message as FlowletUIMessage;
+    }
+    if (last) await threads.upsertMessages(scope, threadId, [last]);
+  } catch (err) {
+    console.error("[flowlet] failed to persist the assistant turn:", err);
+  }
 }
 
 export async function handleChat(req: Request, deps: ChatDeps): Promise<Response> {
@@ -69,20 +116,28 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     return Response.json({ error: "messages must be a non-empty array" }, { status: 400 });
   }
 
-  const clientThreadId = typeof body.id === "string" && body.id.length > 0 ? body.id : "default";
-  const scope: Principal = { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId };
+  // One identity space: FlowletRoot sends an explicit client-owned
+  // `threadId`; the ai SDK transport always sends `id`. Both resolve through
+  // the same ThreadIndex so the consent endpoint (which resolves `id`) and
+  // the /threads routes land on the same store thread.
+  const clientThreadId =
+    typeof body.threadId === "string" && body.threadId.length > 0
+      ? body.threadId
+      : typeof body.id === "string" && body.id.length > 0
+        ? body.id
+        : "default";
+  const scope: Principal = threadScope(guard.principal);
   const threadRecordId = await deps.threadIndex.resolve(scope, clientThreadId);
 
-  // NO persistence here — the SINGLE writer for thread messages is the
-  // engine's onSettled hook (registered in handler.ts's createAgentCache
-  // call). It fires with the FULL settled message list — including the
-  // streamed assistant turn and any approval-requested parts — keyed by the
-  // threadId below, so the consent endpoint can read this turn's approval
-  // part BEFORE the client's next chat turn. Persisting the request body
-  // here as well would double-append (and, alone, it misses the streamed
-  // turn entirely — review 2026-07-04). The onSettled writer delta-appends
-  // on a prefix assumption (single-client v1): the settled list strictly
-  // extends what's stored.
+  const threads = deps.threads;
+  if (threads) {
+    // Pre-stream: capture the client's messages as sent — including a
+    // resume's mutated approval parts on a message id already on file — even
+    // if the run below never completes. Upsert-by-id, so the engine's
+    // onSettled writer (the settled-list persister) never double-appends.
+    await threads.upsertMessages(scope, threadRecordId, messages);
+  }
+
   const stream = deps.getAgent().run({
     // Enrichment strips client-supplied source/pinBase and confines the raw
     // envelope to the last user message; verification then converts it into
@@ -101,5 +156,10 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     threadId: threadRecordId,
   });
 
+  if (threads) {
+    const [forClient, forCapture] = stream.tee();
+    void captureAssistantTurn(forCapture, threads, scope, threadRecordId);
+    return createUIMessageStreamResponse({ stream: forClient });
+  }
   return createUIMessageStreamResponse({ stream });
 }

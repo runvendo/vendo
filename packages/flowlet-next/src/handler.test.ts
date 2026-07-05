@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createFlowletDatabase, getMeta } from "@flowlet/store";
+import { createFlowletDatabase, createDrizzleThreadStore, getMeta } from "@flowlet/store";
+import type { FlowletUIMessage } from "@flowlet/core";
 import { createFlowletHandler, resetFlowletBootRegistry, routeTail } from "./handler";
 import { z } from "zod";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
@@ -341,6 +342,60 @@ describe("createFlowletHandler", () => {
       expect(heartbeat?.at).toBeTruthy();
       expect(Number.isNaN(Date.parse(heartbeat!.at!))).toBe(false);
     });
+  });
+
+  it("GET /threads and /threads/<id> are principal-scoped (per-user isolation)", async () => {
+    const dataDir = `memory://flowlet-next-threads-${Date.now()}`;
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir } },
+      principal: async (r) => {
+        const userId = r.headers.get("x-user");
+        return userId ? { userId } : null;
+      },
+    });
+
+    // Assembly (and its boot migration) is lazy — trigger it before seeding
+    // directly against the same durable handle, or the seed write races the
+    // migration that creates `flowlet.threads`.
+    await GET(req("/api/flowlet/capabilities", { headers: { host: "localhost:3000", "x-user": "alice" } }));
+    const handle = await createFlowletDatabase({ pglite: { dataDir } });
+    const threads = createDrizzleThreadStore(handle);
+    const msg = (id: string, text: string): FlowletUIMessage =>
+      ({ id, role: "user", parts: [{ type: "text", text }] }) as FlowletUIMessage;
+    await threads.upsertMessages({ tenantId: "flowlet-embedded", subject: "alice" }, "t-alice", [
+      msg("m1", "hi from alice"),
+    ]);
+    await threads.upsertMessages({ tenantId: "flowlet-embedded", subject: "bob" }, "t-bob", [
+      msg("m2", "hi from bob"),
+    ]);
+
+    const aliceList = await GET(
+      req("/api/flowlet/threads", { headers: { host: "localhost:3000", "x-user": "alice" } }),
+    );
+    const aliceThreads = (await aliceList.json()) as Array<{ id: string }>;
+    expect(aliceThreads.map((t) => t.id)).toEqual(["t-alice"]);
+
+    const bobList = await GET(
+      req("/api/flowlet/threads", { headers: { host: "localhost:3000", "x-user": "bob" } }),
+    );
+    const bobThreads = (await bobList.json()) as Array<{ id: string }>;
+    expect(bobThreads.map((t) => t.id)).toEqual(["t-bob"]);
+
+    const aliceMessages = await GET(
+      req("/api/flowlet/threads/t-alice", { headers: { host: "localhost:3000", "x-user": "alice" } }),
+    );
+    expect(await aliceMessages.json()).toEqual([msg("m1", "hi from alice")]);
+
+    // Isolation: bob reading alice's thread id sees nothing, not her data.
+    const bobReadsAlice = await GET(
+      req("/api/flowlet/threads/t-alice", { headers: { host: "localhost:3000", "x-user": "bob" } }),
+    );
+    expect(await bobReadsAlice.json()).toEqual([]);
+
+    // No principal (resolver returns null) → 403, never a bare list.
+    const anon = await GET(req("/api/flowlet/threads", { headers: { host: "localhost:3000" } }));
+    expect(anon.status).toBe(403);
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {

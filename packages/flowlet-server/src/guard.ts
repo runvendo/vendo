@@ -60,6 +60,17 @@ export const DEFAULT_PRINCIPAL: FlowletPrincipal = { userId: "flowlet-default-us
  */
 export const WORLD_SCOPE: Principal = { tenantId: "flowlet-embedded", subject: DEFAULT_PRINCIPAL.userId };
 
+/**
+ * Maps a resolved request principal to a thread-store scope: the same fixed
+ * tenant as `WORLD_SCOPE` (v1 is single-tenant), subject = the principal's
+ * `userId`. This is what gives per-user thread isolation when a host wires a
+ * custom `principal` resolver — each distinct userId gets its own thread
+ * list — while every install still shares one automations-world tenant.
+ */
+export function threadScope(principal: FlowletPrincipal): Principal {
+  return { tenantId: WORLD_SCOPE.tenantId, subject: principal.userId };
+}
+
 export const REMOTE_BLOCKED_MESSAGE =
   "Flowlet is not serving this request. In production you MUST pass a `principal` " +
   "resolver to createFlowletHandler (recommended) or set FLOWLET_ALLOW_REMOTE=1. " +
