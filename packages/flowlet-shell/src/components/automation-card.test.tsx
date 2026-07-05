@@ -31,7 +31,7 @@ describe("isAutomationApproval", () => {
 });
 
 describe("AutomationCard (proposal state)", () => {
-  it("shows name, tier, trigger, guard, step targets, and the original ask", () => {
+  it("shows a consumer-friendly approval summary with app context", () => {
     render(
       <AutomationCard
         toolName="create_automation"
@@ -40,15 +40,15 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText("Late-night delivery snitch")).toBeTruthy();
-    expect(screen.getByText(/deterministic/i)).toBeTruthy();
-    expect(screen.getAllByText(/transaction\.created/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/trigger\.hour < 5/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/#general/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/snitch on me in #general/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('Turn on "Late-night delivery snitch"?')).toBeTruthy();
+    expect(screen.getByText("Needs your approval")).toBeTruthy();
+    expect(screen.getByText("A transaction is created")).toBeTruthy();
+    expect(screen.getByText("For outgoing transactions before 5:00 AM")).toBeTruthy();
+    expect(screen.getByText("Post to #general")).toBeTruthy();
+    expect(screen.getAllByText("Slack").length).toBeGreaterThan(0);
   });
 
-  it("marks granted tools as run-without-asking and ungated ones as ask-each-time", () => {
+  it("marks granted tools as able to run automatically", () => {
     render(
       <AutomationCard
         toolName="create_automation"
@@ -57,7 +57,7 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/runs without asking/i)).toBeTruthy();
+    expect(screen.getByText(/can run automatically/i)).toBeTruthy();
   });
 
   it("shows the un-granted state truthfully", () => {
@@ -69,10 +69,10 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/asks you each time/i)).toBeTruthy();
+    expect(screen.getByText(/will ask first/i)).toBeTruthy();
   });
 
-  it("renders a hybrid spec's agent step with its goal and allowlist", () => {
+  it("renders a hybrid spec's agent step with its goal and app permission", () => {
     const hybrid = {
       ...snitchSpec,
       name: "Weekly digest",
@@ -98,8 +98,8 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/hybrid/i)).toBeTruthy();
     expect(screen.getAllByText(/Write a friendly weekly digest/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Maple")).toBeTruthy();
   });
 
   it("approve and decline fire the callbacks", () => {
@@ -113,8 +113,8 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={onDecline}
       />,
     );
-    fireEvent.click(screen.getByText("Approve automation"));
-    fireEvent.click(screen.getByText("Decline"));
+    fireEvent.click(screen.getByText("Turn on automation"));
+    fireEvent.click(screen.getByText("Not now"));
     expect(onApprove).toHaveBeenCalledOnce();
     expect(onDecline).toHaveBeenCalledOnce();
   });

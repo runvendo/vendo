@@ -251,6 +251,41 @@
 .fl-approval-field dd { margin: 0; color: var(--flowlet-fg); overflow-wrap: anywhere; white-space: pre-line; }
 .fl-approval-more { font-size: 11.5px; color: var(--flowlet-fg-muted); }
 .fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+.fl-automation-approval { padding: 14px; }
+.fl-auto-approval-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.fl-auto-approval-heading { min-width: 0; }
+.fl-auto-approval-title { margin-top: 5px; font: 650 15px/1.25 var(--flowlet-font); color: var(--flowlet-fg);
+  letter-spacing: -.01em; overflow-wrap: anywhere; }
+.fl-auto-logo-stack { display: flex; align-items: center; flex-shrink: 0; padding-top: 1px; }
+.fl-auto-logo { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid var(--flowlet-border);
+  border-radius: 10px; background: var(--flowlet-surface); box-shadow: inset 0 1px 0 rgba(255,255,255,.58); }
+.fl-auto-logo + .fl-auto-logo { margin-left: -7px; }
+.fl-auto-summary { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--flowlet-border); }
+.fl-auto-summary-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; align-items: start; }
+.fl-auto-summary-k { padding-top: 1px; color: var(--flowlet-fg-muted); font-size: 11.5px; font-weight: 650; }
+.fl-auto-summary-v { min-width: 0; display: flex; flex-direction: column; gap: 2px; color: var(--flowlet-fg);
+  font-size: 12.5px; line-height: 1.35; }
+.fl-auto-summary-v strong { font: 600 12.8px/1.35 var(--flowlet-font); overflow-wrap: anywhere; }
+.fl-auto-summary-v span { color: var(--flowlet-fg-muted); overflow-wrap: anywhere; }
+.fl-auto-access { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.fl-auto-access-label { color: var(--flowlet-fg-muted); font-size: 11.5px; font-weight: 650; }
+.fl-auto-access-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  min-width: 0; padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--flowlet-border) 68%, transparent); }
+.fl-auto-access-row:first-of-type { border-top: 0; }
+.fl-auto-access-logo { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--flowlet-border);
+  border-radius: 10px; background: var(--flowlet-surface); box-shadow: inset 0 1px 0 rgba(255,255,255,.58); }
+.fl-auto-access-copy { min-width: 0; }
+.fl-auto-access-title { color: var(--flowlet-fg); font-size: 12.5px; font-weight: 650; line-height: 1.2; }
+.fl-auto-access-sub { margin-top: 2px; color: var(--flowlet-fg-muted); font-size: 11.5px; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-auto-access-badge { justify-self: end; max-width: 112px; padding: 4px 7px; border-radius: 999px;
+  background: var(--flowlet-accent-soft); color: var(--flowlet-fg); font-size: 10.5px; font-weight: 650;
+  line-height: 1.15; text-align: center; overflow-wrap: normal; }
+.fl-auto-details { margin-top: 8px; }
+.fl-auto-details summary { color: var(--flowlet-fg-muted); font-size: 11px; cursor: pointer; }
+.fl-auto-details pre { margin: 7px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap;
+  font: 11px/1.35 var(--flowlet-font-mono); color: var(--flowlet-fg-muted); }
 .fl-approval-batch-list { list-style: none; margin: 12px 0 0; padding: 10px 0 2px;
   border-top: 1px solid var(--flowlet-border); display: flex; flex-direction: column; gap: 7px; }
 .fl-approval-batch-row label { display: flex; align-items: center; gap: 9px;
