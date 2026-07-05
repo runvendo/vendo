@@ -912,8 +912,8 @@ importers:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
       fluidkit:
-        specifier: file:../../vendor/fluidkit-0.3.0-d5e0fd6.tgz
-        version: file:vendor/fluidkit-0.3.0-d5e0fd6.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: file:../../vendor/fluidkit-0.5.0-656857b.tgz
+        version: file:vendor/fluidkit-0.5.0-656857b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       katex:
         specifier: ^0.16.11
         version: 0.16.47
@@ -6593,13 +6593,17 @@ packages:
   flatted@3.4.2:
     resolution: {integrity: sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==}
 
-  fluidkit@file:vendor/fluidkit-0.3.0-d5e0fd6.tgz:
-    resolution: {integrity: sha512-t1QLDK70xRx7V/vwsfCucFgz05fHpPeAz5BCLqe/5iUb8NqjPtHftj3qVlLL3duOUI2oDDT4G4zQv1k5ZJiD2g==, tarball: file:vendor/fluidkit-0.3.0-d5e0fd6.tgz}
-    version: 0.3.0
+  fluidkit@file:vendor/fluidkit-0.5.0-656857b.tgz:
+    resolution: {integrity: sha512-RGUwZZMEPDCJRxxT2OlQnQyewr8AyBLE9LNz/nSMxYcTvtmOEmzc2VJK4j3+GJ3SkZlq9bWB1c3H+5z00E60PQ==, tarball: file:vendor/fluidkit-0.5.0-656857b.tgz}
+    version: 0.5.0
     peerDependencies:
+      '@paper-design/shaders-react': 0.0.76
       motion: '>=11'
       react: '>=18'
       react-dom: '>=18'
+    peerDependenciesMeta:
+      '@paper-design/shaders-react':
+        optional: true
 
   follow-redirects@1.16.0:
     resolution: {integrity: sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==}
@@ -17336,7 +17340,7 @@ snapshots:
 
   flatted@3.4.2: {}
 
-  fluidkit@file:vendor/fluidkit-0.3.0-d5e0fd6.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  fluidkit@file:vendor/fluidkit-0.5.0-656857b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       motion: 12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react: 18.3.1
