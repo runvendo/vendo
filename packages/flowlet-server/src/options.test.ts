@@ -75,3 +75,41 @@ describe("parseHandlerOptions storage", () => {
     expect(() => parseHandlerOptions({ storage: { bogus: true } } as never)).toThrow(/invalid options/);
   });
 });
+
+describe("parseHandlerOptions: connections", () => {
+  const fullStore = {
+    list: async () => [],
+    connect: async () => undefined,
+    disconnect: async () => undefined,
+    connectedToolkits: async () => [],
+    setConnectedAccount: async () => undefined,
+    findByConnectedAccount: async () => undefined,
+  };
+
+  it("accepts a store implementing all six ConnectionsStore methods", () => {
+    expect(() => parseHandlerOptions({ connections: fullStore as never })).not.toThrow();
+  });
+
+  it("rejects a legacy store missing the newer methods (would throw at runtime instead of boot)", () => {
+    // Pre-webhooks shape: list + connectedToolkits only — integrations calls
+    // connect/disconnect/setConnectedAccount and webhooks calls
+    // findByConnectedAccount, so this must fail AT BOOT, readably.
+    const legacy = {
+      list: fullStore.list,
+      connectedToolkits: fullStore.connectedToolkits,
+    };
+    expect(() => parseHandlerOptions({ connections: legacy as never })).toThrow(
+      /connections store must implement/,
+    );
+  });
+
+  it("rejects a store missing any single method", () => {
+    for (const missing of Object.keys(fullStore)) {
+      const partial = { ...fullStore } as Record<string, unknown>;
+      delete partial[missing];
+      expect(() => parseHandlerOptions({ connections: partial as never }), missing).toThrow(
+        /invalid options/,
+      );
+    }
+  });
+});

@@ -134,6 +134,15 @@ export interface FlowletHandlerOptions {
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
 
+const CONNECTIONS_STORE_METHODS = [
+  "list",
+  "connect",
+  "disconnect",
+  "connectedToolkits",
+  "setConnectedAccount",
+  "findByConnectedAccount",
+] as const satisfies readonly (keyof ConnectionsStore)[];
+
 const optionsSchema = z
   .object({
     model: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
@@ -151,12 +160,22 @@ const optionsSchema = z
     cacheKey: fn<() => string>().optional(),
     integrations: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) }).strict()).optional(),
     mcpServers: mcpServerArraySchema.optional(),
+    // ALL six ConnectionsStore methods: integrations calls
+    // connect/disconnect/setConnectedAccount and webhooks calls
+    // findByConnectedAccount — a legacy (list + connectedToolkits only) store
+    // must fail HERE, at boot, not at first runtime use.
     connections: z
       .custom<ConnectionsStore>(
         (v) =>
           typeof v === "object" && v !== null &&
-          typeof (v as ConnectionsStore).connectedToolkits === "function" &&
-          typeof (v as ConnectionsStore).list === "function",
+          CONNECTIONS_STORE_METHODS.every(
+            (m) => typeof (v as Record<string, unknown>)[m] === "function",
+          ),
+        {
+          message:
+            `the connections store must implement all of ${CONNECTIONS_STORE_METHODS.join(", ")} ` +
+            `(the full ConnectionsStore interface — see @flowlet/server's connections.ts)`,
+        },
       )
       .optional(),
     automations: z
