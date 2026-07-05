@@ -826,3 +826,76 @@ describe("MCP ingestion wiring", () => {
     expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
   });
 });
+
+describe("per-run instruction assembly (spec §1/§7)", () => {
+  function captureSystemModel() {
+    let seenSystem: string | undefined;
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        const sys = (prompt as Array<{ role: string; content: unknown }>).find(
+          (m) => m.role === "system",
+        );
+        seenSystem = typeof sys?.content === "string" ? sys.content : JSON.stringify(sys?.content);
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "ok"),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    return { model, seenSystem: () => seenSystem };
+  }
+
+  it("evaluates an instructions FUNCTION per run with the live merged tool summary", async () => {
+    const { model, seenSystem } = captureSystemModel();
+    const agent = createFlowletAgent({
+      model,
+      policy: allowPolicy,
+      tools: {
+        listThings: tool({
+          description: "List things",
+          inputSchema: z.object({}),
+          execute: async () => [],
+          // annotation route: engine tools carry hints via top-level annotations
+        }),
+      },
+      instructions: (ctx) =>
+        `DYNAMIC PROMPT with ${ctx.toolSummary.length} tools: ${ctx.toolSummary
+          .map((t) => t.name)
+          .join(",")}`,
+    });
+    await collect(
+      agent.run({
+        messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] }] as FlowletUIMessage[],
+        tools: {},
+        signal: new AbortController().signal,
+      }),
+    );
+    const system = seenSystem();
+    expect(system).toContain("DYNAMIC PROMPT");
+    expect(system).toContain("listThings");
+    // engine protocol tools are mechanics, not capabilities
+    expect(system).not.toContain(RENDER_VIEW_TOOL_NAME);
+    expect(system).not.toContain(REQUEST_CONNECT_TOOL_NAME);
+  });
+
+  it("keeps plain-string instructions byte-identical (backwards compatible)", async () => {
+    const { model, seenSystem } = captureSystemModel();
+    const agent = createFlowletAgent({
+      model,
+      policy: allowPolicy,
+      instructions: "STATIC PROMPT",
+    });
+    await collect(
+      agent.run({
+        messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "hi" }] }] as FlowletUIMessage[],
+        tools: {},
+        signal: new AbortController().signal,
+      }),
+    );
+    expect(seenSystem()).toBe("STATIC PROMPT");
+  });
+});

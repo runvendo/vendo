@@ -7,7 +7,13 @@
 import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
 import type { HostToolDefinition, RegisteredComponent } from "@flowlet/core";
-import type { ApprovalPolicy, FlowletPrincipal, McpServerConfig, RegisteredTool } from "@flowlet/runtime";
+import type {
+  ApprovalPolicy,
+  FlowletPrincipal,
+  InstructionContext,
+  McpServerConfig,
+  RegisteredTool,
+} from "@flowlet/runtime";
 import type { ConnectionsStore } from "./connections";
 import { mcpServerArraySchema } from "./mcp-config";
 
@@ -22,8 +28,9 @@ export interface FlowletHandlerOptions {
   model?: LanguageModel;
   /** Product name used in the default system prompt (e.g. "Maple"). */
   productName?: string;
-  /** Full system-prompt override. Prefer `instructionsExtra` for additions. */
-  instructions?: string;
+  /** Full system-prompt override — a string, or a per-run builder receiving
+   *  the live tool summary (spec §1). Prefer `instructionsExtra` for additions. */
+  instructions?: string | ((ctx: InstructionContext) => string);
   /** Appended to the built default system prompt. */
   instructionsExtra?: string;
   /** Guardrail policy. Default: annotation + verb heuristic, fail-safe approve. */
@@ -77,7 +84,9 @@ const optionsSchema = z
   .object({
     model: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
     productName: z.string().min(1).optional(),
-    instructions: z.string().min(1).optional(),
+    instructions: z
+      .union([z.string().min(1), fn<(ctx: InstructionContext) => string>()])
+      .optional(),
     instructionsExtra: z.string().min(1).optional(),
     policy: z.custom<ApprovalPolicy>((v) => typeof v === "object" && v !== null && "evaluate" in (v as object)).optional(),
     tools: z.union([z.record(z.unknown()), fn<() => ToolSet>()]).optional(),

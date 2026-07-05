@@ -137,3 +137,55 @@ describe("createComposioClient", () => {
     expect(typeof client.fetchTools).toBe("function");
   });
 });
+
+describe("ingestComposioTools output capping (spec §5)", () => {
+  it("caps oversized results at ingestion, shape-stably", async () => {
+    const bigBody = "<html><body>" + "<p>row</p>".repeat(5000) + "</body></html>";
+    const toolset: ToolSet = {
+      GMAIL_FETCH_EMAILS: tool({
+        description: "Fetch emails",
+        inputSchema: z.object({}),
+        execute: async () => ({
+          data: { messages: Array.from({ length: 300 }, (_, i) => ({ id: i, body: bigBody })) },
+        }),
+      }),
+    };
+    const { client } = fakeClient(toolset);
+    const { toolset: ingested } = await ingestComposioTools({
+      principal,
+      config: { toolkits: ["gmail"] },
+      client,
+    });
+    const result = (await ingested.GMAIL_FETCH_EMAILS.execute!({}, {
+      toolCallId: "t1",
+      messages: [],
+    })) as { data: { messages: Array<{ id: number; body: string }> }; _truncation?: string };
+    expect(JSON.stringify(result).length).toBeLessThan(40_000);
+    expect(result.data.messages.length).toBeLessThan(300);
+    // shape stability: rows keep their record shape, note only at root
+    expect(typeof result.data.messages[0].id).toBe("number");
+    expect(result.data.messages[0].body).not.toContain("<p>");
+    expect(typeof result._truncation).toBe("string");
+  });
+
+  it("passes small results through unchanged", async () => {
+    const toolset: ToolSet = {
+      GMAIL_SEND_EMAIL: tool({
+        description: "Send an email",
+        inputSchema: z.object({ to: z.string() }),
+        execute: async () => ({ ok: true, id: "m1" }),
+      }),
+    };
+    const { client } = fakeClient(toolset);
+    const { toolset: ingested } = await ingestComposioTools({
+      principal,
+      config: { toolkits: ["gmail"] },
+      client,
+    });
+    const result = await ingested.GMAIL_SEND_EMAIL.execute!({ to: "a@b.c" }, {
+      toolCallId: "t2",
+      messages: [],
+    });
+    expect(result).toEqual({ ok: true, id: "m1" });
+  });
+});

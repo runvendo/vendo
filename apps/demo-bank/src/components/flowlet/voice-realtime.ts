@@ -11,26 +11,123 @@
 import {
   annotationsToTier,
   createRealtimeVoiceDriver,
+  replayRegistry,
   type VoiceDriver,
   type VoiceDriverHandle,
   type VoiceEvent,
+  type VoiceSessionInit,
   type VoiceToolDef,
 } from "@flowlet/shell";
-import { executeHostToolCall, type UINode } from "@flowlet/core";
+import {
+  buildVoiceInstructions,
+  capabilitySummary,
+  executeHostToolCall,
+  type ToolSummaryInput,
+  type UINode,
+} from "@flowlet/core";
 import { mapleHostToolDefs } from "@/flowlet/host-tools";
-import { createComposioIntegrations } from "./integrations";
+import { createComposioIntegrations, integrationCatalogIds } from "./integrations";
 import { mapleVoiceDriver as scriptedFallback } from "./voice-demo";
 
 let viewSeq = 0;
 
-/** Wrap rows/columns from the model into a sandbox-rendered Table view. */
+/**
+ * Per-session cache of read-tool results (spec §3): the model's `source`
+ * declaration is matched against what the CLIENT actually fetched, so the
+ * refreshable payload stores the verbatim (capped) result — the model never
+ * has to round-trip raw data. Bounded FIFO; latest result per key wins.
+ */
+const sessionResults = new Map<string, unknown>();
+const SESSION_RESULTS_MAX = 32;
+
+/** Key-order-stable stringify: the model's `source.input` may order fields
+ *  differently than the call it mirrors ({limit, category} vs {category,
+ *  limit}) — both must hit the same cache entry. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+const resultKey = (tool: string, input: unknown): string =>
+  `${tool}:${stableStringify(input ?? {})}`;
+function recordResult(tool: string, input: unknown, output: unknown): void {
+  const key = resultKey(tool, input);
+  if (sessionResults.size >= SESSION_RESULTS_MAX && !sessionResults.has(key)) {
+    const oldest = sessionResults.keys().next().value as string | undefined;
+    if (oldest !== undefined) sessionResults.delete(oldest);
+  }
+  sessionResults.set(key, output);
+}
+
+/** The model's optional provenance declaration on display tools. */
+interface SourceDecl {
+  tool?: string;
+  input?: unknown;
+  rowsPath?: string;
+}
+
+/** Resolve a JSON pointer ("/data/transactions") into a value, or undefined. */
+function resolvePointer(value: unknown, pointer: string): unknown {
+  if (pointer === "" || pointer === "/") return value;
+  let current: unknown = value;
+  for (const raw of pointer.split("/").slice(1)) {
+    const key = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (Array.isArray(current)) current = current[Number(key)];
+    else if (current && typeof current === "object")
+      current = (current as Record<string, unknown>)[key];
+    else return undefined;
+  }
+  return current;
+}
+
+/** Validate a source declaration against the session cache: the pointed-at
+ *  value must be an array of records whose fields cover the column keys, and
+ *  the tool must be replayable. Any failure → snapshot (never an error). */
+function matchSource(
+  source: SourceDecl | undefined,
+  columns: Array<{ key: string }>,
+): { raw: unknown; tool: string; input: unknown; rowsPath: string } | undefined {
+  if (!source?.tool || typeof source.rowsPath !== "string") return undefined;
+  if (!replayRegistry.has(source.tool)) return undefined;
+  const key = resultKey(source.tool, source.input);
+  if (!sessionResults.has(key)) return undefined;
+  const raw = sessionResults.get(key);
+  const rows = resolvePointer(raw, source.rowsPath);
+  if (!Array.isArray(rows)) return undefined;
+  // An EMPTY result is still a valid, refreshable declaration (rows may exist
+  // on a later refresh) — column validation only applies when rows exist.
+  if (rows.length > 0) {
+    const first = rows[0];
+    if (!first || typeof first !== "object") return undefined;
+    const fields = new Set(Object.keys(first as Record<string, unknown>));
+    if (!columns.every((c) => fields.has(c.key))) return undefined;
+  }
+  return { raw, tool: source.tool, input: source.input ?? {}, rowsPath: source.rowsPath };
+}
+
+/** Wrap rows/columns from the model into a sandbox-rendered Table view. When
+ *  the model declares a valid `source`, the payload is DATA-BOUND (rows via
+ *  $path into the verbatim cached result) and declares `queries`, so pinning
+ *  it yields a view that refreshes on reopen — the chat protocol (spec §3). */
 function tableView(input: unknown): UINode | undefined {
-  const { title, columns, rows } = (input ?? {}) as {
+  const { title, columns, rows, source } = (input ?? {}) as {
     title?: string;
     columns?: Array<{ key: string; label: string }>;
     rows?: Array<Record<string, unknown>>;
+    source?: SourceDecl;
   };
   if (!columns?.length || !rows) return undefined;
+
+  const matched = matchSource(source, columns);
+  const tableProps = matched
+    ? { columns, rows: { $path: `/source${matched.rowsPath}` } }
+    : { columns, rows };
   return {
     id: `voice-table-${++viewSeq}`,
     kind: "generated",
@@ -39,9 +136,15 @@ function tableView(input: unknown): UINode | undefined {
       root: "root",
       nodes: [
         { id: "root", component: "Stack", children: title ? ["title", "table"] : ["table"] },
-        ...(title ? [{ id: "title", component: "Text", props: { value: title } }] : []),
-        { id: "table", component: "Table", source: "prewired", props: { columns, rows } },
+        ...(title ? [{ id: "title", component: "Text", props: { text: title } }] : []),
+        { id: "table", component: "Table", source: "prewired", props: tableProps },
       ],
+      ...(matched
+        ? {
+            data: { source: matched.raw },
+            queries: [{ path: "/source", tool: matched.tool, input: matched.input }],
+          }
+        : {}),
     },
   };
 }
@@ -67,11 +170,25 @@ function keyValueView(input: unknown): UINode | undefined {
   };
 }
 
+/** Optional provenance declaration (spec §3): lets the client build a
+ *  refreshable, data-bound payload from its own cached copy of the result. */
+const SOURCE_PARAM = {
+  type: "object",
+  description:
+    "Where the shown data came from, when it came from ONE tool call you made: the tool name, the exact input you passed, and the JSON pointer to the row array inside that tool's result (e.g. '/data/transactions'). Use raw field names as column keys when declaring this. Makes the view refreshable when pinned.",
+  properties: {
+    tool: { type: "string" },
+    input: { type: "object" },
+    rowsPath: { type: "string" },
+  },
+  required: ["tool", "rowsPath"],
+} as const;
+
 const displayTools: VoiceToolDef[] = [
   {
     name: "show_table",
     description:
-      "Display structured rows (transactions, comparisons) as a table on screen. Use this to SHOW data — then speak only the headline.",
+      "Display structured rows (transactions, comparisons) as a table on screen. Use this to SHOW data — then speak only the headline. Declare `source` when the rows came from a tool call so the view stays refreshable.",
     parameters: {
       type: "object",
       properties: {
@@ -85,6 +202,7 @@ const displayTools: VoiceToolDef[] = [
           },
         },
         rows: { type: "array", items: { type: "object" } },
+        source: SOURCE_PARAM,
       },
       required: ["columns", "rows"],
     },
@@ -112,6 +230,9 @@ const displayTools: VoiceToolDef[] = [
             required: ["label", "value"],
           },
         },
+        // Accepted for schema symmetry with show_table; label/value rows are
+        // model-authored prose, so a raw result can't bind — stays a snapshot.
+        source: SOURCE_PARAM,
       },
       required: ["rows"],
     },
@@ -166,24 +287,66 @@ const integrationTools: VoiceToolDef[] = [
   },
 ];
 
-/** Every Maple host-API operation, straight through the chat-side executor. */
-const hostVoiceTools: VoiceToolDef[] = mapleHostToolDefs.map((def) => ({
-  name: def.name,
-  description: def.description,
-  parameters: def.inputSchema,
-  tier: annotationsToTier(def.annotations),
-  execute: (input) => executeHostToolCall(def, (input ?? {}) as Record<string, unknown>),
-}));
+/** Every Maple host-API operation, straight through the chat-side executor.
+ *  Read-tier results are recorded for `source` matching, and read tools are
+ *  registered for saved-view replay (spec §3). */
+const hostVoiceTools: VoiceToolDef[] = mapleHostToolDefs.map((def) => {
+  const tier = annotationsToTier(def.annotations);
+  const run = (input: unknown) =>
+    executeHostToolCall(def, (input ?? {}) as Record<string, unknown>);
+  if (tier === "read") replayRegistry.register(def.name, run);
+  return {
+    name: def.name,
+    description: def.description,
+    parameters: def.inputSchema,
+    tier,
+    execute: async (input) => {
+      const output = await run(input);
+      if (tier === "read") recordResult(def.name, input, output);
+      return output;
+    },
+  };
+});
 
-const INSTRUCTIONS = [
-  "You are Maple's voice assistant — Maple is the user's bank. Warm, brisk, plain-spoken.",
-  "You can read the user's real accounts, transactions, cards, insights and payees through your tools; the data comes back as JSON from Maple's own API.",
-  "Money amounts in the API are integer CENTS — always convert and display as dollars (941220 → $9,412.20), on screen and aloud.",
-  "When data is worth seeing, put it on screen with show_table or show_key_value and speak only the headline (totals, the outlier, what to do next). Never read rows aloud.",
-  "Integrations: if a toolkit's tools (GMAIL_*, SLACK_*, …) appear in your tool list, that integration IS connected — call them directly. Only when a requested toolkit has no tools in your list do you use request_connect to put a Connect card on screen. Gated actions ask the user's permission like everything else.",
-  "A spoken yes always refers to your MOST RECENT permission request. If an older request is still unanswered, treat it as declined and mention you dropped it — never apply a yes to it.",
-  "Keep spoken turns to one or two sentences.",
-].join(" ");
+/** Protocol/display tools are mechanics, not capabilities — keep them out of
+ *  the "what can you do" summary. */
+const MECHANIC_TOOLS = new Set(["show_table", "show_key_value", "list_integrations", "request_connect"]);
+
+/** Map the composed VoiceToolDef list to the shared capability contract. */
+function voiceToolSummary(tools: VoiceToolDef[]): ToolSummaryInput[] {
+  return tools
+    .filter((t) => !MECHANIC_TOOLS.has(t.name))
+    .map((t) => {
+      // Composio bridge tools are named TOOLKIT_ACTION (GMAIL_FETCH_EMAILS).
+      const upper = /^[A-Z0-9]+_/.test(t.name);
+      return {
+        name: t.name,
+        description: t.description,
+        tier: t.tier === "read" ? ("read" as const) : t.tier === "critical" ? ("critical" as const) : ("act" as const),
+        source: upper ? ("integration" as const) : ("host" as const),
+        ...(upper ? { toolkit: t.name.slice(0, t.name.indexOf("_")).toLowerCase() } : {}),
+      };
+    });
+}
+
+/** Maple's voice prompt — recomposed onto the shared prompt core (spec §1):
+ *  platform rules (anti-yap register, show-vs-say, source declarations,
+ *  consent recency, guardrails) come from @flowlet/core; only the persona and
+ *  the cents convention are Maple's. Assembled at session start so the
+ *  capability summary reflects the LIVE tool list. */
+function buildInstructions(tools: VoiceToolDef[]): string {
+  return buildVoiceInstructions({
+    persona: [
+      "You are Maple's voice assistant — Maple is the user's bank. Warm, brisk, plain-spoken.",
+      "You can read the user's real accounts, transactions, cards, insights and payees through",
+      "your tools; the data comes back as JSON from Maple's own API.",
+    ].join(" "),
+    toolSummary: capabilitySummary(voiceToolSummary(tools), integrationCatalogIds),
+    extras: [
+      "Money amounts in the API are integer CENTS — always convert and display as dollars (941220 → $9,412.20), on screen and aloud.",
+    ],
+  });
+}
 
 const GREETING =
   "Greet the user in ONE short sentence: you're Maple's voice assistant, ask what they need. Do not list capabilities.";
@@ -197,12 +360,10 @@ async function fetchIntegrationVoiceTools(): Promise<VoiceToolDef[]> {
     const body = (await res.json()) as {
       tools?: Array<{ name: string; description: string; parameters: Record<string, unknown>; tier: string }>;
     };
-    return (body.tools ?? []).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-      tier: tool.tier === "read" ? "read" : tool.tier === "critical" ? "critical" : "act",
-      execute: async (input) => {
+    return (body.tools ?? []).map((tool) => {
+      const tier: VoiceToolDef["tier"] =
+        tool.tier === "read" ? "read" : tool.tier === "critical" ? "critical" : "act";
+      const run = async (input: unknown) => {
         const exec = await fetch("/api/flowlet/voice/tools", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -211,8 +372,22 @@ async function fetchIntegrationVoiceTools(): Promise<VoiceToolDef[]> {
         const json = (await exec.json()) as { result?: unknown; error?: string };
         if (!exec.ok) throw new Error(json.error ?? `integration tool failed (${exec.status})`);
         return json.result;
-      },
-    }));
+      };
+      // Read tools replay through the same (capping) bridge on reopen, so the
+      // refreshed shape matches the initial one (spec §3/§5).
+      if (tier === "read") replayRegistry.register(tool.name, run);
+      return {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        tier,
+        execute: async (input) => {
+          const output = await run(input);
+          if (tier === "read") recordResult(tool.name, input, output);
+          return output;
+        },
+      };
+    });
   } catch {
     return []; // integrations stay chat-only this session — never fatal
   }
@@ -225,7 +400,7 @@ async function fetchIntegrationVoiceTools(): Promise<VoiceToolDef[]> {
  * made before the mint settles are forwarded once the inner driver exists.
  */
 export const mapleRealtimeVoiceDriver: VoiceDriver = {
-  start(emit: (event: VoiceEvent) => void): VoiceDriverHandle {
+  start(emit: (event: VoiceEvent) => void, init?: VoiceSessionInit): VoiceDriverHandle {
     let inner: VoiceDriverHandle | null = null;
     let stopped = false;
     const queued: Array<(handle: VoiceDriverHandle) => void> = [];
@@ -238,13 +413,17 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
       for (const fn of queued.splice(0)) fn(handle);
     };
 
+    // Fresh session, fresh provenance: stale results from an earlier session
+    // must never validate a new session's source declarations.
+    sessionResults.clear();
+
     emit({ type: "status", status: "connecting" });
     void fetch("/api/flowlet/voice", { method: "POST" })
       .then(async (res) => {
         if (stopped) return;
         if (!res.ok) {
           console.info("[flowlet voice] no realtime key — running the scripted demo session");
-          adopt(scriptedFallback.start(emit));
+          adopt(scriptedFallback.start(emit, init));
           return;
         }
         const [grant, composioTools] = await Promise.all([
@@ -252,17 +431,20 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
           fetchIntegrationVoiceTools(),
         ]);
         if (stopped) return;
+        const tools = [...displayTools, ...integrationTools, ...composioTools, ...hostVoiceTools];
         const driver = createRealtimeVoiceDriver({
           getSession: async () => grant,
-          tools: [...displayTools, ...integrationTools, ...composioTools, ...hostVoiceTools],
-          instructions: INSTRUCTIONS,
+          tools,
+          instructions: buildInstructions(tools),
           greeting: GREETING,
         });
-        adopt(driver.start(emit));
+        // Forward init through the mint wrapper — before this, the session
+        // brief/carry-over silently never reached the realtime driver.
+        adopt(driver.start(emit, init));
       })
       .catch(() => {
         if (stopped) return;
-        adopt(scriptedFallback.start(emit));
+        adopt(scriptedFallback.start(emit, init));
       });
 
     return {
@@ -277,3 +459,6 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
     };
   },
 };
+
+/** Internal seams exported for unit tests only. */
+export const __voiceTesting = { tableView, recordResult, resolvePointer };

@@ -137,6 +137,19 @@ options when you outgrow that: `model`, `instructions`/`instructionsExtra`,
 demo-bank app runs entirely on this handler, with its custom policy, prompt,
 and demo world injected through those options.
 
+Prompts are assembled from a shared core in `@flowlet/core` (`buildChatInstructions`
+/ `buildVoiceInstructions`): the platform owns the behavioral rules (when to
+render vs. talk, register, consent, capability talk, closing guardrails) and
+your app supplies identity, brand, catalogs, and free-form `extras` on both
+the chat and voice sides — host extras always land *before* the guardrails, so
+platform safety rules win on conflict. `instructions` also accepts a function
+`(ctx) => string` evaluated per run with `ctx.toolSummary` (the live merged
+toolset), which is how the default prompt grounds "what can you do?" answers
+in what is actually connected. Oversized tool results are capped
+deterministically at every ingestion point (`capToolOutput`) — HTML becomes
+text, binary is dropped, long arrays are truncated with an honest note —
+before they reach the model.
+
 ## Deploying
 
 Zero-config serves **local requests only** — the handler holds your keys and

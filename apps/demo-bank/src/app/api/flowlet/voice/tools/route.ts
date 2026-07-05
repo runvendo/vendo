@@ -16,6 +16,7 @@
  * connected-toolkit set, mirroring the chat route's agent cache.
  */
 import { createComposioClient, ingestComposioTools, type ToolDescriptor } from "@flowlet/runtime";
+import { capToolOutput } from "@flowlet/core";
 import type { ToolSet } from "ai";
 import { connectedToolkits } from "@/flowlet/connections-store";
 import { DEMO_PRINCIPAL } from "@/flowlet/principal";
@@ -27,6 +28,9 @@ export const dynamic = "force-dynamic";
 /** Session tool budget: enough for gmail+slack essentials without drowning
  *  the realtime session in schemas. */
 const MAX_TOOLS = 40;
+
+/** Realtime tokens are the expensive ones — cap integration results hard. */
+const VOICE_TOOL_OUTPUT_BUDGET = { maxChars: 6_000, attachNote: true } as const;
 
 const composioClient = createComposioClient({});
 type Ingested = { toolset: ToolSet; descriptors: ToolDescriptor[] };
@@ -106,7 +110,10 @@ export async function POST(req: Request): Promise<Response> {
   }
   try {
     const result = await entry.execute(input ?? {}, { toolCallId: `voice-${Date.now()}`, messages: [] });
-    return Response.json({ result });
+    // Voice budget is tighter than chat's (realtime tokens are the expensive
+    // ones); capping here also covers saved-view REPLAY through this bridge,
+    // so initial and refreshed shapes match (spec §5).
+    return Response.json({ result: capToolOutput(result, VOICE_TOOL_OUTPUT_BUDGET).result });
   } catch (error) {
     console.error("[flowlet voice] integration tool failed", tool, error);
     return Response.json(

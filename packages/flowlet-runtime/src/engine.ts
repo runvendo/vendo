@@ -32,6 +32,7 @@ import type {
   RunInput,
   FlowletUIMessage,
   RegisteredComponent,
+  ToolSummaryInput,
 } from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
@@ -68,6 +69,17 @@ const DEFAULT_INSTRUCTIONS =
   "You are a Flowlet agent. Help the user by calling the available tools and, " +
   "when it helps, rendering UI components via the render_view tool. Only act " +
   "within the user's request; do not take destructive actions without approval.";
+
+/**
+ * Per-run instruction context (context-engineering spec §1/§7): the chat
+ * toolset is not known at config time — Composio descriptors resolve inside
+ * `run()` — so instruction assembly may run AFTER tool ingestion. `toolSummary`
+ * is the merged live toolset in the shared `ToolSummaryInput` shape, ready for
+ * `capabilitySummary()`.
+ */
+export interface InstructionContext {
+  toolSummary: ToolSummaryInput[];
+}
 
 /** Anchor block from the latest user message (FlowletRemix, 2026-07-04 spec). */
 function lastUserAnchors(messages: FlowletUIMessage[]): AnchorContextBlock | undefined {
@@ -216,8 +228,11 @@ export interface FlowletAgentConfig {
   model: LanguageModel;
   /** The composed guardrail policy applied to every tool. */
   policy: ApprovalPolicy;
-  /** Default system prompt; a grounded default is used when omitted. */
-  instructions?: string;
+  /**
+   * Default system prompt; a grounded default is used when omitted. A function
+   * is evaluated per run, after tool ingestion, with the live tool summary.
+   */
+  instructions?: string | ((ctx: InstructionContext) => string);
   /** Sandbox environment manifest (flowlet sync). When the scoped anchor has
    *  an entry, the prompt lists exactly which imports are real/shimmed/absent
    *  and drops the bare-sandbox restyling warning. */
@@ -474,6 +489,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         ];
 
         // 5. Merge + uniformly policy-wrap every tool.
+        const registered: ToolDescriptor[] = [];
         const tools = buildToolset({
           sources,
           policy: config.policy,
@@ -488,10 +504,20 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             console.warn(
               `[flowlet] tool "${name}" from source "${source}" skipped: ${reason}`,
             ),
+          onRegister: (descriptor) => registered.push(descriptor),
         });
 
-        // 6. Drive the model->tool loop.
-        const baseSystem = input.system ?? config.instructions ?? DEFAULT_INSTRUCTIONS;
+        // 5b. Per-run instruction assembly (spec §1/§7): a function gets the
+        // LIVE merged toolset — the only place it is actually known.
+        const instructions =
+          typeof config.instructions === "function"
+            ? config.instructions({ toolSummary: toToolSummary(registered) })
+            : config.instructions;
+
+        // 6. Drive the model->tool loop. `instructions` is the PER-RUN
+        // evaluated prompt (function form resolved above, spec §1) — the
+        // remix anchor section stacks on top of it.
+        const baseSystem = input.system ?? instructions ?? DEFAULT_INSTRUCTIONS;
         const result = streamText({
           model: config.model,
           system: anchors
@@ -527,4 +553,27 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   }
 
   return { run };
+}
+
+/** Map registered descriptors to the shared capability-summary contract.
+ *  Engine-internal protocol tools are mechanics, not capabilities. */
+function toToolSummary(descriptors: ToolDescriptor[]): ToolSummaryInput[] {
+  return descriptors
+    .filter(
+      (d) => d.name !== RENDER_VIEW_TOOL_NAME && d.name !== REQUEST_CONNECT_TOOL_NAME,
+    )
+    .map((d) => ({
+      name: d.name,
+      description: d.description,
+      tier: d.annotations.readOnlyHint
+        ? ("read" as const)
+        : d.annotations.destructiveHint
+          ? ("critical" as const)
+          : ("act" as const),
+      source:
+        d.source === "composio" || d.source === "mcp"
+          ? ("integration" as const)
+          : ("host" as const),
+      toolkit: d.toolkit,
+    }));
 }
