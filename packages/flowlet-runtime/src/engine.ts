@@ -177,8 +177,10 @@ function baselineSection(
       "(without the number labels), use ORIGINAL line numbers for every hunk, and pass the " +
       "base hash above verbatim.",
     "The rendered view receives the element's live data as `props.anchor` (the root node is " +
-      "prewired with anchor={ $path: \"/anchor\" }). If the component reads other props, add " +
-      "hunks adapting it to `props.anchor`.",
+      "prewired with anchor={ $path: \"/anchor\" }). `props.anchor` has EXACTLY the shape of " +
+      "the \"Element data\" JSON above — match it precisely (e.g. if Element data is " +
+      "{ clients: [...] }, read props.anchor.clients, never treat props.anchor as the array). " +
+      "If the component fetches or reads other props, add hunks adapting it to `props.anchor`.",
     "IMPORTS RULE — the sandbox resolves ONLY react and the imports the environment section " +
       "lists as real or shimmed. Your FIRST hunks must remove or inline every other import " +
       "(delete the import lines; replace helpers with small inline versions; replace missing " +
