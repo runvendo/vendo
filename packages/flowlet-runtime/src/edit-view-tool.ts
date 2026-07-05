@@ -151,7 +151,9 @@ export function createEditViewTool(writer: FlowletWriter, options: EditViewToolO
       "user's current customization when its numbered source is shown. Copy startLine/oldLines " +
       "EXACTLY from the numbered listing (numbers are labels, not content) and the component's " +
       "base hash verbatim. All hunks use ORIGINAL line numbers. On a mismatch error, retry once " +
-      "with the echoed actual lines; after two failures fall back to render_view.",
+      "with the echoed actual lines; after two failures fall back to render_view. NOT for " +
+      "rewrites: if the request would replace most of the component or needs a different " +
+      "structure entirely, use render_view instead.",
     inputSchema: z.object({
       base: z.enum(["anchor", "pin"]).describe(
         "'anchor' = the captured component source; 'pin' = the user's current customization.",

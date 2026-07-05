@@ -216,8 +216,12 @@ function baselineSection(
             `\`export default ${baseline.componentName};\` at the end.`,
         ]
       : []),
-    "Use render_view for this element only when edit_view failed twice, or the request " +
-      "needs a multi-component composition the baseline cannot express.",
+    "CHOOSING THE TOOL — decide by the SHAPE of the request, not only after failures: " +
+      "if it keeps the component's structure and data handling (styling, reordering, " +
+      "adding/removing sections, thresholds, labels), use edit_view. If honoring it would " +
+      "replace more than about half the lines, need a fundamentally different structure, or " +
+      "a multi-component composition, call render_view DIRECTLY — do not force hunks. " +
+      "Also fall back to render_view after two failed edit_view attempts.",
     "After a successful edit_view, reply with ONE short sentence. The rendered view IS the " +
       "answer — do not enumerate the changes.",
     "Do not reproduce this source verbatim in prose replies; use it only to build the view.",
