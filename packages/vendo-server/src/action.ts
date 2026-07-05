@@ -102,22 +102,89 @@ type ExecutableTool = {
   inputSchema?: unknown;
 };
 
+function jsonTypeMatches(value: unknown, type: string): boolean {
+  switch (type) {
+    case "object":
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    case "array":
+      return Array.isArray(value);
+    case "string":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "null":
+      return value === null;
+    default:
+      return true; // unrecognized type keyword — don't block on it
+  }
+}
+
+/**
+ * Minimal JSON Schema check for the fallback below: enforces the three
+ * constraints that matter for a fail-CLOSED action gate — declared `type`,
+ * `required` presence, and `additionalProperties: false` — recursing into
+ * object properties and array items. Deliberately NOT a full validator (no
+ * formats, enums, numeric bounds); those tighten further but are not the hole.
+ */
+function validateAgainstJsonSchema(value: unknown, schema: unknown): boolean {
+  if (schema === null || typeof schema !== "object") return true;
+  const s = schema as Record<string, unknown>;
+  const type = s["type"];
+  if (typeof type === "string" && !jsonTypeMatches(value, type)) return false;
+  if (Array.isArray(type) && !type.some((t) => typeof t === "string" && jsonTypeMatches(value, t))) {
+    return false;
+  }
+
+  const isObj = value !== null && typeof value === "object" && !Array.isArray(value);
+  if (isObj && (s["properties"] !== undefined || s["required"] !== undefined || type === "object")) {
+    const obj = value as Record<string, unknown>;
+    const properties = (s["properties"] ?? {}) as Record<string, unknown>;
+    const required = Array.isArray(s["required"]) ? (s["required"] as string[]) : [];
+    for (const key of required) {
+      if (obj[key] === undefined) return false;
+    }
+    if (s["additionalProperties"] === false) {
+      for (const key of Object.keys(obj)) {
+        if (!(key in properties)) return false;
+      }
+    }
+    for (const [key, propSchema] of Object.entries(properties)) {
+      if (obj[key] !== undefined && !validateAgainstJsonSchema(obj[key], propSchema)) return false;
+    }
+  }
+
+  const items = s["items"];
+  if (Array.isArray(value) && items !== null && typeof items === "object" && !Array.isArray(items)) {
+    for (const el of value) {
+      if (!validateAgainstJsonSchema(el, items)) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Sandbox payloads are caller-shaped, and unlike the chat loop (where the ai
  * SDK validates model tool inputs at the model boundary) nothing upstream of
  * this route checks them — validate against the tool's own input schema
- * before executing. Returns the schema-parsed value (same semantics the SDK's
- * own tool-call path applies: defaults filled, strict shapes enforced), or
- * `null` when the payload does not validate. Schemas without a runtime
- * validator (bare `jsonSchema()` descriptors) pass through unchanged — that
- * mirrors the SDK's `safeValidateTypes` behavior for the same schema kind.
+ * before executing. When the schema carries a runtime validator (zod / any
+ * standard-schema tool) use it and return its parsed value. When it does NOT
+ * (an AI SDK `jsonSchema()` tool — `asSchema(...).validate` is undefined), fall
+ * back to our own JSON Schema check rather than failing open: no validator must
+ * never mean "execute anything".
  */
 async function validatePayload(tool: ExecutableTool, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false }> {
   if (tool.inputSchema === undefined) return { ok: true, value: payload };
-  const validate = asSchema(tool.inputSchema as Parameters<typeof asSchema>[0]).validate;
-  if (!validate) return { ok: true, value: payload };
-  const result = await validate(payload);
-  return result.success ? { ok: true, value: result.value } : { ok: false };
+  const schema = asSchema(tool.inputSchema as Parameters<typeof asSchema>[0]);
+  if (schema.validate) {
+    const result = await schema.validate(payload);
+    return result.success ? { ok: true, value: result.value } : { ok: false };
+  }
+  const jsonSchema = await schema.jsonSchema;
+  return validateAgainstJsonSchema(payload, jsonSchema) ? { ok: true, value: payload } : { ok: false };
 }
 
 export async function handleAction(req: Request, deps: ActionDeps): Promise<Response> {
