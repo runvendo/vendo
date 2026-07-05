@@ -1,0 +1,166 @@
+/**
+ * `createFlowletHandler()` options — zod-validated so a typo'd option name or
+ * a wrong-shaped value fails at boot with a readable error instead of being
+ * silently ignored. ZERO-CONFIG contract: every field is optional; the
+ * defaults read `.env` + `.flowlet/` and just work.
+ */
+import { z } from "zod";
+import type { LanguageModel, ToolSet } from "ai";
+import type {
+  AuditLog,
+  CompiledRuleStore,
+  GrantStore,
+  HostToolDefinition,
+  RegisteredComponent,
+  ThreadStore,
+} from "@flowlet/core";
+import type {
+  ApprovalPolicy,
+  BreakerState,
+  FadeTracker,
+  FlowletPrincipal,
+  InstructionContext,
+  McpServerConfig,
+  RegisteredTool,
+} from "@flowlet/runtime";
+import type { ConnectionsStore } from "./connections";
+import { mcpServerArraySchema } from "./mcp-config";
+
+export interface IntegrationCatalogEntry {
+  /** Composio toolkit id (must match the shell's BrandIcon ids). */
+  id: string;
+  name: string;
+}
+
+export interface FlowletHandlerOptions {
+  /** Language model driving the loop. Default: anthropic(FLOWLET_MODEL ?? claude-sonnet-4-6). */
+  model?: LanguageModel;
+  /** Product name used in the default system prompt (e.g. "Maple"). */
+  productName?: string;
+  /** Full system-prompt override — a string, or a per-run builder receiving
+   *  the live tool summary (spec §1). Prefer `instructionsExtra` for additions. */
+  instructions?: string | ((ctx: InstructionContext) => string);
+  /** Appended to the built default system prompt. */
+  instructionsExtra?: string;
+  /** Guardrail policy. Default: annotation + verb heuristic, fail-safe approve. */
+  policy?: ApprovalPolicy;
+  /** Extra server-executed tools (or a per-request factory). */
+  tools?: ToolSet | (() => ToolSet);
+  /** The app's registered host components (added to the prewired catalog). */
+  components?: RegisteredComponent[];
+  /** Host-API tool definitions; overrides `.flowlet/tools.json`. */
+  hostTools?: HostToolDefinition[];
+  /** Where `.flowlet/` lives. Default: `<cwd>/.flowlet`. */
+  flowletDir?: string;
+  /**
+   * Resolve the caller's identity. Providing this makes YOU the gate: return
+   * null to reject (403). Without it the handler only serves local requests
+   * (or any request when FLOWLET_ALLOW_REMOTE=1 — see guard.ts).
+   */
+  principal?: (req: Request) => FlowletPrincipal | null | Promise<FlowletPrincipal | null>;
+  /** Extra agent-cache key material (e.g. a store generation for demo resets). */
+  cacheKey?: () => string;
+  /** Integrations catalog shown by the connect UI. Default: the standard set. */
+  integrations?: IntegrationCatalogEntry[];
+  /**
+   * Host-declared MCP servers (Streamable HTTP). Tools are ingested through
+   * the policy engine as source "mcp", prefixed `<name>_<tool>`. OVERRIDES
+   * `.flowlet/mcp.json` entirely when provided.
+   */
+  mcpServers?: McpServerConfig[];
+  /**
+   * Bring-your-own connections store (which toolkits are connected → what the
+   * agent ingests). Default: a fresh in-memory store. Inject when the host
+   * owns connection state elsewhere (e.g. a demo reset that clears it).
+   */
+  connections?: ConnectionsStore;
+  /**
+   * Automations world. `false` disables it (no authoring tools, tick 404s);
+   * `tools` registers server-executed tools automation steps may call.
+   */
+  automations?: false | { tools?: Record<string, RegisteredTool> };
+  /** Max model->tool steps per turn. Default: engine default. */
+  maxSteps?: number;
+  /** Remix-source lookup for hosts without the extractor: map or resolver;
+   *  consulted before `.flowlet/remix-sources.json` (`undefined` falls
+   *  through). Values are raw component source strings. */
+  remixSources?: Record<string, string> | ((anchorId: string) => string | undefined);
+  /**
+   * Store seam members backing grants, audit, thread persistence, and
+   * breaker state (ENG-193 §6.1/§6.2/§4.7). Defaults: fresh in-memory
+   * instances (reset on process restart). Inject when the host persists
+   * these elsewhere.
+   */
+  store?: {
+    grants?: GrantStore;
+    audit?: AuditLog;
+    threads?: ThreadStore;
+    breakers?: BreakerState;
+    /** ENG-193 §4.4 — inject to share fade tracking with a host-owned instance. */
+    fadeTracker?: FadeTracker;
+    /** ENG-193 item 6 — inject to persist compiled always-ask rules elsewhere. */
+    rules?: CompiledRuleStore;
+  };
+  /** The judge model (ENG-193 §4.2). Default: undefined — the judge is
+   *  IDENTITY (fail-safe rollout; item-2 behavior, unchanged) until a host
+   *  opts in. */
+  judgeModel?: LanguageModel;
+}
+
+const fn = <T>() => z.custom<T>((v) => typeof v === "function");
+
+const optionsSchema = z
+  .object({
+    model: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
+    productName: z.string().min(1).optional(),
+    instructions: z
+      .union([z.string().min(1), fn<(ctx: InstructionContext) => string>()])
+      .optional(),
+    instructionsExtra: z.string().min(1).optional(),
+    policy: z.custom<ApprovalPolicy>((v) => typeof v === "object" && v !== null && "evaluate" in (v as object)).optional(),
+    tools: z.union([z.record(z.unknown()), fn<() => ToolSet>()]).optional(),
+    components: z.array(z.custom<RegisteredComponent>((v) => typeof v === "object" && v !== null)).optional(),
+    hostTools: z.array(z.custom<HostToolDefinition>((v) => typeof v === "object" && v !== null)).optional(),
+    flowletDir: z.string().min(1).optional(),
+    principal: fn<NonNullable<FlowletHandlerOptions["principal"]>>().optional(),
+    cacheKey: fn<() => string>().optional(),
+    integrations: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) }).strict()).optional(),
+    mcpServers: mcpServerArraySchema.optional(),
+    connections: z
+      .custom<ConnectionsStore>(
+        (v) =>
+          typeof v === "object" && v !== null &&
+          typeof (v as ConnectionsStore).connectedToolkits === "function" &&
+          typeof (v as ConnectionsStore).list === "function",
+      )
+      .optional(),
+    automations: z
+      .union([z.literal(false), z.object({ tools: z.record(z.custom<RegisteredTool>()).optional() }).strict()])
+      .optional(),
+    remixSources: z
+      .union([z.record(z.string(), z.string()), fn<(anchorId: string) => string | undefined>()])
+      .optional(),
+    maxSteps: z.number().int().positive().optional(),
+    store: z
+      .object({
+        grants: z.custom<GrantStore>((v) => typeof v === "object" && v !== null).optional(),
+        audit: z.custom<AuditLog>((v) => typeof v === "object" && v !== null).optional(),
+        threads: z.custom<ThreadStore>((v) => typeof v === "object" && v !== null).optional(),
+        breakers: z.custom<BreakerState>((v) => typeof v === "object" && v !== null).optional(),
+        fadeTracker: z.custom<FadeTracker>((v) => typeof v === "object" && v !== null).optional(),
+        rules: z.custom<CompiledRuleStore>((v) => typeof v === "object" && v !== null).optional(),
+      })
+      .strict()
+      .optional(),
+    judgeModel: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
+  })
+  .strict();
+
+/** Validate options; throws a readable error on unknown keys or bad shapes. */
+export function parseHandlerOptions(raw: FlowletHandlerOptions = {}): FlowletHandlerOptions {
+  const parsed = optionsSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`createFlowletHandler: invalid options — ${parsed.error.message}`);
+  }
+  return raw;
+}

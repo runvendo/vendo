@@ -24,6 +24,7 @@ import { dangerTier } from "../policy/tier";
 import type { RegisteredTool } from "./interpreter";
 import type { AutomationRunner } from "./runner";
 import {
+  automationSpecInputSchema,
   automationSpecSchema,
   specTier,
   walkSteps,
@@ -255,13 +256,15 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
         "where judgment over unstructured data is needed. grantedTools lists tools the user " +
         "explicitly pre-authorized for unattended runs (never invent these).",
       inputSchema: z.object({
-        spec: automationSpecSchema,
+        spec: automationSpecInputSchema,
         grantedTools: z.array(z.string()).optional(),
       }),
       execute: async ({ spec: rawSpec, grantedTools }) => {
-        // Re-parse even though the SDK validates at the call boundary: direct
-        // callers (tests, wrappers) must get the same defaults + rejections.
-        const spec = automationSpecSchema.parse(rawSpec);
+        // The model never chooses a DSL version (dslVersion is not in the input
+        // schema — a numeric literal there breaks Google function declarations).
+        // Inject it server-side, then validate against the persisted contract —
+        // which also re-applies defaults for direct callers (tests, wrappers).
+        const spec = automationSpecSchema.parse({ ...rawSpec, dslVersion: 1 });
         const compiled = await compile(spec, grantedTools ?? []);
         if (!compiled.ok) return compiled;
         const { automation } = await config.store.create(scope, {
@@ -282,13 +285,15 @@ export function createAutomationTools(config: AutomationToolsConfig): ToolSet {
         "pass grantedTools fresh (the user re-approves the whole package).",
       inputSchema: z.object({
         id: z.string(),
-        spec: automationSpecSchema,
+        spec: automationSpecInputSchema,
         grantedTools: z.array(z.string()).optional(),
       }),
       execute: async ({ id, spec: rawSpec, grantedTools }) => {
         const automation = await config.store.get(scope, id);
         if (!automation) return notFound(id);
-        const spec = automationSpecSchema.parse(rawSpec);
+        // dslVersion is server-injected (see create_automation): the model
+        // never sends it, keeping the tool's JSON schema numeric-literal-free.
+        const spec = automationSpecSchema.parse({ ...rawSpec, dslVersion: 1 });
         const compiled = await compile(spec, grantedTools ?? []);
         if (!compiled.ok) return compiled;
         await config.store.cancelPendingRuns(scope, id);

@@ -11,15 +11,18 @@
 export const FLOWLET_NEXT_PACKAGE = "@flowlet/next";
 
 export { createFlowletHandler, type FlowletRouteHandlers } from "./handler";
-export type { FlowletHandlerOptions, IntegrationCatalogEntry } from "./options";
-export { detectCapabilities, type FlowletCapabilities } from "./capabilities";
-export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
-export { manifestToolsToHostTools } from "./manifest-tools";
-export { defaultFlowletPolicy } from "./default-policy";
-export { createConnectionsStore, type ConnectionsStore } from "./connections";
-export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
-export { buildInstructions, type BuildInstructionsInput } from "./agent";
-export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./policy-stack";
-export { createThreadIndex, type ThreadIndex } from "./threads";
-export { handleConsentRoute, type ConsentRouteDeps } from "./consent";
-export { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
+export type { FlowletHandlerOptions, IntegrationCatalogEntry } from "@flowlet/server";
+export { detectCapabilities, type FlowletCapabilities } from "@flowlet/server";
+export { loadFlowletDir, type LoadedFlowletDir } from "@flowlet/server";
+export { manifestToolsToHostTools } from "@flowlet/server";
+export { defaultFlowletPolicy } from "@flowlet/server";
+export { createConnectionsStore, type ConnectionsStore } from "@flowlet/server";
+export { DEFAULT_INTEGRATION_CATALOG } from "@flowlet/server";
+export { buildInstructions, type BuildInstructionsInput } from "@flowlet/server";
+export { enrichAnchorSources, createSourceResolver, capSource } from "@flowlet/server";
+// ENG-193 permissions surface — re-exported from @flowlet/server per the
+// framework-agnostic split (the implementations live there now).
+export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "@flowlet/server";
+export { createThreadIndex, type ThreadIndex } from "@flowlet/server";
+export { handleConsentRoute, type ConsentRouteDeps } from "@flowlet/server";
+export { listParkedActionsRoute, resolveParkedActionRoute } from "@flowlet/server";

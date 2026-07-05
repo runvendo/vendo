@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createFlowletHandler } from "./handler";
 import { z } from "zod";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
-import { createFlowletHandler } from "./handler";
 
 function req(pathname: string, init?: RequestInit): Request {
   return new Request(`http://localhost:3000${pathname}`, {
@@ -36,7 +36,64 @@ describe("createFlowletHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
     const res = await GET(req("/api/flowlet/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+  });
+
+  it("capabilities.mcp is true when mcpServers option is set", async () => {
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      mcpServers: [{ name: "weather", url: "https://mcp.example.com/mcp" }],
+    });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(true);
+  });
+
+  it("capabilities.mcp is true when .flowlet/mcp.json declares a server", async () => {
+    const dir = emptyDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "s", url: "https://x" }] }),
+    );
+    const { GET } = createFlowletHandler({ flowletDir: dir });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(true);
+  });
+
+  it("capabilities.mcp is false when the only mcp.json server is dropped by env substitution", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const dir = emptyDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [
+          {
+            name: "s",
+            url: "https://x",
+            headers: { Authorization: "Bearer ${DEFINITELY_NOT_SET_VAR_42}" },
+          },
+        ],
+      }),
+    );
+    const { GET } = createFlowletHandler({ flowletDir: dir });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("the mcpServers option overrides mcp.json entirely", async () => {
+    const dir = emptyDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "from-file", url: "https://file" }] }),
+    );
+    // Option present (even []) wins over the file: [] means MCP off.
+    const { GET } = createFlowletHandler({ flowletDir: dir, mcpServers: [] });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(false);
   });
 
   it("keeps integrations inert without a Composio key", async () => {
@@ -65,6 +122,48 @@ describe("createFlowletHandler", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it("serves automation deliveries since a cursor (FlowletToasts)", async () => {
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await GET(req("/api/flowlet/deliveries?since=0"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deliveries: [] });
+  });
+
+  it("404s deliveries and resume when automations are disabled", async () => {
+    const { GET, POST } = createFlowletHandler({ flowletDir: emptyDir(), automations: false });
+    expect((await GET(req("/api/flowlet/deliveries?since=0"))).status).toBe(404);
+    expect(
+      (
+        await POST(
+          req("/api/flowlet/resume", {
+            method: "POST",
+            body: JSON.stringify({ runId: "r1", approved: true }),
+          }),
+        )
+      ).status,
+    ).toBe(404);
+  });
+
+  it("answers resume for an unknown run as stale instead of erroring", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/resume", {
+        method: "POST",
+        body: JSON.stringify({ runId: "nope", approved: true }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ stale: true });
+  });
+
+  it("400s a resume request without a runId", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/resume", { method: "POST", body: JSON.stringify({ approved: true }) }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("503s a chat request when no model key is configured", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
@@ -74,6 +173,27 @@ describe("createFlowletHandler", () => {
     expect(res.status).toBe(503);
   });
 
+  it("treats an injected model as chat-enabled with zero provider keys", async () => {
+    // Pins the wiring this exists for: options.model flows into assemble's
+    // detectCapabilities as hasInjectedModel, and POST /chat gates on that
+    // same capabilities.chat (no ad-hoc override).
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "");
+    const model = { modelId: "stub" } as unknown as import("ai").LanguageModel;
+    const { GET, POST } = createFlowletHandler({ flowletDir: emptyDir(), model });
+
+    const caps = await GET(req("/api/flowlet/capabilities"));
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+
+    // The chatEnabled gate (503) fires before messages validation (400), so a
+    // 400 on an empty messages array proves chat was NOT gated off.
+    const res = await POST(
+      req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ messages: [] }) }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("400s a chat request with no messages once a key is present", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
     const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
@@ -81,6 +201,40 @@ describe("createFlowletHandler", () => {
       req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ messages: [] }) }),
     );
     expect(res.status).toBe(400);
+  });
+
+  it("500s a boot failure and retries assembly once the config is fixed", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("FLOWLET_MODEL", "grok/whatever");
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
+
+    const broken = await GET(req("/api/flowlet/capabilities"));
+    expect(broken.status).toBe(500);
+    expect(((await broken.json()) as { error: string }).error).toMatch(/Flowlet/);
+
+    // Fixing the env must NOT keep serving the cached rejection.
+    vi.stubEnv("FLOWLET_MODEL", "");
+    const fixed = await GET(req("/api/flowlet/capabilities"));
+    expect(fixed.status).toBe(200);
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+  });
+
+  it("guards every mutating endpoint against remote requests by default", async () => {
+    // A key so chat reaches the guard rather than short-circuiting on 503.
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("COMPOSIO_API_KEY", "ck_x");
+    vi.stubEnv("NODE_ENV", "production"); // fail-closed in prod even for spoofed Host
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    for (const p of ["chat", "action", "tick", "integrations"]) {
+      const res = await POST(
+        new Request(`http://prod.example.com/api/flowlet/${p}`, {
+          method: "POST",
+          headers: { host: "prod.example.com" },
+          body: JSON.stringify({}),
+        }),
+      );
+      expect(res.status, p).toBe(403);
+    }
   });
 
   it("REGRESSION: a consent POST for a just-streamed approval mints a grant (streamed turn persisted before consent)", async () => {
@@ -337,24 +491,6 @@ describe("createFlowletHandler", () => {
       req("/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: rule.id }) }),
     );
     expect(ruleRes.status).toBe(200);
-  });
-
-  it("guards every mutating endpoint against remote requests by default", async () => {
-    // A key so chat reaches the guard rather than short-circuiting on 503.
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
-    vi.stubEnv("COMPOSIO_API_KEY", "ck_x");
-    vi.stubEnv("NODE_ENV", "production"); // fail-closed in prod even for spoofed Host
-    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
-    for (const p of ["chat", "action", "tick", "integrations"]) {
-      const res = await POST(
-        new Request(`http://prod.example.com/api/flowlet/${p}`, {
-          method: "POST",
-          headers: { host: "prod.example.com" },
-          body: JSON.stringify({}),
-        }),
-      );
-      expect(res.status, p).toBe(403);
-    }
   });
 
   it("REVIEW FOLLOW-UP: a custom principal resolver (multi-user mount) withholds steering tools — stop_asking_about is absent", async () => {

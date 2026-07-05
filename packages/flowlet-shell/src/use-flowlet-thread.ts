@@ -118,6 +118,28 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
         items.push({ kind: "ui", key, messageId, node: part.data as UINode });
       } else if (part.type === "data-consent") {
         // Consumed via tierByToolCallId above — never its own render item.
+      } else if (part.type === "dynamic-tool") {
+        // Dynamic tools (MCP servers, and any tool the SDK types at runtime)
+        // carry their name in `toolName` instead of the part type. Same
+        // approval/chip treatment as static tool parts; RENDER_TOOLS never
+        // ingest as dynamic, so no skeleton branch is needed here.
+        const toolName = String(part.toolName ?? "unknown");
+        if (part.state === "approval-requested") {
+          const approval = part.approval as { id: string };
+          items.push({ kind: "approval", key, messageId, approvalId: approval.id, toolName, input: part.input });
+        } else {
+          items.push({
+            kind: "tool",
+            key,
+            messageId,
+            toolName,
+            toolCallId: part.toolCallId as string | undefined,
+            state: String(part.state ?? ""),
+            input: part.input,
+            output: part.output,
+            errorText: part.errorText as string | undefined,
+          });
+        }
       } else if (part.type.startsWith("tool-")) {
         const toolName = part.type.slice("tool-".length);
         const toolCallId = part.toolCallId as string | undefined;

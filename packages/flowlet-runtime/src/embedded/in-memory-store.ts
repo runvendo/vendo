@@ -18,6 +18,8 @@ import type {
   AuditLog,
   FlowletUIMessage,
   Principal,
+  RemixRecord,
+  RemixStore,
   SavedFlowlet,
   SavedFlowletStore,
   Store,
@@ -164,6 +166,57 @@ export class InMemorySavedFlowletStore implements SavedFlowletStore {
   }
 }
 
+interface OwnedRemix extends RemixRecord {
+  tenantId: string;
+  subject: string;
+}
+
+export class InMemoryRemixStore implements RemixStore {
+  /** Keyed by anchorId → owned records; ownership compared as fields. */
+  private pins = new Map<string, OwnedRemix[]>();
+  constructor(private readonly clock: () => string) {}
+
+  private find(scope: Principal, anchorId: string): OwnedRemix | undefined {
+    return this.pins.get(anchorId)?.find((r) => sameScope(scope, r));
+  }
+
+  async pin(
+    scope: Principal,
+    anchorId: string,
+    record: Omit<RemixRecord, "anchorId" | "createdAt" | "updatedAt">,
+  ): Promise<RemixRecord> {
+    const now = this.clock();
+    const existing = this.find(scope, anchorId);
+    const owned: OwnedRemix = {
+      ...structuredClone(record),
+      anchorId,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      tenantId: scope.tenantId,
+      subject: scope.subject,
+    };
+    const rest = (this.pins.get(anchorId) ?? []).filter((r) => !sameScope(scope, r));
+    this.pins.set(anchorId, [...rest, owned]);
+    return this.toRecord(owned);
+  }
+
+  async get(scope: Principal, anchorId: string): Promise<RemixRecord | undefined> {
+    const owned = this.find(scope, anchorId);
+    return owned ? this.toRecord(owned) : undefined;
+  }
+
+  async unpin(scope: Principal, anchorId: string): Promise<void> {
+    const rest = (this.pins.get(anchorId) ?? []).filter((r) => !sameScope(scope, r));
+    if (rest.length === 0) this.pins.delete(anchorId);
+    else this.pins.set(anchorId, rest);
+  }
+
+  private toRecord(owned: OwnedRemix): RemixRecord {
+    const { tenantId: _t, subject: _s, ...record } = structuredClone(owned);
+    return record;
+  }
+}
+
 /** Append-only: the log clones on both sides of the boundary, so neither the
  *  caller's event object nor anything read via `events` is a live reference. */
 export class InMemoryAuditLog implements AuditLog {
@@ -200,6 +253,7 @@ export interface InMemoryStore extends Store {
   flowlets: InMemorySavedFlowletStore;
   automations: InMemoryAutomationStore;
   audit: InMemoryAuditLog;
+  remixes: InMemoryRemixStore;
 }
 
 export function createInMemoryStore(opts: { now?: () => string } = {}): InMemoryStore {
@@ -209,5 +263,6 @@ export function createInMemoryStore(opts: { now?: () => string } = {}): InMemory
     flowlets: new InMemorySavedFlowletStore(clock),
     automations: new InMemoryAutomationStore({ now: clock }),
     audit: new InMemoryAuditLog(),
+    remixes: new InMemoryRemixStore(clock),
   };
 }

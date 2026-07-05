@@ -24,6 +24,7 @@ export interface Store {
   flowlets: SavedFlowletStore;
   automations: AutomationStore;
   audit: AuditLog;
+  remixes: RemixStore;
   /** ENG-193: standing user permission grants. Optional — additive to the
    *  frozen seam (same pattern as the reserved memory member). */
   grants?: GrantStore;
@@ -127,6 +128,34 @@ export interface AutomationStore {
   list(scope: Principal): Promise<AutomationRecord[]>;
   recordRun(scope: Principal, run: AutomationRun): Promise<void>;
   listRuns(scope: Principal, automationId: string): Promise<AutomationRun[]>;
+}
+
+/**
+ * A pinned remix (FlowletRemix, 2026-07-04 spec): the end user's customization
+ * of a dev-wrapped host component. Unlike SavedFlowlet there is no bound query —
+ * the anchor is the data source, feeding its `context` into the tree as host
+ * props on every render. One pin per (principal, anchorId).
+ */
+export interface RemixRecord {
+  anchorId: string;
+  uiTree: UINode;
+  originatingPrompt: string;
+  /** Host-component name → registry version, same drift semantics as SavedFlowlet. */
+  components?: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RemixStore {
+  /** Upsert — the store owns the anchor stamp and both timestamps; `createdAt`
+   *  survives re-pins. */
+  pin(
+    scope: Principal,
+    anchorId: string,
+    record: Omit<RemixRecord, "anchorId" | "createdAt" | "updatedAt">,
+  ): Promise<RemixRecord>;
+  get(scope: Principal, anchorId: string): Promise<RemixRecord | undefined>;
+  unpin(scope: Principal, anchorId: string): Promise<void>;
 }
 
 /**

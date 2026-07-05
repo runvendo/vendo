@@ -9,6 +9,7 @@
 import { FlowletThemeProvider } from "@flowlet/components"
 import { FlowletSlot } from "@flowlet/shell"
 import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
+import { mapleRealtimeVoiceDriver } from "@/components/flowlet/voice-realtime"
 
 export function FlowletCard() {
   return (
@@ -19,6 +20,7 @@ export function FlowletCard() {
             flowletId="home-dashboard"
             emptyLabel="Design a view"
             greeting="What do you want to see here?"
+            voice={mapleRealtimeVoiceDriver}
             suggestions={[
               "My spending by category this month",
               "A chart of my net worth over time",

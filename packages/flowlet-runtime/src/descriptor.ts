@@ -54,6 +54,10 @@ export interface ToolDescriptor {
   kind: string;
   /** Where the call executes. Absent means `"server"`. */
   executor?: ToolExecutor;
+  /** Human description captured at ingestion (feeds the capability summary). */
+  description?: string;
+  /** Toolkit id for integration tools (e.g. "gmail"), when derivable. */
+  toolkit?: string;
 }
 
 /**
@@ -102,7 +106,19 @@ export function buildDescriptor(
       ? "client"
       : "server";
 
-  return { name, source, annotations, hasExecute, kind, executor };
+  const description =
+    isObj && typeof (tool as Record<string, unknown>)["description"] === "string"
+      ? ((tool as Record<string, unknown>)["description"] as string)
+      : undefined;
+
+  // Composio names its tools TOOLKIT_ACTION (GMAIL_FETCH_EMAILS) — derive the
+  // toolkit id from the prefix for integration-sourced tools.
+  const toolkit =
+    source === "composio" && name.includes("_")
+      ? name.slice(0, name.indexOf("_")).toLowerCase()
+      : undefined;
+
+  return { name, source, annotations, hasExecute, kind, executor, description, toolkit };
 }
 
 // ---------------------------------------------------------------------------

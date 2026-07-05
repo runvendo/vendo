@@ -93,9 +93,14 @@ describe("dependency guard: @flowlet/runtime is portable (Decision 1)", () => {
     expect(offending).toEqual([]);
   });
 
-  it("no src/ file imports a db, queue, http server, or Node server builtin", () => {
+  it("no shipped src/ file imports a db, queue, http server, or Node server builtin", () => {
     const offending: string[] = [];
     for (const file of sourceFiles(join(PKG_ROOT, "src"))) {
+      // Test files are excluded from the build (tsconfig `exclude`) and never
+      // reach dist, so they may stand up local fixtures — e.g. the MCP
+      // contract test's in-process node:http server. The shipped-runtime
+      // guarantee this guard protects is unaffected.
+      if (/\.test\.(ts|tsx)$/.test(file)) continue;
       for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
         if (FORBIDDEN_MODULES.includes(moduleRoot(specifier))) {
           offending.push(`${file} -> ${specifier}`);

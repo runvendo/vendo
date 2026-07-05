@@ -51,7 +51,19 @@ registry ships (ENG-198). Embedded hosts read this directory from disk.
 export async function runInit(opts: InitOptions): Promise<number> {
   const targetDir = path.resolve(opts.targetDir);
   const info = await detectTarget(targetDir);
-  const model = opts.skipLlm ? null : opts.model !== undefined ? opts.model : cliModel();
+
+  let model: LanguageModel | null;
+  try {
+    model = opts.skipLlm ? null : opts.model !== undefined ? opts.model : await cliModel();
+  } catch (err) {
+    // A provider was explicitly configured (a key or FLOWLET_MODEL/
+    // FLOWLET_CLI_MODEL) but resolution failed (unknown provider prefix, or a
+    // configured provider's optional peer package isn't installed) — surface
+    // the actionable error instead of an unhandled rejection or a silent
+    // fallback to deterministic mode.
+    console.error(err instanceof Error ? err.message : String(err));
+    return 1;
+  }
 
   const report: InitReport = { info, theme: null, tools: null, components: null, llmSkipped: model === null };
   try {
@@ -78,7 +90,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
           "",
           "Next steps:",
           "  1. install deps (npm install / pnpm install)",
-          "  2. cp .env.example .env.local  and paste your ANTHROPIC_API_KEY",
+          "  2. cp .env.example .env.local  and paste one provider API key (see comments)",
           "  3. npm run dev — then hit the launcher (or Cmd/Ctrl+K) and ask for a view",
         ].join("\n"),
       );

@@ -6,16 +6,46 @@
  * policy judge.
  */
 import { generateText, type LanguageModel } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+// Imported via the lean `/model` subpath, NOT the bare `@flowlet/server`
+// package — the barrel pulls in `@flowlet/runtime` (jsonata, croner, ...)
+// transitively, which a bundler can't tree-shake away when re-exports aren't
+// provably side-effect-free (see model.ts's header comment).
+import { hasProviderKey, resolveModel, type ResolveModelDeps } from "@flowlet/server/model";
 import type { z } from "zod";
 
-/** Same default as demo-bank's DEMO_MODEL; override via FLOWLET_CLI_MODEL. */
-const DEFAULT_MODEL = "claude-sonnet-4-6";
-
-/** Returns null when no ANTHROPIC_API_KEY is present — callers skip LLM steps. */
-export function cliModel(): LanguageModel | null {
-  if (!process.env["ANTHROPIC_API_KEY"]) return null;
-  return anthropic(process.env["FLOWLET_CLI_MODEL"] ?? DEFAULT_MODEL);
+/**
+ * Resolves the CLI's LLM from any of the three provider keys (ANTHROPIC_API_KEY,
+ * OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY — same precedence as the runtime:
+ * Anthropic > OpenAI > Google), via `@flowlet/server`'s `resolveModel`.
+ *
+ * `FLOWLET_CLI_MODEL` is the CLI-specific override, taking precedence over the
+ * shared `FLOWLET_MODEL` — both accept `provider/model` or a bare model id
+ * (applied to the detected provider). Implemented by aliasing
+ * FLOWLET_CLI_MODEL onto FLOWLET_MODEL before delegating, so it reuses
+ * `resolveModelChoice`'s parsing exactly.
+ *
+ * Gated on key presence: a FLOWLET_MODEL/FLOWLET_CLI_MODEL id alone is NOT a
+ * credential (same principle as the runtime's chat capability), so with zero
+ * provider keys this returns null — callers skip LLM steps and fall back to
+ * deterministic rescues — instead of constructing an unkeyed model that would
+ * fail mid-init with a raw SDK "API key is missing" error. Only when a key IS
+ * present can this throw, in two cases (both intentional — the user
+ * explicitly configured something broken and deserves the error over a
+ * silent deterministic fallback):
+ *   - the override names an unknown provider prefix (e.g. "grok/whatever"):
+ *     `resolveModelChoice` (inside `resolveModel`) throws its readable error;
+ *   - the resolved provider's optional peer package
+ *     (@ai-sdk/openai/@ai-sdk/google) isn't installed: `resolveModel` throws
+ *     its actionable install-command error.
+ */
+export async function cliModel(
+  env: Record<string, string | undefined> = process.env,
+  deps?: ResolveModelDeps,
+): Promise<LanguageModel | null> {
+  const cliOverride = env["FLOWLET_CLI_MODEL"]?.trim();
+  const resolvedEnv = cliOverride ? { ...env, FLOWLET_MODEL: cliOverride } : env;
+  if (!hasProviderKey(resolvedEnv)) return null;
+  return resolveModel(resolvedEnv, deps);
 }
 
 function stripFences(text: string): string {

@@ -13,10 +13,59 @@ import { FlowletStage } from "@flowlet/react";
 import { ApprovalCard } from "@flowlet/shell";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@flowlet/components";
 import type { BrandTokens } from "@flowlet/components/theme";
+import { NAVIGATE_ACTION, isSafeAppPath } from "./navigate";
+
+interface StageEnv {
+  modules?: Record<string, string>;
+  css?: string;
+  tailwindRuntimeSrc?: string;
+}
 
 interface Sources {
   react: string;
   bundle: string;
+  /** Furnished environment (remix-fidelity), when `flowlet sync` produced one.
+   *  Fetched HOST-side and passed as strings; the stage blobs them so the
+   *  iframe CSP never changes. Absent → bare sandbox, byte-identical to before. */
+  env?: StageEnv;
+}
+
+interface EnvImportMap {
+  imports?: Record<string, string>;
+}
+
+/** Fetch the flowlet-sync env (import map + vendored modules + host CSS) on the
+ *  host origin. Missing env is normal (fresh install / no sync) — returns
+ *  undefined, never throws. */
+async function loadEnv(): Promise<StageEnv | undefined> {
+  const mapRes = await fetch("/flowlet/env/import-map.json").catch(() => null);
+  const css = await fetch("/flowlet/env/host.css")
+    .then((r) => (r.ok ? r.text() : undefined))
+    .catch(() => undefined);
+  const tw = await fetch("/flowlet/env/tailwind.js")
+    .then((r) => (r.ok ? r.text() : undefined))
+    .catch(() => undefined);
+  let modules: Record<string, string> | undefined;
+  if (mapRes?.ok) {
+    const map = (await mapRes.json().catch(() => ({}))) as EnvImportMap;
+    const entries = await Promise.all(
+      Object.entries(map.imports ?? {}).map(async ([specifier, rel]) => {
+        // Only fetch bundle-relative `./` paths, resolved strictly under
+        // /flowlet/env/. A malformed/hostile import map with an absolute URL
+        // must NOT cause a host-side fetch that bypasses the iframe's
+        // connect-src 'none' (Codex review).
+        if (typeof rel !== "string" || !rel.startsWith("./")) return null;
+        const url = new URL(rel.replace(/^\.\//, "/flowlet/env/"), location.origin);
+        if (url.origin !== location.origin || !url.pathname.startsWith("/flowlet/env/")) return null;
+        const src = await fetch(url).then((r) => (r.ok ? r.text() : undefined)).catch(() => undefined);
+        return src !== undefined ? ([specifier, src] as const) : null;
+      }),
+    );
+    const kept = entries.filter((e): e is readonly [string, string] => e !== null);
+    if (kept.length > 0) modules = Object.fromEntries(kept);
+  }
+  if (!modules && !css && !tw) return undefined;
+  return { ...(modules ? { modules } : {}), ...(css ? { css } : {}), ...(tw ? { tailwindRuntimeSrc: tw } : {}) };
 }
 
 let sourcesPromise: Promise<Sources> | null = null;
@@ -32,7 +81,8 @@ function loadSources(): Promise<Sources> {
         if (!r.ok) throw new Error("components bundle missing — run `flowlet init` to copy sandbox assets into public/flowlet/");
         return r.text();
       }),
-    ]).then(([react, bundle]) => ({ react, bundle }));
+      loadEnv(),
+    ]).then(([react, bundle, env]) => ({ react, bundle, ...(env ? { env } : {}) }));
     sourcesPromise.catch(() => {
       sourcesPromise = null; // allow retry on failure
     });
@@ -73,9 +123,14 @@ export interface SandboxStageProps {
   brand: BrandTokens;
   components: RegisteredComponent[];
   basePath: string;
+  /** Host router navigation for the reserved flowlet.navigate action (from the
+   *  link/router shims). Kept as a prop so this package stays framework-
+   *  version-agnostic; FlowletRoot wires `useRouter().push`. Default:
+   *  `location.assign`, still validated same-app first. */
+  onNavigate?: (href: string) => void;
 }
 
-export function SandboxStage({ node, brand, components, basePath }: SandboxStageProps): ReactNode {
+export function SandboxStage({ node, brand, components, basePath, onNavigate }: SandboxStageProps): ReactNode {
   const [sources, setSources] = useState<Sources | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Pending approvals keyed by requestId: concurrent gated dispatches each get
@@ -122,6 +177,18 @@ export function SandboxStage({ node, brand, components, basePath }: SandboxStage
   if (!sources) return <div data-testid="stage-loading" aria-busy="true" />;
 
   const onAction = async (req: ActionRequest): Promise<ActionResult> => {
+    // Reserved navigation from the link/router shims: handled here, never sent
+    // to /action. Validate the href (same-app path only) before touching the
+    // host router — a generated view cannot navigate off-site or run a scheme.
+    if (req.action === NAVIGATE_ACTION) {
+      const href = (req.payload as { href?: unknown } | undefined)?.href;
+      if (isSafeAppPath(href)) {
+        if (onNavigate) onNavigate(href);
+        else if (typeof location !== "undefined") location.assign(href);
+        return { result: { navigated: href } };
+      }
+      return { error: { code: "unsafe_navigation", message: `blocked navigation to ${String(href)}` } };
+    }
     // First pass: let the policy decide.
     const first = await postAction(basePath, req.action, req.payload);
     if (first.needsApproval !== true) return { result: first.result };
@@ -144,6 +211,7 @@ export function SandboxStage({ node, brand, components, basePath }: SandboxStage
         components={[...prewiredComponents, ...components]}
         reactSource={sources.react}
         bundleSource={sources.bundle}
+        {...(sources.env ? { env: sources.env } : {})}
         onAction={onAction}
         theme={brandToCssVars(brand)}
         componentTheme={{ theme: mapBrandToTheme(brand), mode: brand.mode ?? "light" }}

@@ -5,7 +5,7 @@
  * and pause/resume. Everything is Principal-scoped per the contracts freeze.
  */
 import { describe, expect, it } from "vitest";
-import type { Principal } from "@flowlet/core";
+import type { OutboundMessage, Principal } from "@flowlet/core";
 import type { ApprovalPolicy } from "../policy";
 import { InMemoryAuditLog } from "../embedded/in-memory-store";
 import { AutomationRunner } from "./runner";
@@ -145,17 +145,27 @@ async function setup(opts: {
   spec?: AutomationSpec;
   tools: Record<string, RegisteredTool>;
   policy?: ApprovalPolicy;
+  deliver?: (message: OutboundMessage) => Promise<void>;
+  nowMs?: () => number;
 }) {
   const store = new InMemoryAutomationStore({ now: () => NOW });
   const { automation } = await store.create(scope, { spec: opts.spec ?? spec(), grants: [] });
+  const delivered: OutboundMessage[] = [];
   const runner = new AutomationRunner({
     store,
     tools: async () => opts.tools,
     policy: opts.policy ?? allowAll,
     now: () => NOW,
-    nowMs: () => Date.parse(NOW),
+    nowMs: opts.nowMs ?? (() => Date.parse(NOW)),
+    channels: {
+      deliver:
+        opts.deliver ??
+        (async (m) => {
+          delivered.push(m);
+        }),
+    },
   });
-  return { store, automation, runner };
+  return { store, automation, runner, delivered };
 }
 
 describe("fire", () => {
@@ -896,5 +906,130 @@ describe("ENG-193 §6.2 — audit trail for parked-action resolutions", () => {
     const byDecision = Object.fromEntries(events.map((e) => [e.decision, e]));
     expect(byDecision["yes"]?.consentId).toBe(approved!.id);
     expect(byDecision["no"]?.consentId).toBe(declined!.id);
+  });
+});
+
+describe("channel deliveries (FlowletToasts, 2026-07-04 spec)", () => {
+  const gatedSpec = () =>
+    spec({
+      execution: {
+        mode: "steps",
+        steps: [
+          { id: "freeze", type: "tool", tool: "freeze_card", input: { cardId: "c1" } },
+          { id: "send", type: "tool", tool: "send_msg" },
+        ],
+      },
+    });
+
+  it("delivers exactly one completed message for a succeeded run", async () => {
+    const { runner, automation, delivered } = await setup({ tools: { send_msg: makeTool("send_msg") } });
+    const run = await runner.fire(scope, automation.id, envelope("e1"));
+    const completed = delivered.filter((m) => m.automation?.kind === "completed");
+    expect(completed).toHaveLength(1);
+    expect(completed[0]!.channel).toBe("in-app");
+    expect(completed[0]!.principal).toEqual(scope);
+    expect(completed[0]!.automation?.runId).toBe(run!.id);
+    expect(completed[0]!.automation?.summary).toContain("Test");
+  });
+
+  it("delivers completed for a failed run, with the error in the summary", async () => {
+    const { runner, automation, delivered } = await setup({
+      tools: { send_msg: makeTool("send_msg", { failTimes: 99 }) },
+    });
+    await runner.fire(scope, automation.id, envelope("e1"));
+    const completed = delivered.filter((m) => m.automation?.kind === "completed");
+    expect(completed).toHaveLength(1);
+    expect(completed[0]!.automation?.summary).toMatch(/fail/i);
+  });
+
+  it("delivers completed for a cap-cancelled run", async () => {
+    const send = makeTool("send_msg");
+    const { runner, automation, delivered } = await setup({
+      spec: spec({ limits: { maxFiringsPerHour: 1 } }),
+      tools: { send_msg: send },
+    });
+    await runner.fire(scope, automation.id, envelope("e1"));
+    await runner.fire(scope, automation.id, envelope("e2"));
+    const kinds = delivered.map((m) => `${m.automation?.kind}:${m.automation?.summary?.includes("dropped") ? "drop" : "run"}`);
+    expect(kinds.filter((k) => k.startsWith("completed"))).toHaveLength(2);
+    expect(delivered.some((m) => m.automation?.summary?.includes("dropped"))).toBe(true);
+  });
+
+  it("stays silent for guard-false skipped runs (spec: skips are routine)", async () => {
+    const { runner, automation, delivered } = await setup({
+      spec: spec({ if: "trigger.amountDollars > 500" }),
+      tools: { send_msg: makeTool("send_msg") },
+    });
+    await runner.fire(scope, automation.id, envelope("e1"));
+    expect(delivered).toHaveLength(0);
+  });
+
+  it("delivers approval-required when pausing, then completed after an approved resume; a second resume delivers nothing more", async () => {
+    const { runner, automation, delivered } = await setup({
+      spec: gatedSpec(),
+      tools: { freeze_card: makeTool("freeze_card"), send_msg: makeTool("send_msg") },
+      policy: approveFor("freeze_card"),
+    });
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    const approvals = delivered.filter((m) => m.automation?.kind === "approval-required");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]!.automation?.runId).toBe(paused!.id);
+    expect(approvals[0]!.automation?.stepId).toBe("freeze");
+
+    await runner.resume(scope, paused!.id, true);
+    expect(delivered.filter((m) => m.automation?.kind === "completed")).toHaveLength(1);
+
+    const countAfterResume = delivered.length;
+    expect(await runner.resume(scope, paused!.id, true)).toBeUndefined();
+    expect(delivered).toHaveLength(countAfterResume);
+  });
+
+  it("resume with a mismatched expectedStepId is stale: nothing executes, nothing delivers", async () => {
+    const freeze = makeTool("freeze_card");
+    const { runner, automation, delivered } = await setup({
+      spec: gatedSpec(),
+      tools: { freeze_card: freeze, send_msg: makeTool("send_msg") },
+      policy: approveFor("freeze_card"),
+    });
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    const before = delivered.length;
+
+    // A toast minted for some other pause must not approve THIS one.
+    expect(await runner.resume(scope, paused!.id, true, "some-other-step")).toBeUndefined();
+    expect(freeze.calls).toHaveLength(0);
+    expect(delivered).toHaveLength(before);
+
+    // The matching stepId still resumes.
+    const resumed = await runner.resume(scope, paused!.id, true, "freeze");
+    expect(resumed?.status).toBe("succeeded");
+    expect(freeze.calls).toHaveLength(1);
+  });
+
+  it("delivers completed (cancelled) when a pending approval expires", async () => {
+    let clock = Date.parse(NOW);
+    const { runner, automation, delivered } = await setup({
+      spec: gatedSpec(),
+      tools: { freeze_card: makeTool("freeze_card"), send_msg: makeTool("send_msg") },
+      policy: approveFor("freeze_card"),
+      nowMs: () => clock,
+    });
+    const paused = await runner.fire(scope, automation.id, envelope("e1"));
+    clock += 1000 * 60 * 60 * 24 * 30; // way past any approval expiry
+    const cancelled = await runner.resume(scope, paused!.id, true);
+    expect(cancelled?.outcome).toBe("cancelled");
+    const completed = delivered.filter((m) => m.automation?.kind === "completed");
+    expect(completed).toHaveLength(1);
+    expect(completed[0]!.automation?.summary).toMatch(/expire/i);
+  });
+
+  it("a failing delivery never fails the run (best-effort surface)", async () => {
+    const { runner, automation } = await setup({
+      tools: { send_msg: makeTool("send_msg") },
+      deliver: async () => {
+        throw new Error("toast surface down");
+      },
+    });
+    const run = await runner.fire(scope, automation.id, envelope("e1"));
+    expect(run?.status).toBe("succeeded");
   });
 });

@@ -5,7 +5,7 @@
  * registration on the frozen Scheduler seam.
  */
 import { describe, expect, it } from "vitest";
-import type { Tool, ToolCallOptions } from "ai";
+import { asSchema, type Tool, type ToolCallOptions } from "ai";
 import type { Principal, Scheduler, TimeTrigger } from "@flowlet/core";
 import { createAutomationTools } from "./tools";
 import { AutomationRunner } from "./runner";
@@ -225,6 +225,17 @@ describe("create_automation", () => {
     expect(version?.grants.map((g) => g.tool)).toEqual(["SLACK_SEND_MESSAGE"]);
   });
 
+  it("injects dslVersion server-side when the model omits it", async () => {
+    const { store, exec } = setup();
+    // The model never sends dslVersion (it is not in the tool input schema).
+    const { dslVersion: _omit, ...specNoVersion } = validSpec();
+    const result = await exec("create_automation", { spec: specNoVersion });
+    expect(result["ok"]).toBe(true);
+    const id = (result["automation"] as Record<string, unknown>)["id"] as string;
+    const stored = (await store.get(scope, id))!.spec;
+    expect(stored.dslVersion).toBe(1);
+  });
+
   it("rejects grantedTools that the spec never references", async () => {
     const { exec } = setup();
     const result = await exec("create_automation", {
@@ -272,6 +283,19 @@ describe("lifecycle tools", () => {
     expect((await store.get(scope, id))?.currentVersion).toBe(2);
     expect((await store.getVersion(scope, id, 2))?.grants).toEqual([]);
     expect((await store.getRun(scope, pending.id))?.outcome).toBe("cancelled");
+  });
+
+  it("update injects dslVersion server-side when the model omits it", async () => {
+    const { store, exec } = setup();
+    const created = await exec("create_automation", { spec: validSpec() });
+    const id = (created["automation"] as Record<string, unknown>)["id"] as string;
+
+    const { dslVersion: _omit, ...specNoVersion } = validSpec({ name: "Renamed" });
+    const updated = await exec("update_automation", { id, spec: specNoVersion, grantedTools: [] });
+    expect(updated["ok"]).toBe(true);
+    const stored = (await store.get(scope, id))!.spec;
+    expect(stored.dslVersion).toBe(1);
+    expect(stored.name).toBe("Renamed");
   });
 
   it("pause cancels the schedule, resume re-registers it, delete removes", async () => {
@@ -369,6 +393,46 @@ describe("annotations", () => {
       const annotations = (toolset[name] as { annotations?: { destructiveHint?: boolean } })
         .annotations;
       expect(annotations?.destructiveHint).toBe(true);
+    }
+  });
+});
+
+/** Every numeric `const`/`enum` in a JSON schema, with its path (for diagnostics). */
+function findNumericLiterals(node: unknown, path = "$"): string[] {
+  const hits: string[] = [];
+  const visit = (n: unknown, p: string): void => {
+    if (n === null || typeof n !== "object") return;
+    if (Array.isArray(n)) {
+      n.forEach((child, i) => visit(child, `${p}[${i}]`));
+      return;
+    }
+    const obj = n as Record<string, unknown>;
+    for (const key of ["const", "enum"] as const) {
+      if (key in obj) {
+        const values = Array.isArray(obj[key]) ? (obj[key] as unknown[]) : [obj[key]];
+        for (const value of values) {
+          if (typeof value === "number") hits.push(`${p}.${key}=${value}`);
+        }
+      }
+    }
+    for (const [k, v] of Object.entries(obj)) visit(v, `${p}.${k}`);
+  };
+  visit(node, path);
+  return hits;
+}
+
+describe("provider-agnostic tool declarations", () => {
+  // Google's function-declaration format rejects numeric enum/const values with
+  // 400 INVALID_ARGUMENT. The DSL's dslVersion (z.literal(1)) used to serialize
+  // into these tool inputs as `{ type: "number", const: 1 }`, breaking every
+  // chat turn on a Google key. Guard: no numeric literal reaches the wire.
+  it("emit no numeric enum/const in create/update input JSON schemas", () => {
+    const { toolset } = setup();
+    for (const name of ["create_automation", "update_automation"]) {
+      const tool = toolset[name] as Tool;
+      const json = asSchema(tool.inputSchema).jsonSchema;
+      const hits = findNumericLiterals(json);
+      expect(hits, `${name} leaks numeric literal(s): ${hits.join(", ")}`).toEqual([]);
     }
   });
 });

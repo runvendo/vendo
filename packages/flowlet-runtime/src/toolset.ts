@@ -68,8 +68,11 @@ export function buildToolset(args: {
   pausedCalls?: PausedCallTracker;
   onCollision?: (name: string, kept: ToolSource, dropped: ToolSource) => void;
   onSkip?: (name: string, source: ToolSource, reason: string) => void;
+  /** Called once per successfully registered tool, with its resolved
+   *  descriptor — feeds the per-run capability summary (spec §7). */
+  onRegister?: (descriptor: ToolDescriptor) => void;
 }): ToolSet {
-  const { sources, policy, principal, threadId, writer, runContext, pausedCalls, onCollision, onSkip } = args;
+  const { sources, policy, principal, threadId, writer, runContext, pausedCalls, onCollision, onSkip, onRegister } = args;
 
   const result: ToolSet = {};
   // Track which source has already claimed each tool name.
@@ -104,6 +107,7 @@ export function buildToolset(args: {
             : wrapTool({ name, tool, descriptor, policy, principal, threadId, writer, runContext, pausedCalls });
         result[name] = wrapped;
         claimed.set(name, source);
+        onRegister?.(descriptor);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         onSkip?.(name, source, reason);

@@ -11,6 +11,14 @@ export interface ApprovalCardProps {
   /** The judge/breaker's plain-language escalation reason (ENG-193 §4.2/§4.7),
    *  from the sibling data-consent part. Absent for an ordinary approval. */
   reason?: string;
+  /** Voice sessions (ENG-185): a soft listening ring while a spoken yes is
+   *  acceptable. Critical-tier cards never listen — voice only announces. */
+  listening?: boolean;
+  /** Settled state — the card becomes a receipt of how consent was given. */
+  resolution?: "voice" | "tap" | "declined";
+  /** Consequence line override for critical-tier cards. Default:
+   *  "This can't be undone." */
+  consequence?: string;
   onApprove: () => void;
   onDecline: () => void;
 }
@@ -26,22 +34,36 @@ const MAX_VALUE_CHARS = 160;
  * flip). Critical's own ceremony register always wins over the escalation
  * register — money/irreversible ceremony doesn't need a reason to already
  * be maximally careful.
+ *
+ * Voice sessions (ENG-185) layer on top: `listening` adds a soft ring while
+ * a spoken yes is acceptable, and a `resolution` turns the card into a
+ * receipt of how consent was given (buttons collapse into an outcome line).
  */
 export function ApprovalCard({
-  toolName, input, tier = "act", unverified = false, reason, onApprove, onDecline,
+  toolName, input, tier = "act", unverified = false, reason, listening = false, resolution, consequence, onApprove, onDecline,
 }: ApprovalCardProps) {
   const action = toolAction(toolName);
   const critical = tier === "critical";
   const escalated = Boolean(reason) && !critical;
+  const settled = resolution !== undefined;
   const { rows, more } = approvalRows(input, critical ? null : MAX_VALUE_CHARS);
   const confirmLabel = critical ? `Confirm ${action.request.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : "Send it";
   const declineLabel = critical ? "Cancel" : "No";
   const approveClass = critical ? "fl-btn-ceremony" : escalated ? "fl-btn" : "fl-btn-primary";
   const declineClass = escalated ? "fl-btn fl-btn-primary" : "fl-btn";
+  const classes = [
+    "fl-approval",
+    critical && "fl-approval--ceremony",
+    escalated && "fl-approval--escalation",
+    listening && !settled && "fl-approval-listening",
+    settled && (resolution === "declined" ? "fl-approval-declined" : "fl-approval-approved"),
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
-      className={`fl-approval${critical ? " fl-approval--ceremony" : escalated ? " fl-approval--escalation" : ""}`}
+      className={classes}
       role="group"
       aria-label={`Approval request: ${action.question}`}
     >
@@ -77,20 +99,30 @@ export function ApprovalCard({
           {more > 0 && <div className="fl-approval-more">+{more} more</div>}
         </dl>
       )}
-      {critical && <div className="fl-approval-consequence">This can&apos;t be undone.</div>}
-      <div className="fl-approval-actions">
-        {escalated ? (
-          <>
-            <button type="button" className={declineClass} onClick={onDecline}>{declineLabel}</button>
-            <button type="button" className={`fl-btn ${approveClass}`} onClick={onApprove}>{confirmLabel}</button>
-          </>
-        ) : (
-          <>
-            <button type="button" className={`fl-btn ${approveClass}`} onClick={onApprove}>{confirmLabel}</button>
-            <button type="button" className={declineClass} onClick={onDecline}>{declineLabel}</button>
-          </>
-        )}
-      </div>
+      {critical && !settled && (
+        <div className="fl-approval-consequence">{consequence ?? "This can't be undone."}</div>
+      )}
+      {settled ? (
+        <div className={`fl-approval-outcome ${resolution === "declined" ? "is-declined" : "is-approved"}`} role="status">
+          {resolution === "declined"
+            ? "Declined"
+            : `${action.done} — approved ${resolution === "voice" ? "by voice" : "on screen"} ✓`}
+        </div>
+      ) : (
+        <div className="fl-approval-actions">
+          {escalated ? (
+            <>
+              <button type="button" className={declineClass} onClick={onDecline}>{declineLabel}</button>
+              <button type="button" className={`fl-btn ${approveClass}`} onClick={onApprove}>{confirmLabel}</button>
+            </>
+          ) : (
+            <>
+              <button type="button" className={`fl-btn ${approveClass}`} onClick={onApprove}>{confirmLabel}</button>
+              <button type="button" className={declineClass} onClick={onDecline}>{declineLabel}</button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -29,3 +29,46 @@ describe("Table", () => {
     expect(screen.getByText("42")).toBeInTheDocument();
   });
 });
+
+// Regression: data-bound refreshable views feed the Table RAW tool rows, which
+// carry nested fields (statusTimeline arrays, metadata objects). The Table
+// renders the DECLARED columns and ignores everything else — it must not
+// reject the whole row set (context-engineering follow-up, live voice check).
+describe("rich raw rows (data-bound refreshable views)", () => {
+  it("renders declared scalar columns and ignores nested undeclared fields", () => {
+    render(
+      <FlowletThemeProvider>
+        <Table
+          columns={[
+            { key: "merchant", label: "Merchant" },
+            { key: "amount", label: "Amount" },
+          ]}
+          rows={[
+            {
+              merchant: "Spotify",
+              amount: -1199,
+              statusTimeline: [{ state: "Posted", at: "2026-07-04" }],
+              meta: { deep: true },
+            },
+          ]}
+        />
+      </FlowletThemeProvider>,
+    );
+    expect(screen.queryByTestId("flowlet-invalid-props")).toBeNull();
+    expect(screen.getByText("Spotify")).toBeInTheDocument();
+    expect(screen.getByText("-1199")).toBeInTheDocument();
+  });
+
+  it("renders a non-scalar cell for a DECLARED column as an em dash, not JSON", () => {
+    render(
+      <FlowletThemeProvider>
+        <Table
+          columns={[{ key: "statusTimeline", label: "Status" }]}
+          rows={[{ statusTimeline: [{ state: "Posted" }] }]}
+        />
+      </FlowletThemeProvider>,
+    );
+    expect(screen.queryByTestId("flowlet-invalid-props")).toBeNull();
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+});

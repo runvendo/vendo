@@ -4,7 +4,15 @@ import type { Executor } from "./executor";
 import type { Principal } from "./principal";
 import type { Scheduler } from "./scheduler";
 import type { Channels } from "./channels";
-import type { Store, ThreadStore, SavedFlowletStore, AutomationStore, AuditLog } from "./store";
+import type {
+  Store,
+  ThreadStore,
+  SavedFlowletStore,
+  AutomationStore,
+  AuditLog,
+  RemixStore,
+  RemixRecord,
+} from "./store";
 
 const principal: Principal = { tenantId: "t1", subject: "u1" };
 
@@ -49,7 +57,26 @@ function makeStore(): Store {
     listRuns: async () => [],
   };
   const audit: AuditLog = { append: async () => {}, query: async () => [] };
-  return { threads, flowlets, automations, audit };
+  const remixPins = new Map<string, RemixRecord>();
+  const remixes: RemixStore = {
+    pin: async (scope, anchorId, record) => {
+      const key = `${scope.tenantId}:${scope.subject}:${anchorId}`;
+      const existing = remixPins.get(key);
+      const pinned: RemixRecord = {
+        ...record,
+        anchorId,
+        createdAt: existing?.createdAt ?? "2026-07-04T00:00:00Z",
+        updatedAt: "2026-07-04T00:00:01Z",
+      };
+      remixPins.set(key, pinned);
+      return pinned;
+    },
+    get: async (scope, anchorId) => remixPins.get(`${scope.tenantId}:${scope.subject}:${anchorId}`),
+    unpin: async (scope, anchorId) => {
+      remixPins.delete(`${scope.tenantId}:${scope.subject}:${anchorId}`);
+    },
+  };
+  return { threads, flowlets, automations, audit, remixes };
 }
 
 describe("seam interfaces are implementable in-memory", () => {
@@ -127,5 +154,64 @@ describe("seam interfaces are implementable in-memory", () => {
     };
     await channels.deliver({ channel: "in-app", principal, text: "done" });
     expect(sent).toEqual(["in-app"]);
+  });
+
+  it("RemixStore pins one record per (principal, anchorId) with upsert semantics", async () => {
+    const store = makeStore();
+    const first = await store.remixes.pin(principal, "invoices-widget", {
+      uiTree: { id: "n1", kind: "generated", payload: {} },
+      originatingPrompt: "add a days-late column",
+      components: { InvoiceRow: "v1" },
+    });
+    // The store owns the anchor stamp and both timestamps.
+    expect(first.anchorId).toBe("invoices-widget");
+    expect(first.createdAt).toBeTruthy();
+    expect(first.components).toEqual({ InvoiceRow: "v1" });
+
+    // Upsert: pinning again replaces, preserving createdAt.
+    const second = await store.remixes.pin(principal, "invoices-widget", {
+      uiTree: { id: "n2", kind: "generated", payload: {} },
+      originatingPrompt: "also sort by it",
+    });
+    expect(second.createdAt).toBe(first.createdAt);
+    expect((await store.remixes.get(principal, "invoices-widget"))?.uiTree.id).toBe("n2");
+
+    // Principal isolation: another subject sees nothing.
+    const other = { tenantId: "t1", subject: "u2" };
+    expect(await store.remixes.get(other, "invoices-widget")).toBeUndefined();
+
+    // Unpin restores the default.
+    await store.remixes.unpin(principal, "invoices-widget");
+    expect(await store.remixes.get(principal, "invoices-widget")).toBeUndefined();
+  });
+
+  it("Channels carries the optional structured automation delivery", async () => {
+    const deliveries: unknown[] = [];
+    const channels: Channels = {
+      deliver: async (msg) => {
+        deliveries.push(msg.automation);
+      },
+    };
+    await channels.deliver({
+      channel: "in-app",
+      principal,
+      text: "Morning chase ran: 2 sent, 1 draft needs review.",
+      automation: { kind: "completed", runId: "r1", summary: "2 sent, 1 draft needs review" },
+    });
+    await channels.deliver({
+      channel: "in-app",
+      principal,
+      text: "Approval needed: email Henderson.",
+      automation: {
+        kind: "approval-required",
+        runId: "r2",
+        stepId: "s3",
+        summary: "email Henderson",
+      },
+    });
+    expect(deliveries).toEqual([
+      { kind: "completed", runId: "r1", summary: "2 sent, 1 draft needs review" },
+      { kind: "approval-required", runId: "r2", stepId: "s3", summary: "email Henderson" },
+    ]);
   });
 });

@@ -13,6 +13,7 @@
  */
 
 import type { ToolSet } from "ai";
+import { capToolOutput } from "@flowlet/core";
 import type { FlowletPrincipal } from "./principal";
 import { buildDescriptor, type ToolDescriptor } from "./descriptor";
 
@@ -226,9 +227,24 @@ export async function ingestComposioTools(args: {
     tools: config.tools,
   });
 
+  // Ingestion is a capping point (context-engineering spec §5): external tool
+  // results (full Gmail bodies, base64 attachments) are shrunk deterministically
+  // and shape-stably before they ever reach the model context.
+  for (const tool of Object.values(toolset)) {
+    const original = tool.execute;
+    if (typeof original !== "function") continue;
+    const bound = original.bind(tool);
+    tool.execute = async (input, options) =>
+      capToolOutput(await bound(input, options), CHAT_TOOL_OUTPUT_BUDGET).result;
+  }
+
   const descriptors = Object.entries(toolset).map(([name, tool]) =>
     buildDescriptor(name, tool, "composio"),
   );
 
   return { toolset, descriptors };
 }
+
+/** Chat-side budget: server context is cheap relative to realtime voice, but
+ *  a raw Gmail body still costs real tokens — cap generously, not infinitely. */
+const CHAT_TOOL_OUTPUT_BUDGET = { maxChars: 16_000, attachNote: true } as const;

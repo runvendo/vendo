@@ -21,18 +21,22 @@ import { FlowletProvider } from "@flowlet/react";
 import {
   FlowletOverlay,
   FlowletShellProvider,
+  FlowletToasts,
   createLocalIntegrations,
+  createWebRemixes,
   createWebStorage,
   type FlowletIntegrations,
+  type FlowletToastsProps,
 } from "@flowlet/shell";
 import { FlowletThemeProvider } from "@flowlet/components";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@flowlet/components/theme";
 import { brandToCssVars } from "@flowlet/components/descriptors";
-import { manifestToolsToHostTools } from "../manifest-tools";
-import type { FlowletCapabilities } from "../capabilities";
+import { manifestToolsToHostTools } from "@flowlet/server/manifest-tools";
+import type { FlowletCapabilities } from "@flowlet/server/capabilities";
 import { SandboxStage } from "./sandbox-stage";
 import { FlowletConnectNode } from "./connect-node";
 import { createServerIntegrations } from "./integrations";
+import { createServerNotifications } from "./notifications";
 import { createRunQuery } from "./run-query";
 
 export interface FlowletRootProps {
@@ -50,6 +54,11 @@ export interface FlowletRootProps {
   suggestions?: string[];
   /** "pill" (default) renders a floating launcher; "none" = Cmd/Ctrl+K only. */
   launcher?: "pill" | "none";
+  /** Automation toasts (FlowletToasts) mount by default; `false` opts out. */
+  toasts?: boolean;
+  /** Corner for the toast stack. Default "bottom-left" (the launcher pill
+   *  owns bottom-right). */
+  toastPlacement?: FlowletToastsProps["placement"];
   children: ReactNode;
 }
 
@@ -98,6 +107,8 @@ export function FlowletRoot({
   greeting,
   suggestions,
   launcher = "pill",
+  toasts = true,
+  toastPlacement = "bottom-left",
   children,
 }: FlowletRootProps) {
   const brand = useMemo(() => parseBrand(theme), [theme]);
@@ -129,6 +140,11 @@ export function FlowletRoot({
   // Saved flowlets survive reloads; only touches localStorage inside methods,
   // so importing stays SSR-safe.
   const store = useMemo(() => createWebStorage({ namespace: `flowlet:${threadId}` }), [threadId]);
+
+  // Remix pins (FlowletRemix) follow the same web-storage pattern; the
+  // notifications client polls the handler's deliveries feed (FlowletToasts).
+  const remixes = useMemo(() => createWebRemixes({ namespace: `flowlet:${threadId}` }), [threadId]);
+  const notifications = useMemo(() => createServerNotifications(basePath), [basePath]);
 
   const integrations = useMemo<FlowletIntegrations>(
     () =>
@@ -181,6 +197,8 @@ export function FlowletRoot({
           renderNode={renderNode}
           integrations={integrations}
           store={store}
+          remixes={remixes}
+          notifications={notifications}
           runQuery={runQuery}
           components={[]}
           theme={{ scheme: brand.mode === "dark" ? "dark" : "light" }}
@@ -203,6 +221,9 @@ export function FlowletRoot({
             <button type="button" style={LAUNCHER_STYLE} onClick={() => setOpen(true)}>
               Ask {productName}
             </button>
+          )}
+          {toasts && (
+            <FlowletToasts placement={toastPlacement} namespace={`flowlet:${threadId}`} />
           )}
         </FlowletShellProvider>
       </FlowletThemeProvider>
