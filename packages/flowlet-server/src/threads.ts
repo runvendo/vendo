@@ -28,14 +28,24 @@ export function createThreadIndex(threads: ThreadStore): ThreadIndex {
       const key = `${scope.tenantId}::${scope.subject}::${clientId}`;
       const memo = byClientId.get(key);
       if (memo) return memo;
-      const existing = await threads.get(scope, clientId);
-      if (!existing) {
-        // First write mints the thread under the CLIENT-OWNED id (empty
-        // upsert = auto-create), so the mapping is reconstructible from the
-        // store alone after a restart.
-        await threads.upsertMessages(scope, clientId, []);
+      // Persistence must not break chat (chat.ts module contract): resolve
+      // returns `clientId` on EVERY path, and `upsertMessages` auto-creates
+      // the thread row — so a store blip while minting (or checking for) the
+      // row degrades to "row minted by the next successful upsert" instead
+      // of 500ing the request.
+      try {
+        const existing = await threads.get(scope, clientId);
+        if (!existing) {
+          // First write mints the thread under the CLIENT-OWNED id (empty
+          // upsert = auto-create), so the mapping is reconstructible from the
+          // store alone after a restart.
+          await threads.upsertMessages(scope, clientId, []);
+        }
+        byClientId.set(key, clientId);
+      } catch (err) {
+        // NOT memoized: retry the mint on the next request.
+        console.error("[flowlet] failed to mint the thread record:", err);
       }
-      byClientId.set(key, clientId);
       return clientId;
     },
   };

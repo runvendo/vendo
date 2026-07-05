@@ -137,7 +137,14 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     // resume's mutated approval parts on a message id already on file — even
     // if the run below never completes. Upsert-by-id, so the engine's
     // onSettled writer (the settled-list persister) never double-appends.
-    await threads.upsertMessages(scope, threadRecordId, messages);
+    // Logged-not-thrown, like every other writer in this file: a store blip
+    // must not 500 the chat (the module contract — persistence failures are
+    // never surfaced to the caller).
+    try {
+      await threads.upsertMessages(scope, threadRecordId, messages);
+    } catch (err) {
+      console.error("[flowlet] failed to persist the incoming client messages:", err);
+    }
   }
 
   const stream = (await deps.getAgent()).run({

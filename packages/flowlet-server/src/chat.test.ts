@@ -325,6 +325,34 @@ describe("handleChat — durable threads", () => {
     expect((await threads.getMessages(SCOPE, "default")).map((m) => m.id)).toContain("m1");
   });
 
+  it("still streams when the pre-stream upsert throws — a store blip must not break chat", async () => {
+    const threads = createInMemoryStore().threads;
+    const threadIndex = createThreadIndex(threads);
+    const { agent } = chunkAgent("asst-1", "still here");
+    const upsert = vi
+      .spyOn(threads, "upsertMessages")
+      .mockRejectedValue(new Error("store down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await handleChat(chatReq({ messages: MESSAGES, threadId: "t1" }), {
+        getAgent: () => agent,
+        hostTools: [],
+        options: {},
+        chatEnabled: true,
+        threadIndex,
+        threads,
+      });
+      expect(res.status).toBe(200);
+      await drainResponse(res);
+      expect(upsert).toHaveBeenCalled();
+      // Logged, not swallowed silently.
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      upsert.mockRestore();
+      errSpy.mockRestore();
+    }
+  });
+
   it("persists nothing when no ThreadStore is wired, even with a threadId", async () => {
     const { agent, run } = stubAgent();
     const { threadIndex } = storeDeps();
