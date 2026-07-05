@@ -4,11 +4,24 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { createFlowletDatabase, createDrizzleThreadStore, getMeta } from "@flowlet/store";
+import {
+  createFlowletDatabase,
+  createDrizzleDecisionStore,
+  createDrizzleThreadStore,
+  getMeta,
+} from "@flowlet/store";
 import type { FlowletUIMessage } from "@flowlet/core";
-import { createFlowletHandler, resetFlowletBootRegistry, routeTail } from "./handler";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
+import {
+  automationSpecSchema,
+  canonicalKey,
+  createInMemoryCompiledRuleStore,
+  createInMemoryGrantStore,
+  InMemoryThreadStore,
+  type RegisteredTool,
+} from "@flowlet/runtime";
+import { createFlowletHandler, resetFlowletBootRegistry, routeTail } from "./handler";
+import { ensureFlowletState, WORLD_SCOPE } from "@flowlet/server";
 
 // An unannotated write tool: the default policy's fail-safe gates it behind
 // approval (no readOnly/destructive hints, no Composio-shaped verb segments).
@@ -840,14 +853,31 @@ describe("createFlowletHandler", () => {
       });
     });
 
-    it("the SAME remember memo is shared by chat's agent and /action (wrapped once in assembly)", async () => {
-      vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
-      const dataDir = `memory://flowlet-next-remember-shared-${Date.now()}`;
-      const { POST } = createFlowletHandler({
+    it("a remembered /action approval never auto-allows an automation step — the world's policy is UNWRAPPED and grants stay the sole unattended authorizer", async () => {
+      const dataDir = `memory://flowlet-next-remember-world-${Date.now()}`;
+      // The world-registered twin of /action's create_thing: same name, same
+      // input, same principal (everything is DEFAULT_PRINCIPAL single-tenant),
+      // so the remember memo's canonicalKey ([userId, toolName, input,
+      // version]) collides EXACTLY across the two surfaces.
+      const registeredCreateThing: RegisteredTool = {
+        descriptor: {
+          name: "create_thing",
+          source: "caller",
+          annotations: {},
+          hasExecute: true,
+          kind: "function",
+        },
+        execute: async (input) => ({ ok: true, result: { wrote: input } }),
+      };
+      const opts = {
         flowletDir: emptyDir(),
         storage: { pglite: { dataDir } },
         tools: writeTool,
-      });
+        automations: { tools: { create_thing: registeredCreateThing } },
+      };
+      const { POST } = createFlowletHandler(opts);
+
+      // Interactive surface: approve + execute once through /action.
       const gate = await POST(
         req("/api/flowlet/action", {
           method: "POST",
@@ -855,21 +885,18 @@ describe("createFlowletHandler", () => {
         }),
       );
       const { approvalToken } = (await gate.json()) as { approvalToken: string };
-      await POST(
+      const executed = await POST(
         req("/api/flowlet/action", {
           method: "POST",
           body: JSON.stringify({ action: "create_thing", payload: { amount: 7 }, approvalToken }),
         }),
       );
+      expect(((await executed.json()) as { decision: string }).decision).toBe("approve");
 
-      // Read the decision store directly (same handle @flowlet/store memoizes
-      // for this dataDir) to prove the memo landed where automations/chat's
-      // policy (built from the SAME wrap) would also read it from.
-      const { createFlowletDatabase: createDb, createDrizzleDecisionStore } = await import("@flowlet/store");
-      const { WORLD_SCOPE } = await import("@flowlet/server");
-      const handle = await createDb({ pglite: { dataDir } });
+      // The memo genuinely exists — so the pause asserted below can only come
+      // from the world's policy being unwrapped, never from a missing memo.
+      const handle = await createFlowletDatabase({ pglite: { dataDir } });
       const decisionStore = createDrizzleDecisionStore(handle, WORLD_SCOPE);
-      const { canonicalKey } = await import("@flowlet/runtime");
       const key = canonicalKey(
         {
           toolName: "create_thing",
@@ -880,6 +907,35 @@ describe("createFlowletHandler", () => {
         "v1",
       );
       expect(await decisionStore.get(key)).toBe("approve");
+
+      // Unattended surface: an automation step calling the IDENTICAL
+      // tool+input with NO grant. It must pause waiting_approval — a chat-time
+      // human approval never green-lights an unattended run; grants are the
+      // sole unattended authorization mechanism (interpreter runs its grant
+      // machinery only on "approve", so a leaked "allow" would skip it).
+      const state = await ensureFlowletState(opts);
+      const world = state.world!;
+      const spec = automationSpecSchema.parse({
+        dslVersion: 1,
+        name: "Memo leak probe",
+        description: "t",
+        prompt: "t",
+        trigger: { type: "host_event", event: "thing.requested" },
+        execution: {
+          mode: "steps",
+          steps: [{ id: "s1", type: "tool", tool: "create_thing", input: { amount: 7 } }],
+        },
+      });
+      const { automation } = await world.store.create(WORLD_SCOPE, { spec, grants: [] });
+      const run = await world.runner.fire(WORLD_SCOPE, automation.id, {
+        source: "host",
+        eventId: "e1",
+        subject: WORLD_SCOPE.subject,
+        occurredAt: new Date().toISOString(),
+        payload: {},
+      });
+      expect(run?.outcome).toBe("waiting_approval");
+      expect(run?.pendingApproval).toMatchObject({ tool: "create_thing" });
     });
   });
 });

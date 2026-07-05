@@ -189,12 +189,26 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
     // durable decisions when storage is configured, in-memory otherwise — so
     // chat's agent and /action share the exact same memo, while breakers
     // (which may only tighten) still sit OUTSIDE the memo and can override it.
+    //
+    // SECURITY: the memo is for the INTERACTIVE surfaces only (chat's agent
+    // and /action, where a human is present to (re-)approve). The automations
+    // world gets `worldPolicy` — the SAME production stack composed over the
+    // UNWRAPPED base policy. The interpreter runs its grant machinery
+    // (hasValidGrant/PauseSignal) only when evaluate returns "approve";
+    // rememberDecisions downgrades a previously-executed approve to "allow"
+    // keyed on [userId, tool, input] — with no interactive-vs-unattended
+    // distinction. Wrapped, a sensitive tool the user approved once in CHAT
+    // (human present) would auto-"allow" an identical automation step and
+    // skip grant checks entirely. Grants are the SOLE unattended
+    // authorization mechanism, so the memo must never reach unattended
+    // evaluation.
     const decisionStore = storage
       ? createDrizzleDecisionStore(storage, WORLD_SCOPE)
       : createInMemoryDecisionStore();
     const basePolicy = options.policy ?? defaultFlowletPolicy;
     const rememberedPolicy = rememberDecisions(basePolicy, decisionStore, DECISION_POLICY_VERSION);
     const policy = composeProductionPolicy(rememberedPolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
+    const worldPolicy = composeProductionPolicy(basePolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 
@@ -226,7 +240,7 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
       options.automations === false
         ? null
         : await createAutomationsWorld({
-            policy,
+            policy: worldPolicy,
             model,
             ...(options.automations?.tools ? { tools: options.automations.tools } : {}),
             scope: worldScope,
