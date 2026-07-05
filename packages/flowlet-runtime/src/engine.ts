@@ -178,8 +178,11 @@ function baselineSection(
       "base hash above verbatim.",
     "The rendered view receives the element's live data as `props.anchor` (the root node is " +
       "prewired with anchor={ $path: \"/anchor\" }). If the component reads other props, add " +
-      "hunks adapting it to `props.anchor`. Imports the environment lists as ABSENT must be " +
-      "removed or inlined via hunks.",
+      "hunks adapting it to `props.anchor`.",
+    "IMPORTS RULE — the sandbox resolves ONLY react and the imports the environment section " +
+      "lists as real or shimmed. Your FIRST hunks must remove or inline every other import " +
+      "(delete the import lines; replace helpers with small inline versions; replace missing " +
+      "components with plain JSX). The server rejects the edit otherwise, naming the offenders.",
     `Example — "make the title blue" when line 12 is \`  <h2>{title}</h2>\`: ${example}`,
     ...(needsDefaultExport
       ? [
@@ -542,6 +545,14 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             ? { seal: { ...seal, sourceHash: remixSourceHash } }
             : {}),
         });
+        // Imports that resolve in this anchor's sandbox: env-manifest entries
+        // classified real or shimmed. Everything else must be edited away.
+        const anchorImports = scoped ? config.envManifest?.anchors[scoped.anchorId] : undefined;
+        const sandboxImports = new Set(
+          Object.entries(anchorImports ?? {})
+            .filter(([, status]) => status.kind === "real" || status.kind === "shimmed")
+            .map(([specifier]) => specifier),
+        );
         const editViewTool =
           scoped && (remix.baseline || remix.pinBase)
             ? createEditViewTool(writer, {
@@ -550,6 +561,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
                 pinBase: remix.pinBase,
                 components: config.components,
                 seal,
+                sandboxImports,
               })
             : undefined;
         const requestConnectTool = createRequestConnectTool(writer);

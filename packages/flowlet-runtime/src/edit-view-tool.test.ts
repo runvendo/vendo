@@ -169,6 +169,79 @@ describe("createEditViewTool — anchor base", () => {
   });
 });
 
+describe("createEditViewTool — sandbox import gate", () => {
+  const importingSrc = [
+    'import Link from "next/link"',
+    'import { cn } from "@/lib/cn"',
+    'import { Star } from "lucide-react"',
+    "export default function DeadlineList(props) {",
+    "  return <div className={cn('x')}><Star /><Link href='/'>go</Link></div>;",
+    "}",
+  ].join("\n");
+  const importingBaseline = normalizeBaseline(importingSrc, undefined);
+  const importOptions = (allowed?: string[]) =>
+    options({
+      anchorBase: {
+        text: importingBaseline.text,
+        baseHash: importingBaseline.baseHash,
+        sourceHash: "captured-hash",
+        componentName: "DeadlineList",
+      },
+      ...(allowed ? { sandboxImports: new Set(allowed) } : {}),
+    });
+  const noopOp = () => ({
+    component: "DeadlineList",
+    baseHash: importingBaseline.baseHash,
+    hunks: [{ startLine: 4, oldLines: [], newLines: ["// touched"] }],
+  });
+
+  it("rejects unresolvable imports with a correctable error naming them", async () => {
+    const writer = writerMock();
+    const tool = createEditViewTool(writer, importOptions(["next/link", "lucide-react"]));
+    const result = String(
+      await tool.execute!({ base: "anchor", ops: [noopOp()] } as never, {} as never),
+    );
+    expect(result).toMatch(/^edit_view error \(imports\)/);
+    expect(result).toContain("@/lib/cn");
+    expect(result).not.toContain("next/link");
+    expect(calls(writer)).toHaveLength(0);
+  });
+
+  it("passes once the offending imports are removed via hunks", async () => {
+    const writer = writerMock();
+    const tool = createEditViewTool(writer, importOptions(["next/link", "lucide-react"]));
+    const fix = {
+      component: "DeadlineList",
+      baseHash: importingBaseline.baseHash,
+      hunks: [
+        { startLine: 2, oldLines: ['import { cn } from "@/lib/cn"'], newLines: ["const cn = (...a) => a.filter(Boolean).join(' ');"] },
+      ],
+    };
+    const result = await tool.execute!({ base: "anchor", ops: [fix] } as never, {} as never);
+    expect(result).toBe("edited");
+  });
+
+  it("react and react/jsx-runtime are always resolvable (the stage shim)", async () => {
+    const writer = writerMock();
+    const src = 'import { useState } from "react"\nexport default function C(){ return null }';
+    const b = normalizeBaseline(src, undefined);
+    const tool = createEditViewTool(
+      writer,
+      options({
+        anchorBase: { text: b.text, baseHash: b.baseHash, sourceHash: "h", componentName: "C" },
+      }),
+    );
+    const result = await tool.execute!(
+      {
+        base: "anchor",
+        ops: [{ component: "C", baseHash: b.baseHash, hunks: [{ startLine: 2, oldLines: [], newLines: ["// t"] }] }],
+      } as never,
+      {} as never,
+    );
+    expect(result).toBe("edited");
+  });
+});
+
 describe("createEditViewTool — pin base", () => {
   const pinSource = [
     "export default function DeadlineList(props) {",

@@ -58,6 +58,26 @@ export interface EditViewToolOptions {
   seal?:
     | { sealer: RemixSealer; principalUserId: string; now?: () => string }
     | undefined;
+  /** Import specifiers that resolve in this anchor's sandbox (env manifest
+   *  real+shimmed). react/react-dom/react/jsx-runtime are always allowed (the
+   *  stage's shared shim). Anything else in a patched source is a correctable
+   *  error BEFORE streaming — otherwise the stage fails at load time. */
+  sandboxImports?: Set<string> | undefined;
+}
+
+/** Always resolvable: the stage's shared shim provides these. */
+const STAGE_IMPORTS = new Set(["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"]);
+
+/** import/export-from/dynamic-import specifiers in an authored source. */
+function importSpecifiers(source: string): string[] {
+  const out = new Set<string>();
+  for (const match of source.matchAll(
+    /(?:^|\n)\s*(?:import|export)\s[^"'\n]*?from\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|(?:^|\n)\s*import\s*["']([^"']+)["']/g,
+  )) {
+    const spec = match[1] ?? match[2] ?? match[3];
+    if (spec) out.add(spec);
+  }
+  return [...out];
 }
 
 const singleLine = z
@@ -198,10 +218,31 @@ export function createEditViewTool(writer: FlowletWriter, options: EditViewToolO
         sources[op.component] = applied.text;
       }
 
-      // 3. Rebuild the authored payload with the patched sources.
+      // 3. Sandbox import gate: every patched source's imports must resolve in
+      //    the jail, or the stage fails at module load — catch it here as a
+      //    correctable error instead (browser-verification finding).
+      const allowed = options.sandboxImports ?? new Set<string>();
+      const unresolved = new Map<string, string[]>();
+      for (const [name, source] of Object.entries(sources)) {
+        const bad = importSpecifiers(source).filter(
+          (s) => !STAGE_IMPORTS.has(s) && !allowed.has(s),
+        );
+        if (bad.length > 0) unresolved.set(name, bad);
+      }
+      if (unresolved.size > 0) {
+        const detail = [...unresolved.entries()]
+          .map(([name, specs]) => `"${name}": ${specs.join(", ")}`)
+          .join(" | ");
+        return err(
+          "imports",
+          `these imports do not resolve in the render sandbox — remove or inline them via hunks: ${detail}`,
+        );
+      }
+
+      // 4. Rebuild the authored payload with the patched sources.
       const authored: GeneratedPayload = { ...payload, components: { ...sources } };
 
-      // 4. The exact render_view gates: validate → host props → compile → node.
+      // 5. The exact render_view gates: validate → host props → compile → node.
       const result = materializeView(authored, {
         components: options.components,
         remixAnchorId: options.remixAnchorId,
@@ -209,7 +250,7 @@ export function createEditViewTool(writer: FlowletWriter, options: EditViewToolO
       });
       if (!result.ok) return `edit_view error ${result.error}`;
 
-      // 5. Ship, with the next edit's sealed base paired to the node.
+      // 6. Ship, with the next edit's sealed base paired to the node.
       writer.write({ type: "data-ui", id: result.node.id, data: result.node });
       if (options.seal) {
         const now = options.seal.now ?? (() => new Date().toISOString());
