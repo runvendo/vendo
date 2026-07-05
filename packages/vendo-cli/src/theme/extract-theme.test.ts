@@ -39,6 +39,32 @@ describe("extractTheme", () => {
     expect(summary.defaulted).toContain("accent");
   });
 
+  it("lets an explicit CSS declaration of a next/font variable win over the synthesized value", async () => {
+    const dir = await stageFixtureApp("maple");
+    await writeFile(
+      path.join(dir, "src/app/globals.css"),
+      '@theme { --color-bg: #FBFBFA; --font-inter: "Custom Corp Sans", sans-serif; --font-sans: var(--font-inter); }',
+    );
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written.fontFamily).toBe('"Custom Corp Sans", sans-serif');
+  });
+
+  it("recovers next/font vars declared in a conventional fonts.ts module", async () => {
+    const dir = await stageFixtureApp("maple");
+    await writeFile(path.join(dir, "src/app/layout.tsx"), "export default function RootLayout() { return null }\n");
+    await mkdir(path.join(dir, "src/app/ui"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/ui/fonts.ts"),
+      'import { Inter } from "next/font/google"\nexport const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })\n',
+    );
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written.fontFamily).toContain("Inter");
+  });
+
   it("extracts Cadence (demo-accounting) tokens: surface background, scale accent, next/font family", async () => {
     const dir = await stageFixtureApp("cadence");
     const info = await detectTarget(dir);

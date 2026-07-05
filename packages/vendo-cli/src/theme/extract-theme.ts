@@ -31,8 +31,12 @@ export async function extractTheme(
     if (error) errors.push(error);
   }
   // next/font injects --font-* vars at runtime; recover them from source so
-  // font var() chains resolve to the actual family.
-  if (info.framework === "next") vars.push(...(await collectNextFontVars(targetDir)));
+  // font var() chains resolve to the actual family. An explicit CSS
+  // declaration of the same variable stays authoritative.
+  if (info.framework === "next") {
+    const declared = new Set(vars.map((v) => v.name));
+    vars.push(...(await collectNextFontVars(targetDir)).filter((v) => !declared.has(v.name)));
+  }
 
   const result = mapVarsToBrand(vars);
   let written = false;

@@ -10,8 +10,8 @@ const splineMono = Spline_Sans_Mono({ subsets: ["latin"], variable: "--font-spli
 `;
     const vars = parseNextFontVars(source, "src/app/layout.tsx");
     expect(vars).toEqual([
-      { name: "--font-hanken", value: '"Hanken Grotesk"', file: "src/app/layout.tsx", darkScope: false },
-      { name: "--font-spline-mono", value: '"Spline Sans Mono"', file: "src/app/layout.tsx", darkScope: false },
+      { name: "--font-hanken", value: '"Hanken Grotesk"', file: "src/app/layout.tsx", darkScope: false, synthetic: true },
+      { name: "--font-spline-mono", value: '"Spline Sans Mono"', file: "src/app/layout.tsx", darkScope: false, synthetic: true },
     ]);
   });
 
@@ -21,7 +21,19 @@ import { Inter as BodyFont } from "next/font/google"
 const body = BodyFont({ subsets: ["latin"], variable: "--font-body" })
 `;
     expect(parseNextFontVars(source, "layout.tsx")).toEqual([
-      { name: "--font-body", value: '"Inter"', file: "layout.tsx", darkScope: false },
+      { name: "--font-body", value: '"Inter"', file: "layout.tsx", darkScope: false, synthetic: true },
+    ]);
+  });
+
+  it("ignores commented-out loader calls", () => {
+    const source = `
+import { Inter } from "next/font/google"
+// const inter = Inter({ subsets: ["latin"], variable: "--font-old" })
+/* const inter = Inter({ variable: "--font-older" }) */
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
+`;
+    expect(parseNextFontVars(source, "layout.tsx")).toEqual([
+      { name: "--font-inter", value: '"Inter"', file: "layout.tsx", darkScope: false, synthetic: true },
     ]);
   });
 
