@@ -9,6 +9,9 @@ export interface CssVarDecl {
   value: string;
   file: string;
   darkScope: boolean;
+  /** Not declared in CSS (e.g. recovered from next/font source) — usable to
+   * resolve var() chains but never picked directly for a slot. */
+  synthetic?: boolean;
 }
 
 const DARK_SELECTOR = /(\.dark\b|\[data-theme=["']?dark["']?\]|prefers-color-scheme:\s*dark)/;
