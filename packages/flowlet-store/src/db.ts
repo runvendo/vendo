@@ -4,7 +4,7 @@ import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import { sql } from "drizzle-orm";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
@@ -32,9 +32,13 @@ const registry: Registry = ((globalThis as Record<string, unknown>)["__flowletSt
 }) as Registry;
 
 export function createFlowletDatabase(config: FlowletDatabaseConfig = {}): Promise<FlowletDb> {
+  // Precedence: explicit connectionString > explicit pglite > env DATABASE_URL
+  // > default PGlite — an explicitly passed `pglite` config must not lose to
+  // an ambient DATABASE_URL env var.
   // `||` (not `??`): a set-but-empty DATABASE_URL means "no connection string",
   // and must not become a shared "" cache key across different PGlite dirs.
-  const conn = config.connectionString || process.env["DATABASE_URL"] || undefined;
+  const conn =
+    config.connectionString || (config.pglite ? undefined : process.env["DATABASE_URL"] || undefined);
   const dataDir = config.pglite?.dataDir ?? process.env["FLOWLET_DATA_DIR"] ?? ".flowlet/data";
   const cacheKey = conn ?? `pglite:${dataDir}`;
   const existing = registry.instances.get(cacheKey);
@@ -78,11 +82,24 @@ export function migrateFlowletDatabase(handle: FlowletDb): Promise<void> {
       await migratePglite(handle.db, { migrationsFolder: MIGRATIONS_DIR, migrationsSchema: "flowlet" });
       return;
     }
-    await handle.db.execute(sql`select pg_advisory_lock(${ADVISORY_LOCK_KEY})`);
+    // Advisory locks are SESSION-scoped, and the handle's db wraps a pg.Pool:
+    // lock, migrate, and unlock could each run on a DIFFERENT pooled session,
+    // so the lock would protect nothing (and the unlock could target a session
+    // that never held it, leaking the lock on the one that did). Run the whole
+    // lock → migrate → unlock sequence on ONE dedicated connection instead.
+    // For the pg kind, cacheKey IS the connection string (see createFlowletDatabase).
+    const client = new Client({ connectionString: handle.cacheKey });
+    await client.connect();
     try {
-      await migratePg(handle.db, { migrationsFolder: MIGRATIONS_DIR, migrationsSchema: "flowlet" });
+      const db = drizzlePg(client);
+      await db.execute(sql`select pg_advisory_lock(${ADVISORY_LOCK_KEY})`);
+      try {
+        await migratePg(db, { migrationsFolder: MIGRATIONS_DIR, migrationsSchema: "flowlet" });
+      } finally {
+        await db.execute(sql`select pg_advisory_unlock(${ADVISORY_LOCK_KEY})`);
+      }
     } finally {
-      await handle.db.execute(sql`select pg_advisory_unlock(${ADVISORY_LOCK_KEY})`);
+      await client.end();
     }
   })().catch((err) => {
     throw new Error(

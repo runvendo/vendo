@@ -46,6 +46,25 @@ describe("createFlowletDatabase", () => {
     expect(handle.cacheKey).toBe(`pglite:${dataDir}`);
   });
 
+  it("prefers an explicitly passed pglite config over an ambient DATABASE_URL env var", async () => {
+    const dataDir = uniqueDataDir();
+    process.env["DATABASE_URL"] = "postgres://env-host:5432/env-db";
+    const handle = await createFlowletDatabase({ pglite: { dataDir } });
+    expect(handle.kind).toBe("pglite");
+    expect(handle.cacheKey).toBe(`pglite:${dataDir}`);
+  });
+
+  it("prefers an explicit connectionString over an explicit pglite config", async () => {
+    // Precedence only — never connect: assert the handle KIND without awaiting
+    // any query against the (nonexistent) server.
+    const handle = await createFlowletDatabase({
+      connectionString: "postgres://explicit-host:5432/explicit-db",
+      pglite: { dataDir: uniqueDataDir() },
+    });
+    expect(handle.kind).toBe("pg");
+    expect(handle.cacheKey).toBe("postgres://explicit-host:5432/explicit-db");
+  });
+
   it("rejects loudly when the pglite dataDir is not writable", async () => {
     // Fixture dir deliberately named WITHOUT the substring "writable" so the
     // assertion can only match the code's own error message, not the path.
