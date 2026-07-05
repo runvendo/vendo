@@ -53,7 +53,7 @@ function req(body: unknown): Request {
 
 describe("parked-actions routes", () => {
   it("GET lists unresolved parked actions for the principal", async () => {
-    const world = makeWorld();
+    const world = await makeWorld();
     const draft = {
       automationId: "a1", runId: "r1", stepId: "s1", tool: "x",
       input: {}, reason: "ungranted" as const, tier: "act" as const,
@@ -80,7 +80,7 @@ describe("parked-actions routes", () => {
 
   it("POST resolve 'yes' executes via the world's runner and returns { ok: true, executed: true }", async () => {
     const tool = makeTool("send_email");
-    const world = makeWorld({ send_email: tool });
+    const world = await makeWorld({ send_email: tool });
     const { automation } = await world.store.create(SCOPE, { spec: minimalSpec(), grants: [] });
     const action = await world.store.createParkedAction(SCOPE, {
       automationId: automation.id, runId: "r1", stepId: "s1", tool: "send_email",
@@ -98,13 +98,13 @@ describe("parked-actions routes", () => {
   });
 
   it("400s a malformed resolve body", async () => {
-    const world = makeWorld();
+    const world = await makeWorld();
     const res = await resolveParkedActionRoute(req({ nonsense: true }), { world, principal: PRINCIPAL });
     expect(res.status).toBe(400);
   });
 
   it("404s an unknown actionId", async () => {
-    const world = makeWorld();
+    const world = await makeWorld();
     const res = await resolveParkedActionRoute(req({ actionId: "missing", decision: "yes" }), {
       world, principal: PRINCIPAL,
     });
@@ -120,7 +120,7 @@ describe("parked-actions routes", () => {
 
   it("REVIEW FOLLOW-UP: routes scope by the WORLD's fixed scope, not the per-request principal — a custom-principal mount still sees and can resolve rows the world parked", async () => {
     const tool = makeTool("send_email");
-    const world = makeWorld({ send_email: tool });
+    const world = await makeWorld({ send_email: tool });
     const { automation } = await world.store.create(SCOPE, { spec: minimalSpec(), grants: [] });
     // The parked row lives under the WORLD's own scope, as the runner always
     // creates it (single-tenant, world.ts's documented model) — NOT under

@@ -205,6 +205,7 @@ export class AutomationRunner {
           outcome: "cancelled",
           error: `dropped: exceeded maxFiringsPerHour (${cap})`,
         });
+        await this.parkIfSpentOneShot(scope, automationId);
         this.config.onRunFinished?.(cancelled, automation);
         await this.notifyFinished(scope, cancelled, automation);
         return cancelled;
@@ -231,6 +232,7 @@ export class AutomationRunner {
       }
       if (!pass) {
         const skipped = await store.finalizeRun(scope, run.id, { outcome: "skipped" });
+        if (options.isTest !== true) await this.parkIfSpentOneShot(scope, automationId);
         this.config.onRunFinished?.(skipped, automation);
         return skipped;
       }
@@ -338,9 +340,27 @@ export class AutomationRunner {
         await store.cancelPendingRuns(scope, automation.id);
       }
     }
+
+    if (!finalized.isTest) await this.parkIfSpentOneShot(scope, automation.id);
     this.config.onRunFinished?.(finalized, automation);
     await this.notifyFinished(scope, finalized, automation);
     return finalized;
+  }
+
+  /**
+   * A one-shot schedule (`at`) is spent once its firing finalizes — however it
+   * finalized (success, failure, guard-skip, cap-cancel, expired approval) —
+   * so park it; otherwise durable stores would rehydrate it as "enabled"
+   * forever. Callers gate on isTest: run_automation_now never spends it.
+   */
+  private async parkIfSpentOneShot(scope: Principal, automationId: string): Promise<void> {
+    const fresh = await this.config.store.get(scope, automationId);
+    const trigger = fresh?.spec.trigger;
+    if (fresh?.status === "enabled" && trigger?.type === "schedule" && trigger.at !== undefined) {
+      await this.config.store.setStatus(scope, automationId, "paused", {
+        disabledReason: "completed_one_shot",
+      });
+    }
   }
 
   /** Resume a waiting_approval run with the user's decision. When
@@ -362,11 +382,11 @@ export class AutomationRunner {
       if (!peek) return undefined;
       return this.enqueue(peek.automationId, async () => {
         const run = await this.config.store.getRun(scope, runId);
-        if (!run || run.outcome !== "waiting_approval" || !run.pendingApproval) {
-          return undefined; // already resumed, cancelled, or finished
-        }
-        const pending = run.pendingApproval;
-        if (expectedStepId !== undefined && pending.stepId !== expectedStepId) {
+        if (!run) return undefined;
+        if (
+          expectedStepId !== undefined &&
+          run.pendingApproval?.stepId !== expectedStepId
+        ) {
           return undefined; // stale: the run moved on to a different pause
         }
         const automation = await this.config.store.get(scope, run.automationId);
@@ -375,17 +395,22 @@ export class AutomationRunner {
           : undefined;
         if (!automation || !version) return undefined;
 
+        // Atomically claim the approval: exactly one resumer gets it, and the
+        // run stops being pending in the same operation. A lost claim means
+        // the run was already resumed, cancelled, or finished.
+        const pending = await this.config.store.claimPendingApproval(scope, runId);
+        if (!pending) return undefined;
+
         // Expired approvals cancel instead of executing stale intent.
         if (Date.parse(pending.expiresAt) < this.nowMs()) {
           const expired = await this.config.store.finalizeRun(scope, run.id, {
             outcome: "cancelled",
             error: "pending approval expired",
           });
+          if (!run.isTest) await this.parkIfSpentOneShot(scope, run.automationId);
           await this.notifyFinished(scope, expired, automation);
           return expired;
         }
-        // Claim the run before executing so nothing else sees it as pending.
-        await this.config.store.updateRun(scope, run.id, { pendingApproval: undefined });
         const user = await this.claims(scope);
         return this.execute(scope, run, automation, version.spec, version.grants, user, {}, {
           checkpoint: pending.checkpoint,

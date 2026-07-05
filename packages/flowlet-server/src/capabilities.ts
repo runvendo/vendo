@@ -22,7 +22,15 @@ export interface FlowletCapabilities {
   voice: boolean;
   /** True when the host declared ≥1 MCP server (set by the handler, not env). */
   mcp: boolean;
+  /** True when the assembled handler built a durable storage handle (set by
+   *  the handler from the resolved `storage` option, not env — see
+   *  fetch-handler.ts's GET "capabilities" case). */
+  storage: boolean;
 }
+
+/** What `detectCapabilities` alone can answer from env keys — everything on
+ *  the wire shape except `storage` (the handler merges that in). */
+export type EnvCapabilities = Omit<FlowletCapabilities, "storage">;
 
 export interface DetectCapabilitiesOptions {
   /** True when the host supplied its own `model` (e.g. via handler options). */
@@ -32,7 +40,7 @@ export interface DetectCapabilitiesOptions {
 export function detectCapabilities(
   env: Record<string, string | undefined> = process.env,
   { hasInjectedModel = false }: DetectCapabilitiesOptions = {},
-): FlowletCapabilities {
+): EnvCapabilities {
   return {
     chat: hasInjectedModel || hasProviderKey(env),
     integrations: present(env["COMPOSIO_API_KEY"]),

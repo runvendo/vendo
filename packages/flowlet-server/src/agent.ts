@@ -152,8 +152,11 @@ export interface AgentFactoryConfig {
    * source the judge/breakers exempt (ENG-193 PR #40 review — item A).
    */
   controlTools?: () => ToolSet;
-  /** Connected Composio toolkits to ingest (undefined = Composio off). */
-  toolkits?: () => string[];
+  /** Connected Composio toolkits to ingest (undefined = Composio off). The
+   *  connections store this reads from is durable-or-in-memory, so it's
+   *  always async — a sync return also works (awaiting a non-promise is a
+   *  no-op). */
+  toolkits?: () => string[] | Promise<string[]>;
   /** Host-declared MCP servers (already env-resolved). Empty/undefined = MCP off. */
   mcpServers?: McpServerConfig[];
   /** Extra cache-key material from the host (e.g. store generation). */
@@ -182,10 +185,10 @@ export interface AgentFactoryConfig {
  * Toolkit-keyed agent cache. The Map stays bounded in practice: keys are
  * combinations of the (small) toolkit catalog plus the host cache key.
  */
-export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent {
+export function createAgentCache(config: AgentFactoryConfig): () => Promise<FlowletAgent> {
   const agents = new Map<string, FlowletAgent>();
-  return () => {
-    const toolkits = config.toolkits ? [...config.toolkits()].sort() : [];
+  return async () => {
+    const toolkits = config.toolkits ? [...(await config.toolkits())].sort() : [];
     const key = `${config.cacheKey?.() ?? ""}:${toolkits.join(",")}`;
     let agent = agents.get(key);
     if (!agent) {

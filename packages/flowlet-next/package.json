@@ -31,6 +31,7 @@
     "@flowlet/runtime": "workspace:*",
     "@flowlet/server": "workspace:*",
     "@flowlet/shell": "workspace:*",
+    "@flowlet/store": "workspace:*",
     "@scarf/scarf": "^1.4.0",
     "ai": "6.0.28",
     "zod": "^3.24.0"

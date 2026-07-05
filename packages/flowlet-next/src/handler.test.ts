@@ -2,10 +2,38 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createFlowletHandler } from "./handler";
+import { tool } from "ai";
 import { z } from "zod";
+import {
+  createFlowletDatabase,
+  createDrizzleDecisionStore,
+  createDrizzleThreadStore,
+  getMeta,
+} from "@flowlet/store";
+import type { FlowletUIMessage } from "@flowlet/core";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
+import {
+  automationSpecSchema,
+  canonicalKey,
+  createInMemoryCompiledRuleStore,
+  createInMemoryGrantStore,
+  InMemoryThreadStore,
+  type RegisteredTool,
+} from "@flowlet/runtime";
+import { createFlowletHandler, resetFlowletBootRegistry, routeTail } from "./handler";
+import { ensureFlowletState, WORLD_SCOPE } from "@flowlet/server";
+
+// An unannotated write tool: the default policy's fail-safe gates it behind
+// approval (no readOnly/destructive hints, no Composio-shaped verb segments).
+function writeTool() {
+  return {
+    create_thing: tool({
+      description: "write a thing",
+      inputSchema: z.object({ amount: z.number() }).passthrough(),
+      execute: async (input: unknown) => ({ wrote: input }),
+    }),
+  };
+}
 
 function req(pathname: string, init?: RequestInit): Request {
   return new Request(`http://localhost:3000${pathname}`, {
@@ -21,6 +49,30 @@ function emptyDir(): string {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  // Handlers claim the process-wide boot slot (first-wins); keep tests
+  // order-independent.
+  resetFlowletBootRegistry();
+});
+
+describe("routeTail", () => {
+  it.each([
+    ["/api/flowlet/chat", "chat"],
+    ["/api/flowlet/webhooks/composio", "webhooks/composio"],
+    ["/api/flowlet/threads", "threads"],
+    ["/api/flowlet/threads/t1", "threads/t1"],
+    ["/api/flowlet/flowlets/f1/delete", "flowlets/f1/delete"],
+    // Regression: the five existing endpoints still resolve under any mount.
+    ["/api/flowlet/action", "action"],
+    ["/api/flowlet/integrations", "integrations"],
+    ["/api/flowlet/capabilities", "capabilities"],
+    ["/api/flowlet/tick", "tick"],
+  ])("resolves %s to %s", (pathname, expected) => {
+    expect(routeTail(req(pathname))).toBe(expected);
+  });
+
+  it("resolves the tail regardless of where the catch-all is mounted", () => {
+    expect(routeTail(req("/some/other/mount/threads/t1"))).toBe("threads/t1");
+  });
 });
 
 describe("createFlowletHandler", () => {
@@ -36,7 +88,7 @@ describe("createFlowletHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
     const res = await GET(req("/api/flowlet/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
   });
 
   it("capabilities.mcp is true when mcpServers option is set", async () => {
@@ -184,7 +236,7 @@ describe("createFlowletHandler", () => {
     const { GET, POST } = createFlowletHandler({ flowletDir: emptyDir(), model });
 
     const caps = await GET(req("/api/flowlet/capabilities"));
-    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
 
     // The chatEnabled gate (503) fires before messages validation (400), so a
     // 400 on an empty messages array proves chat was NOT gated off.
@@ -216,7 +268,223 @@ describe("createFlowletHandler", () => {
     vi.stubEnv("FLOWLET_MODEL", "");
     const fixed = await GET(req("/api/flowlet/capabilities"));
     expect(fixed.status).toBe(200);
-    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+  });
+
+  it("resolves GET /capabilities after async assembly (async ripple smoke test)", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir(), storage: false });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+  });
+
+  it("reports storage:true once durable storage actually assembles (not just from an env key)", async () => {
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir: `memory://flowlet-next-capabilities-storage-${Date.now()}` } },
+    });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: true });
+  });
+
+  it("warns once, no matter how many requests, when running without durable storage in production", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir(), storage: false, principal: async () => null });
+    await GET(req("/api/flowlet/capabilities"));
+    await GET(req("/api/flowlet/capabilities"));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/in-memory/);
+    warn.mockRestore();
+  });
+
+  it("warns once when durable storage is configured alongside a custom principal resolver (single-tenant)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir: "memory://flowlet-next-handler-test" } },
+      principal: async () => ({ userId: "u1" }),
+    });
+    await GET(req("/api/flowlet/capabilities"));
+    await GET(req("/api/flowlet/capabilities"));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/single-tenant/);
+    warn.mockRestore();
+  });
+
+  it("allows a tick with the correct bearer secret WITHOUT resolving a principal", async () => {
+    vi.stubEnv("FLOWLET_TICK_SECRET", "s3cret");
+    // A principal resolver that rejects EVERYONE proves the bearer path
+    // bypasses resolvePrincipal entirely.
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir(), principal: async () => null });
+    const res = await POST(
+      req("/api/flowlet/tick", {
+        method: "POST",
+        headers: { host: "localhost:3000", authorization: "Bearer s3cret" },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("401s a wrong bearer when the tick secret is set (no fall-through)", async () => {
+    vi.stubEnv("FLOWLET_TICK_SECRET", "s3cret");
+    // Even a localhost dev request (which resolvePrincipal would allow) must
+    // be rejected: presenting a bad service credential is never a fall-through.
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/tick", {
+        method: "POST",
+        headers: { host: "localhost:3000", authorization: "Bearer wrong" },
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("falls through to resolvePrincipal when the secret is set but no bearer is presented", async () => {
+    vi.stubEnv("FLOWLET_TICK_SECRET", "s3cret");
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir(), principal: async () => null });
+    const res = await POST(req("/api/flowlet/tick", { method: "POST" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("ignores a bearer entirely when no tick secret is configured (existing path unchanged)", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/tick", {
+        method: "POST",
+        headers: { host: "localhost:3000", authorization: "Bearer anything" },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("writes a scheduler heartbeat meta row after a successful tick with durable storage", async () => {
+    const dataDir = `memory://flowlet-next-heartbeat-${Date.now()}`;
+    const { POST } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir } },
+    });
+    const res = await POST(req("/api/flowlet/tick", { method: "POST" }));
+    expect(res.status).toBe(200);
+
+    // Heartbeat is fire-and-forget; poll the shared (memoized) handle.
+    const handle = await createFlowletDatabase({ pglite: { dataDir } });
+    await vi.waitFor(async () => {
+      const heartbeat = (await getMeta(handle, "scheduler_heartbeat")) as { at?: string } | undefined;
+      expect(heartbeat?.at).toBeTruthy();
+      expect(Number.isNaN(Date.parse(heartbeat!.at!))).toBe(false);
+    });
+  });
+
+  it("GET /threads and /threads/<id> are principal-scoped (per-user isolation)", async () => {
+    const dataDir = `memory://flowlet-next-threads-${Date.now()}`;
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir } },
+      principal: async (r) => {
+        const userId = r.headers.get("x-user");
+        return userId ? { userId } : null;
+      },
+    });
+
+    // Assembly (and its boot migration) is lazy — trigger it before seeding
+    // directly against the same durable handle, or the seed write races the
+    // migration that creates `flowlet.threads`.
+    await GET(req("/api/flowlet/capabilities", { headers: { host: "localhost:3000", "x-user": "alice" } }));
+    const handle = await createFlowletDatabase({ pglite: { dataDir } });
+    const threads = createDrizzleThreadStore(handle);
+    const msg = (id: string, text: string): FlowletUIMessage =>
+      ({ id, role: "user", parts: [{ type: "text", text }] }) as FlowletUIMessage;
+    await threads.upsertMessages({ tenantId: "flowlet-embedded", subject: "alice" }, "t-alice", [
+      msg("m1", "hi from alice"),
+    ]);
+    await threads.upsertMessages({ tenantId: "flowlet-embedded", subject: "bob" }, "t-bob", [
+      msg("m2", "hi from bob"),
+    ]);
+
+    const aliceList = await GET(
+      req("/api/flowlet/threads", { headers: { host: "localhost:3000", "x-user": "alice" } }),
+    );
+    const aliceThreads = (await aliceList.json()) as Array<{ id: string }>;
+    expect(aliceThreads.map((t) => t.id)).toEqual(["t-alice"]);
+
+    const bobList = await GET(
+      req("/api/flowlet/threads", { headers: { host: "localhost:3000", "x-user": "bob" } }),
+    );
+    const bobThreads = (await bobList.json()) as Array<{ id: string }>;
+    expect(bobThreads.map((t) => t.id)).toEqual(["t-bob"]);
+
+    const aliceMessages = await GET(
+      req("/api/flowlet/threads/t-alice", { headers: { host: "localhost:3000", "x-user": "alice" } }),
+    );
+    expect(await aliceMessages.json()).toEqual([msg("m1", "hi from alice")]);
+
+    // Isolation: bob reading alice's thread id sees nothing, not her data.
+    const bobReadsAlice = await GET(
+      req("/api/flowlet/threads/t-alice", { headers: { host: "localhost:3000", "x-user": "bob" } }),
+    );
+    expect(await bobReadsAlice.json()).toEqual([]);
+
+    // No principal (resolver returns null) → 403, never a bare list.
+    const anon = await GET(req("/api/flowlet/threads", { headers: { host: "localhost:3000" } }));
+    expect(anon.status).toBe(403);
+  });
+
+  it("GET/POST /flowlets are wired end-to-end (save, list, load, delete, 404, principal isolation)", async () => {
+    const dataDir = `memory://flowlet-next-flowlets-handler-${Date.now()}`;
+    const principalOf = (r: Request) => {
+      const userId = r.headers.get("x-user");
+      return userId ? { userId } : null;
+    };
+    const { GET, POST } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir } },
+      principal: async (r) => principalOf(r),
+    });
+    const withUser = (user: string) => ({ headers: { host: "localhost:3000", "x-user": user } });
+    const node = { kind: "component", id: "n1", name: "Text", props: {} };
+
+    const saved = await POST(
+      req("/api/flowlet/flowlets", {
+        method: "POST",
+        body: JSON.stringify({ id: "f1", name: "first", node }),
+        ...withUser("alice"),
+      }),
+    );
+    expect(saved.status).toBe(200);
+    const savedBody = (await saved.json()) as { id: string; createdAt: number; updatedAt: number };
+    expect(savedBody.id).toBe("f1");
+    expect(typeof savedBody.createdAt).toBe("number");
+    expect(typeof savedBody.updatedAt).toBe("number");
+
+    const aliceList = await GET(req("/api/flowlet/flowlets", withUser("alice")));
+    expect((await aliceList.json()) as Array<{ id: string }>).toEqual([savedBody]);
+
+    // Isolation: a different user sees nothing.
+    const bobList = await GET(req("/api/flowlet/flowlets", withUser("bob")));
+    expect(await bobList.json()).toEqual([]);
+
+    const one = await GET(req("/api/flowlet/flowlets/f1", withUser("alice")));
+    expect(await one.json()).toEqual(savedBody);
+
+    const missing = await GET(req("/api/flowlet/flowlets/nope", withUser("alice")));
+    expect(missing.status).toBe(404);
+
+    const bobReadsAlice = await GET(req("/api/flowlet/flowlets/f1", withUser("bob")));
+    expect(bobReadsAlice.status).toBe(404);
+
+    const del = await POST(req("/api/flowlet/flowlets/f1/delete", { method: "POST", ...withUser("alice") }));
+    expect(del.status).toBe(200);
+    const gone = await GET(req("/api/flowlet/flowlets/f1", withUser("alice")));
+    expect(gone.status).toBe(404);
+
+    // No principal (resolver returns null) → 403, never a bare list.
+    const anon = await GET(req("/api/flowlet/flowlets", { headers: { host: "localhost:3000" } }));
+    expect(anon.status).toBe(403);
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {
@@ -224,8 +492,11 @@ describe("createFlowletHandler", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
     vi.stubEnv("COMPOSIO_API_KEY", "ck_x");
     vi.stubEnv("NODE_ENV", "production"); // fail-closed in prod even for spoofed Host
-    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
-    for (const p of ["chat", "action", "tick", "integrations"]) {
+    // storage: false — NODE_ENV is stubbed away from "test", so the handler's
+    // test-env safety net doesn't apply; this test doesn't care about
+    // durability and must not touch disk.
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir(), storage: false });
+    for (const p of ["chat", "action", "tick", "integrations", "flowlets"]) {
       const res = await POST(
         new Request(`http://prod.example.com/api/flowlet/${p}`, {
           method: "POST",
@@ -514,5 +785,249 @@ describe("createFlowletHandler", () => {
     const body = (await res.json()) as { tools: { name: string }[] };
     const names = body.tools.map((t) => t.name);
     expect(names).toContain("stop_asking_about");
+  });
+
+  describe("ask-once-remember wired end-to-end through assembly", () => {
+    it("an approved-and-executed /action call is remembered durably, surviving an assembly rebuild over the same PGlite dir", async () => {
+      const dataDir = `memory://flowlet-next-remember-durable-${Date.now()}`;
+      const opts = { flowletDir: emptyDir(), storage: { pglite: { dataDir } }, tools: writeTool };
+
+      const first = createFlowletHandler(opts);
+      const gate = await first.POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      const { approvalToken } = (await gate.json()) as { approvalToken: string };
+      const executed = await first.POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 }, approvalToken }),
+        }),
+      );
+      expect(((await executed.json()) as { decision: string }).decision).toBe("approve");
+
+      // Simulate a process restart: reset the handler's own boot slot (a
+      // fresh module/process would have none), but reuse the SAME PGlite
+      // dataDir — @flowlet/store memoizes the underlying handle by cacheKey,
+      // so this is the durable-rebuild-equivalent without an actual restart.
+      resetFlowletBootRegistry();
+      const second = createFlowletHandler(opts);
+      const remembered = await second.POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      expect(await remembered.json()).toEqual({
+        decision: "allow",
+        result: { wrote: { amount: 5 } },
+      });
+    });
+
+    it("keeps the same remember semantics in-memory when storage is off", async () => {
+      const { POST } = createFlowletHandler({ flowletDir: emptyDir(), storage: false, tools: writeTool });
+      const gate = await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      const { approvalToken } = (await gate.json()) as { approvalToken: string };
+      await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 }, approvalToken }),
+        }),
+      );
+      const remembered = await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      expect(await remembered.json()).toEqual({
+        decision: "allow",
+        result: { wrote: { amount: 5 } },
+      });
+    });
+
+    it("a remembered /action approval never auto-allows an automation step — the world's policy is UNWRAPPED and grants stay the sole unattended authorizer", async () => {
+      const dataDir = `memory://flowlet-next-remember-world-${Date.now()}`;
+      // The world-registered twin of /action's create_thing: same name, same
+      // input, same principal (everything is DEFAULT_PRINCIPAL single-tenant),
+      // so the remember memo's canonicalKey ([userId, toolName, input,
+      // version]) collides EXACTLY across the two surfaces.
+      const registeredCreateThing: RegisteredTool = {
+        descriptor: {
+          name: "create_thing",
+          source: "caller",
+          annotations: {},
+          hasExecute: true,
+          kind: "function",
+        },
+        execute: async (input) => ({ ok: true, result: { wrote: input } }),
+      };
+      const opts = {
+        flowletDir: emptyDir(),
+        storage: { pglite: { dataDir } },
+        tools: writeTool,
+        automations: { tools: { create_thing: registeredCreateThing } },
+      };
+      const { POST } = createFlowletHandler(opts);
+
+      // Interactive surface: approve + execute once through /action.
+      const gate = await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 7 } }),
+        }),
+      );
+      const { approvalToken } = (await gate.json()) as { approvalToken: string };
+      const executed = await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 7 }, approvalToken }),
+        }),
+      );
+      expect(((await executed.json()) as { decision: string }).decision).toBe("approve");
+
+      // The memo genuinely exists — so the pause asserted below can only come
+      // from the world's policy being unwrapped, never from a missing memo.
+      const handle = await createFlowletDatabase({ pglite: { dataDir } });
+      const decisionStore = createDrizzleDecisionStore(handle, WORLD_SCOPE);
+      const key = canonicalKey(
+        {
+          toolName: "create_thing",
+          input: { amount: 7 },
+          descriptor: undefined as never,
+          principal: { userId: "flowlet-default-user" },
+        },
+        "v1",
+      );
+      expect(await decisionStore.get(key)).toBe("approve");
+
+      // Unattended surface: an automation step calling the IDENTICAL
+      // tool+input with NO grant. It must pause waiting_approval — a chat-time
+      // human approval never green-lights an unattended run; grants are the
+      // sole unattended authorization mechanism (interpreter runs its grant
+      // machinery only on "approve", so a leaked "allow" would skip it).
+      const state = await ensureFlowletState(opts);
+      const world = state.world!;
+      const spec = automationSpecSchema.parse({
+        dslVersion: 1,
+        name: "Memo leak probe",
+        description: "t",
+        prompt: "t",
+        trigger: { type: "host_event", event: "thing.requested" },
+        execution: {
+          mode: "steps",
+          steps: [{ id: "s1", type: "tool", tool: "create_thing", input: { amount: 7 } }],
+        },
+      });
+      const { automation } = await world.store.create(WORLD_SCOPE, { spec, grants: [] });
+      const run = await world.runner.fire(WORLD_SCOPE, automation.id, {
+        source: "host",
+        eventId: "e1",
+        subject: WORLD_SCOPE.subject,
+        occurredAt: new Date().toISOString(),
+        payload: {},
+      });
+      expect(run?.outcome).toBe("waiting_approval");
+      expect(run?.pendingApproval).toMatchObject({ tool: "create_thing" });
+    });
+  });
+
+  describe("durable connections — webhook routing survives a restart", () => {
+    it("a connected toolkit and its connected-account mapping survive an assembly rebuild over the same PGlite dir", async () => {
+      const dataDir = `memory://flowlet-next-connections-durable-${Date.now()}`;
+      const opts = { flowletDir: emptyDir(), storage: { pglite: { dataDir } } };
+
+      // Simulate the integrations status-poll capture: the OAuth flow landed
+      // and the poll branch calls setConnectedAccount(toolkit, accountId).
+      const first = await ensureFlowletState(opts);
+      await first.connections.setConnectedAccount("gmail", "acct-durable-1");
+      expect(await first.connections.connectedToolkits()).toContain("gmail");
+
+      // Simulate a process restart: reset the boot slot but reuse the SAME
+      // PGlite dataDir (the durable-rebuild-equivalent — see the /action
+      // test above for the same pattern).
+      resetFlowletBootRegistry();
+      const second = await ensureFlowletState(opts);
+
+      // (a) the connected toolkit is still connected...
+      expect(await second.connections.connectedToolkits()).toContain("gmail");
+      // (b) ...and webhook routing can still resolve the connected-account →
+      // principal mapping a redelivered/live Composio webhook depends on.
+      await expect(second.connections.findByConnectedAccount("acct-durable-1")).resolves.toEqual({
+        toolkit: "gmail",
+        principal: WORLD_SCOPE,
+      });
+    });
+
+    it("keeps the same in-memory (non-durable) behavior when storage is off", async () => {
+      const opts = { flowletDir: emptyDir(), storage: false as const };
+      const state = await ensureFlowletState(opts);
+      await state.connections.setConnectedAccount("gmail", "acct-1");
+      expect(await state.connections.connectedToolkits()).toContain("gmail");
+      await expect(state.connections.findByConnectedAccount("acct-1")).resolves.toEqual({
+        toolkit: "gmail",
+        principal: WORLD_SCOPE,
+      });
+    });
+  });
+});
+
+describe("bootKey — cross-module-graph boot-slot sharing", () => {
+  // Regression: Next.js compiles instrumentation.ts and a route file into
+  // SEPARATE module graphs, so a `flowletOptions` module shared between them
+  // is evaluated TWICE — the object landing in ensureFlowletState() and the
+  // one landing in createFlowletHandler() are `!==` even though every field
+  // is identical. Before `bootKey`, that mismatch made createFlowletHandler
+  // fork a private world whose scheduler was never started.
+  it("shares one assembled world between ensureFlowletState and createFlowletHandler when both pass the same bootKey on DIFFERENT option objects", async () => {
+    const dir = emptyDir();
+    const schedulerOpts = { flowletDir: dir, bootKey: "shared-key" };
+    const routeOpts = { flowletDir: dir, bootKey: "shared-key", storage: false as const, tools: writeTool };
+    expect(schedulerOpts).not.toBe(routeOpts);
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const schedulerState = await ensureFlowletState(schedulerOpts);
+    const { POST } = createFlowletHandler(routeOpts);
+    expect(warn).not.toHaveBeenCalled();
+
+    const gate = await POST(
+      req("/api/flowlet/action", {
+        method: "POST",
+        body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+      }),
+    );
+    const { approvalToken } = (await gate.json()) as { approvalToken: string };
+
+    // Proof the route landed on the SAME assembled state as the scheduler
+    // side: the scheduler-side approvals store (a private in-memory Map)
+    // recognizes the token the route just issued.
+    expect(
+      schedulerState.approvals.consume(
+        approvalToken,
+        "create_thing",
+        JSON.stringify({ amount: 5 }),
+        "flowlet-default-user",
+      ),
+    ).toBe(true);
+  });
+
+  it("forks a private world (with a warning) when bootKeys differ and options aren't otherwise shared", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = createFlowletHandler({ flowletDir: emptyDir(), bootKey: "world-a", storage: false });
+    await first.GET(req("/api/flowlet/capabilities"));
+
+    const second = createFlowletHandler({ flowletDir: emptyDir(), bootKey: "world-b", storage: false });
+    await second.GET(req("/api/flowlet/capabilities"));
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/private world/i);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/bootKey/);
   });
 });

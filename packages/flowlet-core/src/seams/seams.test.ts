@@ -32,6 +32,7 @@ function makeStore(): Store {
     list: async () => [],
     appendMessages: async () => {},
     getMessages: async () => [],
+    upsertMessages: async () => {},
   };
   const flowlets: SavedFlowletStore = {
     save: async (_scope, f) => ({

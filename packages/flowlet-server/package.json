@@ -45,6 +45,8 @@
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
     "@flowlet/runtime": "workspace:*",
+    "@flowlet/shell": "workspace:*",
+    "@flowlet/store": "workspace:*",
     "@flowlet/telemetry": "workspace:*",
     "ai": "6.0.28",
     "zod": "^3.24.0"
