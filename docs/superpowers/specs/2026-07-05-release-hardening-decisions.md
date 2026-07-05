@@ -17,7 +17,8 @@ now carries only what #60 lacks: scheduler/fan-out isolation, pg.Pool error
 listener, provider-peer degradation, server-side error hygiene, the two
 release gates, and residuals the gates caught on top of launch prep
 (sandbox-shims dist was still not Node-loadable; CLI's conflicting duplicate
-typescript pins). **Merge order: #60 → #56.**
+typescript pins). Wave 3 (policy/approval integrity, twice Codex-reviewed)
+is PR #64 stacked on #56. **Merge order: #60 → #56 → #64.**
 
 ## Judgment calls I made that you should ratify (all in PR #56)
 
