@@ -1,13 +1,60 @@
 {
   "anchors": {
     "upcoming-deadlines": {
+      "next/link": {
+        "kind": "shimmed",
+        "note": "renders an anchor; clicks navigate the host app via flowlet.navigate"
+      },
+      "lucide-react": {
+        "kind": "real"
+      },
+      "swr": {
+        "kind": "shimmed",
+        "note": "useSWR resolves anchor data / declared queries; the fetcher never runs"
+      },
+      "@/components/ui/badge": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
+      "@/components/ui/card": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
+      "@/components/ui/empty-state": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
+      "@/components/ui/error-state": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
+      "@/components/ui/progress": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
+      "@/components/ui/skeleton": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
+      "@/lib/api": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
       "@/lib/cn": {
+        "kind": "absent",
+        "alternative": "app-local helper not vendored — inline its logic from the source"
+      },
+      "@/lib/format": {
         "kind": "absent",
         "alternative": "app-local helper not vendored — inline its logic from the source"
       }
     }
   },
-  "vendorSizes": {},
+  "vendorSizes": {
+    "lucide-react": 1195660,
+    "next/link": 1047,
+    "swr": 581
+  },
   "styles": {
     "css": true,
     "tailwind": true

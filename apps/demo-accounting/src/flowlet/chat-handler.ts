@@ -29,25 +29,21 @@ interface ChatRequestBody {
 }
 
 /**
- * Remix-source map for the demo. `deadline-list.tsx` is a client component —
- * a RAW server-side file read (never an import, which would drag Next/browser
- * deps into the Node route). The @/-relative path resolves from the app root.
+ * Remix sources now come from `flowlet sync`'s capture (the anchor→file
+ * mapping lives in flowlet.config.json `remixAnchors`, so the CLI records
+ * deadline-list.tsx and the env builder vendors what IT imports). The shared
+ * resolver re-reads the mapped file in dev, so edits are never stale.
  */
-const remixSourceMap: Record<string, string> = {
-  "upcoming-deadlines": "src/components/dashboard/deadline-list.tsx",
-};
-const resolveRemixSource = createSourceResolver({
-  option: (anchorId) => {
-    const rel = remixSourceMap[anchorId];
-    if (!rel) return undefined;
-    try {
-      return readFileSync(path.join(process.cwd(), rel), "utf8");
-    } catch {
-      return undefined; // file moved — fall open to the DOM-snapshot baseline
-    }
-  },
-  captured: {},
-});
+const capturedRemixSources = (() => {
+  try {
+    return JSON.parse(
+      readFileSync(path.join(process.cwd(), ".flowlet", "remix-sources.json"), "utf8"),
+    ) as Record<string, import("@flowlet/core").RemixSourceRecord>;
+  } catch {
+    return {}; // no sync run — remix falls open to the DOM-snapshot baseline
+  }
+})();
+const resolveRemixSource = createSourceResolver({ captured: capturedRemixSources });
 
 export async function handleChat(req: Request, agent: FlowletAgent): Promise<Response> {
   if (!demoPrincipalAllowed(req)) {

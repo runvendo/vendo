@@ -1,3 +1,7 @@
 {
-  "imports": {}
+  "imports": {
+    "lucide-react": "./vendor/lucide-react.js",
+    "next/link": "./vendor/shim-next-link.js",
+    "swr": "./vendor/shim-swr.js"
+  }
 }

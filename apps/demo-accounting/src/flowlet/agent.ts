@@ -11,13 +11,15 @@
  * provider, so it MUST stay server-only — import it from route handlers,
  * never from a client component.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { anthropic } from "@ai-sdk/anthropic";
 import {
   createFlowletAgent,
   buildBrandGuidance,
   type ComposioClient,
 } from "@flowlet/runtime";
-import type { FlowletAgent, RegisteredComponent } from "@flowlet/core";
+import type { EnvManifest, FlowletAgent, RegisteredComponent } from "@flowlet/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { resolveRemixSealer } from "@flowlet/next";
@@ -190,11 +192,23 @@ export interface CreateDemoAgentOptions {
   toolkits?: string[];
 }
 
+/** The furnished-sandbox manifest from `flowlet sync` (absent → bare env). */
+function loadEnvManifest(): EnvManifest | undefined {
+  try {
+    return JSON.parse(
+      readFileSync(path.join(process.cwd(), ".flowlet", "env", "manifest.json"), "utf8"),
+    ) as EnvManifest;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent {
   const model = opts.model ?? anthropic(DEMO_MODEL);
   // Pin-envelope sealing (remix fast-edits): ANTHROPIC_API_KEY is this demo's
   // own key, so the HKDF fallback is meaningful here.
   const remixSealer = resolveRemixSealer({ hasInjectedModel: false });
+  const envManifest = loadEnvManifest();
   return createFlowletAgent({
     model,
     policy: demoPolicy,
@@ -207,5 +221,6 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
     ...(remixSealer ? { remixSealer } : {}),
+    ...(envManifest ? { envManifest } : {}),
   });
 }

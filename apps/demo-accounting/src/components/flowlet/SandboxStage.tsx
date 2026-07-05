@@ -20,7 +20,45 @@ import { cadenceBrand } from "@/flowlet/brand";
 const theme = brandToCssVars(cadenceBrand);
 const componentTheme = { theme: mapBrandToTheme(cadenceBrand), mode: cadenceBrand.mode ?? "light" };
 
-interface Sources { react: string; bundle: string }
+interface StageEnv {
+  modules?: Record<string, string>;
+  css?: string;
+  tailwindRuntimeSrc?: string;
+}
+interface Sources { react: string; bundle: string; env?: StageEnv }
+
+/** Fetch the flowlet-sync furnished env (import map + vendored modules + host
+ *  CSS + Tailwind JIT) on the host origin; the stage blobs them so the iframe
+ *  CSP never changes. Missing env is normal (no sync) — undefined, never
+ *  throws. Same rules as @flowlet/next's SandboxStage: only `./` entries,
+ *  resolved strictly under /flowlet/env/. */
+async function loadEnv(): Promise<StageEnv | undefined> {
+  const mapRes = await fetch("/flowlet/env/import-map.json").catch(() => null);
+  const css = await fetch("/flowlet/env/host.css")
+    .then((r) => (r.ok ? r.text() : undefined))
+    .catch(() => undefined);
+  const tw = await fetch("/flowlet/env/tailwind.js")
+    .then((r) => (r.ok ? r.text() : undefined))
+    .catch(() => undefined);
+  let modules: Record<string, string> | undefined;
+  if (mapRes?.ok) {
+    const map = (await mapRes.json().catch(() => ({}))) as { imports?: Record<string, string> };
+    const entries = await Promise.all(
+      Object.entries(map.imports ?? {}).map(async ([specifier, rel]) => {
+        if (typeof rel !== "string" || !rel.startsWith("./")) return null;
+        const url = new URL(rel.replace(/^\.\//, "/flowlet/env/"), location.origin);
+        if (url.origin !== location.origin || !url.pathname.startsWith("/flowlet/env/")) return null;
+        const src = await fetch(url).then((r) => (r.ok ? r.text() : undefined)).catch(() => undefined);
+        return src !== undefined ? ([specifier, src] as const) : null;
+      }),
+    );
+    const kept = entries.filter((e): e is readonly [string, string] => e !== null);
+    if (kept.length > 0) modules = Object.fromEntries(kept);
+  }
+  if (!modules && !css && !tw) return undefined;
+  return { ...(modules ? { modules } : {}), ...(css ? { css } : {}), ...(tw ? { tailwindRuntimeSrc: tw } : {}) };
+}
+
 let sourcesPromise: Promise<Sources> | null = null;
 function loadSources(): Promise<Sources> {
   // Module-level memo: fetch once per page, shared by every stage instance.
@@ -28,7 +66,8 @@ function loadSources(): Promise<Sources> {
     sourcesPromise = Promise.all([
       fetch("/flowlet/react-runtime.js").then((r) => { if (!r.ok) throw new Error("react shim missing"); return r.text(); }),
       fetch("/flowlet/components-sandbox.js").then((r) => { if (!r.ok) throw new Error("components bundle missing"); return r.text(); }),
-    ]).then(([react, bundle]) => ({ react, bundle }));
+      loadEnv(),
+    ]).then(([react, bundle, env]) => ({ react, bundle, ...(env ? { env } : {}) }));
     sourcesPromise.catch(() => { sourcesPromise = null; }); // allow retry on failure
   }
   return sourcesPromise;
@@ -138,6 +177,7 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
         components={[...prewiredComponents, ...cadenceHostComponents]}
         reactSource={sources.react}
         bundleSource={sources.bundle}
+        {...(sources.env ? { env: sources.env } : {})}
         onAction={onAction}
         theme={theme}
         componentTheme={componentTheme}

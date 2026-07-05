@@ -200,6 +200,32 @@ export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}
   const records: Record<string, RemixSourceRecord> = {};
   const report: string[] = [];
 
+  // flowlet.config.json remixAnchors: explicit anchor→file overrides for
+  // cases the child heuristic gets wrong (e.g. the wrapper's direct child is
+  // a generic ui primitive but the meaningful component is the enclosing
+  // one). Overrides win; refusal rules still apply.
+  const overrides = new Map<string, { file: string; exportName?: string }>();
+  try {
+    const raw = readFileSync(path.join(targetDir, "flowlet.config.json"), "utf8");
+    const parsed = JSON.parse(raw) as {
+      remixAnchors?: Record<string, { file?: unknown; exportName?: unknown }>;
+    };
+    for (const [anchorId, entry] of Object.entries(parsed.remixAnchors ?? {})) {
+      if (typeof entry?.file === "string") {
+        overrides.set(anchorId, {
+          file: entry.file,
+          ...(typeof entry.exportName === "string" ? { exportName: entry.exportName } : {}),
+        });
+      } else {
+        report.push(`skip override ${anchorId}: remixAnchors entries need a "file"`);
+      }
+    }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+      report.push(`flowlet.config.json unreadable — overrides ignored (${(e as Error).message})`);
+    }
+  }
+
   const capture = (anchorId: string, file: string, exportName?: string): void => {
     let content: string;
     try {
@@ -228,6 +254,12 @@ export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}
     report.push(`captured ${anchorId} ← ${path.relative(targetDir, file)}${exportName ? ` (${exportName})` : ""}`);
   };
 
+  for (const [anchorId, override] of overrides) {
+    capture(anchorId, path.resolve(targetDir, override.file), override.exportName);
+    const captured = records[anchorId];
+    if (captured) report[report.length - 1] += " (config override)";
+  }
+
   for (const file of walk(targetDir)) {
     let text: string;
     try {
@@ -242,6 +274,7 @@ export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}
         report.push(`skip: dynamic FlowletRemix id in ${path.relative(targetDir, anchor.file)} — only literal ids are capturable`);
         continue;
       }
+      if (overrides.has(anchor.anchorId)) continue; // config override won
       if (anchor.childComponent) {
         const imported = findImport(sourceFile, anchor.childComponent);
         const resolved = imported
