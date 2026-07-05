@@ -1,5 +1,5 @@
-import { useEffect, useState, type ComponentType } from "react";
-import type { ThinkingProps } from "fluidkit";
+import { useEffect, useRef, useState, type ComponentType } from "react";
+import type { VoiceBallProps, VoiceBallMode } from "fluidkit";
 
 export type VoiceBlobState =
   | "connecting"
@@ -11,38 +11,43 @@ export type VoiceBlobState =
 
 export interface VoiceBlobProps {
   state: VoiceBlobState;
-  /** 0..1 live level; breathes the blob (mic while listening, agent while speaking). */
+  /** 0..1 live level; drives the ball (mic while listening, agent while speaking). */
   amplitude?: number;
   /** Diameter of the presence in px. */
   size?: number;
 }
 
-type ThinkingComponent = ComponentType<ThinkingProps>;
+type VoiceBallComponent = ComponentType<VoiceBallProps>;
 
-// Same one-load-per-session pattern as FluidThinking — the blob IS that
-// creature, scaled up for the stage. `undefined` = not attempted, `null` = off.
-let cached: ThinkingComponent | null | undefined;
+// Same one-load-per-session pattern as FluidThinking — the presence is the
+// fluidkit voice ball. `undefined` = not attempted, `null` = off.
+let cached: VoiceBallComponent | null | undefined;
 
-/** Per-state motion character for the fluidkit cluster. */
-const MOTION: Record<VoiceBlobState, { speed: number; spreadFactor: number }> = {
-  connecting: { speed: 0.5, spreadFactor: 0.3 },
-  listening: { speed: 0.55, spreadFactor: 0.42 },
-  thinking: { speed: 1, spreadFactor: 0.52 },
-  speaking: { speed: 1.7, spreadFactor: 0.6 },
-  muted: { speed: 0, spreadFactor: 0 },
-  error: { speed: 0, spreadFactor: 0 },
+/** Stage state → VoiceBall's three-mode register. `muted`/`error` never reach
+ *  the ball (they render the frozen disc): a lively ball that isn't listening
+ *  reads as a lie. `thinking` is a calm working breathe (idle), not attentive. */
+const MODE: Record<VoiceBlobState, VoiceBallMode> = {
+  connecting: "idle",
+  listening: "listening",
+  thinking: "idle",
+  speaking: "speaking",
+  muted: "idle",
+  error: "idle",
 };
 
 /**
- * The voice presence — the ENG-205 thinking creature promoted to the stage.
- * fluidkit is an enhancement layer: a static disc paints immediately (and is
- * all reduced-motion ever animates); the metaball cluster takes over when the
- * chunk resolves. Muted/error freeze to the disc deliberately — a lively blob
- * that isn't listening reads as a lie.
+ * The voice presence — fluidkit's `VoiceBall` (0.5), a liquid glass bead tinted
+ * by the host's accent. fluidkit is an enhancement layer: a static disc paints
+ * immediately (and is all reduced-motion ever animates); the ball takes over
+ * when the chunk resolves. Muted/error freeze to the disc deliberately.
  */
-export function VoiceBlob({ state, amplitude = 0, size = 72 }: VoiceBlobProps) {
-  const [Thinking, setThinking] = useState<ThinkingComponent | null>(() => cached ?? null);
+export function VoiceBlob({ state, amplitude = 0, size = 96 }: VoiceBlobProps) {
+  const [VoiceBall, setVoiceBall] = useState<VoiceBallComponent | null>(() => cached ?? null);
   const [reduced, setReduced] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  // The ball's glass fill needs a CONCRETE color (the accent is defined via
+  // light-dark()); read it off the mounted element's resolved `color`.
+  const [tint, setTint] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (typeof matchMedia === "undefined") return;
@@ -54,12 +59,19 @@ export function VoiceBlob({ state, amplitude = 0, size = 72 }: VoiceBlobProps) {
   }, []);
 
   useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof getComputedStyle === "undefined") return;
+    const resolved = getComputedStyle(el).color;
+    if (resolved) setTint(resolved);
+  }, []);
+
+  useEffect(() => {
     if (cached !== undefined) return;
     let alive = true;
     import("fluidkit").then(
       (mod) => {
-        cached = mod.Thinking;
-        if (alive) setThinking(() => mod.Thinking);
+        cached = mod.VoiceBall;
+        if (alive) setVoiceBall(() => mod.VoiceBall);
       },
       () => {
         cached = null;
@@ -71,24 +83,23 @@ export function VoiceBlob({ state, amplitude = 0, size = 72 }: VoiceBlobProps) {
   }, []);
 
   const still = state === "muted" || state === "error";
-  const fluid = Thinking && !reduced && !still;
-  const motion = MOTION[state];
-  // Amplitude breathes the whole presence; clamped so a hot mic can't balloon it.
-  const scale = 1 + Math.max(0, Math.min(1, amplitude)) * 0.14;
+  const fluid = VoiceBall && !reduced && !still;
 
   return (
     <div
+      ref={ref}
       className={`fl-voice-blob is-${state}`}
-      style={{ width: size, height: size, transform: `scale(${fluid ? scale : 1})` }}
+      style={{ width: size, height: size }}
       aria-hidden="true"
     >
       {fluid ? (
-        <Thinking
-          label=""
-          material="flat"
-          size={Math.round(size * 0.22)}
-          spread={Math.round(size * motion.spreadFactor)}
-          speed={motion.speed}
+        <VoiceBall
+          mode={MODE[state]}
+          level={Math.max(0, Math.min(1, amplitude))}
+          size={size}
+          tint={tint}
+          opacity={0.58}
+          intensity="whisper"
         />
       ) : (
         <span className="fl-voice-disc" />

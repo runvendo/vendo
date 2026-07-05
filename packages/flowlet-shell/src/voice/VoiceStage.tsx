@@ -67,11 +67,12 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   const feedRef = useRef<HTMLDivElement>(null);
   const closedFired = useRef(false);
 
-  const { status, muted, amplitude, liveUser, liveAgent, transcript, feed, errorMessage } = snapshot;
+  const { status, muted, amplitude, liveAgent, transcript, feed, errorMessage } = snapshot;
 
-  // Captions are STICKY: a finalized line stays visible (dimmed) until the
-  // next one starts — words never just vanish off the stage (real-speech
-  // E2E finding). Each role holds its own line; they never clobber.
+  // Only the agent's side ("out") shows on the stage (Yousef): the caption and
+  // transcript carry what Maple said, not what you said. The caption is STICKY —
+  // a finalized line stays (dimmed) until the next one starts, so words never
+  // just vanish off the stage (real-speech E2E finding).
   const lastOf = (role: "user" | "assistant") => {
     for (let i = transcript.length - 1; i >= 0; i--) {
       const line = transcript[i]!;
@@ -79,10 +80,9 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
     }
     return undefined;
   };
-  const userLine = liveUser ?? lastOf("user");
-  const userSettled = !liveUser && userLine !== undefined;
   const agentLine = liveAgent ?? lastOf("assistant");
   const agentSettled = !liveAgent && agentLine !== undefined;
+  const agentTranscript = transcript.filter((line) => line.role === "assistant");
 
   const approvals = feed.filter((entry): entry is ApprovalEntry => entry.kind === "approval");
   const pendingApproval = approvals.find((entry) => !entry.resolution);
@@ -234,21 +234,20 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
       role="dialog"
       aria-label="Voice session"
     >
-      {/* The blob never moves: the feed scrolls under this pinned head. */}
+      {/* The presence rests CENTERED while there's nothing to show; the moment
+          the first view lands it rises to the top and the feed takes the space
+          (animated grid: the leading spacer collapses from 1fr to 0fr). */}
+      <div className={`fl-voice-canvas ${slides.length > 0 ? "has-views" : ""}`}>
+      <div className="fl-voice-lift" aria-hidden="true" />
       <div className="fl-voice-head">
         <VoiceBlob state={blobState} amplitude={amplitude} size={96} />
         <span className="fl-sr-only" role="status" aria-live="polite">
           {mutedLive ? "Muted" : STATUS_COPY[status]}
         </span>
         {visibleLabel && <div className="fl-voice-status">{visibleLabel}</div>}
-        {/* The conversation lives with the blob (Yousef): both sides of the
-            current exchange, sticky until the next line replaces them. */}
+        {/* What Maple is saying lives with the blob (Yousef): the agent's line,
+            sticky until the next one replaces it. */}
         <div className="fl-voice-caption" aria-live="off">
-          {userLine && (
-            <span className={`is-user ${userSettled ? "is-settled" : ""}`}>
-              {userLine.text}
-            </span>
-          )}
           {agentLine && (
             <span className={`is-agent ${agentSettled ? "is-settled" : ""}`}>
               {agentLine.text}
@@ -304,6 +303,7 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
             ))}
           </div>
         )}
+      </div>
       </div>
 
       {(status === "reconnecting" || status === "error") && (
@@ -399,6 +399,24 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
             </>
           ) : (
             <>
+              {/* Pin the focused view to the host card mid-session (Yousef) —
+                  live, without ending the call. An icon button so it sits with
+                  mute/end rather than as an out-of-place pill. Slot surfaces
+                  only (onPin). */}
+              {onPin && focusedNode && (
+                <button
+                  type="button"
+                  className="fl-icon-btn"
+                  aria-label="Pin this view"
+                  title="Pin this view"
+                  onClick={() => onPin(focusedNode)}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 17v5" /><path d="M5 17h14l-1.5-4.5a2 2 0 0 1 0-1.3L19 7H5l1.5 4.2a2 2 0 0 1 0 1.3Z" />
+                  </svg>
+                </button>
+              )}
               <button
                 type="button"
                 className={`fl-icon-btn ${muted ? "is-active" : ""}`}
@@ -427,10 +445,10 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
 
       {drawerOpen && (
         <div className="fl-voice-drawer">
-          {transcript.length === 0 && <div className="fl-voice-drawer-empty">Nothing said yet</div>}
-          {transcript.map((line) => (
-            <div key={line.id} className={`fl-voice-line ${line.role === "user" ? "is-user" : "is-agent"}`}>
-              <span className="fl-voice-line-role">{line.role === "user" ? "You" : "Agent"}</span>
+          {agentTranscript.length === 0 && <div className="fl-voice-drawer-empty">Nothing said yet</div>}
+          {agentTranscript.map((line) => (
+            <div key={line.id} className="fl-voice-line is-agent">
+              <span className="fl-voice-line-role">Maple</span>
               <span>
                 {line.text}
                 {line.interrupted && <em> — interrupted</em>}

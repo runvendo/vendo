@@ -83,14 +83,23 @@ describe("VoiceStage", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 
-  it("opens the transcript drawer with finished lines (and keeps the caption sticky)", () => {
+  it("shows only the agent's side — caption and transcript are out-only (Yousef)", () => {
     const { container } = renderStage(
-      snapshotOf([{ type: "caption", id: "c1", role: "user", text: "show my spending", final: true }]),
+      snapshotOf([
+        { type: "caption", id: "u1", role: "user", text: "show my spending", final: true },
+        { type: "caption", id: "c1", role: "assistant", text: "here is your spending", final: true },
+      ]),
     );
-    // Settled line stays visible in the caption area (dimmed), never vanishes.
-    expect(container.querySelector(".fl-voice-caption .is-user.is-settled")?.textContent).toContain("show my spending");
+    // The user's ("in") line never reaches the stage; the agent's settled line
+    // stays visible in the caption area (dimmed), never vanishes.
+    expect(container.querySelector(".fl-voice-caption .is-user")).toBeNull();
+    expect(container.querySelector(".fl-voice-caption .is-agent.is-settled")?.textContent).toContain(
+      "here is your spending",
+    );
     fireEvent.click(screen.getByRole("button", { name: /transcript/ }));
-    expect(container.querySelector(".fl-voice-drawer")?.textContent).toContain("show my spending");
+    const drawer = container.querySelector(".fl-voice-drawer");
+    expect(drawer?.textContent).toContain("here is your spending");
+    expect(drawer?.textContent).not.toContain("show my spending");
   });
 
   it("closes the transcript drawer when an approval arrives (consent is never covered)", () => {
