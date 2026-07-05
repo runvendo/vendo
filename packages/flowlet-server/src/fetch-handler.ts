@@ -520,8 +520,22 @@ function createLazyState(options: FlowletHandlerOptions): () => Promise<FlowletS
 //     must never be silently ignored); `ensureFlowletState` instead reuses
 //     the slot with a warning, since the boot hook has nothing else to start.
 //
-// Keyed by a module-scope Symbol on globalThis so Next dev-mode module
-// re-evaluation still converges on one registry per process.
+// Keyed by `Symbol.for(...)` (the runtime-wide, string-interned global symbol
+// registry) on globalThis, NOT a bare `Symbol(...)`. Next.js compiles
+// instrumentation.ts and a route file into SEPARATE module graphs even for
+// the Node.js runtime, so this module's top-level code — including this key —
+// genuinely runs more than once per server process. A bare `Symbol("x")`
+// mints a NEW, non-interned identity on every such evaluation, so each copy
+// would silently read/write its OWN `globalThis` slot and never observe the
+// other's — exactly the "first-wins" coordination this section depends on,
+// silently defeated (confirmed live: `startFlowletScheduler()`'s assembled
+// world and `createFlowletHandler()`'s never converged, so the boot-started
+// scheduler ticked a bare default world with none of the route's
+// `automations.tools`, while the route served requests from a second,
+// correctly-configured world whose OWN scheduler was never started).
+// `Symbol.for(key)` resolves to the identical value for identical `key`
+// strings from anywhere in the process, so every evaluation of this module
+// converges on one registry regardless of how many separate bundles load it.
 // ---------------------------------------------------------------------------
 
 interface BootRegistry {
@@ -530,7 +544,7 @@ interface BootRegistry {
   schedulerStarted: boolean;
 }
 
-const BOOT_REGISTRY_KEY = Symbol("flowlet.server.bootRegistry");
+const BOOT_REGISTRY_KEY = Symbol.for("flowlet.server.bootRegistry");
 
 /** @internal Shared with boot.ts; not part of the public API. */
 export function bootRegistry(): BootRegistry {
