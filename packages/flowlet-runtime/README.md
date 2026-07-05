@@ -36,6 +36,25 @@ const agent = createFlowletAgent({
 parts for UI render events. Run identity (`runId`, `threadId`, `schemaVersion`)
 is attached as metadata on the `start` chunk.
 
+## Rendering tools
+
+Two engine-owned tools produce views (both stream a `data-ui` part and run the
+same validate → host-prop-check → compile gates):
+
+- `render_view` — the model emits a whole `GeneratedPayload` (node tree +
+  component source). Used for novel views and as the fallback when no baseline
+  exists.
+- `edit_view` — the remix fast path. Registered only when the scoped anchor
+  has a non-truncated captured source baseline. The model emits line hunks
+  against the server-held base (`base:"anchor"` for the captured source,
+  `base:"pin"` for the user's current customization); the server applies,
+  gates unresolvable sandbox imports, compiles, and ships the full view. Remix
+  results are paired with a sealed envelope (`data-remix-envelope` part) that
+  carries the authored state through the client for later pin edits — sealing
+  requires key material (`remixSealer` in config; the Next adapter derives it
+  from `FLOWLET_SEAL_SECRET` or the provider key). See
+  `docs/superpowers/specs/2026-07-04-remix-fast-edits-design.md`.
+
 ## Guardrail policy
 
 Every tool call is evaluated by the configured `ApprovalPolicy` before
@@ -104,6 +123,8 @@ Inject a `ComposioClient` in `composio.client` to swap in a fake for tests.
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Live model calls |
 | `COMPOSIO_API_KEY` | Composio tool ingestion |
+| `FLOWLET_SEAL_SECRET` | Remix pin-envelope sealing (optional; falls back to provider-key derivation) |
+| `FLOWLET_BENCH` | `=1` logs edit_view apply/validate/compile timings |
 
 The full test suite (86 offline tests) runs without either key. The live
 Composio integration test (`*.live.test.ts`) is skipped unless both keys are
