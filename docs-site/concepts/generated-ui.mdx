@@ -1,0 +1,133 @@
+---
+title: "Generated UI and the sandbox"
+description: "How views are composed and why they render in an egress-jailed sandbox"
+---
+
+Vendo renders generated UI through one built-in tool: `render_view`. The tool
+does not stream HTML. It streams a validated Vendo GenUI payload, which the
+host resolves into a `UINode` tree and renders inside the sandboxed stage.
+
+## The `render_view` Payload
+
+`render_view` accepts one `GeneratedPayload` with
+`formatVersion: "vendo-genui/v1"`.
+
+```json
+{
+  "formatVersion": "vendo-genui/v1",
+  "root": "summary",
+  "nodes": [
+    {
+      "id": "summary",
+      "component": "Surface",
+      "children": ["title", "value"]
+    },
+    {
+      "id": "title",
+      "component": "Text",
+      "props": { "variant": "label", "text": "Current balance" }
+    },
+    {
+      "id": "value",
+      "component": "Text",
+      "props": { "variant": "value", "text": { "$path": "/balance" } }
+    }
+  ],
+  "data": {
+    "balance": "$12,480.00"
+  }
+}
+```
+
+The node list is flat. Each node has an `id`, a `component`, optional `props`,
+and optional `children` containing child node ids. The `root` id selects the
+top node. During rendering, Vendo resolves the flat graph into a nested
+`UINode` tree.
+
+A prop value can bind to the payload data model with `{ "$path": "/json/pointer" }`.
+The data stays in the payload. Generated components can transform it while
+rendering, but Vendo does not ask the model to copy large tool results into
+many props.
+
+## Component Sources
+
+Each node can come from one of three sources:
+
+- `prewired`: built-in primitives shipped with the stage, including `Stack`,
+  `Row`, `Grid`, `Surface`, `Divider`, `Text`, and `Skeleton`. If `source` is
+  omitted, Vendo treats the node as `prewired`.
+- `host`: registered host components from your app's component catalog.
+  Vendo validates registered host component props before streaming when it has
+  the component descriptors.
+- `generated`: React component code carried in the payload's `components` map.
+  The generated component name must be PascalCase and must match a node whose
+  `source` is `generated`.
+
+Generated component source is compiled server-side before it is sent to the
+stage. The code runs only inside the sandbox.
+
+```json
+{
+  "formatVersion": "vendo-genui/v1",
+  "root": "chart",
+  "nodes": [
+    {
+      "id": "chart",
+      "source": "generated",
+      "component": "MiniChart",
+      "props": { "points": { "$path": "/points" } }
+    }
+  ],
+  "data": {
+    "points": [4, 8, 6, 12]
+  },
+  "components": {
+    "MiniChart": "export default function MiniChart(props) { return <pre>{JSON.stringify(props.points)}</pre>; }"
+  }
+}
+```
+
+## Refreshable Data
+
+When a view displays data fetched from a tool, `render_view` can declare
+`queries`. Each query names the tool call that produced one subtree of `data`.
+Saved views can re-run those queries later through the same policy-governed
+tool path and patch fresh results back into the view.
+
+```json
+{
+  "path": "/invoices",
+  "tool": "listInvoices",
+  "input": { "limit": 25 }
+}
+```
+
+## The Sandbox Boundary
+
+Generated UI renders in `@vendoai/stage`, an iframe created with
+`sandbox="allow-scripts"` and no `allow-same-origin`. The stage document
+injects a strict CSP:
+
+- `default-src 'none'`
+- `connect-src 'none'`
+- `img-src data:`
+- `font-src data:`
+- scripts only from the generated nonce and `blob:` URLs
+
+That means generated code cannot fetch, open WebSockets, read cookies, touch
+host storage, or inspect your app DOM. Assets and modules that the stage needs
+are fetched by the host page first, then passed into the iframe as text and
+loaded from `blob:` URLs.
+
+Generated components can still ask your app to do something. They call
+`props.vendo.dispatch({ action, payload })`, which crosses the bridge as a
+`tools/call` request. The host validates the node capability, applies policy,
+and either executes the action, asks for approval, or rejects it.
+
+## The Connect Card Exception
+
+Integration authorization is deliberately not rendered with `render_view`.
+When the model needs an integration the customer has not connected, it calls
+`request_connect`. That emits a host-rendered component named `Connect`, so the
+OAuth flow can use host-page privileges such as popups, window events, and the
+integration routes served by your handler.

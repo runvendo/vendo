@@ -1,0 +1,34 @@
+---
+title: "Introduction"
+description: "Embed an agent that helps your customers automate work, generate views, and connect tools inside your product"
+---
+
+Vendo embeds an agent in your product that lets every customer automate their work, build their own views, and connect their tools, inside your brand and your guardrails.
+
+```bash
+npx vendo init
+```
+
+One command. It reads your app, extracts your theme, tools, and components, and wires the agent into your routes. Add one model key and it works.
+
+{/* TODO: Add a hero screenshot or GIF showing Vendo chat beside a generated view. */}
+
+Vendo gives your app a chat surface and a generated UI surface. The agent can talk with your customers, call tools through your own API as the signed-in user, and render generated charts, tables, forms, and workflows in a sandboxed stage.
+
+Your product stays the system of record. Vendo reads the reviewable `.vendo/` files in your repo, serves a single handler from your app, and uses the model keys you provide. There is no extra infrastructure to run for the embedded path.
+
+With Vendo embedded, your customers can:
+
+- Ask for a custom view and get generated UI inside your product.
+- Let the agent use your existing API through their current session.
+- Connect external tools through the integrations surface when you provide a Composio key.
+- Create automations that use the same tools and approval policy as chat.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart: Next.js" icon="bolt" href="/quickstart">
+    Run `npx vendo init` in a Next.js App Router app, add one provider key, and open your first generated view.
+  </Card>
+  <Card title="Quickstart: any Node server" icon="server" href="/quickstart-node">
+    Mount the `@vendoai/server` fetch handler on `node:http`, Express, Hono, or another Node runtime.
+  </Card>
+</CardGroup>

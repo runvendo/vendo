@@ -1,0 +1,61 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "Vendo",
+  "description": "Embed an agent in your product that lets every customer automate their work, build their own views, and connect their tools, inside your brand and your guardrails.",
+  "appearance": {
+    "default": "light"
+  },
+  "colors": {
+    "primary": "#4338CA",
+    "light": "#818CF8",
+    "dark": "#4338CA"
+  },
+  "background": {
+    "color": {
+      "light": "#FAFAF8",
+      "dark": "#17171A"
+    }
+  },
+  "fonts": {
+    "family": "Inter"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting started",
+        "pages": ["index", "quickstart", "quickstart-node", "capability-keys"]
+      },
+      {
+        "group": "Concepts",
+        "pages": ["concepts/architecture", "concepts/generated-ui", "concepts/tools-and-safety", "concepts/prompts"]
+      },
+      {
+        "group": "Connect your app",
+        "pages": ["connect/vendo-init", "connect/api-tools", "connect/host-components", "connect/theming", "connect/instructions"]
+      },
+      {
+        "group": "Capabilities",
+        "pages": ["capabilities/integrations", "capabilities/mcp", "capabilities/automations", "capabilities/saved-views", "capabilities/voice"]
+      },
+      {
+        "group": "Deploy and operate",
+        "pages": ["deploy/persistence", "deploy/deploying", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
+      },
+      {
+        "group": "Reference",
+        "pages": ["reference/handler-options", "reference/server-api", "reference/cli", "reference/dot-vendo", "reference/http-routes", "reference/environment-variables"]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/runvendo/vendo"
+    }
+  }
+}
