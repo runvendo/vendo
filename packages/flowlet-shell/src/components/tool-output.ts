@@ -16,6 +16,23 @@ function isPrimitive(v: unknown): v is string | number | boolean {
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 }
 
+/**
+ * True when a settled `output-available` tool part's output is actually the
+ * runtime's `policyDenied(...)` payload (`@flowlet/runtime`'s errors.ts,
+ * `{ code: "policy_denied", tool, rule }`) — a SERVER tool whose `execute`
+ * short-circuited a deny returns this as an ordinary successful result (the
+ * SDK never sees a throw), so `state` alone reads as a success. Finding 1:
+ * without this check the shell rendered a ✓ receipt for a call that was
+ * actually blocked by the user's own policy.
+ */
+export function isPolicyDenied(output: unknown): boolean {
+  return (
+    output != null &&
+    typeof output === "object" &&
+    (output as { code?: unknown }).code === "policy_denied"
+  );
+}
+
 /** A short right-aligned summary for the step row, e.g. "2 results". */
 export function stepSummary(output: unknown): string | undefined {
   if (Array.isArray(output)) {

@@ -54,9 +54,18 @@ export async function listGrantsRoute(
     }));
 
   if (deps.world) {
-    const automations = await deps.world.store.list(deps.principal);
+    // Finding 7 (mirrors parked-actions.ts's own documented fix): the
+    // automations world is single-tenant with a FIXED scope set at
+    // construction (`world.scope`) — every automation and its grants live
+    // there, never under whatever a custom multi-tenant `principal` resolver
+    // returns per request. Querying by `deps.principal` here looked up an
+    // empty per-user scope that never has (and can never get) any automation
+    // rows, making the Trust screen's Automations section permanently empty
+    // for a custom-principal mount. Standing chat grants (above) are
+    // unaffected — those correctly stay scoped to `deps.principal`.
+    const automations = await deps.world.store.list(deps.world.scope);
     for (const automation of automations) {
-      const version = await deps.world.store.getVersion(deps.principal, automation.id, automation.currentVersion);
+      const version = await deps.world.store.getVersion(deps.world.scope, automation.id, automation.currentVersion);
       for (const grant of version?.grants ?? []) {
         rows.push({
           tool: grant.tool, scopePreview: "runs as agreed",

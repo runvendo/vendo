@@ -7,9 +7,10 @@ import { z } from "zod";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import type { AuditEvent, AuditLog, FlowletUIMessage } from "@flowlet/core";
 import { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
-import { auditPolicy, composePolicy, volumeBreaker, createBreakerState } from "./policy";
-import type { ApprovalPolicy, PolicyContext } from "./policy";
+import { auditPolicy, composePolicy, volumeBreaker, cautionBreaker, createBreakerState } from "./policy";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy";
 import type { ComposioClient } from "./composio";
+import type { ToolDescriptor } from "./descriptor";
 
 // Replace `createComposioClient` with a spy so we can assert the engine builds
 // the client ONCE and reuses it across runs (Finding 4). `ingestComposioTools`
@@ -591,7 +592,10 @@ describe("createFlowletAgent", () => {
       } as unknown as Tool;
     }
 
-    function historyWithClientResult(toolCallId: string): FlowletUIMessage[] {
+    function historyWithClientResult(
+      toolCallId: string,
+      approval?: { id: string; approved: boolean; reason?: string },
+    ): FlowletUIMessage[] {
       return [
         { id: "m1", role: "user", parts: [{ type: "text", text: "send it" }] },
         {
@@ -604,6 +608,7 @@ describe("createFlowletAgent", () => {
               state: "output-available",
               input: { to: "a@b.com" },
               output: { ok: true },
+              ...(approval ? { approval } : {}),
             },
           ],
         },
@@ -729,6 +734,104 @@ describe("createFlowletAgent", () => {
       });
       expect(forced).toBe("approve");
       expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(1);
+    });
+
+    it("FINDING 3: reports 'approve' (not 'allow') to onExecuted when the client part carries approval.approved === true", async () => {
+      const decisions: ApprovalDecision[] = [];
+      const spyPolicy: ApprovalPolicy = {
+        evaluate: async () => "allow",
+        onExecuted: async (_ctx, decision) => {
+          decisions.push(decision);
+        },
+      };
+      const agent = createFlowletAgent({ model: mockModel(), policy: spyPolicy });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-approved-1", { id: "a1", approved: true }),
+          tools,
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(decisions).toEqual(["approve"]);
+    });
+
+    it("FINDING 3: reports 'allow' when the client part carries no approval metadata (auto-allowed, never asked)", async () => {
+      const decisions: ApprovalDecision[] = [];
+      const spyPolicy: ApprovalPolicy = {
+        evaluate: async () => "allow",
+        onExecuted: async (_ctx, decision) => {
+          decisions.push(decision);
+        },
+      };
+      const agent = createFlowletAgent({ model: mockModel(), policy: spyPolicy });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-allowed-1"),
+          tools,
+          signal: new AbortController().signal,
+        }),
+      );
+
+      expect(decisions).toEqual(["allow"]);
+    });
+
+    it("FINDING 3 knock-on: only an 'approve' report (not 'allow') lets a client-tool execution count toward cautionBreaker's clean-approval lift", async () => {
+      // Mirrors breakers.test.ts's own "5 clean human approvals lift caution"
+      // pattern, but against a CLIENT-executor descriptor — the shape
+      // `auditClientExecutedTools` actually reports onExecuted for. Proves the
+      // fix's downstream effect: before it, every client execution reported
+      // "allow" unconditionally, so cautionBreaker.onExecuted's own
+      // `decision === "approve"` gate (breakers.ts line ~253) NEVER counted a
+      // client-tool's clean approval — caution could trip from a client tool
+      // but never lift via one.
+      const state = createBreakerState();
+      const flaggedDescriptor: ToolDescriptor = {
+        name: "risky_tool", source: "caller", annotations: { readOnlyHint: false }, hasExecute: true, kind: "function",
+      };
+      const clientDescriptor: ToolDescriptor = {
+        name: "send_thing", source: "caller", annotations: { readOnlyHint: false, destructiveHint: false },
+        hasExecute: false, kind: "function", executor: "client",
+      };
+      const flaggedCtx = (): PolicyContext => ({
+        toolName: "risky_tool", input: {}, descriptor: flaggedDescriptor, principal: { userId: "u" }, threadId: "th-1",
+      });
+      const clientCtx = (): PolicyContext => ({
+        toolName: "send_thing", input: {}, descriptor: clientDescriptor, principal: { userId: "u" }, threadId: "th-1",
+      });
+
+      // Arm caution: 1 judge-verdict escalation (consecutiveThreshold: 1).
+      const { setEscalationReason } = await import("./policy/escalation");
+      const escalatingJudge: ApprovalPolicy = {
+        evaluate: (ctx) => {
+          setEscalationReason(ctx, "judge escalation", "verdict");
+          return "approve";
+        },
+      };
+      const arm = cautionBreaker(escalatingJudge, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      const armCtx = flaggedCtx();
+      await arm.evaluate(armCtx);
+      await arm.onExecuted!(armCtx, "approve");
+
+      const check = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      expect(await check.evaluate(flaggedCtx())).toBe("approve"); // caution active, forcing.
+
+      // A client-tool execution reported "allow" (the PRE-FIX bug) never counts.
+      const noLift = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      await noLift.onExecuted!(clientCtx(), "allow");
+      const stillActive = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      expect(await stillActive.evaluate(flaggedCtx())).toBe("approve"); // still active.
+
+      // The SAME client-tool execution reported "approve" (post-fix, since
+      // the part carries approval.approved === true) DOES lift it.
+      const lift = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      await lift.onExecuted!(clientCtx(), "approve");
+      const after = cautionBreaker({ evaluate: () => "allow" }, state, { consecutiveThreshold: 1, cleanApprovalsToLift: 1 });
+      expect(await after.evaluate(flaggedCtx())).toBe("allow"); // lifted.
     });
 
     it("is a no-op when no audit config is supplied (graceful default)", async () => {

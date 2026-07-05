@@ -101,4 +101,77 @@ describe("ActivityPanel", () => {
     );
     expect(container.querySelector(".fl-receipt")).toBeNull();
   });
+
+  it("a CRITICAL receipt's detail rows lift the cap same as its approval card — all 12 fields, no '+more' (finding 2 knock-on)", () => {
+    const input = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`field${i}`, `v${i}`]));
+    const { container } = render(
+      <ActivityStep
+        step={{
+          kind: "tool", key: "s3", messageId: "m", toolName: "transfer_money",
+          toolCallId: "c3", state: "output-available", input, output: "done",
+          tier: "critical",
+        }}
+        showPeek
+      />,
+    );
+    fireEvent.click(screen.getByText("details"));
+    expect(container.querySelectorAll(".fl-approval-field")).toHaveLength(12);
+  });
+
+  it("a policy_denied output at output-available renders a blocked state, never a ✓ receipt (finding 1)", () => {
+    const { container } = render(
+      <ActivityStep
+        step={{
+          kind: "tool", key: "s5", messageId: "m", toolName: "GMAIL_SEND_EMAIL",
+          toolCallId: "c5", state: "output-available",
+          input: { to: "a@b.com" }, output: { code: "policy_denied", tool: "GMAIL_SEND_EMAIL", rule: "no external sends" },
+          tier: "act",
+        }}
+        showPeek
+      />,
+    );
+    expect(screen.getByText(/blocked/i)).toBeTruthy();
+    expect(screen.queryByText("✓")).toBeNull();
+    expect(container.querySelector(".fl-act-tick")).toBeNull();
+    // Never renders a receipt affordance for a call that didn't actually run.
+    expect(container.querySelector(".fl-receipt")).toBeNull();
+  });
+
+  it("a policy_denied panel header reads Blocked, never the success tick (finding 1)", () => {
+    render(
+      <ActivityPanel
+        steps={[tool("GMAIL_SEND_EMAIL", "output-available", { code: "policy_denied", tool: "GMAIL_SEND_EMAIL", rule: "r" })]}
+      />,
+    );
+    expect(screen.getByText(/blocked/i)).toBeTruthy();
+    expect(screen.queryByText("✓")).toBeNull();
+  });
+
+  it("a mixed turn (success + policy_denied) reads Partly done, same as success+declined", () => {
+    render(
+      <ActivityPanel
+        steps={[
+          tool("get_transactions", "output-available"),
+          tool("GMAIL_SEND_EMAIL", "output-available", { code: "policy_denied", tool: "GMAIL_SEND_EMAIL", rule: "r" }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("Partly done")).toBeTruthy();
+  });
+
+  it("an ACT receipt's detail rows still cap at 8 (unlike critical)", () => {
+    const input = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`field${i}`, `v${i}`]));
+    const { container } = render(
+      <ActivityStep
+        step={{
+          kind: "tool", key: "s4", messageId: "m", toolName: "GMAIL_SEND_EMAIL",
+          toolCallId: "c4", state: "output-available", input, output: "sent",
+          tier: "act",
+        }}
+        showPeek
+      />,
+    );
+    fireEvent.click(screen.getByText("details"));
+    expect(container.querySelectorAll(".fl-approval-field")).toHaveLength(8);
+  });
 });

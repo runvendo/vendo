@@ -113,4 +113,35 @@ describe("FadeTracker", () => {
     t.record(p, "send_email", { to: "e@acme.co" }, "yes");
     expect(t.propose(p, "send_email", { to: "f@acme.co" })).not.toBeNull();
   });
+
+  it("consume returns the removed offer (finding 4 — so a caller can restore it on a later failure)", () => {
+    const t = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    const offer = t.propose(p, "send_email", { to: "d@acme.co" })!;
+    expect(t.consume(p, offer.proposalId)).toEqual({ tool: "send_email", shape: offer.shape });
+    expect(t.consume(p, offer.proposalId)).toBeUndefined(); // already gone — nothing to return
+  });
+
+  it("restore puts a consumed offer back so it's eligible again (finding 4 rollback)", () => {
+    const t = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    const offer = t.propose(p, "send_email", { to: "d@acme.co" })!;
+    const claimed = t.consume(p, offer.proposalId)!;
+    expect(t.resolveEligible(p, offer.proposalId)).toBeUndefined();
+    t.restore(p, offer.proposalId, claimed);
+    expect(t.resolveEligible(p, offer.proposalId)).toEqual({ tool: "send_email", shape: offer.shape });
+  });
+
+  it("restore never clobbers a DIFFERENT offer that already exists under the same id", () => {
+    const t = createFadeTracker();
+    for (const to of ["a@acme.co", "b@acme.co", "c@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    const offer = t.propose(p, "send_email", { to: "d@acme.co" })!;
+    const claimed = t.consume(p, offer.proposalId)!;
+    // A fresh offer minted under the SAME id (deterministic ids can collide
+    // if re-proposed with the same shape) before the restore runs.
+    for (const to of ["e@acme.co", "f@acme.co", "g@acme.co"]) t.record(p, "send_email", { to }, "yes");
+    t.propose(p, "send_email", { to: "h@acme.co" }); // same proposalId (same principal/tool/shape)
+    t.restore(p, offer.proposalId, claimed); // must be a no-op — something newer is already there
+    expect(t.resolveEligible(p, offer.proposalId)).toEqual({ tool: "send_email", shape: offer.shape });
+  });
 });

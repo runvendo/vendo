@@ -107,6 +107,23 @@ interface ApprovalPart {
   input?: unknown;
 }
 
+/**
+ * Finding 5: match on toolCallId alone, in ANY state. Previously restricted
+ * to `approval-requested`/`approval-responded` — but now that the shell
+ * resumes the SDK approval immediately (optimistic client-side continuation),
+ * a fast client tool can reach a TERMINAL state (`output-available`,
+ * `output-denied`) before this consent POST's `getMessages` read observes the
+ * thread, and the old filter 404'd a real, valid consent — losing the
+ * consent/fade/grant entirely. The part's existence + the caller-checked tool
+ * name match (below) IS the validation; there is nothing more a state
+ * restriction protected here. KNOCK-ON (replay): this does NOT reopen a
+ * replay concern — `handleConsent`'s idempotency ledger (`deps.seen`) caches
+ * ONLY `ok: true` outcomes and short-circuits BEFORE this lookup even runs
+ * (see the ledger check above), so a repeated POST for a toolCallId that
+ * already succeeded once returns the cached result and never re-reaches
+ * `findApprovalPart` at all — accepting terminal states here doesn't change
+ * that dedupe.
+ */
 function findApprovalPart(
   messages: FlowletUIMessage[],
   toolCallId: string,
@@ -114,11 +131,7 @@ function findApprovalPart(
   for (const message of messages) {
     for (const rawPart of message.parts) {
       const part = rawPart as ApprovalPart;
-      if (
-        part.type.startsWith("tool-") &&
-        part.toolCallId === toolCallId &&
-        (part.state === "approval-requested" || part.state === "approval-responded")
-      ) {
+      if (part.type.startsWith("tool-") && part.toolCallId === toolCallId) {
         return part;
       }
     }
@@ -189,22 +202,6 @@ export async function handleConsent(
     });
   }
 
-  let fadeEligible: { shape: FadeShape; proposalId: string; count: number } | undefined;
-  if (deps.fadeTracker) {
-    const fadeDescriptor = deps.resolveDescriptor(req.toolName);
-    // Fade eligibility is act-tier, verified-tool territory ONLY (ENG-193 §4.4
-    // invariant — checked here structurally, not by convention: critical and
-    // unverified tools never even reach `record`/`propose`).
-    if (fadeDescriptor && dangerTier(fadeDescriptor) === "act" && !isUnverified(fadeDescriptor)) {
-      const signal = req.response.decision === "no" ? "no" : "yes"; // "subset" reads as a yes
-      deps.fadeTracker.record(principal, req.toolName, part.input, signal);
-      if (signal === "yes") {
-        const eligible = deps.fadeTracker.propose(principal, req.toolName, part.input);
-        if (eligible) fadeEligible = eligible;
-      }
-    }
-  }
-
   if (req.response.decision === "yes" && req.response.grant) {
     // Bind the grant to the consented tool SERVER-SIDE: `grant.tool` is
     // client-authored, and without this check a consent gesture shown for one
@@ -252,6 +249,31 @@ export async function handleConsent(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return audited({ ok: false, status: 403, error: message });
+    }
+  }
+
+  // Finding 6: fadeTracker.record/propose moved HERE — after every rejecting
+  // validation above has passed — so a request that's about to 400/403/404
+  // (grant.tool mismatch, unknown tool, a refused critical/duplicate grant)
+  // never records a decision first. Previously this ran BEFORE the
+  // grant.tool mismatch check, so a retried bad POST accumulated a "yes" on
+  // every attempt despite never succeeding. Reaching this point means either
+  // there was no grant to validate (a plain "yes"/"no", or "yes" with no
+  // grant) or the grant validations above all passed — the success path,
+  // exactly what fade tracking is meant to observe.
+  let fadeEligible: { shape: FadeShape; proposalId: string; count: number } | undefined;
+  if (deps.fadeTracker) {
+    const fadeDescriptor = deps.resolveDescriptor(req.toolName);
+    // Fade eligibility is act-tier, verified-tool territory ONLY (ENG-193 §4.4
+    // invariant — checked here structurally, not by convention: critical and
+    // unverified tools never even reach `record`/`propose`).
+    if (fadeDescriptor && dangerTier(fadeDescriptor) === "act" && !isUnverified(fadeDescriptor)) {
+      const signal = req.response.decision === "no" ? "no" : "yes"; // "subset" reads as a yes
+      deps.fadeTracker.record(principal, req.toolName, part.input, signal);
+      if (signal === "yes") {
+        const eligible = deps.fadeTracker.propose(principal, req.toolName, part.input);
+        if (eligible) fadeEligible = eligible;
+      }
     }
   }
 

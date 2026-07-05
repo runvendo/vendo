@@ -73,10 +73,24 @@ export interface FadeTracker {
   /** Consume a successfully-accepted offer (review follow-up) — accept is
    *  one-shot. Idempotent-safe: replaying an already-consumed or unknown id
    *  is a no-op, never a throw. Does NOT suppress the shape (see `decline`
-   *  for that) — only this one offer is removed. */
+   *  for that) — only this one offer is removed. Returns the removed offer
+   *  (or `undefined` if there was nothing to remove) so a caller can
+   *  {@link restore} it if what happens next fails. */
   consume(
     principal: { tenantId: string; subject: string },
     proposalId: string,
+  ): { tool: string; shape: FadeShape } | undefined;
+  /** Rollback for `consume` (ENG-193 review follow-up — finding 4): a
+   *  successful `consume` claims the offer SYNCHRONOUSLY, before the async
+   *  grant-mint work that follows — if that work then fails (a validation
+   *  400/403/404, or the grant store itself throwing), the offer must be put
+   *  BACK so a corrected retry can still succeed instead of losing the
+   *  eligibility window forever. A no-op if another offer already exists
+   *  under this id (never clobbers). */
+  restore(
+    principal: { tenantId: string; subject: string },
+    proposalId: string,
+    offer: { tool: string; shape: FadeShape },
   ): void;
 }
 
@@ -150,8 +164,14 @@ export function createFadeTracker(opts: FadeTrackerOptions = {}): FadeTracker {
 
     consume(principal, proposalId) {
       const offer = offered.get(proposalId);
-      if (!offer || offer.principalKey !== principalKey(principal)) return;
+      if (!offer || offer.principalKey !== principalKey(principal)) return undefined;
       offered.delete(proposalId);
+      return { tool: offer.tool, shape: offer.shape };
+    },
+
+    restore(principal, proposalId, offer) {
+      if (offered.has(proposalId)) return; // never clobber a newer offer under this id
+      offered.set(proposalId, { principalKey: principalKey(principal), tool: offer.tool, shape: offer.shape });
     },
   };
 }

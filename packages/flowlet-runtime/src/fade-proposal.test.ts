@@ -106,4 +106,46 @@ describe("handleFadeProposal", () => {
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.status).toBe(403);
   });
+
+  it("FINDING 4: two CONCURRENT accepts of the SAME proposalId mint exactly one grant", async () => {
+    const { tracker, offer } = offerEligible();
+    const d = deps(tracker);
+    const [first, second] = await Promise.all([
+      handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true }),
+      handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true }),
+    ]);
+    const results = [first, second];
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toHaveLength(1);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
+  });
+
+  it("FINDING 4: a grant-creation failure restores the offer so a corrected retry still succeeds", async () => {
+    const { tracker, offer } = offerEligible();
+    const realGrants = createInMemoryGrantStore({ now });
+    let failNext = true;
+    // A GrantStore whose `create` throws exactly once — simulates a transient
+    // mint failure (e.g. a store conflict) AFTER the offer has already been
+    // claimed synchronously (finding 4's fix).
+    const flakyGrants = {
+      ...realGrants,
+      create: async (...args: Parameters<typeof realGrants.create>) => {
+        if (failNext) {
+          failNext = false;
+          throw new Error("transient store failure");
+        }
+        return realGrants.create(...args);
+      },
+    };
+    const d = { ...deps(tracker), grants: flakyGrants };
+
+    const failed = await handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true });
+    expect(failed.ok).toBe(false);
+    expect(await realGrants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+
+    // Retry with the SAME proposalId — the offer must have been restored.
+    const retried = await handleFadeProposal(d, scope, { proposalId: offer.proposalId, accept: true });
+    expect(retried.ok).toBe(true);
+    expect(await realGrants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
+  });
 });

@@ -53,12 +53,18 @@ export function isEmpty(value: unknown): boolean {
   return false;
 }
 
-/** Flatten the tool input into readable label/value rows for confirmation. */
+/** Flatten the tool input into readable label/value rows for confirmation.
+ *  `maxChars: null` is the SAME critical signal `fieldValue` uses — a
+ *  critical card never truncates material fields, so it must never HIDE one
+ *  behind a "+N more" row cap either (finding 2: a critical payload can carry
+ *  more than MAX_ROWS fields and every one of them is material). Only an
+ *  act-tier card (a finite `maxChars`) caps at MAX_ROWS. */
 export function approvalRows(input: unknown, maxChars: number | null): { rows: FieldRow[]; more: number } {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return isEmpty(input) ? { rows: [], more: 0 } : { rows: [{ label: "Input", value: fieldValue(input, maxChars) }], more: 0 };
   }
   const entries = Object.entries(input as Record<string, unknown>).filter(([, v]) => !isEmpty(v));
-  const rows = entries.slice(0, MAX_ROWS).map(([k, v]) => ({ label: fieldLabel(k), value: fieldValue(v, maxChars) }));
-  return { rows, more: Math.max(0, entries.length - MAX_ROWS) };
+  const capped = maxChars === null ? entries : entries.slice(0, MAX_ROWS);
+  const rows = capped.map(([k, v]) => ({ label: fieldLabel(k), value: fieldValue(v, maxChars) }));
+  return { rows, more: maxChars === null ? 0 : Math.max(0, entries.length - MAX_ROWS) };
 }

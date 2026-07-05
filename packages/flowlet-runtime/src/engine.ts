@@ -42,7 +42,7 @@ import {
   type ComposioClient,
   type ComposioConfig,
 } from "./composio";
-import type { ApprovalPolicy } from "./policy";
+import type { ApprovalDecision, ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 import { buildDescriptor, type ToolDescriptor } from "./descriptor";
 import { createRunPolicyContext } from "./policy/run-context";
@@ -148,12 +148,17 @@ const MAX_AUDITED_CLIENT_CALLS = 4096;
 
 /** Structural view of the ai SDK tool-part shape scanned for client-executed
  *  results — mirrors `consent.ts`'s `ApprovalPart`, keyed by `output-available`
- *  instead of `approval-*`. */
+ *  instead of `approval-*`. `approval` mirrors the SDK's own
+ *  `output-available` part shape (ai@6.0.28's `UIToolInvocation`): present
+ *  ONLY when the call actually went through the native approval round-trip,
+ *  with `approved: true` (finding 3 — a call the SDK auto-allowed with no
+ *  approval request carries no `approval` field at all). */
 interface ClientResultPart {
   type: string;
   toolCallId?: string;
   state?: string;
   input?: unknown;
+  approval?: { id: string; approved?: boolean; reason?: string };
 }
 
 /** Merge `sources` into a name -> descriptor map WITHOUT policy-wrapping —
@@ -211,6 +216,15 @@ async function auditClientExecutedTools(args: {
       const descriptor = descriptors.get(toolName);
       if (!descriptor || descriptor.executor !== "client") continue;
       if (seen(part.toolCallId)) continue;
+      // Finding 3: derive the decision from the part itself rather than
+      // hardcoding "allow" — a human-APPROVED client call (the part carries
+      // `approval.approved === true` because it went through the SDK's
+      // native approval round-trip) must report "approve", or it never counts
+      // as a clean human approval for `cautionBreaker`'s `onExecuted` lift
+      // (breakers.ts only increments `cleanApprovals` on `decision ===
+      // "approve"`). A call the SDK auto-allowed (no `approval` field at all)
+      // correctly stays "allow".
+      const decision: ApprovalDecision = part.approval?.approved === true ? "approve" : "allow";
       try {
         await policy.onExecuted?.(
           {
@@ -221,7 +235,7 @@ async function auditClientExecutedTools(args: {
             threadId,
             toolCallId: part.toolCallId,
           },
-          "allow",
+          decision,
         );
       } catch (err) {
         console.error(`[flowlet] failed to audit client-executed tool "${toolName}":`, err);

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ToolItem } from "../use-flowlet-thread";
 import { toolAction } from "./tool-labels";
 import { ActivityStep } from "./ActivityStep";
+import { isPolicyDenied } from "./tool-output";
 
 export interface ActivityPanelProps {
   steps: ToolItem[];
@@ -28,10 +29,15 @@ export function ActivityPanel({ steps, working = false }: ActivityPanelProps) {
   // failed step as "Working (…)" would misread as the tool still executing.
   const active = working
     ? [...steps].reverse().find((s) => !isTerminal(s.state)) ??
-      (last.state === "output-available" ? last : undefined)
+      (last.state === "output-available" && !isPolicyDenied(last.output) ? last : undefined)
     : undefined;
   const hasError = steps.some((s) => s.state === "output-error");
   const hasDenied = steps.some((s) => s.state === "output-denied");
+  // A policy-denied SERVER call settles at `output-available` (finding 1 —
+  // see ActivityStep for the full explanation), so it must be excluded from
+  // `hasSuccess` and folded into the same "not actually a success" bucket as
+  // `hasDenied` here, or the header would still show a ✓ + the done label.
+  const hasBlocked = steps.some((s) => s.state === "output-available" && isPolicyDenied(s.output));
   const more = steps.length - 1;
 
   let header: React.ReactNode;
@@ -44,17 +50,20 @@ export function ActivityPanel({ steps, working = false }: ActivityPanelProps) {
       </>
     );
   } else {
-    // Error wins over denied; a denied step must never read as a success tick.
-    // A mixed turn (some steps ran, one was declined) is "Partly done" — plain
-    // "Declined" would erase the work that DID happen.
-    const hasSuccess = steps.some((s) => s.state === "output-available");
-    const icon = hasError ? "✕" : hasDenied ? "⊘" : "✓";
+    // Error wins over denied/blocked; neither must ever read as a success
+    // tick. A mixed turn (some steps ran, one was declined/blocked) is
+    // "Partly done" — plain "Declined"/"Blocked" would erase the work that
+    // DID happen.
+    const hasSuccess = steps.some((s) => s.state === "output-available" && !isPolicyDenied(s.output));
+    const icon = hasError ? "✕" : hasDenied || hasBlocked ? "⊘" : "✓";
     const label = hasError
       ? "Ran into an issue"
-      : hasDenied
+      : hasDenied || hasBlocked
         ? hasSuccess
           ? "Partly done"
-          : "Declined"
+          : hasDenied
+            ? "Declined"
+            : "Blocked by your settings"
         : toolAction(last.toolName).done;
     header = (
       <>

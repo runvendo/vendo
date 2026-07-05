@@ -64,6 +64,52 @@ describe("listGrantsRoute", () => {
     expect(automationRow).toMatchObject({ tool: "GMAIL_SEND_EMAIL", automationName: "Morning chase" });
     expect(automationRow?.id).toBeUndefined();
   });
+
+  it("FINDING 7: routes automation-version grants by the WORLD's fixed scope, not the per-request principal — a custom-principal mount still sees them (mirrors parked-actions.ts)", async () => {
+    const grants = createInMemoryGrantStore({ now });
+    const world = createAutomationsWorld({
+      policy: defaultFlowletPolicy,
+      model: { modelId: "stub" } as unknown as LanguageModel,
+      scope,
+    });
+    const spec = automationSpecSchema.parse({
+      dslVersion: 1, name: "Morning chase", description: "d", prompt: "p",
+      trigger: { type: "host_event", event: "transaction.created" },
+      execution: { mode: "steps", steps: [{ id: "s1", type: "tool", tool: "GMAIL_SEND_EMAIL", input: {} }] },
+    });
+    // The automation (and its grants) live under the WORLD's own fixed scope,
+    // as the runner always creates them (single-tenant, world.ts's documented
+    // model) — NOT under whatever a custom `principal` resolver might return.
+    await world.store.create(scope, {
+      spec,
+      grants: [{ tool: "GMAIL_SEND_EMAIL", descriptorHash: "h1", scopeHash: "s1", grantedAt: now() }],
+    });
+    // A standing chat grant under the WORLD's scope, NOT the custom principal
+    // below — this must NOT federate in when queried as the custom principal,
+    // proving standing chat grants stay scoped per-request (unchanged).
+    await grants.create(scope, {
+      tool: "SLACK_POST", descriptorHash: "h2", scope: { kind: "tool" }, duration: "standing",
+      source: { kind: "chat" },
+    });
+
+    // A DIFFERENT resolved principal than the world's own scope subject
+    // (simulating a custom multi-tenant `principal` resolver) — the
+    // automation-version row must still be federated in, because the route
+    // must key its automation-store query off `world.scope`, not this value.
+    const customPrincipal = { tenantId: "custom-tenant", subject: "custom-user-not-the-world-subject" };
+    const res = await listGrantsRoute(req("http://localhost/api/flowlet/grants"), {
+      grants, world, principal: customPrincipal,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      grants: { id?: string; tool: string; source: string; automationName?: string }[];
+    };
+    const automationRow = body.grants.find((g) => g.source === "automation");
+    expect(automationRow).toMatchObject({ tool: "GMAIL_SEND_EMAIL", automationName: "Morning chase" });
+    // The world-scoped standing grant does NOT leak into a different
+    // principal's chat-grants list — standing grants stay per-request.
+    expect(body.grants.some((g) => g.tool === "SLACK_POST")).toBe(false);
+  });
 });
 
 describe("revokeGrantRoute", () => {

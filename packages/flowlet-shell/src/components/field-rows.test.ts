@@ -37,4 +37,18 @@ describe("approvalRows", () => {
       { label: "Body", value: "Body: Hi" },
     ]);
   });
+
+  it("caps an act-tier (maxChars: number) card at MAX_ROWS with a +more count", () => {
+    const input = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`field${i}`, `v${i}`]));
+    const { rows, more } = approvalRows(input, 160);
+    expect(rows).toHaveLength(8);
+    expect(more).toBe(4);
+  });
+
+  it("a critical card (maxChars: null) also lifts the ROW cap — all 12 fields render, not just 8 (finding 2)", () => {
+    const input = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`field${i}`, `v${i}`]));
+    const { rows, more } = approvalRows(input, null);
+    expect(rows).toHaveLength(12);
+    expect(more).toBe(0);
+  });
 });

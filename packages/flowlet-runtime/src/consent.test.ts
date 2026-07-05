@@ -3,6 +3,7 @@ import { createConsentLedger, handleConsent } from "./consent";
 import { createInMemoryGrantStore } from "./grant-store";
 import { InMemoryAuditLog, InMemoryThreadStore } from "./embedded/in-memory-store";
 import { createFadeTracker } from "./fade-tracker";
+import type { FadeTracker } from "./fade-tracker";
 import { grantPolicy } from "./policy/grant-policy";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletUIMessage } from "@flowlet/core";
@@ -211,6 +212,120 @@ describe("handleConsent", () => {
     expect(result.ok).toBe(true);
     const [grant] = await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL");
     expect(grant?.contextKey).toBeUndefined();
+  });
+
+  it("FINDING 5: a consent POST after the tool part already reached output-available still succeeds (200, grant minted) — existence + tool-name match is the only validation", async () => {
+    const d = deps(threadWith({ state: "output-available", output: "sent", approval: { id: "ap-1", approved: true } }));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "standing" } },
+    });
+    expect(result.ok).toBe(true);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
+  });
+
+  it("FINDING 5: also succeeds when the part settled to approval-responded (already answered elsewhere) or output-denied", async () => {
+    for (const state of ["approval-responded", "output-denied"]) {
+      const d = deps(threadWith({ state, approval: { id: "ap-1", approved: state !== "output-denied" } }));
+      const result = await handleConsent(d, scope, {
+        threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+        response: { id: "call-1", decision: "yes",
+          grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "standing" } },
+      });
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it("FINDING 5: STILL 404s when the part is truly absent from the thread", async () => {
+    const d = deps([]);
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-missing", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-missing", decision: "yes" },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(404);
+  });
+
+  it("FINDING 5 knock-on: the success-only ledger still dedupes a replay after the part reached a terminal state — a duplicate POST never mints a second grant", async () => {
+    const d = {
+      ...deps(threadWith({ state: "output-available", output: "sent", approval: { id: "ap-1", approved: true } })),
+      seen: createConsentLedger(),
+    };
+    const req = {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" as const,
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" as const }, duration: "standing" as const } },
+    };
+    const first = await handleConsent(d, scope, req);
+    const second = await handleConsent(d, scope, req);
+    expect(second).toEqual(first);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
+  });
+
+  it("FINDING 6: fadeTracker.record only fires on the success path — repeated bad POSTs (grant.tool mismatch, 400) record ZERO decisions", async () => {
+    const tracker = createFadeTracker();
+    let recordCalls = 0;
+    const spyTracker: FadeTracker = {
+      ...tracker,
+      record: (...args: Parameters<FadeTracker["record"]>) => {
+        recordCalls += 1;
+        return tracker.record(...args);
+      },
+    };
+    const d = { ...deps(threadWith({})), fadeTracker: spyTracker };
+    const badReq = {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" as const,
+        // grant.tool mismatches the consented tool — 400s AFTER fadeTracker's
+        // pre-fix call site, so a pre-fix run would already have recorded a
+        // "yes" for this shape before the validation rejected the request.
+        grant: { tool: "transfer_money", scope: { kind: "tool" as const }, duration: "standing" as const } },
+    };
+    const first = await handleConsent(d, scope, badReq);
+    expect(first.ok).toBe(false);
+    expect(first.status).toBe(400);
+    const second = await handleConsent(d, scope, badReq);
+    expect(second.ok).toBe(false);
+    expect(second.status).toBe(400);
+
+    expect(recordCalls).toBe(0);
+  });
+
+  it("FINDING 6: a grant.tool mismatch never inflates the fade eligibility count — 3 GENUINE yeses still earn the offer at exactly count 3", async () => {
+    const d = depsWithFade(threadWith({}));
+    const badReq = {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" as const,
+        grant: { tool: "transfer_money", scope: { kind: "tool" as const }, duration: "standing" as const } },
+    };
+    await handleConsent(d, scope, badReq);
+    await handleConsent(d, scope, badReq);
+
+    for (let i = 0; i < 2; i++) {
+      await handleConsent(d, scope, {
+        threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+        response: { id: "call-1", decision: "yes" },
+      });
+    }
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    expect(result.ok).toBe(true);
+    // Exactly 3 — NOT 5, which is what it would be if the 2 bad POSTs above
+    // had also recorded a "yes" (pre-fix behavior).
+    expect(result.ok && result.fadeEligible?.count).toBe(3);
+  });
+
+  it("FINDING 6: a 'no' decision (no grant involved, nothing CAN 400 after it) still records exactly as before", async () => {
+    const d = depsWithFade(threadWith({}));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "no" },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.fadeEligible).toBeUndefined();
   });
 });
 
