@@ -10,71 +10,21 @@
  *  - `connections` injects the demo store, so /api/flowlet/reset still clears
  *    connection state;
  *  - the demo's own automations world flows in through `tools` (handler
- *    automations stay off);
+ *    automations stay off, except under the persistence drill — see
+ *    ./flowlet/handler-options.ts);
  *  - the local-only guard keeps FLOWLET_DEMO_PUBLIC=1 as the deploy opt-in.
+ *
+ * The options object lives in ./flowlet/handler-options.ts (not inline here)
+ * so instrumentation.ts can import the SAME reference for
+ * `startFlowletScheduler()` — see that file's doc comment for why.
  *
  * The sibling static routes (poll, reset) remain demo-custom and win over
  * this catch-all in Next routing.
  */
-import { anthropic } from "@ai-sdk/anthropic";
-import { createFlowletHandler, type ConnectionsStore } from "@flowlet/next";
-import { buildInstructions } from "@/flowlet/agent";
-import { demoPolicy } from "@/flowlet/policy";
-import { demoTools } from "@/flowlet/tools";
-import { automationsWorld, automationsGeneration } from "@/flowlet/automations";
-import {
-  listIntegrations,
-  connect,
-  disconnect,
-  connectedToolkits,
-  setConnectedAccount,
-  findByConnectedAccount,
-} from "@/flowlet/connections-store";
-import { mapleHostToolDefs } from "@/flowlet/host-tools";
-import { mapleHostComponents } from "@/flowlet/host-components/descriptors";
-import { DEMO_PRINCIPAL } from "@/flowlet/principal";
+import { createFlowletHandler } from "@flowlet/next";
+import { flowletOptions } from "@/flowlet/handler-options";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
-
-/** Only expose the real Composio identity to local requests, unless an
- *  operator explicitly opted a deployment in via FLOWLET_DEMO_PUBLIC=1. */
-function principalAllowed(req: Request): boolean {
-  if (process.env.FLOWLET_DEMO_PUBLIC === "1") return true;
-  const host = req.headers.get("host");
-  let hostname = host ? (host.split(":")[0] ?? "") : "";
-  if (!hostname) {
-    try {
-      hostname = new URL(req.url).hostname;
-    } catch {
-      hostname = "";
-    }
-  }
-  return LOCAL_HOSTS.has(hostname.toLowerCase());
-}
-
-/** The demo connection store, adapted to the handler's seam. */
-const demoConnections: ConnectionsStore = {
-  list: listIntegrations,
-  connect,
-  disconnect,
-  connectedToolkits,
-  setConnectedAccount,
-  findByConnectedAccount,
-};
-
-export const { GET, POST } = createFlowletHandler({
-  model: anthropic(process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6"),
-  // Per-run function (spec §7): grounds capability talk in the live toolset.
-  instructions: (ctx) => buildInstructions({ toolSummary: ctx.toolSummary }),
-  policy: demoPolicy,
-  tools: () => ({ ...demoTools(), ...automationsWorld().authoringTools() }),
-  components: mapleHostComponents,
-  hostTools: mapleHostToolDefs,
-  connections: demoConnections,
-  principal: (req) => (principalAllowed(req) ? DEMO_PRINCIPAL : null),
-  cacheKey: () => String(automationsGeneration()),
-  automations: false,
-});
+export const { GET, POST } = createFlowletHandler(flowletOptions);
