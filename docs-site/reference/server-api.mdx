@@ -1,0 +1,149 @@
+---
+title: "@vendoai/server"
+description: "The framework-agnostic server API and Node bridge"
+---
+
+`@vendoai/server` is the framework-agnostic handler core behind
+`@vendoai/next`. Import it only from server code. It reads `.vendo/`, uses
+provider keys, and owns route handlers.
+
+## Handler Core
+
+```ts
+import { createServer } from "node:http";
+import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+
+const handler = createVendoFetchHandler();
+
+createServer(toNodeHandler(handler)).listen(3000);
+```
+
+| Export | Purpose |
+| --- | --- |
+| `VENDO_SERVER_PACKAGE` | Constant string, `"@vendoai/server"`. |
+| `createVendoFetchHandler` | Returns the fetch-native Vendo handler, `(Request) => Promise<Response>`. |
+| `VendoFetchHandler` | Type for the fetch-native handler. |
+| `VendoState` | Type for the assembled handler state. |
+| `routeTail` | Resolves the Vendo route suffix from a request URL, independent of mount prefix. |
+| `ensureVendoState` | Assembles or reuses the process-wide Vendo state used by the scheduler. |
+| `bootRegistry` | Process-wide boot registry used to coordinate route and scheduler state. |
+| `resetVendoBootRegistry` | Test helper that clears the boot registry. |
+| `startVendoScheduler` | Starts the in-process automation scheduler unless `VENDO_SCHEDULER=external`. |
+
+## Node Bridge
+
+`toNodeHandler(handler)` adapts the fetch handler to Node's
+`(IncomingMessage, ServerResponse)` shape. It streams response bodies, converts
+thrown handler errors to HTTP 500 when headers are not sent, and aborts the
+fetch `Request` signal if the client disconnects.
+
+| Export | Purpose |
+| --- | --- |
+| `toNodeHandler` | Bridges a fetch handler to Node, Express, and other Node servers that use the same request/response shape. |
+| `FetchHandler` | `(req: Request) => Promise<Response>`. |
+| `NodeHandler` | `(req: IncomingMessage, res: ServerResponse) => Promise<void>`. |
+
+## Options And Loading
+
+| Export | Purpose |
+| --- | --- |
+| `parseHandlerOptions` | Validates `VendoHandlerOptions` and rejects unknown keys. |
+| `VendoHandlerOptions` | Shared options type for `createVendoFetchHandler` and `createVendoHandler`. |
+| `IntegrationCatalogEntry` | `{ id: string; name: string }` entry used by the integrations catalog option. |
+| `loadVendoDir` | Loads `.vendo/theme.json`, `.vendo/tools.json`, `.vendo/remix-sources.json`, `.vendo/env/manifest.json`, and `.vendo/mcp.json`. |
+| `LoadedVendoDir` | Return type for `loadVendoDir`. |
+| `manifestToolsToHostTools` | Converts `.vendo/tools.json` manifest entries into host tool definitions. |
+| `resolveMcpServers` | Resolves MCP server config and substitutes `${ENV_VAR}` header templates. |
+| `mcpJsonSchema` | Zod schema for `.vendo/mcp.json`. |
+| `mcpServerArraySchema` | Zod schema for an array of MCP server configs. |
+
+## Capabilities And Models
+
+| Export | Purpose |
+| --- | --- |
+| `detectCapabilities` | Detects chat, integrations, voice, and MCP capability flags from env and injected-model presence. |
+| `VendoCapabilities` | Wire shape returned by `GET /capabilities`, including `storage`. |
+| `EnvCapabilities` | Capability shape detectable from env alone, without `storage`. |
+| `DetectCapabilitiesOptions` | Options for `detectCapabilities`. |
+| `resolveModel` | Resolves provider env and `VENDO_MODEL` into an AI SDK `LanguageModel`. |
+| `resolveModelChoice` | Pure provider/model-id resolver. |
+| `ModelChoice` | Result type for `resolveModelChoice`. |
+| `ModelProvider` | `"anthropic" \| "openai" \| "google"`. |
+| `ResolveModelDeps` | Test seam for dynamic provider imports. |
+
+## Policy, Principal, And Prompt Helpers
+
+| Export | Purpose |
+| --- | --- |
+| `defaultVendoPolicy` | Default approval policy based on tool annotations and verb/name heuristics. |
+| `composeProductionPolicy` | Composes grants, rules, audit, judge, and breaker behavior around a base policy. |
+| `principalScope` | Maps a policy context to the stored principal scope. |
+| `EMBEDDED_TENANT` | Fixed embedded tenant id used by the built-in handler world. |
+| `resolvePrincipal` | Applies the handler principal resolver or the default local-only guard. |
+| `tickServiceAuth` | Verifies `Authorization: Bearer <VENDO_TICK_SECRET>` for scheduler ticks. |
+| `threadScope` | Maps a `VendoPrincipal` to the thread store scope. |
+| `DEFAULT_PRINCIPAL` | Default development principal used by zero-config local installs. |
+| `WORLD_SCOPE` | Fixed embedded automation-world scope. |
+| `GuardResult` | Result type returned by `resolvePrincipal`. |
+| `buildInstructions` | Builds the default Vendo system prompt. |
+| `createAgentCache` | Creates the cached agent factory used by the handler. |
+| `BuildInstructionsInput` | Input type for `buildInstructions`. |
+| `AgentFactoryConfig` | Config type for `createAgentCache`. |
+
+## Stores And Worlds
+
+| Export | Purpose |
+| --- | --- |
+| `DEFAULT_INTEGRATION_CATALOG` | Default Composio integration catalog. |
+| `createConnectionsStore` | Creates the in-memory integration connection store. |
+| `ConnectionsStore` | Integration connection store interface. |
+| `createAutomationsWorld` | Creates the embedded automations world. |
+| `VendoAutomationsWorld` | Automations world interface returned by `createAutomationsWorld`. |
+| `CreateWorldConfig` | Config type for `createAutomationsWorld`. |
+| `createThreadIndex` | Maps client thread ids to stored thread ids. |
+| `ThreadIndex` | Thread index interface. |
+| `createDrizzleVendoRegistry` | Creates a durable saved-view registry. |
+| `createInMemoryVendoRegistry` | Creates an in-memory saved-view registry. |
+| `VendoRegistry` | Saved-view registry interface. |
+| `createApprovalStore` | Creates the short-lived action approval-token store. |
+| `ApprovalStore` | Approval-token store interface. |
+
+## Route Handlers
+
+These lower-level exports are what `createVendoFetchHandler` mounts for you.
+Use them only if you are composing your own router.
+
+| Export | Purpose |
+| --- | --- |
+| `handleChat`, `ChatDeps` | Agent chat streaming route. |
+| `handleAction`, `ActionDeps` | Server action dispatch route. |
+| `handleIntegrationsGet`, `handleIntegrationsPost`, `IntegrationsDeps` | Integration catalog, connect, disconnect, and status routes. |
+| `handleVendosGet`, `handleVendosPost` | Saved generated view routes. |
+| `handleConsentRoute`, `ConsentRouteDeps` | Consent response route. |
+| `handleFadeProposalRoute`, `FadeProposalRouteDeps` | Fade proposal resolution route. |
+| `listParkedActionsRoute`, `resolveParkedActionRoute` | Parked automation actions routes. |
+| `listGrantsRoute`, `revokeGrantRoute` | Trust grant routes. |
+| `listRulesRoute`, `revokeRuleRoute` | Trust always-ask rule routes. |
+| `queryAuditRoute` | Trust audit query route. |
+| `listCriticalToolsRoute` | Trust critical-tools route. |
+
+## Remix Helpers
+
+| Export | Purpose |
+| --- | --- |
+| `applyVerifiedPinBase` | Applies a verified remix pin envelope to UI messages. |
+| `enrichAnchorSources` | Adds server-side captured anchor source to remix requests. |
+| `createSourceResolver` | Creates a source resolver from handler options and captured `.vendo` sources. |
+| `capSource` | Caps captured component source text. |
+| `resolveRemixSealer` | Resolves the remix envelope sealer from options and env. |
+
+## Subpath Exports
+
+The package also exposes these server-safe subpaths:
+
+| Subpath | Exports |
+| --- | --- |
+| `@vendoai/server/capabilities` | Capability detection without importing the full server barrel. |
+| `@vendoai/server/model` | Model resolution without importing the full server barrel. |
+| `@vendoai/server/manifest-tools` | Manifest-to-host-tool conversion. |
+| `@vendoai/server/catalog` | Default integration catalog. |

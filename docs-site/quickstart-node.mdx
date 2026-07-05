@@ -1,0 +1,109 @@
+---
+title: "Quickstart: any Node server"
+description: "Mount the framework-agnostic handler on Node, Express, or Hono"
+---
+
+`@vendoai/server` exposes the framework-agnostic handler behind the Next.js adapter. It returns a fetch handler, `(Request) => Promise<Response>`, plus `toNodeHandler()` for Node's `IncomingMessage` and `ServerResponse` shape.
+
+Install the server package:
+
+```bash
+npm install @vendoai/server
+```
+
+If your frontend reuses Vendo's React root outside Next.js, also install `@vendoai/next` and import `VendoRoot` from `@vendoai/next/client`.
+
+## node:http
+
+Mount Vendo under `/api/vendo` and serve the sandbox runtime files from `/vendo`:
+
+```ts
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { createServer } from "node:http";
+import path from "node:path";
+import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+
+const publicDir = path.resolve("public");
+const vendo = toNodeHandler(createVendoFetchHandler());
+
+const server = createServer(async (req, res) => {
+  const { pathname } = new URL(req.url ?? "/", "http://localhost");
+
+  if (pathname === "/api/vendo" || pathname.startsWith("/api/vendo/")) {
+    await vendo(req, res);
+    return;
+  }
+
+  const file = path.normalize(path.join(publicDir, pathname));
+  if (pathname.startsWith("/vendo/") && file.startsWith(publicDir + path.sep)) {
+    try {
+      if ((await stat(file)).isFile()) {
+        res.setHeader("content-type", "text/javascript; charset=utf-8");
+        createReadStream(file).pipe(res);
+        return;
+      }
+    } catch {
+      // fall through to 404
+    }
+  }
+
+  res.statusCode = 404;
+  res.end("not found");
+});
+
+server.listen(3300);
+```
+
+The `public/vendo` directory must contain:
+
+- `react-runtime.js`
+- `components-sandbox.js`
+
+The Next.js codemod copies these automatically. On a custom Node server, copy them as part of your own setup or build step and serve them at `/vendo/...`.
+
+## Express
+
+```ts
+import express from "express";
+import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+
+const app = express();
+
+app.all("/api/vendo/*", toNodeHandler(createVendoFetchHandler()));
+app.use("/vendo", express.static("public/vendo"));
+
+app.listen(3300);
+```
+
+For Express 5, use the route pattern `"/api/vendo/{*path}"`.
+
+## Hono
+
+Fetch-native runtimes can call the handler directly:
+
+```ts
+import { Hono } from "hono";
+import { createVendoFetchHandler } from "@vendoai/server";
+
+const vendo = createVendoFetchHandler();
+const app = new Hono();
+
+app.all("/api/vendo/*", (c) => vendo(c.req.raw));
+
+export default app;
+```
+
+Serve the same `public/vendo` directory at `/vendo` with your Hono runtime's static-file middleware.
+
+## Configure capabilities
+
+Use the same capability keys as the Next.js adapter:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+# or OPENAI_API_KEY=sk-...
+# or GOOGLE_GENERATIVE_AI_API_KEY=...
+```
+
+`createVendoFetchHandler(options)` accepts the same `VendoHandlerOptions` that `createVendoHandler(options)` accepts in Next.js.
