@@ -14,6 +14,7 @@
  *   GET|POST /voice/tools — connected integration tool bridge for voice
  *   GET  /deliveries    — in-app Channels feed for VendoToasts (single-tenant)
  *   POST /tick          — drives the automations scheduler
+ *   POST /events/ingest — fires declared host_event automations
  *   POST /resume        — resumes a paused automation run (approval toast)
  *   POST /consent       — answers a ConsentRequest; server-validates grant
  *                          creation (ENG-193)
@@ -51,11 +52,13 @@ import {
   createFadeTracker,
   createInMemoryCompiledRuleStore,
   createInMemoryGrantStore,
+  fireHostEventAutomations,
   createSteeringTools,
   hostToolset,
   InMemoryAuditLog,
   InMemoryThreadStore,
   type InstructionContext,
+  type HostEventIngestResult,
 } from "@vendoai/runtime";
 import { handleChat } from "./chat";
 import { handleAction, createApprovalStore } from "./action";
@@ -109,6 +112,7 @@ export const FIRST_SEGMENTS = new Set([
   "voice",
   "deliveries",
   "tick",
+  "events",
   "resume",
   "consent",
   "fade-proposal",
@@ -483,6 +487,7 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       connections,
       world,
       worldScope,
+      hostEvents: loaded.manifest.events,
       serverTools,
       getAgent,
       resolveRemixSource,
@@ -634,6 +639,71 @@ export function ensureVendoState(rawOptions: VendoHandlerOptions = {}): Promise<
   return state();
 }
 
+export class UnknownVendoEventError extends Error {
+  readonly declaredEvents: string[];
+
+  constructor(name: string, declaredEvents: string[]) {
+    super(`unknown host event "${name}"`);
+    this.name = "UnknownVendoEventError";
+    this.declaredEvents = declaredEvents;
+  }
+}
+
+export interface IngestVendoEventOptions extends VendoHandlerOptions {
+  /** Producer-supplied dedupe id. Re-delivery with the same id is a no-op. */
+  eventId?: string;
+  /** Defaults to the current time. */
+  occurredAt?: string;
+}
+
+export type IngestVendoEventResult = HostEventIngestResult;
+
+function declaredHostEventNames(s: VendoState): string[] {
+  return s.hostEvents.map((event) => event.name);
+}
+
+function assertDeclaredHostEvent(s: VendoState, name: string): string[] {
+  const declared = declaredHostEventNames(s);
+  if (!declared.includes(name)) throw new UnknownVendoEventError(name, declared);
+  return declared;
+}
+
+async function ingestVendoEventOnState(
+  s: VendoState,
+  name: string,
+  payload: unknown,
+  opts: { eventId?: string; occurredAt?: string } = {},
+): Promise<IngestVendoEventResult> {
+  if (!s.world) {
+    throw new Error("automations are disabled");
+  }
+  assertDeclaredHostEvent(s, name);
+  return fireHostEventAutomations({ store: s.world.store, runner: s.world.runner }, s.worldScope, name, {
+    payload,
+    ...(opts.eventId !== undefined ? { eventId: opts.eventId } : {}),
+    ...(opts.occurredAt !== undefined ? { occurredAt: opts.occurredAt } : {}),
+  });
+}
+
+/**
+ * Programmatic host-event ingest for in-process producers (host route
+ * handlers, pollers, webhook relays). It shares the same process-wide boot
+ * slot as `startVendoScheduler()`; pass the same `bootKey` as the handler
+ * when your route and instrumentation compile through separate module graphs.
+ */
+export async function ingestVendoEvent(
+  name: string,
+  payload: unknown,
+  opts: IngestVendoEventOptions = {},
+): Promise<IngestVendoEventResult> {
+  const { eventId, occurredAt, ...handlerOptions } = opts;
+  const state = await ensureVendoState(handlerOptions);
+  return ingestVendoEventOnState(state, name, payload, {
+    ...(eventId !== undefined ? { eventId } : {}),
+    ...(occurredAt !== undefined ? { occurredAt } : {}),
+  });
+}
+
 export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): VendoFetchHandler {
   const options = parseHandlerOptions(rawOptions);
 
@@ -678,6 +748,22 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         // Telemetry is best-effort and must not affect the handler response.
       }
     }
+  }
+
+  async function authorizeMutationOrService(req: Request): Promise<Response | undefined> {
+    const service = tickServiceAuth(req);
+    if (service === "denied") {
+      return Response.json({ error: "invalid service credential" }, { status: 401 });
+    }
+    if (service !== "allowed") {
+      const guard = await resolvePrincipal(req, options);
+      if (!guard.ok) return guard.response;
+    }
+    return undefined;
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
   async function GET(req: Request, s: VendoState): Promise<Response> {
@@ -847,6 +933,43 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           );
         }
         return Response.json({ ok: true });
+      }
+      case "events/ingest": {
+        if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
+        const auth = await authorizeMutationOrService(req);
+        if (auth) return auth;
+        const body = (await req.json().catch(() => undefined)) as unknown;
+        if (!isRecord(body)) {
+          return Response.json({ error: "JSON body is required" }, { status: 400 });
+        }
+        if (typeof body.name !== "string" || body.name.length === 0) {
+          return Response.json({ error: "name is required" }, { status: 400 });
+        }
+        if (!("payload" in body)) {
+          return Response.json({ error: "payload is required" }, { status: 400 });
+        }
+        if (body.eventId !== undefined && (typeof body.eventId !== "string" || body.eventId.length === 0)) {
+          return Response.json({ error: "eventId must be a non-empty string when provided" }, { status: 400 });
+        }
+        try {
+          const result = await ingestVendoEventOnState(s, body.name, body.payload, {
+            ...(body.eventId !== undefined ? { eventId: body.eventId } : {}),
+          });
+          return Response.json({
+            ok: true,
+            eventId: result.eventId,
+            matched: result.matched,
+            fired: result.fired,
+          });
+        } catch (err) {
+          if (err instanceof UnknownVendoEventError) {
+            return Response.json(
+              { error: err.message, declaredEvents: err.declaredEvents },
+              { status: 400 },
+            );
+          }
+          throw err;
+        }
       }
       case "webhooks/composio":
         // No principal guard: the Svix-style signature IS the authentication

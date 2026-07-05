@@ -44,10 +44,13 @@ export { resolvePrincipal, tickServiceAuth, threadScope, DEFAULT_PRINCIPAL, WORL
 export { parseHandlerOptions, type VendoHandlerOptions, type IntegrationCatalogEntry } from "./options";
 export {
   createVendoFetchHandler,
+  ingestVendoEvent,
   routeTail,
   ensureVendoState,
   bootRegistry,
   resetVendoBootRegistry,
+  type IngestVendoEventOptions,
+  type IngestVendoEventResult,
   type VendoFetchHandler,
   type VendoState,
 } from "./fetch-handler";
