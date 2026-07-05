@@ -17,4 +17,3 @@ LLM steps need `ANTHROPIC_API_KEY` (model override: `VENDO_CLI_MODEL`, default `
 
 `vendo publish` validates `.vendo/tools.json` and prints the sha256 a real publish would key on. The cloud registry is ENG-198; embedded hosts read `.vendo/` from disk and never need publish.
 
-Ground-truth run + fidelity report: `docs/superpowers/specs/2026-07-02-flowlet-eng197-extraction-fidelity-findings.md`.

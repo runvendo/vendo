@@ -41,5 +41,4 @@ Open http://localhost:3000.
 ## More
 
 - `apps/demo-bank/README.md` — the Maple app: stack, architecture, API endpoints, and the planted demo charge.
-- `docs/superpowers/specs/2026-06-29-flowlet-f1-foundation-design.md` — F1 foundation design.
 - Reuse: `ai` SDK (protocol), MCP (tools + permission annotations), mcp-ui (sandbox — F3), Crayon (components — F4).

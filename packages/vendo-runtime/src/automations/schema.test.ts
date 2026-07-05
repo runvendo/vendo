@@ -1,7 +1,7 @@
 /**
- * DSL schema tests. The four fixtures are the worked examples from
- * docs/superpowers/specs/2026-07-01-flowlet-automations-proposal.md, verbatim —
- * if the doc and the schema drift, these tests catch it.
+ * DSL schema tests. The four fixtures are the worked examples from the
+ * original automations design, verbatim — if the design and the schema
+ * drift, these tests catch it.
  */
 import { describe, expect, it } from "vitest";
 import { automationSpecSchema } from "./schema";
