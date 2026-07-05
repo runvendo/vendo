@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { LanguageModel } from "ai";
+import { initTelemetry, type Telemetry } from "@flowlet/telemetry";
 import { detectTarget } from "./detect.js";
 import { extractTheme } from "./theme/extract-theme.js";
 import { extractTools } from "./tools/extract-tools.js";
@@ -15,6 +16,36 @@ export interface InitOptions {
   force: boolean;
   /** test seam — pass null to force LLM-off, a mock to avoid the network */
   model?: LanguageModel | null;
+  /** test seam — telemetry wiring overrides; omit in production for real env/key */
+  telemetry?: {
+    home?: string;
+    posthogKey?: string;
+    env?: Record<string, string | undefined>;
+    fetchImpl?: typeof fetch;
+  };
+}
+
+type InitFailedStep = "theme" | "tools" | "components" | "wiring";
+
+function noopTelemetry(): Telemetry {
+  return {
+    async track() {},
+  };
+}
+
+function initRunTelemetry(opts: InitOptions): Telemetry {
+  try {
+    return initTelemetry({
+      version: "0.0.0",
+      runtime: false,
+      home: opts.telemetry?.home,
+      posthogKey: opts.telemetry?.posthogKey ?? process.env.FLOWLET_POSTHOG_KEY,
+      env: opts.telemetry?.env ?? process.env,
+      fetchImpl: opts.telemetry?.fetchImpl,
+    });
+  } catch {
+    return noopTelemetry();
+  }
 }
 
 function readmeSource(report: InitReport): string {
@@ -49,8 +80,12 @@ registry ships (ENG-198). Embedded hosts read this directory from disk.
 }
 
 export async function runInit(opts: InitOptions): Promise<number> {
+  const startedAt = Date.now();
   const targetDir = path.resolve(opts.targetDir);
   const info = await detectTarget(targetDir);
+  const t = initRunTelemetry(opts);
+  const framework = info.framework;
+  await t.track("init_started", { framework });
 
   let model: LanguageModel | null;
   try {
@@ -62,17 +97,25 @@ export async function runInit(opts: InitOptions): Promise<number> {
     // the actionable error instead of an unhandled rejection or a silent
     // fallback to deterministic mode.
     console.error(err instanceof Error ? err.message : String(err));
+    await t.track("init_failed", { framework, failedStep: "tools" });
     return 1;
   }
 
   const report: InitReport = { info, theme: null, tools: null, components: null, llmSkipped: model === null };
+  let failedStep: InitFailedStep = "theme";
   try {
+    failedStep = "theme";
     report.theme = await extractTheme(targetDir, info, opts);
+    failedStep = "tools";
     report.tools = await extractTools(targetDir, info, model, opts);
-    if (model) report.components = await extractComponents(targetDir, model, opts);
+    if (model) {
+      failedStep = "components";
+      report.components = await extractComponents(targetDir, model, opts);
+    }
     await writeGenerated(path.join(targetDir, ".flowlet/README.md"), readmeSource(report), opts);
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
+    await t.track("init_failed", { framework, failedStep });
     return 1;
   }
   console.log(renderReport(report));
@@ -81,6 +124,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
   // .env.example, sandbox assets, dependency. Fail-open by design — anything
   // uncertain is skipped and reported, never guessed.
   try {
+    failedStep = "wiring";
     const wiring = await wireNextApp(targetDir, info, { force: opts.force });
     const rendered = renderWiring(wiring);
     if (rendered) console.log(rendered);
@@ -97,7 +141,16 @@ export async function runInit(opts: InitOptions): Promise<number> {
     }
   } catch (err) {
     console.error(`next wiring failed (review \`git diff\` — wiring writes are individually atomic): ${err instanceof Error ? err.message : String(err)}`);
+    await t.track("init_failed", { framework, failedStep });
     return 1;
   }
+  await t.track("init_completed", {
+    framework,
+    provider: model === null ? "none" : "configured",
+    llmSkipped: model === null,
+    componentCount: report.components?.written.length ?? 0,
+    toolCount: report.tools?.toolCount ?? 0,
+    durationMs: Date.now() - startedAt,
+  });
   return 0;
 }
