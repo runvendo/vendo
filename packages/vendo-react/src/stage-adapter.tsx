@@ -38,6 +38,17 @@ const structureKey = (payload: GeneratedPayload): string => {
   return JSON.stringify([payload.nodes, sortedComponents]);
 };
 
+/** Inert tree mounted when `node` becomes null: renders nothing, carries no
+ *  actions — clearing the node must clear the stage (audit: a stale tree
+ *  stayed mounted and actionable). Reserved id so no real node collides. */
+const CLEARED_TREE: UINode = {
+  id: "__vendo-stage-cleared__",
+  kind: "component",
+  source: "prewired",
+  name: "Text",
+  props: { text: "" },
+};
+
 export interface VendoStageProps {
   node: UINode | null;
   bundleSource?: string;
@@ -110,8 +121,27 @@ export function VendoStage({
   // Initialize or update whenever node changes (after ready).
   useEffect(() => {
     const c = ctrlRef.current;
-    if (!c || !node) return;
+    if (!c) return;
     let cancelled = false;
+    if (!node) {
+      // node={null} means "show nothing": an initialized stage must unmount
+      // its tree, not leave the previous view visible and actionable. An
+      // inert empty tree replaces it (the protocol has no dedicated clear
+      // op); the session/payload refs drop too so the next node — generated
+      // or not — re-initializes instead of data-delta'ing a cleared tree.
+      if (initedRef.current) {
+        c.ready
+          .then(() => {
+            if (cancelled) return;
+            c.initialize({ theme, state, bundleSource, componentTheme, tree: CLEARED_TREE });
+            rootIdRef.current = CLEARED_TREE.id;
+            sessionRef.current = null;
+            payloadRef.current = null;
+          })
+          .catch((err) => console.error("[vendo] stage failed to become ready", err));
+      }
+      return () => { cancelled = true; };
+    }
     c.ready
       .then(() => {
         if (cancelled) return;

@@ -139,6 +139,48 @@ describe("VendoStage", () => {
     warn.mockRestore();
   });
 
+  it("clears the mounted tree when node becomes null (no stale interactive view)", async () => {
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    const theme = {};
+    const state = {};
+    update.mockClear();
+    initialize.mockClear();
+    const { rerender } = render(<VendoStage node={node} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+
+    rerender(<VendoStage node={null} theme={theme} state={state} />);
+    // The previous tree must be unmounted — an inert empty tree replaces it,
+    // so the stale view can no longer be seen or interacted with.
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+    expect(initialize.mock.calls[1][0].tree).toMatchObject({ props: { text: "" } });
+
+    // And a later node mounts fresh (re-initialize, not a no-op update).
+    rerender(<VendoStage node={node} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(3));
+    expect(initialize.mock.calls[2][0]).toMatchObject({ tree: node });
+  });
+
+  it("clears a generated tree when node becomes null, then re-resolves the next payload", async () => {
+    const theme = {};
+    const state = {};
+    update.mockClear();
+    initialize.mockClear();
+    const { rerender } = render(
+      <VendoStage node={makeGenNode({ title: "Hello" })} theme={theme} state={state} />,
+    );
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+
+    rerender(<VendoStage node={null} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+
+    // The next generated payload re-initializes (never a stale data-delta
+    // against the cleared tree).
+    rerender(<VendoStage node={makeGenNode({ title: "World" })} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(3));
+    expect(initialize.mock.calls[2][0].tree).toMatchObject({ props: { title: "World" } });
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ replace: expect.anything() }));
+  });
+
   // ---- Generated nodes (ENG-180) ----
 
   it("initializes a generated node with the session's resolved tree", async () => {
