@@ -309,6 +309,36 @@ describe("createFlowletHandler", () => {
     expect(await (await GET(req("/api/flowlet/rules"))).json()).toEqual({ rules: [] });
   });
 
+  it("REVIEW FOLLOW-UP: a POST ending in /revoke that is neither /rules/revoke nor /grants/revoke 404s (never falls through to a grant revoke)", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/nope/revoke", { method: "POST", body: JSON.stringify({ id: "whatever" }) }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("REVIEW FOLLOW-UP: /grants/revoke and /rules/revoke both still resolve correctly (guards the fix above didn't regress the happy paths)", async () => {
+    const scope = { tenantId: "flowlet-embedded", subject: "flowlet-default-user" };
+    const grants = createInMemoryGrantStore();
+    const rules = createInMemoryCompiledRuleStore();
+    const grant = await grants.create(scope, {
+      tool: "send_email", descriptorHash: "h1", scope: { kind: "tool" }, duration: "standing",
+      source: { kind: "chat" },
+    });
+    const rule = await rules.create(scope, {
+      kind: "always_ask", toolPattern: "send_email", plainText: "sending any email",
+    });
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir(), store: { grants, rules } });
+    const grantRes = await POST(
+      req("/api/flowlet/grants/revoke", { method: "POST", body: JSON.stringify({ id: grant.id }) }),
+    );
+    expect(grantRes.status).toBe(200);
+    const ruleRes = await POST(
+      req("/api/flowlet/rules/revoke", { method: "POST", body: JSON.stringify({ id: rule.id }) }),
+    );
+    expect(ruleRes.status).toBe(200);
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");

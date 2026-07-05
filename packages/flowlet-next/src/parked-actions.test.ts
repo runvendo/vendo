@@ -117,4 +117,40 @@ describe("parked-actions routes", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("REVIEW FOLLOW-UP: routes scope by the WORLD's fixed scope, not the per-request principal — a custom-principal mount still sees and can resolve rows the world parked", async () => {
+    const tool = makeTool("send_email");
+    const world = makeWorld({ send_email: tool });
+    const { automation } = await world.store.create(SCOPE, { spec: minimalSpec(), grants: [] });
+    // The parked row lives under the WORLD's own scope, as the runner always
+    // creates it (single-tenant, world.ts's documented model) — NOT under
+    // whatever a custom `principal` resolver might return per request.
+    const action = await world.store.createParkedAction(SCOPE, {
+      automationId: automation.id, runId: "r1", stepId: "s1", tool: "send_email",
+      input: { to: "a@b.com" }, reason: "ungranted", tier: "act",
+      descriptorHash: hashDescriptor(tool.descriptor), requestedAt: NOW,
+    });
+
+    // A DIFFERENT resolved principal than the world's own scope subject
+    // (simulating a custom multi-tenant `principal` resolver) — the row must
+    // still be visible and resolvable, because the routes key off
+    // `world.scope`, not this value.
+    const customPrincipal = { userId: "custom-user-not-the-world-subject" };
+
+    const listRes = await listParkedActionsRoute(
+      new Request("http://localhost:3000/api/flowlet/parked-actions"),
+      { world, principal: customPrincipal },
+    );
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as { actions: { id: string }[] };
+    expect(listBody.actions.map((a) => a.id)).toContain(action.id);
+
+    const resolveRes = await resolveParkedActionRoute(req({ actionId: action.id, decision: "yes" }), {
+      world, principal: customPrincipal,
+    });
+    expect(resolveRes.status).toBe(200);
+    const resolveBody = (await resolveRes.json()) as { ok: boolean; executed: boolean };
+    expect(resolveBody).toMatchObject({ ok: true, executed: true });
+    expect(tool.calls).toHaveLength(1);
+  });
 });

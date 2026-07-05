@@ -445,11 +445,20 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       // (ENG-193 §3 Moment 12/item-6) — `subPath` only inspects the LAST path
       // segment, so both collapse to "revoke" here; disambiguate on the full
       // pathname (item-6 plan deviation #6 — found while wiring this task).
+      // Review follow-up: mirror the "resolve" guard above exactly — a POST
+      // ending in "/revoke" that is neither `/rules/revoke` nor
+      // `/grants/revoke` (e.g. a typo'd `/nope/revoke`) must 404, not silently
+      // fall through to a grant revoke it was never meant to reach.
       case "revoke": {
+        const pathname = new URL(req.url).pathname;
+        const isRuleRevoke = pathname.includes("/rules/revoke");
+        const isGrantRevoke = pathname.includes("/grants/revoke");
+        if (!isRuleRevoke && !isGrantRevoke) {
+          return Response.json({ error: "not found" }, { status: 404 });
+        }
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
         const principal = { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId };
-        const isRuleRevoke = new URL(req.url).pathname.includes("/rules/revoke");
         return isRuleRevoke
           ? revokeRuleRoute(req, { rules: s.rules, audit: s.audit, principal })
           : revokeGrantRoute(req, { grants: s.grants, audit: s.audit, principal });

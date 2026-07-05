@@ -229,6 +229,25 @@ describe("handleConsent — idempotency (review follow-up)", () => {
     expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
   });
 
+  it("REVIEW FOLLOW-UP: a transient 404 (approval part not found, e.g. the onSettled persistence race) is NEVER cached — a later retry for the SAME toolCallId succeeds once the part persists", async () => {
+    let persisted = false;
+    const getMessages = async () => (persisted ? threadWith({}) : []);
+    const d = { ...deps([]), getMessages, seen: createConsentLedger() };
+    const req = {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" as const },
+    };
+
+    const first = await handleConsent(d, scope, req);
+    expect(first.ok).toBe(false);
+    expect(first.ok === false && first.status).toBe(404);
+
+    persisted = true; // the fire-and-forget onSettled write finally lands
+    const second = await handleConsent(d, scope, req);
+    expect(second.ok).toBe(true); // NOT the cached 404 — it re-evaluated and found the part
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(2); // both attempts audited
+  });
+
   it("a duplicate POST never double-records a fade decision — the 3rd DISTINCT yes, not the duplicate, is what earns the offer", async () => {
     const messages = [
       { id: "m1", role: "assistant", parts: [

@@ -185,6 +185,11 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
  * tier "act": a reason means the judge/cautionBreaker/volumeBreaker escalated
  * this SPECIFIC call above its siblings — the "Hold on" ceremony (its own
  * card, the reason legible) must not be swallowed into a bulk "Approve all N".
+ * Review follow-up: an `unverified` item is exempt too, consistent with the
+ * critical/reason/undefined-tier exemptions above — `ApprovalBatchCard` has
+ * no unverified badge/copy, so silently dropping an unverified call into a
+ * bulk "Approve all N" would hide exactly the caveat its own individual
+ * `ApprovalCard` renders.
  */
 export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
   const out: RenderItem[] = [];
@@ -214,7 +219,10 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
       // PR #40 review — item C) is exempt too, however "act" its tier: the
       // judge/breaker specifically escalated THIS call — batching would lose
       // the "Hold on" treatment for exactly the call that most needs it.
-      if (item.tier !== "act" || item.reason !== undefined) {
+      // `unverified` (review follow-up) is exempt for the same reason:
+      // ApprovalBatchCard carries no unverified tag, so a batch would hide
+      // the caveat the solo ApprovalCard shows.
+      if (item.tier !== "act" || item.reason !== undefined || item.unverified) {
         out.push(item);
         continue;
       }
@@ -249,11 +257,10 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
       const toolName = groupKey.slice(groupKey.indexOf("::") + 2);
       const siblings = items.filter(
         (i): i is Extract<ThreadItem, { kind: "approval" }> =>
-          // tier === "act" && reason === undefined mirrors the skip above: a
-          // critical, undefined-tier, OR reasoned item that shares a
-          // message+tool with act siblings must not be pulled into their
-          // batch during promotion either.
-          i.kind === "approval" && i.tier === "act" && i.reason === undefined &&
+          // Mirrors the skip above: a critical, undefined-tier, reasoned, OR
+          // unverified item that shares a message+tool with act siblings
+          // must not be pulled into their batch during promotion either.
+          i.kind === "approval" && i.tier === "act" && i.reason === undefined && !i.unverified &&
           i.messageId === entry.messageId && i.toolName === toolName,
       );
       if (siblings.length > 1) {

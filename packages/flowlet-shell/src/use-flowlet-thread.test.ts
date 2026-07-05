@@ -277,6 +277,39 @@ describe("groupThreadItems — batching sibling approvals", () => {
   });
 });
 
+describe("groupThreadItems — batching excludes unverified act-tier calls", () => {
+  it("REVIEW FOLLOW-UP: two UNVERIFIED same-tool act-tier siblings never batch — ApprovalBatchCard has no unverified tag, so each renders its own individual card", () => {
+    const items = toThreadItems([
+      msg("m9", "assistant", [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c1", state: "approval-requested", input: {}, approval: { id: "ap1" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c2", state: "approval-requested", input: {}, approval: { id: "ap2" } },
+        { type: "data-consent", data: { toolCallId: "c1", tier: "act", unverified: true } },
+        { type: "data-consent", data: { toolCallId: "c2", tier: "act", unverified: true } },
+      ]),
+    ]);
+    const grouped = groupThreadItems(items);
+    expect(grouped.every((g) => g.kind !== "approval-batch")).toBe(true);
+    expect(grouped.filter((g) => g.kind === "approval")).toHaveLength(2);
+  });
+
+  it("REVIEW FOLLOW-UP: an unverified sibling sharing a message+tool with verified act siblings stays out of their batch", () => {
+    const items = toThreadItems([
+      msg("m10", "assistant", [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c1", state: "approval-requested", input: {}, approval: { id: "ap1" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c2", state: "approval-requested", input: {}, approval: { id: "ap2" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c3", state: "approval-requested", input: {}, approval: { id: "ap3" } },
+        { type: "data-consent", data: { toolCallId: "c1", tier: "act", unverified: false } },
+        { type: "data-consent", data: { toolCallId: "c2", tier: "act", unverified: false } },
+        { type: "data-consent", data: { toolCallId: "c3", tier: "act", unverified: true } },
+      ]),
+    ]);
+    const grouped = groupThreadItems(items);
+    const batch = grouped.find((g) => g.kind === "approval-batch") as { items: { approvalId: string }[] } | undefined;
+    expect(batch?.items.map((i) => i.approvalId)).toEqual(["ap1", "ap2"]);
+    expect(grouped.filter((g) => g.kind === "approval")).toHaveLength(1); // the unverified one, alone
+  });
+});
+
 describe("originatingPrompt", () => {
   it("finds the nearest preceding user text", () => {
     const items = [

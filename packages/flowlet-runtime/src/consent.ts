@@ -146,12 +146,20 @@ export async function handleConsent(
   // Every decision — accepted OR rejected past body validation — leaves one
   // consent audit event (the module docstring's "records EVERY decision"
   // contract covers the rejected outcomes too).
+  //
+  // Review follow-up: the ledger caches ONLY `ok: true` outcomes. A `404`
+  // ("no pending approval") is frequently the TRANSIENT onSettled-persistence
+  // race (see APPROVAL_LOOKUP_RETRIES above) rather than a real permanent
+  // miss — caching it would pin a retry-worthy failure forever, so a client
+  // retry after the part finally lands would keep getting the stale 404
+  // instead of succeeding. Every failure (400/403/404) therefore always
+  // re-evaluates from scratch; only a genuine success is idempotent.
   async function audited(result: HandleConsentResult): Promise<HandleConsentResult> {
     await deps.audit.append({
       at: clock(), principal, kind: "consent",
       consentId: req.response.id, decision: req.response.decision,
     });
-    if (ledgerKey !== undefined) deps.seen!.set(ledgerKey, result);
+    if (ledgerKey !== undefined && result.ok) deps.seen!.set(ledgerKey, result);
     return result;
   }
 

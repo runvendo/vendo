@@ -156,6 +156,28 @@ export function FlowletThread({
       }
     });
   };
+  // Batch consent posts settle in parallel; this surfaces the FIRST
+  // fadeEligible among them via the SAME fade-proposal state the single-card
+  // `approve()` path above uses (review follow-up — previously the batch
+  // paths fired the POSTs and threw away every response, so a fade proposal
+  // earned by (say) the 3rd "yes" inside a batch never rendered). "First" is
+  // array order (the batch's own toolCallId order), not resolution order —
+  // `Promise.all` preserves that regardless of which POST settles first.
+  const applyFirstFadeEligible = (
+    settled: { result: SendConsentResult | void; item: ReturnType<typeof findApproval> }[],
+  ) => {
+    for (const { result, item } of settled) {
+      if (result?.fadeEligible && item) {
+        setFadeProposal({
+          messageId: item.messageId,
+          toolName: item.toolName,
+          proposalId: result.fadeEligible.proposalId,
+          count: result.fadeEligible.count,
+        });
+        return;
+      }
+    }
+  };
   const resolveFade = (accept: boolean) => {
     if (!fadeProposal) return;
     const { proposalId } = fadeProposal;
@@ -180,12 +202,15 @@ export function FlowletThread({
   // which never waited on them either).
   const approveBatch = (approvalIds: string[], toolCallIds: string[]) => {
     approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
-    toolCallIds.forEach((id) =>
-      void postConsent(
-        { id, decision: "yes", subset: toolCallIds },
-        findApprovalByCall(id)?.toolName ?? "",
-      ),
-    );
+    // Review follow-up: inspect the settled responses (instead of discarding
+    // them) so a fadeEligible earned inside the batch can still surface.
+    const posts = toolCallIds.map((id) => {
+      const item = findApprovalByCall(id);
+      return postConsent({ id, decision: "yes", subset: toolCallIds }, item?.toolName ?? "").then(
+        (result) => ({ result, item }),
+      );
+    });
+    void Promise.all(posts).then(applyFirstFadeEligible);
   };
   const approveSubset = (
     approvalIds: string[], toolCallIds: string[], allApprovalIds: string[], allToolCallIds: string[],
@@ -198,18 +223,23 @@ export function FlowletThread({
       .filter((id): id is string => !!id);
     approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
     declinedApprovalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: false }));
-    toolCallIds.forEach((id) =>
-      void postConsent(
-        { id, decision: "subset", subset: allToolCallIds },
-        findApprovalByCall(id)?.toolName ?? "",
-      ),
-    );
+    // Review follow-up: same as approveBatch — inspect the accepted subset's
+    // settled responses for a fadeEligible instead of discarding them. The
+    // declined siblings post "no" (never fade-eligible — consent.ts only
+    // offers on a "yes" signal), so only the accepted ids need collecting.
+    const posts = toolCallIds.map((id) => {
+      const item = findApprovalByCall(id);
+      return postConsent({ id, decision: "subset", subset: allToolCallIds }, item?.toolName ?? "").then(
+        (result) => ({ result, item }),
+      );
+    });
     declinedToolCallIds.forEach((id) =>
       void postConsent(
         { id, decision: "no", subset: allToolCallIds },
         findApprovalByCall(id)?.toolName ?? "",
       ),
     );
+    void Promise.all(posts).then(applyFirstFadeEligible);
   };
   const declineBatch = (approvalIds: string[]) => {
     approvalIds.forEach((approvalId) => {

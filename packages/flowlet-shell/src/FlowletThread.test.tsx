@@ -4,12 +4,42 @@ import type { ConsentResponse } from "@flowlet/core";
 import { createStubAgent } from "@flowlet/core/testing";
 import { z } from "zod";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider } from "./context";
+import { FlowletShellProvider, type SendConsentResult } from "./context";
 import { FlowletThread } from "./FlowletThread";
+import type { ThreadItem } from "./use-flowlet-thread";
 
 function DemoCard({ title }: { title: string }) {
   return <div data-testid="demo-card">{title}</div>;
 }
+
+// Batch-consent tests below drive FlowletThread's internal approveBatch/
+// approveSubset closures WITHOUT a full scripted-agent turn (createStubAgent
+// only ever emits one approval at a time) — `useFlowletThread` is mocked so
+// the test controls `items`/`addToolApprovalResponse` directly, while
+// `groupThreadItems` (the real implementation, re-exported below) still does
+// the actual sibling-batching MessageList relies on.
+const { chatRef } = vi.hoisted(() => ({
+  chatRef: { current: null as unknown as {
+    items: ThreadItem[];
+    status: string;
+    error?: unknown;
+    addToolApprovalResponse: (r: { id: string; approved: boolean }) => void;
+    sendMessage: (...args: unknown[]) => void;
+    regenerate: (...args: unknown[]) => void;
+    stop: () => void;
+    clearError: () => void;
+  } | null },
+}));
+vi.mock("./use-flowlet-thread", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./use-flowlet-thread")>();
+  return {
+    ...actual,
+    // Every OTHER describe block in this file drives a real createStubAgent
+    // turn through the real useFlowletThread (chatRef.current stays null for
+    // those) — only the batch-consent tests below opt in by setting it.
+    useFlowletThread: () => chatRef.current ?? (actual as { useFlowletThread: () => unknown }).useFlowletThread(),
+  };
+});
 
 describe("FlowletThread composer placement", () => {
   const mount = (heroComposer: boolean) =>
@@ -119,5 +149,73 @@ describe("FlowletThread consent channel", () => {
     });
     expect(screen.getByTestId("demo-card")).toBeTruthy();
     vi.useRealTimers();
+  });
+});
+
+describe("FlowletThread batch consent — fade proposal surfacing (review follow-up)", () => {
+  function batchItems(): ThreadItem[] {
+    return [
+      // MessageList only mounts FadeProposalCard beside an "activity" render
+      // unit (grouped from "tool" items) for the matching messageId — a
+      // settled, DIFFERENT-tool call in the same turn gives the fade proposal
+      // somewhere to render, same as it would beside whatever else the turn
+      // already did before offering to stop asking about this batch's tool.
+      { kind: "tool", key: "m1:x", messageId: "m1", toolName: "OTHER_TOOL", state: "output-available" },
+      { kind: "approval", key: "m1:0", messageId: "m1", approvalId: "ap1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL", input: {}, tier: "act" },
+      { kind: "approval", key: "m1:1", messageId: "m1", approvalId: "ap2", toolCallId: "call-2", toolName: "GMAIL_SEND_EMAIL", input: {}, tier: "act" },
+    ];
+  }
+
+  const mountBatch = (sendConsent: (response: ConsentResponse) => Promise<SendConsentResult | void>) => {
+    chatRef.current = {
+      items: batchItems(),
+      status: "ready",
+      addToolApprovalResponse: vi.fn(),
+      sendMessage: vi.fn(),
+      regenerate: vi.fn(),
+      stop: vi.fn(),
+      clearError: vi.fn(),
+    };
+    return render(
+      <FlowletShellProvider sendConsent={sendConsent}>
+        <FlowletThread />
+      </FlowletShellProvider>,
+    );
+  };
+
+  it("REVIEW FOLLOW-UP: approveBatch surfaces the fadeEligible earned by ONE of the batch's consent responses — previously discarded entirely", async () => {
+    // call-1's response carries no fadeEligible; call-2's does (the 3rd yes
+    // inside this batch, say) — before the fix, approveBatch fired both
+    // POSTs and threw away every result, so this never rendered.
+    const sendConsent = vi.fn((response: ConsentResponse) =>
+      response.id === "call-2"
+        ? Promise.resolve({ fadeEligible: { shape: { kind: "tool" as const }, proposalId: "prop-1", count: 3 } })
+        : Promise.resolve(undefined),
+    );
+    mountBatch(sendConsent);
+
+    fireEvent.click(await screen.findByText("Approve all 2"));
+
+    await waitFor(() => expect(sendConsent).toHaveBeenCalledTimes(2));
+    await screen.findByRole("group", { name: "Handle this without asking?" });
+    expect(screen.getByText(/That's the third time you've okayed/)).toBeTruthy();
+  });
+
+  it("REVIEW FOLLOW-UP: approveSubset surfaces a fadeEligible from the accepted subset the same way", async () => {
+    const sendConsent = vi.fn((response: ConsentResponse) =>
+      response.id === "call-2" && response.decision === "subset"
+        ? Promise.resolve({ fadeEligible: { shape: { kind: "tool" as const }, proposalId: "prop-2", count: 4 } })
+        : Promise.resolve(undefined),
+    );
+    mountBatch(sendConsent);
+
+    fireEvent.click(await screen.findByText("Pick which…"));
+    // Both are checked by default (untouched state) — "Approve selected"
+    // approves the full subset, exercising approveSubset's accepted path.
+    fireEvent.click(screen.getByText("Approve selected"));
+
+    await waitFor(() => expect(sendConsent).toHaveBeenCalledTimes(2));
+    await screen.findByRole("group", { name: "Handle this without asking?" });
+    expect(screen.getByText(/4th time you've okayed/)).toBeTruthy();
   });
 });

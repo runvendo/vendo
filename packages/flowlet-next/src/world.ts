@@ -51,6 +51,17 @@ export interface FlowletAutomationsWorld {
   authoringTools(threadId?: string): ToolSet;
   /** Drive due schedules — the client pings POST /tick (no server timers). */
   tick(): Promise<void>;
+  /**
+   * The world's OWN fixed scope (= this config's `scope`), exposed so
+   * callers that must read/write the world's store agree with where
+   * `authoringTools`/the runner actually park and create rows — same
+   * SINGLE-TENANT simplification this module's docstring already declares.
+   * Review follow-up (parked-actions.ts): the per-request principal a
+   * multi-user mount resolves is NOT this scope, and parked rows always live
+   * under THIS one — routes must key off `world.scope`, never re-derive a
+   * scope from whatever principal the request happened to resolve.
+   */
+  scope: Principal;
 }
 
 export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutomationsWorld {
@@ -71,6 +82,7 @@ export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutoma
     store,
     scheduler,
     runner,
+    scope: config.scope,
     authoringTools: (threadId?: string) =>
       createAutomationTools({
         store,
