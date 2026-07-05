@@ -1,0 +1,18 @@
+---
+title: "Voice"
+description: "Realtime voice sessions over the same tools and views"
+---
+
+Voice is implemented in `@vendoai/shell` as a `VoiceDriver` seam plus the `VoiceStage` UI. A voice session can call the same kind of tools as chat, render views into the stage, and land its transcript and generated views back into the thread when the session closes.
+
+Set `OPENAI_API_KEY` on your server to make the handler report `voice: true` from `GET /api/vendo/capabilities`.
+
+<Warning>
+  The default `VendoRoot` does not auto-wire a realtime voice driver yet. The stage package, `@vendoai/stage`, is the generated-UI sandbox and action bridge, not the voice runtime. To ship voice today, wire a `VoiceDriver` into `VendoThread` or `VendoSlot`.
+</Warning>
+
+`@vendoai/shell` exports `createRealtimeVoiceDriver`. It expects a `getSession()` function that returns an ephemeral Realtime client secret. Keep your raw `OPENAI_API_KEY` on the server. The browser receives only the ephemeral secret.
+
+Voice approvals follow the same tier model as chat. Read tools run directly. Act tools show a consent bar and can be approved by voice or by tapping. Critical tools require on-screen confirmation.
+
+Voice sessions can receive a compact thread brief, visible views, recent tool results, and saved views. If you pass saved views into `VendoThread`, the session also gets an `open_saved_vendo` tool so a customer can ask for a saved view by name.
