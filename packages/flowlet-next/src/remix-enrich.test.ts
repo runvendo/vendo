@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { FlowletUIMessage, RemixSourceRecord } from "@flowlet/core";
-import { createSourceResolver, enrichAnchorSources, SOURCE_CAP_BYTES } from "./remix-enrich";
+import { createRemixSealer, deriveSealKey } from "@flowlet/runtime";
+import {
+  applyVerifiedPinBase,
+  createSourceResolver,
+  enrichAnchorSources,
+  SOURCE_CAP_BYTES,
+} from "./remix-enrich";
 
 const record = (over: Partial<RemixSourceRecord> = {}): RemixSourceRecord => ({
   file: "src/components/dashboard/deadline-list.tsx",
@@ -129,6 +135,41 @@ describe("enrichAnchorSources", () => {
     const enriched = enrichAnchorSources([older, last], () => undefined);
     expect(enriched[0]!.metadata?.anchors?.scoped?.envelope).toBeUndefined();
     expect(enriched[1]!.metadata?.anchors?.scoped?.envelope).toBe("sealed-current");
+  });
+
+  it("verified envelope becomes pinBase; invalid/foreign envelopes vanish", () => {
+    const sealer = createRemixSealer(deriveSealKey({ secret: "s" })!);
+    const payload = {
+      formatVersion: "flowlet-genui/v1" as const,
+      root: "root",
+      nodes: [{ id: "root", component: "C", source: "generated" as const }],
+      components: { C: "export default function C(){return null}" },
+    };
+    const sealed = sealer.mint({
+      anchorId: "upcoming-deadlines",
+      principalUserId: "user-1",
+      payload,
+      sources: payload.components,
+      sourceHash: "sh",
+      baseHash: "bh",
+      issuedAt: "2026-07-04T00:00:00.000Z",
+    });
+
+    const [ok] = applyVerifiedPinBase([scopedMessage({ envelope: sealed })], sealer, "user-1");
+    expect(ok!.metadata?.anchors?.scoped?.envelope).toBeUndefined();
+    expect(ok!.metadata?.anchors?.scoped?.pinBase?.baseHash).toBe("bh");
+
+    const [wrongUser] = applyVerifiedPinBase([scopedMessage({ envelope: sealed })], sealer, "user-2");
+    expect(wrongUser!.metadata?.anchors?.scoped?.pinBase).toBeUndefined();
+    expect(wrongUser!.metadata?.anchors?.scoped?.envelope).toBeUndefined();
+
+    const [garbage] = applyVerifiedPinBase([scopedMessage({ envelope: "junk" })], sealer, "user-1");
+    expect(garbage!.metadata?.anchors?.scoped?.pinBase).toBeUndefined();
+
+    // No sealer configured → envelope still never reaches the engine.
+    const [noSealer] = applyVerifiedPinBase([scopedMessage({ envelope: sealed })], undefined, "user-1");
+    expect(noSealer!.metadata?.anchors?.scoped?.envelope).toBeUndefined();
+    expect(noSealer!.metadata?.anchors?.scoped?.pinBase).toBeUndefined();
   });
 
   it("strips even when no server source exists; leaves unscoped messages alone", () => {

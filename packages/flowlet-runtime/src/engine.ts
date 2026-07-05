@@ -26,6 +26,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import { jsonRepairMiddleware } from "./json-repair";
+import type { RemixSealer } from "./remix/envelope";
 import type {
   AnchorContextBlock,
   EnvImportStatus,
@@ -220,6 +221,10 @@ export interface FlowletAgentConfig {
   policy: ApprovalPolicy;
   /** Default system prompt; a grounded default is used when omitted. */
   instructions?: string;
+  /** Envelope sealer (remix fast-edits): enables `edit_view`'s pin base and
+   *  envelope minting on remix-tagged results. Absent → anchor-base editing
+   *  still works when a baseline exists; results ship without envelopes. */
+  remixSealer?: RemixSealer;
   /** Sandbox environment manifest (flowlet sync). When the scoped anchor has
    *  an entry, the prompt lists exactly which imports are real/shimmed/absent
    *  and drops the bare-sandbox restyling warning. */

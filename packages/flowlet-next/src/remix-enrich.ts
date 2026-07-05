@@ -19,6 +19,7 @@ import type {
   RemixSourceResolver,
   ResolvedRemixSource,
 } from "@flowlet/core";
+import type { RemixSealer } from "@flowlet/runtime";
 
 /** Same cap as capture; the engine also caps as last defense. */
 export const SOURCE_CAP_BYTES = 48 * 1024;
@@ -94,6 +95,37 @@ export function createSourceResolver(config: SourceResolverConfig): RemixSourceR
  * one the chat handler verifies), then enrich the last user message's scoped
  * anchor from the resolver. Pure; returns a new array (originals untouched).
  */
+/**
+ * Convert the last user message's client-supplied `scoped.envelope` into a
+ * server-verified `scoped.pinBase` (remix fast-edits spec). The opaque
+ * envelope NEVER reaches the engine: verified → replaced by the pin base;
+ * invalid/foreign/absent → silently dropped (degrade, never escalate). Runs
+ * AFTER `enrichAnchorSources` (which already confines the envelope to the
+ * last user message). Pure; returns a new array.
+ */
+export function applyVerifiedPinBase(
+  messages: FlowletUIMessage[],
+  sealer: RemixSealer | undefined,
+  principalUserId: string,
+): FlowletUIMessage[] {
+  return messages.map((message) => {
+    const scoped = message.metadata?.anchors?.scoped;
+    if (!scoped || scoped.envelope === undefined) return message;
+    const { envelope, ...rest } = scoped;
+    const pinBase = sealer?.verify(envelope, { anchorId: rest.anchorId, principalUserId }) ?? null;
+    return {
+      ...message,
+      metadata: {
+        ...message.metadata,
+        anchors: {
+          ...message.metadata!.anchors,
+          scoped: { ...rest, ...(pinBase !== null ? { pinBase } : {}) },
+        },
+      },
+    };
+  });
+}
+
 export function enrichAnchorSources(
   messages: FlowletUIMessage[],
   resolve: RemixSourceResolver,

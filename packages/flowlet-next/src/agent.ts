@@ -25,6 +25,7 @@ import {
   componentPromptCatalog,
 } from "@flowlet/components/descriptors";
 import { buildAutomationInstructions } from "@flowlet/runtime";
+import type { RemixSealer } from "@flowlet/runtime";
 import type { IntegrationCatalogEntry } from "./options";
 
 export interface BuildInstructionsInput {
@@ -189,6 +190,9 @@ export interface AgentFactoryConfig {
   maxSteps?: number;
   /** Sandbox environment manifest (flowlet sync) → engine prompt precision. */
   envManifest?: EnvManifest;
+  /** Envelope sealer (remix fast-edits): enables edit_view pin bases and
+   *  envelope minting on remix-tagged results. */
+  remixSealer?: RemixSealer;
 }
 
 /**
@@ -218,6 +222,7 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         ...(config.tools ? { tools: config.tools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
         ...(config.envManifest ? { envManifest: config.envManifest } : {}),
+        ...(config.remixSealer ? { remixSealer: config.remixSealer } : {}),
         components: config.components,
       });
       agents.set(key, agent);

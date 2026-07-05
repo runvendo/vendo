@@ -37,6 +37,7 @@ import { resolveMcpServers } from "./mcp-config";
 import { manifestToolsToHostTools } from "./manifest-tools";
 import { buildInstructions, createAgentCache } from "./agent";
 import { createSourceResolver } from "./remix-enrich";
+import { resolveRemixSealer } from "./seal";
 import { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld } from "./world";
 import { defaultFlowletPolicy } from "./default-policy";
 import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
@@ -111,6 +112,13 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       captured: loaded.remixSources,
     });
 
+    // Pin-envelope sealing (remix fast-edits). No key material → pin editing
+    // degrades to the anchor baseline; everything else is unaffected.
+    const remixSealer = resolveRemixSealer({
+      sealSecret: options.sealSecret,
+      hasInjectedModel: options.model !== undefined,
+    });
+
     const getAgent = createAgentCache({
       model,
       policy,
@@ -124,6 +132,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       ...(mcpServers.length > 0 ? { mcpServers } : {}),
       ...(options.cacheKey ? { cacheKey: options.cacheKey } : {}),
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+      ...(remixSealer ? { remixSealer } : {}),
     });
 
     return {
@@ -136,6 +145,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       serverTools,
       getAgent,
       resolveRemixSource,
+      remixSealer,
       approvals: createApprovalStore(),
     };
   }
@@ -185,6 +195,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           hostTools: s.hostTools,
           options,
           resolveRemixSource: s.resolveRemixSource,
+          ...(s.remixSealer ? { remixSealer: s.remixSealer } : {}),
           // A host that injects its own `model` owns the key; otherwise chat
           // needs ANTHROPIC_API_KEY (capabilities.chat).
           chatEnabled: options.model !== undefined || s.capabilities.chat,
