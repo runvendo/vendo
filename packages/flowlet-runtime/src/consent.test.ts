@@ -242,6 +242,29 @@ describe("handleConsent", () => {
     }
   });
 
+  it("Greptile P1 (over-relaxation): an AUTO-ALLOWED part (terminal state, no `approval` metadata — never showed a card) 404s with an explicit grant draft, and mints NO grant", async () => {
+    const d = deps(threadWith({ state: "output-available", output: "sent", approval: undefined }));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "standing" } },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(404);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+  });
+
+  it("Greptile P1 (over-relaxation): an AUTO-ALLOWED part also 404s a plain 'yes' — no implicit session-scoped mint either", async () => {
+    const d = deps(threadWith({ state: "output-available", output: "sent", approval: undefined }));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(404);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+  });
+
   it("FINDING 5: STILL 404s when the part is truly absent from the thread", async () => {
     const d = deps([]);
     const result = await handleConsent(d, scope, {

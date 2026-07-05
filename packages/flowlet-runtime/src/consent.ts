@@ -117,30 +117,45 @@ export type HandleConsentResult =
   | { ok: false; status: 400 | 403 | 404; error: string };
 
 /** Structural view of the ai SDK tool-part shape this reads — matches
- *  `engine.ts`'s own `normalizeHistory` scanning, just keyed by toolCallId. */
+ *  `engine.ts`'s own `normalizeHistory` scanning, just keyed by toolCallId.
+ *  `approval` mirrors `engine.ts`'s `ClientResultPart.approval` (ai@6.0.28's
+ *  `UIToolInvocation` shape): present ONLY when the call actually went
+ *  through the SDK's native approval round-trip — a call the SDK
+ *  auto-allowed carries no `approval` field at all, on ANY state, terminal
+ *  or not. That's the exact fact this file's evidence check below relies on. */
 interface ApprovalPart {
   type: string;
   toolCallId?: string;
   state?: string;
   input?: unknown;
+  approval?: { id: string; approved?: boolean; reason?: string };
 }
 
 /**
- * Finding 5: match on toolCallId alone, in ANY state. Previously restricted
- * to `approval-requested`/`approval-responded` — but now that the shell
- * resumes the SDK approval immediately (optimistic client-side continuation),
- * a fast client tool can reach a TERMINAL state (`output-available`,
- * `output-denied`) before this consent POST's `getMessages` read observes the
- * thread, and the old filter 404'd a real, valid consent — losing the
- * consent/fade/grant entirely. The part's existence + the caller-checked tool
- * name match (below) IS the validation; there is nothing more a state
- * restriction protected here. KNOCK-ON (replay): this does NOT reopen a
- * replay concern — `handleConsent`'s idempotency ledger (`deps.seen`) caches
- * ONLY `ok: true` outcomes and short-circuits BEFORE this lookup even runs
- * (see the ledger check above), so a repeated POST for a toolCallId that
- * already succeeded once returns the cached result and never re-reaches
- * `findApprovalPart` at all — accepting terminal states here doesn't change
- * that dedupe.
+ * Finding 5 (as fixed post-Greptile-P1): match on toolCallId, but ONLY on a
+ * part that carries APPROVAL EVIDENCE — never a bare state match. Two shapes
+ * qualify: (1) `approval-requested`/`approval-responded` — the card is either
+ * pending or was just answered; (2) a TERMINAL state (`output-available`,
+ * `output-denied`, `output-error`) whose part STILL carries its `approval`
+ * field — the SDK stamps that field on a part only when it went through the
+ * native approval round-trip (`engine.ts`'s `ClientResultPart` doc), and it
+ * survives the state transition to terminal (that's what let Finding 5's
+ * original fast-approval race — the shell resuming the SDK approval before
+ * this POST's `getMessages` read observes the persisted terminal state —
+ * still validate). A terminal part with NO `approval` field was AUTO-ALLOWED
+ * (no card ever shown, no human in the loop) and must NOT anchor a grant of
+ * any kind: Greptile P1 — the original "ANY state" relaxation dropped this
+ * distinction entirely, so an ordinary auto-allowed execution could satisfy a
+ * same-origin consent POST for its toolCallId and mint a standing (explicit
+ * draft) or implicit session-exact grant with no approval ever having been
+ * presented, violating the server-validation contract that every grant
+ * traces to an approval the user actually saw. KNOCK-ON (replay): this does
+ * NOT reopen a replay concern — `handleConsent`'s idempotency ledger
+ * (`deps.seen`) caches ONLY `ok: true` outcomes and short-circuits BEFORE
+ * this lookup even runs (see the ledger check above), so a repeated POST for
+ * a toolCallId that already succeeded once returns the cached result and
+ * never re-reaches `findApprovalPart` at all — this evidence check doesn't
+ * change that dedupe.
  */
 function findApprovalPart(
   messages: FlowletUIMessage[],
@@ -149,12 +164,19 @@ function findApprovalPart(
   for (const message of messages) {
     for (const rawPart of message.parts) {
       const part = rawPart as ApprovalPart;
-      if (part.type.startsWith("tool-") && part.toolCallId === toolCallId) {
+      if (part.type.startsWith("tool-") && part.toolCallId === toolCallId && hasApprovalEvidence(part)) {
         return part;
       }
     }
   }
   return undefined;
+}
+
+const TERMINAL_STATES = new Set(["output-available", "output-denied", "output-error"]);
+
+function hasApprovalEvidence(part: ApprovalPart): boolean {
+  if (part.state === "approval-requested" || part.state === "approval-responded") return true;
+  return part.state !== undefined && TERMINAL_STATES.has(part.state) && part.approval !== undefined;
 }
 
 export async function handleConsent(
