@@ -42,18 +42,18 @@
     }
   },
   "vendorSizes": {
-    "lucide-react": 1195660,
-    "next/link": 1047,
-    "swr": 581,
-    "@/components/ui/badge": 100665,
-    "@/components/ui/card": 100372,
-    "@/components/ui/empty-state": 100731,
-    "@/components/ui/error-state": 101317,
-    "@/components/ui/progress": 100526,
-    "@/components/ui/skeleton": 100008,
-    "@/lib/api": 583,
-    "@/lib/cn": 99762,
-    "@/lib/format": 1348
+    "lucide-react": 1185124,
+    "next/link": 1029,
+    "swr": 575,
+    "@/components/ui/badge": 100695,
+    "@/components/ui/card": 100402,
+    "@/components/ui/empty-state": 100761,
+    "@/components/ui/error-state": 101389,
+    "@/components/ui/progress": 100556,
+    "@/components/ui/skeleton": 100038,
+    "@/lib/api": 604,
+    "@/lib/cn": 99771,
+    "@/lib/format": 1369
   },
   "styles": {
     "css": true,

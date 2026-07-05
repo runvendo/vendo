@@ -1,4 +1,4 @@
-// src/lib/api.ts
+// apps/demo-accounting/src/lib/api.ts
 var ApiError = class extends Error {
   constructor(message, status) {
     super(message);

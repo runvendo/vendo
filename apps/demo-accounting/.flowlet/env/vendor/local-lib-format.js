@@ -1,4 +1,4 @@
-// src/lib/format.ts
+// apps/demo-accounting/src/lib/format.ts
 var MINUTE = 6e4;
 var HOUR = 60 * MINUTE;
 var DAY = 24 * HOUR;

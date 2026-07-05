@@ -1,4 +1,4 @@
-// ../../node_modules/.pnpm/@tailwindcss+browser@4.3.2/node_modules/@tailwindcss/browser/dist/index.global.js
+// node_modules/.pnpm/@tailwindcss+browser@4.3.2/node_modules/@tailwindcss/browser/dist/index.global.js
 (() => {
   var nr = "4.3.2";
   function Ze(e) {
