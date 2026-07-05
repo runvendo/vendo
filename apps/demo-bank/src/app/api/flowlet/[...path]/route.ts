@@ -27,6 +27,8 @@ import {
   connect,
   disconnect,
   connectedToolkits,
+  setConnectedAccount,
+  findByConnectedAccount,
 } from "@/flowlet/connections-store";
 import { mapleHostToolDefs } from "@/flowlet/host-tools";
 import { mapleHostComponents } from "@/flowlet/host-components/descriptors";
@@ -59,6 +61,8 @@ const demoConnections: ConnectionsStore = {
   connect,
   disconnect,
   connectedToolkits,
+  setConnectedAccount,
+  findByConnectedAccount,
 };
 
 export const { GET, POST } = createFlowletHandler({
