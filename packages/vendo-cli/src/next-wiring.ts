@@ -59,6 +59,8 @@ export const VENDO_TRANSPILE_PACKAGES = [
 ] as const;
 
 const NEXT_SERVER_EXTERNAL_PACKAGES = ["@electric-sql/pglite"] as const;
+const PGLITE_DEPENDENCY = "@electric-sql/pglite";
+const PGLITE_VERSION = "^0.2.0";
 
 /** Locate the App Router directory (`app/` or `src/app/`) with a root layout. */
 export async function findAppDir(
@@ -829,23 +831,27 @@ export async function wireNextApp(
     summary.written.push(rel(dest));
   }
 
-  // 8. package.json: @vendoai/next dependency + prebuild sync wiring.
+  // 8. package.json: @vendoai/next + PGlite dependencies + prebuild sync
+  // wiring. PGlite is also server-externalized in next.config, but pnpm's
+  // strict node_modules still requires it to be resolvable from the app root.
   if (pkgRaw) {
     const withDep = addDependency(pkgRaw, "@vendoai/next", "latest");
     if (withDep === null) {
-      summary.skipped.push({ step: "package.json", reason: "unparsable — add @vendoai/next yourself" });
+      summary.skipped.push({ step: "package.json", reason: "unparsable — add @vendoai/next and @electric-sql/pglite yourself" });
       summary.manual.push('add "@vendoai/next" to package.json dependencies and install');
+      summary.manual.push('add "@electric-sql/pglite" to package.json dependencies and install');
       summary.manual.push('add "vendo sync" to your package.json "prebuild" script');
     } else {
-      const withSync = addPrebuildSync(withDep) ?? withDep;
+      const withPglite = addDependency(withDep, PGLITE_DEPENDENCY, PGLITE_VERSION) ?? withDep;
+      const withSync = addPrebuildSync(withPglite) ?? withPglite;
       if (withSync !== pkgRaw) {
         await fs.writeFile(path.join(targetDir, "package.json"), withSync);
         summary.edited.push("package.json");
-        if (withDep !== pkgRaw) {
-          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @vendoai/next");
+        if (withPglite !== pkgRaw) {
+          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @vendoai/next and @electric-sql/pglite");
         }
       } else {
-        summary.skipped.push({ step: "package.json", reason: "@vendoai/next + prebuild sync already present" });
+        summary.skipped.push({ step: "package.json", reason: "@vendoai/next + @electric-sql/pglite + prebuild sync already present" });
       }
     }
   }

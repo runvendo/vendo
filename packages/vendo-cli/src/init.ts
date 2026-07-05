@@ -39,7 +39,7 @@ function noopTelemetry(): Telemetry {
 function initRunTelemetry(opts: InitOptions): Telemetry {
   try {
     return initTelemetry({
-      version: "0.0.0",
+      version: "0.1.0",
       runtime: false,
       home: opts.telemetry?.home,
       posthogKey: opts.telemetry?.posthogKey ?? process.env.VENDO_POSTHOG_KEY,
@@ -114,6 +114,10 @@ registry ships (ENG-198). Embedded hosts read this directory from disk.
 `;
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function runInit(opts: InitOptions): Promise<number> {
   const startedAt = Date.now();
   const targetDir = path.resolve(opts.targetDir);
@@ -136,20 +140,55 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return 1;
   }
 
-  const report: InitReport = { info, theme: null, tools: null, components: null, llmSkipped: model === null };
+  const report: InitReport = {
+    info,
+    theme: null,
+    tools: null,
+    components: null,
+    llmSkipped: model === null,
+    llmSkippedReason: model === null
+      ? (opts.skipLlm ? "--skip-llm" : "no ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY")
+      : undefined,
+  };
   let failedStep: InitFailedStep = "theme";
   try {
     failedStep = "theme";
     report.theme = await extractTheme(targetDir, info, opts);
     failedStep = "tools";
-    report.tools = await extractTools(targetDir, info, model, opts);
+    try {
+      report.tools = await extractTools(targetDir, info, model, opts);
+    } catch (err) {
+      // LLM route scanning is optional. If the provider rejects, warns via an
+      // exception, or otherwise fails, keep the deterministic init path moving
+      // so Next wiring still happens and the developer gets a reviewable diff.
+      // Deterministic OpenAPI conversion errors still fail init normally.
+      if (!model || info.openapiPath) throw err;
+      const message = errorMessage(err);
+      console.error(`LLM-assisted route scan failed; continuing without LLM: ${message}`);
+      model = null;
+      report.llmSkipped = true;
+      report.llmSkippedReason = "LLM-assisted route scan failed; continuing without LLM";
+      report.tools = await extractTools(targetDir, info, null, opts);
+      report.tools.errors.unshift(`LLM-assisted route scan failed (${message}) — continuing without LLM`);
+    }
     if (model) {
       failedStep = "components";
-      report.components = await extractComponents(targetDir, model, opts);
+      try {
+        report.components = await extractComponents(targetDir, model, opts);
+      } catch (err) {
+        const message = errorMessage(err);
+        console.error(`LLM-assisted component discovery failed; continuing without generated components: ${message}`);
+        report.components = {
+          candidates: 0,
+          written: [],
+          excluded: [],
+          failed: [{ file: "(component discovery)", error: message }],
+        };
+      }
     }
     await writeGenerated(path.join(targetDir, ".vendo/README.md"), readmeSource(report), opts);
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(errorMessage(err));
     await t.track("init_failed", { framework, failedStep });
     return 1;
   }

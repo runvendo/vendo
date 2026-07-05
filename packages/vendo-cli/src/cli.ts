@@ -81,7 +81,7 @@ export async function main(argv: string[]): Promise<number> {
     case "telemetry":
       return runTelemetryCmd(rest.find((a) => !a.startsWith("--")), { log: (m) => console.log(m) });
     case "--version":
-      console.log("0.0.0");
+      console.log("0.1.0");
       return 0;
     default:
       console.log(HELP);
