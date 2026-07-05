@@ -397,4 +397,39 @@ describe("host-relative path enforcement (frozen manifest contract)", () => {
     await expect(executeHostToolCall(forged, {}, { fetchImpl })).rejects.toThrow(/host-relative/);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  // Browsers normalize "\" to "/" while parsing URLs, so a backslash path
+  // that passes a forward-slash-only check still becomes a protocol-relative
+  // cross-origin URL — and executeHostToolCall sends the user's cookies.
+  const BACKSLASH_VECTORS = [
+    "/\\evil.com",
+    "/\\\\evil.com",
+    "\\\\evil.com",
+    "https:/\\evil.com",
+  ];
+
+  it("rejects spec paths with backslash cross-origin bypasses", () => {
+    for (const badPath of BACKSLASH_VECTORS) {
+      const forgedSpec = {
+        openapi: "3.1.0",
+        info: { title: "t", version: "1" },
+        paths: { [badPath]: { get: { operationId: "bad" } } },
+      };
+      expect(() => openApiToHostTools(forgedSpec), badPath).toThrow(/host-relative/);
+    }
+  });
+
+  it("refuses to execute a definition whose path parses off-origin via backslashes", async () => {
+    for (const badPath of BACKSLASH_VECTORS) {
+      const fetchImpl = vi.fn();
+      const forged: HostToolDefinition = {
+        ...byName(openApiToHostTools(spec), "listAccounts"),
+        http: { method: "get", path: badPath, params: [], hasBody: false },
+      };
+      await expect(executeHostToolCall(forged, {}, { fetchImpl }), badPath).rejects.toThrow(
+        /host-relative/,
+      );
+      expect(fetchImpl, badPath).not.toHaveBeenCalled();
+    }
+  });
 });

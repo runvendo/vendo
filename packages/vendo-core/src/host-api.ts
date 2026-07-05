@@ -54,12 +54,29 @@ export interface HostToolDefinition {
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const;
 
 /**
- * Host-relative path guard, identical to the frozen manifest contract
- * (`httpBindingSchema` in `manifest/tool.ts`): a single leading `/`, no
- * `//authority`, no whitespace — a spec or manifest path can never point the
- * client executor at a foreign origin.
+ * Host-relative path guard: a single leading `/`, no `//authority`, no
+ * whitespace — a spec or manifest path can never point the client executor at
+ * a foreign origin.
+ *
+ * The regex alone is NOT enough: browsers normalize `\` to `/` while parsing
+ * URLs, so a path like `/\evil.com` (which the regex accepts — `\` is not
+ * whitespace) becomes protocol-relative `//evil.com`, and the credentialed
+ * fetch below would ship the user's cookies cross-origin. So we reject any
+ * backslash outright AND re-parse against a sentinel origin, confirming the
+ * result stays on it — fail closed on anything that normalizes off-origin.
  */
-const HOST_RELATIVE_PATH = /^\/(?!\/)\S*$/;
+const HOST_RELATIVE_PATH_RE = /^\/(?!\/)\S*$/;
+const SENTINEL_ORIGIN = "https://vendo.invalid";
+
+function isHostRelativePath(path: string): boolean {
+  if (typeof path !== "string" || path.includes("\\")) return false;
+  if (!HOST_RELATIVE_PATH_RE.test(path)) return false;
+  try {
+    return new URL(path, SENTINEL_ORIGIN).origin === SENTINEL_ORIGIN;
+  } catch {
+    return false;
+  }
+}
 
 /** Loose structural view of the OpenAPI bits the adapter reads. */
 interface OpenApiParameter {
@@ -127,7 +144,7 @@ function annotationsFor(method: string, op: OpenApiOperation): HostToolAnnotatio
 export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
   const defs: HostToolDefinition[] = [];
   for (const [path, rawItem] of Object.entries(spec.paths ?? {})) {
-    if (!HOST_RELATIVE_PATH.test(path)) {
+    if (!isHostRelativePath(path)) {
       throw new Error(
         `host tool path "${path}" must be host-relative (single leading "/", no authority, no whitespace)`,
       );
@@ -227,7 +244,7 @@ export async function executeHostToolCall(
 
   // Same guard as the adapter and the frozen manifest contract — enforced at
   // execution too, because definitions can arrive from outside the adapter.
-  if (!HOST_RELATIVE_PATH.test(def.http.path)) {
+  if (!isHostRelativePath(def.http.path)) {
     throw new Error(
       `host tool "${def.name}": path "${def.http.path}" is not host-relative`,
     );
