@@ -151,9 +151,10 @@ Two properties matter:
 `createFlowletHandler()` is zero-config by default and takes validated
 options when you outgrow that: `model`, `instructions`/`instructionsExtra`,
 `policy`, server-side `tools`, host `components`, an `integrations` catalog,
-`connections` (bring your own store), `cacheKey`, `automations`. Our own
-demo-bank app runs entirely on this handler, with its custom policy, prompt,
-and demo world injected through those options.
+`connections` (bring your own store), `cacheKey`, `automations`, `storage`
+(durable engine store — PGlite by default, `DATABASE_URL`, or `false` for
+in-memory). Our own demo-bank app runs entirely on this handler, with its
+custom policy, prompt, and demo world injected through those options.
 
 Prompts are assembled from a shared core in `@flowlet/core` (`buildChatInstructions`
 / `buildVoiceInstructions`): the platform owns the behavioral rules (when to
@@ -228,9 +229,11 @@ anonymous internet traffic would be wrong. Going live safely:
 - **Escape hatch:** `FLOWLET_ALLOW_REMOTE=1` disables the local guard with no
   replacement — use only for a throwaway internal preview you trust.
 
-**Single-tenant, single-process by default.** The built-in connections store,
-approval-token store, and automations world are in-memory and **not** keyed by
-user, so:
+**Single-tenant, single-process by default.** The automations world's engine
+store is durable by default (PGlite under `.flowlet/data`, or a Postgres
+`DATABASE_URL`) — pass `storage: false` to opt back into in-memory. The
+built-in connections store and approval-token store are still in-memory. None
+of them are keyed by user, so:
 
 - Run the handler as **one long-lived Node process**, not on a serverless
   platform that spreads requests across cold instances — otherwise an approval

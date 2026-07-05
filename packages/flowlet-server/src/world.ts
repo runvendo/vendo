@@ -1,8 +1,10 @@
 /**
  * The handler's embedded automations world: the ENG-188 engine assembled with
- * the in-memory store and in-process scheduler (the embedded seam impls), the
- * handler's own policy, and whatever server-executed tools the host registers
- * through `automations.tools`.
+ * an engine store (in-memory by default, `DrizzleAutomationStore` when the
+ * handler resolves durable storage — see `storage.ts`) and an in-process
+ * scheduler (the embedded seam impls), the handler's own policy, and
+ * whatever server-executed tools the host registers through
+ * `automations.tools`.
  *
  * Zero-config note: host-API tools from `.flowlet/tools.json` are CLIENT-
  * executed (they ride the user's browser session) and therefore cannot run
@@ -10,11 +12,11 @@
  * step can only call tools the host registered server-side.
  *
  * SINGLE-TENANT: the world is created once per handler with a fixed scope
- * (`DEFAULT_PRINCIPAL`), and its store lives in memory. A `principal` resolver
- * gates who may reach the endpoints, but does NOT partition automations per
- * user — every caller shares one automation store. Multi-tenant installs must
- * front their own per-user store/world. (Documented in docs/quickstart.md →
- * Deploying.)
+ * (`DEFAULT_PRINCIPAL`), regardless of whether its store is in-memory or
+ * durable. A `principal` resolver gates who may reach the endpoints, but does
+ * NOT partition automations per user — every caller shares one automation
+ * store scope. Multi-tenant installs must front their own per-user
+ * store/world. (Documented in docs/quickstart.md → Deploying.)
  */
 import type { LanguageModel, ToolSet } from "ai";
 import type { AuditLog, Principal } from "@flowlet/core";
@@ -27,6 +29,7 @@ import {
   createAutomationTools,
   createSchedulerFiringHandler,
   type ApprovalPolicy,
+  type AutomationEngineStore,
   type RegisteredTool,
 } from "@flowlet/runtime";
 
@@ -42,10 +45,16 @@ export interface CreateWorldConfig {
    *  tests that don't wire an audit log; `scope` is already Principal-shaped
    *  here, so the runner's default identity `auditPrincipal` is correct. */
   audit?: AuditLog;
+  /**
+   * The engine store. Default: a fresh `InMemoryAutomationStore` (nothing
+   * survives a restart). The handler hands in a `DrizzleAutomationStore` when
+   * durable storage is configured (see `storage.ts`).
+   */
+  store?: AutomationEngineStore;
 }
 
 export interface FlowletAutomationsWorld {
-  store: InMemoryAutomationStore;
+  store: AutomationEngineStore;
   scheduler: InProcessScheduler;
   runner: AutomationRunner;
   /** In-app deliveries (FlowletToasts): the client polls these via the
@@ -69,7 +78,7 @@ export interface FlowletAutomationsWorld {
 
 export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutomationsWorld {
   const registered = config.tools ?? {};
-  const store = new InMemoryAutomationStore({});
+  const store = config.store ?? new InMemoryAutomationStore({});
   const channels = new InAppChannels();
   const runner = new AutomationRunner({
     store,

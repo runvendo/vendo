@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { LanguageModel } from "ai";
+import type { AutomationEngineStore } from "@flowlet/runtime";
 import { createAutomationsWorld } from "./world";
 import { defaultFlowletPolicy } from "./default-policy";
 
@@ -57,5 +58,27 @@ describe("createAutomationsWorld", () => {
     const deliveries = world.channels.listSince(scope, 0);
     expect(deliveries.length).toBeGreaterThan(0);
     expect(deliveries[0]!.message.automation?.kind).toBe("completed");
+  });
+});
+
+describe("createAutomationsWorld — injected store", () => {
+  it("wires an injected store into the runner/tools instead of the in-memory default", async () => {
+    const list = vi.fn(async () => []);
+    const store: AutomationEngineStore = {
+      list,
+    } as unknown as AutomationEngineStore;
+    const world = createAutomationsWorld({
+      policy: defaultFlowletPolicy,
+      model: { modelId: "stub" } as unknown as LanguageModel,
+      scope: { tenantId: "flowlet-embedded", subject: "u1" },
+      store,
+    });
+
+    expect(world.store).toBe(store);
+
+    const tools = world.authoringTools("thread-1");
+    const result = await tools["list_automations"]!.execute!({}, { toolCallId: "t1", messages: [] });
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: true, automations: [] });
   });
 });

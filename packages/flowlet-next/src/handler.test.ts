@@ -240,12 +240,49 @@ describe("createFlowletHandler", () => {
     expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
   });
 
+  it("resolves GET /capabilities after async assembly (async ripple smoke test)", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir(), storage: false });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+  });
+
+  it("warns once, no matter how many requests, when running without durable storage in production", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir(), storage: false, principal: async () => null });
+    await GET(req("/api/flowlet/capabilities"));
+    await GET(req("/api/flowlet/capabilities"));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/in-memory/);
+    warn.mockRestore();
+  });
+
+  it("warns once when durable storage is configured alongside a custom principal resolver (single-tenant)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir: "memory://flowlet-next-handler-test" } },
+      principal: async () => ({ userId: "u1" }),
+    });
+    await GET(req("/api/flowlet/capabilities"));
+    await GET(req("/api/flowlet/capabilities"));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/single-tenant/);
+    warn.mockRestore();
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
     vi.stubEnv("COMPOSIO_API_KEY", "ck_x");
     vi.stubEnv("NODE_ENV", "production"); // fail-closed in prod even for spoofed Host
-    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    // storage: false — NODE_ENV is stubbed away from "test", so the handler's
+    // test-env safety net doesn't apply; this test doesn't care about
+    // durability and must not touch disk.
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir(), storage: false });
     for (const p of ["chat", "action", "tick", "integrations"]) {
       const res = await POST(
         new Request(`http://prod.example.com/api/flowlet/${p}`, {

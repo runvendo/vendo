@@ -33,6 +33,7 @@
 import assert from "node:assert";
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
+import { DrizzleAutomationStore } from "@flowlet/store";
 import {
   buildDescriptor,
   createBreakerState,
@@ -71,6 +72,7 @@ import { defaultFlowletPolicy } from "./default-policy";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
 import { createThreadIndex } from "./threads";
 import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
+import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
 
 const FIRST_SEGMENTS = new Set([
@@ -158,6 +160,30 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 
+    // The shared FlowletDb handle: `null` means in-memory (storage: false, or
+    // the NODE_ENV=test default — see storage.ts). Only the engine store is
+    // wired durably this task; decision/thread/flowlet/connections stores
+    // reuse this same handle in later tasks.
+    const storage = await resolveStorage(options);
+    if (storage === null && process.env["NODE_ENV"] === "production") {
+      console.warn(
+        "[flowlet] no durable storage configured in production (NODE_ENV=production) — " +
+          "automations are running against an in-memory store and will NOT survive a " +
+          "restart or scale past one instance. Pass a `storage` option (PGlite dataDir " +
+          "or a Postgres connectionString) to persist them.",
+      );
+    }
+    if (storage !== null && options.principal) {
+      console.warn(
+        "[flowlet] durable storage is configured, but the automations world remains " +
+          "single-tenant: a custom `principal` resolver gates who may reach the " +
+          "endpoints, but every caller still shares one automation store scope. " +
+          "Multi-tenant installs must front their own per-user store/world " +
+          "(see docs/quickstart.md → Deploying).",
+      );
+    }
+    const engineStore = storage ? new DrizzleAutomationStore(storage) : undefined;
+
     // SINGLE-TENANT (see world.ts): one embedded scope for the store, the
     // deliveries feed, and approval resumes.
     const worldScope = { tenantId: EMBEDDED_TENANT, subject: DEFAULT_PRINCIPAL.userId };
@@ -169,6 +195,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
             model,
             ...(options.automations?.tools ? { tools: options.automations.tools } : {}),
             scope: worldScope,
+            ...(engineStore ? { store: engineStore } : {}),
             // ENG-193 §4.6/§6.2: parked-action resolutions get the SAME
             // "consent" audit trail chat approvals already do.
             audit,
@@ -392,6 +419,9 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       fadeTracker,
       consentSeen,
       clientTools,
+      // The shared durable handle (null = in-memory). Reused by later tasks
+      // to wire the decision/thread/flowlet/connections stores durably too.
+      storage,
     };
   }
   // Memoize the assembly promise, but drop it on rejection so the next

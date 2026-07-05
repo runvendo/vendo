@@ -111,9 +111,16 @@ export interface FlowletHandlerOptions {
   judgeModel?: LanguageModel;
   /**
    * Durable storage. Default: PGlite at `.flowlet/data` (or `DATABASE_URL` /
-   * `FLOWLET_DATA_DIR`). `false` = in-memory (tests). `autoMigrate` defaults
-   * to `true`; set `false` to skip boot migrations and run them out-of-band
-   * (via the exported `migrateFlowletDatabase`).
+   * `FLOWLET_DATA_DIR`) — durable by default, no config required. `false` =
+   * in-memory (opt out explicitly). `autoMigrate` defaults to `true`; set
+   * `false` to skip boot migrations and run them out-of-band (via the
+   * exported `migrateFlowletDatabase`).
+   *
+   * Test-env safety net: when `NODE_ENV === "test"` and this option is left
+   * unset entirely, the handler behaves as if `storage: false` were passed
+   * (silently — no on-disk PGlite dirs from test runs, no warning). Pass an
+   * explicit value, including `false`, to opt back in even under
+   * `NODE_ENV=test`.
    */
   storage?: false | { connectionString?: string; pglite?: { dataDir: string }; autoMigrate?: boolean };
 }
