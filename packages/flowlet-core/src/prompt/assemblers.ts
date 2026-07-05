@@ -51,7 +51,8 @@ export function buildChatInstructions(input: ChatInstructionsInput): string {
     input.catalogs,
     input.capabilities,
     capabilitiesSection("chat", input.toolSummary),
-    connectSection("chat", { toolkits: input.toolkits }),
+    // Connect guidance only makes sense when integrations exist at all.
+    input.toolkits ? connectSection("chat", { toolkits: input.toolkits }) : undefined,
     consentSection("chat"),
     registerSection("chat"),
     proactivitySection("chat"),

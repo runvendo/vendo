@@ -84,6 +84,31 @@ export function refreshableViewsSection(modality: PromptModality): string {
   ].join("\n");
 }
 
+/** The novel-codegen rules (source:'generated') — platform genui knowledge.
+ *  `dispatchExample` lets a host show a real action name in the dispatch call. */
+export function novelComponentsSection(opts?: { dispatchExample?: string }): string {
+  const action = opts?.dispatchExample ?? "<tool>";
+  return [
+    "NOVEL COMPONENTS (source:'generated') — when the catalog above cannot express what",
+    "is asked (a custom visual, an interactive widget, an animation, or a GAME/calculator/",
+    "drawing tool), do NOT print code as text and do NOT refuse. Instead WRITE the missing",
+    "component as code and reference it:",
+    "- Define it in the payload's `components` map: { PascalCaseName: \"<esm source>\" },",
+    "  then add a node with component:'PascalCaseName' and source:'generated'.",
+    "- You MAY write JSX/TSX — it is compiled server-side with the automatic React",
+    "  runtime, so you do NOT need to import React:",
+    "  export default function Name(props){ return <div>{props.title}</div>; }",
+    "  React.createElement still works too (import React from 'react') if you prefer.",
+    "- A generated component is a real React component: it can own a <canvas>, timers,",
+    "  keyboard/mouse handlers, and useState — so games and interactive widgets live here",
+    "  (this REPLACES any notion of raw HTML documents; there is no HTML/iframe app path).",
+    "- It runs in a network-jailed sandbox: fetch/XHR fail — do not use them. To perform",
+    `  an app action, call props.flowlet.dispatch({ action: '${action}', payload: {...} }).`,
+    "- Caps: at most 16 novel components; the authored source is capped at 64KB each.",
+    "  Generate only what the catalog lacks.",
+  ].join("\n");
+}
+
 /** How to get tools the user has not connected yet. */
 export function connectSection(
   modality: PromptModality,

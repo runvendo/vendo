@@ -9,6 +9,7 @@ describe("buildChatInstructions", () => {
       brandGuidance: "BRAND: be calm.",
       catalogs: "BUILDING BLOCKS: Stack, Row.",
       capabilities: "You can do host things.",
+      toolkits: ["gmail", "slack"],
       extras: ["HOST EXTRA ALPHA", "HOST EXTRA BETA"],
     });
     const order = [
@@ -101,5 +102,12 @@ describe("capabilitySummary", () => {
     );
     expect(s).toContain("Read the app's own data: listA.");
     expect(s).toContain("pauses for the user's approval): createB, deleteC.");
+  });
+});
+
+describe("connect section conditionality", () => {
+  it("omits CONNECTING TOOLS when the host has no integrations", () => {
+    const text = buildChatInstructions({ identity: "You are X." });
+    expect(text).not.toContain("CONNECTING TOOLS");
   });
 });

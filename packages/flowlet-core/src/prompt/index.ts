@@ -9,6 +9,7 @@ export {
   capabilitiesSection,
   proactivitySection,
   guardrailSection,
+  novelComponentsSection,
   type PromptModality,
 } from "./sections";
 export {
