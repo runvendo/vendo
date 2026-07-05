@@ -62,7 +62,7 @@
                   },
                   "path": {
                     "type": "string",
-                    "pattern": "^\\/(?!\\/)\\S*$"
+                    "pattern": "^\\/(?!\\/)[^\\s\\\\]*$"
                   }
                 },
                 "required": [

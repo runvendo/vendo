@@ -44,9 +44,12 @@ export const httpBindingSchema = z
     type: z.literal("http"),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
     /** Host-relative path template, e.g. `/api/invoices/{id}/cancel`. Must start
-     *  with a single `/` (no scheme, no `//authority`) and contain no whitespace —
-     *  a manifest path can never point a client executor at a foreign origin. */
-    path: z.string().regex(/^\/(?!\/)\S*$/),
+     *  with a single `/` (no scheme, no `//authority`), contain no whitespace,
+     *  and contain no backslash — browsers normalize `\`→`/`, so `/\evil.com`
+     *  would otherwise become a cross-origin URL. `[^\s\\]` keeps this a plain
+     *  regex `pattern` in the generated JSON Schema while rejecting exactly the
+     *  paths the runtime executor's `isHostRelativePath` guard rejects. */
+    path: z.string().regex(/^\/(?!\/)[^\s\\]*$/),
   })
   .strict();
 export const manifestToolBindingSchema = z.discriminatedUnion("type", [httpBindingSchema]);

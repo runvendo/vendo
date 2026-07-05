@@ -55,6 +55,21 @@ describe("manifestToolSchema", () => {
     }
   });
 
+  it("rejects backslash paths that browsers normalize off-origin (parity with the runtime executor)", () => {
+    // `\` is not whitespace, so a naive forward-slash regex accepts these, but
+    // browsers normalize `\`→`/` and the credentialed fetch goes cross-origin.
+    for (const path of ["/\\evil.com", "/\\\\evil.com", "\\\\evil.com", "https:/\\evil.com", "/api\\x"]) {
+      expect(
+        () =>
+          manifestToolSchema.parse({
+            ...listInvoices,
+            binding: { type: "http", method: "GET", path },
+          }),
+        path,
+      ).toThrow();
+    }
+  });
+
   it("rejects unknown keys at every level (parity with additionalProperties: false)", () => {
     expect(() => manifestToolSchema.parse({ ...listInvoices, extra: 1 })).toThrow();
     expect(() =>
