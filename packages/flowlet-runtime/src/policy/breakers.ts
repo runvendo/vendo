@@ -21,7 +21,11 @@
  * volume" approval would look identical to a judge escalation and get
  * miscounted. Putting `volumeBreaker` OUTSIDE `cautionBreaker` instead keeps
  * `cautionBreaker`'s immediate inner as `judgePolicy`, and only it, so the
- * attribution is unambiguous.
+ * attribution is unambiguous. Review follow-up: a stamped reason ALSO needs
+ * its source to be `"verdict"` (a real judge escalation), not `"error"`
+ * (judge-policy's own escalate-on-error bias) — see escalation.ts's
+ * docstring; a flaky/unparseable judge model must never manufacture caution
+ * mode on its own.
  *
  * Both breakers skip entirely when `ctx.threadId` is undefined — an
  * automation context, item 4's territory (see judge-policy.ts's docstring
@@ -31,11 +35,15 @@
  * Caution is scoped to the ACT tier only: reads keep flowing even in
  * caution mode (Moment 1's promise has no exception), and critical's
  * ceremony is unconditional either way — caution can tighten nothing there
- * because nothing is ever loosened for critical in the first place.
+ * because nothing is ever loosened for critical in the first place. Review
+ * follow-up: an active caution also never forces an engine-source (control-
+ * plane) act-tier call — the user's own "always ask before"/"stop asking
+ * about" utterances only ever ADD safety, so gating them behind a caution
+ * card would be counterproductive.
  */
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
 import { dangerTier } from "./tier";
-import { getEscalationReason, setEscalationReason } from "./escalation";
+import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation";
 
 export interface BreakerState {
   /** Executed-call counts per principal::thread per tool (fed by onExecuted). */
@@ -171,12 +179,17 @@ export function cautionBreaker(
       const rec = cautionFor(state, key);
 
       // inner is judgePolicy DIRECTLY (composition contract, see docstring):
-      // an "approve" with a reason already stamped IS a judge escalation.
-      // Counted at most ONCE per toolCallId — the SDK evaluates the same
-      // call twice (needsApproval + execute), see CautionRecord's doc.
+      // an "approve" with a reason already stamped IS a judge escalation —
+      // but ONLY when that reason's source is "verdict" (the judge model
+      // actually said "escalate"). A source of "error" is judge-policy's own
+      // escalate-on-error bias (a model failure/unparseable output) — review
+      // follow-up: model unreliability must never manufacture caution mode
+      // on its own (see escalation.ts's docstring). Counted at most ONCE per
+      // toolCallId — the SDK evaluates the same call twice (needsApproval +
+      // execute), see CautionRecord's doc.
       if (
         decision === "approve" &&
-        getEscalationReason(ctx) !== undefined &&
+        getEscalationSource(ctx) === "verdict" &&
         !alreadyCounted(rec, ctx.toolCallId)
       ) {
         rec.consecutiveEscalations += 1;
@@ -187,7 +200,16 @@ export function cautionBreaker(
         }
       }
 
-      if (dangerTier(ctx.descriptor) === "act" && rec.active && decision === "allow") {
+      // Review follow-up: an active caution must never block the user's OWN
+      // "always ask me"/"stop asking about" command (engine-source, act
+      // tier) — tightening tools only ever ADD safety, so gating them behind
+      // a caution card is counterproductive, not protective.
+      if (
+        dangerTier(ctx.descriptor) === "act" &&
+        rec.active &&
+        decision === "allow" &&
+        ctx.descriptor.source !== "engine"
+      ) {
         setEscalationReason(ctx, "a few things seemed unusual, so I'm checking with you for a bit");
         return "approve";
       }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createBreakerState, cautionBreaker, volumeBreaker } from "./breakers";
-import { getEscalationReason, setEscalationReason } from "./escalation";
+import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation";
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
 import type { ToolDescriptor } from "../descriptor";
 
@@ -10,16 +10,33 @@ const actDesc: ToolDescriptor = {
 const criticalDesc: ToolDescriptor = {
   name: "transfer_money", source: "caller", annotations: { destructiveHint: true }, hasExecute: true, kind: "function",
 };
+const engineActDesc: ToolDescriptor = {
+  name: "always_ask_before", source: "engine", annotations: { readOnlyHint: false, destructiveHint: false },
+  hasExecute: true, kind: "function",
+};
 
 function fixed(decision: ApprovalDecision): ApprovalPolicy {
   return { evaluate: () => decision };
 }
 
-/** A stub that reports "escalate" (stamps a reason) on evaluate, mimicking judgePolicy's output. */
+/** A stub that reports a REAL judge "escalate" verdict (stamps source
+ *  "verdict") on evaluate, mimicking judgePolicy's `applyVerdict` output. */
 function escalatingStub(decision: ApprovalDecision = "approve"): ApprovalPolicy {
   return {
     evaluate(ctx) {
-      if (decision === "approve") setEscalationReason(ctx, "judge escalation");
+      if (decision === "approve") setEscalationReason(ctx, "judge escalation", "verdict");
+      return decision;
+    },
+  };
+}
+
+/** A stub that reports judge-policy's own escalate-ON-ERROR bias (stamps
+ *  source "error") — model unreliability, NOT a judge verdict (review
+ *  follow-up: this must never feed cautionBreaker's counting). */
+function errorStub(decision: ApprovalDecision = "approve"): ApprovalPolicy {
+  return {
+    evaluate(ctx) {
+      if (decision === "approve") setEscalationReason(ctx, "judge model error", "error");
       return decision;
     },
   };
@@ -229,6 +246,54 @@ describe("cautionBreaker", () => {
     const probe2 = { ...ctxFor(actDesc), toolCallId: "probe-2" };
     expect(await cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 }).evaluate(probe2)).toBe("approve");
     expect(getEscalationReason(probe2)).toBeTruthy();
+  });
+
+  it("REVIEW FOLLOW-UP: error-path (judge escalate-on-error) stamps never trip caution, however many", async () => {
+    const state = createBreakerState();
+    // Well beyond both thresholds, but every stamp is source "error".
+    for (let i = 0; i < 12; i++) {
+      const esc = cautionBreaker(errorStub("approve"), state, { consecutiveThreshold: 3, totalThreshold: 8 });
+      const ctx = { ...ctxFor(actDesc), toolCallId: `err-${i}` };
+      expect(await esc.evaluate(ctx)).toBe("approve"); // errorStub's own approve passes through untouched
+      await esc.onExecuted!(ctx, "approve");
+    }
+    const probe = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3, totalThreshold: 8 });
+    const ctx = ctxFor(actDesc);
+    expect(await probe.evaluate(ctx)).toBe("allow"); // caution never activated
+    expect(getEscalationReason(ctx)).toBeUndefined();
+  });
+
+  it("REVIEW FOLLOW-UP: real judge-verdict escalations still trip caution exactly as before (3 consecutive)", async () => {
+    const state = createBreakerState();
+    for (let i = 0; i < 3; i++) {
+      const esc = cautionBreaker(escalatingStub("approve"), state, { consecutiveThreshold: 3 });
+      const ctx = { ...ctxFor(actDesc), toolCallId: `v-${i}` };
+      expect(await esc.evaluate(ctx)).toBe("approve");
+      await esc.onExecuted!(ctx, "approve");
+    }
+    const probe = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 });
+    const ctx = ctxFor(actDesc);
+    expect(await probe.evaluate(ctx)).toBe("approve");
+    expect(getEscalationSource(ctx)).toBe("verdict");
+  });
+
+  it("REVIEW FOLLOW-UP: an active caution does not block an engine-source (control-plane) act-tier call", async () => {
+    const state = createBreakerState();
+    // Trip caution with 3 consecutive REAL judge escalations on a non-engine tool.
+    for (let i = 0; i < 3; i++) {
+      const esc = cautionBreaker(escalatingStub("approve"), state, { consecutiveThreshold: 3 });
+      const ctx = { ...ctxFor(actDesc), toolCallId: `t-${i}` };
+      await esc.evaluate(ctx);
+      await esc.onExecuted!(ctx, "approve");
+    }
+    // Confirm it IS active for the ordinary act-tier tool...
+    const ordinary = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 });
+    expect(await ordinary.evaluate(ctxFor(actDesc))).toBe("approve");
+    // ...but an engine-source tool's "allow" (e.g. always_ask_before) passes straight through.
+    const engineCtx = ctxFor(engineActDesc);
+    const engine = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 });
+    expect(await engine.evaluate(engineCtx)).toBe("allow");
+    expect(getEscalationReason(engineCtx)).toBeUndefined();
   });
 
   it("caution state is scoped per principal — the same threadId under a different user starts fresh", async () => {

@@ -15,6 +15,14 @@
  *   - tier "critical"       -> returned untouched. The judge never runs —
  *                              money/irreversible never depends on a model
  *                              (spec §2 principle 6).
+ *   - descriptor.source ===
+ *     "engine"              -> returned untouched, model never called. These
+ *                              are control-plane tools (steering, automation
+ *                              authoring) — the agent doing exactly what the
+ *                              user literally said via the tool call itself.
+ *                              Judging "did this match the user's intent" is
+ *                              a category error when the call IS the user's
+ *                              stated intent (review follow-up).
  *   - no `model` configured -> IDENTITY. This is the fail-safe default during
  *                              rollout (today's item-2 behavior, unchanged) —
  *                              see the invariants test for the pinned proof.
@@ -90,8 +98,9 @@ function buildPrompt(ctx: PolicyContext): string {
     "whether ONE proposed tool call matches what the user asked, or whether",
     "the agent should stop and check with them first.",
     "",
-    "Consider three questions, then answer with EXACTLY one line — no other",
-    "text, no punctuation beyond what's shown:",
+    "Consider three questions, then reply with EXACTLY one line — nothing",
+    "else: no markdown, no preamble, no punctuation beyond what's shown. Your",
+    "entire reply must be ONE of these two literal forms:",
     "  match",
     "  escalate: <one-sentence plain-English reason the USER will read>",
     "",
@@ -114,11 +123,46 @@ function buildPrompt(ctx: PolicyContext): string {
   ].join("\n");
 }
 
+/**
+ * Strip markdown emphasis/heading/code markers (wherever they land on the
+ * line — haiku wraps either the whole line, `**match**`, or just the
+ * keyword, `**escalate:** reason`), a leading "verdict:"/"answer:" preamble
+ * some models add, and surrounding quote characters. Root-cause fix for the
+ * live caution noise: claude-haiku-4-5's prose otherwise fails the strict
+ * one-line regex the parser used to require (review follow-up).
+ */
+function cleanVerdictLine(raw: string): string {
+  let s = raw.trim().replace(/[*_`#]+/g, "");
+  s = s.replace(/^\s*(?:verdict|answer)\s*:\s*/i, "");
+  s = s.replace(/^["'“”‘’]+/, "").replace(/["'“”‘’]+$/, "");
+  return s.trim();
+}
+
+/**
+ * Scans every non-empty line (not just the first) for a verdict — a model
+ * may prepend a preamble sentence before the actual answer despite the
+ * prompt's instruction. `match` must stand ALONE on its (cleaned) line;
+ * `escalate` must LEAD its (cleaned) line, with the reason continuing
+ * through the rest of that line and every line after it (the original
+ * multiline reason capture, now fed cleaned input). No matching line at all
+ * -> undefined (unparseable — escalate-on-error, never a silent deny).
+ */
 function parseVerdict(text: string): JudgeVerdict | undefined {
-  const trimmed = text.trim();
-  if (/^match$/i.test(trimmed)) return { kind: "match" };
-  const escalate = /^escalate\s*:\s*(.+)$/is.exec(trimmed);
-  if (escalate?.[1]?.trim()) return { kind: "escalate", reason: escalate[1].trim() };
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]!.trim().length === 0) continue;
+    const cleaned = cleanVerdictLine(lines[i]!);
+    if (/^match[.!]?$/i.test(cleaned)) return { kind: "match" };
+    const escalate = /^escalate\s*:?\s*(.*)$/is.exec(cleaned);
+    if (escalate) {
+      const continuation = lines.slice(i + 1).join("\n");
+      const reason = [escalate[1], continuation]
+        .map((part) => (part ?? "").trim())
+        .filter((part) => part.length > 0)
+        .join(" ");
+      if (reason) return { kind: "escalate", reason };
+    }
+  }
   return undefined; // unparseable
 }
 
@@ -136,7 +180,9 @@ export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): Ap
 
   function applyVerdict(ctx: PolicyContext, verdict: JudgeVerdict): ApprovalDecision {
     if (verdict.kind === "match") return "allow";
-    setEscalationReason(ctx, verdict.reason);
+    // "verdict" source: this IS a real judge escalation — cautionBreaker
+    // counts these (review follow-up — see escalation.ts's docstring).
+    setEscalationReason(ctx, verdict.reason, "verdict");
     return "approve";
   }
 
@@ -144,9 +190,14 @@ export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): Ap
     if (decision === "approve") return decision; // already asking — leave it
     const tainted = (ctx.provenance?.taintedSources.length ?? 0) > 0;
     if (!tainted) return decision; // no concrete risk signal — don't manufacture friction
+    // "error" source: model unreliability, NOT a judge verdict — the card
+    // still shows this reason (unchanged UX), but cautionBreaker must not
+    // count it toward tripping caution (review follow-up: a flaky judge must
+    // never manufacture caution mode on its own).
     setEscalationReason(
       ctx,
       "I couldn't check this one properly, and it follows something I read from outside — I stopped to be safe.",
+      "error",
     );
     return "approve";
   }
@@ -156,6 +207,9 @@ export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): Ap
       const decision = await inner.evaluate(ctx);
       if (decision === "deny") return decision;
       if (dangerTier(ctx.descriptor) === "critical") return decision;
+      // Control-plane (engine-source) tools — the judge never runs (review
+      // follow-up, see this function's docstring above).
+      if (ctx.descriptor.source === "engine") return decision;
       if (opts.model === undefined) return decision;
       if (ctx.threadId === undefined) return decision; // automation context — item 4
       if (dangerTier(ctx.descriptor) !== "act") return decision;

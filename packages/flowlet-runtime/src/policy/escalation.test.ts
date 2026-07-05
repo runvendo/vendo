@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getEscalationReason, setEscalationReason } from "./escalation";
+import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation";
 import type { PolicyContext } from "./types";
 
 function ctxFor(toolName: string): PolicyContext {
@@ -39,5 +39,24 @@ describe("escalation reason side channel", () => {
     const ctx = ctxFor("send_email");
     setEscalationReason(ctx, "  line one\n\nline\ttwo   spaced\r\nend  ");
     expect(getEscalationReason(ctx)).toBe("line one line two spaced end");
+  });
+
+  describe("source tag (review follow-up: distinguish a real judge verdict from escalate-on-error)", () => {
+    it("defaults to source \"verdict\" when omitted", () => {
+      const ctx = ctxFor("send_email");
+      setEscalationReason(ctx, "a reason");
+      expect(getEscalationSource(ctx)).toBe("verdict");
+    });
+
+    it("round-trips an explicit \"error\" source alongside the reason", () => {
+      const ctx = ctxFor("send_email");
+      setEscalationReason(ctx, "model failed", "error");
+      expect(getEscalationReason(ctx)).toBe("model failed");
+      expect(getEscalationSource(ctx)).toBe("error");
+    });
+
+    it("returns undefined for a ctx nothing stamped", () => {
+      expect(getEscalationSource(ctxFor("a"))).toBeUndefined();
+    });
   });
 });

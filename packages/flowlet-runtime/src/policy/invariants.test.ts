@@ -56,6 +56,13 @@ const criticalDesc: ToolDescriptor = {
   hasExecute: true,
   kind: "function",
 };
+const engineActDesc: ToolDescriptor = {
+  name: "always_ask_before",
+  source: "engine",
+  annotations: { readOnlyHint: false, destructiveHint: false },
+  hasExecute: true,
+  kind: "function",
+};
 
 const ctxFor = (descriptor: ToolDescriptor, input: unknown = {}): PolicyContext => ({
   toolName: descriptor.name,
@@ -221,6 +228,63 @@ describe("ENG-193 item 3 — judge + breaker invariants", () => {
       expect(await denyWrapped.evaluate(ctx)).toBe("deny");
       expect(getEscalationReason(ctx)).toBeUndefined();
     }
+  });
+
+  it("INVARIANT (review follow-up): an engine-source (control-plane) tool is exempt from the judge, even with a model configured", async () => {
+    const approveInner: ApprovalPolicy = { evaluate: () => "approve" };
+    const policy = judgePolicy(approveInner, {
+      model: judgeReturning("escalate: whatever"),
+    });
+    const ctx = { ...ctxFor(engineActDesc), threadId: "th-1" };
+    expect(await policy.evaluate(ctx)).toBe("approve"); // inner's own decision, untouched
+    expect(getEscalationReason(ctx)).toBeUndefined();
+  });
+
+  it("INVARIANT (review follow-up): judge-policy's escalate-ON-ERROR forced approvals never trip cautionBreaker, however many", async () => {
+    const state = createBreakerState();
+    const grantStore = createInMemoryGrantStore();
+    await seedToolGrant(grantStore, actDesc); // grantPolicy loosens this call to "allow"
+    const flakyJudge = judgePolicy(
+      grantPolicy(annotationPolicy(), grantStore, { principalScope: () => scope }),
+      { model: judgeReturning("uh, sure I guess?") }, // unparseable -> escalate-on-error
+    );
+    const withCaution = cautionBreaker(flakyJudge, state, { consecutiveThreshold: 3, totalThreshold: 8 });
+    for (let i = 0; i < 12; i++) {
+      const ctx = {
+        ...ctxFor(actDesc),
+        threadId: "th-1",
+        toolCallId: `call-${i}`,
+        provenance: { taintedSources: ["some_tool"] }, // forces escalate-on-error to fire
+      };
+      // Forced to "approve" by the ERROR path itself, not by caution.
+      expect(await withCaution.evaluate(ctx)).toBe("approve");
+      await withCaution.onExecuted!(ctx, "approve");
+    }
+    // Well past both thresholds in call volume, but every stamp was source
+    // "error" (a flaky/unparseable judge), never "verdict" — caution must
+    // still be inactive.
+    const probeCtx = { ...ctxFor(actDesc), threadId: "th-1" };
+    expect(await withCaution.evaluate(probeCtx)).toBe("allow");
+  });
+
+  it("INVARIANT (review follow-up): an active caution never blocks an engine-source (control-plane) act-tier call", async () => {
+    const state = createBreakerState();
+    for (let i = 0; i < 3; i++) {
+      const escalating: ApprovalPolicy = {
+        evaluate: (ctx) => {
+          setEscalationReason(ctx, "x", "verdict");
+          return "approve";
+        },
+      };
+      const wrapped = cautionBreaker(escalating, state, { consecutiveThreshold: 3 });
+      const ctx = { ...ctxFor(actDesc), threadId: "th-1", toolCallId: `e-${i}` };
+      await wrapped.evaluate(ctx);
+      await wrapped.onExecuted!(ctx, "approve");
+    }
+    const allowInner: ApprovalPolicy = { evaluate: () => "allow" };
+    const policy = cautionBreaker(allowInner, state);
+    const ctx = { ...ctxFor(engineActDesc), threadId: "th-1" };
+    expect(await policy.evaluate(ctx)).toBe("allow"); // engine-source: never gated, even while caution is active
   });
 });
 

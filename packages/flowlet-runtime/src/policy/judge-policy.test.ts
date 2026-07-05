@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import { judgePolicy } from "./judge-policy";
-import { getEscalationReason } from "./escalation";
+import { getEscalationReason, getEscalationSource } from "./escalation";
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
 import type { ToolDescriptor } from "../descriptor";
 
@@ -51,6 +51,10 @@ const readDesc: ToolDescriptor = {
 };
 const criticalDesc: ToolDescriptor = {
   name: "transfer_money", source: "caller", annotations: { destructiveHint: true }, hasExecute: true, kind: "function",
+};
+const engineActDesc: ToolDescriptor = {
+  name: "always_ask_before", source: "engine", annotations: { readOnlyHint: false, destructiveHint: false },
+  hasExecute: true, kind: "function",
 };
 
 function fixed(decision: ApprovalDecision): ApprovalPolicy {
@@ -216,6 +220,71 @@ describe("judgePolicy", () => {
     await policy.evaluate(ctxFor(actDesc));
     await policy.evaluate(ctxFor(actDesc, { principal: { userId: "someone-else" } }));
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("INVARIANT: an engine-source (control-plane) tool is exempt from the judge — model never invoked", async () => {
+    const { model, spy } = spyMock(() => "escalate: whatever");
+    const policy = judgePolicy(fixed("approve"), { model });
+    const ctx = ctxFor(engineActDesc);
+    expect(await policy.evaluate(ctx)).toBe("approve");
+    expect(spy).not.toHaveBeenCalled();
+    expect(getEscalationReason(ctx)).toBeUndefined();
+  });
+
+  describe("parser hardening (review follow-up: haiku's prose fails a strict one-line regex)", () => {
+    it("parses a markdown-wrapped match verdict", async () => {
+      const policy = judgePolicy(fixed("approve"), { model: mockReturning("**match**") });
+      expect(await policy.evaluate(ctxFor(actDesc))).toBe("allow");
+    });
+
+    it("parses a verdict that follows a preamble line", async () => {
+      const policy = judgePolicy(
+        fixed("approve"),
+        { model: mockReturning("Let me think about this for a second.\nmatch") },
+      );
+      expect(await policy.evaluate(ctxFor(actDesc))).toBe("allow");
+    });
+
+    it("parses a match verdict with trailing punctuation", async () => {
+      const policy = judgePolicy(fixed("approve"), { model: mockReturning("match.") });
+      expect(await policy.evaluate(ctxFor(actDesc))).toBe("allow");
+    });
+
+    it('parses a markdown-wrapped "escalate:" label and stamps the clean reason', async () => {
+      const policy = judgePolicy(fixed("allow"), { model: mockReturning("**escalate:** unusual target") });
+      const ctx = ctxFor(actDesc);
+      expect(await policy.evaluate(ctx)).toBe("approve");
+      expect(getEscalationReason(ctx)).toBe("unusual target");
+      expect(getEscalationSource(ctx)).toBe("verdict");
+    });
+
+    it("genuinely ambiguous prose (no line is a bare verdict) still parses as undefined -> escalate-on-error", async () => {
+      const policy = judgePolicy(fixed("allow"), {
+        model: mockReturning("I think you might want to double check this one, but it could be fine either way."),
+      });
+      // No taint -> escalateOnError leaves an "allow" alone (existing, unrelated invariant).
+      expect(await policy.evaluate(ctxFor(actDesc, { provenance: { taintedSources: [] } }))).toBe("allow");
+      // With taint present, the SAME ambiguous prose forces approve via the error path.
+      const ctx = ctxFor(actDesc, { provenance: { taintedSources: ["some_tool"] } });
+      expect(await policy.evaluate(ctx)).toBe("approve");
+      expect(getEscalationSource(ctx)).toBe("error");
+    });
+  });
+
+  describe("escalation source tagging (review follow-up)", () => {
+    it('a real "escalate" verdict stamps source "verdict"', async () => {
+      const policy = judgePolicy(fixed("allow"), { model: mockReturning("escalate: unusual target") });
+      const ctx = ctxFor(actDesc);
+      await policy.evaluate(ctx);
+      expect(getEscalationSource(ctx)).toBe("verdict");
+    });
+
+    it('a model error/unparseable output stamps source "error", never "verdict"', async () => {
+      const policy = judgePolicy(fixed("allow"), { model: mockThrowing() });
+      const ctx = ctxFor(actDesc, { provenance: { taintedSources: ["some_tool"] } });
+      await policy.evaluate(ctx);
+      expect(getEscalationSource(ctx)).toBe("error");
+    });
   });
 
   it("propagates onExecuted to inner", async () => {
