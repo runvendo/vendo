@@ -29,8 +29,8 @@ No `.vendo/` directory is needed — the handler falls back to the default brand
 empty tool manifest (zero-config).
 
 **Monorepo caveat:** the workspace packages' dists are built for bundlers (extensionless
-ESM imports), so `dev:api` runs `server.mjs` through `tsx` — the same way apps/gmail runs
-its Express server. The server code is plain `node:http`; plain `node server.mjs` works
+ESM imports), so `dev:api` runs `server.mjs` through `tsx`. The server code is plain
+`node:http`; plain `node server.mjs` works
 once the packages publish Node-loadable ESM.
 
 ## Express

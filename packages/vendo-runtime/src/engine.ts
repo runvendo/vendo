@@ -608,7 +608,7 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
   // Stable, deterministic run identity without Math.random/Date.now.
   let runCounter = 0;
 
-  // Engine-owned JSON repair (upstreamed from apps/gmail, PR #28): streamed
+  // Engine-owned JSON repair: streamed
   // tool inputs whose JSON broke on raw control chars are repaired before the
   // ai SDK gives up on them, and historical broken inputs are repaired (or
   // emptied) before they can 400 a later turn at the provider.

@@ -214,7 +214,7 @@ implicitly.
 > **Status honesty:** `@vendoai/server` isn't published to npm yet either
 > (ENG-198). And unlike a published package, the workspace's built output is
 > bundler-format ESM, not directly Node-loadable: `examples/node` runs its
-> server through `tsx` for that reason (same trick `apps/gmail` uses). Plain
+> server through `tsx` for that reason. Plain
 > `node server.js` starts working once the packages publish.
 
 ## Persistence
