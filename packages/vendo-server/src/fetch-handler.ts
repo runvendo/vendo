@@ -81,7 +81,9 @@ import { buildInstructions, createAgentCache } from "./agent.js";
 import { createSourceResolver } from "./remix-enrich.js";
 import { resolveRemixSealer } from "./seal.js";
 import { createAutomationsWorld, type VendoAutomationsWorld } from "./world.js";
-import { resolveModel } from "./model.js";
+import { anthropic } from "@ai-sdk/anthropic";
+import { DEFAULT_MODEL_ID } from "./model-choice.js";
+import { ModelPeerMissingError, resolveModel } from "./model.js";
 import { defaultVendoPolicy } from "./default-policy.js";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack.js";
 import { createThreadIndex } from "./threads.js";
@@ -158,12 +160,31 @@ async function assembleVendoState(options: VendoHandlerOptions) {
     // runs in an env-aware context). A server whose var is missing is dropped
     // with a warning. The capability flag reads the RESOLVED list.
     const mcpServers = options.mcpServers ?? resolveMcpServers(loaded.mcpServers ?? []);
+    const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
+    // A configured provider whose optional peer isn't installed (OPENAI_API_KEY
+    // set, @ai-sdk/openai missing) must degrade like the no-key ladder state —
+    // chat gated off, every other route healthy — not fail assembly and 500
+    // the whole handler. The call-time-failing Anthropic default is the same
+    // placeholder resolveModel() uses for the keyless state; chat stays gated
+    // by capabilities.chat below, and the install hint reaches the developer
+    // through the server log and the chat 503.
+    let model: NonNullable<VendoHandlerOptions["model"]>;
+    let modelUnavailable: string | undefined;
+    try {
+      model = options.model ?? (await resolveModel());
+    } catch (err) {
+      // Only the documented ladder state degrades; a misconfigured
+      // VENDO_MODEL keeps failing assembly loudly.
+      if (!(err instanceof ModelPeerMissingError)) throw err;
+      modelUnavailable = err.message;
+      console.error(`[vendo] model unavailable: ${modelUnavailable}`);
+      model = anthropic(DEFAULT_MODEL_ID.anthropic);
+    }
     const capabilities = {
       ...detectCapabilities(undefined, { hasInjectedModel: options.model !== undefined }),
       mcp: mcpServers.length > 0,
     };
-    const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
-    const model = options.model ?? (await resolveModel());
+    if (modelUnavailable) capabilities.chat = false;
     const grants = options.store?.grants ?? createInMemoryGrantStore();
     const rules = options.store?.rules ?? createInMemoryCompiledRuleStore();
     const audit = options.store?.audit ?? new InMemoryAuditLog();
@@ -487,6 +508,9 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       // The shared durable handle (null = in-memory). Reused by later tasks
       // to wire the decision/thread/vendo/connections stores durably too.
       storage,
+      // Set when a configured provider's optional peer failed to load; chat
+      // is gated off and its 503 carries this actionable hint.
+      modelUnavailable,
     };
 }
 
@@ -764,6 +788,7 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           // folds in an injected model (via hasInjectedModel above) alongside
           // any configured provider key.
           chatEnabled: s.capabilities.chat,
+          ...(s.modelUnavailable ? { chatDisabledReason: s.modelUnavailable } : {}),
           threadIndex: s.threadIndex,
         });
       case "action":

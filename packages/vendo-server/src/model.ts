@@ -49,13 +49,23 @@ export interface ResolveModelDeps {
   import?: (spec: string) => Promise<unknown>;
 }
 
+/**
+ * A configured provider's optional peer (@ai-sdk/openai, @ai-sdk/google)
+ * could not be loaded. Unlike a misconfigured VENDO_MODEL (which must fail
+ * loudly), this state is part of the documented capability ladder and the
+ * handler degrades it to chat:false + an actionable hint.
+ */
+export class ModelPeerMissingError extends Error {
+  override readonly name = "ModelPeerMissingError";
+}
+
 async function loadOptionalProvider(
   importer: (spec: string) => Promise<unknown>,
   provider: Exclude<ModelProvider, "anthropic">,
   modelId: string,
 ): Promise<LanguageModel> {
   const pkg = PROVIDER_PACKAGE[provider];
-  const missingPeerError = new Error(
+  const missingPeerError = new ModelPeerMissingError(
     `Vendo: model "${provider}/${modelId}" requires ${pkg} — run: npm i ${pkg}`,
   );
   let mod: Record<string, unknown>;
