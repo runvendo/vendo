@@ -1,15 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Composer } from "./Composer";
-import { useVoiceInput } from "../use-voice-input";
-
-describe("useVoiceInput", () => {
-  it("reports unsupported by default", () => {
-    const v = useVoiceInput();
-    expect(v.supported).toBe(false);
-    expect(v.state).toBe("disabled");
-  });
-});
 
 describe("Composer", () => {
   it("sends trimmed text on Enter and clears the input", () => {
@@ -36,5 +27,14 @@ describe("Composer", () => {
     render(<Composer onSend={() => {}} status="streaming" onStop={onStop} />);
     fireEvent.click(screen.getByLabelText("Stop"));
     expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("shows the mic only when a voice handler is wired", () => {
+    const onVoice = vi.fn();
+    const { rerender } = render(<Composer onSend={() => {}} />);
+    expect(screen.queryByLabelText("Start voice session")).toBeNull();
+    rerender(<Composer onSend={() => {}} onVoice={onVoice} />);
+    fireEvent.click(screen.getByLabelText("Start voice session"));
+    expect(onVoice).toHaveBeenCalledOnce();
   });
 });

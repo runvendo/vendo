@@ -63,7 +63,8 @@ const demoConnections: ConnectionsStore = {
 
 export const { GET, POST } = createFlowletHandler({
   model: anthropic(process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6"),
-  instructions: buildInstructions(),
+  // Per-run function (spec §7): grounds capability talk in the live toolset.
+  instructions: (ctx) => buildInstructions({ toolSummary: ctx.toolSummary }),
   policy: demoPolicy,
   tools: () => ({ ...demoTools(), ...automationsWorld().authoringTools() }),
   components: mapleHostComponents,

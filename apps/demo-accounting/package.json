@@ -17,6 +17,7 @@
     "@ai-sdk/react": "3.0.30",
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
+    "@flowlet/next": "workspace:*",
     "@flowlet/react": "workspace:*",
     "@flowlet/runtime": "workspace:*",
     "@flowlet/shell": "workspace:*",

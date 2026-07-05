@@ -68,6 +68,7 @@ hides that surface — nothing errors.
 | Any one of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY` | Chat + generated UI (the one-key minimum) |
 | `OPENAI_API_KEY` specifically | Also flips on the voice capability flag (a flag only: voice UX is in design) |
 | `+ COMPOSIO_API_KEY` | Integrations: Gmail, Slack, Notion, … via OAuth connect cards |
+| `+ MCP servers declared` | Any remote MCP server's tools, policy-governed (config, not a key — see below) |
 
 The client reads `GET /api/flowlet/capabilities` and gates its UI on the
 answer, so the integrations tray simply doesn't offer connections until the
@@ -88,6 +89,48 @@ provider key (or a code-injected `model`), chat stays off. OpenAI and Google
 are optional peers (`@ai-sdk/openai`, `@ai-sdk/google`): resolving to one
 without its package installed fails fast with an actionable `npm i` hint, not
 a silent fallback.
+
+## MCP servers
+
+Point Flowlet at any remote MCP server and its tools become agent tools,
+governed by the same approval policy as everything else.
+
+Either declare them in code:
+
+```ts
+export const { GET, POST } = createFlowletHandler({
+  mcpServers: [
+    {
+      name: "weather",                    // tools appear as weather_<tool>
+      url: "https://mcp.example.com/mcp", // Streamable HTTP endpoint
+      headers: { Authorization: `Bearer ${process.env.WEATHER_TOKEN}` }, // optional
+      tools: ["get_forecast"],            // optional allowlist; omit = all tools
+    },
+  ],
+});
+```
+
+or in `.flowlet/mcp.json` (the code option wins entirely if both exist):
+
+```json
+{
+  "version": 1,
+  "servers": [
+    {
+      "name": "weather",
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${WEATHER_TOKEN}" }
+    }
+  ]
+}
+```
+
+In `mcp.json`, `${VAR}` in header values is read from the environment at
+boot; a server whose variable is unset is skipped with a warning. Notes:
+HTTP transport only (no stdio), static headers only (OAuth-only servers not
+yet supported), tools only (no resources/prompts). Server-reported
+annotations are honored: read-only tools run freely, everything else pauses
+for approval.
 
 ## Your API as the agent's hands
 
@@ -111,6 +154,19 @@ options when you outgrow that: `model`, `instructions`/`instructionsExtra`,
 `connections` (bring your own store), `cacheKey`, `automations`. Our own
 demo-bank app runs entirely on this handler, with its custom policy, prompt,
 and demo world injected through those options.
+
+Prompts are assembled from a shared core in `@flowlet/core` (`buildChatInstructions`
+/ `buildVoiceInstructions`): the platform owns the behavioral rules (when to
+render vs. talk, register, consent, capability talk, closing guardrails) and
+your app supplies identity, brand, catalogs, and free-form `extras` on both
+the chat and voice sides — host extras always land *before* the guardrails, so
+platform safety rules win on conflict. `instructions` also accepts a function
+`(ctx) => string` evaluated per run with `ctx.toolSummary` (the live merged
+toolset), which is how the default prompt grounds "what can you do?" answers
+in what is actually connected. Oversized tool results are capped
+deterministically at every ingestion point (`capToolOutput`) — HTML becomes
+text, binary is dropped, long arrays are truncated with an honest note —
+before they reach the model.
 
 ## Not using Next.js?
 

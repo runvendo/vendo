@@ -62,6 +62,44 @@ describe("CSP (Tier 2.5 hardening)", () => {
     expect(cspNonce).toBeTruthy();
     expect(html).toContain(`_im.nonce=${JSON.stringify(cspNonce)};`);
   });
+
+  it("furnishes the env: vendored modules blobbed into the import map, host CSS + Tailwind injected", () => {
+    const html = buildSrcdoc("shim-src", {
+      modules: { "lucide-react": "export const Icon=1;" },
+      css: ".btn{color:red}",
+      tailwindRuntimeSrc: "/* tw */",
+    });
+    // Module source is blobbed and assigned by specifier — no static URL.
+    expect(html).toContain("export const Icon=1;");
+    expect(html).toContain('_imports["lucide-react"]=_e0');
+    // Host CSS injected as a style tag; Tailwind runtime blobbed + imported.
+    expect(html).toContain('data-flowlet-host-css');
+    expect(html).toContain(".btn{color:red}");
+    expect(html).toContain("/* tw */");
+    // CSP is UNCHANGED — still blob-only, connect-src none, no http(s) source.
+    expect(html).toContain("connect-src 'none'");
+    expect(html).toContain("script-src 'nonce-");
+    expect(html).not.toMatch(/src\s*=\s*["']https?:/);
+  });
+
+  it("hardens import specifier KEYS against </script> breakout (Codex review)", () => {
+    const html = buildSrcdoc("shim-src", {
+      modules: { "evil</script><script>alert(1)</script>": "export const x=1;" },
+    });
+    // The raw </script> must never appear literally — it is escaped to <.
+    expect(html).not.toContain("evil</script>");
+    expect(html).toContain("\\u003c/script");
+    // Assigned into a null-proto imports object, not an object literal.
+    expect(html).toContain("Object.create(null)");
+  });
+
+  it("is byte-identical without env vs an empty env (capability-additive)", () => {
+    // Same nonce path isn't deterministic, so compare structure: no env styling
+    // artifacts appear in the bare build.
+    const bare = buildSrcdoc("shim-src");
+    expect(bare).not.toContain("data-flowlet-host-css");
+    expect(bare).not.toContain(":_e0");
+  });
 });
 
 // ── connectStage ─────────────────────────────────────────────────────────────

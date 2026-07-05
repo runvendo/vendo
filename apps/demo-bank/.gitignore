@@ -42,3 +42,4 @@ next-env.d.ts
 
 # flowlet sandbox assets (build artifacts, copied by scripts/copy-flowlet-sandbox.mjs)
 /public/flowlet/
+voice-e2e/

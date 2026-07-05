@@ -22,6 +22,43 @@ describe("toThreadItems", () => {
     });
   });
 
+  it("emits an approval item for a DYNAMIC tool part awaiting approval (MCP tools)", () => {
+    // MCP tools ingest as ai-SDK dynamic tools: their parts are type
+    // "dynamic-tool" with the name in `toolName`, not "tool-<name>".
+    const items = toThreadItems([
+      msg("m2d", "assistant", [
+        {
+          type: "dynamic-tool",
+          toolName: "everything_echo",
+          state: "approval-requested",
+          approval: { id: "a9" },
+          input: { message: "hi" },
+        },
+      ]),
+    ]);
+    expect(items[0]).toEqual({
+      kind: "approval", key: "m2d:0", messageId: "m2d", approvalId: "a9", toolName: "everything_echo", input: { message: "hi" },
+    });
+  });
+
+  it("emits a tool item for a dynamic tool part in other states", () => {
+    const items = toThreadItems([
+      msg("m3d", "assistant", [
+        {
+          type: "dynamic-tool",
+          toolName: "everything_echo",
+          toolCallId: "c1",
+          state: "output-available",
+          input: { message: "hi" },
+          output: { content: [{ type: "text", text: "Echo: hi" }] },
+        },
+      ]),
+    ]);
+    expect(items[0]).toMatchObject({
+      kind: "tool", toolName: "everything_echo", toolCallId: "c1", state: "output-available",
+    });
+  });
+
   it("emits an error item for an error part", () => {
     const items = toThreadItems([msg("m0", "assistant", [{ type: "error", errorText: "boom" }])]);
     expect(items[0]).toEqual({ kind: "error", key: "m0:0", messageId: "m0", message: "boom" });

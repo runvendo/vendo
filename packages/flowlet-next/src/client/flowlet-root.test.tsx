@@ -36,6 +36,32 @@ describe("FlowletRoot", () => {
     );
   });
 
+  it("mounts FlowletToasts by default (deliveries poll) and not when toasts={false}", async () => {
+    const fetchMock = stubFetch({ chat: true, integrations: false, voice: false });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <FlowletRoot productName="Acme">
+        <div />
+      </FlowletRoot>,
+    );
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/deliveries"))).toBe(true),
+    );
+    cleanup();
+
+    const offMock = stubFetch({ chat: true, integrations: false, voice: false });
+    vi.stubGlobal("fetch", offMock);
+    render(
+      <FlowletRoot productName="Acme" toasts={false}>
+        <div />
+      </FlowletRoot>,
+    );
+    await waitFor(() =>
+      expect(offMock.mock.calls.some(([u]) => String(u).includes("/capabilities"))).toBe(true),
+    );
+    expect(offMock.mock.calls.some(([u]) => String(u).includes("/deliveries"))).toBe(false);
+  });
+
   it("hides the launcher when launcher='none'", () => {
     vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false }));
     render(

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { UINode } from "@flowlet/core";
 import { groupThreadItems, type ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
@@ -21,9 +22,12 @@ export interface MessageListProps {
   onRegenerate?: (messageId: string) => void;
   /** Host feedback sink for a turn's thumbs up/down. */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
+  /** Pin a remix candidate onto its FlowletRemix anchor. When provided,
+   *  generated views tagged with `remixAnchorId` grow an Apply bar. */
+  onApplyRemix?: (node: UINode) => void;
 }
 
-export function MessageList({ items, status, onApprove, onDecline, onRegenerate, onFeedback }: MessageListProps) {
+export function MessageList({ items, status, onApprove, onDecline, onRegenerate, onFeedback, onApplyRemix }: MessageListProps) {
   const rendered = useMemo(() => groupThreadItems(items), [items]);
   // Render-slot keys (ENG-205): a skeleton and the ui view that replaces it
   // carry different item keys (different part indices), but must share one
@@ -211,6 +215,18 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
               return (
                 <FluidReveal key={slotKeys.get(item.key)} phase="view">
                   <UINodeView node={item.node} />
+                  {onApplyRemix && item.node.remixAnchorId !== undefined && (
+                    <div className="fl-applybar">
+                      <button
+                        type="button"
+                        className="fl-apply-btn"
+                        onClick={() => onApplyRemix(item.node)}
+                      >
+                        ✦ Apply to page
+                      </button>
+                      <span className="fl-applybar-hint">replaces the wrapped element for you</span>
+                    </div>
+                  )}
                 </FluidReveal>
               );
             case "error": {

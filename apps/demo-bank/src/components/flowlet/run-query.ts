@@ -8,11 +8,18 @@
  * BEFORE the network call and the reopen flow keeps the saved snapshot.
  */
 import type { DataQuery } from "@flowlet/core";
+import { replayRegistry } from "@flowlet/shell";
 
 /** Demo tools that are safe to re-run without the user asking. */
 const READ_ONLY_TOOLS = new Set(["get_transactions"]);
 
 export async function runQuery(query: DataQuery): Promise<unknown> {
+  // Client-side replay registry first (spec §3): read-tier host tools run in
+  // the browser and integration read tools go through the voice bridge —
+  // neither exists on the server action route.
+  if (replayRegistry.has(query.tool)) {
+    return replayRegistry.replay(query.tool, query.input ?? {});
+  }
   if (!READ_ONLY_TOOLS.has(query.tool)) {
     throw new Error(`query "${query.tool}" is not replayable on reopen (not read-only)`);
   }

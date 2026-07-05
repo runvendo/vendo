@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FileUIPart } from "ai";
-import type { UINode } from "@flowlet/core";
+import type { AnchorContextBlock, FlowletMetadata, UINode } from "@flowlet/core";
 import { useFlowletThread } from "./use-flowlet-thread";
+import { REMIX_CHANGED_EVENT } from "./remix/FlowletRemix";
+import { stampHostComponents } from "./component-drift";
 import type { Feedback } from "./components/TurnActions";
 import { useShell } from "./context";
 import type { Flowlet } from "./seams/store";
@@ -14,6 +16,11 @@ import { IntegrationsPicker } from "./components/IntegrationsPicker";
 import { ConnectDock } from "./components/ConnectDock";
 import { ConnectTray } from "./components/ConnectTray";
 import { friendlyError, logErrorDetail } from "./components/error-copy";
+import { VoiceStage } from "./voice/VoiceStage";
+import { useVoiceSession } from "./voice/use-voice-session";
+import { voiceSessionMessages } from "./voice/voice-messages";
+import { voiceSessionBrief } from "./voice/session-brief";
+import type { VoiceDriver, VoiceToolDef } from "./voice/voice-session";
 
 export interface FlowletThreadProps {
   greeting?: string;
@@ -41,16 +48,71 @@ export interface FlowletThreadProps {
    * omit to hide the feedback controls entirely.
    */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
+  /**
+   * Realtime voice seam (ENG-185). When present, the composer grows a mic;
+   * tapping it swaps this surface into the voice stage. Ending the session
+   * lands its transcript + views in this thread as ordinary history.
+   */
+  voice?: VoiceDriver;
 }
 
 export function FlowletThread({
   greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
-  heroComposer = false, onPin, onFeedback,
+  heroComposer = false, onPin, onFeedback, voice,
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
-  const { integrations } = useShell();
+  const { integrations, registry, scope, remixes, components } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
+  const voiceSession = useVoiceSession(voice);
+
+  // Context carry-over (spec §4): a structured session brief — conversation
+  // tail, on-screen views, tool-result digests, saved flowlets — plus the
+  // shell-contributed open_saved_flowlet tool so "open my coffee view" works.
+  const startVoice = () => {
+    const context = voiceSessionBrief({ items: chat.items, flows });
+    const sessionTools: VoiceToolDef[] = onOpenFlow
+      ? [
+          {
+            name: "open_saved_flowlet",
+            description:
+              "Open one of the user's saved views by its id (listed in your session brief). Use when the user asks for a saved view by name.",
+            parameters: {
+              type: "object",
+              properties: { id: { type: "string", description: "saved flowlet id" } },
+              required: ["id"],
+            },
+            tier: "read",
+            execute: async (input) => {
+              const { id } = (input ?? {}) as { id?: string };
+              const flow = flows.find((f) => f.id === id);
+              if (!flow) return { opened: false, error: `no saved view with id ${id}` };
+              onOpenFlow(flow);
+              return { opened: true, name: flow.name };
+            },
+          },
+        ]
+      : [];
+    voiceSession.start(
+      context || sessionTools.length ? { context, sessionTools } : undefined,
+    );
+  };
+
+  // Cmd/Ctrl+Shift+K toggles a voice session (sibling of the overlay's Cmd+K).
+  useEffect(() => {
+    if (!voiceSession.supported || typeof window === "undefined") return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (voiceSession.active) voiceSession.end();
+        else startVoice();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceSession.supported, voiceSession.active, chat.items]);
 
   // The most recent rendered view — what "Pin to card" commits.
   const latestNode = useMemo<UINode | null>(() => {
@@ -82,7 +144,33 @@ export function FlowletThread({
     if (chat.status === "error") logErrorDetail(chat.error);
   }, [chat.status, chat.error]);
 
-  const send = (text: string, files?: FileUIPart[]) => { void chat.sendMessage({ text, files }); };
+  // Anchor context (FlowletRemix): a scoped send carries the clicked anchor
+  // (snapshot included); every send lists the page's other anchors ambiently.
+  const send = (text: string, files?: FileUIPart[]) => {
+    const scoped = activeScope;
+    const ambient = registry.ambient().filter((a) => a.anchorId !== scoped?.anchorId);
+    const anchors: AnchorContextBlock | undefined =
+      scoped || ambient.length > 0
+        ? { ...(scoped ? { scoped } : {}), ...(ambient.length > 0 ? { ambient } : {}) }
+        : undefined;
+    const message: { text: string; files?: FileUIPart[]; metadata?: FlowletMetadata } = { text };
+    if (files) message.files = files;
+    if (anchors) message.metadata = { anchors };
+    void chat.sendMessage(message);
+  };
+  // Apply a remix candidate: pin it (stamped for drift detection) and tell the
+  // mounted wrapper to swap in place.
+  const applyRemix = (node: UINode) => {
+    if (node.kind !== "generated" || !node.remixAnchorId) return;
+    const anchorId = node.remixAnchorId;
+    const stamp = stampHostComponents(node, components ?? []);
+    void remixes
+      .pin({ anchorId, node, ...(stamp ? { components: stamp } : {}) })
+      .then(() => {
+        window.dispatchEvent(new CustomEvent(REMIX_CHANGED_EVENT, { detail: { anchorId } }));
+      })
+      .catch((err) => console.warn(`[flowlet] failed to apply remix for "${anchorId}"`, err));
+  };
   const approve = (id: string) => { void chat.addToolApprovalResponse({ id, approved: true }); };
   const decline = (id: string) => { void chat.addToolApprovalResponse({ id, approved: false }); };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
@@ -96,6 +184,7 @@ export function FlowletThread({
       onSend={send}
       status={chat.status}
       onStop={() => chat.stop()}
+      onVoice={voiceSession.supported ? startVoice : undefined}
       accessory={
         <ConnectDock
           integrations={tools}
@@ -122,6 +211,29 @@ export function FlowletThread({
     </div>
   );
 
+  // The stage replaces the surface (the decided ENG-185 model: voice fills the
+  // container it was launched from). On close, the session's transcript and
+  // views land in this thread as ordinary messages — the record survives.
+  if (voiceSession.active) {
+    return (
+      <div className="fl-thread">
+        <VoiceStage
+          snapshot={voiceSession.snapshot}
+          onMute={voiceSession.mute}
+          onEnd={voiceSession.end}
+          onApprove={voiceSession.approve}
+          onDecline={voiceSession.decline}
+          onPin={onPin}
+          onClosed={() => {
+            const finalSnapshot = voiceSession.close();
+            const landed = voiceSessionMessages(finalSnapshot);
+            if (landed.length > 0) void chat.setMessages([...chat.messages, ...landed]);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="fl-thread">
       {empty ? (
@@ -145,6 +257,7 @@ export function FlowletThread({
             onDecline={decline}
             onRegenerate={regenerate}
             onFeedback={onFeedback}
+            onApplyRemix={applyRemix}
           />
         </ThreadErrorBoundary>
       )}

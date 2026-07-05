@@ -19,3 +19,4 @@ export { defaultFlowletPolicy } from "@flowlet/server";
 export { createConnectionsStore, type ConnectionsStore } from "@flowlet/server";
 export { DEFAULT_INTEGRATION_CATALOG } from "@flowlet/server";
 export { buildInstructions, type BuildInstructionsInput } from "@flowlet/server";
+export { enrichAnchorSources, createSourceResolver, capSource } from "@flowlet/server";

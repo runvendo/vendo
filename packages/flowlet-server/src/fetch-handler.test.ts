@@ -37,7 +37,7 @@ describe("createFlowletFetchHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const handler = createFlowletFetchHandler({ flowletDir: emptyDir() });
     const res = await handler(req("/api/flowlet/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
   });
 
   it("keeps integrations inert without a Composio key", async () => {
@@ -91,7 +91,7 @@ describe("createFlowletFetchHandler", () => {
     const handler = createFlowletFetchHandler({ flowletDir: emptyDir(), model });
 
     const caps = await handler(req("/api/flowlet/capabilities"));
-    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false });
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
 
     // The chatEnabled gate (503) fires before messages validation (400), so a
     // 400 on an empty messages array proves chat was NOT gated off.
@@ -123,7 +123,7 @@ describe("createFlowletFetchHandler", () => {
     vi.stubEnv("FLOWLET_MODEL", "");
     const fixed = await handler(req("/api/flowlet/capabilities"));
     expect(fixed.status).toBe(200);
-    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false });
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {
