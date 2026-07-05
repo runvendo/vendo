@@ -25,9 +25,28 @@ describe("createSourceResolver", () => {
       captured: { b: record({ source: "CAPTURED_SOURCE" }) },
       env: { NODE_ENV: "production" },
     });
-    expect(resolve("a")).toBe("OPTION_SOURCE");
-    expect(resolve("b")).toBe("CAPTURED_SOURCE");
+    expect(resolve("a")?.source).toBe("OPTION_SOURCE");
+    expect(resolve("b")?.source).toBe("CAPTURED_SOURCE");
     expect(resolve("c")).toBeUndefined();
+  });
+
+  it("resolved records carry exportName, sourceHash, and truncated", () => {
+    const resolve = createSourceResolver({
+      captured: { b: record({ source: "CAPTURED_SOURCE", sourceHash: "cap-hash" }) },
+      env: { NODE_ENV: "production" },
+    });
+    const rec = resolve("b")!;
+    expect(rec.exportName).toBe("DeadlineList");
+    expect(rec.sourceHash).toBe("cap-hash");
+    expect(rec.truncated).toBe(false);
+    // Option-sourced text has no capture record: hash is computed, no exportName.
+    const opt = createSourceResolver({
+      option: { a: "OPTION_SOURCE" },
+      captured: {},
+      env: { NODE_ENV: "production" },
+    })("a")!;
+    expect(opt.exportName).toBeUndefined();
+    expect(opt.sourceHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("dev mode re-reads the mapped file; production uses the captured copy", () => {
@@ -41,11 +60,11 @@ describe("createSourceResolver", () => {
       cwd: "/app",
     };
     const dev = createSourceResolver({ ...config, env: { NODE_ENV: "development" } });
-    expect(dev("x")).toBe("FRESH_FROM_DISK");
+    expect(dev("x")?.source).toBe("FRESH_FROM_DISK");
     expect(reads[0]).toBe("/app/src/components/dashboard/deadline-list.tsx");
 
     const prod = createSourceResolver({ ...config, env: { NODE_ENV: "production" } });
-    expect(prod("x")).toBe("STALE");
+    expect(prod("x")?.source).toBe("STALE");
     expect(reads).toHaveLength(1); // no request-time filesystem reads in prod
   });
 
@@ -60,7 +79,7 @@ describe("createSourceResolver", () => {
       cwd: "/app",
       env: { NODE_ENV: "development" },
     });
-    expect(resolve("x")).toBe("CAPTURED"); // never read the traversal target
+    expect(resolve("x")?.source).toBe("CAPTURED"); // never read the traversal target
     expect(reads).toHaveLength(0);
   });
 
@@ -72,32 +91,54 @@ describe("createSourceResolver", () => {
       },
       env: { NODE_ENV: "development" },
     });
-    expect(resolve("x")).toBe("CAPTURED");
+    expect(resolve("x")?.source).toBe("CAPTURED");
 
     const big = createSourceResolver({
       captured: { y: record({ source: "z".repeat(SOURCE_CAP_BYTES + 10) }) },
       env: { NODE_ENV: "production" },
     });
-    expect(big("y")!.endsWith("[truncated]")).toBe(true);
+    const rec = big("y")!;
+    expect(rec.source.endsWith("[truncated]")).toBe(true);
+    expect(rec.truncated).toBe(true);
   });
 });
 
 describe("enrichAnchorSources", () => {
-  it("strips client-supplied source everywhere and enriches only the last user message", () => {
-    const tampered = scopedMessage({ source: "FAKE_CLIENT_SOURCE" });
-    const older: FlowletUIMessage = { ...scopedMessage({ source: "OLD_FAKE" }), id: "m0" };
-    const enriched = enrichAnchorSources([older, tampered], () => "SERVER_SOURCE");
-    expect(enriched[0]!.metadata?.anchors?.scoped?.source).toBeUndefined();
-    expect(enriched[1]!.metadata?.anchors?.scoped?.source).toBe("SERVER_SOURCE");
+  const server = () => ({ source: "SERVER_SOURCE", sourceHash: "sh", truncated: false });
+
+  it("strips client-supplied remixSource/pinBase everywhere and enriches only the last user message", () => {
+    const tampered = scopedMessage({
+      remixSource: { source: "FAKE_CLIENT_SOURCE", sourceHash: "x", truncated: false },
+      pinBase: { payload: {}, sources: {}, baseHash: "x", sourceHash: "x" },
+    });
+    const older: FlowletUIMessage = {
+      ...scopedMessage({ remixSource: { source: "OLD_FAKE", sourceHash: "x", truncated: false } }),
+      id: "m0",
+    };
+    const enriched = enrichAnchorSources([older, tampered], server);
+    expect(enriched[0]!.metadata?.anchors?.scoped?.remixSource).toBeUndefined();
+    expect(enriched[1]!.metadata?.anchors?.scoped?.remixSource?.source).toBe("SERVER_SOURCE");
+    expect(enriched[1]!.metadata?.anchors?.scoped?.pinBase).toBeUndefined();
     // Inputs untouched.
-    expect(tampered.metadata?.anchors?.scoped?.source).toBe("FAKE_CLIENT_SOURCE");
+    expect(tampered.metadata?.anchors?.scoped?.remixSource?.source).toBe("FAKE_CLIENT_SOURCE");
+  });
+
+  it("keeps the client envelope ONLY on the last user message (verification input)", () => {
+    const older: FlowletUIMessage = { ...scopedMessage({ envelope: "sealed-old" }), id: "m0" };
+    const last = scopedMessage({ envelope: "sealed-current" });
+    const enriched = enrichAnchorSources([older, last], () => undefined);
+    expect(enriched[0]!.metadata?.anchors?.scoped?.envelope).toBeUndefined();
+    expect(enriched[1]!.metadata?.anchors?.scoped?.envelope).toBe("sealed-current");
   });
 
   it("strips even when no server source exists; leaves unscoped messages alone", () => {
     const plain: FlowletUIMessage = { id: "p", role: "user", parts: [{ type: "text", text: "hi" }] };
-    const enriched = enrichAnchorSources([plain, scopedMessage({ source: "FAKE" })], () => undefined);
+    const enriched = enrichAnchorSources(
+      [plain, scopedMessage({ remixSource: { source: "FAKE", sourceHash: "x", truncated: false } })],
+      () => undefined,
+    );
     expect(enriched[0]).toBe(plain);
-    expect(enriched[1]!.metadata?.anchors?.scoped?.source).toBeUndefined();
+    expect(enriched[1]!.metadata?.anchors?.scoped?.remixSource).toBeUndefined();
     expect(enriched[1]!.metadata?.anchors?.scoped?.anchorId).toBe("upcoming-deadlines");
   });
 });

@@ -510,7 +510,7 @@ describe("createFlowletAgent", () => {
       return { holder, model };
     };
 
-    const sourcedTurn = (source: string): FlowletUIMessage[] => [
+    const sourcedTurn = (source: string, truncated = false): FlowletUIMessage[] => [
       {
         id: "m1",
         role: "user",
@@ -524,7 +524,7 @@ describe("createFlowletAgent", () => {
               anchorId: "invoices-widget",
               label: "Outstanding invoices",
               snapshot: "<div>3 rows</div>",
-              source,
+              remixSource: { source, sourceHash: "h-test", truncated },
             },
           },
         },

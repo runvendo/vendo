@@ -194,7 +194,7 @@ function anchorSection(anchors: AnchorContextBlock, envManifest?: EnvManifest): 
       // the bare-sandbox restyling guidance would be actively wrong.
       if (!anchorEnv) lines.push(BARE_SANDBOX_STYLE_WARNING);
     }
-    if (scoped.source) lines.push(...sourceSection(scoped.source));
+    if (scoped.remixSource) lines.push(...sourceSection(scoped.remixSource.source));
     if (anchorEnv) lines.push(...envSection(anchorEnv, envManifest?.styles));
   }
   if (ambient && ambient.length > 0) {
