@@ -37,22 +37,50 @@ describe("createDemoAgent", () => {
   });
 });
 
-// Pre-migration baseline: the exact prompt shipped before the shared prompt
-// core (docs/superpowers/specs/2026-07-04-context-engineering-design.md).
-// The migration diff test anchors on this fixture — regenerate ONLY with an
-// intentional, reviewed prompt change (UPDATE_PROMPT_BASELINE=1 pnpm test).
-import { readFileSync, writeFileSync } from "node:fs";
+// Migration diff test (shared-prompt-core spec, docs/superpowers/specs/
+// 2026-07-04-context-engineering-design.md): anchored on the FROZEN
+// pre-migration fixture, so it can never compare the new path to itself.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildInstructions } from "./agent";
 
-describe("chat prompt baseline", () => {
+describe("chat prompt migration diff", () => {
   const fixturePath = join(__dirname, "__fixtures__", "chat-instructions.baseline.txt");
 
-  it("matches the frozen pre-migration fixture", () => {
+  // The ONLY fixture lines allowed to disappear: the connect section's toolkit
+  // list re-wraps onto one line in the shared connectSection. Everything else
+  // must survive verbatim.
+  const INTENDED_REMOVALS = [
+    /^"gmail", reason: "read the receipt for that charge" \}\. Use the toolkit id \(gmail,$/,
+    /^slack, notion, github, googlecalendar, linear, googledrive, discord, googlesheets,$/,
+    /^stripe, jira, asana, hubspot, airtable\)\. You may briefly say you're requesting access\.$/,
+  ];
+
+  it("keeps every non-superseded fixture line and adds only the approved sections", () => {
     const current = buildInstructions();
-    if (process.env.UPDATE_PROMPT_BASELINE) {
-      writeFileSync(fixturePath, current);
+    const baseline = readFileSync(fixturePath, "utf8");
+    const currentLines = new Set(current.split("\n"));
+
+    const lost = baseline
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .filter((line) => !currentLines.has(line))
+      .filter((line) => !INTENDED_REMOVALS.some((re) => re.test(line)));
+    expect(lost, `fixture lines lost without an approved removal:\n${lost.join("\n")}`).toEqual([]);
+
+    // The approved additions (spec sections), and guardrails after ALL host
+    // content (the automations block is Maple's last extra).
+    for (const anchor of [
+      "TALKING ABOUT WHAT YOU CAN DO",
+      "APPROVALS:",
+      "REGISTER — how you talk",
+      "SUGGESTIONS:",
+      "NON-NEGOTIABLES",
+    ]) {
+      expect(current).toContain(anchor);
     }
-    expect(current).toBe(readFileSync(fixturePath, "utf8"));
+    expect(current.indexOf("NON-NEGOTIABLES")).toBeGreaterThan(
+      current.indexOf("SLACK_SEND_MESSAGE"),
+    );
   });
 });
