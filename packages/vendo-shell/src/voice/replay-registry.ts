@@ -12,7 +12,7 @@
 
 export interface ReplayRegistry {
   /** Register a read-tier executor for `tool`. Latest registration wins. */
-  register(tool: string, execute: (input: unknown) => Promise<unknown>): void;
+  register(tool: string, execute: (input: unknown) => Promise<unknown>): () => void;
   has(tool: string): boolean;
   replay(tool: string, input: unknown): Promise<unknown>;
 }
@@ -22,6 +22,9 @@ export function createReplayRegistry(): ReplayRegistry {
   return {
     register(tool, execute) {
       executors.set(tool, execute);
+      return () => {
+        if (executors.get(tool) === execute) executors.delete(tool);
+      };
     },
     has(tool) {
       return executors.has(tool);

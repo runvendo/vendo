@@ -19,4 +19,18 @@ describe("replay registry", () => {
     registry.register("t", async () => 2);
     await expect(registry.replay("t", {})).resolves.toBe(2);
   });
+
+  it("unregisters only the executor that owns the current name", async () => {
+    const registry = createReplayRegistry();
+    const unregisterFirst = registry.register("t", async () => 1);
+    const unregisterSecond = registry.register("t", async () => 2);
+
+    unregisterFirst();
+    expect(registry.has("t")).toBe(true);
+    await expect(registry.replay("t", {})).resolves.toBe(2);
+
+    unregisterSecond();
+    expect(registry.has("t")).toBe(false);
+    await expect(registry.replay("t", {})).rejects.toThrow(/not in the replay registry/);
+  });
 });
