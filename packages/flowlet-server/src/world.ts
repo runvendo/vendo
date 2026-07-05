@@ -19,7 +19,7 @@
  * store/world. (Documented in docs/quickstart.md → Deploying.)
  */
 import type { LanguageModel, ToolSet } from "ai";
-import type { AuditLog, Principal } from "@flowlet/core";
+import type { AuditLog, Principal, TimeTrigger } from "@flowlet/core";
 import {
   AutomationRunner,
   InAppChannels,
@@ -30,6 +30,7 @@ import {
   createSchedulerFiringHandler,
   type ApprovalPolicy,
   type AutomationEngineStore,
+  type AutomationTrigger,
   type RegisteredTool,
 } from "@flowlet/runtime";
 
@@ -61,7 +62,9 @@ export interface FlowletAutomationsWorld {
    *  handler's /deliveries route. */
   channels: InAppChannels;
   authoringTools(threadId?: string): ToolSet;
-  /** Drive due schedules — the client pings POST /tick (no server timers). */
+  /** Drive due schedules — POST /tick (client or external cron) drives one
+   *  pass; `startFlowletScheduler()` (boot.ts) starts the in-process timer
+   *  on long-lived Node servers. */
   tick(): Promise<void>;
   /**
    * The world's OWN fixed scope (= this config's `scope`), exposed so
@@ -76,7 +79,16 @@ export interface FlowletAutomationsWorld {
   scope: Principal;
 }
 
-export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutomationsWorld {
+/** Map the spec's schedule trigger to the core Scheduler seam's TimeTrigger:
+ *  `{ at }` → one-shot, `{ cron, timezone? }` → recurring. Mirrors the
+ *  runtime's authoring-time mapping (tools.ts) so rehydrated schedules fire
+ *  exactly like freshly authored ones. */
+function toTimeTrigger(trigger: Extract<AutomationTrigger, { type: "schedule" }>): TimeTrigger {
+  if (trigger.at !== undefined) return { kind: "at", at: trigger.at };
+  return { kind: "cron", expression: trigger.cron!, timezone: trigger.timezone };
+}
+
+export async function createAutomationsWorld(config: CreateWorldConfig): Promise<FlowletAutomationsWorld> {
   const registered = config.tools ?? {};
   const store = config.store ?? new InMemoryAutomationStore({});
   const channels = new InAppChannels();
@@ -91,6 +103,15 @@ export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutoma
   });
   const scheduler = new InProcessScheduler();
   scheduler.onFire(createSchedulerFiringHandler(runner));
+
+  // REHYDRATION: the in-process scheduler's registrations live in memory, so
+  // a restart would silently drop every durable schedule until its automation
+  // was re-authored. Re-register everything enabled from the store at
+  // assembly (a fresh in-memory store returns [], so this is a no-op for the
+  // non-durable path).
+  for (const row of await store.listEnabledSchedules()) {
+    await scheduler.schedule(row.automationId, toTimeTrigger(row.trigger), row.principal);
+  }
 
   return {
     store,

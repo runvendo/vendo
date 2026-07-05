@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createFlowletHandler, routeTail } from "./handler";
+import { createFlowletDatabase, getMeta } from "@flowlet/store";
+import { createFlowletHandler, resetFlowletBootRegistry, routeTail } from "./handler";
 import { z } from "zod";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
@@ -21,6 +22,9 @@ function emptyDir(): string {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  // Handlers claim the process-wide boot slot (first-wins); keep tests
+  // order-independent.
+  resetFlowletBootRegistry();
 });
 
 describe("routeTail", () => {
@@ -272,6 +276,71 @@ describe("createFlowletHandler", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toMatch(/single-tenant/);
     warn.mockRestore();
+  });
+
+  it("allows a tick with the correct bearer secret WITHOUT resolving a principal", async () => {
+    vi.stubEnv("FLOWLET_TICK_SECRET", "s3cret");
+    // A principal resolver that rejects EVERYONE proves the bearer path
+    // bypasses resolvePrincipal entirely.
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir(), principal: async () => null });
+    const res = await POST(
+      req("/api/flowlet/tick", {
+        method: "POST",
+        headers: { host: "localhost:3000", authorization: "Bearer s3cret" },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("401s a wrong bearer when the tick secret is set (no fall-through)", async () => {
+    vi.stubEnv("FLOWLET_TICK_SECRET", "s3cret");
+    // Even a localhost dev request (which resolvePrincipal would allow) must
+    // be rejected: presenting a bad service credential is never a fall-through.
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/tick", {
+        method: "POST",
+        headers: { host: "localhost:3000", authorization: "Bearer wrong" },
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("falls through to resolvePrincipal when the secret is set but no bearer is presented", async () => {
+    vi.stubEnv("FLOWLET_TICK_SECRET", "s3cret");
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir(), principal: async () => null });
+    const res = await POST(req("/api/flowlet/tick", { method: "POST" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("ignores a bearer entirely when no tick secret is configured (existing path unchanged)", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/tick", {
+        method: "POST",
+        headers: { host: "localhost:3000", authorization: "Bearer anything" },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("writes a scheduler heartbeat meta row after a successful tick with durable storage", async () => {
+    const dataDir = `memory://flowlet-next-heartbeat-${Date.now()}`;
+    const { POST } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir } },
+    });
+    const res = await POST(req("/api/flowlet/tick", { method: "POST" }));
+    expect(res.status).toBe(200);
+
+    // Heartbeat is fire-and-forget; poll the shared (memoized) handle.
+    const handle = await createFlowletDatabase({ pglite: { dataDir } });
+    await vi.waitFor(async () => {
+      const heartbeat = (await getMeta(handle, "scheduler_heartbeat")) as { at?: string } | undefined;
+      expect(heartbeat?.at).toBeTruthy();
+      expect(Number.isNaN(Date.parse(heartbeat!.at!))).toBe(false);
+    });
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {

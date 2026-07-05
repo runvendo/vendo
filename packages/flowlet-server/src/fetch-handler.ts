@@ -33,7 +33,7 @@
 import assert from "node:assert";
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
-import { DrizzleAutomationStore } from "@flowlet/store";
+import { DrizzleAutomationStore, setMeta } from "@flowlet/store";
 import {
   buildDescriptor,
   createBreakerState,
@@ -71,7 +71,7 @@ import { resolveModel } from "./model";
 import { defaultFlowletPolicy } from "./default-policy";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
 import { createThreadIndex } from "./threads";
-import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
+import { resolvePrincipal, tickServiceAuth, DEFAULT_PRINCIPAL } from "./guard";
 import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
 
@@ -115,17 +115,16 @@ export function routeTail(req: Request): string {
 
 export type FlowletFetchHandler = (req: Request) => Promise<Response>;
 
-export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}): FlowletFetchHandler {
-  const options = parseHandlerOptions(rawOptions);
+/** Everything the routes (and the scheduler boot hook) need, assembled once. */
+export type FlowletState = Awaited<ReturnType<typeof assembleFlowletState>>;
 
-  // Everything below is built lazily on first request: framework adapters
-  // (e.g. `next build`) import route modules at build time, and reading
-  // `.flowlet/` or requiring keys there would break builds in clean CI
-  // environments. `assemble` is async because provider resolution loads
-  // optional peer packages via dynamic import; the memoized promise keeps
-  // the lazy-on-first-request behavior.
-  let assembled: ReturnType<typeof assemble> | null = null;
-  async function assemble() {
+// Assembly is lazy (first request / scheduler boot): framework adapters
+// (e.g. `next build`) import route modules at build time, and reading
+// `.flowlet/` or requiring keys there would break builds in clean CI
+// environments. Async because provider resolution loads optional peer
+// packages via dynamic import; the memoized promise (createLazyState) keeps
+// the lazy-on-first-request behavior.
+async function assembleFlowletState(options: FlowletHandlerOptions) {
     const loaded = loadFlowletDir(options.flowletDir);
     // MCP servers: the code option OVERRIDES the file entirely; ${ENV_VAR}
     // header substitution applies only to file-sourced entries (code already
@@ -190,7 +189,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     const world: FlowletAutomationsWorld | null =
       options.automations === false
         ? null
-        : createAutomationsWorld({
+        : await createAutomationsWorld({
             policy,
             model,
             ...(options.automations?.tools ? { tools: options.automations.tools } : {}),
@@ -423,14 +422,18 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       // to wire the decision/thread/flowlet/connections stores durably too.
       storage,
     };
-  }
-  // Memoize the assembly promise, but drop it on rejection so the next
-  // request retries fresh (the old sync code threw before assignment, so a
-  // boot failure — bad FLOWLET_MODEL, missing peer — was never cached). The
-  // identity check keeps a late rejection from clobbering a newer assembly.
-  const state = () => {
+}
+
+/** Memoize the assembly promise, but drop it on rejection so the next
+ *  request retries fresh (a transient boot failure — DB blip, bad
+ *  FLOWLET_MODEL, missing peer — must not brick every request until process
+ *  restart). The identity check keeps a late rejection from clobbering a
+ *  newer assembly. */
+function createLazyState(options: FlowletHandlerOptions): () => Promise<FlowletState> {
+  let assembled: Promise<FlowletState> | null = null;
+  return () => {
     if (!assembled) {
-      const p = assemble();
+      const p = assembleFlowletState(options);
       p.catch(() => {
         if (assembled === p) assembled = null;
       });
@@ -438,6 +441,95 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     }
     return assembled;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Process-wide boot registry — ONE world per process (first-wins).
+//
+// `createFlowletFetchHandler()` is called from the adapter's route file and
+// `startFlowletScheduler()` (boot.ts) from e.g. Next.js instrumentation.ts —
+// usually in SEPARATE modules with separate options objects. Both must land
+// on the same assembled state, or the started scheduler would tick a
+// different world than the one requests write automations into. The rule is
+// deliberately simple:
+//
+//   - The first caller to need state claims the slot; its options win.
+//   - A later caller with the SAME options object, or with NO options at all
+//     (the instrumentation.ts shape), reuses the slot.
+//   - A later `createFlowletFetchHandler` with DIFFERENT non-empty options
+//     gets its own private world (its options — e.g. a `principal` resolver —
+//     must never be silently ignored); `ensureFlowletState` instead reuses
+//     the slot with a warning, since the boot hook has nothing else to start.
+//
+// Keyed by a module-scope Symbol on globalThis so Next dev-mode module
+// re-evaluation still converges on one registry per process.
+// ---------------------------------------------------------------------------
+
+interface BootRegistry {
+  slot: { options: FlowletHandlerOptions; state: () => Promise<FlowletState> } | null;
+  /** startFlowletScheduler's once-latch (see boot.ts). */
+  schedulerStarted: boolean;
+}
+
+const BOOT_REGISTRY_KEY = Symbol("flowlet.server.bootRegistry");
+
+/** @internal Shared with boot.ts; not part of the public API. */
+export function bootRegistry(): BootRegistry {
+  const g = globalThis as { [BOOT_REGISTRY_KEY]?: BootRegistry };
+  return (g[BOOT_REGISTRY_KEY] ??= { slot: null, schedulerStarted: false });
+}
+
+/** @internal Test-only: clears the first-wins slot and the scheduler latch. */
+export function resetFlowletBootRegistry(): void {
+  const registry = bootRegistry();
+  registry.slot = null;
+  registry.schedulerStarted = false;
+}
+
+function isEmptyOptions(options: FlowletHandlerOptions): boolean {
+  return Object.keys(options).length === 0;
+}
+
+/**
+ * The process-wide lazy state used by `startFlowletScheduler()` (boot.ts).
+ * First-wins: reuses the first-assembled state when one exists; passing
+ * DIFFERENT non-empty options at that point is a misuse (warned, ignored) —
+ * give instrumentation.ts the same options object as the route, or none.
+ *
+ * @internal
+ */
+export function ensureFlowletState(rawOptions: FlowletHandlerOptions = {}): Promise<FlowletState> {
+  const registry = bootRegistry();
+  if (registry.slot) {
+    if (!isEmptyOptions(rawOptions) && rawOptions !== registry.slot.options) {
+      console.warn(
+        "[flowlet] startFlowletScheduler() was called with different options than the " +
+          "first-assembled Flowlet state — first-wins: reusing the existing world and " +
+          "ignoring these options. Pass the same options object from instrumentation.ts " +
+          "as the route handler uses, or pass none.",
+      );
+    }
+    return registry.slot.state();
+  }
+  const state = createLazyState(parseHandlerOptions(rawOptions));
+  registry.slot = { options: rawOptions, state };
+  return state();
+}
+
+export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}): FlowletFetchHandler {
+  const options = parseHandlerOptions(rawOptions);
+
+  // Share the process-wide world when compatible (same options object, or
+  // this handler is zero-config); otherwise assemble privately and claim the
+  // slot if still free. See the BootRegistry comment above.
+  const registry = bootRegistry();
+  let state: () => Promise<FlowletState>;
+  if (registry.slot && (registry.slot.options === rawOptions || isEmptyOptions(rawOptions))) {
+    state = registry.slot.state;
+  } else {
+    state = createLazyState(options);
+    if (!registry.slot) registry.slot = { options: rawOptions, state };
+  }
 
   /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection. */
   function bootError(err: unknown): Response {
@@ -447,7 +539,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     );
   }
 
-  async function GET(req: Request, s: Awaited<ReturnType<typeof assemble>>): Promise<Response> {
+  async function GET(req: Request, s: FlowletState): Promise<Response> {
     switch (routeTail(req)) {
       case "capabilities":
         return Response.json(s.capabilities);
@@ -511,7 +603,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     }
   }
 
-  async function POST(req: Request, s: Awaited<ReturnType<typeof assemble>>): Promise<Response> {
+  async function POST(req: Request, s: FlowletState): Promise<Response> {
     switch (routeTail(req)) {
       case "chat":
         return handleChat(req, {
@@ -547,9 +639,27 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
         });
       case "tick": {
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
-        const guard = await resolvePrincipal(req, options);
-        if (!guard.ok) return guard.response;
+        // Service auth first: an external cron (vercel.json, Cloudflare Cron
+        // Trigger) presents FLOWLET_TICK_SECRET as a bearer token — no user
+        // principal involved. A wrong bearer is always a hard 401 (never a
+        // fall-through); no bearer at all takes the normal principal path.
+        const service = tickServiceAuth(req);
+        if (service === "denied") {
+          return Response.json({ error: "invalid tick credential" }, { status: 401 });
+        }
+        if (service !== "allowed") {
+          const guard = await resolvePrincipal(req, options);
+          if (!guard.ok) return guard.response;
+        }
         await s.world.tick();
+        // Liveness heartbeat for durable installs — fire-and-forget: a meta
+        // write failure must never fail the tick itself.
+        if (s.storage) {
+          const handle = s.storage;
+          void setMeta(handle, "scheduler_heartbeat", { at: new Date().toISOString() }).catch(
+            (err: unknown) => console.error("[flowlet] failed to record scheduler heartbeat:", err),
+          );
+        }
         return Response.json({ ok: true });
       }
       case "resume": {
@@ -637,7 +747,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
   }
 
   return async function flowletFetchHandler(req: Request): Promise<Response> {
-    let s: Awaited<ReturnType<typeof assemble>>;
+    let s: FlowletState;
     try {
       s = await state();
     } catch (err) {

@@ -12,6 +12,7 @@ export {
   connections,
   meta,
 } from "./schema.js";
+export { getMeta, setMeta } from "./meta.js";
 export { DrizzleAutomationStore, toIso } from "./automation-store.js";
 export { createDrizzleDecisionStore } from "./decision-store.js";
 export { createDrizzleThreadStore } from "./thread-store.js";

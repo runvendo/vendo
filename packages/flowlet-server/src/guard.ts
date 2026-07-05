@@ -16,10 +16,36 @@
  * is set. The Host check only relaxes things in development.
  * (See docs/quickstart.md → Deploying.)
  */
+import { timingSafeEqual } from "node:crypto";
 import type { FlowletPrincipal } from "@flowlet/runtime";
 import type { FlowletHandlerOptions } from "./options";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+
+/**
+ * Service auth for POST /tick — an external cron (vercel.json, Cloudflare
+ * Cron Trigger) presents `authorization: Bearer <FLOWLET_TICK_SECRET>`.
+ *
+ *   - "allowed"     — secret configured and the bearer matches (timing-safe).
+ *   - "denied"      — secret configured, bearer presented, but WRONG: hard
+ *                     401 upstream, never a fall-through to principal auth.
+ *   - "unattempted" — no secret configured, or no bearer presented: the
+ *                     caller falls through to `resolvePrincipal` unchanged.
+ */
+export function tickServiceAuth(
+  req: Request,
+  env: Record<string, string | undefined> = process.env,
+): "allowed" | "denied" | "unattempted" {
+  const secret = env["FLOWLET_TICK_SECRET"];
+  if (!secret) return "unattempted";
+  const header = req.headers.get("authorization");
+  if (!header?.startsWith("Bearer ")) return "unattempted";
+  const presented = Buffer.from(header.slice("Bearer ".length));
+  const expected = Buffer.from(secret);
+  // timingSafeEqual requires equal lengths; a length mismatch is a mismatch.
+  if (presented.length !== expected.length) return "denied";
+  return timingSafeEqual(presented, expected) ? "allowed" : "denied";
+}
 
 /** The identity zero-config installs run as (keys Composio connections too). */
 export const DEFAULT_PRINCIPAL: FlowletPrincipal = { userId: "flowlet-default-user" };

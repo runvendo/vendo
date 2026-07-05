@@ -18,7 +18,7 @@ import { createFlowletFetchHandler, type FlowletHandlerOptions } from "@flowlet/
 
 // Re-exported so route-level consumers (and tests) can resolve the tail the
 // same way the fetch handler does.
-export { routeTail } from "@flowlet/server";
+export { routeTail, resetFlowletBootRegistry } from "@flowlet/server";
 
 export interface FlowletRouteHandlers {
   GET: (req: Request) => Promise<Response>;
