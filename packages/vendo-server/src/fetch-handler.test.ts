@@ -438,7 +438,7 @@ describe("createVendoFetchHandler", () => {
     // NODE_ENV==="test"-only), whose WASM first-init is flaky here and would 500 the
     // first request before it reaches the remote guard. This test is about the guard.
     const handler = createVendoFetchHandler({ vendoDir: emptyDir(), storage: false });
-    for (const p of ["chat", "action", "tick", "integrations"]) {
+    for (const p of ["chat", "action", "tick", "events/ingest", "integrations"]) {
       const res = await handler(
         new Request(`http://prod.example.com/api/vendo/${p}`, {
           method: "POST",
