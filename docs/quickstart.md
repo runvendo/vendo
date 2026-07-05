@@ -66,10 +66,53 @@ hides that surface — nothing errors.
 | `ANTHROPIC_API_KEY` | Chat + generated UI (the one-key minimum) |
 | `+ COMPOSIO_API_KEY` | Integrations: Gmail, Slack, Notion, … via OAuth connect cards |
 | `+ OPENAI_API_KEY` | Reserved for voice — exposed as a capability flag only (voice UX is in design) |
+| `+ MCP servers declared` | Any remote MCP server's tools, policy-governed (config, not a key — see below) |
 
 The client reads `GET /api/flowlet/capabilities` and gates its UI on the
 answer, so the integrations tray simply doesn't offer connections until the
 Composio key exists.
+
+## MCP servers
+
+Point Flowlet at any remote MCP server and its tools become agent tools,
+governed by the same approval policy as everything else.
+
+Either declare them in code:
+
+```ts
+export const { GET, POST } = createFlowletHandler({
+  mcpServers: [
+    {
+      name: "weather",                    // tools appear as weather_<tool>
+      url: "https://mcp.example.com/mcp", // Streamable HTTP endpoint
+      headers: { Authorization: `Bearer ${process.env.WEATHER_TOKEN}` }, // optional
+      tools: ["get_forecast"],            // optional allowlist; omit = all tools
+    },
+  ],
+});
+```
+
+or in `.flowlet/mcp.json` (the code option wins entirely if both exist):
+
+```json
+{
+  "version": 1,
+  "servers": [
+    {
+      "name": "weather",
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${WEATHER_TOKEN}" }
+    }
+  ]
+}
+```
+
+In `mcp.json`, `${VAR}` in header values is read from the environment at
+boot; a server whose variable is unset is skipped with a warning. Notes:
+HTTP transport only (no stdio), static headers only (OAuth-only servers not
+yet supported), tools only (no resources/prompts). Server-reported
+annotations are honored: read-only tools run freely, everything else pauses
+for approval.
 
 ## Your API as the agent's hands
 

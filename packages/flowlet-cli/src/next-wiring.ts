@@ -243,6 +243,24 @@ export function addDependency(pkgJson: string, name: string, version: string): s
   return JSON.stringify(pkg, null, 2) + "\n";
 }
 
+/** Add `flowlet sync` to the app's `prebuild` script (create or extend),
+ *  so every production build refreshes the capture + sandbox environment.
+ *  Idempotent: never adds a second copy. */
+export function addPrebuildSync(pkgJson: string): string | null {
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(pkgJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const scripts = (pkg["scripts"] ?? {}) as Record<string, string>;
+  const existing = scripts["prebuild"];
+  if (existing?.includes("flowlet sync")) return pkgJson; // already wired
+  scripts["prebuild"] = existing ? `${existing} && flowlet sync` : "flowlet sync";
+  pkg["scripts"] = scripts;
+  return JSON.stringify(pkg, null, 2) + "\n";
+}
+
 /** Sandbox assets bundled with the CLI at build time (see scripts/bundle-assets.mjs). */
 function bundledAssetsDir(): string {
   return fileURLToPath(new URL("./assets/", import.meta.url));
@@ -399,18 +417,24 @@ export async function wireNextApp(
     summary.written.push(rel(dest));
   }
 
-  // 6. package.json dependency.
+  // 6. package.json: @flowlet/next dependency + prebuild sync wiring.
   if (pkgRaw) {
-    const nextPkg = addDependency(pkgRaw, "@flowlet/next", "latest");
-    if (nextPkg === null) {
+    const withDep = addDependency(pkgRaw, "@flowlet/next", "latest");
+    if (withDep === null) {
       summary.skipped.push({ step: "package.json", reason: "unparsable — add @flowlet/next yourself" });
       summary.manual.push('add "@flowlet/next" to package.json dependencies and install');
-    } else if (nextPkg !== pkgRaw) {
-      await fs.writeFile(path.join(targetDir, "package.json"), nextPkg);
-      summary.edited.push("package.json");
-      summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @flowlet/next");
+      summary.manual.push('add "flowlet sync" to your package.json "prebuild" script');
     } else {
-      summary.skipped.push({ step: "package.json", reason: "@flowlet/next already a dependency" });
+      const withSync = addPrebuildSync(withDep) ?? withDep;
+      if (withSync !== pkgRaw) {
+        await fs.writeFile(path.join(targetDir, "package.json"), withSync);
+        summary.edited.push("package.json");
+        if (withDep !== pkgRaw) {
+          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @flowlet/next");
+        }
+      } else {
+        summary.skipped.push({ step: "package.json", reason: "@flowlet/next + prebuild sync already present" });
+      }
     }
   }
 

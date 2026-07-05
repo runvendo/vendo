@@ -21,6 +21,7 @@ import type { LanguageModel, ToolSet } from "ai";
 import type { Principal } from "@flowlet/core";
 import {
   AutomationRunner,
+  InAppChannels,
   InMemoryAutomationStore,
   InProcessScheduler,
   createAgentStepRunner,
@@ -43,6 +44,9 @@ export interface FlowletAutomationsWorld {
   store: InMemoryAutomationStore;
   scheduler: InProcessScheduler;
   runner: AutomationRunner;
+  /** In-app deliveries (FlowletToasts): the client polls these via the
+   *  handler's /deliveries route. */
+  channels: InAppChannels;
   authoringTools(threadId?: string): ToolSet;
   /** Drive due schedules — the client pings POST /tick (no server timers). */
   tick(): Promise<void>;
@@ -51,12 +55,14 @@ export interface FlowletAutomationsWorld {
 export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutomationsWorld {
   const registered = config.tools ?? {};
   const store = new InMemoryAutomationStore({});
+  const channels = new InAppChannels();
   const runner = new AutomationRunner({
     store,
     tools: async () => registered,
     policy: config.policy,
     userClaims: async () => ({ id: config.scope.subject }),
     agentRunner: createAgentStepRunner({ model: config.model }),
+    channels,
   });
   const scheduler = new InProcessScheduler();
   scheduler.onFire(createSchedulerFiringHandler(runner));
@@ -65,6 +71,7 @@ export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutoma
     store,
     scheduler,
     runner,
+    channels,
     authoringTools: (threadId?: string) =>
       createAutomationTools({
         store,

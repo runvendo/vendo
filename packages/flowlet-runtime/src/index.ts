@@ -57,6 +57,13 @@ export {
 } from "./composio";
 export type { ComposioClient, ComposioConfig } from "./composio";
 
+// MCP ingestion (host-declared servers)
+export {
+  ingestMcpTools,
+  createMcpToolSource,
+} from "./mcp";
+export type { McpServerConfig, McpToolSource, McpFetchResult } from "./mcp";
+
 // Automations engine (ENG-188): DSL, interpreter, store, runner, scheduler,
 // ingest helpers, and chat authoring tools.
 export * from "./automations";
@@ -68,6 +75,7 @@ export * from "./automations";
 export {
   createInMemoryStore,
   InMemoryAuditLog,
+  InMemoryRemixStore,
   InMemorySavedFlowletStore,
   InMemoryThreadStore,
   type InMemoryStore,
@@ -77,4 +85,8 @@ export {
   type InProcessCredentialBrokerConfig,
 } from "./embedded/in-process-credential-broker";
 export { InProcessExecutor, type InProcessToolFn } from "./embedded/in-process-executor";
-export { InAppChannels, type InAppChannelsConfig } from "./embedded/in-app-channels";
+export {
+  InAppChannels,
+  type InAppChannelsConfig,
+  type RetainedDelivery,
+} from "./embedded/in-app-channels";

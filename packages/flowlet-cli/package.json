@@ -2,7 +2,9 @@
   "name": "@flowlet/cli",
   "version": "0.0.0",
   "type": "module",
-  "bin": { "flowlet": "./dist/cli.js" },
+  "bin": {
+    "flowlet": "./dist/cli.js"
+  },
   "scripts": {
     "build": "vite build && node scripts/bundle-assets.mjs",
     "test": "vitest run",
@@ -12,8 +14,13 @@
     "@ai-sdk/anthropic": "3.0.12",
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
+    "@flowlet/sandbox-shims": "workspace:*",
+    "@tailwindcss/browser": "^4.1.0",
+    "@tailwindcss/cli": "^4.1.0",
     "ai": "6.0.28",
+    "esbuild": "^0.25.0",
     "sucrase": "^3.35.0",
+    "typescript": "^5.9.0",
     "yaml": "^2.5.0",
     "zod": "^3.24.0"
   },

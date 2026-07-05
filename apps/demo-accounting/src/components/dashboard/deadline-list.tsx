@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowUpRight, CalendarCheck2 } from "lucide-react"
 import useSWR from "swr"
+import { FlowletRemix } from "@flowlet/shell"
 import { Badge, type BadgeVariant } from "@/components/ui/badge"
 import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -75,7 +76,17 @@ export function DeadlineList({ className }: { className?: string }) {
   const entries = data?.slice(0, 5)
 
   return (
-    <Card className={cn("overflow-hidden", className)}>
+    /* Remixable (2026-07-04 spec): renders exactly as-is by default; the ✦
+       affordance lets the user customize this widget via the shared overlay,
+       with the live entries flowing into any pinned remix. The wrapper takes
+       the layout className — it is the grid child now. */
+    <FlowletRemix
+      id="upcoming-deadlines"
+      label="Upcoming deadlines"
+      context={{ clients: entries }}
+      className={className}
+    >
+    <Card className="overflow-hidden">
       <CardHeader
         title="Upcoming deadlines"
         action={
@@ -116,5 +127,6 @@ export function DeadlineList({ className }: { className?: string }) {
         </ul>
       )}
     </Card>
+    </FlowletRemix>
   )
 }

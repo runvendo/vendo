@@ -11,7 +11,12 @@
  * means connecting e.g. gmail builds a FRESH agent that ingests it.
  */
 import type { LanguageModel, ToolSet } from "ai";
-import type { FlowletAgent, RegisteredComponent, ToolSummaryInput } from "@flowlet/core";
+import type {
+  EnvManifest,
+  FlowletAgent,
+  RegisteredComponent,
+  ToolSummaryInput,
+} from "@flowlet/core";
 import {
   buildChatInstructions,
   capabilitySummary,
@@ -22,6 +27,7 @@ import {
   buildBrandGuidance,
   type ApprovalPolicy,
   type InstructionContext,
+  type McpServerConfig,
 } from "@flowlet/runtime";
 import type { BrandTokens } from "@flowlet/components/theme";
 import {
@@ -136,9 +142,13 @@ export interface AgentFactoryConfig {
   tools?: () => ToolSet;
   /** Connected Composio toolkits to ingest (undefined = Composio off). */
   toolkits?: () => string[];
+  /** Host-declared MCP servers (already env-resolved). Empty/undefined = MCP off. */
+  mcpServers?: McpServerConfig[];
   /** Extra cache-key material from the host (e.g. store generation). */
   cacheKey?: () => string;
   maxSteps?: number;
+  /** Sandbox environment manifest (flowlet sync) → engine prompt precision. */
+  envManifest?: EnvManifest;
 }
 
 /**
@@ -160,8 +170,14 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         // unconnected toolkit makes the Composio fetch fail and the agent ends
         // up with NO tools at all — an empty list is the fail-closed default.
         ...(config.toolkits ? { composio: { config: { toolkits } } } : {}),
+        // MCP servers are host-level and fixed for the handler's lifetime, so
+        // they need no cache-key material (unlike connected toolkits).
+        ...(config.mcpServers && config.mcpServers.length > 0
+          ? { mcp: { servers: config.mcpServers } }
+          : {}),
         ...(config.tools ? { tools: config.tools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
+        ...(config.envManifest ? { envManifest: config.envManifest } : {}),
         components: config.components,
       });
       agents.set(key, agent);

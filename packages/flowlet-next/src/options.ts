@@ -11,9 +11,11 @@ import type {
   ApprovalPolicy,
   FlowletPrincipal,
   InstructionContext,
+  McpServerConfig,
   RegisteredTool,
 } from "@flowlet/runtime";
 import type { ConnectionsStore } from "./connections";
+import { mcpServerArraySchema } from "./mcp-config";
 
 export interface IntegrationCatalogEntry {
   /** Composio toolkit id (must match the shell's BrandIcon ids). */
@@ -52,6 +54,12 @@ export interface FlowletHandlerOptions {
   /** Integrations catalog shown by the connect UI. Default: the standard set. */
   integrations?: IntegrationCatalogEntry[];
   /**
+   * Host-declared MCP servers (Streamable HTTP). Tools are ingested through
+   * the policy engine as source "mcp", prefixed `<name>_<tool>`. OVERRIDES
+   * `.flowlet/mcp.json` entirely when provided.
+   */
+  mcpServers?: McpServerConfig[];
+  /**
    * Bring-your-own connections store (which toolkits are connected → what the
    * agent ingests). Default: a fresh in-memory store. Inject when the host
    * owns connection state elsewhere (e.g. a demo reset that clears it).
@@ -64,6 +72,10 @@ export interface FlowletHandlerOptions {
   automations?: false | { tools?: Record<string, RegisteredTool> };
   /** Max model->tool steps per turn. Default: engine default. */
   maxSteps?: number;
+  /** Remix-source lookup for hosts without the extractor: map or resolver;
+   *  consulted before `.flowlet/remix-sources.json` (`undefined` falls
+   *  through). Values are raw component source strings. */
+  remixSources?: Record<string, string> | ((anchorId: string) => string | undefined);
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
@@ -84,6 +96,7 @@ const optionsSchema = z
     principal: fn<NonNullable<FlowletHandlerOptions["principal"]>>().optional(),
     cacheKey: fn<() => string>().optional(),
     integrations: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) }).strict()).optional(),
+    mcpServers: mcpServerArraySchema.optional(),
     connections: z
       .custom<ConnectionsStore>(
         (v) =>
@@ -94,6 +107,9 @@ const optionsSchema = z
       .optional(),
     automations: z
       .union([z.literal(false), z.object({ tools: z.record(z.custom<RegisteredTool>()).optional() }).strict()])
+      .optional(),
+    remixSources: z
+      .union([z.record(z.string(), z.string()), fn<(anchorId: string) => string | undefined>()])
       .optional(),
     maxSteps: z.number().int().positive().optional(),
   })
