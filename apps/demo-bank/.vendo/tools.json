@@ -24,6 +24,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/accounts/{id}"
+      },
+      "formats": {
+        "balance": "cents"
       }
     },
     {
@@ -49,6 +52,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/accounts/{id}/transactions"
+      },
+      "formats": {
+        "amount": "cents"
       }
     },
     {
@@ -66,6 +72,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/accounts"
+      },
+      "formats": {
+        "balance": "cents"
       }
     },
     {
@@ -91,6 +100,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/cards/{id}/transactions"
+      },
+      "formats": {
+        "amount": "cents"
       }
     },
     {
@@ -260,6 +272,10 @@
         "type": "http",
         "method": "GET",
         "path": "/api/goals"
+      },
+      "formats": {
+        "target": "cents",
+        "saved": "cents"
       }
     },
     {
@@ -277,6 +293,10 @@
         "type": "http",
         "method": "GET",
         "path": "/api/insights/budgets"
+      },
+      "formats": {
+        "limit": "cents",
+        "spent": "cents"
       }
     },
     {
@@ -294,6 +314,10 @@
         "type": "http",
         "method": "GET",
         "path": "/api/insights/cashflow"
+      },
+      "formats": {
+        "in": "cents",
+        "out": "cents"
       }
     },
     {
@@ -311,6 +335,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/insights/recurring"
+      },
+      "formats": {
+        "amount": "cents"
       }
     },
     {
@@ -328,6 +355,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/insights/spending"
+      },
+      "formats": {
+        "amount": "cents"
       }
     },
     {
@@ -397,6 +427,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/payments/scheduled"
+      },
+      "formats": {
+        "amount": "cents"
       }
     },
     {
@@ -414,6 +447,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/profile"
+      },
+      "formats": {
+        "netWorth": "cents"
       }
     },
     {
@@ -439,6 +475,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/transactions/{id}"
+      },
+      "formats": {
+        "amount": "cents"
       }
     },
     {
@@ -501,6 +540,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/transactions"
+      },
+      "formats": {
+        "amount": "cents"
       }
     }
   ],

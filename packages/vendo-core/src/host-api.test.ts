@@ -151,6 +151,38 @@ describe("openApiToHostTools", () => {
     expect(byName(defs, "createTransfer").annotations.destructiveHint).toBe(true);
   });
 
+  it("honours the x-vendo-formats extension (result-field format hints)", () => {
+    const withFormats = openApiToHostTools({
+      paths: {
+        "/api/deadlines": {
+          get: {
+            operationId: "listDeadlines",
+            summary: "All deadlines",
+            "x-vendo-formats": { filingDeadline: "iso-datetime", amount: "cents" },
+          },
+        },
+      },
+    });
+    expect(byName(withFormats, "listDeadlines").formats).toEqual({
+      filingDeadline: "iso-datetime",
+      amount: "cents",
+    });
+    // Undeclared → absent, not defaulted.
+    expect(byName(defs, "listAccounts").formats).toBeUndefined();
+  });
+
+  it("rejects an x-vendo-formats value outside the closed vocabulary", () => {
+    expect(() =>
+      openApiToHostTools({
+        paths: {
+          "/api/x": {
+            get: { operationId: "getX", "x-vendo-formats": { amount: "dollars" } },
+          },
+        },
+      }),
+    ).toThrow(/x-vendo-formats/);
+  });
+
   it("builds a flat input schema: params top-level, request body under `body`", () => {
     const order = byName(defs, "createOrder");
     expect(order.inputSchema).toEqual({

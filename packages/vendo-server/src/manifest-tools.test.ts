@@ -78,6 +78,16 @@ describe("manifestToolsToHostTools", () => {
     expect(def!.inputSchema).toEqual(src.inputSchema);
   });
 
+  it("passes the optional result-field formats map through to the definition", () => {
+    const [def] = manifestToolsToHostTools([
+      tool({ formats: { amount: "cents", timestamp: "iso-datetime" } }),
+    ]);
+    expect(def!.formats).toEqual({ amount: "cents", timestamp: "iso-datetime" });
+    // Absent stays absent — no empty-object default.
+    const [plain] = manifestToolsToHostTools([tool()]);
+    expect(plain!.formats).toBeUndefined();
+  });
+
   it("throws when a path template param is missing from the input schema", () => {
     expect(() =>
       manifestToolsToHostTools([

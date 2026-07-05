@@ -73,6 +73,18 @@
                 "additionalProperties": false
               }
             ]
+          },
+          "formats": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "cents",
+                "iso-date",
+                "iso-datetime",
+                "percent"
+              ]
+            }
           }
         },
         "required": [

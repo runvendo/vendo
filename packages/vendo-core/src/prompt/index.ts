@@ -28,3 +28,4 @@ export {
   pendingActionNote,
 } from "./consent-strings.js";
 export { capToolOutput, type CapBudget, type CappedResult } from "./cap-tool-output.js";
+export { renderFormatHints } from "./format-hints.js";

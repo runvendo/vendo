@@ -70,6 +70,23 @@ describe("manifestToolSchema", () => {
     }
   });
 
+  it("accepts an optional result-field formats map (additive — old manifests stay valid)", () => {
+    expect(() =>
+      manifestToolSchema.parse({
+        ...listInvoices,
+        formats: { amount: "cents", dueDate: "iso-date", updatedAt: "iso-datetime", apy: "percent" },
+      }),
+    ).not.toThrow();
+    // Absent formats stays valid — the field is optional, never defaulted.
+    expect(manifestToolSchema.parse(listInvoices).formats).toBeUndefined();
+  });
+
+  it("rejects unknown format values — the vocabulary is closed", () => {
+    expect(() =>
+      manifestToolSchema.parse({ ...listInvoices, formats: { amount: "dollars" } }),
+    ).toThrow();
+  });
+
   it("rejects unknown keys at every level (parity with additionalProperties: false)", () => {
     expect(() => manifestToolSchema.parse({ ...listInvoices, extra: 1 })).toThrow();
     expect(() =>

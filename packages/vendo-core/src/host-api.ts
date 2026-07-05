@@ -12,6 +12,11 @@
  *   call never transits Vendo; only the tool result enters the loop).
  */
 
+import {
+  manifestToolFormatsSchema,
+  type FieldFormat,
+} from "./manifest/tool.js";
+
 /** Standard MCP-style annotation hints, mirrored by the policy layer. */
 export interface HostToolAnnotations {
   readOnlyHint: boolean;
@@ -49,6 +54,10 @@ export interface HostToolDefinition {
   inputSchema: Record<string, unknown>;
   annotations: HostToolAnnotations;
   http: HostHttpCall;
+  /** Optional result-field format hints (field name → format). Rendered into
+   *  the tool's prompt description by the runtime (`hostToolset`) so money and
+   *  date fields are formatted faithfully — see `prompt/format-hints.ts`. */
+  formats?: Record<string, FieldFormat>;
 }
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const;
@@ -97,6 +106,7 @@ interface OpenApiOperation {
     content?: Record<string, { schema?: Record<string, unknown> }>;
   };
   "x-vendo-dangerous"?: boolean;
+  "x-vendo-formats"?: Record<string, string>;
 }
 
 export interface OpenApiSpec {
@@ -197,6 +207,22 @@ export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
         if (op.requestBody?.required === true) required.push("body");
       }
 
+      // Result-field format hints (mirrors the manifest's optional `formats`).
+      // Fail loudly on a value outside the closed vocabulary — a typo'd format
+      // silently dropping a money/date rule is exactly the bug class this
+      // annotation exists to kill.
+      let formats: Record<string, FieldFormat> | undefined;
+      const rawFormats = op["x-vendo-formats"];
+      if (rawFormats != null) {
+        const parsed = manifestToolFormatsSchema.safeParse(rawFormats);
+        if (!parsed.success) {
+          throw new Error(
+            `host tool "${name}": invalid x-vendo-formats — ${parsed.error.message}`,
+          );
+        }
+        formats = parsed.data;
+      }
+
       defs.push({
         name,
         description: op.summary ?? op.description ?? name,
@@ -208,6 +234,7 @@ export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
         },
         annotations: annotationsFor(method, op),
         http: { method, path, params, hasBody },
+        ...(formats ? { formats } : {}),
       });
     }
   }
