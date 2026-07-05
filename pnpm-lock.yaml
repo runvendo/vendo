@@ -532,6 +532,9 @@ importers:
       '@flowlet/telemetry':
         specifier: workspace:*
         version: link:../flowlet-telemetry
+      '@scarf/scarf':
+        specifier: ^1.4.0
+        version: 1.4.0
       '@tailwindcss/browser':
         specifier: ^4.1.0
         version: 4.3.2
@@ -685,6 +688,9 @@ importers:
       '@flowlet/shell':
         specifier: workspace:*
         version: link:../flowlet-shell
+      '@scarf/scarf':
+        specifier: ^1.4.0
+        version: 1.4.0
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -3736,6 +3742,9 @@ packages:
 
   '@rushstack/eslint-patch@1.16.1':
     resolution: {integrity: sha512-TvZbIpeKqGQQ7X0zSCvPH9riMSFQFSggnfBjFZ1mEoILW+UuXCKwOoPcgjMwiUtRqFZ8jWhPJc4um14vC6I4ag==}
+
+  '@scarf/scarf@1.4.0':
+    resolution: {integrity: sha512-xxeapPiUXdZAE3che6f3xogoJPeZgig6omHEy1rIY5WVsB3H2BHNnZH+gHG6x91SCWyQCzWGsuL2Hh3ClO5/qQ==}
 
   '@sinclair/typebox@0.24.51':
     resolution: {integrity: sha512-1P1OROm/rdubP5aFDSZQILU0vrLCJ4fvHt6EoqHEM+2D/G5MK3bIaymUKLit8Js9gbns5UyJnkP/TZROLw4tUA==}
@@ -13597,6 +13606,8 @@ snapshots:
   '@rtsao/scc@1.1.0': {}
 
   '@rushstack/eslint-patch@1.16.1': {}
+
+  '@scarf/scarf@1.4.0': {}
 
   '@sinclair/typebox@0.24.51': {}
 
