@@ -1,2 +1,11 @@
 import { defineConfig } from "vitest/config";
-export default defineConfig({ test: { environment: "node" } });
+import { fileURLToPath } from "node:url";
+
+export default defineConfig({
+  test: { environment: "node" },
+  resolve: {
+    alias: {
+      "@flowlet/telemetry": fileURLToPath(new URL("../flowlet-telemetry/src/index.ts", import.meta.url)),
+    },
+  },
+});

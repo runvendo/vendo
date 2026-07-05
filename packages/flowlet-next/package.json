@@ -32,6 +32,7 @@
     "@flowlet/server": "workspace:*",
     "@flowlet/shell": "workspace:*",
     "@flowlet/store": "workspace:*",
+    "@scarf/scarf": "^1.4.0",
     "ai": "6.0.28",
     "zod": "^3.24.0"
   },
@@ -45,5 +46,9 @@
     "react-dom": "^18.3.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "scarfSettings": {
+    "defaultOptIn": true,
+    "allowTopLevel": true
   }
 }

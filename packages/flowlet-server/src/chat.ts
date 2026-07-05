@@ -38,6 +38,7 @@ import { resolvePrincipal, threadScope } from "./guard";
 import type { ThreadIndex } from "./threads";
 import { applyVerifiedPinBase, enrichAnchorSources } from "./remix-enrich";
 import type { FlowletHandlerOptions } from "./options";
+import { devTelemetry } from "./telemetry-dev";
 
 interface ChatRequestBody {
   /** The ai SDK Chat's own id (DefaultChatTransport's default body key — see
@@ -144,6 +145,14 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
       await threads.upsertMessages(scope, threadRecordId, messages);
     } catch (err) {
       console.error("[flowlet] failed to persist the incoming client messages:", err);
+    }
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      void devTelemetry().track("agent_run", {});
+    } catch {
+      // Telemetry is best-effort and must not affect the chat response.
     }
   }
 

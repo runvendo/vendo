@@ -2,6 +2,10 @@
 
 Monorepo for Flowlet — a drop-in agentic experience — and the demo that showcases it.
 
+## Telemetry
+
+Flowlet collects anonymous, opt-out usage telemetry from build and development tooling. See [TELEMETRY.md](./TELEMETRY.md).
+
 ## Layout
 
 ```

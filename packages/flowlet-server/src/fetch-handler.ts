@@ -88,6 +88,7 @@ import { createThreadIndex } from "./threads";
 import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard";
 import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
+import { devTelemetry, errorClassName } from "./telemetry-dev";
 import { handleComposioWebhook } from "./webhooks";
 
 // Exported for flowlets.ts's save-path id validation (a saved flowlet's id
@@ -654,6 +655,16 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     );
   }
 
+  function trackErrorClass(err: unknown): void {
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        void devTelemetry().track("error_class", { errorClass: errorClassName(err) });
+      } catch {
+        // Telemetry is best-effort and must not affect the handler response.
+      }
+    }
+  }
+
   async function GET(req: Request, s: FlowletState): Promise<Response> {
     switch (routeTail(req)) {
       case "capabilities":
@@ -901,6 +912,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     try {
       s = await state();
     } catch (err) {
+      trackErrorClass(err);
       return bootError(err);
     }
     switch (req.method) {
