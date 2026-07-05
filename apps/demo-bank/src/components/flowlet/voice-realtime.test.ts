@@ -113,3 +113,43 @@ describe("review fixes (PR #41 triage)", () => {
     expect(titleNode?.props).toEqual({ text: "March" });
   });
 });
+
+describe("live voice check fixes (real Maple row shapes)", () => {
+  // The REAL listTransactions rows: scalar display fields + nested extras.
+  const REAL_ROWS = [
+    {
+      id: "txn_0135",
+      merchant: "Spotify",
+      amount: -1199,
+      category: "subscriptions",
+      statusTimeline: [{ state: "Posted", at: "2026-07-04T13:00:00.000Z" }],
+    },
+  ];
+  const REAL_RAW = { status: 200, ok: true, data: { data: REAL_ROWS } };
+
+  it("binds when declared columns are scalar, even though rows carry nested fields", () => {
+    replayRegistry.register("listTransactions", async () => REAL_RAW);
+    recordResult("listTransactions", { limit: 40 }, REAL_RAW);
+    const node = tableView({
+      columns: [
+        { key: "merchant", label: "Merchant" },
+        { key: "amount", label: "Amount" },
+      ],
+      rows: REAL_ROWS,
+      source: { tool: "listTransactions", input: { limit: 40 }, rowsPath: "/data/data" },
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    expect(payload.queries?.[0]?.tool).toBe("listTransactions");
+  });
+
+  it("degrades to snapshot when a DECLARED column is a nested value", () => {
+    recordResult("listTransactions", { limit: 41 }, REAL_RAW);
+    const node = tableView({
+      columns: [{ key: "statusTimeline", label: "Status" }],
+      rows: [{ statusTimeline: "Posted" }],
+      source: { tool: "listTransactions", input: { limit: 41 }, rowsPath: "/data/data" },
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    expect(payload.queries).toBeUndefined();
+  });
+});

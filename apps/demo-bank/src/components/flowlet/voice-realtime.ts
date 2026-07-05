@@ -105,8 +105,13 @@ function matchSource(
   if (rows.length > 0) {
     const first = rows[0];
     if (!first || typeof first !== "object") return undefined;
-    const fields = new Set(Object.keys(first as Record<string, unknown>));
-    if (!columns.every((c) => fields.has(c.key))) return undefined;
+    const record = first as Record<string, unknown>;
+    // Declared columns must exist AND be scalar: bound cells render raw
+    // values, so a nested field (statusTimeline…) would show as an em dash
+    // in every row — worse than the model's own formatted snapshot.
+    const scalar = (v: unknown) =>
+      v === null || ["string", "number", "boolean"].includes(typeof v);
+    if (!columns.every((c) => c.key in record && scalar(record[c.key]))) return undefined;
   }
   return { raw, tool: source.tool, input: source.input ?? {}, rowsPath: source.rowsPath };
 }
