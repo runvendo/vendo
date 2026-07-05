@@ -60,9 +60,15 @@ export async function generateJson<T>(opts: {
   prompt: string;
 }): Promise<T> {
   const ask = async (prompt: string): Promise<{ value?: T; error: string }> => {
-    // temperature 0: safety-relevant outputs (annotations, wrappers) must be as
-    // run-to-run stable as the model allows.
-    const { text } = await generateText({ model: opts.model, prompt, temperature: 0 });
+    // No explicit temperature: the current-generation default models
+    // (claude-sonnet-5, opus-4.8/4.7, gpt-5.x, gemini-3.x) REJECT the
+    // `temperature` parameter with a 400 ("temperature is deprecated for this
+    // model") — they fix sampling internally. Passing temperature:0 here made
+    // every LLM-assisted extraction (component wrappers) fail on a fresh
+    // install with the default provider model. Omitting it is valid on every
+    // model; the parse-retry below covers the small determinism loss on the
+    // older models that still honor a default temperature.
+    const { text } = await generateText({ model: opts.model, prompt });
     try {
       return { value: opts.schema.parse(JSON.parse(stripFences(text))), error: "" };
     } catch (err) {
