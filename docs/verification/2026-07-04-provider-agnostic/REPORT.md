@@ -76,7 +76,7 @@ What was verified instead:
 **Verdict: capability/plumbing PASS; end-to-end reply/generated-view with a real OpenAI key
 NOT RUN (no key available).**
 
-## 3c. Live check — Google (real Gemini key): BUG FOUND
+## 3c. Live check — Google (real Gemini key): found broken, fixed in b4702fab, re-verified green
 
 The Infisical `GEMINI_API_KEY` is a Google AI Studio key — the exact credential
 `@ai-sdk/google` reads as `GOOGLE_GENERATIVE_AI_API_KEY`. Exported it under that name
@@ -88,9 +88,9 @@ key (Anthropic/OpenAI explicitly absent).
   install needed, nothing to revert.
 - `GET /api/flowlet/capabilities` -> `{"chat":true,"integrations":false,"voice":false}` —
   correct (chat on, voice off without an OpenAI key).
-- Browser chat turn: sent the same visual prompt. **FAILS.** Client shows the clean
-  "Something went wrong" card (screenshot `05-google-gemini-400-tool-schema-error.png`);
-  server log shows the request DID reach
+- First browser chat turn (pre-fix, at `c005a750`): sent the same visual prompt. **FAILED.**
+  Client showed the clean "Something went wrong" card (screenshot
+  `05b-google-gemini-400-before-fix.png`); server log showed the request DID reach
   `generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent`
   and authenticated fine (no 401/403), but Google returned a deterministic
   `400 INVALID_ARGUMENT`:
@@ -113,11 +113,23 @@ key (Anthropic/OpenAI explicitly absent).
   (`packages/flowlet-core/src/manifest/manifest.ts`) carry the same pattern and would hit
   the same wall anywhere they enter a Google-bound tool schema.
 
-**Verdict: provider resolution, peer loading, capabilities, and real Google auth all work;
-the end-to-end turn FAILS with a reproducible 400 caused by numeric-literal enums in the
-automation tool schemas. Needs a fix (e.g. represent dslVersion in a Google-compatible way
-or transform tool JSON schemas per provider) — not attempted here, out of verification
-scope.**
+- **Fix**: commit `b4702fab` removes `dslVersion` from the LLM-facing tool input schema
+  (the server injects it instead) and adds a regression test asserting the serialized
+  `create_automation`/`update_automation` schemas contain zero numeric const/enum values.
+  `pnpm build` (16/16) and `pnpm --filter @flowlet/runtime test` (276 passed, including the
+  new regression test) green after the fix.
+- **Re-run (post-fix)**: identical setup (only `GOOGLE_GENERATIVE_AI_API_KEY`, `env -i`,
+  rebuilt packages). Capabilities unchanged and correct. Same browser prompt -> real Gemini
+  reply ("I have built an interactive Savings Plan Comparison Dashboard for you...") AND a
+  generated interactive view in the sandbox: growth chart (Traditional/High-Yield/CD over
+  5 years), parameter sliders with 1/3/5/10-year presets, per-plan balance cards, and a
+  Plan Comparison panel with "Extra vs. Traditional" deltas. Server log for the whole turn:
+  zero errors. Screenshot: `05-google-gemini-chat-generated-view.png`.
+
+**Verdict: PASS end-to-end after `b4702fab`. Story: real-Gemini run found the numeric-enum
+tool-schema bug (Anthropic/OpenAI tolerate numeric enums, Google rejects them), the fix
+landed with a regression test, and the identical run now completes with a real reply and
+generated view.**
 
 ## 4. Regression — demo-bank (`pnpm demo`)
 
@@ -168,7 +180,7 @@ RUN (no key available).**
 | 2 | Anthropic-only live browser | PASS | `01-anthropic-chat-generated-view.png` |
 | 3 | OpenAI live browser (real key) | NOT RUN — no key anywhere | — |
 | 3b | OpenAI plumbing (fake key + missing-peer) | PASS | `02-openai-capabilities-chat-true.png`, `03-openai-fakekey-401-client-error.png`, server log 401 from api.openai.com |
-| 3c | Google real-key end-to-end (Gemini via `GEMINI_API_KEY`) | FAIL — real bug: numeric enum in automation tool schemas 400s every Gemini call | `05-google-gemini-400-tool-schema-error.png`, server log 400 INVALID_ARGUMENT |
+| 3c | Google real-key end-to-end (Gemini via `GEMINI_API_KEY`) | PASS after fix — found numeric-enum tool-schema bug, fixed in `b4702fab`, re-verified green | `05-google-gemini-chat-generated-view.png` (success), `05b-google-gemini-400-before-fix.png` (pre-fix failure) |
 | 4 | demo-bank regression (`pnpm demo`) | PASS | `04-demobank-regression-healthy-turn.png` |
 | 5 | CLI extraction quality vs ground truth (real key) | NOT RUN — no key anywhere | — |
 | 5b | CLI fake-key failure + no-key deterministic-rescue | PASS | terminal output above |
@@ -176,9 +188,11 @@ RUN (no key available).**
 No OpenAI provider key was obtainable from Infisical, ambient shell env, or any `~/.env`-ish
 file on this machine at verification time; the Infisical `GEMINI_API_KEY` (a Google AI Studio
 key, the same credential `GOOGLE_GENERATIVE_AI_API_KEY` expects) enabled the real Google
-end-to-end in section 3c, which surfaced the numeric-enum tool-schema bug. Everything gated on
-a real OpenAI key is explicitly marked NOT RUN above rather than faked; everything else was
-run for real against live processes and a real browser.
+end-to-end in section 3c, which surfaced the numeric-enum tool-schema bug — fixed in
+`b4702fab` and re-verified green. Everything gated on a real OpenAI key is explicitly marked
+NOT RUN above rather than faked; everything else was run for real against live processes and
+a real browser. Two of the three big-3 providers (Anthropic, Google) are now verified fully
+end-to-end with real keys.
 
 All servers and processes started for this verification were stopped afterward; the tree is
 clean except this directory's screenshots and `.gitignore`'s new `!docs/verification/**/*.png`
