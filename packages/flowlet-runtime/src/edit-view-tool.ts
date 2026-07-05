@@ -43,6 +43,10 @@ export interface EditViewToolOptions {
         sourceHash: string;
         /** Component name for the deterministic skeleton. */
         componentName: string;
+        /** The anchor's scoped context, seeded at `data.anchor` so the THREAD
+         *  PREVIEW renders with real data (`FlowletRemix` re-patches live
+         *  context at pin render time regardless). */
+        context?: unknown;
       }
     | undefined;
   /** Seal-verified authored state of the current pin (`base:"pin"`). */
@@ -80,7 +84,11 @@ const editSourceSchema = z.object({
 });
 
 /** Deterministic single-node skeleton for the anchor base (spec contract). */
-function anchorSkeleton(componentName: string, source: string): GeneratedPayload {
+function anchorSkeleton(
+  componentName: string,
+  source: string,
+  context: unknown,
+): GeneratedPayload {
   return {
     formatVersion: "flowlet-genui/v1",
     root: "root",
@@ -92,7 +100,10 @@ function anchorSkeleton(componentName: string, source: string): GeneratedPayload
         props: { anchor: { $path: "/anchor" } },
       },
     ],
-    data: {},
+    // Seeded so the thread preview binds real data; the pinned render patches
+    // LIVE context over this on every render (FlowletRemix), so it never goes
+    // stale where it matters.
+    data: context !== undefined ? { anchor: context } : {},
     components: { [componentName]: source },
   };
 }
@@ -140,7 +151,11 @@ export function createEditViewTool(writer: FlowletWriter, options: EditViewToolO
           return err("base", "no captured baseline exists for this anchor — use render_view");
         }
         sources = { [options.anchorBase.componentName]: options.anchorBase.text };
-        payload = anchorSkeleton(options.anchorBase.componentName, options.anchorBase.text);
+        payload = anchorSkeleton(
+          options.anchorBase.componentName,
+          options.anchorBase.text,
+          options.anchorBase.context,
+        );
         sourceHash = options.anchorBase.sourceHash;
       }
 

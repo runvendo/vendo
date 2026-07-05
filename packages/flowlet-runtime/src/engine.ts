@@ -129,6 +129,8 @@ interface RemixContext {
     baseHash: string;
     sourceHash: string;
     componentName: string;
+    /** Scoped context, seeded into the skeleton's data.anchor (preview data). */
+    context?: unknown;
   };
   /** Seal-verified authored state of the user's current pin. */
   pinBase?: VerifiedPinBase;
@@ -525,6 +527,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             baseHash: normalized.baseHash,
             sourceHash: record.sourceHash,
             componentName: record.exportName ?? "HostComponent",
+            ...(scoped.context !== undefined ? { context: scoped.context } : {}),
           };
         }
         if (scoped?.pinBase) remix.pinBase = scoped.pinBase;

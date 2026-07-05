@@ -27,6 +27,7 @@ function options(over: Partial<EditViewToolOptions> = {}): EditViewToolOptions {
       baseHash: baseline.baseHash,
       sourceHash: "captured-hash",
       componentName: "DeadlineList",
+      context: { items: [{ id: "d1", name: "Acme VAT" }] },
     },
     seal: { sealer, principalUserId: "user-1", now: () => "2026-07-04T12:00:00.000Z" },
     ...over,
@@ -73,6 +74,9 @@ describe("createEditViewTool — anchor base", () => {
         props: { anchor: { $path: "/anchor" } },
       },
     ]);
+    // Preview data: the scoped context is seeded at data.anchor so the thread
+    // preview binds real data (live context re-patched at pin render time).
+    expect(payload.data).toEqual({ anchor: { items: [{ id: "d1", name: "Acme VAT" }] } });
     // Shipped source is COMPILED (JSX gone), and carries the edit.
     expect(payload.components.DeadlineList).not.toContain("<ol");
     expect(payload.components.DeadlineList).toContain("var(--flowlet-accent)");
