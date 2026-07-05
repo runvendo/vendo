@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { z } from "zod";
+import type { ApprovalPolicy, RegisteredTool } from "@vendoai/runtime";
 import { createVendoFetchHandler, resetVendoBootRegistry } from "./fetch-handler";
 
 function req(pathname: string, init?: RequestInit): Request {
@@ -11,9 +15,110 @@ function req(pathname: string, init?: RequestInit): Request {
   });
 }
 
+const ZERO_USAGE = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+} as const;
+
+const ALLOW_POLICY: ApprovalPolicy = {
+  evaluate: () => "allow",
+};
+
+const NOOP_TOOL: RegisteredTool = {
+  descriptor: {
+    name: "noop",
+    source: "caller",
+    annotations: { readOnlyHint: true },
+    hasExecute: true,
+    kind: "function",
+  },
+  inputSchema: z.object({}),
+  execute: async () => ({ ok: true, result: { ok: true } }),
+};
+
+function textChunks(id: string, text: string): LanguageModelV3StreamPart[] {
+  return [
+    { type: "text-start", id },
+    { type: "text-delta", id, delta: text },
+    { type: "text-end", id },
+  ];
+}
+
+function promptHasToolCall(prompt: { role: string; content: unknown }[]): boolean {
+  return prompt.some(
+    (m) =>
+      m.role === "assistant" &&
+      Array.isArray(m.content) &&
+      m.content.some((c) => (c as { type?: string }).type === "tool-call"),
+  );
+}
+
+function createAutomationModel(event: string): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      const chunks: LanguageModelV3StreamPart[] = promptHasToolCall(prompt)
+        ? [
+            ...textChunks("done", "Done."),
+            { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+          ]
+        : [
+            ...textChunks("start", "Creating automation."),
+            {
+              type: "tool-call",
+              toolCallId: "call-create",
+              toolName: "create_automation",
+              input: JSON.stringify({
+                spec: {
+                  name: "Invoice automation",
+                  description: "Run when invoice event arrives.",
+                  prompt: "When an invoice is paid, run the no-op step.",
+                  trigger: { type: "host_event", event },
+                  execution: {
+                    mode: "steps",
+                    steps: [{ id: "noop_step", type: "tool", tool: "noop", input: {} }],
+                  },
+                  limits: { maxFiringsPerHour: 10 },
+                },
+                grantedTools: [],
+              }),
+            },
+            { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "tool-calls", raw: undefined } },
+          ];
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  });
+}
+
+async function readBody(res: Response): Promise<string> {
+  return res.text();
+}
+
 // Point at an empty scratch dir so tests never read the repo's .vendo/.
 function emptyDir(): string {
   return path.join(mkdtempSync(path.join(tmpdir(), "vendo-fetch-handler-")), ".vendo");
+}
+
+function vendoDirWithEvent(): string {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), "vendo-fetch-handler-")), ".vendo");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, "tools.json"),
+    JSON.stringify({
+      version: 1,
+      tools: [],
+      events: [
+        {
+          name: "invoice.paid",
+          description: "An invoice was paid.",
+          payloadSchema: {
+            type: "object",
+            properties: { invoiceId: { type: "string" } },
+          },
+        },
+      ],
+    }),
+  );
+  return dir;
 }
 
 afterEach(() => {
@@ -72,6 +177,42 @@ describe("createVendoFetchHandler", () => {
     const handler = createVendoFetchHandler({ vendoDir: emptyDir() });
     const res = await handler(req("/api/vendo/tick", { method: "POST" }));
     expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("flows tools.json events into the automation world closed-world validation", async () => {
+    const createHandler = (event: string) =>
+      createVendoFetchHandler({
+        vendoDir: vendoDirWithEvent(),
+        model: createAutomationModel(event),
+        policy: ALLOW_POLICY,
+        automations: { tools: { noop: NOOP_TOOL } },
+        maxSteps: 3,
+      });
+
+    const declared = await createHandler("invoice.paid")(
+      req("/api/vendo/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "create it" }] }],
+        }),
+      }),
+    );
+    expect(declared.status).toBe(200);
+    expect(await readBody(declared)).toContain('"ok":true');
+
+    resetVendoBootRegistry();
+    const undeclared = await createHandler("invoice.sent")(
+      req("/api/vendo/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "create it" }] }],
+        }),
+      }),
+    );
+    expect(undeclared.status).toBe(200);
+    const body = await readBody(undeclared);
+    expect(body).toContain('host event \\"invoice.sent\\" is not declared');
+    expect(body).toContain("available: invoice.paid");
   });
 
   it("503s a chat request when no model key is configured", async () => {
