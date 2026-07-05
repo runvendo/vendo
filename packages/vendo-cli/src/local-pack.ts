@@ -11,6 +11,10 @@ export interface LocalTarball {
   fileName: string;
 }
 
+export type LocalPackageRewriteResult =
+  | { kind: "updated"; source: string }
+  | { kind: "skipped"; reason: string; manual: string };
+
 export interface LocalVendoInstallSummary {
   packageManager: "pnpm" | "npm";
   installCommand: "pnpm install" | "npm install";
@@ -36,6 +40,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}
+
+function objectRecord(value: unknown, label: string): { ok: true; value: Record<string, unknown> } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, value: {} };
+  if (!isRecord(value)) return { ok: false, reason: `${label} is not an object` };
+  return { ok: true, value: { ...value } };
 }
 
 function sortedRecord<T>(record: Record<string, T>): Record<string, T> {
@@ -101,7 +111,13 @@ async function discoverLocalPackageClosure(repoDir: string): Promise<WorkspacePa
 
 async function findFluidkitTarball(repoDir: string): Promise<string> {
   const vendorDir = path.join(repoDir, "vendor");
-  const matches = (await fs.readdir(vendorDir))
+  let entries: string[];
+  try {
+    entries = await fs.readdir(vendorDir);
+  } catch {
+    throw new Error(`no fluidkit tarball found in ${path.relative(process.cwd(), vendorDir)}`);
+  }
+  const matches = entries
     .filter((name) => /^fluidkit-.+\.tgz$/.test(name))
     .sort();
   if (matches.length === 0) throw new Error(`no fluidkit tarball found in ${path.relative(process.cwd(), vendorDir)}`);
@@ -116,7 +132,7 @@ async function defaultPackRunner(
   opts: { repoDir: string; vendorDir: string; fileName: string },
 ): Promise<void> {
   const output = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn("pnpm", ["--filter", pkg.name, "pack", "--pack-destination", opts.vendorDir], {
+    const child = spawn("pnpm", ["-C", pkg.dir, "pack", "--pack-destination", opts.vendorDir], {
       cwd: opts.repoDir,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -157,16 +173,26 @@ export function rewritePackageJsonForLocalVendo(
   pkgJson: string,
   tarballs: readonly LocalTarball[],
   opts: { packageManager: "pnpm" | "npm" },
-): string | null {
+): LocalPackageRewriteResult {
   let pkg: PackageJson;
   try {
     pkg = JSON.parse(pkgJson) as PackageJson;
   } catch {
-    return null;
+    return {
+      kind: "skipped",
+      reason: "package.json is not valid JSON",
+      manual: localPackageManualInstructions(tarballs, opts.packageManager),
+    };
   }
   const byName = new Map(tarballs.map((tarball) => [tarball.name, tarball]));
   for (const name of [...LOCAL_DIRECT_DEPENDENCIES, "fluidkit"]) {
-    if (!byName.has(name)) return null;
+    if (!byName.has(name)) {
+      return {
+        kind: "skipped",
+        reason: `local tarball map is missing ${name}`,
+        manual: localPackageManualInstructions(tarballs, opts.packageManager),
+      };
+    }
   }
 
   const deps = stringRecord(pkg["dependencies"]);
@@ -179,13 +205,70 @@ export function rewritePackageJsonForLocalVendo(
     Object.fromEntries(tarballs.map((tarball) => [tarball.name, fileSpec(tarball.fileName)])),
   );
   if (opts.packageManager === "pnpm") {
-    const pnpm = isRecord(pkg["pnpm"]) ? { ...pkg["pnpm"] } : {};
-    pnpm["overrides"] = sortedRecord({ ...stringRecord(pnpm["overrides"]), ...localOverrides });
+    const pnpmResult = objectRecord(pkg["pnpm"], "pnpm");
+    if (!pnpmResult.ok) {
+      return {
+        kind: "skipped",
+        reason: pnpmResult.reason,
+        manual: localPackageManualInstructions(tarballs, opts.packageManager),
+      };
+    }
+    const pnpm = pnpmResult.value;
+    const overridesResult = objectRecord(pnpm["overrides"], "pnpm.overrides");
+    if (!overridesResult.ok) {
+      return {
+        kind: "skipped",
+        reason: overridesResult.reason,
+        manual: localPackageManualInstructions(tarballs, opts.packageManager),
+      };
+    }
+    pnpm["overrides"] = sortedRecord({ ...overridesResult.value, ...localOverrides });
     pkg["pnpm"] = pnpm;
   } else {
-    pkg["overrides"] = sortedRecord({ ...stringRecord(pkg["overrides"]), ...localOverrides });
+    const overridesResult = objectRecord(pkg["overrides"], "overrides");
+    if (!overridesResult.ok) {
+      return {
+        kind: "skipped",
+        reason: overridesResult.reason,
+        manual: localPackageManualInstructions(tarballs, opts.packageManager),
+      };
+    }
+    pkg["overrides"] = sortedRecord({ ...overridesResult.value, ...localOverrides });
   }
-  return JSON.stringify(pkg, null, 2) + "\n";
+  return { kind: "updated", source: JSON.stringify(pkg, null, 2) + "\n" };
+}
+
+function localPackageManualInstructions(tarballs: readonly LocalTarball[], packageManager: "pnpm" | "npm"): string {
+  const byName = new Map(tarballs.map((tarball) => [tarball.name, tarball.fileName]));
+  const direct = LOCAL_DIRECT_DEPENDENCIES
+    .map((name) => `${JSON.stringify(name)}: ${JSON.stringify(byName.has(name) ? fileSpec(byName.get(name)!) : "file:vendor/<tarball>")}`)
+    .join(", ");
+  const overrides = tarballs
+    .map((tarball) => `${JSON.stringify(tarball.name)}: ${JSON.stringify(fileSpec(tarball.fileName))}`)
+    .join(", ");
+  return `manually add package.json dependencies { ${direct} } and ${packageManager === "pnpm" ? "pnpm.overrides" : "overrides"} { ${overrides} }`;
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  return fs.access(p).then(() => true, () => false);
+}
+
+async function replaceVendorDir(stagingDir: string, vendorDir: string): Promise<void> {
+  if (!(await pathExists(vendorDir))) {
+    await fs.rename(stagingDir, vendorDir);
+    return;
+  }
+  const backupDir = await fs.mkdtemp(path.join(path.dirname(vendorDir), ".vendo-local-pack-backup-"));
+  await fs.rm(backupDir, { recursive: true, force: true });
+  await fs.rename(vendorDir, backupDir);
+  try {
+    await fs.rename(stagingDir, vendorDir);
+    await fs.rm(backupDir, { recursive: true, force: true });
+  } catch (err) {
+    await fs.rm(vendorDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rename(backupDir, vendorDir).catch(() => {});
+    throw err;
+  }
 }
 
 export async function installLocalVendoPackages(
@@ -196,28 +279,46 @@ export async function installLocalVendoPackages(
   const resolvedTarget = path.resolve(targetDir);
   const resolvedRepo = path.resolve(repoDir);
   const vendorDir = path.join(resolvedTarget, "vendor");
-  await fs.mkdir(vendorDir, { recursive: true });
-
   const packages = await discoverLocalPackageClosure(resolvedRepo);
-  const pack = opts.pack ?? defaultPackRunner;
-  const tarballs: LocalTarball[] = [];
-  for (const pkg of packages) {
-    const fileName = npmPackFileName(pkg.name, pkg.version);
-    await pack(pkg, { repoDir: resolvedRepo, vendorDir, fileName });
-    tarballs.push({ name: pkg.name, fileName });
-  }
-
   const fluidkit = await findFluidkitTarball(resolvedRepo);
   const fluidkitFileName = path.basename(fluidkit);
-  await fs.copyFile(fluidkit, path.join(vendorDir, fluidkitFileName));
-  tarballs.push({ name: "fluidkit", fileName: fluidkitFileName });
+  const tarballs: LocalTarball[] = [
+    ...packages.map((pkg) => ({ name: pkg.name, fileName: npmPackFileName(pkg.name, pkg.version) })),
+    { name: "fluidkit", fileName: fluidkitFileName },
+  ];
 
   const pkgPath = path.join(resolvedTarget, "package.json");
   const pkgJson = await fs.readFile(pkgPath, "utf8");
-  const packageManager = await detectPackageManager(resolvedTarget, JSON.parse(pkgJson) as PackageJson);
+  let parsedPkg: PackageJson = {};
+  try {
+    parsedPkg = JSON.parse(pkgJson) as PackageJson;
+  } catch {
+    /* rewritePackageJsonForLocalVendo returns the actionable manual path */
+  }
+  const packageManager = await detectPackageManager(resolvedTarget, parsedPkg);
   const rewritten = rewritePackageJsonForLocalVendo(pkgJson, tarballs, { packageManager });
-  if (rewritten === null) throw new Error("could not rewrite package.json for local Vendo tarballs");
-  await fs.writeFile(pkgPath, rewritten);
+  if (rewritten.kind === "skipped") {
+    throw new Error(`${rewritten.reason}; ${rewritten.manual}`);
+  }
+
+  const pack = opts.pack ?? defaultPackRunner;
+  const stagingDir = await fs.mkdtemp(path.join(resolvedTarget, ".vendo-local-pack-"));
+  try {
+    if (await pathExists(vendorDir)) {
+      await fs.cp(vendorDir, stagingDir, { recursive: true });
+    }
+    for (const pkg of packages) {
+      await pack(pkg, { repoDir: resolvedRepo, vendorDir: stagingDir, fileName: npmPackFileName(pkg.name, pkg.version) });
+    }
+
+    await fs.copyFile(fluidkit, path.join(stagingDir, fluidkitFileName));
+    await replaceVendorDir(stagingDir, vendorDir);
+  } catch (err) {
+    await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
+
+  await fs.writeFile(pkgPath, rewritten.source);
 
   return {
     packageManager,

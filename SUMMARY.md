@@ -50,3 +50,11 @@ Verification:
 - `pnpm build` passed.
 - `pnpm --dir packages/vendo-cli test` passed: 28 files, 136 tests.
 - `pnpm --dir packages/vendo-cli typecheck` passed.
+
+## FIXED
+
+- Replaced `pnpm --filter <pkg> pack` with `pnpm -C <pkg.dir> pack --pack-destination <vendorDir>`.
+- Added a real-pnpm test that packs from a synthetic local repo path containing spaces.
+- Preserved existing npm and pnpm override objects while merging only Vendo tarball keys; unsupported override shapes now skip with manual instructions instead of dropping data.
+- Preflighted `fluidkit` and package.json rewrites before target writes, then staged tarballs before replacing `vendor/`.
+- Updated the generated Events README example to show the full `tools.json` shape and name `ingestVendoEvent()` plus `POST /api/vendo/events/ingest`.

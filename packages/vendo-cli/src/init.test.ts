@@ -41,7 +41,11 @@ describe("runInit e2e (mock model)", () => {
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
     const readme = await readFile(path.join(dir, ".vendo/README.md"), "utf8");
     expect(readme).toContain("## Events");
+    expect(readme).toContain('"version": 1');
+    expect(readme).toContain('"events": [');
     expect(readme).toContain('"name": "charge.posted"');
+    expect(readme).toContain("ingestVendoEvent()");
+    expect(readme).toContain("POST /api/vendo/events/ingest");
     expect(readme).toContain("push at the source, relay webhooks, or poll upstream systems");
   });
 

@@ -80,25 +80,32 @@ after review — this file is the reviewable source of truth.
 ## Events
 
 Events are named payload contracts that automations can use as triggers. Add
-them to \`tools.json\` beside your tools:
+them to the \`events\` array in \`tools.json\`:
 
 \`\`\`json
 {
-  "name": "charge.posted",
-  "description": "A card charge posted to an account.",
-  "payloadSchema": {
-    "type": "object",
-    "required": ["chargeId", "accountId", "amountCents"],
-    "properties": {
-      "chargeId": { "type": "string" },
-      "accountId": { "type": "string" },
-      "amountCents": { "type": "integer" },
-      "postedAt": { "type": "string", "format": "date-time" }
+  "version": 1,
+  "tools": [],
+  "events": [
+    {
+      "name": "charge.posted",
+      "description": "A card charge posted to an account.",
+      "payloadSchema": {
+        "type": "object",
+        "required": ["chargeId", "accountId", "amountCents"],
+        "properties": {
+          "chargeId": { "type": "string" },
+          "accountId": { "type": "string" },
+          "amountCents": { "type": "integer" },
+          "postedAt": { "type": "string", "format": "date-time" }
+        }
+      }
     }
-  }
+  ]
 }
 \`\`\`
 
+Ingest events with \`ingestVendoEvent()\` or \`POST /api/vendo/events/ingest\`.
 Producers can push at the source, relay webhooks, or poll upstream systems; all
 three feed the same Vendo ingest path.
 
