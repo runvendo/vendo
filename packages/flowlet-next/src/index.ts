@@ -19,4 +19,10 @@ export { defaultFlowletPolicy } from "./default-policy";
 export { createConnectionsStore, type ConnectionsStore } from "./connections";
 export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
 export { buildInstructions, type BuildInstructionsInput } from "./agent";
-export { enrichAnchorSources, createSourceResolver, capSource } from "./remix-enrich";
+export {
+  applyVerifiedPinBase,
+  enrichAnchorSources,
+  createSourceResolver,
+  capSource,
+} from "./remix-enrich";
+export { resolveRemixSealer } from "./seal";

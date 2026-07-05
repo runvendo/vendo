@@ -20,6 +20,7 @@ import {
 import type { FlowletAgent, RegisteredComponent } from "@flowlet/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
+import { resolveRemixSealer } from "@flowlet/next";
 import { demoPolicy } from "./policy";
 import { cadenceBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
@@ -191,6 +192,9 @@ export interface CreateDemoAgentOptions {
 
 export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent {
   const model = opts.model ?? anthropic(DEMO_MODEL);
+  // Pin-envelope sealing (remix fast-edits): ANTHROPIC_API_KEY is this demo's
+  // own key, so the HKDF fallback is meaningful here.
+  const remixSealer = resolveRemixSealer({ hasInjectedModel: false });
   return createFlowletAgent({
     model,
     policy: demoPolicy,
@@ -202,5 +206,6 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     tools: opts.extraTools,
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
+    ...(remixSealer ? { remixSealer } : {}),
   });
 }
