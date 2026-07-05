@@ -532,9 +532,9 @@ export function startFlowletScheduler(options: FlowletHandlerOptions = {}): void
 
 Codex ground truth: NO remember layer wraps the policy today, and `/action` never calls `policy.onExecuted` — durable decisions need both ends built, not just swapped.
 
-- [ ] **Step 1: Failing tests** — (a) with durable storage, an approved-and-executed action for tool+input X makes the NEXT `policy.evaluate` for identical X return allow (the remember contract) — and still does after rebuilding assembly from the same PGlite dir; (b) a DENIED action never memoizes (re-prompts); (c) without durable storage, behavior is unchanged (no remember layer, or in-memory remember — pick: **in-memory remember when storage off**, keeping semantics uniform; test accordingly).
-- [ ] **Step 2: Implement** — assembly: `policy = rememberDecisions(basePolicy, { store: decisionStore, policyVersion: <existing constant or "v1"> })` (read `remember.ts` for the exact factory signature); `action.ts`: after a successful approved execution, `await policy.onExecuted?.(ctx)` with the same `PolicyContext` used for evaluate (find the execute-success point, ~line 127 region).
-- [ ] **Step 3: Run** — green. **Commit** `feat(next): ask-once-remember wired end-to-end with durable decisions`
+- [x] **Step 1: Failing tests** — (a) with durable storage, an approved-and-executed action for tool+input X makes the NEXT `policy.evaluate` for identical X return allow (the remember contract) — and still does after rebuilding assembly from the same PGlite dir; (b) a DENIED action never memoizes (re-prompts); (c) without durable storage, behavior is unchanged (no remember layer, or in-memory remember — pick: **in-memory remember when storage off**, keeping semantics uniform; test accordingly).
+- [x] **Step 2: Implement** — assembly: `policy = rememberDecisions(basePolicy, { store: decisionStore, policyVersion: <existing constant or "v1"> })` (read `remember.ts` for the exact factory signature); `action.ts`: after a successful approved execution, `await policy.onExecuted?.(ctx)` with the same `PolicyContext` used for evaluate (find the execute-success point, ~line 127 region).
+- [x] **Step 3: Run** — green. **Commit** `feat(next): ask-once-remember wired end-to-end with durable decisions`
 
 ---
 

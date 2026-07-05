@@ -2,12 +2,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { tool } from "ai";
+import { z } from "zod";
 import { createFlowletDatabase, createDrizzleThreadStore, getMeta } from "@flowlet/store";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { createFlowletHandler, resetFlowletBootRegistry, routeTail } from "./handler";
-import { z } from "zod";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
+
+// An unannotated write tool: the default policy's fail-safe gates it behind
+// approval (no readOnly/destructive hints, no Composio-shaped verb segments).
+function writeTool() {
+  return {
+    create_thing: tool({
+      description: "write a thing",
+      inputSchema: z.object({ amount: z.number() }).passthrough(),
+      execute: async (input: unknown) => ({ wrote: input }),
+    }),
+  };
+}
 
 function req(pathname: string, init?: RequestInit): Request {
   return new Request(`http://localhost:3000${pathname}`, {
@@ -759,5 +772,114 @@ describe("createFlowletHandler", () => {
     const body = (await res.json()) as { tools: { name: string }[] };
     const names = body.tools.map((t) => t.name);
     expect(names).toContain("stop_asking_about");
+  });
+
+  describe("ask-once-remember wired end-to-end through assembly", () => {
+    it("an approved-and-executed /action call is remembered durably, surviving an assembly rebuild over the same PGlite dir", async () => {
+      const dataDir = `memory://flowlet-next-remember-durable-${Date.now()}`;
+      const opts = { flowletDir: emptyDir(), storage: { pglite: { dataDir } }, tools: writeTool };
+
+      const first = createFlowletHandler(opts);
+      const gate = await first.POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      const { approvalToken } = (await gate.json()) as { approvalToken: string };
+      const executed = await first.POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 }, approvalToken }),
+        }),
+      );
+      expect(((await executed.json()) as { decision: string }).decision).toBe("approve");
+
+      // Simulate a process restart: reset the handler's own boot slot (a
+      // fresh module/process would have none), but reuse the SAME PGlite
+      // dataDir — @flowlet/store memoizes the underlying handle by cacheKey,
+      // so this is the durable-rebuild-equivalent without an actual restart.
+      resetFlowletBootRegistry();
+      const second = createFlowletHandler(opts);
+      const remembered = await second.POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      expect(await remembered.json()).toEqual({
+        decision: "allow",
+        result: { wrote: { amount: 5 } },
+      });
+    });
+
+    it("keeps the same remember semantics in-memory when storage is off", async () => {
+      const { POST } = createFlowletHandler({ flowletDir: emptyDir(), storage: false, tools: writeTool });
+      const gate = await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      const { approvalToken } = (await gate.json()) as { approvalToken: string };
+      await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 }, approvalToken }),
+        }),
+      );
+      const remembered = await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+        }),
+      );
+      expect(await remembered.json()).toEqual({
+        decision: "allow",
+        result: { wrote: { amount: 5 } },
+      });
+    });
+
+    it("the SAME remember memo is shared by chat's agent and /action (wrapped once in assembly)", async () => {
+      vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+      const dataDir = `memory://flowlet-next-remember-shared-${Date.now()}`;
+      const { POST } = createFlowletHandler({
+        flowletDir: emptyDir(),
+        storage: { pglite: { dataDir } },
+        tools: writeTool,
+      });
+      const gate = await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 7 } }),
+        }),
+      );
+      const { approvalToken } = (await gate.json()) as { approvalToken: string };
+      await POST(
+        req("/api/flowlet/action", {
+          method: "POST",
+          body: JSON.stringify({ action: "create_thing", payload: { amount: 7 }, approvalToken }),
+        }),
+      );
+
+      // Read the decision store directly (same handle @flowlet/store memoizes
+      // for this dataDir) to prove the memo landed where automations/chat's
+      // policy (built from the SAME wrap) would also read it from.
+      const { createFlowletDatabase: createDb, createDrizzleDecisionStore } = await import("@flowlet/store");
+      const { WORLD_SCOPE } = await import("@flowlet/server");
+      const handle = await createDb({ pglite: { dataDir } });
+      const decisionStore = createDrizzleDecisionStore(handle, WORLD_SCOPE);
+      const { canonicalKey } = await import("@flowlet/runtime");
+      const key = canonicalKey(
+        {
+          toolName: "create_thing",
+          input: { amount: 7 },
+          descriptor: undefined as never,
+          principal: { userId: "flowlet-default-user" },
+        },
+        "v1",
+      );
+      expect(await decisionStore.get(key)).toBe("approve");
+    });
   });
 });

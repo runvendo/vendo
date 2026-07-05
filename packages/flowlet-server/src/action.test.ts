@@ -4,9 +4,11 @@ import { z } from "zod";
 import {
   buildDescriptor,
   createInMemoryCompiledRuleStore,
+  createInMemoryDecisionStore,
   createInMemoryGrantStore,
   hashDescriptor,
   InMemoryAuditLog,
+  rememberDecisions,
   type ApprovalPolicy,
 } from "@flowlet/runtime";
 import { createApprovalStore, handleAction, type ActionDeps } from "./action";
@@ -258,5 +260,71 @@ describe("handleAction", () => {
       const body = (await res.json()) as { needsApproval?: boolean };
       expect(body.needsApproval).toBe(true); // still gated — the grant never matched
     });
+  });
+});
+
+describe("ask-once-remember wired through /action", () => {
+  it("an approved-and-executed action is remembered: the next identical call auto-executes without a token", async () => {
+    const store = createInMemoryDecisionStore();
+    const policy = rememberDecisions(defaultFlowletPolicy, store, "v1");
+    const d = deps({ policy });
+
+    const gate = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 } }),
+      d,
+    );
+    const { approvalToken } = (await gate.json()) as { approvalToken: string };
+    const executed = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 }, approvalToken }),
+      d,
+    );
+    expect((await executed.json()) as { decision: string }).toMatchObject({ decision: "approve" });
+
+    // No token this time — remembered decision auto-allows and executes directly.
+    const remembered = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 } }),
+      d,
+    );
+    expect(await remembered.json()).toEqual({
+      decision: "allow",
+      result: { wrote: { amount: 5 } },
+    });
+  });
+
+  it("a denied action never memoizes and keeps re-prompting", async () => {
+    const store = createInMemoryDecisionStore();
+    let allowed = false;
+    const flakyInner: ApprovalPolicy = {
+      evaluate: () => (allowed ? "approve" : "deny"),
+    };
+    const policy = rememberDecisions(flakyInner, store, "v1");
+    const d = deps({ policy });
+
+    const denied = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 } }),
+      d,
+    );
+    expect(denied.status).toBe(403);
+
+    // Flip the inner policy to allow approval, then approve+execute once.
+    allowed = true;
+    const gate = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 } }),
+      d,
+    );
+    const { approvalToken } = (await gate.json()) as { approvalToken: string };
+    const executed = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 }, approvalToken }),
+      d,
+    );
+    expect(((await executed.json()) as { decision: string }).decision).toBe("approve");
+
+    // Now it IS remembered (post-execute), proving the earlier deny never
+    // wrote a memo — it took a real approve+execute to start remembering.
+    const remembered = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 } }),
+      d,
+    );
+    expect(((await remembered.json()) as { decision: string }).decision).toBe("allow");
   });
 });

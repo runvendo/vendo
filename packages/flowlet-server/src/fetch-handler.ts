@@ -33,9 +33,16 @@
 import assert from "node:assert";
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
-import { DrizzleAutomationStore, createDrizzleThreadStore, setMeta } from "@flowlet/store";
+import {
+  DrizzleAutomationStore,
+  createDrizzleDecisionStore,
+  createDrizzleThreadStore,
+  setMeta,
+} from "@flowlet/store";
 import {
   buildDescriptor,
+  createInMemoryDecisionStore,
+  rememberDecisions,
   createBreakerState,
   createConsentLedger,
   createFadeTracker,
@@ -77,7 +84,7 @@ import { resolveModel } from "./model";
 import { defaultFlowletPolicy } from "./default-policy";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
 import { createThreadIndex } from "./threads";
-import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL } from "./guard";
+import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard";
 import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
 import { handleComposioWebhook } from "./webhooks";
@@ -121,6 +128,11 @@ export function routeTail(req: Request): string {
 }
 
 export type FlowletFetchHandler = (req: Request) => Promise<Response>;
+
+// Bump this when the guardrail policy's decision-relevant shape changes
+// (e.g. a rewritten annotation ruleset) so old remembered decisions stop
+// suppressing prompts under the new rules — see rememberDecisions/canonicalKey.
+const DECISION_POLICY_VERSION = "v1";
 
 /** Everything the routes (and the scheduler boot hook) need, assembled once. */
 export type FlowletState = Awaited<ReturnType<typeof assembleFlowletState>>;
@@ -172,8 +184,17 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
     // grants can suppress repeat approvals (never critical), a judge (off by
     // default) can tighten/loosen the act tier, deterministic breakers can
     // only tighten, and audit records executes.
+    //
+    // Ask-once-remember wraps the base policy INSIDE the production stack —
+    // durable decisions when storage is configured, in-memory otherwise — so
+    // chat's agent and /action share the exact same memo, while breakers
+    // (which may only tighten) still sit OUTSIDE the memo and can override it.
+    const decisionStore = storage
+      ? createDrizzleDecisionStore(storage, WORLD_SCOPE)
+      : createInMemoryDecisionStore();
     const basePolicy = options.policy ?? defaultFlowletPolicy;
-    const policy = composeProductionPolicy(basePolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
+    const rememberedPolicy = rememberDecisions(basePolicy, decisionStore, DECISION_POLICY_VERSION);
+    const policy = composeProductionPolicy(rememberedPolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 
