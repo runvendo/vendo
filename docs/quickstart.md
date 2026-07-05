@@ -31,12 +31,16 @@ npx flowlet init .
 - extracts your **theme, tools, and components** into `.flowlet/` (the
   reviewable source of truth — edit these files);
 - writes `app/api/flowlet/[...path]/route.ts` containing
-  `createFlowletHandler()` — one catch-all that serves chat, sandbox actions,
-  integrations, capabilities, and the automations tick;
+  `createFlowletHandler()` — one catch-all serving `chat`, `action`,
+  `integrations`, `capabilities`, `tick`, `webhooks/composio`, `threads` /
+  `threads/<id>`, and `flowlets` / `flowlets/<id>` / `flowlets/<id>/delete`;
 - writes `app/flowlet-root.tsx` (a small client wrapper) and wraps your root
   layout's `{children}` with it — idempotently, respecting existing providers;
+- writes `instrumentation.ts` (or `src/instrumentation.ts`, next to a
+  `src/app`) that boots the automation scheduler on server start;
 - drops `.env.example` documenting the capability-additive key ladder (see
-  below);
+  below) plus the storage and scheduler env vars (see
+  [Persistence](#persistence));
 - copies the sandbox runtime assets into `public/flowlet/`;
 - adds `@flowlet/next` to your dependencies.
 
@@ -213,6 +217,22 @@ implicitly.
 > server through `tsx` for that reason (same trick `apps/gmail` uses). Plain
 > `node server.js` starts working once the packages publish.
 
+## Persistence
+
+Storage is durable by default: with no `storage` option, `createFlowletHandler`
+opens an embedded PGlite database at `.flowlet/data` and persists automations
+(with their versions, grants, and run history), approval decisions, chat
+threads, and saved flowlets — all of it survives a server restart. Point
+`DATABASE_URL` at a hosted Postgres (Supabase, Neon, RDS) to move off PGlite,
+or pass `storage: false` to opt back into in-memory. The scheduler that fires
+schedules without a browser open boots from the `instrumentation.ts` the
+codemod wrote for you; the same handler also has a signature-verified
+Composio webhook route (`POST /api/flowlet/webhooks/composio`) so triggers
+fire without polling. Full detail — scheduler modes for serverless deploys,
+the webhook setup, and the single-writer/single-tenant posture you should
+know before deploying — lives in
+[`docs/persistence-and-deploy.md`](persistence-and-deploy.md).
+
 ## Deploying
 
 Zero-config serves **local requests only** — the handler holds your keys and
@@ -244,6 +264,9 @@ of them are keyed by user, so:
   so don't rely on it to separate two users' integrations. Multi-tenant
   installs must inject their own per-user `connections` store (and will want
   host-provided approval/automation stores).
+
+See [`docs/persistence-and-deploy.md`](persistence-and-deploy.md) for the
+scheduler and Composio webhook setup you'll want on a real deployment.
 
 ## Troubleshooting
 
