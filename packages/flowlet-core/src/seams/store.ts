@@ -58,6 +58,10 @@ export interface ThreadStore {
    *  full settled list. Optional — additive to the frozen seam (same pattern
    *  as `Store.grants`); callers fall back to append-only deltas when absent. */
   replaceMessages?(scope: Principal, threadId: string, messages: FlowletUIMessage[]): Promise<void>;
+  /** Upsert by message id: existing messages keep their position, parts are
+   *  replaced wholesale (ai-SDK mutates approval parts on resume — ENG-204).
+   *  Unknown threadId auto-creates the thread. */
+  upsertMessages(scope: Principal, threadId: string, messages: FlowletUIMessage[]): Promise<void>;
 }
 
 /**

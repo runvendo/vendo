@@ -53,6 +53,64 @@ describe("InMemoryThreadStore", () => {
   });
 });
 
+describe("InMemoryThreadStore.upsertMessages", () => {
+  const msg = (id: string, parts: unknown[] = []) => ({ id, role: "user", parts }) as never;
+
+  it("inserts new messages and reads them back in order", async () => {
+    const store = createInMemoryStore({ now });
+    const thread = await store.threads.create(scope);
+    await store.threads.upsertMessages(scope, thread.id, [msg("m1"), msg("m2")]);
+    const messages = await store.threads.getMessages(scope, thread.id);
+    expect(messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("re-upserting an existing id replaces parts wholesale and keeps position", async () => {
+    const store = createInMemoryStore({ now });
+    const thread = await store.threads.create(scope);
+    await store.threads.upsertMessages(scope, thread.id, [
+      msg("m1", [{ type: "text", text: "stale approval" }]),
+      msg("m2", [{ type: "text", text: "unchanged" }]),
+    ]);
+    // ai-SDK resume mutates message parts in place (ENG-204): the re-upsert
+    // must replace m1's parts wholesale, not merge or duplicate the message.
+    await store.threads.upsertMessages(scope, thread.id, [
+      msg("m1", [{ type: "text", text: "resolved approval" }]),
+    ]);
+    const messages = await store.threads.getMessages(scope, thread.id);
+    expect(messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(messages[0]?.parts).toEqual([{ type: "text", text: "resolved approval" }]);
+    expect(messages[1]?.parts).toEqual([{ type: "text", text: "unchanged" }]);
+  });
+
+  it("auto-creates unknown threads (the client owns thread ids)", async () => {
+    const store = createInMemoryStore({ now });
+    await store.threads.upsertMessages(scope, "client-thread-1", [msg("m1")]);
+    const thread = await store.threads.get(scope, "client-thread-1");
+    expect(thread?.id).toBe("client-thread-1");
+    expect(thread?.tenantId).toBe("t1");
+    const messages = await store.threads.getMessages(scope, "client-thread-1");
+    expect(messages.map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  it("isolates identical client thread ids across principals", async () => {
+    const store = createInMemoryStore({ now });
+    await store.threads.upsertMessages(scope, "shared", [
+      msg("m1", [{ type: "text", text: "mine" }]),
+    ]);
+    await store.threads.upsertMessages(other, "shared", [
+      msg("m1", [{ type: "text", text: "theirs" }]),
+    ]);
+    const mine = await store.threads.getMessages(scope, "shared");
+    const theirs = await store.threads.getMessages(other, "shared");
+    expect(mine).toHaveLength(1);
+    expect(theirs).toHaveLength(1);
+    expect(mine[0]?.parts).toEqual([{ type: "text", text: "mine" }]);
+    expect(theirs[0]?.parts).toEqual([{ type: "text", text: "theirs" }]);
+    expect((await store.threads.get(scope, "shared"))?.subject).toBe("u1");
+    expect((await store.threads.get(other, "shared"))?.subject).toBe("u2");
+  });
+});
+
 describe("InMemorySavedFlowletStore", () => {
   const draft = {
     name: "Late-night spend",
