@@ -191,6 +191,13 @@ export function VendoRoot({
     });
   }, [voice, capabilities?.voice, capabilities?.integrations, basePath, productName, hostToolDefs]);
 
+  useEffect(
+    () => () => {
+      (effectiveVoice as (VoiceDriver & { dispose?: () => void }) | undefined)?.dispose?.();
+    },
+    [effectiveVoice],
+  );
+
   const renderNode = useMemo(() => {
     const render = (node: UINode): ReactNode => {
       // The one host-rendered, trusted exception: the Connect OAuth card.

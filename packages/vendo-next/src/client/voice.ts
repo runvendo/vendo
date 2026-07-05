@@ -12,8 +12,10 @@ import {
   createRealtimeVoiceDriver,
   replayRegistry,
   type VoiceDriver,
+  type VoiceDriverHandle,
   type VoiceToolDef,
 } from "@vendoai/shell";
+import { descriptors } from "@vendoai/components/descriptors";
 import {
   buildVoiceInstructions,
   capabilitySummary,
@@ -48,6 +50,9 @@ interface VoiceInternals {
   tableView(input: unknown): UINode | undefined;
   keyValueView(input: unknown): UINode | undefined;
   moneyFlowView(input: unknown): UINode | undefined;
+  createIntegrationVoiceTools(): Promise<{ tools: VoiceToolDef[]; unregister(): void }>;
+  buildInstructions(tools: VoiceToolDef[]): string;
+  dispose(): void;
 }
 
 const SESSION_RESULTS_MAX = 32;
@@ -71,6 +76,8 @@ const MECHANIC_TOOLS = new Set([
   "list_integrations",
   "request_connect",
 ]);
+
+const sankeyPropsSchema = descriptors.find((d) => d.name === "Sankey")?.propsSchema;
 
 function cleanName(productName: string | undefined): string {
   const trimmed = productName?.trim();
@@ -110,10 +117,55 @@ function genNode(id: string, payload: GeneratedPayload): UINode {
   return { id, kind: "generated", payload };
 }
 
+function moneyFlowValidation(input: unknown): { ok: true } | { ok: false; message: string } {
+  const parsed = sankeyPropsSchema?.safeParse(input);
+  if (parsed) {
+    if (parsed.success) return { ok: true };
+    return {
+      ok: false,
+      message:
+        parsed.error.issues[0]?.message ??
+        "Money-flow diagrams need at least two unique nodes and positive links between known node ids.",
+    };
+  }
+
+  const { nodes, links } = (input ?? {}) as {
+    nodes?: Array<{ id?: unknown }>;
+    links?: Array<{ source?: unknown; target?: unknown; value?: unknown }>;
+  };
+  if (!Array.isArray(nodes) || nodes.length < 2) {
+    return { ok: false, message: "Money-flow diagrams need at least two nodes." };
+  }
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    if (typeof node.id !== "string" || node.id.length === 0) {
+      return { ok: false, message: "Every money-flow node needs a non-empty string id." };
+    }
+    if (ids.has(node.id)) return { ok: false, message: "Money-flow node ids must be unique." };
+    ids.add(node.id);
+  }
+  if (!Array.isArray(links) || links.length === 0) {
+    return { ok: false, message: "Money-flow diagrams need at least one link." };
+  }
+  for (const link of links) {
+    if (typeof link.value !== "number" || link.value <= 0) {
+      return { ok: false, message: "Money-flow link values must be positive numbers." };
+    }
+    if (typeof link.source !== "string" || !ids.has(link.source)) {
+      return { ok: false, message: "Money-flow link sources must reference known node ids." };
+    }
+    if (typeof link.target !== "string" || !ids.has(link.target)) {
+      return { ok: false, message: "Money-flow link targets must reference known node ids." };
+    }
+  }
+  return { ok: true };
+}
+
 function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInternals {
   const basePath = options.basePath ?? "/api/vendo";
   const productName = cleanName(options.productName);
   const sessionResults = new Map<string, unknown>();
+  const unregisterHostTools: Array<() => void> = [];
   let viewSeq = 0;
   const nextId = (prefix: string) => `voice-${prefix}-${++viewSeq}`;
 
@@ -205,7 +257,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
       nodes?: Array<{ id: string; label: string }>;
       links?: Array<{ source: string; target: string; value: number }>;
     };
-    if (!nodes?.length || !links?.length) return undefined;
+    if (moneyFlowValidation(input).ok === false) return undefined;
     return genNode(nextId("money-flow"), {
       formatVersion: "vendo-genui/v1",
       root: "sankey",
@@ -284,6 +336,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
           title: { type: "string" },
           nodes: {
             type: "array",
+            minItems: 2,
             items: {
               type: "object",
               properties: { id: { type: "string" }, label: { type: "string" } },
@@ -292,12 +345,13 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
           },
           links: {
             type: "array",
+            minItems: 1,
             items: {
               type: "object",
               properties: {
                 source: { type: "string" },
                 target: { type: "string" },
-                value: { type: "number" },
+                value: { type: "number", exclusiveMinimum: 0 },
               },
               required: ["source", "target", "value"],
             },
@@ -306,7 +360,18 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
         required: ["nodes", "links"],
       },
       tier: "read",
-      execute: async () => ({ shown: true }),
+      execute: async (input) => {
+        const validation = moneyFlowValidation(input);
+        if (!validation.ok) {
+          return {
+            shown: false,
+            error: validation.message,
+            repair:
+              "Call show_money_flow again with at least two unique node ids and positive links whose source and target reference those node ids.",
+          };
+        }
+        return { shown: true };
+      },
       toView: (input) => moneyFlowView(input),
     },
   ];
@@ -358,7 +423,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     const tier = annotationsToTier(def.annotations);
     const run = (input: unknown) =>
       executeHostToolCall(def, (input ?? {}) as Record<string, unknown>);
-    if (tier === "read") replayRegistry.register(def.name, run);
+    if (tier === "read") unregisterHostTools.push(replayRegistry.register(def.name, run));
     return {
       name: def.name,
       description: def.description,
@@ -371,6 +436,57 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
       },
     };
   });
+
+  async function createIntegrationVoiceTools(): Promise<{ tools: VoiceToolDef[]; unregister(): void }> {
+    if (!options.integrations) return { tools: [], unregister() {} };
+    try {
+      const res = await fetch(`${basePath}/voice/tools`, { cache: "no-store" });
+      if (!res.ok) return { tools: [], unregister() {} };
+      const body = (await res.json()) as {
+        tools?: Array<{
+          name: string;
+          description: string;
+          parameters: Record<string, unknown>;
+          tier: string;
+        }>;
+      };
+      const unregisters: Array<() => void> = [];
+      const tools = (body.tools ?? []).map((tool) => {
+        const tier: VoiceToolDef["tier"] =
+          tool.tier === "read" ? "read" : tool.tier === "critical" ? "critical" : "act";
+        const run = async (input: unknown) => {
+          const exec = await fetch(`${basePath}/voice/tools`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ tool: tool.name, input }),
+          });
+          const json = (await exec.json().catch(() => ({}))) as { result?: unknown; error?: string };
+          if (!exec.ok) throw new Error(json.error ?? `integration tool failed (${exec.status})`);
+          return json.result;
+        };
+        if (tier === "read") unregisters.push(replayRegistry.register(tool.name, run));
+        return {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+          tier,
+          execute: async (input: unknown) => {
+            const output = await run(input);
+            if (tier === "read") recordResult(tool.name, input, output);
+            return output;
+          },
+        };
+      });
+      return {
+        tools,
+        unregister() {
+          for (const unregister of unregisters.splice(0)) unregister();
+        },
+      };
+    } catch {
+      return { tools: [], unregister() {} };
+    }
+  }
 
   const tools = [...displayTools, ...integrationTools, ...hostVoiceTools];
   const instructions = buildInstructions(productName, tools, options.instructionsExtra ?? []);
@@ -385,18 +501,27 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     tableView,
     keyValueView,
     moneyFlowView,
+    createIntegrationVoiceTools,
+    buildInstructions: (sessionTools) => buildInstructions(productName, sessionTools, options.instructionsExtra ?? []),
+    dispose() {
+      for (const unregister of unregisterHostTools.splice(0)) unregister();
+    },
   };
 }
 
 function voiceToolSummary(tools: VoiceToolDef[]): ToolSummaryInput[] {
   return tools
     .filter((t) => !MECHANIC_TOOLS.has(t.name))
-    .map((t) => ({
-      name: t.name,
-      description: t.description,
-      tier: t.tier === "read" ? "read" : t.tier === "critical" ? "critical" : "act",
-      source: "host",
-    }));
+    .map((t) => {
+      const integration = /^[A-Z0-9]+_/.test(t.name);
+      return {
+        name: t.name,
+        description: t.description,
+        tier: t.tier === "read" ? "read" : t.tier === "critical" ? "critical" : "act",
+        source: integration ? "integration" : "host",
+        ...(integration ? { toolkit: t.name.slice(0, t.name.indexOf("_")).toLowerCase() } : {}),
+      };
+    });
 }
 
 function buildInstructions(productName: string, tools: VoiceToolDef[], extras: string[]): string {
@@ -436,19 +561,97 @@ async function getSession(basePath: string): Promise<{ clientSecret: string; mod
   };
 }
 
-export function createVendoVoice(options: CreateVendoVoiceOptions = {}): VoiceDriver {
+export interface DisposableVoiceDriver extends VoiceDriver {
+  dispose(): void;
+}
+
+function inertHandle(): VoiceDriverHandle {
+  return {
+    mute() {},
+    end() {},
+    approve() {},
+    decline() {},
+    stop() {},
+  };
+}
+
+export function createVendoVoice(options: CreateVendoVoiceOptions = {}): DisposableVoiceDriver {
   const basePath = options.basePath ?? "/api/vendo";
   const internals = createVoiceInternals(options);
-  const realtime = createRealtimeVoiceDriver({
-    getSession: () => getSession(basePath),
-    tools: internals.tools,
-    instructions: internals.instructions,
-    greeting: internals.greeting,
-  });
+  const activeStops = new Set<() => void>();
+  let disposed = false;
   return {
+    dispose() {
+      disposed = true;
+      for (const stop of [...activeStops]) stop();
+      internals.dispose();
+    },
     start(emit, init) {
       internals.clearResults();
-      return realtime.start(emit, init);
+      if (disposed) return inertHandle();
+
+      let inner: VoiceDriverHandle | null = null;
+      let stopped = false;
+      let unregisterSessionTools = () => {};
+      const queued: Array<(handle: VoiceDriverHandle) => void> = [];
+      const withInner = (fn: (handle: VoiceDriverHandle) => void) => {
+        if (inner) fn(inner);
+        else queued.push(fn);
+      };
+      const cleanup = () => {
+        activeStops.delete(stop);
+        unregisterSessionTools();
+        unregisterSessionTools = () => {};
+      };
+      const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        inner?.stop();
+        cleanup();
+      };
+      activeStops.add(stop);
+
+      emit({ type: "status", status: "connecting" });
+      void Promise.allSettled([getSession(basePath), internals.createIntegrationVoiceTools()] as const)
+        .then(([grantResult, integrationResult]) => {
+          const integration =
+            integrationResult.status === "fulfilled"
+              ? integrationResult.value
+              : { tools: [], unregister() {} };
+          unregisterSessionTools = integration.unregister;
+          if (grantResult.status === "rejected") throw grantResult.reason;
+          if (stopped || disposed) {
+            cleanup();
+            return;
+          }
+          const sessionTools = [...internals.tools, ...integration.tools];
+          const realtime = createRealtimeVoiceDriver({
+            getSession: async () => grantResult.value,
+            tools: sessionTools,
+            instructions: internals.buildInstructions(sessionTools),
+            greeting: internals.greeting,
+          });
+          inner = realtime.start(emit, init);
+          for (const fn of queued.splice(0)) fn(inner);
+        })
+        .catch((error) => {
+          cleanup();
+          if (stopped || disposed) return;
+          console.error("[vendo voice] failed to prepare realtime session", error);
+          emit({
+            type: "status",
+            status: "error",
+            message: "Voice couldn't start. Check the microphone permission and try again.",
+          });
+        });
+
+      return {
+        mute: (muted) => withInner((handle) => handle.mute(muted)),
+        end: () => withInner((handle) => handle.end()),
+        approve: (id, via) => withInner((handle) => handle.approve(id, via)),
+        decline: (id) => withInner((handle) => handle.decline(id)),
+        stop,
+      };
     },
   };
 }

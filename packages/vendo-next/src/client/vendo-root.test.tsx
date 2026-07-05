@@ -183,6 +183,24 @@ describe("VendoRoot", () => {
     expect(screen.queryByLabelText("Start voice session")).toBeNull();
   });
 
+  it("disposes the packaged voice driver on unmount", async () => {
+    const dispose = vi.fn();
+    vi.spyOn(voiceModule, "createVendoVoice").mockReturnValue({
+      ...customVoice(),
+      dispose,
+    } as voiceModule.DisposableVoiceDriver);
+    vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: true }));
+    const view = render(
+      <VendoRoot productName="Acme">
+        <div />
+      </VendoRoot>,
+    );
+
+    await waitFor(() => expect(voiceModule.createVendoVoice).toHaveBeenCalled());
+    view.unmount();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
   it("uses a custom VoiceDriver even when packaged voice capability is unavailable", async () => {
     const start = vi.fn();
     vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false }));
