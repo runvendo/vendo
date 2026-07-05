@@ -697,7 +697,7 @@
 .fl-slot-menu button { text-align: left; font-size: 12.5px; padding: 7px 9px; border: 0; border-radius: 8px;
   background: transparent; color: var(--flowlet-fg); cursor: pointer; }
 .fl-slot-menu button:hover { background: var(--flowlet-accent-soft); }
-.fl-slot-menu button.is-danger { color: var(--flowlet-danger); }
+.fl-menu-danger { color: var(--flowlet-danger); }
 
 /* ---- pin-to-card footer (slot overlay only) ---- */
 .fl-pinbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px 0; }

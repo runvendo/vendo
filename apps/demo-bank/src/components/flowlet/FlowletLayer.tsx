@@ -53,7 +53,6 @@ export function FlowletLayer() {
       <FlowletPoller onFire={setFire} />
       <FlowletToast
         fire={fire}
-        onDismiss={() => setFire(null)}
         onOpen={() => {
           setFire(null);
           setOverlayOpen(true);

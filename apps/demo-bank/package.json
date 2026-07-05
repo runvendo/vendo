@@ -23,6 +23,7 @@
     "@flowlet/react": "workspace:*",
     "@flowlet/runtime": "workspace:*",
     "@flowlet/shell": "workspace:*",
+    "fluidkit": "file:../../vendor/fluidkit-0.5.0-d8e26f4.tgz",
     "@flowlet/stage": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-dropdown-menu": "^2.1.18",

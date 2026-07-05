@@ -181,6 +181,9 @@ importers:
       cmdk:
         specifier: ^1.1.1
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      fluidkit:
+        specifier: file:../../vendor/fluidkit-0.5.0-d8e26f4.tgz
+        version: file:vendor/fluidkit-0.5.0-d8e26f4.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       framer-motion:
         specifier: ^12.40.0
         version: 12.42.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -775,8 +778,8 @@ importers:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
       fluidkit:
-        specifier: file:../../vendor/fluidkit-0.5.0-49f145b.tgz
-        version: file:vendor/fluidkit-0.5.0-49f145b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: file:../../vendor/fluidkit-0.5.0-d8e26f4.tgz
+        version: file:vendor/fluidkit-0.5.0-d8e26f4.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       katex:
         specifier: ^0.16.11
         version: 0.16.47
@@ -5725,8 +5728,8 @@ packages:
   flatted@3.4.2:
     resolution: {integrity: sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==}
 
-  fluidkit@file:vendor/fluidkit-0.5.0-49f145b.tgz:
-    resolution: {integrity: sha512-zjcGrMs2Szx0wFRKrxqyRLJ+qYki4iefz38uWyM7cgM9RYikIKIBOyMGnGPFlEpzPEIIFn18KY3wCLtqU3QsIg==, tarball: file:vendor/fluidkit-0.5.0-49f145b.tgz}
+  fluidkit@file:vendor/fluidkit-0.5.0-d8e26f4.tgz:
+    resolution: {integrity: sha512-U8O64cAksB4aK16RvWmx2HVlmQFcz55gdQUOZFPiLkr+nZ4JjA7fuOEjq3PruZk5C0i5K6AbygOpGAt42IUqog==, tarball: file:vendor/fluidkit-0.5.0-d8e26f4.tgz}
     version: 0.5.0
     peerDependencies:
       '@paper-design/shaders-react': 0.0.76
@@ -15940,11 +15943,17 @@ snapshots:
 
   flatted@3.4.2: {}
 
-  fluidkit@file:vendor/fluidkit-0.5.0-49f145b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  fluidkit@file:vendor/fluidkit-0.5.0-d8e26f4.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       motion: 12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
+
+  fluidkit@file:vendor/fluidkit-0.5.0-d8e26f4.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+    dependencies:
+      motion: 12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
 
   follow-redirects@1.16.0: {}
 
@@ -16013,6 +16022,16 @@ snapshots:
       '@emotion/is-prop-valid': 1.4.0
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
+
+  framer-motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+    dependencies:
+      motion-dom: 12.42.2
+      motion-utils: 12.39.0
+      tslib: 2.8.1
+    optionalDependencies:
+      '@emotion/is-prop-valid': 1.4.0
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
 
   framer-motion@3.10.6(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
@@ -17937,6 +17956,15 @@ snapshots:
       '@emotion/is-prop-valid': 1.4.0
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
+
+  motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+    dependencies:
+      framer-motion: 12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      tslib: 2.8.1
+    optionalDependencies:
+      '@emotion/is-prop-valid': 1.4.0
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
 
   ms@2.0.0: {}
 

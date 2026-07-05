@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { LiquidMenu } from "fluidkit";
 import type { UINode } from "@flowlet/core";
 import { useFlowletChat } from "@flowlet/react";
 import { useShell } from "../context";
@@ -39,8 +40,6 @@ export function FlowletSlot({
     greeting ?? (productName ? `What can ${productName} build here?` : "What can I build here?");
   const [pinned, setPinned] = useState<UINode | null>(savedNode ?? null);
   const [designing, setDesigning] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const { setMessages } = useFlowletChat();
 
   // Hydrate from localStorage after mount so SSR and first client render agree
@@ -56,20 +55,6 @@ export function FlowletSlot({
   }, [flowletId, savedNode]);
 
   // Close the overflow menu on outside click / Escape.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
   const persist = (node: UINode | null) => {
     try {
       if (node) window.localStorage.setItem(storageKey(flowletId), JSON.stringify(node));
@@ -80,11 +65,10 @@ export function FlowletSlot({
   };
 
   const pin = (node: UINode) => { setPinned(node); persist(node); setDesigning(false); };
-  const edit = () => { setMenuOpen(false); setDesigning(true); };
+  const edit = () => setDesigning(true);
   const remove = () => {
     setPinned(null);
     persist(null);
-    setMenuOpen(false);
     void setMessages([]); // start a fresh conversation next time
   };
 
@@ -93,25 +77,26 @@ export function FlowletSlot({
       {pinned ? (
         <div className="fl-slot-filled">
           <UINodeView node={pinned} />
-          <div className="fl-slot-menu-wrap" ref={menuRef}>
-            <button
-              type="button"
-              className="fl-slot-menu-btn"
-              aria-label="Flowlet options"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <div className="fl-slot-menu" role="menu">
-                <button type="button" role="menuitem" onClick={edit}>Edit view</button>
-                <button type="button" role="menuitem" className="is-danger" onClick={remove}>Remove</button>
-              </div>
-            )}
+          <div className="fl-slot-menu-wrap">
+            {/* fluidkit LiquidMenu owns open state, outside-click, Escape, and
+                the full ARIA menu keyboard pattern the hand-rolled version
+                approximated; it pours from the trigger and themes from the
+                brand via FluidThemeProvider. */}
+            <LiquidMenu
+              align="end"
+              trigger={
+                <button type="button" className="fl-slot-menu-btn" aria-label="Flowlet options">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+                  </svg>
+                </button>
+              }
+              items={[
+                { label: "Edit view", onSelect: edit },
+                { type: "separator" },
+                { label: <span className="fl-menu-danger">Remove</span>, onSelect: remove },
+              ]}
+            />
           </div>
         </div>
       ) : (

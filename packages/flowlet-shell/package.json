@@ -20,7 +20,7 @@
     "@flowlet/core": "workspace:*",
     "@flowlet/react": "workspace:*",
     "ai": "6.0.28",
-    "fluidkit": "file:../../vendor/fluidkit-0.5.0-49f145b.tgz",
+    "fluidkit": "file:../../vendor/fluidkit-0.5.0-d8e26f4.tgz",
     "katex": "^0.16.11",
     "motion": "^12.41.0",
     "react-markdown": "^10.1.0",
