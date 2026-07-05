@@ -775,8 +775,8 @@ importers:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
       fluidkit:
-        specifier: file:../../vendor/fluidkit-0.5.0-3310e48.tgz
-        version: file:vendor/fluidkit-0.5.0-3310e48.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        specifier: file:../../vendor/fluidkit-0.5.0-49f145b.tgz
+        version: file:vendor/fluidkit-0.5.0-49f145b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       katex:
         specifier: ^0.16.11
         version: 0.16.47
@@ -5725,8 +5725,8 @@ packages:
   flatted@3.4.2:
     resolution: {integrity: sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==}
 
-  fluidkit@file:vendor/fluidkit-0.5.0-3310e48.tgz:
-    resolution: {integrity: sha512-cYnSG3l2sMHLcMr2Chl7LZzLFfWklMOnirQF0u+/UaswwJJPPvExCI8hE7uDAm6p5Y/VOVgk68Z6nx/RZFSDPA==, tarball: file:vendor/fluidkit-0.5.0-3310e48.tgz}
+  fluidkit@file:vendor/fluidkit-0.5.0-49f145b.tgz:
+    resolution: {integrity: sha512-zjcGrMs2Szx0wFRKrxqyRLJ+qYki4iefz38uWyM7cgM9RYikIKIBOyMGnGPFlEpzPEIIFn18KY3wCLtqU3QsIg==, tarball: file:vendor/fluidkit-0.5.0-49f145b.tgz}
     version: 0.5.0
     peerDependencies:
       '@paper-design/shaders-react': 0.0.76
@@ -15940,7 +15940,7 @@ snapshots:
 
   flatted@3.4.2: {}
 
-  fluidkit@file:vendor/fluidkit-0.5.0-3310e48.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  fluidkit@file:vendor/fluidkit-0.5.0-49f145b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       motion: 12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react: 18.3.1
