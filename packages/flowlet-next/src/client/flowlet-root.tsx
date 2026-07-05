@@ -28,6 +28,7 @@ import {
   type FlowletIntegrations,
   type FlowletToastsProps,
 } from "@flowlet/shell";
+import { createServerFlowletStore } from "./server-store";
 import { FlowletThemeProvider } from "@flowlet/components";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@flowlet/components/theme";
 import { brandToCssVars } from "@flowlet/components/descriptors";
@@ -141,9 +142,21 @@ export function FlowletRoot({
     [basePath, threadId],
   );
 
-  // Saved flowlets survive reloads; only touches localStorage inside methods,
-  // so importing stays SSR-safe.
-  const store = useMemo(() => createWebStorage({ namespace: `flowlet:${threadId}` }), [threadId]);
+  // Saved flowlets survive reloads. Server-backed (durable across devices,
+  // no localStorage quota) when the handler reports the `storage` capability;
+  // localStorage otherwise — including the optimistic `capabilities === null`
+  // window before the fetch above resolves, which is why `capabilities?.storage`
+  // (not `capabilities`) drives this: the store switches under the surfaces
+  // using it the moment capabilities land, never blocking on them. No
+  // localStorage→server migration in v1 (see docs/persistence-and-deploy.md).
+  // Only touches localStorage inside its own methods, so importing stays SSR-safe.
+  const store = useMemo(
+    () =>
+      capabilities?.storage
+        ? createServerFlowletStore(basePath)
+        : createWebStorage({ namespace: `flowlet:${threadId}` }),
+    [capabilities?.storage, basePath, threadId],
+  );
 
   // Remix pins (FlowletRemix) follow the same web-storage pattern; the
   // notifications client polls the handler's deliveries feed (FlowletToasts).

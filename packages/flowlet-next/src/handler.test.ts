@@ -62,7 +62,7 @@ describe("createFlowletHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
     const res = await GET(req("/api/flowlet/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
   });
 
   it("capabilities.mcp is true when mcpServers option is set", async () => {
@@ -210,7 +210,7 @@ describe("createFlowletHandler", () => {
     const { GET, POST } = createFlowletHandler({ flowletDir: emptyDir(), model });
 
     const caps = await GET(req("/api/flowlet/capabilities"));
-    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
 
     // The chatEnabled gate (503) fires before messages validation (400), so a
     // 400 on an empty messages array proves chat was NOT gated off.
@@ -242,7 +242,7 @@ describe("createFlowletHandler", () => {
     vi.stubEnv("FLOWLET_MODEL", "");
     const fixed = await GET(req("/api/flowlet/capabilities"));
     expect(fixed.status).toBe(200);
-    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
   });
 
   it("resolves GET /capabilities after async assembly (async ripple smoke test)", async () => {
@@ -250,7 +250,17 @@ describe("createFlowletHandler", () => {
     const { GET } = createFlowletHandler({ flowletDir: emptyDir(), storage: false });
     const res = await GET(req("/api/flowlet/capabilities"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+  });
+
+  it("reports storage:true once durable storage actually assembles (not just from an env key)", async () => {
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir: `memory://flowlet-next-capabilities-storage-${Date.now()}` } },
+    });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: true });
   });
 
   it("warns once, no matter how many requests, when running without durable storage in production", async () => {
@@ -398,6 +408,59 @@ describe("createFlowletHandler", () => {
     expect(anon.status).toBe(403);
   });
 
+  it("GET/POST /flowlets are wired end-to-end (save, list, load, delete, 404, principal isolation)", async () => {
+    const dataDir = `memory://flowlet-next-flowlets-handler-${Date.now()}`;
+    const principalOf = (r: Request) => {
+      const userId = r.headers.get("x-user");
+      return userId ? { userId } : null;
+    };
+    const { GET, POST } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      storage: { pglite: { dataDir } },
+      principal: async (r) => principalOf(r),
+    });
+    const withUser = (user: string) => ({ headers: { host: "localhost:3000", "x-user": user } });
+    const node = { kind: "component", id: "n1", name: "Text", props: {} };
+
+    const saved = await POST(
+      req("/api/flowlet/flowlets", {
+        method: "POST",
+        body: JSON.stringify({ id: "f1", name: "first", node }),
+        ...withUser("alice"),
+      }),
+    );
+    expect(saved.status).toBe(200);
+    const savedBody = (await saved.json()) as { id: string; createdAt: number; updatedAt: number };
+    expect(savedBody.id).toBe("f1");
+    expect(typeof savedBody.createdAt).toBe("number");
+    expect(typeof savedBody.updatedAt).toBe("number");
+
+    const aliceList = await GET(req("/api/flowlet/flowlets", withUser("alice")));
+    expect((await aliceList.json()) as Array<{ id: string }>).toEqual([savedBody]);
+
+    // Isolation: a different user sees nothing.
+    const bobList = await GET(req("/api/flowlet/flowlets", withUser("bob")));
+    expect(await bobList.json()).toEqual([]);
+
+    const one = await GET(req("/api/flowlet/flowlets/f1", withUser("alice")));
+    expect(await one.json()).toEqual(savedBody);
+
+    const missing = await GET(req("/api/flowlet/flowlets/nope", withUser("alice")));
+    expect(missing.status).toBe(404);
+
+    const bobReadsAlice = await GET(req("/api/flowlet/flowlets/f1", withUser("bob")));
+    expect(bobReadsAlice.status).toBe(404);
+
+    const del = await POST(req("/api/flowlet/flowlets/f1/delete", { method: "POST", ...withUser("alice") }));
+    expect(del.status).toBe(200);
+    const gone = await GET(req("/api/flowlet/flowlets/f1", withUser("alice")));
+    expect(gone.status).toBe(404);
+
+    // No principal (resolver returns null) → 403, never a bare list.
+    const anon = await GET(req("/api/flowlet/flowlets", { headers: { host: "localhost:3000" } }));
+    expect(anon.status).toBe(403);
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
@@ -407,7 +470,7 @@ describe("createFlowletHandler", () => {
     // test-env safety net doesn't apply; this test doesn't care about
     // durability and must not touch disk.
     const { POST } = createFlowletHandler({ flowletDir: emptyDir(), storage: false });
-    for (const p of ["chat", "action", "tick", "integrations"]) {
+    for (const p of ["chat", "action", "tick", "integrations", "flowlets"]) {
       const res = await POST(
         new Request(`http://prod.example.com/api/flowlet/${p}`, {
           method: "POST",

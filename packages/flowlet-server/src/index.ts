@@ -25,6 +25,7 @@ export {
 export {
   detectCapabilities,
   type FlowletCapabilities,
+  type EnvCapabilities,
   type DetectCapabilitiesOptions,
 } from "./capabilities";
 export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
@@ -51,6 +52,13 @@ export {
   type FlowletState,
 } from "./fetch-handler";
 export { startFlowletScheduler } from "./boot";
+export {
+  createDrizzleFlowletRegistry,
+  createInMemoryFlowletRegistry,
+  handleFlowletsGet,
+  handleFlowletsPost,
+  type FlowletRegistry,
+} from "./flowlets";
 export { toNodeHandler, type FetchHandler, type NodeHandler } from "./node";
 export {
   applyVerifiedPinBase,

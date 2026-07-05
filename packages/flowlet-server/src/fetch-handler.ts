@@ -60,6 +60,12 @@ import {
   handleIntegrationsPost,
 } from "./integrations";
 import { detectCapabilities } from "./capabilities";
+import {
+  createDrizzleFlowletRegistry,
+  createInMemoryFlowletRegistry,
+  handleFlowletsGet,
+  handleFlowletsPost,
+} from "./flowlets";
 import { loadFlowletDir } from "./flowlet-dir";
 import { resolveMcpServers } from "./mcp-config";
 import { manifestToolsToHostTools } from "./manifest-tools";
@@ -150,6 +156,10 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
       options.store?.threads ??
       (storage ? createDrizzleThreadStore(storage) : new InMemoryThreadStore(() => new Date().toISOString()));
     const threadIndex = createThreadIndex(threads);
+    // Saved flowlets: same durable-handle-or-in-memory posture as threads, but
+    // over the shell's FlowletStore shape, not core's SavedFlowletStore — see
+    // flowlets.ts's header for why the two don't share an implementation.
+    const flowlets = storage ? createDrizzleFlowletRegistry(storage) : createInMemoryFlowletRegistry();
     const breakers = options.store?.breakers ?? createBreakerState();
     const fadeTracker = options.store?.fadeTracker ?? createFadeTracker();
     // Review follow-up: per-(principal, toolCallId) consent idempotency —
@@ -423,6 +433,7 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
       fadeTracker,
       consentSeen,
       clientTools,
+      flowlets,
       // The shared durable handle (null = in-memory). Reused by later tasks
       // to wire the decision/thread/flowlet/connections stores durably too.
       storage,
@@ -559,7 +570,10 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
   async function GET(req: Request, s: FlowletState): Promise<Response> {
     switch (routeTail(req)) {
       case "capabilities":
-        return Response.json(s.capabilities);
+        // `storage` depends on the ASSEMBLED state (whether a durable handle
+        // was actually built), not an env key — detectCapabilities() alone
+        // can't know it, so it's merged in here.
+        return Response.json({ ...s.capabilities, storage: s.storage !== null });
       case "integrations":
         return handleIntegrationsGet(req, {
           store: s.connections,
@@ -620,6 +634,8 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
         if (!guard.ok) return guard.response;
         return Response.json(await s.threads.list(threadScope(guard.principal)));
       }
+      case "flowlets":
+        return handleFlowletsGet(req, "flowlets", { registry: s.flowlets, options });
       default: {
         const tail = routeTail(req);
         if (tail.startsWith("threads/")) {
@@ -627,6 +643,9 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
           if (!guard.ok) return guard.response;
           const threadId = decodeURIComponent(tail.slice("threads/".length));
           return Response.json(await s.threads.getMessages(threadScope(guard.principal), threadId));
+        }
+        if (tail.startsWith("flowlets/")) {
+          return handleFlowletsGet(req, tail, { registry: s.flowlets, options });
         }
         return Response.json({ error: "not found" }, { status: 404 });
       }
@@ -767,6 +786,8 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       }
       // POST /api/flowlet/grants/revoke AND POST /api/flowlet/rules/revoke
       // (ENG-193 §3 Moment 12/item-6) — full-tail keys keep them distinct.
+      case "flowlets":
+        return handleFlowletsPost(req, "flowlets", { registry: s.flowlets, options });
       case "grants/revoke":
       case "rules/revoke": {
         const isRuleRevoke = routeTail(req) === "rules/revoke";
@@ -777,8 +798,14 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
           ? revokeRuleRoute(req, { rules: s.rules, audit: s.audit, principal })
           : revokeGrantRoute(req, { grants: s.grants, audit: s.audit, principal });
       }
-      default:
+      default: {
+        const tail = routeTail(req);
+        // Delete verb convention: POST flowlets/<id>/delete (no DELETE method).
+        if (tail.startsWith("flowlets/")) {
+          return handleFlowletsPost(req, tail, { registry: s.flowlets, options });
+        }
         return Response.json({ error: "not found" }, { status: 404 });
+      }
     }
   }
 
