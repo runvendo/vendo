@@ -57,6 +57,37 @@ function isUnsafeVendoId(id: string): boolean {
   return RESERVED_VENDO_IDS.has(id) || id.includes("/");
 }
 
+/**
+ * CSRF gate for the mutating vendo routes (save/delete). A host `principal`
+ * resolver may authenticate via ambient cookies, so a cross-site page could
+ * otherwise fire authenticated mutations. Two escape hatches keep legitimate
+ * callers working:
+ *   - an `authorization` header is a custom-header credential a cross-site
+ *     page cannot attach without a CORS preflight this handler never grants —
+ *     inherently CSRF-safe, no origin check needed;
+ *   - a request with NO browser provenance headers (curl, server-to-server)
+ *     carries no third-party-triggered ambient credentials.
+ * Otherwise: `sec-fetch-site` decides when present (it distinguishes
+ * same-site subdomains precisely); the `Origin` header must match the request
+ * host exactly as the fallback (host/port equality — computing "same site"
+ * from Origin alone needs a public-suffix list, so the fallback is stricter).
+ */
+function isCrossSiteRequest(req: Request): boolean {
+  if (req.headers.get("authorization")) return false;
+  const site = req.headers.get("sec-fetch-site");
+  if (site !== null) return site === "cross-site";
+  const origin = req.headers.get("origin");
+  if (origin === null) return false;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return true; // includes "Origin: null" (sandboxed iframe) — fail closed
+  }
+  const host = req.headers.get("host") ?? new URL(req.url).host;
+  return originHost !== host;
+}
+
 /** Principal-scoped counterpart to the shell's `VendoStore` (which has no
  *  scope param — the browser is inherently single-user). Same four verbs. */
 export interface VendoRegistry {
@@ -215,6 +246,9 @@ export async function handleVendosGet(req: Request, tail: string, deps: VendosDe
 /** POST vendos (save) | POST vendos/<id>/delete — the verb convention
  *  every mutating endpoint here uses (GET/POST only, no DELETE method). */
 export async function handleVendosPost(req: Request, tail: string, deps: VendosDeps): Promise<Response> {
+  if (isCrossSiteRequest(req)) {
+    return Response.json({ error: "cross-site request rejected" }, { status: 403 });
+  }
   const guard = await resolvePrincipal(req, deps.options);
   if (!guard.ok) return guard.response;
   const scope = threadScope(guard.principal);

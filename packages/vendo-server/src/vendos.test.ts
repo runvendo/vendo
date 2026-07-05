@@ -166,6 +166,68 @@ describe("vendos endpoints — reserved-id rejection (review blocker)", () => {
   });
 });
 
+describe("vendos endpoints — cross-site request rejection (CSRF)", () => {
+  // A host `principal` resolver may authenticate via ambient cookies, so a
+  // cross-site page could fire authenticated mutations. The mutating vendo
+  // routes must reject cross-site browser provenance unless the request
+  // carries a custom-header credential (which cross-site pages cannot set
+  // without a CORS preflight this handler never grants).
+  const save = (headers: Record<string, string>) =>
+    handleVendosPost(
+      req("/api/vendo/vendos", {
+        method: "POST",
+        headers: { host: "localhost:3000", ...headers },
+        body: JSON.stringify(draft("f1", "first")),
+      }),
+      "vendos",
+      { registry: createInMemoryVendoRegistry(), options: options("u1") },
+    );
+
+  it("rejects a save whose Origin does not match the request host", async () => {
+    const registry = createInMemoryVendoRegistry();
+    const res = await handleVendosPost(
+      req("/api/vendo/vendos", {
+        method: "POST",
+        headers: { host: "localhost:3000", origin: "https://evil.example" },
+        body: JSON.stringify(draft("f1", "first")),
+      }),
+      "vendos",
+      { registry, options: options("u1") },
+    );
+    expect(res.status).toBe(403);
+    expect(await registry.list({ tenantId: "vendo-embedded", subject: "u1" })).toEqual([]);
+  });
+
+  it("rejects a delete that declares sec-fetch-site: cross-site", async () => {
+    const registry = createInMemoryVendoRegistry();
+    await registry.save({ tenantId: "vendo-embedded", subject: "u1" }, draft("f1", "first"));
+    const res = await handleVendosPost(
+      req("/api/vendo/vendos/f1/delete", {
+        method: "POST",
+        headers: { host: "localhost:3000", "sec-fetch-site": "cross-site" },
+      }),
+      "vendos/f1/delete",
+      { registry, options: options("u1") },
+    );
+    expect(res.status).toBe(403);
+    expect(await registry.load({ tenantId: "vendo-embedded", subject: "u1" }, "f1")).not.toBeNull();
+  });
+
+  it("allows same-origin provenance (sec-fetch-site and matching Origin)", async () => {
+    expect((await save({ "sec-fetch-site": "same-origin" })).status).toBe(200);
+    expect((await save({ origin: "http://localhost:3000" })).status).toBe(200);
+  });
+
+  it("allows a cross-site Origin when the request carries an authorization header (custom-header credentials are inherently CSRF-safe)", async () => {
+    const res = await save({ origin: "https://evil.example", authorization: "Bearer token" });
+    expect(res.status).toBe(200);
+  });
+
+  it("allows requests with no browser provenance headers (non-browser callers)", async () => {
+    expect((await save({})).status).toBe(200);
+  });
+});
+
 describe("vendos endpoints — Drizzle registry", () => {
   it(
     "saves, lists, loads, deletes, and scopes by principal (durable)",
