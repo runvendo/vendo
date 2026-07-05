@@ -65,6 +65,7 @@ describe("routeTail", () => {
     ["/api/vendo/action", "action"],
     ["/api/vendo/integrations", "integrations"],
     ["/api/vendo/capabilities", "capabilities"],
+    ["/api/vendo/voice/session", "voice/session"],
     ["/api/vendo/tick", "tick"],
   ])("resolves %s to %s", (pathname, expected) => {
     expect(routeTail(req(pathname))).toBe(expected);

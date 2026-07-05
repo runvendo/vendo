@@ -10,6 +10,7 @@
  *   POST /action        — sandbox dispatch through the policy (+ approval tokens)
  *   GET|POST /integrations — Composio connect flow (inert without the key)
  *   GET  /capabilities  — { chat, integrations, voice, mcp } from env-key/config presence
+ *   POST /voice/session — ephemeral OpenAI Realtime client secret mint
  *   GET  /deliveries    — in-app Channels feed for VendoToasts (single-tenant)
  *   POST /tick          — drives the automations scheduler
  *   POST /resume        — resumes a paused automation run (approval toast)
@@ -90,6 +91,7 @@ import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type VendoHandlerOptions } from "./options";
 import { devTelemetry, errorClassName } from "./telemetry-dev";
 import { handleComposioWebhook } from "./webhooks";
+import { handleVoiceSessionPost } from "./voice";
 
 // Exported for vendos.ts's save-path id validation (a saved vendo's id
 // is caller-assigned, unlike threads' store-assigned UUIDs — see the
@@ -102,6 +104,7 @@ export const FIRST_SEGMENTS = new Set([
   "action",
   "integrations",
   "capabilities",
+  "voice",
   "deliveries",
   "tick",
   "resume",
@@ -795,6 +798,11 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           enabled: s.capabilities.integrations,
           options,
         });
+      case "voice/session": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return handleVoiceSessionPost(req);
+      }
       case "tick": {
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         // Service auth first: an external cron (vercel.json, Cloudflare Cron

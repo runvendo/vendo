@@ -76,6 +76,7 @@ export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./poli
 export { createThreadIndex, type ThreadIndex } from "./threads";
 export { handleConsentRoute, type ConsentRouteDeps } from "./consent";
 export { handleFadeProposalRoute, type FadeProposalRouteDeps } from "./fade-proposal";
+export { handleVoiceSessionPost, type VoiceSessionDeps } from "./voice";
 export { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
 export {
   listGrantsRoute,

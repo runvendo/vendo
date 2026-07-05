@@ -121,8 +121,13 @@ function vendoDirWithEvent(): string {
   return dir;
 }
 
+function modelStub(): import("ai").LanguageModel {
+  return { modelId: "stub" } as unknown as import("ai").LanguageModel;
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   // Handlers claim the process-wide boot slot (first-wins); keep tests
   // order-independent.
   resetVendoBootRegistry();
@@ -243,6 +248,91 @@ describe("createVendoFetchHandler", () => {
       req("/api/vendo/chat", { method: "POST", body: JSON.stringify({ messages: [] }) }),
     );
     expect(res.status).toBe(400);
+  });
+
+  it("mints an OpenAI Realtime client secret for POST /voice/session", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-voice");
+    vi.stubEnv("OPENAI_REALTIME_MODEL", "gpt-realtime-preview");
+    vi.stubEnv("OPENAI_REALTIME_VOICE", "alloy");
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ value: "eph_secret" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir(), model: modelStub() });
+
+    const res = await handler(req("/api/vendo/voice/session", { method: "POST" }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      clientSecret: "eph_secret",
+      model: "gpt-realtime-preview",
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://api.openai.com/v1/realtime/client_secrets");
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: { Authorization: "Bearer sk-voice", "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      session: {
+        type: "realtime",
+        model: "gpt-realtime-preview",
+        audio: { output: { voice: "alloy" } },
+      },
+    });
+  });
+
+  it("502s /voice/session when the OpenAI mint fails", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-voice");
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { message: "bad key" } }), { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir(), model: modelStub() });
+
+    const res = await handler(req("/api/vendo/voice/session", { method: "POST" }));
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "bad key" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    err.mockRestore();
+  });
+
+  it("503s /voice/session without OPENAI_API_KEY and does not call upstream", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir(), model: modelStub() });
+
+    const res = await handler(req("/api/vendo/voice/session", { method: "POST" }));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "voice not configured (OPENAI_API_KEY missing)" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("guards /voice/session with the same production default request guard as other spend routes", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-voice");
+    vi.stubEnv("NODE_ENV", "production");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const handler = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      model: modelStub(),
+      storage: false,
+    });
+
+    const res = await handler(
+      new Request("http://prod.example.com/api/vendo/voice/session", {
+        method: "POST",
+        headers: { host: "prod.example.com" },
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("400s a chat request with no messages once a key is present", async () => {

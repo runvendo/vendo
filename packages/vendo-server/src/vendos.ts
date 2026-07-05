@@ -37,6 +37,7 @@ const RESERVED_VENDO_IDS = new Set([
   "action",
   "integrations",
   "capabilities",
+  "voice",
   "deliveries",
   "tick",
   "resume",
