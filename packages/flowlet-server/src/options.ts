@@ -109,6 +109,13 @@ export interface FlowletHandlerOptions {
    *  IDENTITY (fail-safe rollout; item-2 behavior, unchanged) until a host
    *  opts in. */
   judgeModel?: LanguageModel;
+  /**
+   * Durable storage. Default: PGlite at `.flowlet/data` (or `DATABASE_URL` /
+   * `FLOWLET_DATA_DIR`). `false` = in-memory (tests). `autoMigrate` defaults
+   * to `true`; set `false` to skip boot migrations and run them out-of-band
+   * (via the exported `migrateFlowletDatabase`).
+   */
+  storage?: false | { connectionString?: string; pglite?: { dataDir: string }; autoMigrate?: boolean };
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
@@ -158,6 +165,18 @@ const optionsSchema = z
       .strict()
       .optional(),
     judgeModel: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
+    storage: z
+      .union([
+        z.literal(false),
+        z
+          .object({
+            connectionString: z.string().min(1).optional(),
+            pglite: z.object({ dataDir: z.string().min(1) }).strict().optional(),
+            autoMigrate: z.boolean().optional(),
+          })
+          .strict(),
+      ])
+      .optional(),
   })
   .strict();
 

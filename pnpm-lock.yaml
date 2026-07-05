@@ -682,6 +682,9 @@ importers:
       '@flowlet/shell':
         specifier: workspace:*
         version: link:../flowlet-shell
+      '@flowlet/store':
+        specifier: workspace:*
+        version: link:../flowlet-store
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)

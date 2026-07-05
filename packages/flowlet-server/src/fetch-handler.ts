@@ -73,9 +73,37 @@ import { createThreadIndex } from "./threads";
 import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
 
-/** The path segment after the mount the handler was invoked with. */
-function subPath(req: Request): string {
+const FIRST_SEGMENTS = new Set([
+  "chat",
+  "action",
+  "integrations",
+  "capabilities",
+  "deliveries",
+  "tick",
+  "resume",
+  "consent",
+  "fade-proposal",
+  "parked-actions",
+  "grants",
+  "rules",
+  "audit",
+  "critical-tools",
+  "webhooks",
+  "threads",
+  "flowlets",
+]);
+
+/**
+ * Everything after the catch-all mount: the suffix starting at the FIRST
+ * known segment (scanning right-to-left so a host route named e.g.
+ * `/threads/...` upstream can't confuse it). The mount itself can't be
+ * assumed to be `api/flowlet` — hosts choose their own path.
+ */
+export function routeTail(req: Request): string {
   const segments = new URL(req.url).pathname.split("/").filter(Boolean);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (FIRST_SEGMENTS.has(segments[i]!)) return segments.slice(i).join("/");
+  }
   return segments[segments.length - 1] ?? "";
 }
 
@@ -386,7 +414,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
   }
 
   async function GET(req: Request, s: Awaited<ReturnType<typeof assemble>>): Promise<Response> {
-    switch (subPath(req)) {
+    switch (routeTail(req)) {
       case "capabilities":
         return Response.json(s.capabilities);
       case "integrations":
@@ -450,7 +478,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
   }
 
   async function POST(req: Request, s: Awaited<ReturnType<typeof assemble>>): Promise<Response> {
-    switch (subPath(req)) {
+    switch (routeTail(req)) {
       case "chat":
         return handleChat(req, {
           getAgent: s.getAgent,
@@ -548,35 +576,20 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
           principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
         });
       }
-      // POST /api/flowlet/parked-actions/resolve (ENG-193 §4.6) — `subPath`
-      // only inspects the LAST path segment, so this is "resolve", not the
-      // full mount path.
-      case "resolve": {
-        // Guard against a future sibling route also ending in "resolve" (the
-        // same trap the "revoke" case below already disambiguates).
-        if (!new URL(req.url).pathname.includes("/parked-actions/resolve")) {
-          return Response.json({ error: "not found" }, { status: 404 });
-        }
+      // POST /api/flowlet/parked-actions/resolve (ENG-193 §4.6) — `routeTail`
+      // resolves the full suffix from the first known segment, so the nested
+      // route matches on its complete tail (no last-segment ambiguity).
+      case "parked-actions/resolve": {
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
         return resolveParkedActionRoute(req, { world: s.world, principal: guard.principal });
       }
       // POST /api/flowlet/grants/revoke AND POST /api/flowlet/rules/revoke
-      // (ENG-193 §3 Moment 12/item-6) — `subPath` only inspects the LAST path
-      // segment, so both collapse to "revoke" here; disambiguate on the full
-      // pathname (item-6 plan deviation #6 — found while wiring this task).
-      // Review follow-up: mirror the "resolve" guard above exactly — a POST
-      // ending in "/revoke" that is neither `/rules/revoke` nor
-      // `/grants/revoke` (e.g. a typo'd `/nope/revoke`) must 404, not silently
-      // fall through to a grant revoke it was never meant to reach.
-      case "revoke": {
-        const pathname = new URL(req.url).pathname;
-        const isRuleRevoke = pathname.includes("/rules/revoke");
-        const isGrantRevoke = pathname.includes("/grants/revoke");
-        if (!isRuleRevoke && !isGrantRevoke) {
-          return Response.json({ error: "not found" }, { status: 404 });
-        }
+      // (ENG-193 §3 Moment 12/item-6) — full-tail keys keep them distinct.
+      case "grants/revoke":
+      case "rules/revoke": {
+        const isRuleRevoke = routeTail(req) === "rules/revoke";
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
         const principal = { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId };

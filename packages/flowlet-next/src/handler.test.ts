@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createFlowletHandler } from "./handler";
+import { createFlowletHandler, routeTail } from "./handler";
 import { z } from "zod";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryThreadStore } from "@flowlet/runtime";
@@ -21,6 +21,27 @@ function emptyDir(): string {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("routeTail", () => {
+  it.each([
+    ["/api/flowlet/chat", "chat"],
+    ["/api/flowlet/webhooks/composio", "webhooks/composio"],
+    ["/api/flowlet/threads", "threads"],
+    ["/api/flowlet/threads/t1", "threads/t1"],
+    ["/api/flowlet/flowlets/f1/delete", "flowlets/f1/delete"],
+    // Regression: the five existing endpoints still resolve under any mount.
+    ["/api/flowlet/action", "action"],
+    ["/api/flowlet/integrations", "integrations"],
+    ["/api/flowlet/capabilities", "capabilities"],
+    ["/api/flowlet/tick", "tick"],
+  ])("resolves %s to %s", (pathname, expected) => {
+    expect(routeTail(req(pathname))).toBe(expected);
+  });
+
+  it("resolves the tail regardless of where the catch-all is mounted", () => {
+    expect(routeTail(req("/some/other/mount/threads/t1"))).toBe("threads/t1");
+  });
 });
 
 describe("createFlowletHandler", () => {
