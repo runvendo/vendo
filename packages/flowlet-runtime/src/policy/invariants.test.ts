@@ -142,6 +142,30 @@ describe("ENG-193 §8 permanent invariants", () => {
     expect(await policy.evaluate(ctxFor(actDesc))).toBe("approve");
   });
 
+  it("INVARIANT §8.1/Greptile P1: a plain 'yes' consent (no client grant draft) on a critical tool mints NO grant — the implicit 'allow once' mint never loosens critical", async () => {
+    const messages = [
+      { id: "m1", role: "assistant", parts: [
+        { type: "tool-transfer_money", toolCallId: "call-1", state: "approval-requested", input: { amount: 5 } },
+      ] },
+    ] as unknown as FlowletUIMessage[];
+    const store = createInMemoryGrantStore();
+    const result = await handleConsent(
+      {
+        grants: store,
+        audit: new InMemoryAuditLog(),
+        resolveDescriptor: (name: string) => (name === criticalDesc.name ? criticalDesc : undefined),
+        getMessages: async () => messages,
+      },
+      scope,
+      {
+        threadId: "th-1", toolCallId: "call-1", toolName: criticalDesc.name,
+        response: { id: "call-1", decision: "yes" },
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(await store.findForTool(scope, criticalDesc.name)).toHaveLength(0);
+  });
+
   it("INVARIANT §8.8: the grant manager refuses to create a grant for a critical tool", async () => {
     const mgr = createGrantManager({
       store: createInMemoryGrantStore(),

@@ -171,14 +171,19 @@ describe("handleConsent", () => {
     expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
   });
 
-  it("no grant is created without a response.grant even on 'yes' — approving once doesn't imply remembering", async () => {
+  it("a plain 'yes' with no response.grant mints a session-scoped exact grant server-side (spec §4.3 — 'allow once')", async () => {
     const d = deps(threadWith({}));
     const result = await handleConsent(d, scope, {
       threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
       response: { id: "call-1", decision: "yes" },
     });
     expect(result.ok).toBe(true);
-    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+    const [grant] = await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL");
+    expect(grant).toBeDefined();
+    expect(grant?.scope.kind).toBe("exact");
+    expect(grant?.duration).toBe("session");
+    expect(grant?.contextKey).toBe("th-1");
+    expect(grant?.source).toEqual({ kind: "chat" });
   });
 
   it("REVIEW FOLLOW-UP: a session/task-duration grant mints WITH a contextKey (= the request's threadId) — grantPolicy suppresses in the SAME thread, not a different one", async () => {
@@ -440,5 +445,112 @@ describe("handleConsent — fade eligibility (ENG-193 §4.4)", () => {
       });
       expect(result.ok && result.fadeEligible).toBeUndefined();
     }
+  });
+});
+
+describe("handleConsent — plain 'yes' mints a session-scoped exact grant (Greptile P1, spec §4.3)", () => {
+  function policyFor(d: ReturnType<typeof deps>) {
+    return grantPolicy({ evaluate: () => "approve" }, d.grants, {
+      principalScope: () => scope,
+      contextKey: (ctx) => ctx.threadId,
+    });
+  }
+
+  it("an identical follow-up call in the SAME thread is suppressed (allow) after a plain yes", async () => {
+    const d = deps(threadWith({}));
+    await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    const descriptor = d.resolveDescriptor("GMAIL_SEND_EMAIL")!;
+    const policy = policyFor(d);
+    const input = { to: "acme@example.com" }; // byte-identical to threadWith's default part.input
+    expect(
+      await policy.evaluate({ toolName: "GMAIL_SEND_EMAIL", input, descriptor, principal: { userId: "u" }, threadId: "th-1" }),
+    ).toBe("allow");
+  });
+
+  it("a different input still asks — the mint is exact, not tool-wide", async () => {
+    const d = deps(threadWith({}));
+    await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    const descriptor = d.resolveDescriptor("GMAIL_SEND_EMAIL")!;
+    const policy = policyFor(d);
+    const differentInput = { to: "someone-else@example.com" };
+    expect(
+      await policy.evaluate({ toolName: "GMAIL_SEND_EMAIL", input: differentInput, descriptor, principal: { userId: "u" }, threadId: "th-1" }),
+    ).toBe("approve");
+  });
+
+  it("a different thread still asks — the mint is session-scoped to the consenting thread", async () => {
+    const d = deps(threadWith({}));
+    await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    const descriptor = d.resolveDescriptor("GMAIL_SEND_EMAIL")!;
+    const policy = policyFor(d);
+    const input = { to: "acme@example.com" };
+    expect(
+      await policy.evaluate({ toolName: "GMAIL_SEND_EMAIL", input, descriptor, principal: { userId: "u" }, threadId: "th-2" }),
+    ).toBe("approve");
+  });
+
+  it("a critical tool's plain yes mints NO grant — 200 ok, findForTool stays empty", async () => {
+    const d = deps(threadWith({ type: "tool-transfer_money", input: {} }));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "transfer_money",
+      response: { id: "call-1", decision: "yes" },
+    });
+    expect(result.ok).toBe(true);
+    expect(await d.grants.findForTool(scope, "transfer_money")).toHaveLength(0);
+  });
+
+  it("a replayed POST (idempotency ledger) mints exactly ONE grant, never two", async () => {
+    const d = { ...deps(threadWith({})), seen: createConsentLedger() };
+    const req = {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" as const },
+    };
+    await handleConsent(d, scope, req);
+    await handleConsent(d, scope, req);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
+  });
+
+  it("an explicit client grant draft still takes precedence over the implicit mint", async () => {
+    const d = deps(threadWith({}));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "standing" } },
+    });
+    expect(result.ok).toBe(true);
+    const grants = await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL");
+    expect(grants).toHaveLength(1); // not a second, implicit one alongside it
+    expect(grants[0]?.scope.kind).toBe("tool"); // the EXPLICIT draft's scope, not an implicit exact one
+    expect(grants[0]?.duration).toBe("standing");
+  });
+
+  it("an unverified tool's plain yes still mints (Yousef ruling: exact-scope session grants are fine for unverified tools)", async () => {
+    const messages = [
+      { id: "m1", role: "assistant", parts: [
+        { type: "tool-mystery_tool", toolCallId: "call-1", state: "approval-requested", input: { x: 1 } },
+      ] },
+    ] as unknown as FlowletUIMessage[];
+    const d = {
+      ...deps(messages),
+      resolveDescriptor: (name: string): ToolDescriptor | undefined =>
+        name === "mystery_tool"
+          ? { name, source: "caller", annotations: {}, hasExecute: true, kind: "function" }
+          : undefined,
+    };
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "mystery_tool",
+      response: { id: "call-1", decision: "yes" },
+    });
+    expect(result.ok).toBe(true);
+    expect(await d.grants.findForTool(scope, "mystery_tool")).toHaveLength(1);
   });
 });

@@ -15,12 +15,30 @@
  * throws on a critical tool; that throw becomes this function's 403, (e)
  * append a "consent" audit event regardless of outcome (the audit trail
  * records EVERY decision, not just the ones that minted a grant).
+ *
+ * A plain "yes" with no client-authored grant draft is NOT a no-op (spec
+ * §4.3): the server mints a session-scoped exact grant itself — "allow once"
+ * — so a byte-identical repeat call in the same thread doesn't re-ask. An
+ * explicit client draft still takes precedence over this implicit mint, and
+ * critical tools never get one, checked before ever calling the manager.
  */
 import type { AuditLog, ConsentResponse, FlowletUIMessage, GrantStore, Principal, FadeShape } from "@flowlet/core";
 import type { ToolDescriptor } from "./descriptor";
 import type { FadeTracker } from "./fade-tracker";
 import { createGrantManager } from "./grant-manager";
+import { hashInput } from "./policy/grant-match";
 import { dangerTier, isUnverified } from "./policy/tier";
+
+/** Cap for the server-derived "allow once" grant's Trust-screen preview text
+ *  (ENG-193 spec §4.3's `inputPreview` field) — mirrors `scopePreview`'s own
+ *  short-and-readable intent (grant-manager.ts) without needing a full
+ *  field-flattening pass for what's already small approval-card input. */
+const ALLOW_ONCE_PREVIEW_CAP = 120;
+
+function previewInput(input: unknown): string {
+  const text = JSON.stringify(input) ?? "null";
+  return text.length <= ALLOW_ONCE_PREVIEW_CAP ? text : `${text.slice(0, ALLOW_ONCE_PREVIEW_CAP)}…`;
+}
 
 export interface HandleConsentDeps {
   grants: GrantStore;
@@ -249,6 +267,41 @@ export async function handleConsent(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return audited({ ok: false, status: 403, error: message });
+    }
+  } else if (req.response.decision === "yes") {
+    // Greptile P1 (spec §4.3: "'Allow once' = a session-scoped exact grant"):
+    // a plain "yes" with NO client-authored grant draft used to mint
+    // nothing, so a byte-identical repeat call in the SAME conversation
+    // re-asked — the retired `rememberDecisions` ask-once behavior never
+    // actually survived. The server now mints the session-scoped exact grant
+    // itself, from the SAME approval part this function already resolved
+    // (`part.input`), so a repeat of the identical call is suppressed by
+    // `grantPolicy` for the rest of this thread while anything else still
+    // asks.
+    //
+    // Critical is skipped CLEANLY here — never by relying on
+    // `grantManager.create`'s own throw, which is a refusal for the EXPLICIT-
+    // draft path above, not a mechanism this implicit path should lean on.
+    // Unverified tools are NOT excluded (Yousef ruling, ENG-193 §4.1): an
+    // exact-scope session grant only suppresses a byte-identical repeat, so
+    // it's safe regardless of the unverified flag.
+    const descriptor = deps.resolveDescriptor(req.toolName);
+    if (descriptor && dangerTier(descriptor) !== "critical") {
+      const manager = createGrantManager({ store: deps.grants, audit: deps.audit, now: clock });
+      await manager.create(
+        principal,
+        {
+          tool: req.toolName,
+          scope: { kind: "exact", inputHash: hashInput(part.input), inputPreview: previewInput(part.input) },
+          duration: "session",
+          // Same store-thread-id reasoning as the explicit-draft path above —
+          // req.threadId is the id grantPolicy's contextKey resolver looks up
+          // on the next call in this same thread.
+          contextKey: req.threadId,
+          source: { kind: "chat" },
+        },
+        descriptor,
+      );
     }
   }
 
