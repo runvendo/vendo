@@ -4,6 +4,7 @@
  *   vendo init [dir]     extract theme/tools/components into <dir>/.vendo/
  *   vendo publish [dir]  stub until the cloud registry lands (ENG-198)
  */
+import { pathToFileURL } from "node:url";
 import { runInit } from "./init.js";
 import { runPublish } from "./publish.js";
 import { runSync } from "./sync/index.js";
@@ -88,6 +89,9 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 // Only auto-run when invoked as a bin, not when imported by tests.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL, not string concat: a checkout path with spaces (or any
+// URL-special char) percent-encodes in import.meta.url, and the naive
+// comparison silently skips main() — the CLI exits 0 having done nothing.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2)).then((code) => process.exit(code));
 }
