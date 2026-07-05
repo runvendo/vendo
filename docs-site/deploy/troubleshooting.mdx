@@ -1,0 +1,204 @@
+---
+title: "Troubleshooting"
+description: "Common failure modes and their fixes"
+---
+
+Use the headings and error snippets to find the matching cause.
+
+## Sandbox unavailable: react shim missing
+
+Cause: `public/vendo/react-runtime.js` is missing.
+
+Fix: run `npx vendo init . --force`, or copy the Vendo sandbox assets into `public/vendo/` as part of your own setup.
+
+## Sandbox unavailable: components bundle missing
+
+Cause: `public/vendo/components-sandbox.js` is missing.
+
+Fix: run `npx vendo init . --force`, or copy the Vendo sandbox assets into `public/vendo/`.
+
+## Chat is unavailable
+
+Error starts with:
+
+```txt
+chat is unavailable
+```
+
+Cause: the server does not see a model provider key, and you did not inject a `model` option. `VENDO_MODEL` names a model, but it is not a credential.
+
+Fix: set one provider key and restart the server:
+
+```bash
+ANTHROPIC_API_KEY=...
+# or OPENAI_API_KEY=...
+# or GOOGLE_GENERATIVE_AI_API_KEY=...
+```
+
+Check what the server sees:
+
+```bash
+curl http://localhost:3000/api/vendo/capabilities
+```
+
+## Chat or action returns 403 in production
+
+Error starts with:
+
+```txt
+Vendo is not serving this request. In production you MUST pass a `principal` resolver
+```
+
+Cause: the handler is reachable outside local development and no production gate is configured.
+
+Fix: pass `principal` to `createVendoHandler`. For a trusted temporary preview only, set `VENDO_ALLOW_REMOTE=1`.
+
+## Integrations tray is empty
+
+Cause: `COMPOSIO_API_KEY` is not set, so the capabilities route reports integrations as disabled.
+
+Fix: set `COMPOSIO_API_KEY` and restart the server. Missing keys hide the integrations UI instead of throwing.
+
+## Integrations POST returns 503
+
+Error starts with:
+
+```txt
+integrations are disabled
+```
+
+Cause: the client tried to connect or disconnect an integration while `COMPOSIO_API_KEY` was absent.
+
+Fix: set `COMPOSIO_API_KEY` and restart the server.
+
+## PGlite cannot run on serverless
+
+Error starts with:
+
+```txt
+[vendo] PGlite (the zero-config store) cannot run on
+```
+
+Cause: the default `.vendo/data` PGlite store was used on an ephemeral serverless filesystem.
+
+Fix: set `DATABASE_URL` to hosted Postgres, or pass `storage: { connectionString }`.
+
+## PGlite data directory is not writable
+
+Error starts with:
+
+```txt
+[vendo] PGlite data directory
+```
+
+Cause: Vendo cannot create or write to `.vendo/data`, or to the directory from `VENDO_DATA_DIR`.
+
+Fix: change directory permissions, set `VENDO_DATA_DIR` to a writable path, or use Postgres with `DATABASE_URL`.
+
+## Migration failed
+
+Error starts with:
+
+```txt
+[vendo] migration failed
+```
+
+Cause: Vendo could not run its schema migrations. A common cause is a Postgres role without permission to create the `vendo` schema or migration tables.
+
+Fix: grant the database role the needed schema permissions, or set `autoMigrate: false` and run `migrateVendoDatabase(handle)` from `@vendoai/store` in your migration pipeline.
+
+## Unknown VENDO_MODEL provider
+
+Error example:
+
+```txt
+Vendo: VENDO_MODEL="grok/whatever" names an unknown provider "grok"
+```
+
+Cause: `VENDO_MODEL` used `provider/model` syntax with an unsupported provider prefix.
+
+Fix: use `anthropic/...`, `openai/...`, `google/...`, or pass a bare model id that applies to the detected provider key.
+
+## Optional provider package missing
+
+Error starts with:
+
+```txt
+Vendo: model "openai/gpt-5.5" requires @ai-sdk/openai
+```
+
+Cause: the resolved provider is OpenAI or Google, but the optional provider package is not installed.
+
+Fix: install the package named in the error, for example `npm i @ai-sdk/openai`, then restart the server.
+
+## Tick route returns 401
+
+Error:
+
+```txt
+invalid tick credential
+```
+
+Cause: `VENDO_TICK_SECRET` is set and the `Authorization: Bearer ...` value did not match it.
+
+Fix: update the cron secret or deployment env var so they match exactly.
+
+## Tick route returns automations are disabled
+
+Error:
+
+```txt
+automations are disabled
+```
+
+Cause: the handler was configured with `automations: false`.
+
+Fix: remove `automations: false` if you want schedules, triggers, deliveries, resume, and parked automation actions.
+
+## Composio webhook returns 404
+
+Error:
+
+```txt
+composio webhooks are not configured
+```
+
+Cause: `COMPOSIO_WEBHOOK_SECRET` is not set.
+
+Fix: set `COMPOSIO_WEBHOOK_SECRET` to the signing secret from Composio and redeploy.
+
+## Composio webhook returns invalid signature
+
+Error:
+
+```txt
+invalid signature
+```
+
+Cause: the webhook request is missing `webhook-id`, `webhook-timestamp`, or `webhook-signature`, the timestamp is outside the five-minute tolerance, or the signature does not match `COMPOSIO_WEBHOOK_SECRET`.
+
+Fix: verify the webhook secret, route URL, and Composio webhook configuration.
+
+## Composio webhook returns unrecognized payload shape
+
+Error:
+
+```txt
+unrecognized payload shape
+```
+
+Cause: the payload did not include a trigger slug and connected-account id in the supported Composio envelope fields.
+
+Fix: confirm the webhook is a Composio trigger delivery. If the toolkit was connected before webhook routing captured a connected-account id, disconnect and reconnect it.
+
+## Invalid handler options
+
+Error starts with:
+
+```txt
+createVendoHandler: invalid options
+```
+
+Cause: an unknown option key or wrong option shape was passed to `createVendoHandler`.
+
+Fix: check the option name and value against the handler options reference. The options object is strict.

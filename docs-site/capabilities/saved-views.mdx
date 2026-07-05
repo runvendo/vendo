@@ -1,0 +1,57 @@
+---
+title: "Saved views"
+description: "Generated views your customers keep, refresh, and reuse"
+---
+
+Saved views are generated UI records that can be reopened later. A saved record stores the view name, generated UI node, originating prompt, optional pin state, host-component version stamp, and timestamps.
+
+The shell exposes the store as `VendoStore`:
+
+```ts
+interface VendoStore {
+  list(): Promise<Vendo[]>;
+  load(id: string): Promise<Vendo | null>;
+  save(draft: VendoDraft): Promise<Vendo>;
+  remove(id: string): Promise<void>;
+}
+```
+
+`VendoRoot` chooses a store from the server capability response. When durable storage is on, it uses the server-backed `/api/vendo/vendos` endpoints. Otherwise it uses `localStorage` with keys under `vendo:saved:<namespace>:`.
+
+There is no automatic `localStorage` to server migration in v1. If you turn durable storage on after customers have local saved views, the server-side library starts empty for those customers.
+
+## Library UI
+
+The shell exports `FlowGallery` for the saved-view library. It sorts pinned views first, then recent views. Each card can open the view, rename it inline, pin or unpin it, or delete it when you provide the corresponding callbacks.
+
+`VendoThread` accepts `flows`, `onOpenFlow`, `onRenameFlow`, `onPinFlow`, and `onDeleteFlow` props for wiring that library into a thread or landing surface.
+
+## Live Refresh
+
+Generated views can declare where their data came from. The `render_view` tool accepts a `queries` array:
+
+```ts
+type DataQuery = {
+  path: string;
+  tool: string;
+  input?: Record<string, unknown>;
+};
+```
+
+`path` is an RFC 6901 JSON Pointer into the generated view's `data` object. On reopen, Vendo renders the saved snapshot immediately. If the view has `queries` and the shell has a `runQuery` seam, Vendo re-runs those queries and patches fresh results into the same view tree.
+
+Reopen refresh is read-only. The default Next client only replays manifest tools whose `.vendo/tools.json` annotation has `mutating: false`. Route-scanned tools are fail-closed as mutating until you review and relax the annotation by hand.
+
+Refresh results have three states:
+
+- `live`: every query refreshed successfully.
+- `partial`: at least one query refreshed and at least one fell back to the snapshot.
+- `snapshot`: no query refreshed, or the view had no queries.
+
+Open saved views refresh every 60 seconds by default, only while the tab is visible. Set `refreshIntervalMs={0}` on `VendoShellProvider` to disable the interval. After repeated full-refresh failures, the open view stops polling and keeps the latest snapshot or partial result.
+
+When a refresh succeeds, Vendo writes the fresh data back to the current saved record. Rename and pin changes made during a refresh are preserved, and a deleted record is not recreated by a late refresh.
+
+## Undo
+
+`FlowGallery` calls your `onDeleteFlow` callback directly. The shell also exports `VendoToast`, a small undo toast with an action button. Use it to implement delete as an undoable action: remove the record, show the toast, and re-save the captured draft if the customer clicks Undo.

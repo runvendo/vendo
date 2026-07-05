@@ -1,0 +1,85 @@
+---
+title: "Environment variables"
+description: "Runtime, CLI, provider, storage, scheduler, and telemetry variables"
+---
+
+These are the environment variables read by the Vendo packages. Handler options
+win over env where an explicit option exists.
+
+## Model Providers
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Enables chat and generated UI through Anthropic. It has first provider precedence. Also provides fallback key material for remix pin sealing when `VENDO_SEAL_SECRET` is unset and no model is injected. | Unset. |
+| `OPENAI_API_KEY` | Enables chat and generated UI through OpenAI when no Anthropic key is present. Also sets the `voice` capability flag. | Unset. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Enables chat and generated UI through Google when Anthropic and OpenAI keys are absent. | Unset. |
+| `VENDO_MODEL` | Overrides the runtime model. Accepts `provider/model` or a bare model id. A bare id applies to the detected provider, or Anthropic if none is detected. | Provider default: `claude-sonnet-5`, `gpt-5.5`, or `gemini-3.5-flash`. |
+| `VENDO_CLI_MODEL` | CLI-only model override for `vendo init`. Takes precedence over `VENDO_MODEL` and uses the same syntax. | Unset. |
+
+`VENDO_MODEL` and `VENDO_CLI_MODEL` do not count as credentials. Chat and
+LLM-assisted init steps still need one provider key or an injected model.
+
+OpenAI and Google model resolution require the optional provider package when
+that provider is selected.
+
+## Integrations And Webhooks
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `COMPOSIO_API_KEY` | Enables integration catalog and connect routes. The Composio client also falls back to this key when no explicit key is passed. | Integrations disabled. |
+| `COMPOSIO_WEBHOOK_SECRET` | Verifies `POST /webhooks/composio` signatures. Missing secret makes the webhook route return `404`. | Webhook ingress disabled. |
+
+## Storage And Scheduler
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `DATABASE_URL` | Uses hosted Postgres for durable storage. Ignored when the handler is given an explicit `storage.pglite` option. | Unset. |
+| `VENDO_DATA_DIR` | Directory for embedded PGlite storage. Ignored when `DATABASE_URL` or an explicit connection string is used. | `.vendo/data`. |
+| `VENDO_TICK_SECRET` | Optional bearer secret for `POST /tick`. A wrong presented bearer returns `401`. If no bearer is presented, `/tick` falls back to principal auth. | Unset. |
+| `VENDO_SCHEDULER` | Set to `external` to disable the in-process scheduler started by `startVendoScheduler()`. Other values behave like unset. | In-process scheduler can start. |
+| `VERCEL` | Marks the runtime as serverless for the default PGlite guard. If set and no Postgres connection is configured, boot fails instead of using ephemeral local files. | Unset. |
+| `CF_PAGES` | Same serverless guard as `VERCEL`. | Unset. |
+| `AWS_LAMBDA_FUNCTION_NAME` | Same serverless guard as `VERCEL`. | Unset. |
+
+If one of the serverless guard variables is present and storage would otherwise
+use the default PGlite file store, boot fails and asks you to set
+`DATABASE_URL`.
+
+## Request Guard And Runtime Mode
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `VENDO_ALLOW_REMOTE` | Set to `1` to allow the default principal for remote or production requests. Prefer a `principal` handler option for production. | Remote default principal disabled. |
+| `NODE_ENV` | `production` disables the default principal unless `principal` or `VENDO_ALLOW_REMOTE=1` is set. `test` makes unset storage behave as `storage: false`. Non-production enables development telemetry events. | Depends on your runtime. |
+| `NEXT_RUNTIME` | The generated Next.js instrumentation starts the scheduler only when this is `nodejs`. | Set by Next.js. |
+
+## Telemetry
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `VENDO_POSTHOG_KEY` | Overrides the telemetry project key. | Built-in telemetry key. |
+| `VENDO_TELEMETRY_DISABLED` | `1` or `true` disables telemetry. | Telemetry allowed unless another opt-out applies. |
+| `DO_NOT_TRACK` | `1` or `true` disables telemetry. | Unset. |
+| `CI` | Any non-empty value except `0` or `false` disables telemetry. | Unset. |
+
+## Development Diagnostics
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `VENDO_BENCH` | Set to `1` to log `edit_view` apply and materialize timings. | Disabled. |
+
+## MCP Header Templates
+
+`.vendo/mcp.json` can reference arbitrary uppercase env vars in header values:
+
+```json
+{
+  "headers": {
+    "authorization": "Bearer ${INTERNAL_MCP_TOKEN}"
+  }
+}
+```
+
+If a referenced variable is missing or empty, that MCP server is dropped at
+boot with a warning. The env var name is not fixed by Vendo. It comes from your
+template.
