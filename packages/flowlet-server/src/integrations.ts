@@ -68,7 +68,13 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
       // active connection for THIS toolkit — otherwise a caller could pass any
       // active account id against any toolkit id and flip it on without OAuth.
       if (status === "active" && (await getClient(deps).hasActiveConnection(guard.principal.userId, id))) {
-        deps.store.connect(id);
+        // This IS where the OAuth flow lands a successful connection — the
+        // client polls with the same `account` (connectedAccountId) it got
+        // back from the POST /connect leg, so this is the one place the
+        // in-memory/durable store can tie a Composio connected-account id to
+        // a toolkit for webhook routing (findByConnectedAccount). Subsumes
+        // connect(id)'s effect (marks the toolkit connected too).
+        await deps.store.setConnectedAccount(id, account);
       }
       return Response.json({ status });
     } catch {
@@ -106,6 +112,12 @@ export async function handleIntegrationsPost(req: Request, deps: IntegrationsDep
   if (body.action === "connect") {
     try {
       // Fast path: already authorized in Composio → mark connected immediately.
+      // NOTE: `hasActiveConnection` doesn't hand back a connectedAccountId, so
+      // this path can't call `setConnectedAccount` — only the status-poll
+      // branch above captures one. A user who reaches "connected" purely via
+      // this fast path won't have a Composio webhook route until they go
+      // through a fresh authorize()+poll cycle (documented gap, not fixed
+      // here — see docs/persistence-and-deploy.md when it lands).
       if (await getClient(deps).hasActiveConnection(userId, id)) {
         deps.store.connect(id);
         return Response.json({ connected: true });

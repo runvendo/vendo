@@ -7,8 +7,8 @@
  *
  * Host webhooks and Composio triggers deliberately do NOT pass through here —
  * they are ingest paths that invoke the same firing pipeline directly (see
- * host-events.ts). Composio trigger delivery needs a reachable webhook
- * endpoint and is cloud-only.
+ * host-events.ts). Composio trigger delivery needs a reachable webhook URL —
+ * see @flowlet/next webhooks.
  *
  * Missed fires are skipped (the next occurrence wins) and the occurrence
  * timestamp doubles as the dedup eventId downstream, so a double tick can

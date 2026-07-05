@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ComposioClient } from "@flowlet/runtime";
+import { WORLD_SCOPE } from "./guard";
 import {
   createConnectionsStore,
   handleIntegrationsGet,
@@ -115,6 +116,26 @@ describe("integrations endpoints", () => {
     const res = await handleIntegrationsPost(post({ id: "evilcorp", action: "connect" }), d);
     expect(res.status).toBe(400);
     expect(authorizeCalls).toBe(0);
+  });
+
+  it("status poll captures the connected-account id for webhook routing (Task 13 Step 1)", async () => {
+    const d = deps({
+      client: stubClient({
+        connectionStatus: async () => "active" as const,
+        hasActiveConnection: async () => true,
+      }),
+    });
+    await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=gmail&account=acc-42"), d);
+    expect(d.store.connectedToolkits()).toEqual(["gmail"]);
+    await expect(d.store.findByConnectedAccount("acc-42")).resolves.toEqual({
+      toolkit: "gmail",
+      principal: WORLD_SCOPE,
+    });
+  });
+
+  it("findByConnectedAccount resolves undefined for an account never captured", async () => {
+    const d = deps();
+    await expect(d.store.findByConnectedAccount("nope")).resolves.toBeUndefined();
   });
 
   it("disconnect flips the store off; unknown ids never connect", async () => {

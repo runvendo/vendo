@@ -74,6 +74,7 @@ import { createThreadIndex } from "./threads";
 import { resolvePrincipal, tickServiceAuth, DEFAULT_PRINCIPAL } from "./guard";
 import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
+import { handleComposioWebhook } from "./webhooks";
 
 const FIRST_SEGMENTS = new Set([
   "chat",
@@ -674,6 +675,11 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
         }
         return Response.json({ ok: true });
       }
+      case "webhooks/composio":
+        // No principal guard: the Svix-style signature IS the authentication
+        // (see webhooks.ts). A host `principal` resolver has no bearing here —
+        // Composio, not a logged-in user, is the caller.
+        return handleComposioWebhook(req, { world: s.world, connections: s.connections });
       case "resume": {
         // Approval toast → resume the paused run. Unknown/already-settled runs
         // answer `stale` (the toast flips to its stale state) instead of 500.

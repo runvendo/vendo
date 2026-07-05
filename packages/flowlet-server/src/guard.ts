@@ -17,6 +17,7 @@
  * (See docs/quickstart.md → Deploying.)
  */
 import { timingSafeEqual } from "node:crypto";
+import type { Principal } from "@flowlet/core";
 import type { FlowletPrincipal } from "@flowlet/runtime";
 import type { FlowletHandlerOptions } from "./options";
 
@@ -49,6 +50,15 @@ export function tickServiceAuth(
 
 /** The identity zero-config installs run as (keys Composio connections too). */
 export const DEFAULT_PRINCIPAL: FlowletPrincipal = { userId: "flowlet-default-user" };
+
+/**
+ * The fixed automations-world scope every embedded install shares (v1 is
+ * single-tenant — see world.ts). One place spells the "flowlet-embedded"
+ * tenant id, so connections storage and webhook routing (which need a
+ * core `Principal` before any request-scoped identity exists) agree with
+ * the world the handler actually assembled.
+ */
+export const WORLD_SCOPE: Principal = { tenantId: "flowlet-embedded", subject: DEFAULT_PRINCIPAL.userId };
 
 export const REMOTE_BLOCKED_MESSAGE =
   "Flowlet is not serving this request. In production you MUST pass a `principal` " +
