@@ -14,14 +14,29 @@
  * `executeHostToolCall` in this browser on the user's existing session,
  * exactly like the live agent path — it never transits the server handler.
  */
-import { executeHostToolCall, type DataQuery, type ManifestTool } from "@vendoai/core";
+import {
+  executeHostToolCall,
+  manifestToolAnnotationsSchema,
+  type DataQuery,
+  type ManifestTool,
+} from "@vendoai/core";
 import { manifestToolsToHostTools } from "@vendoai/server/manifest-tools";
 
 export type RunQuery = (query: DataQuery) => Promise<unknown>;
 
+/** FAIL CLOSED: `tools` arrives from host props unvalidated, so a truthiness
+ *  read of `annotations.mutating` would let an absent/forged annotation shape
+ *  (`{}`, `mutating: 0`, no annotations at all) count as read-only. Only a
+ *  shape that VALIDATES against the manifest contract and reads a literal
+ *  `mutating: false` is replayable. */
+function isValidatedReadOnly(tool: ManifestTool): boolean {
+  const parsed = manifestToolAnnotationsSchema.safeParse(tool.annotations);
+  return parsed.success && parsed.data.mutating === false;
+}
+
 export function createRunQuery(_basePath: string, tools: ManifestTool[]): RunQuery {
   const readOnlyDefs = new Map(
-    manifestToolsToHostTools(tools.filter((t) => !t.annotations.mutating)).map((d) => [d.name, d]),
+    manifestToolsToHostTools(tools.filter(isValidatedReadOnly)).map((d) => [d.name, d]),
   );
   return async (query: DataQuery): Promise<unknown> => {
     const def = readOnlyDefs.get(query.tool);
