@@ -137,4 +137,46 @@ describe("createAutomationsWorld — schedule rehydration", () => {
       principal,
     );
   });
+
+  it("parks (never re-registers) a one-shot whose `at` passed while the process was down", async () => {
+    // The tick window starts at boot, so a re-registered past one-shot can
+    // never fire — it would stay "enabled" forever (a zombie). Missed-fire
+    // policy: skipped fires stay skipped; park it like a fired one-shot.
+    const principal = { tenantId: "flowlet-embedded", subject: "u1" };
+    const setStatus = vi.fn(async () => undefined);
+    const store = {
+      listEnabledSchedules: async () => [
+        {
+          automationId: "auto-missed",
+          trigger: { type: "schedule", at: "2020-01-01T00:00:00.000Z" },
+          principal,
+        },
+        {
+          automationId: "auto-future",
+          trigger: { type: "schedule", at: "2099-01-01T00:00:00.000Z" },
+          principal,
+        },
+      ],
+      setStatus,
+    } as unknown as AutomationEngineStore;
+    const schedule = vi.spyOn(InProcessScheduler.prototype, "schedule");
+
+    await createAutomationsWorld({
+      policy: defaultFlowletPolicy,
+      model: STUB_MODEL,
+      scope: principal,
+      store,
+    });
+
+    expect(setStatus).toHaveBeenCalledTimes(1);
+    expect(setStatus).toHaveBeenCalledWith(principal, "auto-missed", "paused", {
+      disabledReason: "completed_one_shot",
+    });
+    expect(schedule).toHaveBeenCalledTimes(1);
+    expect(schedule).toHaveBeenCalledWith(
+      "auto-future",
+      { kind: "at", at: "2099-01-01T00:00:00.000Z" },
+      principal,
+    );
+  });
 });

@@ -109,8 +109,21 @@ export async function createAutomationsWorld(config: CreateWorldConfig): Promise
   // was re-authored. Re-register everything enabled from the store at
   // assembly (a fresh in-memory store returns [], so this is a no-op for the
   // non-durable path).
+  const bootMs = Date.now();
   for (const row of await store.listEnabledSchedules()) {
-    await scheduler.schedule(row.automationId, toTimeTrigger(row.trigger), row.principal);
+    const trigger = toTimeTrigger(row.trigger);
+    // MISSED-FIRE POLICY: skipped fires stay skipped. The scheduler's tick
+    // window starts at boot, so a one-shot whose `at` passed while the
+    // process was down can never fire again — re-registering it would leave
+    // an enabled-forever zombie. Park it the way a fired one-shot completes
+    // (spent/expired one-shots must not zombie).
+    if (trigger.kind === "at" && Date.parse(trigger.at) <= bootMs) {
+      await store.setStatus(row.principal, row.automationId, "paused", {
+        disabledReason: "completed_one_shot",
+      });
+      continue;
+    }
+    await scheduler.schedule(row.automationId, trigger, row.principal);
   }
 
   return {
