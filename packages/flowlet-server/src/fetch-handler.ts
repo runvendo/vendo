@@ -528,7 +528,19 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     state = registry.slot.state;
   } else {
     state = createLazyState(options);
-    if (!registry.slot) registry.slot = { options: rawOptions, state };
+    if (!registry.slot) {
+      registry.slot = { options: rawOptions, state };
+    } else {
+      // Forking a private world: its own InProcessScheduler is NOT the one
+      // startFlowletScheduler() started, so its schedules only fire via
+      // POST /tick. Say so instead of diverging silently.
+      console.warn(
+        "[flowlet] createFlowletFetchHandler() was called with different options than the " +
+          "first-assembled Flowlet state — this handler gets its own private world whose " +
+          "internal scheduler is not started. Its schedules fire only via POST /tick. " +
+          "Pass the same options object everywhere (route + instrumentation.ts), or none.",
+      );
+    }
   }
 
   /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection. */
