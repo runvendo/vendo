@@ -91,6 +91,20 @@ function isLocalRequest(req: Request): boolean {
   return LOCAL_HOSTS.has(hostname.toLowerCase());
 }
 
+/**
+ * True only for a development-mode request from a local host — the one
+ * situation where a deliberately-constructed boot error message may be echoed
+ * to the caller (see fetch-handler.ts's bootError). Same Host-header localness
+ * `resolvePrincipal` keys on; NODE_ENV=production disables it entirely because
+ * that header is client-controlled.
+ */
+export function isLocalDevRequest(
+  req: Request,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env["NODE_ENV"] !== "production" && isLocalRequest(req);
+}
+
 export type GuardResult =
   | { ok: true; principal: VendoPrincipal }
   | { ok: false; response: Response };

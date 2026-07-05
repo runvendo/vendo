@@ -87,7 +87,7 @@ import { ModelPeerMissingError, resolveModel } from "./model.js";
 import { defaultVendoPolicy } from "./default-policy.js";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack.js";
 import { createThreadIndex } from "./threads.js";
-import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard.js";
+import { isLocalDevRequest, resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard.js";
 import { resolveStorage } from "./storage.js";
 import { parseHandlerOptions, type VendoHandlerOptions } from "./options.js";
 import { devTelemetry, errorClassName } from "./telemetry-dev.js";
@@ -671,10 +671,24 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
     }
   }
 
-  /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection. */
-  function bootError(err: unknown): Response {
+  /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection.
+   *  This path runs BEFORE any principal guard, so a raw message (which can
+   *  carry file paths, DATABASE_URL contents, provider auth detail) must never
+   *  reach a caller: full detail goes to the server log, the response is
+   *  generic. Exception: our own deliberately-constructed developer-actionable
+   *  messages — recognized by their static "[vendo]"/"Vendo:" prefixes — pass
+   *  through to a LOCAL request in development only. When in doubt, generic. */
+  function bootError(req: Request, err: unknown): Response {
+    console.error("[vendo] handler assembly failed:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    const deliberate = message.startsWith("[vendo]") || message.startsWith("Vendo:");
     return Response.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      {
+        error:
+          deliberate && isLocalDevRequest(req)
+            ? message
+            : "vendo failed to start — see server logs",
+      },
       { status: 500 },
     );
   }
@@ -938,7 +952,7 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
       s = await state();
     } catch (err) {
       trackErrorClass(err);
-      return bootError(err);
+      return bootError(req, err);
     }
     switch (req.method) {
       case "GET":

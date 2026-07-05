@@ -114,19 +114,50 @@ describe("createVendoFetchHandler", () => {
   });
 
   it("500s a boot failure and retries assembly once the config is fixed", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
     vi.stubEnv("VENDO_MODEL", "grok/whatever");
     const handler = createVendoFetchHandler({ vendoDir: emptyDir() });
 
+    // A deliberately-constructed, developer-actionable message ("Vendo: …")
+    // still reaches a LOCAL dev request verbatim — it's static text our own
+    // code wrote, and localhost-in-dev is the developer's own terminal.
     const broken = await handler(req("/api/vendo/capabilities"));
     expect(broken.status).toBe(500);
-    expect(((await broken.json()) as { error: string }).error).toMatch(/Vendo/);
+    expect(((await broken.json()) as { error: string }).error).toMatch(/Vendo.*VENDO_MODEL/);
 
     // Fixing the env must NOT keep serving the cached rejection.
     vi.stubEnv("VENDO_MODEL", "");
     const fixed = await handler(req("/api/vendo/capabilities"));
     expect(fixed.status).toBe(200);
     expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    error.mockRestore();
+  });
+
+  it("answers a REMOTE caller's boot failure with a generic message, even a developer-actionable one", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("VENDO_MODEL", "grok/whatever");
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir() });
+
+    // Boot failures happen BEFORE any principal guard runs, so this path is
+    // reachable by unauthenticated remote callers — nothing but the generic
+    // message may cross; the detail goes to the server log.
+    const res = await handler(
+      new Request("http://prod.example.com/api/vendo/capabilities", {
+        headers: { host: "prod.example.com" },
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "vendo failed to start — see server logs",
+    );
+    expect(
+      error.mock.calls.some((call) =>
+        call.some((arg) => arg instanceof Error && arg.message.includes("VENDO_MODEL")),
+      ),
+    ).toBe(true);
+    error.mockRestore();
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {
