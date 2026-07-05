@@ -11,13 +11,11 @@
  * governed `slack_summary` in-process tool, not as an agent toolkit.
  */
 import { anthropic } from "@ai-sdk/anthropic";
-import { wrapLanguageModel } from "ai";
 import { createFlowletAgent, buildBrandGuidance } from "@flowlet/runtime";
 import type { FlowletAgent } from "@flowlet/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
-import { jsonRepairMiddleware } from "./json-repair";
 // Plain-JS module shared with the CRA client (registry + prompt must agree).
 import { gmailHostComponents } from "../../src/flowlet/host-components";
 import { brandTokensSchema } from "@flowlet/components/theme";
@@ -173,11 +171,8 @@ export interface CreateDemoAgentOptions {
 }
 
 export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent {
-  // Repair middleware: long generated payloads occasionally stream with raw
-  // control chars inside JSON strings — fix them instead of 400ing the turn.
-  const model =
-    opts.model ??
-    wrapLanguageModel({ model: anthropic(DEMO_MODEL), middleware: jsonRepairMiddleware });
+  // JSON repair now lives in the engine (@flowlet/runtime wraps every model).
+  const model = opts.model ?? anthropic(DEMO_MODEL);
   return createFlowletAgent({
     model,
     policy: demoPolicy,

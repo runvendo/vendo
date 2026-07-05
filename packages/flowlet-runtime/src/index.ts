@@ -47,6 +47,22 @@ export type { BrandGuidanceInput, HostBrandNorms } from "./brand-guidance";
 // Generated-component compiler (JSX/TS → sandbox-ready ESM)
 export { compileComponentSource } from "./compile-component";
 
+// Tool-input JSON repair (engine wraps every model with this; exported for
+// hosts that drive models outside the engine)
+export {
+  jsonRepairMiddleware,
+  repairToolInputText,
+  escapeControlCharsInJsonStrings,
+} from "./json-repair";
+
+// Remix fast-edits primitives (baseline/hunks/envelope)
+export { normalizeBaseline, numberedLines, NORMALIZER_VERSION } from "./remix/baseline";
+export type { NormalizedBaseline } from "./remix/baseline";
+export { applyHunks, validateHunkLines } from "./remix/hunks";
+export type { Hunk, HunkError, HunkResult } from "./remix/hunks";
+export { createRemixSealer, deriveSealKey } from "./remix/envelope";
+export type { RemixSealer, SealKey, SealKeySources, MintInput, VerifyContext } from "./remix/envelope";
+
 // Request connect tool (host-privileged Connect card)
 export { createRequestConnectTool } from "./request-connect-tool";
 

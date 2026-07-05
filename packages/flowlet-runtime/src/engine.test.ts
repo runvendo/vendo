@@ -383,7 +383,7 @@ describe("createFlowletAgent", () => {
     expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
   });
 
-  it("coerces a broken-JSON tool input in history to {} so the provider does not reject every later turn", async () => {
+  it("repairs a broken-JSON tool input in history (control chars → data kept; unrepairable → {})", async () => {
     let seenPrompt: { role: string; content: unknown }[] = [];
     const model = new MockLanguageModelV3({
       doStream: async ({ prompt }) => {
@@ -406,7 +406,16 @@ describe("createFlowletAgent", () => {
         role: "assistant",
         parts: [
           {
-            // Streamed render_view input that broke mid-flight: a string, not an object.
+            // Raw control chars inside a string literal: REPAIRABLE — the
+            // middleware must keep the data, not blank it to {}.
+            type: "tool-render_view",
+            toolCallId: "call-repairable",
+            state: "output-available",
+            input: '{"components":{"C":"line1\nline2"}}',
+            output: "rendered",
+          },
+          {
+            // Truncated mid-stream: unrepairable — degrades to {}.
             type: "tool-render_view",
             toolCallId: "call-broken",
             state: "output-available",
@@ -422,16 +431,19 @@ describe("createFlowletAgent", () => {
       agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
     );
     expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
-    // The broken call reached the model with an OBJECT input (coerced to {}),
-    // so the provider would not 400 on it.
-    const brokenCall = seenPrompt
+    const calls = seenPrompt
       .filter((m) => m.role === "assistant")
-      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
-      .find((c) => (c as { toolCallId?: string }).toolCallId === "call-broken") as
-      | { input?: unknown }
-      | undefined;
-    expect(brokenCall).toBeDefined();
-    expect(typeof brokenCall!.input).toBe("object");
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : [])) as {
+      toolCallId?: string;
+      input?: unknown;
+    }[];
+    // Repairable input reaches the model as the PARSED object with data kept.
+    const repairable = calls.find((c) => c.toolCallId === "call-repairable");
+    expect(repairable?.input).toEqual({ components: { C: "line1\nline2" } });
+    // Unrepairable input degrades to {} so the provider still never 400s.
+    const broken = calls.find((c) => c.toolCallId === "call-broken");
+    expect(broken).toBeDefined();
+    expect(broken!.input).toEqual({});
   });
 
   describe("anchor context (FlowletRemix, 2026-07-04 spec)", () => {

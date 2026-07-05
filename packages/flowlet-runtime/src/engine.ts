@@ -20,10 +20,12 @@ import {
   createUIMessageStream,
   stepCountIs,
   streamText,
+  wrapLanguageModel,
   type LanguageModel,
   type ToolSet,
   type UIMessageChunk,
 } from "ai";
+import { jsonRepairMiddleware } from "./json-repair";
 import type {
   AnchorContextBlock,
   EnvImportStatus,
@@ -262,6 +264,15 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   // Stable, deterministic run identity without Math.random/Date.now.
   let runCounter = 0;
 
+  // Engine-owned JSON repair (upstreamed from apps/gmail, PR #28): streamed
+  // tool inputs whose JSON broke on raw control chars are repaired before the
+  // ai SDK gives up on them, and historical broken inputs are repaired (or
+  // emptied) before they can 400 a later turn at the provider.
+  const model = wrapLanguageModel({
+    model: config.model as Parameters<typeof wrapLanguageModel>[0]["model"],
+    middleware: jsonRepairMiddleware,
+  });
+
   // Build the Composio client ONCE and reuse it across runs. `fetchTools` takes
   // the `userId` per call, so reuse is safe (no cross-user leak), and
   // `createComposioClient` is lazy (it never connects at construction). The
@@ -328,21 +339,10 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             },
           } as typeof rawPart;
         }
-        // A tool call whose streamed input JSON broke (e.g. a large render_view
-        // that truncated) lands in history with a non-object `input`. The
-        // provider rejects the whole request ("tool_use.input: Input should be
-        // an object") on EVERY later turn, wedging the thread. Coerce the
-        // historical input to `{}` so the record stays valid — it is a past
-        // call with its output already present, never re-executed, so an empty
-        // input is harmless.
-        if (
-          part.type.startsWith("tool-") &&
-          "input" in part &&
-          (typeof part.input !== "object" || part.input === null)
-        ) {
-          changed = true;
-          return { ...rawPart, input: {} } as typeof rawPart;
-        }
+        // A tool call whose streamed input JSON broke lands in history with a
+        // non-object `input`. jsonRepairMiddleware (transformParams) repairs
+        // or empties it at the provider boundary — repairable history keeps
+        // its data instead of the old blanket `{}` coercion here.
         return rawPart;
       });
       return changed ? { ...message, parts } : message;
@@ -493,7 +493,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         // 6. Drive the model->tool loop.
         const baseSystem = input.system ?? config.instructions ?? DEFAULT_INSTRUCTIONS;
         const result = streamText({
-          model: config.model,
+          model,
           system: anchors
             ? `${baseSystem}\n\n${anchorSection(anchors, config.envManifest)}`
             : baseSystem,
