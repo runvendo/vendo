@@ -4,18 +4,20 @@ Everything from the hardening effort that needs your call, in one place.
 Companion to the [bar](2026-07-05-release-hardening-bar.md) and
 [inventory](2026-07-05-release-hardening-inventory.md).
 
-## Blocking npm publish (decide before ENG-198)
+## Blocking npm publish — RESOLVED by PR #60 (your parallel launch-prep session)
 
-1. **fluidkit distribution.** `@vendoai/shell` ships
-   `fluidkit: file:../../vendor/fluidkit-0.5.0-…tgz` — consumer installs abort.
-   Options: (a) **publish fluidkit to npm** from runvendo/fluidkit
-   (recommended: honest dep graph, hosts can dedupe/upgrade), (b) bundle it
-   into shell's dist, (c) ship the tgz inside the package. Tracked as KNOWN
-   in `scripts/check-publish-hygiene.mjs` — the gate goes red for it the
-   moment you pick (a) and we swap the dep to a version range.
-2. **License.** Repo has no LICENSE and no `license` fields — legally
-   unlicensed. Pick MIT / Apache-2.0 / other; the sweep after is mechanical
-   (root LICENSE + per-package field + the hygiene gate starts enforcing it).
+1. ~~fluidkit distribution~~ — **decided: bundled into shell's dist via tsup**
+   (`noExternal`), fluidkit moved to devDependencies. The hygiene gate passes.
+2. ~~License~~ — **decided: Apache-2.0** (LICENSE + NOTICE + per-package fields
+   in #60).
+
+**Reconciliation note:** #60 overlapped three wave-1 fixes (CLI bin guard,
+NodeNext sweep, manifests). PR #56 was rebuilt as a stack ON TOP of #60 and
+now carries only what #60 lacks: scheduler/fan-out isolation, pg.Pool error
+listener, provider-peer degradation, server-side error hygiene, the two
+release gates, and residuals the gates caught on top of launch prep
+(sandbox-shims dist was still not Node-loadable; CLI's conflicting duplicate
+typescript pins). **Merge order: #60 → #56.**
 
 ## Judgment calls I made that you should ratify (all in PR #56)
 
@@ -25,9 +27,8 @@ Companion to the [bar](2026-07-05-release-hardening-bar.md) and
   install. Now: chat gated off, hint in server log + chat 503, everything
   else healthy; a misconfigured `VENDO_MODEL` still fails loudly. Quickstart
   updated. Revert is one commit if you want fail-fast back.
-- **`@vendoai/sandbox-shims` is now publishable** (was `private: true`) — the
-  published CLI resolves its dist at runtime, so it must ship. Alternative
-  (bundling shim sources into the CLI package) rejected as a bigger change.
+- ~~sandbox-shims un-privated~~ — superseded by #60's approach (CLI ships
+  shims inside its own dist with a workspace fallback); shims stays private.
 - **A failed one-shot automation firing is consumed, not retried** — matches
   the existing "missed fires are skipped" rule; the occurrence, not the
   delivery, is what happens exactly once.
