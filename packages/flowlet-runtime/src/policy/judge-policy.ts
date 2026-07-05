@@ -148,11 +148,20 @@ function cleanVerdictLine(raw: string): string {
  * -> undefined (unparseable — escalate-on-error, never a silent deny).
  */
 function parseVerdict(text: string): JudgeVerdict | undefined {
+  // Escalate-biased scan (review follow-up): an escalate ANYWHERE in the
+  // output beats a match anywhere else. A model that "thinks out loud" and
+  // emits a stray standalone `match` line before its real `escalate:`
+  // conclusion must never be read as allowing — erring toward the card is
+  // the only acceptable direction for a parser mistake.
   const lines = text.split(/\r?\n/);
+  let matched = false;
   for (let i = 0; i < lines.length; i++) {
     if (lines[i]!.trim().length === 0) continue;
     const cleaned = cleanVerdictLine(lines[i]!);
-    if (/^match[.!]?$/i.test(cleaned)) return { kind: "match" };
+    if (/^match[.!]?$/i.test(cleaned)) {
+      matched = true;
+      continue;
+    }
     const escalate = /^escalate\s*:?\s*(.*)$/is.exec(cleaned);
     if (escalate) {
       const continuation = lines.slice(i + 1).join("\n");
@@ -163,7 +172,7 @@ function parseVerdict(text: string): JudgeVerdict | undefined {
       if (reason) return { kind: "escalate", reason };
     }
   }
-  return undefined; // unparseable
+  return matched ? { kind: "match" } : undefined; // undefined = unparseable
 }
 
 export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): ApprovalPolicy {

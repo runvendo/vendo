@@ -295,3 +295,14 @@ describe("judgePolicy", () => {
     expect(calls).toEqual(["inner"]);
   });
 });
+
+describe("parseVerdict escalate bias (review follow-up)", () => {
+  it("an escalate after a stray standalone match line wins — never reads as allow", async () => {
+    const policy = judgePolicy(fixed("approve"), {
+      model: mockReturning("match\nescalate: recipient not in the user's request"),
+    });
+    const ctx = ctxFor(actDesc);
+    expect(await policy.evaluate(ctx)).toBe("approve");
+    expect(getEscalationReason(ctx)).toMatch(/recipient not in the user's request/);
+  });
+});
