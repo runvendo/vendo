@@ -160,6 +160,32 @@ describe("createVendoFetchHandler", () => {
     error.mockRestore();
   });
 
+  it("answers a throw inside a route handler with a generic JSON 500, never an escaped rejection", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // A throwing host `principal` resolver is a realistic route-dep failure
+    // (host auth backend down). Before the route-level boundary this escaped
+    // createVendoFetchHandler entirely — the framework rendered an HTML 500,
+    // which the sandbox then parsed as JSON into a raw SyntaxError.
+    const handler = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      principal: async () => {
+        throw new Error("pg://user:s3cretpw@auth-db.internal:5432 connection refused");
+      },
+    });
+    const res = await handler(req("/api/vendo/grants"));
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toMatch(/application\/json/);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("internal error");
+    // The detail (connection string and all) goes to the server log only.
+    expect(
+      error.mock.calls.some((call) =>
+        call.some((arg) => arg instanceof Error && arg.message.includes("s3cretpw")),
+      ),
+    ).toBe(true);
+    error.mockRestore();
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");

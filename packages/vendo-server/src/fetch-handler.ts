@@ -954,13 +954,23 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
       trackErrorClass(err);
       return bootError(req, err);
     }
-    switch (req.method) {
-      case "GET":
-        return GET(req, s);
-      case "POST":
-        return POST(req, s);
-      default:
-        return Response.json({ error: "not found" }, { status: 404 });
+    // Route-level error boundary: a throw inside any route handler must
+    // answer as JSON, never escape to the framework (whose HTML 500 the
+    // sandbox would parse as JSON into a raw SyntaxError). Same hygiene as
+    // bootError: detail to the server log, generic body to the caller.
+    try {
+      switch (req.method) {
+        case "GET":
+          return await GET(req, s);
+        case "POST":
+          return await POST(req, s);
+        default:
+          return Response.json({ error: "not found" }, { status: 404 });
+      }
+    } catch (err) {
+      console.error(`[vendo] ${req.method} ${routeTail(req)} failed:`, err);
+      trackErrorClass(err);
+      return Response.json({ error: "internal error" }, { status: 500 });
     }
   };
 }
