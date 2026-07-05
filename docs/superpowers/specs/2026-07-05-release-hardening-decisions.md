@@ -34,6 +34,19 @@ is PR #64 stacked on #56. **Merge order: #60 → #56 → #64.**
   the existing "missed fires are skipped" rule; the occurrence, not the
   delivery, is what happens exactly once.
 
+## UI decisions MADE (2026-07-05, in session)
+
+- **Mobile:** full-screen overlay takeover below ~768px (Intercom pattern) — approved.
+- **Consent card:** human summary only; raw params never shown to end users — approved.
+- **Glass skeletons:** the landing page's glass+shimmer recipe, tinted from each
+  host's theme.json accent, for render_view placeholder / saved-vendo refresh /
+  library+tray loading (FluidThinking stays for chat thinking) — approved
+  enthusiastically; exploration mock at
+  `~/Desktop/vendo-ui-bash-2026-07-05/glass-skeleton-exploration.html`.
+- **MCP approvals:** route through the consent/audit/grant channel — approved, build next.
+
+All four land as one shell-UI wave PR with browser screenshots for review before merge.
+
 ## UI decision queue
 
 Bug bash complete (both demo apps, browser-driven). Screenshots:
