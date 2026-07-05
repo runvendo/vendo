@@ -57,6 +57,33 @@ describe("createVendoFetchHandler", () => {
     expect(connect.status).toBe(503);
   });
 
+  it("requires a passing principal for capabilities once a principal resolver is configured", async () => {
+    // Configuration disclosure (which providers/keys/integrations are live)
+    // must not leak to an unauthenticated caller when the host HAS wired auth.
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const denied = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      principal: async () => null,
+    });
+    expect((await denied(req("/api/vendo/capabilities"))).status).toBe(403);
+
+    const allowed = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      principal: async () => ({ userId: "u1" }),
+    });
+    const ok = await allowed(req("/api/vendo/capabilities"));
+    expect(ok.status).toBe(200);
+    expect((await ok.json()) as { chat: boolean }).toMatchObject({ chat: true });
+  });
+
+  it("keeps capabilities open for zero-config installs (client needs it pre-auth)", async () => {
+    // No principal resolver: the local dev / BYO-keys mode where the client
+    // reads capabilities before any auth exists. This must stay open.
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir() });
+    expect((await handler(req("/api/vendo/capabilities"))).status).toBe(200);
+  });
+
   it("routes unknown paths to 404 and disabled tick to 404", async () => {
     const handler = createVendoFetchHandler({ vendoDir: emptyDir(), automations: false });
     expect((await handler(req("/api/vendo/nope"))).status).toBe(404);

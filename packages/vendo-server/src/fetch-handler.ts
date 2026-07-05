@@ -705,11 +705,22 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
 
   async function GET(req: Request, s: VendoState): Promise<Response> {
     switch (routeTail(req)) {
-      case "capabilities":
+      case "capabilities": {
+        // Config disclosure (which providers/keys/integrations are live) must
+        // sit behind the principal guard WHENEVER the host configured one —
+        // otherwise any unauthenticated caller reads it. A zero-config install
+        // (no `principal` resolver) keeps it open: the client fetches
+        // capabilities pre-auth to decide its UI, and that mode has no auth to
+        // pass anyway.
+        if (options.principal) {
+          const guard = await resolvePrincipal(req, options);
+          if (!guard.ok) return guard.response;
+        }
         // `storage` depends on the ASSEMBLED state (whether a durable handle
         // was actually built), not an env key — detectCapabilities() alone
         // can't know it, so it's merged in here.
         return Response.json({ ...s.capabilities, storage: s.storage !== null });
+      }
       case "integrations":
         return handleIntegrationsGet(req, {
           store: s.connections,
