@@ -40,6 +40,23 @@ describe("buildInstructions", () => {
     expect(on).toContain("list_things, create_thing");
   });
 
+  it("lists manifest-declared automation events with payload fields", () => {
+    const text = buildInstructions({
+      ...BASE,
+      automations: true,
+      automationEvents: [
+        {
+          name: "invoice.paid",
+          description: "An invoice was paid.",
+          payloadFields: "invoiceId, amount",
+        },
+      ],
+    });
+
+    expect(text).toContain('"invoice.paid": An invoice was paid.');
+    expect(text).toContain("trigger payload fields: invoiceId, amount");
+  });
+
   it("carries host extra instructions verbatim, with only the platform guardrails after", () => {
     const text = buildInstructions({ ...BASE, extra: "ALWAYS SPEAK PIRATE." });
     expect(text).toContain("ALWAYS SPEAK PIRATE.");

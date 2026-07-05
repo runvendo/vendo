@@ -6,13 +6,19 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OutboundMessage, Principal } from "@vendoai/core";
-import type { ApprovalPolicy } from "../policy/index.js";
+import type { ApprovalPolicy } from "../policy.js";
 import { InMemoryAuditLog } from "../embedded/in-memory-store.js";
 import { AutomationRunner } from "./runner.js";
 import { hashDescriptor } from "./grants.js";
 import { automationSpecSchema, type AutomationSpec } from "./schema.js";
 import type { RegisteredTool } from "./interpreter.js";
-import { InMemoryAutomationStore, MAX_STEP_OUTPUT_BYTES, type TriggerEnvelope } from "./store.js";
+import {
+  InMemoryAutomationStore,
+  MAX_STEP_OUTPUT_BYTES,
+  MAX_TRIGGER_PAYLOAD_BYTES,
+  TriggerPayloadTooLargeError,
+  type TriggerEnvelope,
+} from "./store.js";
 
 const NOW = "2026-07-01T08:00:00.000Z";
 const scope: Principal = { tenantId: "tenant-1", subject: "user-1" };
@@ -189,6 +195,25 @@ describe("fire", () => {
     expect(run?.status).toBe("succeeded");
     expect(run?.outcome).toBe("skipped");
     expect(run?.steps).toEqual([]);
+    expect(send.calls).toHaveLength(0);
+  });
+
+  it("rejects over-cap trigger payloads before guard evaluation creates a run", async () => {
+    const send = makeTool("send_msg");
+    const { runner, automation, store } = await setup({
+      spec: spec({ if: "trigger.amountDollars > 1" }),
+      tools: { send_msg: send },
+    });
+    const oversized = envelope("huge");
+    oversized.payload = {
+      amountDollars: 100,
+      merchant: "x".repeat(MAX_TRIGGER_PAYLOAD_BYTES),
+    };
+
+    await expect(runner.fire(scope, automation.id, oversized)).rejects.toBeInstanceOf(
+      TriggerPayloadTooLargeError,
+    );
+    expect(await store.listRuns(scope, automation.id)).toHaveLength(0);
     expect(send.calls).toHaveLength(0);
   });
 

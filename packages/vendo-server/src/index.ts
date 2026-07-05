@@ -44,10 +44,13 @@ export { resolvePrincipal, tickServiceAuth, threadScope, DEFAULT_PRINCIPAL, WORL
 export { parseHandlerOptions, type VendoHandlerOptions, type IntegrationCatalogEntry } from "./options.js";
 export {
   createVendoFetchHandler,
+  ingestVendoEvent,
   routeTail,
   ensureVendoState,
   bootRegistry,
   resetVendoBootRegistry,
+  type IngestVendoEventOptions,
+  type IngestVendoEventResult,
   type VendoFetchHandler,
   type VendoState,
 } from "./fetch-handler.js";
@@ -76,6 +79,7 @@ export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./poli
 export { createThreadIndex, type ThreadIndex } from "./threads.js";
 export { handleConsentRoute, type ConsentRouteDeps } from "./consent.js";
 export { handleFadeProposalRoute, type FadeProposalRouteDeps } from "./fade-proposal.js";
+export { handleVoiceSessionPost, type VoiceSessionDeps } from "./voice.js";
 export { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions.js";
 export {
   listGrantsRoute,

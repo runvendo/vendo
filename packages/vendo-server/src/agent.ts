@@ -51,6 +51,8 @@ export interface BuildInstructionsInput {
   integrations: IntegrationCatalogEntry[];
   /** Whether the automations world is enabled. */
   automations: boolean;
+  /** Host events available as automation triggers (compiler guidance). */
+  automationEvents?: Array<{ name: string; description?: string; payloadFields?: string }>;
   /** Appended verbatim at the end when provided. */
   extra?: string;
   /** Live merged toolset (per-run, spec §7) — feeds the capability summary. */
@@ -111,7 +113,7 @@ export function buildInstructions(input: BuildInstructionsInput): string {
       : undefined;
 
   const extras: string[] = [];
-  if (input.automations) extras.push(buildAutomationInstructions());
+  if (input.automations) extras.push(buildAutomationInstructions({ hostEvents: input.automationEvents ?? [] }));
   if (input.extra) extras.push(input.extra);
 
   return buildChatInstructions({

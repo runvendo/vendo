@@ -21,6 +21,7 @@ import {
 } from "./interpreter.js";
 import type { AutomationSpec } from "./schema.js";
 import {
+  assertTriggerPayloadWithinCap,
   DuplicateRunError,
   PARKED_ACTION_TTL_MS,
   type AutomationEngineStore,
@@ -179,6 +180,8 @@ export class AutomationRunner {
 
     const version = await store.getVersion(scope, automationId, automation.currentVersion);
     if (!version) return undefined;
+
+    assertTriggerPayloadWithinCap(envelope.payload);
 
     let run: AutomationRun;
     try {

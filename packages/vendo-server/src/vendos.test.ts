@@ -140,7 +140,7 @@ describe("vendos endpoints — in-memory registry", () => {
 });
 
 describe("vendos endpoints — reserved-id rejection (review blocker)", () => {
-  it.each(["chat", "action", "integrations", "capabilities", "tick", "webhooks", "threads", "vendos"])(
+  it.each(["chat", "action", "integrations", "capabilities", "voice", "tick", "webhooks", "threads", "vendos"])(
     "rejects a save whose id equals the reserved segment %s",
     async (id) => {
       const registry = createInMemoryVendoRegistry();
