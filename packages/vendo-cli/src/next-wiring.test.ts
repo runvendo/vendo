@@ -303,6 +303,7 @@ describe("wireNextApp", () => {
       dependencies: Record<string, string>;
     };
     expect(pkg.dependencies["@vendoai/next"]).toBeDefined();
+    expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
     const nextConfig = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(nextConfig).toContain('transpilePackages: [');
     expect(nextConfig).toContain('"@vendoai/next"');
@@ -335,11 +336,15 @@ describe("wireNextApp", () => {
     const dir = await scaffoldFreshApp(false);
     const info = await detectTarget(dir);
     const summary = (await wireNextApp(dir, info, { force: false }))!;
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
     const config = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(summary.written).toContain("next.config.ts");
     expect(config).toContain('import type { NextConfig } from "next"');
     expect(config).toContain('"@vendoai/next"');
     expect(config).toContain('"@electric-sql/pglite"');
+    expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
   });
 
   it("edits a simple next.config object literal without removing existing entries", async () => {
@@ -422,12 +427,14 @@ export default withAnalyzer({});
     const instrumentationAfterFirst = await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8");
     const envAfterFirst = await fs.readFile(path.join(dir, ".env.example"), "utf8");
     const nextConfigAfterFirst = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
+    const pkgAfterFirst = await fs.readFile(path.join(dir, "package.json"), "utf8");
     const second = (await wireNextApp(dir, info, { force: false }))!;
     expect(second.edited).toEqual([]);
     expect(await fs.readFile(path.join(dir, "app/layout.tsx"), "utf8")).toBe(layoutAfterFirst);
     expect(await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8")).toBe(instrumentationAfterFirst);
     expect(await fs.readFile(path.join(dir, ".env.example"), "utf8")).toBe(envAfterFirst);
     expect(await fs.readFile(path.join(dir, "next.config.ts"), "utf8")).toBe(nextConfigAfterFirst);
+    expect(await fs.readFile(path.join(dir, "package.json"), "utf8")).toBe(pkgAfterFirst);
   });
 
   it("fails open on an unrecognizable layout: files written, layout untouched, manual steps printed", async () => {

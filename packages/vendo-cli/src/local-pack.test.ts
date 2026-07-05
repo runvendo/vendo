@@ -4,17 +4,23 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { installLocalVendoPackages, rewritePackageJsonForLocalVendo, type LocalTarball } from "./local-pack.js";
 
+const TEST_PACKAGE_VERSION = "0.1.0";
+const vendoTarball = (name: string) => `${name.replace("@", "").replace("/", "-")}-${TEST_PACKAGE_VERSION}.tgz`;
+const nextTarball = vendoTarball("@vendoai/next");
+const shellTarball = vendoTarball("@vendoai/shell");
+const coreTarball = vendoTarball("@vendoai/core");
+
 const LOCAL_TARBALLS: LocalTarball[] = [
-  { name: "@vendoai/components", fileName: "vendoai-components-0.0.0.tgz" },
-  { name: "@vendoai/core", fileName: "vendoai-core-0.0.0.tgz" },
-  { name: "@vendoai/next", fileName: "vendoai-next-0.0.0.tgz" },
-  { name: "@vendoai/react", fileName: "vendoai-react-0.0.0.tgz" },
-  { name: "@vendoai/runtime", fileName: "vendoai-runtime-0.0.0.tgz" },
-  { name: "@vendoai/server", fileName: "vendoai-server-0.0.0.tgz" },
-  { name: "@vendoai/shell", fileName: "vendoai-shell-0.0.0.tgz" },
-  { name: "@vendoai/stage", fileName: "vendoai-stage-0.0.0.tgz" },
-  { name: "@vendoai/store", fileName: "vendoai-store-0.0.0.tgz" },
-  { name: "@vendoai/telemetry", fileName: "vendoai-telemetry-0.0.0.tgz" },
+  { name: "@vendoai/components", fileName: vendoTarball("@vendoai/components") },
+  { name: "@vendoai/core", fileName: coreTarball },
+  { name: "@vendoai/next", fileName: nextTarball },
+  { name: "@vendoai/react", fileName: vendoTarball("@vendoai/react") },
+  { name: "@vendoai/runtime", fileName: vendoTarball("@vendoai/runtime") },
+  { name: "@vendoai/server", fileName: vendoTarball("@vendoai/server") },
+  { name: "@vendoai/shell", fileName: shellTarball },
+  { name: "@vendoai/stage", fileName: vendoTarball("@vendoai/stage") },
+  { name: "@vendoai/store", fileName: vendoTarball("@vendoai/store") },
+  { name: "@vendoai/telemetry", fileName: vendoTarball("@vendoai/telemetry") },
   { name: "fluidkit", fileName: "fluidkit-0.5.0-656857b.tgz" },
 ];
 
@@ -36,8 +42,8 @@ describe("rewritePackageJsonForLocalVendo", () => {
       dependencies: Record<string, string>;
       pnpm: { overrides: Record<string, string> };
     };
-    expect(pkg.dependencies["@vendoai/next"]).toBe("file:vendor/vendoai-next-0.0.0.tgz");
-    expect(pkg.dependencies["@vendoai/shell"]).toBe("file:vendor/vendoai-shell-0.0.0.tgz");
+    expect(pkg.dependencies["@vendoai/next"]).toBe(`file:vendor/${nextTarball}`);
+    expect(pkg.dependencies["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
     expect(pkg.dependencies["next"]).toBe("16.0.0");
     for (const tarball of LOCAL_TARBALLS) {
       expect(pkg.pnpm.overrides[tarball.name]).toBe(`file:vendor/${tarball.fileName}`);
@@ -62,9 +68,9 @@ describe("rewritePackageJsonForLocalVendo", () => {
       overrides: Record<string, unknown>;
       pnpm?: unknown;
     };
-    expect(pkg.dependencies["@vendoai/next"]).toBe("file:vendor/vendoai-next-0.0.0.tgz");
-    expect(pkg.dependencies["@vendoai/shell"]).toBe("file:vendor/vendoai-shell-0.0.0.tgz");
-    expect(pkg.overrides["@vendoai/core"]).toBe("file:vendor/vendoai-core-0.0.0.tgz");
+    expect(pkg.dependencies["@vendoai/next"]).toBe(`file:vendor/${nextTarball}`);
+    expect(pkg.dependencies["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
+    expect(pkg.overrides["@vendoai/core"]).toBe(`file:vendor/${coreTarball}`);
     expect(pkg.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-656857b.tgz");
     expect(pkg.overrides["zod"]).toBe("^3.24.0");
     expect(pkg.overrides["eslint"]).toEqual({ chalk: "5.0.0" });
@@ -107,7 +113,7 @@ async function createPackableLocalRepo(withFluidkit = true): Promise<string> {
     const pkgDir = path.join(repoDir, "packages", dirName);
     await writeJson(path.join(pkgDir, "package.json"), {
       name,
-      version: "0.0.0",
+      version: TEST_PACKAGE_VERSION,
       type: "module",
       main: "index.js",
       files: ["index.js"],
@@ -139,18 +145,18 @@ describe("installLocalVendoPackages", () => {
     expect(summary.installCommand).toBe("pnpm install");
 
     const vendorFiles = await readdir(path.join(targetDir, "vendor"));
-    expect(vendorFiles).toContain("vendoai-next-0.0.0.tgz");
-    expect(vendorFiles).toContain("vendoai-shell-0.0.0.tgz");
+    expect(vendorFiles).toContain(nextTarball);
+    expect(vendorFiles).toContain(shellTarball);
     expect(vendorFiles).toContain("fluidkit-0.5.0-test.tgz");
 
     const pkg = JSON.parse(await readFile(path.join(targetDir, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
       pnpm: { overrides: Record<string, string> };
     };
-    expect(pkg.dependencies["@vendoai/next"]).toBe("file:vendor/vendoai-next-0.0.0.tgz");
-    expect(pkg.dependencies["@vendoai/shell"]).toBe("file:vendor/vendoai-shell-0.0.0.tgz");
-    expect(pkg.pnpm.overrides["@vendoai/next"]).toBe("file:vendor/vendoai-next-0.0.0.tgz");
-    expect(pkg.pnpm.overrides["@vendoai/shell"]).toBe("file:vendor/vendoai-shell-0.0.0.tgz");
+    expect(pkg.dependencies["@vendoai/next"]).toBe(`file:vendor/${nextTarball}`);
+    expect(pkg.dependencies["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
+    expect(pkg.pnpm.overrides["@vendoai/next"]).toBe(`file:vendor/${nextTarball}`);
+    expect(pkg.pnpm.overrides["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
     expect(pkg.pnpm.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
   });
 
