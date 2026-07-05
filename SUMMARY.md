@@ -102,3 +102,23 @@ Notes: shell tests and root build still emit existing warnings (React `act(...)`
   - `capabilities.voice === true` and no `voice` prop creates the packaged `createVendoVoice()` driver.
   - `voice={false}` opts out entirely.
   - A custom `VoiceDriver` prop wins over packaged voice.
+
+## FIXED-ROUND-2
+
+- Added guarded `GET|POST {basePath}/voice/tools` in `@vendoai/server` so packaged voice can list and execute CONNECTED Composio tools server-side, with tier mapping and realtime-sized output capping.
+- Hardened `/voice/session` mint failures: upstream bodies are not logged or returned; responses use `{ error: "mint failed" }`.
+- Bound OpenAI Realtime mints to the guarded principal with a stable privacy-preserving `OpenAI-Safety-Identifier`.
+- Validated `show_money_flow` against the Sankey constraints before emitting a generated view; invalid inputs return a repairable tool error and no view.
+- Added replay-registry unregister handles and packaged-driver cleanup on teardown/unmount/tool replacement.
+- Confirmed zero-config voice behavior after rebasing onto `origin/main` with PR #54/#55:
+  - `capabilities.voice === true` and no `voice` prop creates the packaged driver.
+  - `voice={false}` opts out entirely.
+  - A custom `VoiceDriver` still wins over packaged voice.
+
+Verification after rebase:
+- `pnpm --filter @vendoai/server test`: passed, 29 files / 259 tests.
+- `pnpm --filter @vendoai/next test`: passed, 6 files / 83 tests.
+- `pnpm --filter @vendoai/shell test`: passed, 61 files / 335 tests.
+- `pnpm build`: passed, 19 of 19 turbo tasks.
+
+Notes: the suites/build still emit existing React `act(...)`, no-store provider, bundle-size, Turbopack NFT trace, and turbo output warnings, with no failures.
