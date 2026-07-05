@@ -3,9 +3,11 @@
  * @flowlet/next's `ConnectionsStore` (packages/flowlet-next/src/connections.ts):
  * which toolkits are connected, i.e. what the agent ingests. Duck-typed
  * locally (not imported) to avoid a next -> store -> next dependency cycle.
- * The upstream interface is synchronous (in-memory); this durable port is
- * necessarily async since every operation is a DB round-trip — Task 13 is
- * where @flowlet/next widens its own interface to match.
+ * Both the upstream interface and this durable port are fully async — every
+ * operation here is a DB round-trip, and the upstream in-memory store matches
+ * that shape (even though it never actually awaits) so the two are drop-in
+ * compatible: `@flowlet/next`'s handler wires this in whenever durable
+ * storage is configured, the in-memory one otherwise.
  *
  * Two additions beyond the upstream shape (webhook + integrations flow):
  *  - `setConnectedAccount` records the Composio connected-account id once the

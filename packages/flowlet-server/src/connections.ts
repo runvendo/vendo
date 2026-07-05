@@ -8,15 +8,14 @@ import type { IntegrationCatalogEntry } from "./options";
 import { WORLD_SCOPE } from "./guard";
 
 export interface ConnectionsStore {
-  list(): Array<IntegrationCatalogEntry & { connected: boolean }>;
-  connect(id: string): void;
-  disconnect(id: string): void;
-  connectedToolkits(): string[];
+  list(): Promise<Array<IntegrationCatalogEntry & { connected: boolean }>>;
+  connect(id: string): Promise<void>;
+  disconnect(id: string): Promise<void>;
+  connectedToolkits(): Promise<string[]>;
   /**
-   * Record the Composio connected-account id once the OAuth flow lands
-   * (Task 9 shape — @flowlet/store's `DurableConnectionsStore` has the same
-   * two methods, so a future durable wiring needs no interface surprises).
-   * Async even on this in-memory impl since the durable port necessarily is.
+   * Record the Composio connected-account id once the OAuth flow lands.
+   * Same shape as @flowlet/store's `DurableConnectionsStore` — the durable
+   * port (createDrizzleConnectionsStore) is a drop-in for this store.
    */
   setConnectedAccount(toolkit: string, connectedAccountId: string): Promise<void>;
   /**
@@ -30,7 +29,9 @@ export interface ConnectionsStore {
 }
 
 /** In-memory connected-toolkit set — the single source of truth for what the
- *  agent ingests. Everything starts DISCONNECTED on boot. */
+ *  agent ingests. Everything starts DISCONNECTED on boot. Every method is
+ *  async (even though nothing here actually awaits) so this is a drop-in for
+ *  the durable, DB-backed `createDrizzleConnectionsStore` port. */
 export function createConnectionsStore(catalog: IntegrationCatalogEntry[]): ConnectionsStore {
   const validIds = new Set(catalog.map((c) => c.id));
   const connected = new Set<string>();
@@ -39,14 +40,18 @@ export function createConnectionsStore(catalog: IntegrationCatalogEntry[]): Conn
   // Composio connectedAccountId, not to disambiguate principals.
   const byAccount = new Map<string, { toolkit: string; principal: Principal }>();
   return {
-    list: () => catalog.map((c) => ({ ...c, connected: connected.has(c.id) })),
-    connect: (id) => {
+    async list() {
+      return catalog.map((c) => ({ ...c, connected: connected.has(c.id) }));
+    },
+    async connect(id) {
       if (validIds.has(id)) connected.add(id);
     },
-    disconnect: (id) => {
+    async disconnect(id) {
       connected.delete(id);
     },
-    connectedToolkits: () => catalog.filter((c) => connected.has(c.id)).map((c) => c.id),
+    async connectedToolkits() {
+      return catalog.filter((c) => connected.has(c.id)).map((c) => c.id);
+    },
     async setConnectedAccount(toolkit, connectedAccountId) {
       if (!validIds.has(toolkit)) return;
       connected.add(toolkit);

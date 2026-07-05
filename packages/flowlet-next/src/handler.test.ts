@@ -938,4 +938,43 @@ describe("createFlowletHandler", () => {
       expect(run?.pendingApproval).toMatchObject({ tool: "create_thing" });
     });
   });
+
+  describe("durable connections — webhook routing survives a restart", () => {
+    it("a connected toolkit and its connected-account mapping survive an assembly rebuild over the same PGlite dir", async () => {
+      const dataDir = `memory://flowlet-next-connections-durable-${Date.now()}`;
+      const opts = { flowletDir: emptyDir(), storage: { pglite: { dataDir } } };
+
+      // Simulate the integrations status-poll capture: the OAuth flow landed
+      // and the poll branch calls setConnectedAccount(toolkit, accountId).
+      const first = await ensureFlowletState(opts);
+      await first.connections.setConnectedAccount("gmail", "acct-durable-1");
+      expect(await first.connections.connectedToolkits()).toContain("gmail");
+
+      // Simulate a process restart: reset the boot slot but reuse the SAME
+      // PGlite dataDir (the durable-rebuild-equivalent — see the /action
+      // test above for the same pattern).
+      resetFlowletBootRegistry();
+      const second = await ensureFlowletState(opts);
+
+      // (a) the connected toolkit is still connected...
+      expect(await second.connections.connectedToolkits()).toContain("gmail");
+      // (b) ...and webhook routing can still resolve the connected-account →
+      // principal mapping a redelivered/live Composio webhook depends on.
+      await expect(second.connections.findByConnectedAccount("acct-durable-1")).resolves.toEqual({
+        toolkit: "gmail",
+        principal: WORLD_SCOPE,
+      });
+    });
+
+    it("keeps the same in-memory (non-durable) behavior when storage is off", async () => {
+      const opts = { flowletDir: emptyDir(), storage: false as const };
+      const state = await ensureFlowletState(opts);
+      await state.connections.setConnectedAccount("gmail", "acct-1");
+      expect(await state.connections.connectedToolkits()).toContain("gmail");
+      await expect(state.connections.findByConnectedAccount("acct-1")).resolves.toEqual({
+        toolkit: "gmail",
+        principal: WORLD_SCOPE,
+      });
+    });
+  });
 });

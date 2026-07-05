@@ -51,7 +51,9 @@ interface ChatRequestBody {
 }
 
 export interface ChatDeps {
-  getAgent: () => FlowletAgent;
+  /** The agent cache may key off an async connections store, so this may
+   *  return a promise; a synchronous getter also works. */
+  getAgent: () => FlowletAgent | Promise<FlowletAgent>;
   hostTools: HostToolDefinition[];
   options: FlowletHandlerOptions;
   /** False when no model key is configured → chat answers 503 instead of streaming a provider error. */
@@ -138,7 +140,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     await threads.upsertMessages(scope, threadRecordId, messages);
   }
 
-  const stream = deps.getAgent().run({
+  const stream = (await deps.getAgent()).run({
     // Enrichment strips client-supplied source/pinBase and confines the raw
     // envelope to the last user message; verification then converts it into
     // a trusted `pinBase` (or drops it) BEFORE the engine sees anything.

@@ -44,23 +44,26 @@ const connected = new Set<string>();
 const byAccount = new Map<string, { toolkit: string; principal: Principal }>();
 const DEMO_SCOPE: Principal = { tenantId: "flowlet-embedded", subject: DEMO_USER_ID };
 
-/** The catalog with each tool's live `connected` flag. */
-export function listIntegrations(): Integration[] {
+/** The catalog with each tool's live `connected` flag. Async — @flowlet/next's
+ *  `ConnectionsStore` contract is fully async (the durable, DB-backed port
+ *  necessarily is), so every method here is too even though this in-memory
+ *  demo store never actually awaits anything. */
+export async function listIntegrations(): Promise<Integration[]> {
   return CATALOG.map((c) => ({ ...c, connected: connected.has(c.id) }));
 }
 
 /** Mark a toolkit connected. No-op for unknown ids. */
-export function connect(id: string): void {
+export async function connect(id: string): Promise<void> {
   if (VALID_IDS.has(id)) connected.add(id);
 }
 
 /** Mark a toolkit disconnected. */
-export function disconnect(id: string): void {
+export async function disconnect(id: string): Promise<void> {
   connected.delete(id);
 }
 
 /** The currently-connected toolkit ids (drives agent ingestion). */
-export function connectedToolkits(): string[] {
+export async function connectedToolkits(): Promise<string[]> {
   return CATALOG.filter((c) => connected.has(c.id)).map((c) => c.id);
 }
 

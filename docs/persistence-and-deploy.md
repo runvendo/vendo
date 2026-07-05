@@ -34,7 +34,7 @@ All tables live in a dedicated `flowlet` Postgres schema — your app's
 
 ## What persists
 
-With durable storage on, four surfaces are covered end to end:
+With durable storage on, five surfaces are covered end to end:
 
 - **Automations** — the automation, its versions (each version carries its
   spec and any pre-approved grants), and its run history, all in the
@@ -46,13 +46,16 @@ With durable storage on, four surfaces are covered end to end:
 - **Chat threads** — `threads` + `thread_messages`, upserted by message id so
   an approval resume replaces parts in place instead of duplicating them.
 - **Saved flowlets** — the shell's saved-flowlet library, in `saved_flowlets`.
-
-**Integration connections are the exception.** `@flowlet/store` ships a
-`createDrizzleConnectionsStore`, but `createFlowletHandler()` does not wire it
-in by default — the built-in connections store (which Composio toolkits are
-connected) is always in-memory unless you pass your own via the `connections`
-option. If you need connected-toolkit state to survive a restart, wire
-`connections: createDrizzleConnectionsStore(handle, scope, catalog)` yourself.
+- **Integration connections** — which Composio toolkits are connected (what
+  the agent ingests) and the connected-account → principal map webhook
+  routing depends on, in the `connections` table. `createFlowletHandler()`
+  wires `createDrizzleConnectionsStore` in automatically whenever durable
+  storage is configured — no separate opt-in. This is what makes Composio
+  webhooks survive a restart: without it, every connected toolkit forgot it
+  was connected on reboot and every inbound webhook was silently skipped
+  until the user reconnected. Pass your own store via the `connections`
+  option only if you need to own connection state elsewhere (e.g. a demo
+  reset that clears it) — an explicit option always wins over this default.
 
 ## Single-writer, single-tenant — read this before deploying
 

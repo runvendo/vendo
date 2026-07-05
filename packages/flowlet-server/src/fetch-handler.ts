@@ -35,6 +35,7 @@ import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 import {
   DrizzleAutomationStore,
+  createDrizzleConnectionsStore,
   createDrizzleDecisionStore,
   createDrizzleThreadStore,
   setMeta,
@@ -210,7 +211,14 @@ async function assembleFlowletState(options: FlowletHandlerOptions) {
     const policy = composeProductionPolicy(rememberedPolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
     const worldPolicy = composeProductionPolicy(basePolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
-    const connections = options.connections ?? createConnectionsStore(catalog);
+    // Connections (which toolkits are connected → what the agent ingests, and
+    // the Composio connected-account → principal map webhook routing reads)
+    // follow the same durable-handle-or-in-memory posture as everything else
+    // here: without this, a restart forgets every connected toolkit and every
+    // inbound Composio webhook is skipped until the user reconnects.
+    const connections =
+      options.connections ??
+      (storage ? createDrizzleConnectionsStore(storage, WORLD_SCOPE, catalog) : createConnectionsStore(catalog));
 
     // The shared FlowletDb handle (resolved above): `null` means in-memory
     // (storage: false, or the NODE_ENV=test default — see storage.ts).
