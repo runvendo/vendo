@@ -61,6 +61,9 @@ registers genuinely differ:
 - `consentSection(modality)` — approval semantics; the voice variant adds the
   yes-means-most-recent-request rule.
 - `styleSection(norms)` — driven by host norms (e.g. no-emoji), not hardcoded.
+- `registerSection(modality)` — how the agent talks (section 6).
+- `capabilitiesSection(modality, toolSummary)` — how it talks about what it can do (section 7).
+- `proactivitySection(modality)` — when it may volunteer suggestions (section 8).
 
 **Assemblers:**
 
@@ -159,6 +162,65 @@ results reach the browser. One shared helper in `@flowlet/runtime`:
 - Deterministic only. No LLM summarization pass (latency, cost, new mid-tool-call failure
   mode); if capping proves too lossy for a toolkit, an LLM pass is a possible follow-up.
 
+## 6. Register: how the agent talks
+
+Observed problem: voice yaps. Platform default register — "concise, warm, helpful" is a
+platform guarantee, not host content; hosts flavor it through persona/extras but never have to
+invent it.
+
+Shared (both modalities):
+
+- Answer first; explanation only if asked or genuinely needed.
+- Warm but plain — no filler openers ("Sure!", "Great question!"), no enthusiasm inflation,
+  no reflexive apologies.
+- Never recap what you just did unless asked.
+
+Voice anti-yap rules:
+
+- One thought per turn; at most two sentences, then stop — no trailing "anything else?"
+  every turn.
+- Never announce what you are about to do; while a tool runs, silence or three words.
+- Never restate the user's question back.
+- When a view is on screen, one headline sentence — the screen carries the rest.
+- Greeting one sentence; sign-off one sentence.
+
+Chat register: match the user's message length; short paragraphs over bullet walls; rendered
+UI carries data.
+
+## 7. Capability discoverability
+
+The toolset is dynamic (it changes when the user connects an integration), and nothing today
+tells the model how to talk about what it can do — "what can you do?" gets an improvised
+answer that can oversell, undersell, or dump a tool inventory.
+
+- At assembly time, a compact capability summary is generated from the live tool descriptors
+  (the component-catalog move applied to tools): host-API reads and gated actions in user
+  terms, connected integrations by toolkit, and the connectable-but-unconnected toolkit list.
+- Rules in `capabilitiesSection(modality)`: answer capability questions with a handful of
+  capabilities in user terms, never a tool inventory; never claim an unconnected toolkit —
+  offer to connect it instead; voice answers in at most two sentences with an offer to put
+  the full list on screen.
+- Demo-bank's hand-written capabilities narrative remains host extras; the generated summary
+  is the grounding underneath.
+
+## 8. Proactivity
+
+- At most one volunteered suggestion per turn, and only when directly connected to what just
+  happened: a view worth pinning, a repeatedly-fielded request that could become an
+  automation, a missing integration that blocks a better answer.
+- A declined or ignored suggestion is dropped for the session — never repeated.
+- Suggestions never accompany an approval request; consent moments stay clean.
+- In voice, a suggestion is a short sentence at the end of a turn, never its own turn.
+- Suggestions only — acting on one still goes through normal consent.
+
+## Platform cleanliness (audited this session)
+
+`packages/` contains no Maple/host-flavored prompt content or behavior — all hits are code
+comments using demo-bank/"Maple" as examples, which stay (the repo ships demo-bank as an
+example app). "Quiet financial confidence" and friends live in `apps/demo-bank` behind the
+host-norms seam, where demo fiction belongs. The prompt-core tests (below) make this a
+permanent guarantee for prompt output.
+
 ## Testing & verification
 
 - Prompt core: unit tests per section builder (both modality variants render, host extras
@@ -174,6 +236,10 @@ results reach the browser. One shared helper in `@flowlet/runtime`:
   arrays); live verification that a receipt lookup by voice stays under budget and still
   answers correctly.
 - Voice behavior changes verified in a real browser session per repo rule (screenshots in PR).
+- Register: live voice session transcript checked against the anti-yap rules (turn length,
+  no announcements, no trailing offers).
+- Capabilities: "what can you do?" asked with and without Gmail connected — answer matches the
+  live toolset both times and offers the connect in the unconnected case.
 
 ## Out of scope
 
