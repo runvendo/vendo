@@ -151,6 +151,37 @@ describe("createVendoAgent", () => {
     expect(ui.data.payload).toEqual(payload);
   });
 
+  it("streams a GENERIC error part on a run failure — raw provider detail stays in the server log", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // A provider auth failure is the canonical leak: its message carries the
+    // key prefix. The stream's error part must never repeat it to the client.
+    const model = new MockLanguageModelV3({
+      doStream: async () => {
+        throw new Error('401 invalid x-api-key "sk-ant-api03-abc123" (request id req_xyz)');
+      },
+    });
+    const agent = createVendoAgent({ model, policy: allowPolicy });
+
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+    const errorPart = parts.find((p) => (p as { type: string }).type === "error") as
+      | { errorText: string }
+      | undefined;
+    expect(errorPart).toBeDefined();
+    expect(errorPart!.errorText).toBe(
+      "something went wrong running this step — check the server logs",
+    );
+    expect(errorPart!.errorText).not.toContain("sk-ant-api03");
+    // The original error (classification-intact) reached the server log.
+    expect(
+      error.mock.calls.some((call) =>
+        call.some((arg) => arg instanceof Error && arg.message.includes("sk-ant-api03-abc123")),
+      ),
+    ).toBe(true);
+    error.mockRestore();
+  });
+
   it("registers render_view and request_connect but not render_ui", async () => {
     // Capture the toolset the engine hands to streamText by reading the tools
     // the SDK forwards to the model's doStream (provider-format function tools,

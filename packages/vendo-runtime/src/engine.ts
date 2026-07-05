@@ -744,6 +744,21 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
     // tool runs, and the stream can't finish before `execute` has started.
     let settledPrincipal: VendoPrincipal = { userId: "" };
 
+    // Route run/step failures (bad prompt, provider/Composio errors) into the
+    // stream as an error part instead of an unhandled rejection — one crashed
+    // run must never take the host process down with it. Serialization
+    // boundary: the raw message (provider 401s carrying key prefixes,
+    // Composio/network detail) must not reach the client stream — sanitized
+    // HERE, not at throw sites, so error classification (telemetry's
+    // errorClassName, policy retry paths) still sees the original error.
+    // Wired into BOTH `createUIMessageStream` (execute/merge failures) and
+    // `toUIMessageStream` below (streamText failures, whose own onError
+    // defaults to the raw getErrorMessage).
+    const streamError = (error: unknown): string => {
+      console.error(`[vendo] run ${runId} failed:`, error);
+      return "something went wrong running this step — check the server logs";
+    };
+
     return createUIMessageStream<VendoUIMessage>({
       // Verified against ai@6.0.28's handleUIMessageStreamFinish: without this,
       // `originalMessages` defaults to `[]` and onFinish's `messages` would be
@@ -752,13 +767,7 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
       // ([...originalMessages, state.message]) — what a Store-backed
       // persistence hook (Task 4/5) actually needs to write.
       originalMessages: input.messages,
-      // Route execute failures (bad prompt, provider/Composio errors) into the
-      // stream as an error part instead of an unhandled rejection — one crashed
-      // run must never take the host process down with it.
-      onError: (error) => {
-        console.error(`[vendo] run ${runId} failed:`, error);
-        return error instanceof Error ? error.message : "The agent run failed.";
-      },
+      onError: streamError,
       // ENG-193 §6.2: persistence for the consent endpoint's "load the
       // thread's messages" step. A throwing/rejecting hook is caught here,
       // never surfaced to the model or the client stream. Only registered when
@@ -1032,6 +1041,11 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
         writer.merge(
           result.toUIMessageStream({
             originalMessages: input.messages,
+            // Without this, toUIMessageStream's own default (getErrorMessage)
+            // serializes the RAW streamText failure into the error chunk —
+            // the outer createUIMessageStream onError never sees it because
+            // the merged stream doesn't reject, it carries an error chunk.
+            onError: streamError,
             messageMetadata: ({ part }) =>
               part.type === "start"
                 ? { runId, threadId, schemaVersion: SCHEMA_VERSION }
