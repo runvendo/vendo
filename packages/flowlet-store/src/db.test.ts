@@ -47,12 +47,14 @@ describe("createFlowletDatabase", () => {
   });
 
   it("rejects loudly when the pglite dataDir is not writable", async () => {
+    // Fixture dir deliberately named WITHOUT the substring "writable" so the
+    // assertion can only match the code's own error message, not the path.
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), "flowlet-store-test-"));
-    const dataDir = path.join(parent, "unwritable");
+    const dataDir = path.join(parent, "locked");
     fs.mkdirSync(dataDir);
     fs.chmodSync(dataDir, 0o444);
     try {
-      await expect(createFlowletDatabase({ pglite: { dataDir } })).rejects.toThrow(/writable/i);
+      await expect(createFlowletDatabase({ pglite: { dataDir } })).rejects.toThrow(/is not writable/);
     } finally {
       fs.chmodSync(dataDir, 0o755);
       fs.rmSync(parent, { recursive: true, force: true });

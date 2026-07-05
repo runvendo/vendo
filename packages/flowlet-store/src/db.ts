@@ -32,7 +32,9 @@ const registry: Registry = ((globalThis as Record<string, unknown>)["__flowletSt
 }) as Registry;
 
 export function createFlowletDatabase(config: FlowletDatabaseConfig = {}): Promise<FlowletDb> {
-  const conn = config.connectionString ?? process.env["DATABASE_URL"];
+  // `||` (not `??`): a set-but-empty DATABASE_URL means "no connection string",
+  // and must not become a shared "" cache key across different PGlite dirs.
+  const conn = config.connectionString || process.env["DATABASE_URL"] || undefined;
   const dataDir = config.pglite?.dataDir ?? process.env["FLOWLET_DATA_DIR"] ?? ".flowlet/data";
   const cacheKey = conn ?? `pglite:${dataDir}`;
   const existing = registry.instances.get(cacheKey);
@@ -48,8 +50,16 @@ export function createFlowletDatabase(config: FlowletDatabaseConfig = {}): Promi
       );
     }
     if (!dataDir.startsWith("memory://")) {
-      fs.mkdirSync(dataDir, { recursive: true }); // throws EACCES/EROFS loudly
-      fs.accessSync(dataDir, fs.constants.W_OK); // "not writable" fails boot, never a silent fallback
+      try {
+        fs.mkdirSync(dataDir, { recursive: true });
+        fs.accessSync(dataDir, fs.constants.W_OK);
+      } catch (err) {
+        // Fail boot loudly — never fall back to a silent ephemeral store.
+        throw new Error(
+          `[flowlet] PGlite data directory "${dataDir}" is not writable — ` +
+            `fix its permissions or point FLOWLET_DATA_DIR elsewhere. Cause: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     const client = await PGlite.create(dataDir);
     return { kind: "pglite" as const, db: drizzlePglite(client), cacheKey };
