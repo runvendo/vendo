@@ -117,6 +117,37 @@ Numbers land in the PR next to the screenshots.
 - Adversarial: pinned source containing the closing delimiter / instruction text does not escape the untrusted framing (extends the PR #35 adversarial test).
 - Real-browser verification in Cadence + the benchmark harness above; screenshots + numbers in the PR.
 
+## Build-time additions (post-benchmark, Yousef-approved)
+
+Benchmarking the shipped design surfaced where the remaining first-remix time
+went, and three additions collapsed it (all deterministic — sync still never
+calls an LLM):
+
+1. **Coordinate-mode hunks** — `{ startLine, endLine, newLines }` without
+   `oldLines`: the op's `baseHash` already pins the exact base text, so quoting
+   is optional self-checking. Kills the mismatch-retry class; prompt prefers it.
+2. **App-local closure vendoring** (the v1-deferred item, now evidence-backed):
+   `flowlet sync` bundles each app-local import's transitive closure as a
+   vendored ESM entry (aliases resolved; refusal rules on every app file in the
+   closure; npm-inside-closure bundled in; react/vendored/shims externalized;
+   css inert). Plus `flowlet.config.json` `remixAnchors` capture overrides for
+   anchors whose child heuristic picks the wrong file.
+3. **Prepared baselines** — the mechanical first-remix glue done ONCE at sync:
+   an AST transform strips the `@flowlet/shell` import and unwraps the
+   component's own `<FlowletRemix>` element (surgical splices, byte-preserving,
+   fail-closed on non-mechanical usage). Records carry `prepared` alongside the
+   verbatim `source`; dev re-read keeps it only while the file matches the
+   captured hash; the engine shows it as the baseline and announces
+   SANDBOX-READY only when every import actually resolves in the anchor's env.
+4. **swr shim data feed** (PR #35 gap found in browser verification): the stage
+   now injects `data.anchor` as `window.__flowletAnchorData` at init and on
+   data updates — the shim shipped reading it but nothing ever set it. Hosts
+   key wrapper `context` by the component's own fetch key and the prepared
+   baseline renders live data unmodified.
+
+Measured on Cadence (N=10 live turns each): first remix p50 32.2s (main) →
+4.4s (prepared, 10/10, one retry across the run); pin edits ~6s throughout.
+
 ## Decided against / deferred
 
 - **v1 sync-time runnable baseline (rejected, Codex review 1):** deterministic conversion to a runnable payload is impossible for many anchors (app-local imports are `absent` in the env manifest by design; props→context mapping is semantic); jsdom smoke-render is low-fidelity and executes host code at build time; build-time LLM rescue makes builds nondeterministic and key-dependent. The text-baseline design gets the same token savings with none of this machinery.
