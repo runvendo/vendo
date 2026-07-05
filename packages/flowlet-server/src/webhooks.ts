@@ -158,17 +158,34 @@ function pickString(obj: unknown, keys: string[]): string | undefined {
 }
 
 const TRIGGER_SLUG_KEYS = ["trigger_slug", "triggerSlug", "type"];
+// Composio V3 metadata: only EXPLICIT slug spellings — never `type`, which in
+// a V3 envelope is a generic event type (e.g. "trigger.fired"), not the slug.
+const METADATA_TRIGGER_SLUG_KEYS = ["trigger_slug", "triggerSlug"];
 const CONNECTED_ACCOUNT_KEYS = ["connected_account_id", "connectedAccountId"];
 
-/** Tolerant extractor — see the file header's payload-envelope note. */
+/** Tolerant extractor — see the file header's payload-envelope note.
+ *  Composio V3 puts `trigger_slug` and `connected_account_id` under a
+ *  `metadata` envelope (at the root or nested inside `data`) while the root
+ *  `type` is a generic event type — so metadata is consulted FIRST, before
+ *  the root/nested fallbacks that older shapes use. */
 function extractTriggerEnvelope(payload: unknown): ExtractedTrigger | undefined {
   if (typeof payload !== "object" || payload === null) return undefined;
   const root = payload as Record<string, unknown>;
   const nested = root["data"] ?? root["payload"];
+  const metadata =
+    root["metadata"] ??
+    (typeof nested === "object" && nested !== null
+      ? (nested as Record<string, unknown>)["metadata"]
+      : undefined);
 
-  const triggerSlug = pickString(root, TRIGGER_SLUG_KEYS) ?? pickString(nested, TRIGGER_SLUG_KEYS);
+  const triggerSlug =
+    pickString(metadata, METADATA_TRIGGER_SLUG_KEYS) ??
+    pickString(root, TRIGGER_SLUG_KEYS) ??
+    pickString(nested, TRIGGER_SLUG_KEYS);
   const connectedAccountId =
-    pickString(root, CONNECTED_ACCOUNT_KEYS) ?? pickString(nested, CONNECTED_ACCOUNT_KEYS);
+    pickString(metadata, CONNECTED_ACCOUNT_KEYS) ??
+    pickString(root, CONNECTED_ACCOUNT_KEYS) ??
+    pickString(nested, CONNECTED_ACCOUNT_KEYS);
   if (!triggerSlug || !connectedAccountId) return undefined;
   return { triggerSlug, connectedAccountId };
 }

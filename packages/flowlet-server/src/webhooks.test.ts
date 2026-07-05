@@ -228,6 +228,68 @@ describe("handleComposioWebhook", () => {
     expect(runs[0]?.trigger.source).toBe("composio");
   });
 
+  it("routes a Composio V3 envelope: trigger_slug + connected_account_id under metadata, generic root type ignored", async () => {
+    const world = await makeWorld();
+    const { automation } = await world.store.create(WORLD_SCOPE, {
+      spec: composioSpec("GMAIL_NEW_GMAIL_MESSAGE"),
+      grants: [],
+    });
+    const connections = createConnectionsStore(CATALOG);
+    await connections.setConnectedAccount("gmail", "acct-123");
+
+    // Realistic V3 shape: root `type` is a GENERIC event type — the slug and
+    // account id live under `metadata` and must win over the `type` fallback.
+    const v3Payload = JSON.stringify({
+      type: "trigger.fired",
+      timestamp: "2026-07-04T12:00:00.000Z",
+      data: { subject: "hello", message_id: "m-1" },
+      metadata: {
+        id: "ti_123",
+        trigger_slug: "GMAIL_NEW_GMAIL_MESSAGE",
+        connected_account_id: "acct-123",
+        toolkit_slug: "gmail",
+      },
+    });
+    const res = await handleComposioWebhook(webhookRequest({ id: "msg_v3", body: v3Payload }), {
+      world,
+      connections,
+      env: { COMPOSIO_WEBHOOK_SECRET: SECRET },
+      nowMs: () => NOW_MS,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, fired: 1 });
+
+    const runs = await world.store.listRuns(WORLD_SCOPE, automation.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.trigger.eventId).toBe("msg_v3");
+  });
+
+  it("routes a payload with metadata nested under data", async () => {
+    const world = await makeWorld();
+    await world.store.create(WORLD_SCOPE, {
+      spec: composioSpec("GMAIL_NEW_GMAIL_MESSAGE"),
+      grants: [],
+    });
+    const connections = createConnectionsStore(CATALOG);
+    await connections.setConnectedAccount("gmail", "acct-123");
+
+    const body = JSON.stringify({
+      type: "trigger.fired",
+      data: {
+        subject: "hello",
+        metadata: { trigger_slug: "GMAIL_NEW_GMAIL_MESSAGE", connected_account_id: "acct-123" },
+      },
+    });
+    const res = await handleComposioWebhook(webhookRequest({ id: "msg_v3_nested", body }), {
+      world,
+      connections,
+      env: { COMPOSIO_WEBHOOK_SECRET: SECRET },
+      nowMs: () => NOW_MS,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, fired: 1 });
+  });
+
   it("redelivery (same webhook-id) is a 200 no-op — runner not re-invoked", async () => {
     const world = await makeWorld();
     const { automation } = await world.store.create(WORLD_SCOPE, {
