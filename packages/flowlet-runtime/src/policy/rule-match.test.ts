@@ -20,14 +20,31 @@ describe("ruleMatches", () => {
     expect(ruleMatches(rule, { tool: "GMAIL_SEND_EMAIL", input: {} })).toBe(true);
     expect(ruleMatches(rule, { tool: "SLACK_SEND_MESSAGE", input: {} })).toBe(false);
   });
-  it("a constraint narrows the match; missing field fails closed", () => {
+  it("a constraint narrows the match: a matching value matches, a PROVABLY non-matching value does not", () => {
     const rule: CompiledRule = {
       ...base,
       constraint: { path: "to", op: "matches", value: "*@acme.co" },
     };
     expect(ruleMatches(rule, { tool: "send_email", input: { to: "a@acme.co" } })).toBe(true);
     expect(ruleMatches(rule, { tool: "send_email", input: { to: "a@evil.co" } })).toBe(false);
-    expect(ruleMatches(rule, { tool: "send_email", input: {} })).toBe(false);
+  });
+
+  it("REVIEW FOLLOW-UP: an unevaluable constraint (missing path) still MATCHES — the rule asks unless provably excluded", () => {
+    // Inverted from grant matching on purpose (see this file's docstring): a
+    // tighten rule fails toward asking, not toward silently loosening.
+    const rule: CompiledRule = {
+      ...base,
+      constraint: { path: "to", op: "matches", value: "*@acme.co" },
+    };
+    expect(ruleMatches(rule, { tool: "send_email", input: {} })).toBe(true);
+  });
+
+  it("REVIEW FOLLOW-UP: an unevaluable constraint (type mismatch) still MATCHES", () => {
+    const rule: CompiledRule = {
+      ...base,
+      constraint: { path: "amount", op: "gte", value: 100 },
+    };
+    expect(ruleMatches(rule, { tool: "send_email", input: { amount: "a lot" } })).toBe(true);
   });
   it("a revoked rule never matches", () => {
     expect(ruleMatches({ ...base, revokedAt: "2026-07-04T01:00:00Z" }, { tool: "send_email", input: {} })).toBe(false);

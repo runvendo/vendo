@@ -194,11 +194,11 @@ describe("judgePolicy", () => {
     expect(await policy.evaluate(ctxFor(actDesc, { provenance: { taintedSources: [] } }))).toBe("allow");
   });
 
-  it("memoises by (threadId, toolName, input): needsApproval + execute's two evaluations of the SAME call invoke the model once", async () => {
+  it("memoises by (principal, toolCallId): needsApproval + execute's two evaluations of the SAME call (same toolCallId) invoke the model once", async () => {
     const { model, spy } = spyMock(() => "match");
     const policy = judgePolicy(fixed("approve"), { model });
-    const ctx1 = ctxFor(actDesc); // simulates needsApproval's ctx
-    const ctx2 = ctxFor(actDesc); // simulates execute's SEPARATE ctx, same call
+    const ctx1 = ctxFor(actDesc, { toolCallId: "call-1" }); // simulates needsApproval's ctx
+    const ctx2 = ctxFor(actDesc, { toolCallId: "call-1" }); // simulates execute's SEPARATE ctx, same call
     expect(await policy.evaluate(ctx1)).toBe("allow");
     expect(await policy.evaluate(ctx2)).toBe("allow");
     expect(spy).toHaveBeenCalledTimes(1);
@@ -207,18 +207,45 @@ describe("judgePolicy", () => {
   it("a memo HIT still re-stamps the reason onto the fresh ctx (escalate verdict, second evaluation)", async () => {
     const { model } = spyMock(() => "escalate: memoised reason");
     const policy = judgePolicy(fixed("allow"), { model });
-    const ctx1 = ctxFor(actDesc);
-    const ctx2 = ctxFor(actDesc);
+    const ctx1 = ctxFor(actDesc, { toolCallId: "call-1" });
+    const ctx2 = ctxFor(actDesc, { toolCallId: "call-1" });
     await policy.evaluate(ctx1);
     await policy.evaluate(ctx2);
     expect(getEscalationReason(ctx2)).toBe("memoised reason");
   });
 
-  it("memo is scoped per principal — the same thread+tool+input under a different user re-invokes the model", async () => {
+  it("memo is scoped per principal — the SAME toolCallId under a different user re-invokes the model", async () => {
     const { model, spy } = spyMock(() => "match");
     const policy = judgePolicy(fixed("approve"), { model });
-    await policy.evaluate(ctxFor(actDesc));
-    await policy.evaluate(ctxFor(actDesc, { principal: { userId: "someone-else" } }));
+    await policy.evaluate(ctxFor(actDesc, { toolCallId: "call-1" }));
+    await policy.evaluate(ctxFor(actDesc, { toolCallId: "call-1", principal: { userId: "someone-else" } }));
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("REGRESSION: a DIFFERENT toolCallId (same tool+input) never replays a stale cached verdict — the judge re-runs and can escalate a now-tainted call", async () => {
+    // The bug this guards against: keying the memo by thread+tool+input let a
+    // "match" cached on an EARLIER turn silently replay on a LATER turn with
+    // the identical tool+input, even after this run's provenance had since
+    // become tainted. toolCallId is unique per call, so this is now
+    // structurally impossible — a new call always re-invokes the model.
+    const { model: firstModel } = spyMock(() => "match");
+    const policy1 = judgePolicy(fixed("approve"), { model: firstModel });
+    const ctx1 = ctxFor(actDesc, { toolCallId: "call-1", provenance: { taintedSources: [] } });
+    expect(await policy1.evaluate(ctx1)).toBe("allow");
+
+    const { model: secondModel, spy } = spyMock(() => "escalate: this now traces to something I read externally");
+    const policy2 = judgePolicy(fixed("approve"), { model: secondModel });
+    const ctx2 = ctxFor(actDesc, { toolCallId: "call-2", provenance: { taintedSources: ["some_tool"] } });
+    expect(await policy2.evaluate(ctx2)).toBe("approve");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(getEscalationReason(ctx2)).toMatch(/read externally/);
+  });
+
+  it("no toolCallId at all -> memoisation is skipped entirely, every evaluation re-invokes the model", async () => {
+    const { model, spy } = spyMock(() => "match");
+    const policy = judgePolicy(fixed("approve"), { model });
+    await policy.evaluate(ctxFor(actDesc, { toolCallId: undefined }));
+    await policy.evaluate(ctxFor(actDesc, { toolCallId: undefined }));
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
@@ -304,5 +331,22 @@ describe("parseVerdict escalate bias (review follow-up)", () => {
     const ctx = ctxFor(actDesc);
     expect(await policy.evaluate(ctx)).toBe("approve");
     expect(getEscalationReason(ctx)).toMatch(/recipient not in the user's request/);
+  });
+
+  it("a bare 'escalate' with NO reason anywhere still wins over a preceding match — default reason, never dropped", async () => {
+    const policy = judgePolicy(fixed("approve"), {
+      model: mockReturning("match\nescalate"),
+    });
+    const ctx = ctxFor(actDesc);
+    expect(await policy.evaluate(ctx)).toBe("approve");
+    expect(getEscalationReason(ctx)).toBe("the safety check flagged this call");
+  });
+
+  it("'escalate' alone (no match, no reason) still escalates with the default reason, never falls through to unparseable", async () => {
+    const policy = judgePolicy(fixed("allow"), { model: mockReturning("escalate") });
+    const ctx = ctxFor(actDesc);
+    expect(await policy.evaluate(ctx)).toBe("approve");
+    expect(getEscalationReason(ctx)).toBe("the safety check flagged this call");
+    expect(getEscalationSource(ctx)).toBe("verdict");
   });
 });

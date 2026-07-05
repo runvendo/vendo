@@ -36,13 +36,22 @@
  *                              nothing to match against, and Moment 1's
  *                              promise ("reads just flow") has no exception.
  *   - tier "act"            -> the judge runs, ONCE per distinct call
- *                              (memoised by principal+thread+tool+input — the ai SDK
- *                              re-evaluates the FULL composed policy at
- *                              `needsApproval` time AND again at `execute`
- *                              time for the same call; asking the model
- *                              twice would double the latency/cost and risk
- *                              a flip-flopping verdict between preflight and
- *                              confirm) with the three questions (provenance/
+ *                              (memoised by principal+toolCallId — review
+ *                              follow-up: the ai SDK re-evaluates the FULL
+ *                              composed policy at `needsApproval` time AND
+ *                              again at `execute` time for the SAME call,
+ *                              sharing one toolCallId, so keying on it dedupes
+ *                              exactly those two evaluations and NOTHING else.
+ *                              The prior key — principal+thread+tool+input —
+ *                              let a verdict cached on turn 1 silently replay
+ *                              on a LATER turn with the identical tool+input,
+ *                              even after this run's provenance had since
+ *                              become tainted; toolCallId is unique per call,
+ *                              so that cross-turn replay is now structurally
+ *                              impossible. A ctx with no toolCallId (e.g. a
+ *                              bare unit test) skips memoisation entirely —
+ *                              every evaluation invokes the model fresh)
+ *                              with the three questions (provenance/
  *                              intent-match/escalation, spec §5):
  *
  *       verdict "match"             -> "allow", REGARDLESS of whether inner
@@ -146,6 +155,14 @@ function cleanVerdictLine(raw: string): string {
  * through the rest of that line and every line after it (the original
  * multiline reason capture, now fed cleaned input). No matching line at all
  * -> undefined (unparseable — escalate-on-error, never a silent deny).
+ *
+ * A bare `escalate` line with NO reason text anywhere (nothing after the
+ * label, nothing on a continuation line) still counts — it gets a default,
+ * user-legible reason rather than being silently dropped (review follow-up:
+ * the old code's `if (reason) return ...` fell through to `continue` on an
+ * empty reason, so a stray reasonless `escalate` could be skipped entirely
+ * and let a LATER standalone `match` line win outright — the exact inversion
+ * the escalate-bias scan exists to prevent).
  */
 function parseVerdict(text: string): JudgeVerdict | undefined {
   // Escalate-biased scan (review follow-up): an escalate ANYWHERE in the
@@ -169,7 +186,9 @@ function parseVerdict(text: string): JudgeVerdict | undefined {
         .map((part) => (part ?? "").trim())
         .filter((part) => part.length > 0)
         .join(" ");
-      if (reason) return { kind: "escalate", reason };
+      // An escalate token ANYWHERE always beats match, reason or not — return
+      // immediately instead of falling through to let a later `match` win.
+      return { kind: "escalate", reason: reason || "the safety check flagged this call" };
     }
   }
   return matched ? { kind: "match" } : undefined; // undefined = unparseable
@@ -211,6 +230,16 @@ export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): Ap
     return "approve";
   }
 
+  /** Actually invokes the model once and parses its verdict — no caching. */
+  async function invokeJudge(ctx: PolicyContext): Promise<JudgeVerdict | undefined> {
+    try {
+      const { text } = await generateText({ model: opts.model!, prompt: buildPrompt(ctx) });
+      return parseVerdict(text);
+    } catch {
+      return undefined; // model error — caller treats this like unparseable
+    }
+  }
+
   return {
     async evaluate(ctx: PolicyContext): Promise<ApprovalDecision> {
       const decision = await inner.evaluate(ctx);
@@ -223,21 +252,23 @@ export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): Ap
       if (ctx.threadId === undefined) return decision; // automation context — item 4
       if (dangerTier(ctx.descriptor) !== "act") return decision;
 
-      // Principal in the key: a shared/guessable threadId under a DIFFERENT
-      // user must never replay another user's cached verdict.
-      const key = JSON.stringify([ctx.principal.userId, ctx.threadId, ctx.toolName, ctx.input]);
-      const cached = memo.get(key);
-      if (cached) return applyVerdict(ctx, cached);
-
-      try {
-        const { text } = await generateText({ model: opts.model, prompt: buildPrompt(ctx) });
-        const verdict = parseVerdict(text);
-        if (!verdict) return escalateOnError(ctx, decision); // unparseable, don't cache
+      // Memoised by (principal, toolCallId) ONLY (review follow-up — see this
+      // module's docstring): dedupes the ai SDK's needsApproval+execute pair
+      // for ONE call, and nothing beyond it. No toolCallId -> no memo at all;
+      // every evaluation re-invokes the model.
+      if (ctx.toolCallId !== undefined) {
+        const key = JSON.stringify([ctx.principal.userId, ctx.toolCallId]);
+        const cached = memo.get(key);
+        if (cached) return applyVerdict(ctx, cached);
+        const verdict = await invokeJudge(ctx);
+        if (!verdict) return escalateOnError(ctx, decision); // unparseable/error, don't cache
         remember(key, verdict);
         return applyVerdict(ctx, verdict);
-      } catch {
-        return escalateOnError(ctx, decision); // model error, don't cache
       }
+
+      const verdict = await invokeJudge(ctx);
+      if (!verdict) return escalateOnError(ctx, decision);
+      return applyVerdict(ctx, verdict);
     },
     async onExecuted(ctx, decision) {
       await inner.onExecuted?.(ctx, decision);

@@ -42,23 +42,44 @@ export function globMatches(pattern: string, value: string): boolean {
   return new RegExp(`^${escaped}$`, "i").test(value);
 }
 
-/** Exported for the same reason as `globMatches` above. */
-export function constraintHolds(
+export type ConstraintCheck = { path: string; op: "eq" | "lte" | "gte" | "matches"; value: string | number | boolean };
+
+/**
+ * Three-way constraint result — "unevaluable" (missing path, or a type
+ * mismatch for an op that requires one) is kept distinct from a definite
+ * "no-match" so callers can choose their own failure direction:
+ * `constraintHolds` (grants) collapses both to `false` (fail CLOSED to no
+ * match — a grant must never fire on a guess); `rule-match.ts` (tighten
+ * rules, ENG-193 item-6 ruling #4) treats "unevaluable" as MATCHING instead
+ * — the opposite direction is correct there: an always-ask rule that can't
+ * tell whether the live input excludes it should still ask, not go silent.
+ * Exported for that one caller; not part of the general policy surface.
+ */
+export function constraintResult(
   input: unknown,
-  c: { path: string; op: "eq" | "lte" | "gte" | "matches"; value: string | number | boolean },
-): boolean {
+  c: ConstraintCheck,
+): "match" | "no-match" | "unevaluable" {
   const actual = getByPath(input, c.path);
-  if (actual === undefined) return false; // fail closed
+  if (actual === undefined) return "unevaluable"; // missing path — can't tell
   switch (c.op) {
     case "eq":
-      return actual === c.value;
+      return actual === c.value ? "match" : "no-match";
     case "lte":
-      return typeof actual === "number" && typeof c.value === "number" && actual <= c.value;
+      if (typeof actual !== "number" || typeof c.value !== "number") return "unevaluable";
+      return actual <= c.value ? "match" : "no-match";
     case "gte":
-      return typeof actual === "number" && typeof c.value === "number" && actual >= c.value;
+      if (typeof actual !== "number" || typeof c.value !== "number") return "unevaluable";
+      return actual >= c.value ? "match" : "no-match";
     case "matches":
-      return typeof actual === "string" && typeof c.value === "string" && globMatches(c.value, actual);
+      if (typeof actual !== "string" || typeof c.value !== "string") return "unevaluable";
+      return globMatches(c.value, actual) ? "match" : "no-match";
   }
+}
+
+/** Exported for the same reason as `globMatches` above. Fails CLOSED to no
+ *  match on anything unevaluable (grants only ever fire on a provable hit). */
+export function constraintHolds(input: unknown, c: ConstraintCheck): boolean {
+  return constraintResult(input, c) === "match";
 }
 
 export function grantMatches(grant: PermissionGrant, ctx: GrantMatchContext): boolean {

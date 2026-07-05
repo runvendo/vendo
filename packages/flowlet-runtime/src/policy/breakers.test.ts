@@ -126,6 +126,38 @@ describe("volumeBreaker", () => {
     const otherUser = { ...ctxFor(actDesc, "th-A"), principal: { userId: "someone-else" } };
     expect(await policy.evaluate(otherUser)).toBe("allow");
   });
+
+  it("REVIEW FOLLOW-UP: never forces a card for read-tier calls, however many — reads just flow", async () => {
+    const state = createBreakerState();
+    const readDesc: ToolDescriptor = { name: "get_x", source: "caller", annotations: { readOnlyHint: true }, hasExecute: true, kind: "function" };
+    const policy = volumeBreaker(fixed("allow"), state, { threshold: 3 });
+    for (let i = 0; i < 20; i++) {
+      const ctx = ctxFor(readDesc);
+      expect(await policy.evaluate(ctx)).toBe("allow");
+      await policy.onExecuted!(ctx, "allow");
+    }
+    expect(await policy.evaluate(ctxFor(readDesc))).toBe("allow"); // never tripped
+  });
+
+  it("REVIEW FOLLOW-UP: never forces a card for an engine-source (control-plane) call, however many, and never counts it", async () => {
+    const state = createBreakerState();
+    const policy = volumeBreaker(fixed("allow"), state, { threshold: 3 });
+    for (let i = 0; i < 20; i++) {
+      const ctx = ctxFor(engineActDesc);
+      expect(await policy.evaluate(ctx)).toBe("allow");
+      await policy.onExecuted!(ctx, "allow");
+    }
+    expect(await policy.evaluate(ctxFor(engineActDesc))).toBe("allow"); // never tripped
+    // An ordinary act-tier tool's OWN tally is untouched by the engine-source
+    // calls above (they were never counted at all).
+    const ordinaryPolicy = volumeBreaker(fixed("allow"), state, { threshold: 3 });
+    for (let i = 0; i < 2; i++) {
+      const ctx = ctxFor(actDesc);
+      await ordinaryPolicy.evaluate(ctx);
+      await ordinaryPolicy.onExecuted!(ctx, "allow");
+    }
+    expect(await ordinaryPolicy.evaluate(ctxFor(actDesc))).toBe("allow"); // only 2 counted, below threshold 3
+  });
 });
 
 describe("cautionBreaker", () => {

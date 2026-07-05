@@ -502,6 +502,20 @@ describe("ENG-193 §8/item-6 — steering invariants", () => {
     expect(await grants.findForTool(scope, unverifiedDesc.name)).toHaveLength(0);
   });
 
+  it("INVARIANT (review follow-up): an unevaluable tighten constraint still asks — a rule fails toward asking, never toward silently loosening", async () => {
+    const store = createInMemoryCompiledRuleStore();
+    await store.create(scope, {
+      kind: "always_ask",
+      toolPattern: actDesc.name,
+      plainText: "p",
+      constraint: { path: "to", op: "matches", value: "*@acme.co" },
+    });
+    const policy = compiledRulesPolicy(store, { principalScope: () => scope });
+    // The live input doesn't even carry the constrained field — unevaluable,
+    // not provably excluded — so the rule still matches and asks.
+    expect(await policy.evaluate(ctxFor(actDesc, {}))).toBe("approve");
+  });
+
   it("INVARIANT: rules are principal-scoped — one principal's rules never leak into another's match", async () => {
     const principalA: Principal = { tenantId: "t", subject: "a" };
     const principalB: Principal = { tenantId: "t", subject: "b" };

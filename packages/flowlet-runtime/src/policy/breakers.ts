@@ -40,6 +40,14 @@
  * plane) act-tier call — the user's own "always ask before"/"stop asking
  * about" utterances only ever ADD safety, so gating them behind a caution
  * card would be counterproductive.
+ *
+ * `volumeBreaker` carries the SAME two exemptions (review follow-up — it
+ * previously had neither): a read-tier or engine-source call is never forced
+ * to approve on volume, and — since "reads just flow" has no exception and an
+ * engine-source call is the user's own literal instruction, not agent
+ * behavior to rate-limit — is never even COUNTED toward the threshold either.
+ * Without this, 15 reads or `render_view` calls in one thread forced an
+ * approval card, breaking Moment 1's promise.
  */
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
 import { dangerTier } from "./tier";
@@ -103,6 +111,12 @@ export function volumeBreaker(
       const decision = await inner.evaluate(ctx);
       if (decision === "deny") return decision;
       if (dangerTier(ctx.descriptor) === "critical") return decision;
+      // Same two exemptions cautionBreaker has (review follow-up, see this
+      // module's docstring): reads never get a forced card, and a
+      // control-plane (engine-source) call is the user's own instruction, not
+      // agent volume to rate-limit.
+      if (dangerTier(ctx.descriptor) === "read") return decision;
+      if (ctx.descriptor.source === "engine") return decision;
       const key = threadKey(ctx);
       if (key === undefined) return decision; // automation context — item 4
       if (decision !== "allow") return decision; // nothing to force — already asking
@@ -115,6 +129,10 @@ export function volumeBreaker(
     },
     async onExecuted(ctx, decision) {
       await inner.onExecuted?.(ctx, decision);
+      // Don't even COUNT a read or engine-source execute toward the
+      // threshold (review follow-up) — symmetric with the exemption above.
+      if (dangerTier(ctx.descriptor) === "read") return;
+      if (ctx.descriptor.source === "engine") return;
       const key = threadKey(ctx);
       if (key === undefined) return;
       let perTool = state.volumeCounts.get(key);
