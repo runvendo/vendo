@@ -33,6 +33,7 @@ import {
 } from "./integrations";
 import { detectCapabilities } from "./capabilities";
 import { loadFlowletDir } from "./flowlet-dir";
+import { resolveMcpServers } from "./mcp-config";
 import { manifestToolsToHostTools } from "./manifest-tools";
 import { buildInstructions, createAgentCache } from "./agent";
 import { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld } from "./world";
@@ -59,8 +60,13 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
   // there would break builds in clean CI environments.
   let assembled: ReturnType<typeof assemble> | null = null;
   function assemble() {
-    const capabilities = detectCapabilities();
     const loaded = loadFlowletDir(options.flowletDir);
+    // MCP servers: the code option OVERRIDES the file entirely; ${ENV_VAR}
+    // header substitution applies only to file-sourced entries (code already
+    // runs in an env-aware context). A server whose var is missing is dropped
+    // with a warning. The capability flag reads the RESOLVED list.
+    const mcpServers = options.mcpServers ?? resolveMcpServers(loaded.mcpServers ?? []);
+    const capabilities = { ...detectCapabilities(), mcp: mcpServers.length > 0 };
     const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
     const model = options.model ?? defaultModel();
     const policy = options.policy ?? defaultFlowletPolicy;
@@ -103,6 +109,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       components: [...prewiredComponents, ...(options.components ?? [])],
       tools: serverTools,
       ...(capabilities.integrations ? { toolkits: () => connections.connectedToolkits() } : {}),
+      ...(mcpServers.length > 0 ? { mcpServers } : {}),
       ...(options.cacheKey ? { cacheKey: options.cacheKey } : {}),
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
     });

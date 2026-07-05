@@ -12,6 +12,8 @@ export interface FlowletCapabilities {
   chat: boolean;
   integrations: boolean;
   voice: boolean;
+  /** True when the host declared ≥1 MCP server (set by the handler, not env). */
+  mcp: boolean;
 }
 
 function present(value: string | undefined): boolean {
@@ -25,5 +27,8 @@ export function detectCapabilities(
     chat: present(env["ANTHROPIC_API_KEY"]),
     integrations: present(env["COMPOSIO_API_KEY"]),
     voice: present(env["OPENAI_API_KEY"]),
+    // MCP is config-presence, not key-presence — the handler overrides this
+    // from the resolved server list.
+    mcp: false,
   };
 }

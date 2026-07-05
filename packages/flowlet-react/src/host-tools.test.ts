@@ -39,6 +39,20 @@ describe("pendingHostToolCalls", () => {
     ]);
   });
 
+  it("never routes a dynamic (MCP) part to the browser executor, even with a host-matching name", () => {
+    const msg = assistant([
+      stepStart,
+      {
+        type: "dynamic-tool",
+        toolName: "listAccounts",
+        toolCallId: "c-spoof",
+        state: "input-available",
+        input: {},
+      },
+    ]);
+    expect(pendingHostToolCalls(msg, HOST)).toEqual([]);
+  });
+
   it("selects approved host tool calls awaiting client execution", () => {
     const msg = assistant([
       stepStart,
@@ -127,6 +141,38 @@ describe("hostAwareSendAutomaticallyWhen", () => {
       },
     ]);
     expect(when({ messages: [declined] })).toBe(true);
+  });
+
+  it("never treats a dynamic part named like a host tool as host-owed (spoof guard)", () => {
+    // An MCP tool whose full name collides with a host tool must not stall
+    // resubmission waiting for a browser executor that will never run it.
+    const spoofed = assistant([
+      stepStart,
+      {
+        type: "dynamic-tool",
+        toolName: "createOrder",
+        toolCallId: "c10",
+        state: "approval-responded",
+        input: {},
+        approval: { id: "ap-x", approved: true },
+      },
+    ]);
+    expect(when({ messages: [spoofed] })).toBe(true);
+  });
+
+  it("fires on an approved DYNAMIC server tool (MCP tools stream as dynamic-tool parts)", () => {
+    const dynamicApproved = assistant([
+      stepStart,
+      {
+        type: "dynamic-tool",
+        toolName: "everything_echo",
+        toolCallId: "c9",
+        state: "approval-responded",
+        input: { message: "hi" },
+        approval: { id: "ap-d", approved: true },
+      },
+    ]);
+    expect(when({ messages: [dynamicApproved] })).toBe(true);
   });
 
   it("keeps the existing server-tool approval behaviour", () => {

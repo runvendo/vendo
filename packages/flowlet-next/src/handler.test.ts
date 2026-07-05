@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFlowletHandler } from "./handler";
@@ -33,7 +33,64 @@ describe("createFlowletHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
     const res = await GET(req("/api/flowlet/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+  });
+
+  it("capabilities.mcp is true when mcpServers option is set", async () => {
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      mcpServers: [{ name: "weather", url: "https://mcp.example.com/mcp" }],
+    });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(true);
+  });
+
+  it("capabilities.mcp is true when .flowlet/mcp.json declares a server", async () => {
+    const dir = emptyDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "s", url: "https://x" }] }),
+    );
+    const { GET } = createFlowletHandler({ flowletDir: dir });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(true);
+  });
+
+  it("capabilities.mcp is false when the only mcp.json server is dropped by env substitution", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const dir = emptyDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [
+          {
+            name: "s",
+            url: "https://x",
+            headers: { Authorization: "Bearer ${DEFINITELY_NOT_SET_VAR_42}" },
+          },
+        ],
+      }),
+    );
+    const { GET } = createFlowletHandler({ flowletDir: dir });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("the mcpServers option overrides mcp.json entirely", async () => {
+    const dir = emptyDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "from-file", url: "https://file" }] }),
+    );
+    // Option present (even []) wins over the file: [] means MCP off.
+    const { GET } = createFlowletHandler({ flowletDir: dir, mcpServers: [] });
+    const res = await GET(req("/api/flowlet/capabilities"));
+    expect(((await res.json()) as { mcp: boolean }).mcp).toBe(false);
   });
 
   it("keeps integrations inert without a Composio key", async () => {
