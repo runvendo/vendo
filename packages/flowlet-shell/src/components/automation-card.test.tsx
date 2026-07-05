@@ -102,6 +102,31 @@ describe("AutomationCard (proposal state)", () => {
     expect(screen.getByText("Maple")).toBeTruthy();
   });
 
+  it("uses canonical toolkit names for app access brands", () => {
+    render(
+      <AutomationCard
+        toolName="create_automation"
+        input={{
+          spec: {
+            ...snitchSpec,
+            name: "Doc summary",
+            execution: {
+              mode: "steps",
+              steps: [
+                { id: "doc", type: "tool", tool: "GOOGLEDOCS_FETCH_DOCUMENT", input: { documentId: "doc-1" } },
+              ],
+            },
+          },
+          grantedTools: ["GOOGLEDOCS_FETCH_DOCUMENT"],
+        }}
+        onApprove={vi.fn()}
+        onDecline={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText("Google Docs").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Googledocs")).toBeNull();
+  });
+
   it("approve and decline fire the callbacks", () => {
     const onApprove = vi.fn();
     const onDecline = vi.fn();

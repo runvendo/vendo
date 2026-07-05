@@ -135,6 +135,7 @@ function formatCondition(condition: string | undefined): string | undefined {
 function formatList(items: string[]): string {
   if (items.length === 0) return "";
   if (items.length === 1) return items[0]!;
+  // Callers pass verb-initial action phrases ("Search Gmail", "Send email").
   if (items.length === 2) return `${items[0]} and ${items[1]!.charAt(0).toLowerCase()}${items[1]!.slice(1)}`;
   return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)!.charAt(0).toLowerCase()}${items.at(-1)!.slice(1)}`;
 }
@@ -173,6 +174,7 @@ const TOOL_BRANDS: Record<string, { id: string; name: string }> = {
   GOOGLEDRIVE: { id: "googledrive", name: "Google Drive" },
   DISCORD: { id: "discord", name: "Discord" },
   GOOGLESHEETS: { id: "googlesheets", name: "Google Sheets" },
+  GOOGLEDOCS: { id: "googledocs", name: "Google Docs" },
   STRIPE: { id: "stripe", name: "Stripe" },
   JIRA: { id: "jira", name: "Jira" },
   ASANA: { id: "asana", name: "Asana" },
