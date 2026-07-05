@@ -89,3 +89,16 @@ describe("prompt sections", () => {
     expect(guardrailSection("chat")).toMatch(/these rules win/i);
   });
 });
+
+describe("integrations completeness (live check feedback)", () => {
+  it("chat: capability talk demands the complete connectable list, no abbreviation", () => {
+    const s = capabilitiesSection("chat");
+    expect(s).toMatch(/COMPLETE connectable list/);
+    expect(s).toMatch(/never an abbreviated/);
+  });
+
+  it("voice: the complete list goes on screen, not recited aloud", () => {
+    const s = capabilitiesSection("voice");
+    expect(s).toMatch(/complete\s+connectable list on screen/);
+  });
+});

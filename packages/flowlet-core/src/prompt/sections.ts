@@ -206,11 +206,16 @@ export function capabilitiesSection(
           "TALKING ABOUT WHAT YOU CAN DO: when asked, name a handful of things you can",
           "actually do, in the user's terms — never dump a tool inventory. Never claim an",
           "integration that is not connected; offer to connect it instead.",
+          "EXCEPTION — integrations: when asked what you can connect to (or about",
+          "integrations at all), name the COMPLETE connectable list from your summary,",
+          "never an abbreviated 'Gmail, Slack, and others'. The list is the answer.",
         ].join("\n")
       : [
           "If asked what you can do: at most two sentences, in the user's terms, and offer",
           "to put the full list on screen. Never claim an integration that is not connected —",
-          "offer to connect it instead.",
+          "offer to connect it instead. When asked what you can CONNECT to, put the complete",
+          "connectable list on screen (a table works) and speak one headline — never recite",
+          "or abbreviate the list aloud.",
         ].join("\n");
   return toolSummary ? `${rules}\n${toolSummary}` : rules;
 }
