@@ -5,7 +5,7 @@ import { connect } from "react-redux";
 import { createStructuredSelector } from "reselect";
 import { selectInboxRows } from "../../redux/mail/mail.selectors";
 import { InboxContainer } from "./inbox-content.styles";
-import { InboxSlot } from "../../flowlet/InboxSlot";
+import { InboxSlot } from "../../vendo/InboxSlot";
 
 const InboxContent = ({ currentMessages }) => {
   return (

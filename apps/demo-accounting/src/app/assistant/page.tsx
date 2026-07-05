@@ -3,25 +3,25 @@
 /**
  * Surface #2 — the full-page Assistant tab, reachable from Cadence's sidebar.
  * The chat IS the page: a tab strip on top (live "Chat" thread, one auto-saved
- * tab per flowlet you've built, "+" to start fresh), the surface filling the
+ * tab per vendo you've built, "+" to start fresh), the surface filling the
  * viewport below Cadence's topbar; only the message list scrolls. This page
  * keeps its own thread; the Cmd+K overlay layer stays unmounted on this route
- * (see FlowletLayer).
+ * (see VendoLayer).
  */
 import { useEffect, useState } from "react"
 import {
-  FlowletThread,
-  FlowletToast,
-  useFlowletThread,
+  VendoThread,
+  VendoToast,
+  useVendoThread,
   useShell,
-  useReopenFlowlet,
+  useReopenVendo,
   useParkedActions,
   WaitingList,
   TrustScreen,
-  type Flowlet,
-} from "@flowlet/shell"
-import { FlowletRoot } from "@/components/flowlet/FlowletRoot"
-import { deriveSavedDrafts } from "@/flowlet/saved-flowlets"
+  type Vendo,
+} from "@vendoai/shell"
+import { VendoRoot } from "@/components/vendo/VendoRoot"
+import { deriveSavedDrafts } from "@/vendo/saved-vendos"
 
 const SUGGESTIONS = [
   "Which clients are still missing documents?",
@@ -32,14 +32,14 @@ const SUGGESTIONS = [
 const CHAT = "chat"
 
 function PageSurface() {
-  const chat = useFlowletThread()
+  const chat = useVendoThread()
   const { store } = useShell()
   const parked = useParkedActions()
   const [active, setActive] = useState<string>(CHAT)
-  const [saved, setSaved] = useState<Flowlet[]>([])
+  const [saved, setSaved] = useState<Vendo[]>([])
   const [trustOpen, setTrustOpen] = useState(false)
 
-  // Hydrate the tab strip from the store (ENG-183): saved flowlets survive
+  // Hydrate the tab strip from the store (ENG-183): saved vendos survive
   // reloads. Oldest-first so tabs keep their creation order.
   useEffect(() => {
     let cancelled = false
@@ -49,7 +49,7 @@ function PageSurface() {
     return () => { cancelled = true }
   }, [store])
 
-  // Every rendered view in the thread becomes a saved flowlet (deduped by node
+  // Every rendered view in the thread becomes a saved vendo (deduped by node
   // id), persisted through the store with the prompt that produced it.
   useEffect(() => {
     const drafts = deriveSavedDrafts(chat.items, new Set(saved.map((s) => s.id)))
@@ -60,7 +60,7 @@ function PageSurface() {
       })
       // save() throws loud (quota/unavailable); an unhandled rejection here
       // would silently drop the tab. Log it; the next items change retries.
-      .catch((error: unknown) => console.error("[flowlet] failed to persist saved view", error))
+      .catch((error: unknown) => console.error("[vendo] failed to persist saved view", error))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.items])
 
@@ -76,12 +76,12 @@ function PageSurface() {
   // Library management (ENG-183): rename + pin persist through the store;
   // delete is undoable via a toast, never destructive twice. Deletes QUEUE
   // (FIFO): each deleted view gets its own toast with a full undo window.
-  const [deleted, setDeleted] = useState<Flowlet[]>([])
+  const [deleted, setDeleted] = useState<Vendo[]>([])
 
   // Read-modify-write against the CURRENT store record: the gallery's `flow`
   // prop can be stale (the reopen hook writes fresh node data back), and a
   // rename spread from stale state would overwrite that fresh node.
-  const persistPatch = (flow: Flowlet, patch: Partial<Flowlet>) => {
+  const persistPatch = (flow: Vendo, patch: Partial<Vendo>) => {
     void store
       .load(flow.id)
       .then((current) => {
@@ -89,10 +89,10 @@ function PageSurface() {
         return store.save({ ...base, ...patch })
       })
       .then((record) => setSaved((prev) => prev.map((p) => (p.id === record.id ? record : p))))
-      .catch((error: unknown) => console.error("[flowlet] failed to update saved view", error))
+      .catch((error: unknown) => console.error("[vendo] failed to update saved view", error))
   }
 
-  const deleteFlow = (flow: Flowlet) => {
+  const deleteFlow = (flow: Vendo) => {
     void store
       .load(flow.id) // capture the CURRENT record so undo restores fresh data
       .then(async (current) => {
@@ -101,10 +101,10 @@ function PageSurface() {
         setActive((now) => (now === flow.id ? CHAT : now))
         setDeleted((queue) => [...queue, current ?? flow])
       })
-      .catch((error: unknown) => console.error("[flowlet] failed to delete saved view", error))
+      .catch((error: unknown) => console.error("[vendo] failed to delete saved view", error))
   }
 
-  const settleDelete = (flow: Flowlet, restore: boolean) => {
+  const settleDelete = (flow: Vendo, restore: boolean) => {
     setDeleted((queue) => queue.filter((f) => f.id !== flow.id))
     if (!restore) return
     void store
@@ -114,7 +114,7 @@ function PageSurface() {
           [...prev, record].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)),
         ),
       )
-      .catch((error: unknown) => console.error("[flowlet] failed to restore saved view", error))
+      .catch((error: unknown) => console.error("[vendo] failed to restore saved view", error))
   }
 
   const activeSaved = saved.find((s) => s.id === active)
@@ -162,7 +162,7 @@ function PageSurface() {
 
       <div className="fl-page-body">
         <div className="fl-page-pane" hidden={active !== CHAT}>
-          <FlowletThread
+          <VendoThread
             greeting="What do you want to build?"
             suggestions={SUGGESTIONS}
             heroComposer
@@ -173,10 +173,10 @@ function PageSurface() {
             onDeleteFlow={deleteFlow}
           />
         </div>
-        {activeSaved ? <SavedPane key={activeSaved.id} flowlet={activeSaved} /> : null}
+        {activeSaved ? <SavedPane key={activeSaved.id} vendo={activeSaved} /> : null}
       </div>
       {deleted[0] && (
-        <FlowletToast
+        <VendoToast
           key={deleted[0].id} // per-view countdown: the next queued toast starts fresh
           message={`Deleted "${deleted[0].name}"`}
           onAction={() => settleDelete(deleted[0]!, true)}
@@ -195,14 +195,14 @@ function PageSurface() {
 }
 
 /**
- * A reopened saved flowlet: renders the persisted snapshot instantly, then
+ * A reopened saved vendo: renders the persisted snapshot instantly, then
  * re-runs the view's declared data queries through the policy-governed action
  * route (the RunQuery seam) and streams the fresh data in via the stage's
  * data-delta path. Query failures silently keep the snapshot.
  */
-function SavedPane({ flowlet }: { flowlet: Flowlet }) {
+function SavedPane({ vendo }: { vendo: Vendo }) {
   const { renderNode } = useShell()
-  const { node, status, errors, drift } = useReopenFlowlet(flowlet)
+  const { node, status, errors, drift } = useReopenVendo(vendo)
   const drifted = [...drift.missing, ...drift.changed]
   return (
     <div className="fl-saved-pane">
@@ -236,9 +236,9 @@ export default function AssistantPage() {
         position: "relative", // anchors the undo toast
       }}
     >
-      <FlowletRoot>
+      <VendoRoot>
         <PageSurface />
-      </FlowletRoot>
+      </VendoRoot>
     </div>
   )
 }

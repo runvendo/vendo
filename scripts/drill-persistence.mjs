@@ -5,7 +5,7 @@
  * acceptance items 1-4 end to end against apps/demo-bank:
  *
  *   1. seed durable state directly against the store (server down, no LLM)
- *   2. boot the real Next.js server (FLOWLET_DRILL=1 wires the handler's
+ *   2. boot the real Next.js server (VENDO_DRILL=1 wires the handler's
  *      built-in automations world + a durable storage default)
  *   3. assert every surface reads back over HTTP, SIGKILL, reboot, assert
  *      again — proving the restart survives
@@ -29,7 +29,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   SCOPE,
-  FLOWLET_ID,
+  VENDO_ID,
   THREAD_ID,
   THREAD_MESSAGES,
 } from "./drill-persistence.constants.mjs";
@@ -90,11 +90,11 @@ function sleep(ms) {
 function baseEnv(dataDir) {
   return {
     ...process.env,
-    FLOWLET_DRILL: "1",
-    FLOWLET_ALLOW_REMOTE: "1",
+    VENDO_DRILL: "1",
+    VENDO_ALLOW_REMOTE: "1",
     NODE_ENV: "production",
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "sk-ant-drill-placeholder-not-used",
-    ...(usingPostgres ? { DATABASE_URL } : { FLOWLET_DATA_DIR: dataDir }),
+    ...(usingPostgres ? { DATABASE_URL } : { VENDO_DATA_DIR: dataDir }),
   };
 }
 
@@ -133,7 +133,7 @@ async function startServer(port, env) {
       throw new Error(`server process exited before becoming ready:\n${tail.join("\n")}`);
     }
     try {
-      const res = await fetch(`http://localhost:${port}/api/flowlet/capabilities`);
+      const res = await fetch(`http://localhost:${port}/api/vendo/capabilities`);
       if (res.ok) return proc;
     } catch {
       // not up yet
@@ -163,7 +163,7 @@ async function killServer(proc, port) {
     const deadline = Date.now() + 15_000;
     for (;;) {
       try {
-        await fetch(`http://localhost:${port}/api/flowlet/capabilities`, {
+        await fetch(`http://localhost:${port}/api/vendo/capabilities`, {
           signal: AbortSignal.timeout(1_000),
         });
       } catch {
@@ -178,29 +178,29 @@ async function killServer(proc, port) {
 }
 
 async function assertSurfaces(port, label) {
-  const caps = await (await fetch(`http://localhost:${port}/api/flowlet/capabilities`)).json();
+  const caps = await (await fetch(`http://localhost:${port}/api/vendo/capabilities`)).json();
   if (caps.storage !== true) fail(`[${label}] GET capabilities storage=${caps.storage}, expected true`);
   log(`[${label}] capabilities.storage === true`);
 
-  const flowletsList = await (await fetch(`http://localhost:${port}/api/flowlet/flowlets`)).json();
-  if (!Array.isArray(flowletsList) || !flowletsList.some((f) => f.id === FLOWLET_ID)) {
-    fail(`[${label}] GET flowlets did not include seeded id "${FLOWLET_ID}": ${JSON.stringify(flowletsList)}`);
+  const vendosList = await (await fetch(`http://localhost:${port}/api/vendo/vendos`)).json();
+  if (!Array.isArray(vendosList) || !vendosList.some((f) => f.id === VENDO_ID)) {
+    fail(`[${label}] GET vendos did not include seeded id "${VENDO_ID}": ${JSON.stringify(vendosList)}`);
   }
-  log(`[${label}] GET flowlets lists the seeded flowlet`);
+  log(`[${label}] GET vendos lists the seeded vendo`);
 
-  const flowletOne = await (await fetch(`http://localhost:${port}/api/flowlet/flowlets/${FLOWLET_ID}`)).json();
-  if (flowletOne.id !== FLOWLET_ID) {
-    fail(`[${label}] GET flowlets/${FLOWLET_ID} returned ${JSON.stringify(flowletOne)}`);
+  const vendoOne = await (await fetch(`http://localhost:${port}/api/vendo/vendos/${VENDO_ID}`)).json();
+  if (vendoOne.id !== VENDO_ID) {
+    fail(`[${label}] GET vendos/${VENDO_ID} returned ${JSON.stringify(vendoOne)}`);
   }
-  log(`[${label}] GET flowlets/<id> returns the seeded record`);
+  log(`[${label}] GET vendos/<id> returns the seeded record`);
 
-  const threadsList = await (await fetch(`http://localhost:${port}/api/flowlet/threads`)).json();
+  const threadsList = await (await fetch(`http://localhost:${port}/api/vendo/threads`)).json();
   if (!Array.isArray(threadsList) || !threadsList.some((t) => t.id === THREAD_ID)) {
     fail(`[${label}] GET threads did not include seeded id "${THREAD_ID}": ${JSON.stringify(threadsList)}`);
   }
   log(`[${label}] GET threads lists the seeded thread`);
 
-  const messages = await (await fetch(`http://localhost:${port}/api/flowlet/threads/${THREAD_ID}`)).json();
+  const messages = await (await fetch(`http://localhost:${port}/api/vendo/threads/${THREAD_ID}`)).json();
   if (!Array.isArray(messages) || messages.length !== THREAD_MESSAGES.length) {
     fail(`[${label}] GET threads/${THREAD_ID} returned ${JSON.stringify(messages)}, expected ${THREAD_MESSAGES.length} messages`);
   }
@@ -218,7 +218,7 @@ async function main() {
   run("pnpm", ["build"]);
   run("pnpm", ["--filter", demoBankFilter, "build"]);
 
-  const dataDir = usingPostgres ? null : mkdtempSync(path.join(tmpdir(), "flowlet-drill-"));
+  const dataDir = usingPostgres ? null : mkdtempSync(path.join(tmpdir(), "vendo-drill-"));
   cleanup.dataDir = dataDir;
   const env = baseEnv(dataDir);
 
@@ -265,13 +265,13 @@ async function main() {
   }
   log("decision survived the restart");
 
-  if (!verified.flowlet || verified.flowlet.id !== FLOWLET_ID) {
-    fail(`flowlet did not survive the restart: ${JSON.stringify(verified.flowlet)}`);
+  if (!verified.vendo || verified.vendo.id !== VENDO_ID) {
+    fail(`vendo did not survive the restart: ${JSON.stringify(verified.vendo)}`);
   }
   if (!Array.isArray(verified.messages) || verified.messages.length !== THREAD_MESSAGES.length) {
     fail(`thread messages did not survive the restart: ${JSON.stringify(verified.messages)}`);
   }
-  log("saved flowlet + thread messages confirmed durable offline");
+  log("saved vendo + thread messages confirmed durable offline");
 
   log("DRILL PASSED");
 }

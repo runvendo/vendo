@@ -1,12 +1,12 @@
 {
-  "name": "@flowlet/example-components",
+  "name": "@vendoai/example-components",
   "private": true,
   "type": "module",
   "scripts": { "dev": "vite", "build": "vite build", "typecheck": "tsc --noEmit" },
   "dependencies": {
-    "@flowlet/components": "workspace:*",
-    "@flowlet/core": "workspace:*",
-    "@flowlet/react": "workspace:*",
+    "@vendoai/components": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/react": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },

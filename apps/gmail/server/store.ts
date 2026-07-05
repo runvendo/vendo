@@ -1,7 +1,7 @@
 /**
  * The Gmail clone's mail store — in-memory, seeded, reseedable. This is the
  * single source of truth for the demo mailbox: the REST API (api.ts), the
- * Flowlet in-process action tools, and the frontend (via the API) all read and
+ * Vendo in-process action tools, and the frontend (via the API) all read and
  * mutate the same instance, so agent actions are immediately visible in the UI.
  */
 

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Gmail Clone Mail API",
-    "description": "The Gmail clone's own REST API. This spec is the host contract Flowlet's agent acts through as the signed-in user (ENG-202): each operation becomes a client-executed agent tool, gated by annotations.",
+    "description": "The Gmail clone's own REST API. This spec is the host contract Vendo's agent acts through as the signed-in user (ENG-202): each operation becomes a client-executed agent tool, gated by annotations.",
     "version": "1.0.0"
   },
   "paths": {

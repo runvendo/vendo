@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cadence API",
-    "description": "Cadence is the practice-management platform Hartwell & Associates runs its accounting firm on: client onboarding, tax-document collection, filing deadlines and client messaging. This spec is the host contract Flowlet's agent acts through, as the signed-in firm user (ENG-202). All responses are enveloped as { \"data\": ... }; errors as { \"error\": { \"code\", \"message\" } } with status 400 or 404.",
+    "description": "Cadence is the practice-management platform Hartwell & Associates runs its accounting firm on: client onboarding, tax-document collection, filing deadlines and client messaging. This spec is the host contract Vendo's agent acts through, as the signed-in firm user (ENG-202). All responses are enveloped as { \"data\": ... }; errors as { \"error\": { \"code\", \"message\" } } with status 400 or 404.",
     "version": "1.0.0"
   },
   "servers": [
@@ -126,7 +126,7 @@
     "/api/clients/{id}/documents/{docId}/status": {
       "post": {
         "operationId": "setDocumentStatus",
-        "x-flowlet-dangerous": true,
+        "x-vendo-dangerous": true,
         "summary": "Advance a document through its lifecycle: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review.",
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Client id" },

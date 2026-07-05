@@ -1,17 +1,17 @@
-# Flowlet
+# Vendo
 
-Monorepo for Flowlet — a drop-in agentic experience — and the demo that showcases it.
+Monorepo for Vendo — a drop-in agentic experience — and the demo that showcases it.
 
 ## Telemetry
 
-Flowlet collects anonymous, opt-out usage telemetry from build and development tooling. See [TELEMETRY.md](./TELEMETRY.md).
+Vendo collects anonymous, opt-out usage telemetry from build and development tooling. See [TELEMETRY.md](./TELEMETRY.md).
 
 ## Layout
 
 ```
 packages/
-  flowlet-core    tools, UI nodes, GenUI format, generated components, stream protocol, agent, registry, stub agent
-  flowlet-react   provider, useFlowletChat, in-memory transport, stub renderer
+  vendo-core    tools, UI nodes, GenUI format, generated components, stream protocol, agent, registry, stub agent
+  vendo-react   provider, useVendoChat, in-memory transport, stub renderer
 examples/
   basic           proves the stub loop end-to-end
 apps/

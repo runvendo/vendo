@@ -1,6 +1,6 @@
 /**
- * CRA dev-server proxy: /api → the clone's Express backend (mail + Flowlet).
- * The Flowlet chat route streams; compression in webpack-dev-server buffers
+ * CRA dev-server proxy: /api → the clone's Express backend (mail + Vendo).
+ * The Vendo chat route streams; compression in webpack-dev-server buffers
  * streamed bodies, so the proxy strips accept-encoding and the backend's
  * responses pass through unbuffered.
  */

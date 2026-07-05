@@ -15,8 +15,8 @@ import MobileNav from "./components/mobile-nav/mobile-nav.component";
 import MobileSearchbar from "./components/mobile-searchbar/mobile-searchbar.component";
 import ComposeBtn from "./components/composeBtn/composeBtn.component";
 import ComposeMessage from "./components/composeMessage/composeMessage.component";
-import FlowletPage from "./flowlet/FlowletPage";
-import { FlowletLayer } from "./flowlet/FlowletLayer";
+import VendoPage from "./vendo/VendoPage";
+import { VendoLayer } from "./vendo/VendoLayer";
 import { refreshMail } from "./mail-api";
 
 function App({ location }) {
@@ -61,12 +61,12 @@ function App({ location }) {
           <Route path="/starred" component={Starred} />
           <Route path="/sent" component={Sent} />
           <Route path="/message/:id" component={MessageView} />
-          <Route path="/flowlet" component={FlowletPage} />
+          <Route path="/vendo" component={VendoPage} />
         </Switch>
       </div>
       <Route path="/compose" component={ComposeMessage} />
       {/* The Cmd/Ctrl+K Vendo overlay, available anywhere in the app. */}
-      <FlowletLayer />
+      <VendoLayer />
 
       {location.pathname !== "/compose" ? <ComposeBtn className="btn" /> : ""}
     </div>

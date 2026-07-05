@@ -2,14 +2,14 @@
 
 What survives a restart, how the scheduler stays alive without a browser tab
 open, and how to wire Composio triggers — the three things that change once
-you take a Flowlet install past `next dev` on your laptop.
+you take a Vendo install past `next dev` on your laptop.
 
 ## The one storage knob
 
-`createFlowletHandler({ storage })` is the only setting that matters:
+`createVendoHandler({ storage })` is the only setting that matters:
 
-- **Unset (default)** — an embedded PGlite database at `.flowlet/data`
-  (override the directory with `FLOWLET_DATA_DIR`). Zero config, file-backed,
+- **Unset (default)** — an embedded PGlite database at `.vendo/data`
+  (override the directory with `VENDO_DATA_DIR`). Zero config, file-backed,
   good for local dev and a single long-lived process (Docker, a VPS,
   `next start`). PGlite is single-process by design: on a known-serverless
   runtime (Vercel, Cloudflare Pages, Lambda) the handler refuses to boot on
@@ -26,10 +26,10 @@ Migrations run automatically on first boot (`autoMigrate: true` by default),
 guarded by a per-process init lock and, on real Postgres, a Postgres advisory
 lock so two cold starts can't race the same DDL. Shops that gate schema
 changes behind a review process set `storage: { autoMigrate: false }` and
-call the exported `migrateFlowletDatabase(handle)` (from `@flowlet/store`)
+call the exported `migrateVendoDatabase(handle)` (from `@vendoai/store`)
 out of band, whenever they're ready to apply it.
 
-All tables live in a dedicated `flowlet` Postgres schema — your app's
+All tables live in a dedicated `vendo` Postgres schema — your app's
 `public` schema stays untouched.
 
 ## What persists
@@ -45,10 +45,10 @@ With durable storage on, five surfaces are covered end to end:
   feed the unattended automations world, which only ever honors grants.
 - **Chat threads** — `threads` + `thread_messages`, upserted by message id so
   an approval resume replaces parts in place instead of duplicating them.
-- **Saved flowlets** — the shell's saved-flowlet library, in `saved_flowlets`.
+- **Saved vendos** — the shell's saved-vendo library, in `saved_vendos`.
 - **Integration connections** — which Composio toolkits are connected (what
   the agent ingests) and the connected-account → principal map webhook
-  routing depends on, in the `connections` table. `createFlowletHandler()`
+  routing depends on, in the `connections` table. `createVendoHandler()`
   wires `createDrizzleConnectionsStore` in automatically whenever durable
   storage is configured — no separate opt-in. This is what makes Composio
   webhooks survive a restart: without it, every connected toolkit forgot it
@@ -80,7 +80,7 @@ to know:
 - **`NODE_ENV=test` silently disables durability.** If `storage` is left
   unset and `NODE_ENV` is `"test"`, the handler behaves exactly like
   `storage: false` — no warning, no on-disk PGlite directory. This exists so
-  running the test suite dozens of times doesn't spray `.flowlet/data`
+  running the test suite dozens of times doesn't spray `.vendo/data`
   directories around the repo. Never let `NODE_ENV=test` leak into a real
   deploy: pass an explicit `storage` value (including `false`, if that's
   really what you want) to opt back in under any `NODE_ENV`.
@@ -88,16 +88,16 @@ to know:
 ## Scheduler modes
 
 By default, schedules fire from an in-process timer that boots with your
-Next.js server — `flowlet init` writes an `instrumentation.ts` (or
+Next.js server — `vendo init` writes an `instrumentation.ts` (or
 `src/instrumentation.ts`, next to a `src/app`) that calls
-`startFlowletScheduler()` from `@flowlet/next` when the Node.js runtime
+`startVendoScheduler()` from `@vendoai/next` when the Node.js runtime
 starts:
 
 ```ts
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { startFlowletScheduler } = await import("@flowlet/next");
-    startFlowletScheduler();
+    const { startVendoScheduler } = await import("@vendoai/next");
+    startVendoScheduler();
   }
 }
 ```
@@ -105,32 +105,32 @@ export async function register() {
 This is the real Next.js boot hook — no request needs to land first. It's
 idempotent and safe under dev-mode HMR.
 
-Set `FLOWLET_SCHEDULER=external` to disable the internal timer entirely
+Set `VENDO_SCHEDULER=external` to disable the internal timer entirely
 (serverless or multi-instance deploys) and drive ticks from an external cron
 hitting `POST <mount>/tick` instead, authenticated with
-`authorization: Bearer $FLOWLET_TICK_SECRET`. Without `FLOWLET_TICK_SECRET`
+`authorization: Bearer $VENDO_TICK_SECRET`. Without `VENDO_TICK_SECRET`
 configured, remote ticks are refused outright; a wrong bearer is always a
 hard 401, never a silent fall-through to the normal principal guard.
 
 **Vercel.** Vercel Cron Jobs only ever send a `GET` request and don't let you
 attach a custom `Authorization` header — so point the cron at a tiny relay
 route in your own app, and have that route perform the authenticated `POST`
-to `/api/flowlet/tick`:
+to `/api/vendo/tick`:
 
 ```json
 // vercel.json
 {
-  "crons": [{ "path": "/api/cron/flowlet-tick", "schedule": "* * * * *" }]
+  "crons": [{ "path": "/api/cron/vendo-tick", "schedule": "* * * * *" }]
 }
 ```
 
 ```ts
-// app/api/cron/flowlet-tick/route.ts
+// app/api/cron/vendo-tick/route.ts
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
-  const res = await fetch(`${origin}/api/flowlet/tick`, {
+  const res = await fetch(`${origin}/api/vendo/tick`, {
     method: "POST",
-    headers: { authorization: `Bearer ${process.env.FLOWLET_TICK_SECRET}` },
+    headers: { authorization: `Bearer ${process.env.VENDO_TICK_SECRET}` },
   });
   return new Response(null, { status: res.ok ? 200 : 502 });
 }
@@ -147,10 +147,10 @@ crons = ["* * * * *"]
 
 ```ts
 export default {
-  async scheduled(_event: ScheduledEvent, env: { FLOWLET_TICK_SECRET: string; APP_ORIGIN: string }) {
-    await fetch(`${env.APP_ORIGIN}/api/flowlet/tick`, {
+  async scheduled(_event: ScheduledEvent, env: { VENDO_TICK_SECRET: string; APP_ORIGIN: string }) {
+    await fetch(`${env.APP_ORIGIN}/api/vendo/tick`, {
       method: "POST",
-      headers: { authorization: `Bearer ${env.FLOWLET_TICK_SECRET}` },
+      headers: { authorization: `Bearer ${env.VENDO_TICK_SECRET}` },
     });
   },
 };
@@ -168,8 +168,8 @@ Composio triggers (Gmail, Slack, etc. firing without polling). To wire it:
 1. Set `COMPOSIO_WEBHOOK_SECRET` to the signing secret from Composio's
    dashboard webhook settings (the `whsec_`-prefixed value, verbatim).
 2. Point the webhook URL in that dashboard at
-   `https://your-deployed-host/api/flowlet/webhooks/composio` (adjust the
-   mount if you didn't use the default `api/flowlet` catch-all path).
+   `https://your-deployed-host/api/vendo/webhooks/composio` (adjust the
+   mount if you didn't use the default `api/vendo` catch-all path).
 3. Without `COMPOSIO_WEBHOOK_SECRET` set, the route 404s — there's no way to
    authenticate a request, so it fails closed rather than accepting
    everything.
@@ -189,16 +189,16 @@ this release shipped — has no webhook route until it goes through one fresh
 `authorize()` + poll cycle. Disconnect and reconnect the toolkit once if its
 webhook triggers aren't firing.
 
-## Saved flowlets: no localStorage migration in v1
+## Saved vendos: no localStorage migration in v1
 
-The client picks a saved-flowlet store based on whether the server reports
+The client picks a saved-vendo store based on whether the server reports
 durable storage (`GET <mount>/capabilities` → `storage: true`): with durable
-storage, it talks to the server (`/flowlets` endpoints); without it, it falls
+storage, it talks to the server (`/vendos` endpoints); without it, it falls
 back to `localStorage`, same as before this release.
 
 There is no migration path from an existing `localStorage` library into the
 server store in v1. Turning on durable storage for an app that already has
-flowlets saved in visitors' browsers means the server-side library starts
+vendos saved in visitors' browsers means the server-side library starts
 empty — those localStorage entries aren't lost, but they also aren't pulled
 forward automatically. `localStorage` remains the fallback whenever
 `storage` is off (or absent), so nothing regresses for installs that don't

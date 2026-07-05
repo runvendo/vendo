@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Maple Bank API",
-    "description": "Maple's own REST API. This spec is the host contract Flowlet's agent acts through, as the signed-in user (ENG-202).",
+    "description": "Maple's own REST API. This spec is the host contract Vendo's agent acts through, as the signed-in user (ENG-202).",
     "version": "1.0.0"
   },
   "paths": {

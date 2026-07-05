@@ -1,7 +1,7 @@
 # Morning Document Chase — Cadence Demo Runbook
 
-Everything to run the Flowlet × Cadence beat on stage, reset it, and recover if
-it misbehaves. The beat: the user asks Vendo (the embedded Flowlet agent) to
+Everything to run the Vendo × Cadence beat on stage, reset it, and recover if
+it misbehaves. The beat: the user asks Vendo (the embedded Vendo agent) to
 set up a standing automation in plain English; it compiles an inspectable
 AutomationCard; one approval, one force-fire, and **real** emails go out and
 **real** calendar events get booked.
@@ -16,16 +16,16 @@ pnpm demo:accounting
 
 Open **http://localhost:3000**. Secrets come from Infisical (`dev`):
 `ANTHROPIC_API_KEY`, `COMPOSIO_API_KEY`. No keys are committed. Model:
-`claude-sonnet-4-6` (override with `FLOWLET_DEMO_MODEL`).
+`claude-sonnet-4-6` (override with `VENDO_DEMO_MODEL`).
 
-Three Flowlet surfaces are live:
+Three Vendo surfaces are live:
 - **Vendo page** — "Vendo" in the left sidebar (`/assistant`): the full agent page.
 - **Cmd/Ctrl+K overlay** — summon the same agent over any page.
 - **Dashboard slot** — the "Design a view" card at the bottom of the dashboard.
 
 Gmail + Google Calendar show connected in the composer's connect tray (2
 connected). There is no on-screen connect flow — they are the firm's standing
-integrations, pre-authorized for the Composio subject `flowlet-demo`.
+integrations, pre-authorized for the Composio subject `vendo-demo`.
 
 ## Before you walk on stage — reset + reseed
 
@@ -77,7 +77,7 @@ what flips `live: true`.
 ## Timing gotcha — the 8 AM cron
 
 The automation's real trigger is `0 8 * * *` America/Los_Angeles. The scheduler
-is driven by a client heartbeat (`POST /api/flowlet/tick` every ~30s). **If the
+is driven by a client heartbeat (`POST /api/vendo/tick` every ~30s). **If the
 wall clock crosses 8:00 AM PT while the app is running with an approved
 automation, it can fire on its own** — sending the real emails/events
 unprompted. For a controlled stage demo, either demo away from ~8 AM PT, or
@@ -111,7 +111,7 @@ timeout, reset and retry — it is almost always transient.
   history for the failed step's error; reset and retry.
 - **403 on chat/tick** → you are not on `localhost` (or `NODE_ENV=production`
   without the opt-in). Real Composio identity is attached only for local runs;
-  set `FLOWLET_DEMO_PUBLIC=1` to intentionally enable a deployment.
+  set `VENDO_DEMO_PUBLIC=1` to intentionally enable a deployment.
 - **Nuclear option** → Cmd/Ctrl+Shift+. to reset, reload, start clean.
 
 ## What is real vs staged
@@ -124,12 +124,12 @@ live sends never reach a stranger.
 
 ## Pre-flight (once, before the session)
 
-Confirm the Composio connections are live for `flowlet-demo`:
+Confirm the Composio connections are live for `vendo-demo`:
 
 ```bash
 infisical run --projectId=b366cac7-1716-47a0-9617-f335500f6dee --env=dev -- \
-  node -e "const k=process.env.COMPOSIO_API_KEY;const A='https://backend.composio.dev/api/v3';(async()=>{for(const s of ['GMAIL_GET_PROFILE','GOOGLECALENDAR_LIST_CALENDARS']){const r=await(await fetch(A+'/tools/execute/'+s,{method:'POST',headers:{'x-api-key':k,'content-type':'application/json'},body:JSON.stringify({user_id:'flowlet-demo',arguments:{}})})).json();console.log(s, r.successful?'OK':'FAIL')}})()"
+  node -e "const k=process.env.COMPOSIO_API_KEY;const A='https://backend.composio.dev/api/v3';(async()=>{for(const s of ['GMAIL_GET_PROFILE','GOOGLECALENDAR_LIST_CALENDARS']){const r=await(await fetch(A+'/tools/execute/'+s,{method:'POST',headers:{'x-api-key':k,'content-type':'application/json'},body:JSON.stringify({user_id:'vendo-demo',arguments:{}})})).json();console.log(s, r.successful?'OK':'FAIL')}})()"
 ```
 
-Both should print `OK`. If not, the Gmail/Calendar connection for `flowlet-demo`
+Both should print `OK`. If not, the Gmail/Calendar connection for `vendo-demo`
 has expired — reconnect it in the Composio dashboard for that subject.

@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = React.useState(false)
   const pathname = usePathname()
 
-  // Cmd/Ctrl+K is owned by the Flowlet overlay in this demo. Maple's command
+  // Cmd/Ctrl+K is owned by the Vendo overlay in this demo. Maple's command
   // palette stays reachable via the topbar search button.
 
   return (

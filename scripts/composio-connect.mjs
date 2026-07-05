@@ -5,11 +5,11 @@
  *   pnpm composio:connect
  *   (= infisical run --projectId=… --env=dev -- node scripts/composio-connect.mjs)
  *
- * Prints the current connection status for userId `flowlet-demo`. For any
+ * Prints the current connection status for userId `vendo-demo`. For any
  * toolkit not yet ACTIVE, it initiates a connection and prints an authorize URL
  * to open in a browser. Already-connected toolkits are reported and skipped.
  */
-const USER_ID = "flowlet-demo";
+const USER_ID = "vendo-demo";
 const TARGETS = [
   { name: "GMAIL", authConfigId: "ac_C0WWr2sbI7AV" },
   { name: "SLACK", authConfigId: "ac_DT5-sR-LyeGz" },

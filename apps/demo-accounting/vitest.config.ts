@@ -6,7 +6,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
-      // Force ONE React: @flowlet/components would otherwise resolve its own
+      // Force ONE React: @vendoai/components would otherwise resolve its own
       // React 18 while the app renders with React 19 (two-React error in jsdom).
       react: path.resolve(__dirname, "node_modules/react"),
       "react-dom": path.resolve(__dirname, "node_modules/react-dom"),

@@ -1,0 +1,159 @@
+/**
+ * DrizzleThreadStore contract tests — a durable port of the core `ThreadStore`
+ * seam (packages/vendo-core/src/seams/store.ts), behavioral spec =
+ * InMemoryThreadStore (packages/vendo-runtime/src/embedded/in-memory-store.ts)
+ * and its test suite. Additions here are DB-specific: race-safe seq
+ * allocation via `threads.nextSeq` and a concurrent-upsert race test.
+ */
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { and, eq, sql } from "drizzle-orm";
+import type { VendoUIMessage, Principal } from "@vendoai/core";
+import { createVendoDatabase, migrateVendoDatabase, type VendoDb } from "./db.js";
+import { createDrizzleThreadStore } from "./thread-store.js";
+import { threadMessages } from "./schema.js";
+
+const NOW = "2026-07-02T00:00:00.000Z";
+const scope: Principal = { tenantId: "t1", subject: "u1" };
+const other: Principal = { tenantId: "t1", subject: "u2" };
+
+const msg = (id: string, parts: unknown[] = []): VendoUIMessage =>
+  ({ id, role: "user", parts }) as VendoUIMessage;
+
+let suffix = 0;
+function uniqueDataDir(): string {
+  suffix += 1;
+  return `memory://thread-store-test-${Date.now()}-${suffix}`;
+}
+
+let handle: VendoDb;
+let store: ReturnType<typeof createDrizzleThreadStore>;
+
+beforeAll(async () => {
+  handle = await createVendoDatabase({ pglite: { dataDir: uniqueDataDir() } });
+  await migrateVendoDatabase(handle);
+});
+
+beforeEach(async () => {
+  await handle.db.execute(sql`truncate table vendo.thread_messages, vendo.threads`);
+  store = createDrizzleThreadStore(handle, { now: () => NOW });
+});
+
+describe("create/get/list", () => {
+  it("creates threads with store-owned id + timestamps and lists per scope", async () => {
+    const thread = await store.create(scope, { title: "Spending" });
+    expect(thread.id).toBeTruthy();
+    expect(thread.createdAt).toBe(NOW);
+    expect(thread.tenantId).toBe("t1");
+    expect(await store.list(scope)).toHaveLength(1);
+    expect(await store.list(other)).toHaveLength(0);
+    expect(await store.get(other, thread.id)).toBeUndefined();
+  });
+});
+
+describe("appendMessages/getMessages", () => {
+  it("appends and reads back messages in order", async () => {
+    const thread = await store.create(scope);
+    await store.appendMessages(scope, thread.id, [msg("m1")]);
+    await store.appendMessages(scope, thread.id, [msg("m2")]);
+    const messages = await store.getMessages(scope, thread.id);
+    expect(messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(await store.getMessages(other, thread.id)).toEqual([]);
+  });
+
+  it("rejects appends to a thread that does not exist in scope", async () => {
+    await expect(store.appendMessages(scope, "nope", [])).rejects.toThrow(/unknown thread/i);
+  });
+});
+
+describe("upsertMessages", () => {
+  it("inserts new messages and reads them back in order", async () => {
+    const thread = await store.create(scope);
+    await store.upsertMessages(scope, thread.id, [msg("m1"), msg("m2")]);
+    const messages = await store.getMessages(scope, thread.id);
+    expect(messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("re-upserting an existing id replaces parts wholesale and keeps position", async () => {
+    const thread = await store.create(scope);
+    await store.upsertMessages(scope, thread.id, [
+      msg("m1", [{ type: "text", text: "stale approval" }]),
+      msg("m2", [{ type: "text", text: "unchanged" }]),
+    ]);
+    await store.upsertMessages(scope, thread.id, [
+      msg("m1", [{ type: "text", text: "resolved approval" }]),
+    ]);
+    const messages = await store.getMessages(scope, thread.id);
+    expect(messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(messages[0]?.parts).toEqual([{ type: "text", text: "resolved approval" }]);
+    expect(messages[1]?.parts).toEqual([{ type: "text", text: "unchanged" }]);
+  });
+
+  it("auto-creates unknown threads (the client owns thread ids)", async () => {
+    await store.upsertMessages(scope, "client-thread-1", [msg("m1")]);
+    const thread = await store.get(scope, "client-thread-1");
+    expect(thread?.id).toBe("client-thread-1");
+    expect(thread?.tenantId).toBe("t1");
+    const messages = await store.getMessages(scope, "client-thread-1");
+    expect(messages.map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  it("isolates identical client thread ids across principals", async () => {
+    await store.upsertMessages(scope, "shared", [msg("m1", [{ type: "text", text: "mine" }])]);
+    await store.upsertMessages(other, "shared", [msg("m1", [{ type: "text", text: "theirs" }])]);
+    const mine = await store.getMessages(scope, "shared");
+    const theirs = await store.getMessages(other, "shared");
+    expect(mine).toHaveLength(1);
+    expect(theirs).toHaveLength(1);
+    expect(mine[0]?.parts).toEqual([{ type: "text", text: "mine" }]);
+    expect(theirs[0]?.parts).toEqual([{ type: "text", text: "theirs" }]);
+  });
+
+  // NOTE: PGlite serializes every `.transaction()` call on its single
+  // connection (`_runExclusiveTransaction` internally), so this can't force
+  // the genuine wire-level interleaving (both txns' existing-ids SELECT
+  // racing before either commits) that trips the unique-violation on real
+  // concurrent Postgres. It still guards the ON CONFLICT arbiter itself:
+  // if a future change swaps it for a plain INSERT again, or narrows the
+  // target columns, this stays green either way under PGlite — the
+  // authoritative check for the actual race is code review of the arbiter
+  // matching `thread_messages_id_uq` exactly (see the module doc).
+  it("two parallel upserts of the SAME new message id race without throwing, leaving exactly one row (review blocker)", async () => {
+    const thread = await store.create(scope);
+    await expect(
+      Promise.all([
+        store.upsertMessages(scope, thread.id, [msg("m1", [{ type: "text", text: "a" }])]),
+        store.upsertMessages(scope, thread.id, [msg("m1", [{ type: "text", text: "b" }])]),
+      ]),
+    ).resolves.toBeDefined();
+
+    const rows = await handle.db
+      .select({ messageId: threadMessages.messageId })
+      .from(threadMessages)
+      .where(
+        and(
+          eq(threadMessages.tenantId, scope.tenantId),
+          eq(threadMessages.subject, scope.subject),
+          eq(threadMessages.threadId, thread.id),
+        ),
+      );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.messageId).toBe("m1");
+  });
+
+  it("two parallel upserts of DIFFERENT messages get distinct seqs with no unique violation", async () => {
+    const thread = await store.create(scope);
+    await Promise.all([
+      store.upsertMessages(scope, thread.id, [msg("m1")]),
+      store.upsertMessages(scope, thread.id, [msg("m2")]),
+    ]);
+    const messages = await store.getMessages(scope, thread.id);
+    expect(messages.map((m) => m.id).sort()).toEqual(["m1", "m2"]);
+
+    const rows = await handle.db
+      .select({ messageId: threadMessages.messageId, seq: threadMessages.seq })
+      .from(threadMessages)
+      .where(and(eq(threadMessages.tenantId, scope.tenantId), eq(threadMessages.subject, scope.subject), eq(threadMessages.threadId, thread.id)));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.seq).not.toBe(rows[1]?.seq);
+  });
+});

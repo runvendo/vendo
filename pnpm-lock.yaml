@@ -30,30 +30,30 @@ importers:
       '@ai-sdk/react':
         specifier: 3.0.30
         version: 3.0.30(react@19.2.4)(zod@3.25.76)
-      '@flowlet/components':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-components
-      '@flowlet/core':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-core
-      '@flowlet/next':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-next
-      '@flowlet/react':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-react
-      '@flowlet/runtime':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-runtime
-      '@flowlet/shell':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-shell
-      '@flowlet/stage':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-stage
       '@openuidev/react-ui':
         specifier: ^0.12.1
         version: 0.12.1(@openuidev/react-headless@0.9.1(react@19.2.4)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@19.2.4)))(@openuidev/react-lang@0.2.8(react@19.2.4)(zod@3.25.76))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(zod@3.25.76)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@19.2.4))
+      '@vendoai/components':
+        specifier: workspace:*
+        version: link:../../packages/vendo-components
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../../packages/vendo-core
+      '@vendoai/next':
+        specifier: workspace:*
+        version: link:../../packages/vendo-next
+      '@vendoai/react':
+        specifier: workspace:*
+        version: link:../../packages/vendo-react
+      '@vendoai/runtime':
+        specifier: workspace:*
+        version: link:../../packages/vendo-runtime
+      '@vendoai/shell':
+        specifier: workspace:*
+        version: link:../../packages/vendo-shell
+      '@vendoai/stage':
+        specifier: workspace:*
+        version: link:../../packages/vendo-stage
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -139,27 +139,6 @@ importers:
       '@composio/vercel':
         specifier: 0.4.0
         version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
-      '@flowlet/components':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-components
-      '@flowlet/core':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-core
-      '@flowlet/next':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-next
-      '@flowlet/react':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-react
-      '@flowlet/runtime':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-runtime
-      '@flowlet/shell':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-shell
-      '@flowlet/stage':
-        specifier: workspace:*
-        version: link:../../packages/flowlet-stage
       '@radix-ui/react-dialog':
         specifier: ^1.1.17
         version: 1.1.17(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -175,6 +154,27 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.10
         version: 1.2.10(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@vendoai/components':
+        specifier: workspace:*
+        version: link:../../packages/vendo-components
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../../packages/vendo-core
+      '@vendoai/next':
+        specifier: workspace:*
+        version: link:../../packages/vendo-next
+      '@vendoai/react':
+        specifier: workspace:*
+        version: link:../../packages/vendo-react
+      '@vendoai/runtime':
+        specifier: workspace:*
+        version: link:../../packages/vendo-runtime
+      '@vendoai/shell':
+        specifier: workspace:*
+        version: link:../../packages/vendo-shell
+      '@vendoai/stage':
+        specifier: workspace:*
+        version: link:../../packages/vendo-stage
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -263,24 +263,24 @@ importers:
       '@ai-sdk/react':
         specifier: 3.0.30
         version: 3.0.30(react@18.3.1)(zod@3.25.76)
-      '@flowlet/components':
+      '@vendoai/components':
         specifier: workspace:*
-        version: link:../../packages/flowlet-components
-      '@flowlet/core':
+        version: link:../../packages/vendo-components
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../../packages/flowlet-core
-      '@flowlet/react':
+        version: link:../../packages/vendo-core
+      '@vendoai/react':
         specifier: workspace:*
-        version: link:../../packages/flowlet-react
-      '@flowlet/runtime':
+        version: link:../../packages/vendo-react
+      '@vendoai/runtime':
         specifier: workspace:*
-        version: link:../../packages/flowlet-runtime
-      '@flowlet/shell':
+        version: link:../../packages/vendo-runtime
+      '@vendoai/shell':
         specifier: workspace:*
-        version: link:../../packages/flowlet-shell
-      '@flowlet/stage':
+        version: link:../../packages/vendo-shell
+      '@vendoai/stage':
         specifier: workspace:*
-        version: link:../../packages/flowlet-stage
+        version: link:../../packages/vendo-stage
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -366,15 +366,15 @@ importers:
       '@ai-sdk/provider':
         specifier: 3.0.2
         version: 3.0.2
-      '@flowlet/core':
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../../packages/flowlet-core
-      '@flowlet/react':
+        version: link:../../packages/vendo-core
+      '@vendoai/react':
         specifier: workspace:*
-        version: link:../../packages/flowlet-react
-      '@flowlet/runtime':
+        version: link:../../packages/vendo-react
+      '@vendoai/runtime':
         specifier: workspace:*
-        version: link:../../packages/flowlet-runtime
+        version: link:../../packages/vendo-runtime
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -406,15 +406,15 @@ importers:
 
   examples/components:
     dependencies:
-      '@flowlet/components':
+      '@vendoai/components':
         specifier: workspace:*
-        version: link:../../packages/flowlet-components
-      '@flowlet/core':
+        version: link:../../packages/vendo-components
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../../packages/flowlet-core
-      '@flowlet/react':
+        version: link:../../packages/vendo-core
+      '@vendoai/react':
         specifier: workspace:*
-        version: link:../../packages/flowlet-react
+        version: link:../../packages/vendo-react
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -440,12 +440,12 @@ importers:
 
   examples/node:
     dependencies:
-      '@flowlet/next':
+      '@vendoai/next':
         specifier: workspace:*
-        version: link:../../packages/flowlet-next
-      '@flowlet/server':
+        version: link:../../packages/vendo-next
+      '@vendoai/server':
         specifier: workspace:*
-        version: link:../../packages/flowlet-server
+        version: link:../../packages/vendo-server
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -477,15 +477,15 @@ importers:
 
   examples/shell:
     dependencies:
-      '@flowlet/core':
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../../packages/flowlet-core
-      '@flowlet/react':
+        version: link:../../packages/vendo-core
+      '@vendoai/react':
         specifier: workspace:*
-        version: link:../../packages/flowlet-react
-      '@flowlet/shell':
+        version: link:../../packages/vendo-react
+      '@vendoai/shell':
         specifier: workspace:*
-        version: link:../../packages/flowlet-shell
+        version: link:../../packages/vendo-shell
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -512,29 +512,35 @@ importers:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)(terser@5.48.0)
 
-  packages/flowlet-cli:
+  packages/vendo-cli:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
         version: 3.0.12(zod@3.25.76)
-      '@flowlet/components':
-        specifier: workspace:*
-        version: link:../flowlet-components
-      '@flowlet/core':
-        specifier: workspace:*
-        version: link:../flowlet-core
-      '@flowlet/sandbox-shims':
-        specifier: workspace:*
-        version: link:../flowlet-sandbox-shims
-      '@flowlet/server':
-        specifier: workspace:*
-        version: link:../flowlet-server
+      '@scarf/scarf':
+        specifier: ^1.4.0
+        version: 1.4.0
       '@tailwindcss/browser':
         specifier: ^4.1.0
         version: 4.3.2
       '@tailwindcss/cli':
         specifier: ^4.1.0
         version: 4.3.2
+      '@vendoai/components':
+        specifier: workspace:*
+        version: link:../vendo-components
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../vendo-core
+      '@vendoai/sandbox-shims':
+        specifier: workspace:*
+        version: link:../vendo-sandbox-shims
+      '@vendoai/server':
+        specifier: workspace:*
+        version: link:../vendo-server
+      '@vendoai/telemetry':
+        specifier: workspace:*
+        version: link:../vendo-telemetry
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -570,14 +576,14 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
 
-  packages/flowlet-components:
+  packages/vendo-components:
     dependencies:
-      '@flowlet/core':
-        specifier: workspace:*
-        version: link:../flowlet-core
       '@openuidev/react-ui':
         specifier: ^0.12.1
         version: 0.12.1(@openuidev/react-headless@0.9.1(react@18.3.1)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1)))(@openuidev/react-lang@0.2.8(react@18.3.1)(zod@3.25.76))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(zod@3.25.76)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1))
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../vendo-core
       d3-sankey:
         specifier: ^0.12.3
         version: 0.12.3
@@ -631,7 +637,7 @@ importers:
         specifier: ^3.25.2
         version: 3.25.2(zod@3.25.76)
 
-  packages/flowlet-core:
+  packages/vendo-core:
     dependencies:
       '@ai-sdk/provider':
         specifier: 3.0.2
@@ -662,29 +668,32 @@ importers:
         specifier: ^3.24.0
         version: 3.25.2(zod@3.25.76)
 
-  packages/flowlet-next:
+  packages/vendo-next:
     dependencies:
-      '@flowlet/components':
+      '@scarf/scarf':
+        specifier: ^1.4.0
+        version: 1.4.0
+      '@vendoai/components':
         specifier: workspace:*
-        version: link:../flowlet-components
-      '@flowlet/core':
+        version: link:../vendo-components
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../flowlet-core
-      '@flowlet/react':
+        version: link:../vendo-core
+      '@vendoai/react':
         specifier: workspace:*
-        version: link:../flowlet-react
-      '@flowlet/runtime':
+        version: link:../vendo-react
+      '@vendoai/runtime':
         specifier: workspace:*
-        version: link:../flowlet-runtime
-      '@flowlet/server':
+        version: link:../vendo-runtime
+      '@vendoai/server':
         specifier: workspace:*
-        version: link:../flowlet-server
-      '@flowlet/shell':
+        version: link:../vendo-server
+      '@vendoai/shell':
         specifier: workspace:*
-        version: link:../flowlet-shell
-      '@flowlet/store':
+        version: link:../vendo-shell
+      '@vendoai/store':
         specifier: workspace:*
-        version: link:../flowlet-store
+        version: link:../vendo-store
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -720,17 +729,17 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
-  packages/flowlet-react:
+  packages/vendo-react:
     dependencies:
       '@ai-sdk/react':
         specifier: 3.0.30
         version: 3.0.30(react@18.3.1)(zod@3.25.76)
-      '@flowlet/core':
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../flowlet-core
-      '@flowlet/stage':
+        version: link:../vendo-core
+      '@vendoai/stage':
         specifier: workspace:*
-        version: link:../flowlet-stage
+        version: link:../vendo-stage
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -763,7 +772,7 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
 
-  packages/flowlet-runtime:
+  packages/vendo-runtime:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
@@ -780,12 +789,12 @@ importers:
       '@composio/vercel':
         specifier: 0.4.0
         version: 0.4.0(@composio/core@0.4.0(ws@8.21.0)(zod@3.25.76))(ai@6.0.28(zod@3.25.76))
-      '@flowlet/core':
-        specifier: workspace:*
-        version: link:../flowlet-core
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../vendo-core
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -805,9 +814,6 @@ importers:
       '@ai-sdk/react':
         specifier: 3.0.30
         version: 3.0.30(react@18.3.1)(zod@3.25.76)
-      '@flowlet/react':
-        specifier: workspace:*
-        version: link:../flowlet-react
       '@testing-library/react':
         specifier: ^16.0.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -817,6 +823,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.0
         version: 19.2.3(@types/react@19.2.17)
+      '@vendoai/react':
+        specifier: workspace:*
+        version: link:../vendo-react
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1
@@ -833,7 +842,7 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
-  packages/flowlet-sandbox-shims:
+  packages/vendo-sandbox-shims:
     devDependencies:
       '@testing-library/react':
         specifier: ^16.1.0
@@ -854,7 +863,7 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
-  packages/flowlet-server:
+  packages/vendo-server:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
@@ -865,21 +874,24 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.0
         version: 3.0.80(zod@3.25.76)
-      '@flowlet/components':
+      '@vendoai/components':
         specifier: workspace:*
-        version: link:../flowlet-components
-      '@flowlet/core':
+        version: link:../vendo-components
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../flowlet-core
-      '@flowlet/runtime':
+        version: link:../vendo-core
+      '@vendoai/runtime':
         specifier: workspace:*
-        version: link:../flowlet-runtime
-      '@flowlet/shell':
+        version: link:../vendo-runtime
+      '@vendoai/shell':
         specifier: workspace:*
-        version: link:../flowlet-shell
-      '@flowlet/store':
+        version: link:../vendo-shell
+      '@vendoai/store':
         specifier: workspace:*
-        version: link:../flowlet-store
+        version: link:../vendo-store
+      '@vendoai/telemetry':
+        specifier: workspace:*
+        version: link:../vendo-telemetry
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -897,17 +909,17 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
 
-  packages/flowlet-shell:
+  packages/vendo-shell:
     dependencies:
       '@ai-sdk/react':
         specifier: 3.0.30
         version: 3.0.30(react@18.3.1)(zod@3.25.76)
-      '@flowlet/core':
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../flowlet-core
-      '@flowlet/react':
+        version: link:../vendo-core
+      '@vendoai/react':
         specifier: workspace:*
-        version: link:../flowlet-react
+        version: link:../vendo-react
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
@@ -961,11 +973,11 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
 
-  packages/flowlet-stage:
+  packages/vendo-stage:
     dependencies:
-      '@flowlet/core':
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../flowlet-core
+        version: link:../vendo-core
     devDependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.107.0
@@ -998,17 +1010,17 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
 
-  packages/flowlet-store:
+  packages/vendo-store:
     dependencies:
       '@electric-sql/pglite':
         specifier: ^0.2.0
         version: 0.2.17
-      '@flowlet/core':
+      '@vendoai/core':
         specifier: workspace:*
-        version: link:../flowlet-core
-      '@flowlet/runtime':
+        version: link:../vendo-core
+      '@vendoai/runtime':
         specifier: workspace:*
-        version: link:../flowlet-runtime
+        version: link:../vendo-runtime
       drizzle-orm:
         specifier: ^0.36.0
         version: 0.36.4(@electric-sql/pglite@0.2.17)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(@types/react@19.2.17)(pg@8.22.0)(react@19.2.4)
@@ -1022,6 +1034,18 @@ importers:
       drizzle-kit:
         specifier: ^0.28.0
         version: 0.28.1
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
+  packages/vendo-telemetry:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -4042,6 +4066,9 @@ packages:
 
   '@rushstack/eslint-patch@1.16.1':
     resolution: {integrity: sha512-TvZbIpeKqGQQ7X0zSCvPH9riMSFQFSggnfBjFZ1mEoILW+UuXCKwOoPcgjMwiUtRqFZ8jWhPJc4um14vC6I4ag==}
+
+  '@scarf/scarf@1.4.0':
+    resolution: {integrity: sha512-xxeapPiUXdZAE3che6f3xogoJPeZgig6omHEy1rIY5WVsB3H2BHNnZH+gHG6x91SCWyQCzWGsuL2Hh3ClO5/qQ==}
 
   '@sinclair/typebox@0.24.51':
     resolution: {integrity: sha512-1P1OROm/rdubP5aFDSZQILU0vrLCJ4fvHt6EoqHEM+2D/G5MK3bIaymUKLit8Js9gbns5UyJnkP/TZROLw4tUA==}
@@ -14228,6 +14255,8 @@ snapshots:
   '@rtsao/scc@1.1.0': {}
 
   '@rushstack/eslint-patch@1.16.1': {}
+
+  '@scarf/scarf@1.4.0': {}
 
   '@sinclair/typebox@0.24.51': {}
 

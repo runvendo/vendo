@@ -2,7 +2,7 @@
 /**
  * Remix fast-edits latency benchmark (spec 2026-07-04, "Benchmarks").
  *
- * Drives a RUNNING demo host's flowlet chat route with scoped remix
+ * Drives a RUNNING demo host's vendo chat route with scoped remix
  * conversations and reports, per turn: wall-clock to first stream part, to the
  * `data-ui` part, total stream bytes, tool parts seen (name × state), hunk
  * failures (edit_view output-error), JSON-parse stream errors, and whether an
@@ -17,7 +17,7 @@
  * server-side. First remix + follow-up edit scenarios; "edit" reuses the
  * envelope captured from the first remix of the same run (skipped with a note
  * when the server ships none, e.g. on main). Server-side apply/compile timings
- * come from FLOWLET_BENCH=1 logs on the server, not this client.
+ * come from VENDO_BENCH=1 logs on the server, not this client.
  * send→stage-rendered is measured separately in the browser (Task 12), not here.
  */
 
@@ -101,7 +101,7 @@ async function runTurn(messages) {
   };
   let res;
   try {
-    res = await fetch(`${BASE}/api/flowlet/chat`, {
+    res = await fetch(`${BASE}/api/vendo/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages }),

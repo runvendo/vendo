@@ -1,7 +1,7 @@
 /**
  * Keeps Cadence's OpenAPI spec honest: every documented operation must have a
  * real route handler, and every route handler must be documented. The spec is
- * the host contract Flowlet's agent tools are derived from (ENG-202).
+ * the host contract Vendo's agent tools are derived from (ENG-202).
  */
 import { describe, expect, it } from "vitest"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
@@ -20,7 +20,7 @@ function routeFileFor(path: string): string {
 }
 
 /** Every route.ts under src/app/api, as an OpenAPI-style path string.
- *  `/api/flowlet/**` is excluded on purpose: those are Flowlet's OWN plumbing
+ *  `/api/vendo/**` is excluded on purpose: those are Vendo's OWN plumbing
  *  (chat stream, stage actions, scheduler tick), not part of the host API
  *  contract the agent's tools are derived from — documenting them would hand
  *  the agent its own transport as tools (the ENG-197 fidelity report flags
@@ -33,7 +33,7 @@ function apiRoutePaths(): string[] {
       const segments = dir.split(sep).map(s => s.replace(/^\[(.+)\]$/, "{$1}"))
       return `/${segments.join("/")}`
     })
-    .filter(path => !path.startsWith("/api/flowlet/"))
+    .filter(path => !path.startsWith("/api/vendo/"))
     .sort()
 }
 

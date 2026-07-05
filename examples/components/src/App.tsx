@@ -1,9 +1,9 @@
 import type { ComponentType } from "react";
 import {
   prewiredImpls,
-  FlowletThemeProvider,
+  VendoThemeProvider,
   defaultBrand,
-} from "@flowlet/components";
+} from "@vendoai/components";
 
 // F4 demo: render each pre-wired component through its impl, themed. (The F1
 // StubRenderer was replaced by the real stage in F3; this example only needs to
@@ -122,7 +122,7 @@ const samples = [
     name: "Accordion",
     props: {
       items: [
-        { title: "What is Flowlet?", content: "Flowlet is an AI-native fintech platform that builds UI on the fly." },
+        { title: "What is Vendo?", content: "Vendo is an AI-native fintech platform that builds UI on the fly." },
         { title: "How secure is my data?", content: "All data is encrypted in transit and at rest using AES-256." },
         { title: "Can I export my transactions?", content: "Yes, you can export to CSV or PDF from the Reports section." },
       ],
@@ -137,7 +137,7 @@ const samples = [
       items: [
         {
           title: "Earn 2% Cashback",
-          body: "Use your Flowlet card on everyday purchases and earn cashback automatically.",
+          body: "Use your Vendo card on everyday purchases and earn cashback automatically.",
           imageUrl: "https://picsum.photos/seed/promo1/400/200",
         },
         {
@@ -188,7 +188,7 @@ const samples = [
         { title: "Create Account", text: "Sign up with your email and create a secure password." },
         { title: "Verify Identity", text: "Upload a government-issued ID to complete KYC." },
         { title: "Link Bank", text: "Connect your existing bank account via Plaid." },
-        { title: "Start Banking", text: "Your Flowlet account is ready to use." },
+        { title: "Start Banking", text: "Your Vendo account is ready to use." },
       ],
     },
   },
@@ -212,9 +212,9 @@ const samples = [
     source: "prewired" as const,
     name: "Image",
     props: {
-      src: "https://picsum.photos/seed/flowlet/760/240",
-      alt: "Flowlet dashboard preview",
-      caption: "The Flowlet AI banking dashboard adapts to your financial context.",
+      src: "https://picsum.photos/seed/vendo/760/240",
+      alt: "Vendo dashboard preview",
+      caption: "The Vendo AI banking dashboard adapts to your financial context.",
     },
   },
   {
@@ -258,16 +258,16 @@ const samples = [
     name: "CodeBlock",
     props: {
       language: "typescript",
-      code: `import { createStubAgent } from "@flowlet/core";
-import { FlowletProvider } from "@flowlet/react";
+      code: `import { createStubAgent } from "@vendoai/core";
+import { VendoProvider } from "@vendoai/react";
 
 const agent = createStubAgent();
 
 export function App() {
   return (
-    <FlowletProvider agent={agent} components={[]}>
+    <VendoProvider agent={agent} components={[]}>
       {/* your UI */}
-    </FlowletProvider>
+    </VendoProvider>
   );
 }`,
     },
@@ -289,9 +289,9 @@ export function App() {
 
 export function App() {
   return (
-    <FlowletThemeProvider brand={defaultBrand}>
+    <VendoThemeProvider brand={defaultBrand}>
       <main style={{ display: "grid", gap: 24, maxWidth: 760, margin: "40px auto", padding: 16 }}>
-        <h1 style={{ fontFamily: "system-ui", marginBottom: 8 }}>Flowlet pre-wired components</h1>
+        <h1 style={{ fontFamily: "system-ui", marginBottom: 8 }}>Vendo pre-wired components</h1>
         {samples.map((node) => {
           const Impl = impls[node.name];
           return (
@@ -304,6 +304,6 @@ export function App() {
           );
         })}
       </main>
-    </FlowletThemeProvider>
+    </VendoThemeProvider>
   );
 }

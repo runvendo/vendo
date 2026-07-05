@@ -1,16 +1,16 @@
 /**
  * Node ESM loader hook used only by drill-persistence-store.mjs.
  *
- * @flowlet/store's compiled dist writes relative imports WITH explicit ".js"
+ * @vendoai/store's compiled dist writes relative imports WITH explicit ".js"
  * extensions (its source already spells them that way — it's designed to run
  * standalone under plain Node, per Task 6/19 of the persistence plan). But its
- * declared runtime dependency @flowlet/runtime (and, transitively,
- * @flowlet/core) do NOT: their dist output carries bundler-style extensionless
+ * declared runtime dependency @vendoai/runtime (and, transitively,
+ * @vendoai/core) do NOT: their dist output carries bundler-style extensionless
  * relative imports (e.g. `from "./engine"`), which only resolve through a
  * bundler (webpack/Turbopack/vite) or a resolution-tolerant test runner
- * (vitest) — not plain Node ESM. This is the same gap flowlet-cli's own
+ * (vitest) — not plain Node ESM. This is the same gap vendo-cli's own
  * bins already work around by vite-bundling instead of running dist directly
- * (see packages/flowlet-cli's bundle-assets step).
+ * (see packages/vendo-cli's bundle-assets step).
  *
  * Rather than change those packages' build output (a repo-wide, cross-cutting
  * decision out of scope for this drill), this hook retries a failed relative

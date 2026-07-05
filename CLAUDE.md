@@ -1,6 +1,6 @@
-# Flowlet
+# Vendo
 
-Flowlet is a devtool that lets a company's users customize its product: an embedded agent that acts through the host's own API as the user and renders generated UI in a sandboxed, brand-native surface.
+Vendo is a devtool that lets a company's users customize its product: an embedded agent that acts through the host's own API as the user and renders generated UI in a sandboxed, brand-native surface.
 
 ## Read first
 
@@ -31,5 +31,5 @@ Flowlet is a devtool that lets a company's users customize its product: an embed
 
 - `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
 - `pnpm demo` — run the demo-bank host app (secrets via Infisical)
-- `pnpm demo:accounting` — run the Cadence accounting demo app (secrets via Infisical: the embedded Flowlet agent needs `ANTHROPIC_API_KEY`)
-- `node packages/flowlet-cli/dist/cli.js init <dir>` — one-command install: extractor (ENG-197) + Next.js App Router codemod (route handler, provider wrap, .env.example, sandbox assets); LLM steps need a provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`), else deterministic extraction; `publish` is stubbed until ENG-198. Install story: [`docs/quickstart.md`](docs/quickstart.md)
+- `pnpm demo:accounting` — run the Cadence accounting demo app (secrets via Infisical: the embedded Vendo agent needs `ANTHROPIC_API_KEY`)
+- `node packages/vendo-cli/dist/cli.js init <dir>` — one-command install: extractor (ENG-197) + Next.js App Router codemod (route handler, provider wrap, .env.example, sandbox assets); LLM steps need a provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`), else deterministic extraction; `publish` is stubbed until ENG-198. Install story: [`docs/quickstart.md`](docs/quickstart.md)
