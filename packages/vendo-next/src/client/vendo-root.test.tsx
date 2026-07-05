@@ -117,6 +117,21 @@ describe("VendoRoot", () => {
     serverStoreSpy.mockRestore();
   });
 
+  it("rehydrates the durable thread on mount (GET /threads/:threadId)", async () => {
+    const fetchMock = stubFetch({ chat: true, integrations: false, voice: false });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <VendoRoot productName="Acme" basePath="/api/vendo" threadId="my thread">
+        <div />
+      </VendoRoot>,
+    );
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([u]) => String(u).includes("/api/vendo/threads/my%20thread")),
+      ).toBe(true),
+    );
+  });
+
   it("tolerates an invalid theme by falling back to the default brand", () => {
     vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false }));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

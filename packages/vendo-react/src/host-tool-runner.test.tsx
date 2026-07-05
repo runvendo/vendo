@@ -160,6 +160,65 @@ describe("chat identity stability", () => {
   });
 });
 
+describe("thread rehydration (loadHistory)", () => {
+  const restoredMessages: VendoUIMessage[] = [
+    { id: "m1", role: "user", parts: [{ type: "text", text: "what did I spend?" }] },
+    { id: "m2", role: "assistant", parts: [{ type: "text", text: "You spent $87." }] },
+  ] as VendoUIMessage[];
+
+  function probeSetup(loadHistory: () => Promise<VendoUIMessage[]>) {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+    let chat: Chat<VendoUIMessage> | undefined;
+    function Probe() {
+      chat = useVendoContext().chat;
+      return null;
+    }
+    render(
+      <VendoProvider transport={transport} components={[]} loadHistory={loadHistory}>
+        <Probe />
+      </VendoProvider>,
+    );
+    if (!chat) throw new Error("chat not captured");
+    return chat;
+  }
+
+  it("seeds an empty chat with the persisted thread messages", async () => {
+    const chat = probeSetup(async () => restoredMessages);
+    await waitFor(() => expect(chat.messages.length).toBe(2));
+    expect(chat.messages[0]!.id).toBe("m1");
+    expect(chat.messages[1]!.id).toBe("m2");
+  });
+
+  it("never clobbers a conversation that started before the history resolved", async () => {
+    let resolveHistory!: (m: VendoUIMessage[]) => void;
+    const gate = new Promise<VendoUIMessage[]>((resolve) => {
+      resolveHistory = resolve;
+    });
+    const chat = probeSetup(() => gate);
+
+    await chat.sendMessage({ text: "fresh question" });
+    await waitFor(() => expect(chat.status).toBe("ready"));
+    const liveIds = chat.messages.map((m) => m.id);
+    expect(liveIds.length).toBeGreaterThan(0);
+
+    resolveHistory(restoredMessages);
+    // Give the (skipped) seeding a chance to run; the live turn must survive.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(chat.messages.map((m) => m.id)).toEqual(liveIds);
+  });
+
+  it("ignores a failed history load", async () => {
+    const chat = probeSetup(async () => {
+      throw new Error("boom");
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(chat.messages.length).toBe(0);
+  });
+});
+
 describe("host tool runner", () => {
   it("executes an un-gated host tool in the browser and resubmits with the output", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ data: [{ id: "acct_1" }] }));

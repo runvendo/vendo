@@ -142,6 +142,22 @@ export function VendoRoot({
     [basePath, threadId],
   );
 
+  // The read half of that durable thread: on mount, restore the persisted
+  // messages (GET /threads/:id) so a reload — including one right after a
+  // stream died mid-turn — brings back every settled message instead of an
+  // empty thread. VendoProvider only seeds a still-empty, idle chat.
+  const loadHistory = useMemo(
+    () => async (): Promise<VendoUIMessage[]> => {
+      const res = await fetch(`${basePath}/threads/${encodeURIComponent(threadId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return [];
+      const body = (await res.json()) as unknown;
+      return Array.isArray(body) ? (body as VendoUIMessage[]) : [];
+    },
+    [basePath, threadId],
+  );
+
   // Saved vendos survive reloads. Server-backed (durable across devices,
   // no localStorage quota) when the handler reports the `storage` capability;
   // localStorage otherwise — including the optimistic `capabilities === null`
@@ -208,6 +224,7 @@ export function VendoRoot({
       components={[]}
       threadId={threadId}
       hostTools={{ definitions: hostToolDefs }}
+      loadHistory={loadHistory}
     >
       <VendoThemeProvider brand={brand}>
         <VendoShellProvider

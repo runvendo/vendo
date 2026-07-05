@@ -56,10 +56,26 @@ export interface VendoProviderProps {
   threadId?: string;
   /** Enable the browser-side executor for the host's own API tools. */
   hostTools?: HostToolsConfig;
+  /**
+   * Load this thread's persisted messages (e.g. from the handler's
+   * `GET /threads/:id`). Called once per Chat instance; the result seeds the
+   * chat ONLY while it is still empty and idle, so a reload after a
+   * mid-stream failure restores every settled message without ever
+   * clobbering a conversation that already started.
+   */
+  loadHistory?: () => Promise<VendoUIMessage[]>;
   children: ReactNode;
 }
 
-export function VendoProvider({ agent, transport, components, threadId, hostTools, children }: VendoProviderProps) {
+export function VendoProvider({
+  agent,
+  transport,
+  components,
+  threadId,
+  hostTools,
+  loadHistory,
+  children,
+}: VendoProviderProps) {
   const registry = useMemo(() => createRegistry(components), [components]);
   const local = useMemo<LocalTransport>(() => {
     if (transport) return { transport };
@@ -96,6 +112,40 @@ export function VendoProvider({ agent, transport, components, threadId, hostTool
       }),
     [local, threadId, hostToolNames],
   );
+  // Rehydrate the durable thread (ENG-193 §6.2's server persistence finally
+  // has a client read path): a reload — including one right after a stream
+  // died mid-turn — restores every settled message instead of wiping the
+  // thread. Ref'd so an inline `loadHistory` never re-runs the effect; the
+  // load happens once per Chat instance.
+  const loadHistoryRef = useRef(loadHistory);
+  useEffect(() => {
+    loadHistoryRef.current = loadHistory;
+  }, [loadHistory]);
+  useEffect(() => {
+    const load = loadHistoryRef.current;
+    if (!load) return;
+    // A conversation already underway (another surface sent first) wins.
+    if (chat.messages.length > 0) return;
+    let cancelled = false;
+    void Promise.resolve()
+      .then(load)
+      .then((restored) => {
+        if (cancelled || !Array.isArray(restored) || restored.length === 0) return;
+        // Seed ONLY a still-empty, idle chat: a turn that began while the
+        // history was in flight must never be clobbered.
+        if (chat.status !== "ready" || chat.messages.length > 0) return;
+        chat.messages = restored;
+      })
+      .catch((err: unknown) => {
+        // Restore is best-effort: a persistence read failure must never
+        // break a fresh conversation.
+        console.warn("[vendo] failed to restore the thread history:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chat]);
+
   const value = useMemo<VendoContextValue>(() => ({ registry, local, chat }), [registry, local, chat]);
   return (
     <VendoContext.Provider value={value}>
