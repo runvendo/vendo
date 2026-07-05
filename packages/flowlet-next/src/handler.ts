@@ -393,6 +393,11 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       // only inspects the LAST path segment, so this is "resolve", not the
       // full mount path.
       case "resolve": {
+        // Guard against a future sibling route also ending in "resolve" (the
+        // same trap the "revoke" case below already disambiguates).
+        if (!new URL(req.url).pathname.includes("/parked-actions/resolve")) {
+          return Response.json({ error: "not found" }, { status: 404 });
+        }
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;

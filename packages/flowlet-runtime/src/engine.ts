@@ -138,8 +138,10 @@ function defaultAuditPrincipal(principal: FlowletPrincipal): Principal {
   return { tenantId: "", subject: principal.userId };
 }
 
-/** Bound on the client-tool-audit dedupe FIFO (see `FlowletAgentConfig.audit`). */
-const MAX_AUDITED_CLIENT_CALLS = 512;
+/** Bound on the client-tool-audit dedupe FIFO (see `FlowletAgentConfig.audit`).
+ *  Sized so a long-lived instance can't realistically evict a live id and
+ *  double-count within one process lifetime (PR #40 review). */
+const MAX_AUDITED_CLIENT_CALLS = 4096;
 
 /** Structural view of the ai SDK tool-part shape scanned for client-executed
  *  results — mirrors `consent.ts`'s `ApprovalPart`, keyed by `output-available`

@@ -7,6 +7,7 @@
  * so the generation is the only cache key.)
  */
 import { createSteeringTools } from "@flowlet/runtime";
+import { cadenceHostToolDefs } from "@/flowlet/host-tools";
 import { createDemoAgent } from "@/flowlet/agent";
 import { handleChat } from "@/flowlet/chat-handler";
 import { demoTools } from "@/flowlet/tools";
@@ -52,6 +53,9 @@ function getAgent(): FlowletAgent {
             knownToolNames: () => [
               ...Object.keys(demoTools()),
               ...Object.keys(automationsWorld().authoringTools()),
+              // Host tools (sendClientMessage, listClients, …): a glob like
+              // "send*" must validate against these too (PR #40 review fix).
+              ...cadenceHostToolDefs.map((def) => def.name),
               "GMAIL_SEND_EMAIL",
               "GOOGLECALENDAR_CREATE_EVENT",
             ],

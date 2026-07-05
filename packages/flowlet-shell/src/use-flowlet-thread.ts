@@ -201,14 +201,13 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
         continue;
       }
       const groupKey = `${item.messageId}::${item.toolName}`;
-      const existing = approvalGroupIndex.get(groupKey);
-      if (existing !== undefined) {
+      if (approvalGroupIndex.has(groupKey)) {
         // A sibling of an already-seen tool in this message: never pushed as
         // its own render item. The second pass below collects every sibling
         // straight from `items` (not `out`) and promotes the FIRST sighting's
         // placeholder into the batch, so this one doesn't need its own slot.
-        const group = out[existing] as { kind: string; items?: typeof item[] };
-        if (group.kind === "approval-batch") group.items!.push(item);
+        // (During this pass the placeholder is always still a plain
+        // "approval" — promotion only happens in the second pass.)
         continue;
       }
       // First sighting: hold a place. It gets promoted to a real
