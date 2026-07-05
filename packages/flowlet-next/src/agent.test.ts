@@ -82,3 +82,35 @@ describe("createAgentCache", () => {
     expect(getAgent()).not.toBe(a);
   });
 });
+
+// Pre-migration baseline for the default prompt (shared-prompt-core spec,
+// docs/superpowers/specs/2026-07-04-context-engineering-design.md). The
+// migration diff test anchors here — regenerate ONLY with an intentional,
+// reviewed prompt change (UPDATE_PROMPT_BASELINE=1 pnpm test).
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { prewiredComponents } from "@flowlet/components/descriptors";
+
+describe("default prompt baseline", () => {
+  const fixturePath = join(__dirname, "__fixtures__", "default-instructions.baseline.txt");
+
+  it("matches the frozen pre-migration fixture (all sections enabled)", () => {
+    const current = buildInstructions({
+      productName: "Acme",
+      brand: defaultBrand,
+      // One stable catalog entry exercises the host-components section.
+      components: [prewiredComponents[0]],
+      hostToolNames: ["list_things", "create_thing"],
+      integrations: [
+        { id: "gmail", name: "Gmail" },
+        { id: "slack", name: "Slack" },
+      ],
+      automations: true,
+      extra: "HOST EXTRA SECTION — verbatim.",
+    });
+    if (process.env.UPDATE_PROMPT_BASELINE) {
+      writeFileSync(fixturePath, current);
+    }
+    expect(current).toBe(readFileSync(fixturePath, "utf8"));
+  });
+});

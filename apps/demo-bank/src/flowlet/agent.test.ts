@@ -36,3 +36,23 @@ describe("createDemoAgent", () => {
     expect(chunks.some((c) => c.type === "data-ui")).toBe(true);
   });
 });
+
+// Pre-migration baseline: the exact prompt shipped before the shared prompt
+// core (docs/superpowers/specs/2026-07-04-context-engineering-design.md).
+// The migration diff test anchors on this fixture — regenerate ONLY with an
+// intentional, reviewed prompt change (UPDATE_PROMPT_BASELINE=1 pnpm test).
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { buildInstructions } from "./agent";
+
+describe("chat prompt baseline", () => {
+  const fixturePath = join(__dirname, "__fixtures__", "chat-instructions.baseline.txt");
+
+  it("matches the frozen pre-migration fixture", () => {
+    const current = buildInstructions();
+    if (process.env.UPDATE_PROMPT_BASELINE) {
+      writeFileSync(fixturePath, current);
+    }
+    expect(current).toBe(readFileSync(fixturePath, "utf8"));
+  });
+});
