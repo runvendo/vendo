@@ -13,10 +13,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { toolsManifestSchema, type ToolsManifest } from "@flowlet/core";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@flowlet/components/theme";
+import type { McpServerConfig } from "@flowlet/runtime";
+import { mcpJsonSchema } from "./mcp-config";
 
 export interface LoadedFlowletDir {
   brand: BrandTokens;
   manifest: ToolsManifest;
+  /** Raw (pre-env-substitution) servers from mcp.json; absent file → undefined. */
+  mcpServers?: McpServerConfig[];
 }
 
 const EMPTY_MANIFEST: ToolsManifest = { version: 1, tools: [], events: [] };
@@ -59,5 +63,15 @@ export function loadFlowletDir(dir: string = path.join(process.cwd(), ".flowlet"
     manifest = parsed.data;
   }
 
-  return { brand, manifest };
+  const mcpRaw = readJson(path.join(dir, "mcp.json"));
+  let mcpServers: McpServerConfig[] | undefined;
+  if (mcpRaw !== undefined) {
+    const parsed = mcpJsonSchema.safeParse(mcpRaw);
+    if (!parsed.success) {
+      throw new Error(`mcp.json does not match the MCP servers schema: ${parsed.error.message}`);
+    }
+    mcpServers = parsed.data.servers;
+  }
+
+  return { brand, manifest, ...(mcpServers ? { mcpServers } : {}) };
 }

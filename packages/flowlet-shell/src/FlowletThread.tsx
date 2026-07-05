@@ -16,6 +16,10 @@ import { IntegrationsPicker } from "./components/IntegrationsPicker";
 import { ConnectDock } from "./components/ConnectDock";
 import { ConnectTray } from "./components/ConnectTray";
 import { friendlyError, logErrorDetail } from "./components/error-copy";
+import { VoiceStage } from "./voice/VoiceStage";
+import { useVoiceSession } from "./voice/use-voice-session";
+import { voiceSessionMessages } from "./voice/voice-messages";
+import type { VoiceDriver } from "./voice/voice-session";
 
 export interface FlowletThreadProps {
   greeting?: string;
@@ -43,17 +47,52 @@ export interface FlowletThreadProps {
    * omit to hide the feedback controls entirely.
    */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
+  /**
+   * Realtime voice seam (ENG-185). When present, the composer grows a mic;
+   * tapping it swaps this surface into the voice stage. Ending the session
+   * lands its transcript + views in this thread as ordinary history.
+   */
+  voice?: VoiceDriver;
 }
 
 export function FlowletThread({
   greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
-  heroComposer = false, onPin, onFeedback,
+  heroComposer = false, onPin, onFeedback, voice,
 }: FlowletThreadProps) {
   const chat = useFlowletThread();
   const { integrations, registry, scope, remixes, components } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
+  const voiceSession = useVoiceSession(voice);
+
+  // Context carry-over: a session started mid-thread knows what was just
+  // typed. Compact tail of the conversation, hard-capped.
+  const startVoice = () => {
+    const lines: string[] = [];
+    for (const item of chat.items.slice(-16)) {
+      if (item.kind === "text" && item.text.trim()) {
+        lines.push(`${item.role}: ${item.text.trim()}`);
+      }
+    }
+    const context = lines.join("\n").slice(-2000);
+    voiceSession.start(context ? { context } : undefined);
+  };
+
+  // Cmd/Ctrl+Shift+K toggles a voice session (sibling of the overlay's Cmd+K).
+  useEffect(() => {
+    if (!voiceSession.supported || typeof window === "undefined") return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (voiceSession.active) voiceSession.end();
+        else startVoice();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceSession.supported, voiceSession.active, chat.items]);
 
   // The most recent rendered view — what "Pin to card" commits.
   const latestNode = useMemo<UINode | null>(() => {
@@ -125,6 +164,7 @@ export function FlowletThread({
       onSend={send}
       status={chat.status}
       onStop={() => chat.stop()}
+      onVoice={voiceSession.supported ? startVoice : undefined}
       accessory={
         <ConnectDock
           integrations={tools}
@@ -150,6 +190,29 @@ export function FlowletThread({
       {composerEl}
     </div>
   );
+
+  // The stage replaces the surface (the decided ENG-185 model: voice fills the
+  // container it was launched from). On close, the session's transcript and
+  // views land in this thread as ordinary messages — the record survives.
+  if (voiceSession.active) {
+    return (
+      <div className="fl-thread">
+        <VoiceStage
+          snapshot={voiceSession.snapshot}
+          onMute={voiceSession.mute}
+          onEnd={voiceSession.end}
+          onApprove={voiceSession.approve}
+          onDecline={voiceSession.decline}
+          onPin={onPin}
+          onClosed={() => {
+            const finalSnapshot = voiceSession.close();
+            const landed = voiceSessionMessages(finalSnapshot);
+            if (landed.length > 0) void chat.setMessages([...chat.messages, ...landed]);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="fl-thread">
