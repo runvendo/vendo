@@ -37,20 +37,22 @@ describe("Table", () => {
 describe("rich raw rows (data-bound refreshable views)", () => {
   it("renders declared scalar columns and ignores nested undeclared fields", () => {
     render(
-      <Table
-        columns={[
-          { key: "merchant", label: "Merchant" },
-          { key: "amount", label: "Amount" },
-        ]}
-        rows={[
-          {
-            merchant: "Spotify",
-            amount: -1199,
-            statusTimeline: [{ state: "Posted", at: "2026-07-04" }],
-            meta: { deep: true },
-          },
-        ]}
-      />,
+      <FlowletThemeProvider>
+        <Table
+          columns={[
+            { key: "merchant", label: "Merchant" },
+            { key: "amount", label: "Amount" },
+          ]}
+          rows={[
+            {
+              merchant: "Spotify",
+              amount: -1199,
+              statusTimeline: [{ state: "Posted", at: "2026-07-04" }],
+              meta: { deep: true },
+            },
+          ]}
+        />
+      </FlowletThemeProvider>,
     );
     expect(screen.queryByTestId("flowlet-invalid-props")).toBeNull();
     expect(screen.getByText("Spotify")).toBeInTheDocument();
@@ -59,10 +61,12 @@ describe("rich raw rows (data-bound refreshable views)", () => {
 
   it("renders a non-scalar cell for a DECLARED column as an em dash, not JSON", () => {
     render(
-      <Table
-        columns={[{ key: "statusTimeline", label: "Status" }]}
-        rows={[{ statusTimeline: [{ state: "Posted" }] }]}
-      />,
+      <FlowletThemeProvider>
+        <Table
+          columns={[{ key: "statusTimeline", label: "Status" }]}
+          rows={[{ statusTimeline: [{ state: "Posted" }] }]}
+        />
+      </FlowletThemeProvider>,
     );
     expect(screen.queryByTestId("flowlet-invalid-props")).toBeNull();
     expect(screen.getByText("—")).toBeInTheDocument();

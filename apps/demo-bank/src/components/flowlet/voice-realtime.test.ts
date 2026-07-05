@@ -153,3 +153,29 @@ describe("live voice check fixes (real Maple row shapes)", () => {
     expect(payload.queries).toBeUndefined();
   });
 });
+
+describe("heterogeneous rows (PR #43 review P1)", () => {
+  it("degrades to snapshot when a LATER row has a nested value for a declared column", () => {
+    const mixed = {
+      ok: true,
+      data: {
+        data: [
+          { merchant: "A", status: "posted" },
+          { merchant: "B", status: [{ state: "pending" }] },
+        ],
+      },
+    };
+    replayRegistry.register("listTransactions", async () => mixed);
+    recordResult("listTransactions", { limit: 42 }, mixed);
+    const node = tableView({
+      columns: [
+        { key: "merchant", label: "Merchant" },
+        { key: "status", label: "Status" },
+      ],
+      rows: [{ merchant: "A", status: "posted" }],
+      source: { tool: "listTransactions", input: { limit: 42 }, rowsPath: "/data/data" },
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    expect(payload.queries).toBeUndefined();
+  });
+});
