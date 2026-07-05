@@ -300,6 +300,47 @@ describe("verifyComposioSignature", () => {
     ).toBe(true);
   });
 
+  it("accepts a signature keyed by the RAW secret string (Composio-docs convention)", () => {
+    // Composio's docs compute the HMAC with the raw dashboard secret as the
+    // key; the Svix convention base64-decodes the whsec_-stripped part.
+    // Verification tolerates both until a live capture pins the contract.
+    const id = "msg_1";
+    const timestamp = NOW_SECONDS;
+    const body = PAYLOAD;
+    const rawKeyed = createHmac("sha256", Buffer.from(SECRET, "utf8"))
+      .update(`${id}.${timestamp}.${body}`)
+      .digest("base64");
+    expect(
+      verifyComposioSignature({
+        id,
+        timestamp,
+        signature: `v1,${rawKeyed}`,
+        body,
+        secret: SECRET,
+        nowMs: NOW_MS,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a raw-keyed signature computed with a different secret", () => {
+    const id = "msg_1";
+    const timestamp = NOW_SECONDS;
+    const body = PAYLOAD;
+    const rawKeyed = createHmac("sha256", Buffer.from("whsec_not-the-secret", "utf8"))
+      .update(`${id}.${timestamp}.${body}`)
+      .digest("base64");
+    expect(
+      verifyComposioSignature({
+        id,
+        timestamp,
+        signature: `v1,${rawKeyed}`,
+        body,
+        secret: SECRET,
+        nowMs: NOW_MS,
+      }),
+    ).toBe(false);
+  });
+
   it("rejects a signature computed with a different secret", () => {
     const id = "msg_1";
     const timestamp = NOW_SECONDS;

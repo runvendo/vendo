@@ -23,9 +23,17 @@
  *
  *   Signing: HMAC-SHA256 over the ASCII string `${id}.${timestamp}.${body}`
  *   (body = the RAW, unparsed request bytes — this is why `req.text()` is
- *   read before any JSON.parse), keyed by the BASE64-DECODED secret. Composio
- *   hands out the secret with a `whsec_` prefix (Svix convention); it is
- *   stripped before base64-decoding. Compared with `timingSafeEqual`.
+ *   read before any JSON.parse). Compared with `timingSafeEqual`.
+ *
+ *   KEY AMBIGUITY: the docs disagree on what keys the HMAC. The Svix
+ *   convention (which Composio's whsec_ prefix suggests) strips `whsec_` and
+ *   BASE64-DECODES the rest; Composio's own webhook docs show the HMAC keyed
+ *   by the RAW secret string. With no live capture available to pin the
+ *   contract, verification is TOLERANT: it computes an expected HMAC with
+ *   BOTH keys (raw secret bytes, and the base64-decoded whsec_-stripped
+ *   value) and accepts if ANY v1 candidate matches either — constant-time
+ *   per compare. Release-time drill item: capture a real delivery and pin
+ *   this down to the single correct key.
  *
  *   Env: `COMPOSIO_WEBHOOK_SECRET` (the `whsec_`-prefixed value verbatim).
  *   Missing entirely → 404 (fail closed: there is no way to authenticate a
@@ -96,19 +104,25 @@ export function verifyComposioSignature(input: {
   const toleranceMs = input.toleranceMs ?? TIMESTAMP_TOLERANCE_MS;
   if (Math.abs(nowMs - tsSeconds * 1000) > toleranceMs) return false;
 
+  // Tolerant key derivation (see the file header's KEY AMBIGUITY note):
+  // both the raw secret bytes (Composio-docs convention) and the
+  // base64-decoded whsec_-stripped value (Svix convention) are tried.
+  const keys: Buffer[] = [];
+  const rawKey = Buffer.from(input.secret, "utf8");
+  if (rawKey.length > 0) keys.push(rawKey);
   const secretB64 = input.secret.startsWith("whsec_") ? input.secret.slice("whsec_".length) : input.secret;
-  let secretBytes: Buffer;
   try {
-    secretBytes = Buffer.from(secretB64, "base64");
+    const decoded = Buffer.from(secretB64, "base64");
+    if (decoded.length > 0) keys.push(decoded);
   } catch {
-    return false;
+    // Not base64 — the raw-key candidate still applies.
   }
-  if (secretBytes.length === 0) return false;
+  if (keys.length === 0) return false;
 
-  const expected = createHmac("sha256", secretBytes)
-    .update(`${input.id}.${input.timestamp}.${input.body}`)
-    .digest("base64");
-  const expectedBytes = Buffer.from(expected, "base64");
+  const message = `${input.id}.${input.timestamp}.${input.body}`;
+  const expected = keys.map((key) =>
+    Buffer.from(createHmac("sha256", key).update(message).digest("base64"), "base64"),
+  );
 
   for (const candidate of input.signature.split(" ")) {
     const [version, sig] = candidate.split(",");
@@ -119,8 +133,10 @@ export function verifyComposioSignature(input: {
     } catch {
       continue;
     }
-    if (candidateBytes.length === expectedBytes.length && timingSafeEqual(candidateBytes, expectedBytes)) {
-      return true;
+    for (const expectedBytes of expected) {
+      if (candidateBytes.length === expectedBytes.length && timingSafeEqual(candidateBytes, expectedBytes)) {
+        return true;
+      }
     }
   }
   return false;
