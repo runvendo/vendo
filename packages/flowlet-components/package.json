@@ -35,12 +35,16 @@
   "dependencies": {
     "@flowlet/core": "workspace:*",
     "@openuidev/react-ui": "^0.12.1",
+    "d3-sankey": "^0.12.3",
+    "d3-shape": "^3.2.0",
     "lucide-react": "^0.562.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
+    "@types/d3-sankey": "^0.12.5",
+    "@types/d3-shape": "^3.1.8",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "jsdom": "^25.0.0",

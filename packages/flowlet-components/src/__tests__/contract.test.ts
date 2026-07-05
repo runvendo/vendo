@@ -57,6 +57,18 @@ describe("JSON round-trip contract (§8)", () => {
       series: ["sales"],
       data: [{ month: "Jan", sales: 100 }],
     },
+    Sankey: {
+      title: "Monthly Cash Flow",
+      nodes: [
+        { id: "income", label: "Income" },
+        { id: "rent", label: "Rent" },
+        { id: "savings", label: "Savings" },
+      ],
+      links: [
+        { source: "income", target: "rent", value: 2200 },
+        { source: "income", target: "savings", value: 1000 },
+      ],
+    },
     Form: {
       submitLabel: "Submit",
       fields: [{ type: "text", name: "email", label: "Email" }],

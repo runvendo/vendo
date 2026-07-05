@@ -63,6 +63,28 @@ const samples = [
     },
   },
   {
+    id: "sankey",
+    kind: "component" as const,
+    source: "prewired" as const,
+    name: "Sankey",
+    props: {
+      title: "Where Income Goes",
+      nodes: [
+        { id: "income", label: "Income" },
+        { id: "rent", label: "Rent" },
+        { id: "food", label: "Food" },
+        { id: "subscriptions", label: "Subscriptions" },
+        { id: "savings", label: "Savings" },
+      ],
+      links: [
+        { source: "income", target: "rent", value: 2200 },
+        { source: "income", target: "food", value: 680 },
+        { source: "income", target: "subscriptions", value: 120 },
+        { source: "income", target: "savings", value: 1000 },
+      ],
+    },
+  },
+  {
     id: "form",
     kind: "component" as const,
     source: "prewired" as const,

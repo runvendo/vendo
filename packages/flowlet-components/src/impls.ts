@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { Card } from "./components/Card/impl";
 import { Table } from "./components/Table/impl";
 import { Chart } from "./components/Chart/impl";
+import { Sankey } from "./components/Sankey/impl";
 import { Form } from "./components/Form/impl";
 import { Accordion } from "./components/Accordion/impl";
 import { Carousel } from "./components/Carousel/impl";
@@ -26,6 +27,7 @@ export const prewiredImpls: Record<string, ComponentType<Record<string, unknown>
   Card,
   Table,
   Chart,
+  Sankey,
   Form,
   Accordion,
   Carousel,
