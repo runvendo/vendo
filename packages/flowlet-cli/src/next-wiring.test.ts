@@ -6,11 +6,16 @@ import { describe, expect, it } from "vitest";
 import {
   addDependency,
   addPrebuildSync,
+  mergeInstrumentation,
   productNameFrom,
   wireNextApp,
   wrapLayoutChildren,
 } from "./next-wiring.js";
 import { detectTarget } from "./detect.js";
+
+async function exists(p: string): Promise<boolean> {
+  return fs.access(p).then(() => true, () => false);
+}
 
 const CREATE_NEXT_APP_LAYOUT = `import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -189,6 +194,41 @@ describe("productNameFrom", () => {
   });
 });
 
+describe("mergeInstrumentation", () => {
+  it("appends the scheduler boot to a file with no existing register()", () => {
+    const existing = `export function onRequestError() {\n  console.log("boom");\n}\n`;
+    const out = mergeInstrumentation(existing)!;
+    expect(out).not.toBeNull();
+    expect(out).toContain('console.log("boom")'); // original content survives
+    expect(out).toContain("export async function register()");
+    expect(out).toContain('await import("@flowlet/next")');
+    expect(out).toContain("startFlowletScheduler()");
+  });
+
+  it("is idempotent once merged", () => {
+    const existing = `export function onRequestError() {}\n`;
+    const merged = mergeInstrumentation(existing)!;
+    expect(mergeInstrumentation(merged)).toBe(merged);
+  });
+
+  it("is idempotent on a hand-wired file (already imports @flowlet/next)", () => {
+    const handWired = `export async function register() {\n  if (process.env.NEXT_RUNTIME === "nodejs") {\n    const { startFlowletScheduler } = await import("@flowlet/next");\n    startFlowletScheduler();\n  }\n}\n`;
+    expect(mergeInstrumentation(handWired)).toBe(handWired);
+  });
+
+  it("fails open (returns null) when the file already declares its own register()", () => {
+    const existing = `export async function register() {\n  await setupSentry();\n}\n`;
+    expect(mergeInstrumentation(existing)).toBeNull();
+  });
+
+  it("does not false-positive on a comment merely mentioning register()", () => {
+    const existing = `// TODO: add a register() hook later\nexport function onRequestError() {}\n`;
+    const out = mergeInstrumentation(existing);
+    expect(out).not.toBeNull();
+    expect(out).toContain("export async function register()");
+  });
+});
+
 async function scaffoldFreshApp(withSrcDir: boolean): Promise<string> {
   const dir = mkdtempSync(path.join(tmpdir(), "flowlet-wire-"));
   const appDir = path.join(dir, withSrcDir ? "src/app" : "app");
@@ -217,15 +257,71 @@ describe("wireNextApp", () => {
     expect(root).toContain('productName="Fresh App"');
     const layout = await fs.readFile(path.join(dir, "src/app/layout.tsx"), "utf8");
     expect(layout).toContain("<AppFlowletRoot>{children}</AppFlowletRoot>");
-    expect(await fs.readFile(path.join(dir, ".env.example"), "utf8")).toContain("ANTHROPIC_API_KEY");
+    const env = await fs.readFile(path.join(dir, ".env.example"), "utf8");
+    expect(env).toContain("ANTHROPIC_API_KEY");
+    expect(env).toContain("DATABASE_URL");
+    expect(env).toContain("FLOWLET_DATA_DIR");
+    expect(env).toContain("FLOWLET_TICK_SECRET");
+    expect(env).toContain("COMPOSIO_WEBHOOK_SECRET");
+    expect(env).toContain("FLOWLET_SCHEDULER");
     expect(JSON.parse(await fs.readFile(path.join(dir, ".flowlet/tools.json"), "utf8")).tools).toEqual([]);
     const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
     };
     expect(pkg.dependencies["@flowlet/next"]).toBeDefined();
 
+    // src/app layout → instrumentation.ts lives under src/, matching Next's convention
+    const instrumentation = await fs.readFile(path.join(dir, "src/instrumentation.ts"), "utf8");
+    expect(instrumentation).toContain("export async function register()");
+    expect(instrumentation).toContain('process.env.NEXT_RUNTIME === "nodejs"');
+    expect(instrumentation).toContain('await import("@flowlet/next")');
+    expect(instrumentation).toContain("startFlowletScheduler()");
+    expect(summary.written).toContain("src/instrumentation.ts");
+
     // sandbox assets aren't bundled in the source tree — reported, not fatal
     expect(summary.skipped.some((s) => s.step === "sandbox-assets")).toBe(true);
+  });
+
+  it("writes instrumentation.ts at the project root for an app/ (non-src) layout", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const info = await detectTarget(dir);
+    await wireNextApp(dir, info, { force: false });
+    const instrumentation = await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8");
+    expect(instrumentation).toContain("startFlowletScheduler()");
+    expect(await exists(path.join(dir, "src/instrumentation.ts"))).toBe(false);
+  });
+
+  it("merges into an existing instrumentation.ts non-destructively when it has no register()", async () => {
+    const dir = await scaffoldFreshApp(false);
+    await fs.writeFile(
+      path.join(dir, "instrumentation.ts"),
+      `export function onRequestError() {\n  console.log("existing hook");\n}\n`,
+    );
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    const instrumentation = await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8");
+    expect(instrumentation).toContain('console.log("existing hook")'); // original survives
+    expect(instrumentation).toContain("startFlowletScheduler()");
+    expect(summary.edited).toContain("instrumentation.ts");
+    expect(await exists(path.join(dir, "instrumentation.flowlet-example.ts"))).toBe(false);
+  });
+
+  it("falls open to instrumentation.flowlet-example.ts + a manual step when an existing register() can't be merged safely", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const existing = `export async function register() {\n  await setupSentry();\n}\n`;
+    await fs.writeFile(path.join(dir, "instrumentation.ts"), existing);
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    expect(await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8")).toBe(existing);
+    const example = await fs.readFile(path.join(dir, "instrumentation.flowlet-example.ts"), "utf8");
+    expect(example).toContain("startFlowletScheduler()");
+    expect(summary.written).toContain("instrumentation.flowlet-example.ts");
+    expect(summary.manual.some((m) => m.includes("instrumentation.flowlet-example.ts"))).toBe(true);
+
+    // second run: example file already exists — reported as skipped, not rewritten
+    const second = (await wireNextApp(dir, info, { force: false }))!;
+    expect(second.skipped.some((s) => s.step === "instrumentation")).toBe(true);
+    expect(second.written).not.toContain("instrumentation.flowlet-example.ts");
   });
 
   it("is idempotent: a second run edits nothing", async () => {
@@ -233,9 +329,13 @@ describe("wireNextApp", () => {
     const info = await detectTarget(dir);
     await wireNextApp(dir, info, { force: false });
     const layoutAfterFirst = await fs.readFile(path.join(dir, "app/layout.tsx"), "utf8");
+    const instrumentationAfterFirst = await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8");
+    const envAfterFirst = await fs.readFile(path.join(dir, ".env.example"), "utf8");
     const second = (await wireNextApp(dir, info, { force: false }))!;
     expect(second.edited).toEqual([]);
     expect(await fs.readFile(path.join(dir, "app/layout.tsx"), "utf8")).toBe(layoutAfterFirst);
+    expect(await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8")).toBe(instrumentationAfterFirst);
+    expect(await fs.readFile(path.join(dir, ".env.example"), "utf8")).toBe(envAfterFirst);
   });
 
   it("fails open on an unrecognizable layout: files written, layout untouched, manual steps printed", async () => {
