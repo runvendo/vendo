@@ -3,6 +3,7 @@ import "./styles.css";
 export const SHELL_PACKAGE = "@flowlet/shell";
 
 export * from "./theme";
+export * from "./brand-to-fluid-theme";
 export * from "./context";
 export * from "./use-flowlet-thread";
 export * from "./use-voice-input";

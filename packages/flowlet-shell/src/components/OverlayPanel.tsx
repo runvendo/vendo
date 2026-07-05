@@ -43,7 +43,11 @@ export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPane
   // Trails `open` by a short exit fade on close (instant under reduced motion).
   const [visible, setVisible] = useState(open);
   useEffect(() => setMounted(true), []);
-  useFocusTrap(open, panelRef);
+  // Gate on `visible` too: `visible` trails `open` by a commit on open (and by
+  // the exit fade on close), and the trap must run only while the panel is
+  // actually in the DOM — with plain `open` it fires before the panel mounts
+  // and focus never moves in.
+  useFocusTrap(open && visible && mounted, panelRef);
 
   useEffect(() => {
     if (open) {

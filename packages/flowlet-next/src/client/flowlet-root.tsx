@@ -21,6 +21,7 @@ import { FlowletProvider } from "@flowlet/react";
 import {
   FlowletOverlay,
   FlowletShellProvider,
+  brandToFlowletTheme,
   createLocalIntegrations,
   createWebStorage,
   type FlowletIntegrations,
@@ -183,7 +184,10 @@ export function FlowletRoot({
           store={store}
           runQuery={runQuery}
           components={[]}
-          theme={{ scheme: brand.mode === "dark" ? "dark" : "light" }}
+          // Full brand tokens (not just scheme): the shell derives fluidkit's
+          // brand-native chrome (glass tint from accent, flat fill from
+          // surface) from these; cssVars stays the --flowlet-* channel.
+          theme={brandToFlowletTheme(brand)}
           cssVars={brandToCssVars(brand)}
           productName={productName}
         >

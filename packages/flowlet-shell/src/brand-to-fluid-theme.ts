@@ -1,6 +1,39 @@
 import type { FluidTheme } from "fluidkit";
 import type { FlowletTheme } from "./theme";
 
+/** Structural BrandTokens (as extracted by flowlet init) — typed structurally so
+ *  the shell needs no dependency on @flowlet/components. */
+export interface BrandLike {
+  accent?: string;
+  background?: string;
+  surface?: string;
+  text?: string;
+  mutedText?: string;
+  fontFamily?: string;
+  radius?: string | number;
+  mode?: "light" | "dark";
+}
+
+/**
+ * BrandTokens → FlowletTheme, for host roots that today pass the brand only as
+ * opaque cssVars. The shell never inspects cssVars (deliberate), so roots that
+ * want brand-derived fluidkit chrome pass `theme={brandToFlowletTheme(brand)}`
+ * alongside the cssVars they already send.
+ */
+export function brandToFlowletTheme(brand: BrandLike): FlowletTheme {
+  const out: FlowletTheme = {};
+  if (brand.accent !== undefined) out.accent = brand.accent;
+  if (brand.background !== undefined) out.bg = brand.background;
+  if (brand.surface !== undefined) out.surface = brand.surface;
+  if (brand.text !== undefined) out.fg = brand.text;
+  if (brand.mutedText !== undefined) out.fgMuted = brand.mutedText;
+  if (brand.fontFamily !== undefined) out.font = brand.fontFamily;
+  if (brand.radius !== undefined)
+    out.radius = typeof brand.radius === "number" ? `${brand.radius}px` : brand.radius;
+  out.scheme = brand.mode === "dark" ? "dark" : "light";
+  return out;
+}
+
 /** Host-tunable liquid character; absent knobs leave fluidkit's own defaults. */
 export interface FluidConfig {
   material?: "glass" | "flat";

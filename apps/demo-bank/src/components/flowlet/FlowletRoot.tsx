@@ -16,7 +16,7 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider, createWebStorage } from "@flowlet/shell";
+import { FlowletShellProvider, brandToFlowletTheme, createWebStorage } from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { mapleBrand } from "@/flowlet/brand";
 import { mapleHostComponents } from "@/flowlet/host-components/descriptors";
@@ -74,7 +74,7 @@ export function FlowletRoot({
           // Same registry as FlowletProvider — reopened saved views diff their
           // host-component stamp against it and surface drift (ENG-186).
           components={[...prewiredComponents, ...mapleHostComponents]}
-          theme={{ scheme: "light" }}
+          theme={{ ...brandToFlowletTheme(mapleBrand), scheme: "light" }}
           cssVars={{
             ...brandToCssVars(mapleBrand),
             // Host-scope font DELIVERY override: the brand token is a concrete

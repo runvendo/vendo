@@ -14,7 +14,7 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { FlowletUIMessage } from "@flowlet/core";
 import { FlowletProvider } from "@flowlet/react";
-import { FlowletShellProvider, createLocalIntegrations, createWebStorage } from "@flowlet/shell";
+import { FlowletShellProvider, brandToFlowletTheme, createLocalIntegrations, createWebStorage } from "@flowlet/shell";
 import { prewiredComponents, FlowletThemeProvider, brandToCssVars } from "@flowlet/components";
 import { cadenceBrand } from "@/flowlet/brand";
 import { cadenceHostComponents } from "@/flowlet/host-components/descriptors";
@@ -75,7 +75,7 @@ export function FlowletRoot({
           // Same registry as FlowletProvider — reopened saved views diff their
           // host-component stamp against it and surface drift (ENG-186).
           components={[...prewiredComponents, ...cadenceHostComponents]}
-          theme={{ scheme: "light" }}
+          theme={{ ...brandToFlowletTheme(cadenceBrand), scheme: "light" }}
           cssVars={{
             ...brandToCssVars(cadenceBrand),
             // Host-scope font DELIVERY override: the brand token is a concrete
