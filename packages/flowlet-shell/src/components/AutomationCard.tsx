@@ -185,7 +185,7 @@ function brandForTool(tool: string): { id: string; name: string } {
   return TOOL_BRANDS[prefix] ?? { id: prefix.toLowerCase(), name: humanize(prefix) || "Tool" };
 }
 
-interface AppAccess {
+export interface AutomationAppAccess {
   key: string;
   brandId: string;
   name: string;
@@ -193,8 +193,8 @@ interface AppAccess {
   canRunAutomatically: boolean;
 }
 
-function appAccessGroups(tools: string[], granted: Set<string>): AppAccess[] {
-  const groups = new Map<string, AppAccess>();
+function appAccessGroups(tools: string[], granted: Set<string>): AutomationAppAccess[] {
+  const groups = new Map<string, AutomationAppAccess>();
   for (const tool of tools) {
     const brand = brandForTool(tool);
     const group = groups.get(brand.name) ?? {
@@ -212,6 +212,36 @@ function appAccessGroups(tools: string[], granted: Set<string>): AppAccess[] {
   return [...groups.values()];
 }
 
+export interface AutomationCardModel {
+  name: string;
+  title: string;
+  trigger: string;
+  condition?: string;
+  outcome: string;
+  access: AutomationAppAccess[];
+  detailJson: string;
+}
+
+export function automationCardModel(toolName: string, input: unknown): AutomationCardModel | undefined {
+  const parsed = parseSpec(input);
+  if (!parsed) return undefined;
+  const { spec, grantedTools } = parsed;
+  const granted = new Set(grantedTools);
+  const verb = toolName === "update_automation" ? "Update" : "Turn on";
+  const steps = flattenSteps(spec.execution.steps);
+  const tools = gatedTools(spec);
+
+  return {
+    name: spec.name,
+    title: `${verb} "${spec.name}"?`,
+    trigger: triggerLine(spec),
+    condition: formatCondition(spec.if),
+    outcome: outcomeLine(spec, steps),
+    access: appAccessGroups(tools, granted),
+    detailJson: JSON.stringify({ spec, grantedTools }, null, 2),
+  };
+}
+
 export interface AutomationCardProps {
   toolName: string;
   input: unknown;
@@ -220,19 +250,12 @@ export interface AutomationCardProps {
 }
 
 export function AutomationCard({ toolName, input, onApprove, onDecline }: AutomationCardProps) {
-  const parsed = parseSpec(input);
+  const model = automationCardModel(toolName, input);
   // Unfamiliar shape: fail open to the generic approval card, never hide a call.
-  if (!parsed) {
+  if (!model) {
     return <ApprovalCard toolName={toolName} input={input} onApprove={onApprove} onDecline={onDecline} />;
   }
-  const { spec, grantedTools } = parsed;
-  const granted = new Set(grantedTools);
-  const verb = toolName === "update_automation" ? "Update" : "Turn on";
-  const steps = flattenSteps(spec.execution.steps);
-  const tools = gatedTools(spec);
-  const access = appAccessGroups(tools, granted);
-  const title = `${verb} "${spec.name}"?`;
-  const condition = formatCondition(spec.if);
+  const { title, access, trigger, condition, outcome, detailJson } = model;
 
   return (
     <div className="fl-approval fl-automation-approval" role="group" aria-label={title}>
@@ -256,14 +279,14 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
         <div className="fl-auto-summary-row">
           <span className="fl-auto-summary-k">When</span>
           <div className="fl-auto-summary-v">
-            <strong>{triggerLine(spec)}</strong>
+            <strong>{trigger}</strong>
             {condition ? <span>{condition}</span> : null}
           </div>
         </div>
         <div className="fl-auto-summary-row">
           <span className="fl-auto-summary-k">Then</span>
           <div className="fl-auto-summary-v">
-            <strong>{outcomeLine(spec, steps)}</strong>
+            <strong>{outcome}</strong>
           </div>
         </div>
       </div>
@@ -293,7 +316,7 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
         {/* grantedTools included: friendly labels above can collapse two tool
             slugs onto one name, so the consent trail needs the raw grants. */}
         <pre>
-          {JSON.stringify({ spec, grantedTools }, null, 2)}
+          {detailJson}
         </pre>
       </details>
 

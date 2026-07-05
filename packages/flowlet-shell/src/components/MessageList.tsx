@@ -5,6 +5,7 @@ import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
 import { ApprovalBatchCard } from "./ApprovalBatchCard";
 import { AutomationCard, isAutomationApproval } from "./AutomationCard";
+import { AutomationCreatedMorph, type AutomationCreatedNotice } from "./AutomationCreatedMorph";
 import { UINodeView } from "./UINodeView";
 import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
@@ -68,6 +69,9 @@ export function MessageList({
   }, [rendered]);
   const lastTextKey = [...items].reverse().find((i) => i.kind === "text")?.key;
   const listRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const automationApprovalRefs = useRef(new Map<string, HTMLDivElement>());
+  const [automationNotices, setAutomationNotices] = useState<AutomationCreatedNotice[]>([]);
   // Whether the user is pinned to the bottom. A ref drives the auto-scroll
   // (read inside effects without re-subscribing); the state mirrors it so the
   // "jump to latest" affordance can show/hide.
@@ -150,8 +154,31 @@ export function MessageList({
     return t;
   };
 
+  const queueAutomationNotice = (item: Extract<ThreadItem, { kind: "approval" }>) => {
+    const host = wrapRef.current;
+    const source = automationApprovalRefs.current.get(item.approvalId);
+    const sourceRect = host && source
+      ? (() => {
+          const hostRect = host.getBoundingClientRect();
+          const card = source.querySelector<HTMLElement>(".fl-automation-approval") ?? source;
+          const rect = card.getBoundingClientRect();
+          return {
+            top: rect.top - hostRect.top,
+            left: rect.left - hostRect.left,
+            width: rect.width,
+            height: rect.height,
+          };
+        })()
+      : undefined;
+
+    setAutomationNotices((current) => [
+      ...current.filter((notice) => notice.id !== item.approvalId),
+      { id: item.approvalId, toolName: item.toolName, input: item.input, sourceRect },
+    ]);
+  };
+
   return (
-    <div className="fl-msglist-wrap">
+    <div className="fl-msglist-wrap" ref={wrapRef}>
       <div className="fl-msglist" ref={listRef} onScroll={onScroll}>
         {rendered.map((item) => {
           switch (item.kind) {
@@ -212,13 +239,24 @@ export function MessageList({
               // Automation authoring approvals get the inspectable card; every
               // other gated call keeps the generic JSON approval.
               return isAutomationApproval(item.toolName) ? (
-                <AutomationCard
+                <div
                   key={item.key}
-                  toolName={item.toolName}
-                  input={item.input}
-                  onApprove={() => onApprove(item.approvalId)}
-                  onDecline={() => onDecline?.(item.approvalId)}
-                />
+                  className="fl-automation-approval-slot"
+                  ref={(node) => {
+                    if (node) automationApprovalRefs.current.set(item.approvalId, node);
+                    else automationApprovalRefs.current.delete(item.approvalId);
+                  }}
+                >
+                  <AutomationCard
+                    toolName={item.toolName}
+                    input={item.input}
+                    onApprove={() => {
+                      queueAutomationNotice(item);
+                      onApprove(item.approvalId);
+                    }}
+                    onDecline={() => onDecline?.(item.approvalId)}
+                  />
+                </div>
               ) : (
                 <ApprovalCard
                   key={item.key}
@@ -309,6 +347,13 @@ export function MessageList({
         })}
         {working && <FluidThinking label="Working" />}
       </div>
+      {automationNotices.map((notice) => (
+        <AutomationCreatedMorph
+          key={notice.id}
+          notice={notice}
+          onDone={(id) => setAutomationNotices((current) => current.filter((notice) => notice.id !== id))}
+        />
+      ))}
       {!atBottom && (
         <button
           type="button"
