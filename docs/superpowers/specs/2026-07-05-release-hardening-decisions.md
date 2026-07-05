@@ -35,9 +35,48 @@ typescript pins). **Merge order: #60 → #56.**
 
 ## UI decision queue
 
-Populated by the browser bug bash (running) — will be appended here with
-screenshots. Already queued from the code audit (all confirmed, all
-UI-affecting, none built without you):
+Bug bash complete (both demo apps, browser-driven). Screenshots:
+`~/Desktop/vendo-ui-bash-2026-07-05/` (cadence/ + demo-bank/, numbered in
+visit order). Verdicts: Cadence reads convincingly native (until 480px);
+Maple is visually strong but trust-breaking in prose and numbers.
+
+### Needs your design call (screenshot-backed, from the bash)
+
+- **480px is broken on both apps** — Cadence: host sidebar never collapses,
+  composer clipped off-screen (`cadence/11`); Maple: header actions +
+  saved-vendo tabs overflow, composer placeholder overlaps itself
+  (`demo-bank/12`). Needs a responsive strategy decision for the shell.
+- **Consent card exposes raw tool params** — "Is html: false", "User id: me",
+  plus an "Unverified tool" badge on a stock Composio Gmail tool
+  (`cadence/06`). What should an end-user consent surface actually show?
+- **"Connection lost" alert UX** on stream failure (`demo-bank/04`) — raw
+  alert today; needs the intended recovery surface.
+- **demo-bank has no Trust (🛡) tab while Cadence does** — config or gap?
+
+### Code-fixable from the bash (queued into fix waves, no design decision)
+
+- **Generated-number correctness (HIGH):** Maple total tile "$40.18" vs its
+  own table's $4,017.81 (100× cents bug, `demo-bank/05`); Cadence deadlines
+  all +1 day vs host (timezone parse, `cadence/04`). Both are the known
+  "$-math / format-hints" class — needs data-format hints in view prompts.
+- **Host-identity leak (HIGH):** Maple's agent calls the host "Cove" in
+  refusal prose (`demo-bank/06`) — "Cove" exists nowhere in the repo; the
+  prompt core must ground the host name harder.
+- **Stream reliability (HIGH):** ERR_INCOMPLETE_CHUNKED_ENCODING on /chat,
+  then reload wiped the whole thread (`demo-bank/08`) — persistence should
+  have restored it.
+- **Deliveries 404 loop:** VendoToasts polls /deliveries every 2s forever on
+  hosts with automations off — should gate on capabilities.
+- **Approval decline ignored (MEDIUM):** clicking "No" re-pitches the same
+  action (`cadence/07`) — decline isn't reaching the model as intent.
+- **Trust panel miscounts (MEDIUM):** "4 actions you approved" after zero
+  approvals, reads counted as actions (`cadence/08`).
+- Copy/template glitches: "So I can To send…" concat (`demo-bank/07`);
+  stray "0" text node in page + sandbox; chart legend shows raw "amount";
+  OpenUI drops the brand `*ChartPalette` keys (10× console warning, both
+  apps — generated charts likely lose brand colors).
+
+### Queued earlier from the code audit (unchanged)
 
 - Raw tool `errorText` rendered verbatim in the DOM (shell ActivityStep +
   ToolCall, react host-tool path, stage bridge) — needs your call on the
