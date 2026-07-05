@@ -93,6 +93,24 @@ export class InMemoryThreadStore implements ThreadStore {
     const thread = this.owned(scope, this.threads.get(threadId));
     return thread ? structuredClone(thread.messages) : [];
   }
+
+  /** Full-list replace for settle hooks (see the seam docstring): continuation
+   *  turns revise the trailing assistant message in place, which append-only
+   *  deltas can never persist. */
+  async replaceMessages(
+    scope: Principal,
+    threadId: string,
+    messages: FlowletUIMessage[],
+  ): Promise<void> {
+    const thread = this.owned(scope, this.threads.get(threadId));
+    if (!thread) {
+      throw new Error(
+        `unknown thread "${threadId}" for scope ${scope.tenantId}/${scope.subject}`,
+      );
+    }
+    thread.messages = structuredClone(messages);
+    thread.updatedAt = this.clock();
+  }
 }
 
 interface OwnedFlowlet extends SavedFlowlet {
@@ -211,6 +229,22 @@ export class InMemoryAuditLog implements AuditLog {
 
   async append(event: AuditEvent): Promise<void> {
     this.log.push(structuredClone(event));
+  }
+
+  /** Read API (ENG-193 §6.2): principal-scoped, ordered by `at` descending.
+   *  `since` is inclusive; an empty `kinds` array means no kind filter. */
+  async query(
+    scope: Principal,
+    filter?: { kinds?: AuditEvent["kind"][]; since?: string; limit?: number },
+  ): Promise<AuditEvent[]> {
+    let rows = this.log.filter((e) => sameScope(scope, e.principal));
+    if (filter?.kinds && filter.kinds.length > 0) {
+      rows = rows.filter((e) => (filter.kinds as string[]).includes(e.kind));
+    }
+    if (filter?.since !== undefined) rows = rows.filter((e) => e.at >= filter.since!);
+    rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    if (filter?.limit !== undefined) rows = rows.slice(0, filter.limit);
+    return structuredClone(rows);
   }
 }
 

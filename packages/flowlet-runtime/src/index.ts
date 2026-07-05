@@ -14,15 +14,16 @@ export type { FlowletAgentConfig, InstructionContext } from "./engine";
 export type { FlowletPrincipal } from "./principal";
 
 // Errors
-export { FlowletError, policyDenied } from "./errors";
-export type { FlowletErrorCode, PolicyDeniedPayload } from "./errors";
+export { FlowletError, policyDenied, approvalRequired } from "./errors";
+export type { FlowletErrorCode, PolicyDeniedPayload, ApprovalRequiredPayload } from "./errors";
 
-// Policy barrel (types, compose, annotation, natural-language, remember, principal-rules)
+// Policy barrel (types, compose, annotation, natural-language, principal-rules,
+// tier, grant-match, grant-policy)
 export * from "./policy";
 
 // Tool wrapping
-export { wrapTool } from "./wrap-tool";
-export type { WrapToolArgs } from "./wrap-tool";
+export { wrapTool, createPausedCallTracker } from "./wrap-tool";
+export type { WrapToolArgs, PausedCallTracker } from "./wrap-tool";
 export { wrapClientTool } from "./wrap-client-tool";
 export type { WrapClientToolArgs } from "./wrap-client-tool";
 
@@ -112,3 +113,44 @@ export {
   type InAppChannelsConfig,
   type RetainedDelivery,
 } from "./embedded/in-app-channels";
+
+// Grant store (ENG-193 §6.1): in-memory GrantStore for the embedded seam
+// slot and tests.
+export { createInMemoryGrantStore } from "./grant-store";
+
+// Compiled-rule store (ENG-193 §4.8/item-6): in-memory CompiledRuleStore for
+// the embedded seam slot and tests.
+export { createInMemoryCompiledRuleStore } from "./rule-store";
+
+// FadeTracker (ENG-193 §4.4): per-principal fade eligibility, injectable
+// in-memory state.
+export { createFadeTracker } from "./fade-tracker";
+export type { FadeTracker, FadeTrackerOptions, FadeEligibility } from "./fade-tracker";
+
+// Grant lifecycle API (ENG-193 §4.3/§6.2): audited create/revoke, the only
+// paths that mutate grants.
+export { createGrantManager, scopePreview } from "./grant-manager";
+
+// Rule lifecycle API (ENG-193 §4.8/item-6): audited create/revoke, the only
+// paths that mutate compiled steering rules.
+export { createRuleManager } from "./rule-manager";
+
+// Conversational steering tools (ENG-193 §3 Moment 11/§4.8): always_ask_before
+// (tighten) + stop_asking_about (loosen), built once per host like the
+// automation authoring tools.
+export { createSteeringTools } from "./steering-tools";
+export type { SteeringToolsConfig } from "./steering-tools";
+
+// Consent endpoint (ENG-193 §4.5): server-validated grant creation behind
+// the consent channel. Transport-agnostic — hosts mount it behind their own
+// route (see @flowlet/next and the accounting demo).
+export { handleConsent, createConsentLedger } from "./consent";
+export type { HandleConsentDeps, HandleConsentRequest, HandleConsentResult, ConsentLedger } from "./consent";
+
+// Fade proposal endpoint (ENG-193 §4.4): server-re-derived accept/decline,
+// keyed by proposalId (not toolCallId/thread — see fade-proposal.ts).
+export { handleFadeProposal } from "./fade-proposal";
+export type {
+  HandleFadeProposalDeps,
+  HandleFadeProposalResult,
+} from "./fade-proposal";

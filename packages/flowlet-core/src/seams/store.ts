@@ -1,5 +1,7 @@
 import type { FlowletUIMessage } from "../protocol";
 import type { UINode } from "../ui";
+import type { CompiledRuleStore } from "./compiled-rules";
+import type { GrantStore } from "./grants";
 import type { Principal } from "./principal";
 
 /**
@@ -23,6 +25,12 @@ export interface Store {
   automations: AutomationStore;
   audit: AuditLog;
   remixes: RemixStore;
+  /** ENG-193: standing user permission grants. Optional — additive to the
+   *  frozen seam (same pattern as the reserved memory member). */
+  grants?: GrantStore;
+  /** ENG-193 item 6: compiled "always ask before X" steering rules. Optional
+   *  — additive to the frozen seam, same pattern as `grants`. */
+  rules?: CompiledRuleStore;
 }
 
 export interface ThreadRecord {
@@ -41,6 +49,15 @@ export interface ThreadStore {
   list(scope: Principal): Promise<ThreadRecord[]>;
   appendMessages(scope: Principal, threadId: string, messages: FlowletUIMessage[]): Promise<void>;
   getMessages(scope: Principal, threadId: string): Promise<FlowletUIMessage[]>;
+  /** Replace the thread's FULL message list (ENG-193 live-verification fix).
+   *  Continuation turns (host-tool resumes, approval resumes) REVISE the
+   *  trailing assistant message in place — the settled list is not a strict
+   *  extension of what's stored, so an append-only delta can never persist
+   *  the revision (the approval-requested part the consent endpoint reads
+   *  would be lost). Single-writer settle hooks call this with the run's
+   *  full settled list. Optional — additive to the frozen seam (same pattern
+   *  as `Store.grants`); callers fall back to append-only deltas when absent. */
+  replaceMessages?(scope: Principal, threadId: string, messages: FlowletUIMessage[]): Promise<void>;
 }
 
 /**
@@ -157,8 +174,23 @@ export type AuditEvent = { at: string; principal: Principal } & (
   | { kind: "approval"; toolCallId: string; decision: "approved" | "denied" }
   | { kind: "grant_exchange"; automationId: string; scopes: string[] }
   | { kind: "automation_firing"; automationId: string; runId: string }
+  | { kind: "grant_created"; grantId: string; tool: string; scopePreview: string }
+  | { kind: "grant_revoked"; grantId: string; tool: string }
+  | { kind: "judge_escalation"; toolName: string; reason: string }
+  | { kind: "consent"; consentId: string; decision: "yes" | "no" | "subset" }
+  | { kind: "rule_created"; ruleId: string; toolPattern: string; plainText: string }
+  | { kind: "rule_revoked"; ruleId: string; toolPattern: string }
 );
 
+/**
+ * Read API (ENG-193 §6.2): principal-scoped, ordered by `at` descending,
+ * optionally filtered by kind/since/limit (an empty `kinds` array means no
+ * kind filter; `since` is inclusive). Powers receipts, the diary, and ENG-194.
+ */
 export interface AuditLog {
   append(event: AuditEvent): Promise<void>;
+  query(
+    scope: Principal,
+    filter?: { kinds?: AuditEvent["kind"][]; since?: string; limit?: number },
+  ): Promise<AuditEvent[]>;
 }

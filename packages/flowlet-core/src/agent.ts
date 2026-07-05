@@ -12,6 +12,13 @@ export interface RunInput {
   system?: string;
   principal?: unknown;       // opaque in F1
   signal: AbortSignal;
+  /**
+   * Stable per-conversation id (ENG-193 §4.3 contextKey). Absent when the
+   * caller doesn't track one; the engine mints its own per-run id either way
+   * (FlowletMetadata.threadId), but a caller-supplied id lets grants persist
+   * ACROSS turns of the same conversation rather than resetting every call.
+   */
+  threadId?: string;
 }
 
 export interface FlowletAgent {

@@ -24,8 +24,25 @@ export type ThreadItem =
       input?: unknown;
       output?: unknown;
       errorText?: string;
+      /** From the sibling data-consent part (ENG-193 §4.1/§4.5). Absent for
+       *  read-tier calls and for messages from before this shipped. */
+      tier?: "act" | "critical";
+      unverified?: boolean;
     }
-  | { kind: "approval"; key: string; messageId: string; approvalId: string; toolName: string; input: unknown }
+  | {
+      kind: "approval";
+      key: string;
+      messageId: string;
+      approvalId: string;
+      toolCallId?: string;
+      toolName: string;
+      input: unknown;
+      tier?: "act" | "critical";
+      unverified?: boolean;
+      /** The judge/breaker's plain-language reason (ENG-193 §4.2/§4.7), from
+       *  the sibling data-consent part. Absent for an ordinary approval. */
+      reason?: string;
+    }
   | {
       kind: "ui";
       key: string;
@@ -44,7 +61,8 @@ export type ToolItem = Extract<ThreadItem, { kind: "tool" }>;
 /** A render unit: either a plain item or a group of a turn's tool calls. */
 export type RenderItem =
   | ThreadItem
-  | { kind: "activity"; key: string; messageId: string; steps: ToolItem[] };
+  | { kind: "activity"; key: string; messageId: string; steps: ToolItem[] }
+  | { kind: "approval-batch"; key: string; messageId: string; toolName: string; items: Extract<ThreadItem, { kind: "approval" }>[] };
 
 /**
  * Built-in tools whose product is a `data-ui` node (the rendered view, or the
@@ -72,12 +90,26 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
   for (const message of messages) {
     const role = message.role === "user" ? "user" : "assistant";
     const messageId = message.id;
-    // Pre-pass: collect this message's remix envelopes by paired node id, so
-    // pairing works whether the envelope part streams before or after its
-    // `data-ui` sibling. Envelope parts emit no item of their own.
+    // First pass: index this message's data-consent parts by toolCallId
+    // (ENG-193 §4.5) — a tool part and its tier metadata can arrive in either
+    // order within the same message, so both branches below read this map
+    // rather than assuming ordering. The same pass collects remix envelopes
+    // by paired node id (remix fast-edits) — envelope parts emit no item of
+    // their own and pair regardless of stream order.
+    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string }>();
     const envelopes = new Map<string, string>();
     for (const rawPart of message.parts) {
-      const part = rawPart as { type: string; data?: { envelope?: string; uiNodeId?: string } };
+      const part = rawPart as {
+        type: string;
+        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; envelope?: string; uiNodeId?: string };
+      };
+      if (part.type === "data-consent" && part.data?.toolCallId) {
+        tierByToolCallId.set(part.data.toolCallId, {
+          tier: part.data.tier as "act" | "critical",
+          unverified: Boolean(part.data.unverified),
+          ...(part.data.reason ? { reason: part.data.reason } : {}),
+        });
+      }
       if (part.type === "data-remix-envelope" && part.data?.uiNodeId && part.data.envelope) {
         envelopes.set(part.data.uiNodeId, part.data.envelope);
       }
@@ -115,6 +147,8 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
           node,
           ...(envelope !== undefined ? { envelope } : {}),
         });
+      } else if (part.type === "data-consent") {
+        // Consumed via tierByToolCallId above — never its own render item.
       } else if (part.type === "dynamic-tool") {
         // Dynamic tools (MCP servers, and any tool the SDK types at runtime)
         // carry their name in `toolName` instead of the part type. Same
@@ -139,9 +173,15 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
         }
       } else if (part.type.startsWith("tool-")) {
         const toolName = part.type.slice("tool-".length);
+        const toolCallId = part.toolCallId as string | undefined;
+        const tierInfo = toolCallId ? tierByToolCallId.get(toolCallId) : undefined;
         if (part.state === "approval-requested") {
           const approval = part.approval as { id: string };
-          items.push({ kind: "approval", key, messageId, approvalId: approval.id, toolName, input: part.input });
+          items.push({
+            kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.reason ? { reason: tierInfo.reason } : {}),
+          });
         } else if (RENDER_TOOLS.has(toolName)) {
           // A render tool's finished output is the sibling data-ui node (so no chip).
           // While render_view is still streaming/pending, show a skeleton in its
@@ -164,11 +204,12 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
             key,
             messageId,
             toolName,
-            toolCallId: part.toolCallId as string | undefined,
+            toolCallId,
             state: String(part.state ?? ""),
             input: part.input,
             output: part.output,
             errorText: part.errorText as string | undefined,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
           });
         }
       }
@@ -181,11 +222,34 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
  * Collapses each turn's consecutive tool calls into a single `activity` group so
  * the message list can render one activity panel per turn instead of a chip per
  * tool. Non-tool items pass through in place; the group takes the position of the
- * turn's first tool call.
+ * turn's first tool call. Sibling approval-requested items of the SAME tool in
+ * the SAME message also collapse into one `approval-batch` (ENG-193 §3 Moment
+ * 4 — "ten at once → one decision"); a lone approval stays a plain `approval`
+ * item so the existing single-card path renders it unchanged. Only tier
+ * "act" items are batchable (review follow-up): critical-tier approvals are
+ * exempt entirely (spec §3 Moment 6/§4.1, each always renders its own
+ * ceremony ApprovalCard) and so — same treatment, not a special case — is an
+ * approval whose tier is UNDEFINED. `tier` rides in on the sibling
+ * data-consent part (ENG-193 §4.1/§4.5); if that part was lost or never
+ * arrived, the item's true tier is simply unknown, and batching it as if it
+ * were a confirmed "act" call would be a false assurance — it renders its
+ * own individual card instead, same as critical. An item carrying a judge/
+ * breaker `reason` (ENG-193 PR #40 review — item C) is EXEMPT too, even at
+ * tier "act": a reason means the judge/cautionBreaker/volumeBreaker escalated
+ * this SPECIFIC call above its siblings — the "Hold on" ceremony (its own
+ * card, the reason legible) must not be swallowed into a bulk "Approve all N".
+ * Review follow-up: an `unverified` item is exempt too, consistent with the
+ * critical/reason/undefined-tier exemptions above — `ApprovalBatchCard` has
+ * no unverified badge/copy, so silently dropping an unverified call into a
+ * bulk "Approve all N" would hide exactly the caveat its own individual
+ * `ApprovalCard` renders.
  */
 export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
   const out: RenderItem[] = [];
   const groupIndexByMessage = new Map<string, number>();
+  // key = `${messageId}::${toolName}` -> index into `out` of its approval-batch
+  const approvalGroupIndex = new Map<string, number>();
+
   for (const item of items) {
     if (item.kind === "tool") {
       const existing = groupIndexByMessage.get(item.messageId);
@@ -195,8 +259,69 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
         groupIndexByMessage.set(item.messageId, out.length);
         out.push({ kind: "activity", key: `activity:${item.messageId}`, messageId: item.messageId, steps: [item] });
       }
+    } else if (item.kind === "approval") {
+      // Only tier "act" ever enters batch collapse (review follow-up).
+      // Critical-tier approvals NEVER batch (spec §3 Moment 6/§4.1): every
+      // money/irreversible action renders its own ceremony card, one
+      // deliberate decision each — a batch "Approve all N" would bypass the
+      // ceremony register and its untruncated fields. An UNDEFINED tier gets
+      // the same treatment: it means the sibling data-consent part carrying
+      // the real tier was lost or never arrived, so this item's true
+      // dangerousness is simply unknown — batching it as if it were a
+      // confirmed "act" call would be a false assurance. A `reason` (ENG-193
+      // PR #40 review — item C) is exempt too, however "act" its tier: the
+      // judge/breaker specifically escalated THIS call — batching would lose
+      // the "Hold on" treatment for exactly the call that most needs it.
+      // `unverified` (review follow-up) is exempt for the same reason:
+      // ApprovalBatchCard carries no unverified tag, so a batch would hide
+      // the caveat the solo ApprovalCard shows.
+      if (item.tier !== "act" || item.reason !== undefined || item.unverified) {
+        out.push(item);
+        continue;
+      }
+      const groupKey = `${item.messageId}::${item.toolName}`;
+      if (approvalGroupIndex.has(groupKey)) {
+        // A sibling of an already-seen tool in this message: never pushed as
+        // its own render item. The second pass below collects every sibling
+        // straight from `items` (not `out`) and promotes the FIRST sighting's
+        // placeholder into the batch, so this one doesn't need its own slot.
+        // (During this pass the placeholder is always still a plain
+        // "approval" — promotion only happens in the second pass.)
+        continue;
+      }
+      // First sighting: hold a place. It gets promoted to a real
+      // "approval-batch" only if a SECOND sibling of the same tool shows up
+      // (below) — a lone approval stays a plain "approval" render item so
+      // ApprovalCard (not ApprovalBatchCard) renders it, unchanged from today.
+      approvalGroupIndex.set(groupKey, out.length);
+      out.push(item);
     } else {
       out.push(item);
+    }
+  }
+
+  // Second pass: promote any placeholder that gained siblings into a real
+  // "approval-batch" — done as a pass rather than inline above so a batch's
+  // FIRST item (already pushed as a plain "approval") converts cleanly once
+  // its second sibling is seen, without special-casing index 0 vs index 1+.
+  for (const [groupKey, index] of approvalGroupIndex) {
+    const entry = out[index];
+    if (entry && entry.kind === "approval") {
+      const toolName = groupKey.slice(groupKey.indexOf("::") + 2);
+      const siblings = items.filter(
+        (i): i is Extract<ThreadItem, { kind: "approval" }> =>
+          // Mirrors the skip above: a critical, undefined-tier, reasoned, OR
+          // unverified item that shares a message+tool with act siblings
+          // must not be pulled into their batch during promotion either.
+          i.kind === "approval" && i.tier === "act" && i.reason === undefined && !i.unverified &&
+          i.messageId === entry.messageId && i.toolName === toolName,
+      );
+      if (siblings.length > 1) {
+        out[index] = {
+          kind: "approval-batch", key: `approval-batch:${entry.messageId}:${toolName}`,
+          messageId: entry.messageId, toolName, items: siblings,
+        };
+      }
     }
   }
   return out;

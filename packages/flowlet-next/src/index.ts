@@ -26,3 +26,9 @@ export {
   capSource,
   resolveRemixSealer,
 } from "@flowlet/server";
+// ENG-193 permissions surface — re-exported from @flowlet/server per the
+// framework-agnostic split (the implementations live there now).
+export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "@flowlet/server";
+export { createThreadIndex, type ThreadIndex } from "@flowlet/server";
+export { handleConsentRoute, type ConsentRouteDeps } from "@flowlet/server";
+export { listParkedActionsRoute, resolveParkedActionRoute } from "@flowlet/server";

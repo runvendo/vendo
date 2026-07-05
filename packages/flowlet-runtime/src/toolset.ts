@@ -12,13 +12,15 @@
  * - Normal path: resolve descriptor, wrap, register.
  */
 
-import type { ToolSet } from "ai";
+import type { ToolSet, UIMessageStreamWriter } from "ai";
+import type { FlowletUIMessage } from "@flowlet/core";
 import type { ToolSource, ToolDescriptor } from "./descriptor";
 import { buildDescriptor } from "./descriptor";
-import { wrapTool } from "./wrap-tool";
+import { wrapTool, type PausedCallTracker } from "./wrap-tool";
 import { wrapClientTool } from "./wrap-client-tool";
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
+import type { RunPolicyContext } from "./policy/run-context";
 
 /** A single source of tools provided to `buildToolset`. */
 export interface ToolSourceInput {
@@ -47,13 +49,30 @@ export function buildToolset(args: {
   sources: ToolSourceInput[];
   policy: ApprovalPolicy;
   principal: FlowletPrincipal;
+  /** Stable per-conversation id threaded into every wrapped tool (ENG-193 §4.3). */
+  threadId?: string;
+  /** The run's stream writer, threaded into every wrapped tool (ENG-193 §4.5). */
+  writer?: UIMessageStreamWriter<FlowletUIMessage>;
+  /** The run's judge context, threaded into every wrapped tool (ENG-193 §4.2). */
+  runContext?: RunPolicyContext;
+  /**
+   * Review follow-up (wrap-tool.ts item 3): a `PausedCallTracker` shared
+   * across every turn of the SAME agent — engine.ts rebuilds this whole
+   * toolset (and therefore fresh `wrapTool` closures) on every `run()` call,
+   * so tracking whether `needsApproval` paused for a toolCallId must live
+   * OUTSIDE any single `buildToolset` call to survive into the LATER turn
+   * where `execute` runs. Absent -> each wrapped tool gets its own private
+   * per-call tracker (`wrapTool`'s default), which is only correct for
+   * single-turn callers (tests).
+   */
+  pausedCalls?: PausedCallTracker;
   onCollision?: (name: string, kept: ToolSource, dropped: ToolSource) => void;
   onSkip?: (name: string, source: ToolSource, reason: string) => void;
   /** Called once per successfully registered tool, with its resolved
    *  descriptor — feeds the per-run capability summary (spec §7). */
   onRegister?: (descriptor: ToolDescriptor) => void;
 }): ToolSet {
-  const { sources, policy, principal, onCollision, onSkip, onRegister } = args;
+  const { sources, policy, principal, threadId, writer, runContext, pausedCalls, onCollision, onSkip, onRegister } = args;
 
   const result: ToolSet = {};
   // Track which source has already claimed each tool name.
@@ -79,14 +98,13 @@ export function buildToolset(args: {
       // no `execute`), catch it, report via onSkip, and leave the tool out —
       // fail-closed.
       try {
-        const wrap = descriptor.executor === "client" ? wrapClientTool : wrapTool;
-        const wrapped = wrap({
-          name,
-          tool,
-          descriptor,
-          policy,
-          principal,
-        });
+        // Branched (not a shared `wrap` variable) so `pausedCalls` — only
+        // meaningful for the server-executed path — isn't forced onto
+        // `wrapClientTool`'s narrower args via a union call signature.
+        const wrapped =
+          descriptor.executor === "client"
+            ? wrapClientTool({ name, tool, descriptor, policy, principal, threadId, writer, runContext })
+            : wrapTool({ name, tool, descriptor, policy, principal, threadId, writer, runContext, pausedCalls });
         result[name] = wrapped;
         claimed.set(name, source);
         onRegister?.(descriptor);

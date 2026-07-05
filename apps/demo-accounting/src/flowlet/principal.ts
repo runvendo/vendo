@@ -8,6 +8,7 @@
  * the display name in approval claims, while the Composio subject stays the
  * infrastructure identity underneath.
  */
+import type { Principal } from "@flowlet/core";
 import type { FlowletPrincipal } from "@flowlet/runtime";
 
 export const DEMO_USER_ID = "flowlet-demo";
@@ -18,3 +19,15 @@ export const DEMO_USER_NAME = "Maya Alvarez";
 export const DEMO_PRINCIPAL: FlowletPrincipal = {
   userId: DEMO_USER_ID,
 };
+
+/**
+ * The demo's Store-seam scope (ENG-193 §6.1/§6.2): one fixed tenant + the
+ * Composio-authorized subject. Defined here (a dependency-free leaf) rather
+ * than in `automations.ts` (which re-exports it for compatibility) so that
+ * `store.ts` can depend on it WITHOUT depending on `automations.ts` — that
+ * indirection would create a module cycle once `policy.ts` (ENG-193 item 2)
+ * imports `demoStore` from `store.ts`: `policy → store → automations →
+ * policy`, deadlocking mid-initialization. Routing through this leaf module
+ * breaks the cycle.
+ */
+export const CADENCE_SCOPE: Principal = { tenantId: "cadence-demo", subject: DEMO_USER_ID };

@@ -27,6 +27,7 @@ import { demoPolicy } from "./policy";
 import { cadenceBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
 import { cadenceHostComponents } from "./host-components/descriptors";
+import { CADENCE_SCOPE, demoStore } from "./store";
 
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
@@ -185,9 +186,15 @@ export interface CreateDemoAgentOptions {
   model?: LanguageModel;
   /** Inject a Composio client (tests pass a stub; production builds the real one). */
   composioClient?: ComposioClient;
-  /** Extra in-process tools — the chat route passes demoTools() + the
-   *  automation world's authoring tools so they share one world. */
+  /** Extra in-process HOST tools (demoTools() only) — judged/breaker-gated
+   *  normally (source "engine"). ENG-193 PR #40 review (item A): must NOT
+   *  carry the automation world's authoring tools or steering tools; see
+   *  `controlTools`. */
   extraTools?: ToolSet;
+  /** Flowlet's own control-plane tools — the automation world's authoring
+   *  tools + steering tools, so they share one world. Exempt from the
+   *  judge/breakers (source "control"). */
+  controlTools?: ToolSet;
   /** Composio toolkits to ingest; defaults to the demo's standing pair. */
   toolkits?: string[];
 }
@@ -218,9 +225,49 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
       client: opts.composioClient,
     },
     tools: opts.extraTools,
+    controlTools: opts.controlTools,
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
     ...(remixSealer ? { remixSealer } : {}),
     ...(envManifest ? { envManifest } : {}),
+    // ENG-193 review follow-up (queued gap): the Trust diary read 0
+    // tool_execution events despite live client-tool sends (Gmail/Calendar
+    // and Cadence's own host tools all execute in the browser — there's no
+    // server execute for the normal onExecuted audit hook to observe). The
+    // engine now audits these itself from the run's incoming history.
+    audit: demoStore.audit,
+    auditPrincipal: (p) => ({ tenantId: CADENCE_SCOPE.tenantId, subject: p.userId }),
+    // ENG-193 §6.2: persist each SETTLED run's full message list to the demo's
+    // thread store. This is the SINGLE writer for thread messages —
+    // chat-handler.ts deliberately does NOT persist the request body — the
+    // streamed assistant turn, with any approval-requested parts, must be in
+    // the store BEFORE the client's consent POST arrives, which happens before
+    // any next chat turn. Mirrors packages/flowlet-next/src/handler.ts's
+    // onSettled wiring (ENG-193 review 2026-07-04).
+    //
+    // Continuation turns (host-tool resumes, approval resumes) REVISE the
+    // trailing assistant message in place — ai's onFinish returns
+    // `[...originalMessages.slice(0, -1), state.message]`, the SAME length as
+    // what a previous settle stored — so an append-only prefix delta silently
+    // drops the revision (live-verification bug, 2026-07-04: the
+    // approval-requested part never reached the store and consent 404'd).
+    // `ThreadStore.replaceMessages` (optional seam member) persists the full
+    // settled list; the append-only fallback stays for stores without it
+    // (same shape as flowlet-next's handler.ts).
+    onSettled: async ({ messages, threadId }) => {
+      // Skip runs whose threadId isn't a store-assigned thread (e.g. a direct
+      // agent.run() test caller with no resolved thread) — the writes below
+      // throw on unknown ids and the engine would just log the noise.
+      if (!(await demoStore.threads.get(CADENCE_SCOPE, threadId))) return;
+      if (demoStore.threads.replaceMessages) {
+        await demoStore.threads.replaceMessages(CADENCE_SCOPE, threadId, messages);
+        return;
+      }
+      const existing = await demoStore.threads.getMessages(CADENCE_SCOPE, threadId);
+      const toAppend = messages.slice(existing.length);
+      if (toAppend.length > 0) {
+        await demoStore.threads.appendMessages(CADENCE_SCOPE, threadId, toAppend);
+      }
+    },
   });
 }

@@ -56,7 +56,7 @@ function makeStore(): Store {
     recordRun: async () => {},
     listRuns: async () => [],
   };
-  const audit: AuditLog = { append: async () => {} };
+  const audit: AuditLog = { append: async () => {}, query: async () => [] };
   const remixPins = new Map<string, RemixRecord>();
   const remixes: RemixStore = {
     pin: async (scope, anchorId, record) => {

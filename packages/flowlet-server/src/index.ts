@@ -51,3 +51,20 @@ export {
 } from "./remix-enrich";
 export { resolveRemixSealer } from "./seal";
 export { resolveMcpServers, mcpJsonSchema, mcpServerArraySchema } from "./mcp-config";
+
+// ENG-193 permissions system: production policy stack, thread index, and the
+// consent/fade/trust/parked-action route handlers behind the fetch handler's
+// endpoints — exported so hosts and adapters can mount them directly.
+export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./policy-stack";
+export { createThreadIndex, type ThreadIndex } from "./threads";
+export { handleConsentRoute, type ConsentRouteDeps } from "./consent";
+export { handleFadeProposalRoute, type FadeProposalRouteDeps } from "./fade-proposal";
+export { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
+export {
+  listGrantsRoute,
+  revokeGrantRoute,
+  listRulesRoute,
+  revokeRuleRoute,
+  queryAuditRoute,
+  listCriticalToolsRoute,
+} from "./trust";

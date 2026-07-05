@@ -169,15 +169,31 @@ export type ActionResult =
 export type DispatchAction = (req: ActionRequest) => Promise<ActionResult>;
 
 /**
- * Flowlet's typed data-* parts layered on the ai SDK UIMessage. Approvals are NOT
- * here: human-in-the-loop tool approval is handled by the ai SDK natively
- * (`needsApproval` tools + `addToolApprovalResponse`), not a custom data part.
+ * Flowlet's typed data-* parts layered on the ai SDK UIMessage.
+ *
+ * Approval PAUSING is NOT here: human-in-the-loop tool approval is handled by
+ * the ai SDK natively (`needsApproval` tools + `addToolApprovalResponse`).
+ * `consent` below is TIER METADATA riding beside that native mechanism — the
+ * engine writes one persistent `data-consent` part per non-read tool call
+ * (ENG-193 §4.1/§4.5), which backs both the approval card's ceremony/unverified
+ * rendering (when the call paused) and the receipt line (when it didn't —
+ * spec Moment 2, a silently-allowed mutating call still gets a receipt).
  */
+export interface ConsentTierPart {
+  toolCallId: string;
+  tier: "act" | "critical";
+  unverified: boolean;
+  /** The judge/breaker's plain-language escalation reason (ENG-193 §4.2/§4.7).
+   *  Absent for an ordinary (non-escalated) act-tier call. */
+  reason?: string;
+}
+
 export type FlowletDataParts = {
   ui: UINode;
   /** Sealed authored-state envelope paired to a `data-ui` node (remix
    *  fast-edits epic). The client stores it opaquely with the pin. */
   "remix-envelope": { envelope: string; uiNodeId: string };
+  consent: ConsentTierPart;
 };
 
 /** The public message type: an ai SDK UIMessage with Flowlet metadata + data parts. */

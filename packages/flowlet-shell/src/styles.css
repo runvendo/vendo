@@ -25,6 +25,10 @@
   --flowlet-danger: light-dark(#b0392b, #f1816f);
   --flowlet-danger-bg: light-dark(#fff5f5, color-mix(in srgb, #f1816f 13%, var(--flowlet-surface)));
   --flowlet-danger-border: light-dark(#f0caca, color-mix(in srgb, #f1816f 32%, var(--flowlet-border)));
+  /* Warn/ceremony surface — critical (money/irreversible) approval cards. */
+  --flowlet-warn: light-dark(#8a5a00, #f0b429);
+  --flowlet-warn-bg: light-dark(#fff8e8, color-mix(in srgb, #f0b429 13%, var(--flowlet-surface)));
+  --flowlet-warn-border: light-dark(#f0dca0, color-mix(in srgb, #f0b429 32%, var(--flowlet-border)));
   color: var(--flowlet-fg);
   font-family: var(--flowlet-font);
   letter-spacing: -.011em;
@@ -242,9 +246,25 @@
 .fl-approval-field { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 12px;
   font-size: 12.5px; line-height: 1.45; }
 .fl-approval-field dt { color: var(--flowlet-fg-muted); }
-.fl-approval-field dd { margin: 0; color: var(--flowlet-fg); overflow-wrap: anywhere; }
+/* pre-line: object/array inputs render as compact `Key: value` lines
+   (field-rows.ts), one per line, instead of raw JSON. */
+.fl-approval-field dd { margin: 0; color: var(--flowlet-fg); overflow-wrap: anywhere; white-space: pre-line; }
 .fl-approval-more { font-size: 11.5px; color: var(--flowlet-fg-muted); }
 .fl-approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+.fl-approval-batch-list { list-style: none; margin: 12px 0 0; padding: 10px 0 2px;
+  border-top: 1px solid var(--flowlet-border); display: flex; flex-direction: column; gap: 7px; }
+.fl-approval-batch-row label { display: flex; align-items: center; gap: 9px;
+  font-size: 12.5px; line-height: 1.45; color: var(--flowlet-fg); cursor: pointer; }
+.fl-approval-batch-row input[type="checkbox"] { appearance: none; margin: 0; width: 15px; height: 15px;
+  flex-shrink: 0; border: 1px solid var(--flowlet-border-strong); border-radius: 4.5px;
+  background: var(--flowlet-surface); cursor: pointer; display: grid; place-items: center;
+  transition: background .13s, border-color .13s; }
+.fl-approval-batch-row input[type="checkbox"]:hover { border-color: var(--flowlet-accent); }
+.fl-approval-batch-row input[type="checkbox"]:focus-visible { outline: 2px solid var(--flowlet-accent); outline-offset: 2px; }
+.fl-approval-batch-row input[type="checkbox"]:checked { background: var(--flowlet-accent); border-color: var(--flowlet-accent); }
+.fl-approval-batch-row input[type="checkbox"]:checked::after { content: ""; width: 8.5px; height: 8.5px;
+  background: var(--flowlet-accent-fg);
+  clip-path: polygon(14% 44%, 0 62%, 40% 100%, 100% 18%, 84% 4%, 39% 68%); }
 .fl-btn { border: 1px solid var(--flowlet-border); border-radius: 9px; padding: 8px 15px;
   font: 550 12.5px/1 var(--flowlet-font); letter-spacing: -.006em;
   background: var(--flowlet-surface); color: var(--flowlet-fg); cursor: pointer;
@@ -255,7 +275,59 @@
 .fl-btn-primary { background: var(--flowlet-accent); color: var(--flowlet-accent-fg); border-color: transparent;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-fg) 22%, transparent), inset 0 1px 0 rgba(255,255,255,.16); }
 .fl-btn-primary:hover { opacity: .92; background: var(--flowlet-accent); border-color: transparent; }
+.fl-approval--ceremony { border-color: var(--flowlet-warn-border); background: var(--flowlet-warn-bg); }
+.fl-approval--ceremony .fl-approval-ic { color: var(--flowlet-warn); background: color-mix(in srgb, var(--flowlet-warn) 16%, transparent); }
+.fl-approval--ceremony .fl-approval-eyebrow { color: var(--flowlet-warn); }
+.fl-approval-unverified { margin-left: 8px; padding: 1px 6px; border-radius: 999px; font-size: 9.5px;
+  font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--flowlet-fg-muted);
+  background: color-mix(in srgb, var(--flowlet-fg-muted) 12%, transparent); }
+.fl-approval-consequence { margin-top: 10px; font: 600 12px/1.4 var(--flowlet-font); color: var(--flowlet-warn); }
+.fl-btn-ceremony { background: var(--flowlet-warn); color: #fff; border-color: transparent;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--flowlet-warn) 40%, transparent); }
+.fl-btn-ceremony:hover { opacity: .92; background: var(--flowlet-warn); border-color: transparent; }
+.fl-approval--escalation { border-color: var(--flowlet-warn-border); background: var(--flowlet-warn-bg); }
+.fl-approval--escalation .fl-approval-ic { color: var(--flowlet-warn); background: color-mix(in srgb, var(--flowlet-warn) 16%, transparent); }
+.fl-approval--escalation .fl-approval-eyebrow { color: var(--flowlet-warn); }
+.fl-approval-reason { margin: 10px 0 0; font: 400 12.5px/1.4 var(--flowlet-font); color: var(--flowlet-fg);
+  /* Defensive: the reason is model-authored text — capped at 200 chars at the
+     stamp site (runtime escalation.ts), but never let a runaway value blow
+     the card up regardless. */
+  max-height: 7em; overflow-y: auto; overflow-wrap: break-word; }
 .fl-uinode { align-self: flex-start; width: 100%; }
+
+/* ---------- fade proposal (ENG-193 §3 Moment 5/§4.4) ---------- */
+.fl-fade { display: flex; flex-direction: column; gap: 10px; margin: 6px 0; padding: 12px 14px;
+  border: 1px dashed var(--flowlet-border); border-radius: 12px; background: var(--flowlet-accent-soft); }
+.fl-fade-text { font-size: 13px; line-height: 1.4; color: var(--flowlet-fg); }
+.fl-fade-actions { display: flex; gap: 8px; }
+
+/* ---------- waiting list ("waiting on you", ENG-193 §4.6) ---------- */
+/* Height-capped with internal scroll: an unbounded inbox (verified live with
+   9 parked rows) starves the host page's flex column, compressing the thread
+   until the last card's buttons sit UNDER the docked composer — whose form
+   then intercepts their clicks. The strip must never take more than its
+   share of the surface; overflow scrolls inside. */
+.fl-waiting { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  max-height: min(40vh, 360px); overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--flowlet-border); border-radius: var(--flowlet-radius);
+  background: var(--flowlet-glass-strong); -webkit-backdrop-filter: var(--flowlet-blur); backdrop-filter: var(--flowlet-blur); }
+/* The scroller's children must never compress (same rule as .fl-msglist). */
+.fl-waiting > * { flex-shrink: 0; }
+.fl-waiting-head { font: 600 11px/1 var(--flowlet-font); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--flowlet-fg-muted); }
+.fl-waiting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 9px 0; border-top: 1px solid var(--flowlet-border); }
+.fl-waiting-row:first-of-type { border-top: none; }
+.fl-waiting-row-main { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+.fl-waiting-ic { flex-shrink: 0; line-height: 1.3; }
+.fl-waiting-row-title { font: 600 13px/1.3 var(--flowlet-font); color: var(--flowlet-fg); }
+.fl-waiting-row-preview { margin-top: 2px; font-size: 12px; color: var(--flowlet-fg-muted);
+  overflow-wrap: anywhere; white-space: pre-line; }
+.fl-waiting-row-meta { margin-top: 4px; font-size: 11px; color: var(--flowlet-fg-muted); }
+.fl-waiting-stale { color: var(--flowlet-fg-muted); }
+.fl-waiting-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.fl-waiting-row--ceremony { background: var(--flowlet-warn-bg); border-radius: 9px; padding: 9px; margin: 0 -9px; }
+.fl-waiting-row--ceremony .fl-waiting-row-title { color: var(--flowlet-warn); }
 
 /* ---------- composer ---------- */
 /* Column so attachment chips / drop zone stack above the input row. */
@@ -352,6 +424,10 @@
 .fl-act-peek-row:last-child { border-bottom: 0; }
 .fl-act-peek-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-act-peek-v { color: var(--flowlet-fg-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.fl-receipt { margin-left: 6px; padding: 0; border: none; background: none; cursor: pointer;
+  font: 500 10.5px/1 var(--flowlet-font); color: var(--flowlet-fg-muted); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--flowlet-fg-muted) 45%, transparent); }
+.fl-receipt-fields { margin-top: 6px; padding-left: 26px; }
 
 /* ---------- turn actions ---------- */
 .fl-turn-actions { display: flex; align-items: center; gap: 2px; margin-top: 6px;
@@ -615,6 +691,15 @@
   padding: 24px; cursor: pointer; background: var(--flowlet-glass-strong); color: var(--flowlet-fg-muted);
   width: 100%; transition: border-color .12s, color .12s; }
 .fl-slot-empty:hover { border-color: var(--flowlet-accent); color: var(--flowlet-fg); }
+/* Trust screen mounted as a docked side panel beside the page chrome (ENG-193
+   §3 Moment 12) — the accounting demo's own overlay, not a portal (unlike
+   FlowletOverlay's Cmd+K palette, which escapes the host's stacking context
+   entirely and so needs the near-max z-index above); this only needs to sit
+   above the page it's mounted inside. */
+.fl-trust-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .28);
+  display: flex; justify-content: flex-end; }
+.fl-trust-overlay > div { width: min(420px, 92vw); height: 100%; background: var(--flowlet-bg);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .12); }
 
 /* ---------- generative dashboard slot (flowlet-slot) ---------- */
 .fl-slot { position: relative; width: 100%; min-height: var(--fl-slot-min-h, 370px);
@@ -678,6 +763,29 @@
   border: 1px solid var(--flowlet-danger-border); background: transparent;
   color: var(--flowlet-danger); font: 600 12px/1.2 var(--flowlet-font); cursor: pointer; }
 .fl-error-retry:hover { background: var(--flowlet-danger); color: var(--flowlet-bg, #fff); }
+
+/* ---------- Trust screen (ENG-193 §3 Moment 12) ---------- */
+.fl-trust { display: flex; flex-direction: column; gap: 16px; padding: 16px; overflow-y: auto;
+  background: var(--flowlet-bg); color: var(--flowlet-fg); font-family: var(--flowlet-font); }
+.fl-trust-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.fl-trust-title { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.fl-trust-close { border: none; background: transparent; font-size: 20px; line-height: 1; cursor: pointer;
+  color: var(--flowlet-fg-muted); }
+.fl-trust-section { display: flex; flex-direction: column; gap: 8px; }
+.fl-trust-section-head { font: 600 11px/1 var(--flowlet-font); letter-spacing: .04em; text-transform: uppercase;
+  color: var(--flowlet-fg-muted); margin: 0; }
+.fl-trust-empty { font-size: 12.5px; color: var(--flowlet-fg-muted); }
+.fl-trust-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--flowlet-border); }
+.fl-trust-row:first-of-type { border-top: none; }
+.fl-trust-row-title { font: 600 13px/1.3 var(--flowlet-font); }
+.fl-trust-row-meta { margin-top: 2px; font-size: 11px; color: var(--flowlet-fg-muted); }
+.fl-trust-critical { font-size: 12.5px; color: var(--flowlet-fg-muted); }
+.fl-trust-diary { font-size: 13px; line-height: 1.5; padding: 10px 12px; border-radius: 10px;
+  background: var(--flowlet-accent-soft); }
+.fl-trust-activity { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.fl-trust-activity-row { display: flex; gap: 8px; font-size: 12px; color: var(--flowlet-fg-muted); }
+.fl-trust-activity-time { flex-shrink: 0; width: 48px; }
 
 /* ---------- FlowletRemix (2026-07-04): wrapper, affordance, pill ---------- */
 .fl-remix { position: relative; }

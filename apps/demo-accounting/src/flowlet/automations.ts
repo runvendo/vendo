@@ -37,8 +37,11 @@ import {
   type RegisteredTool,
 } from "@flowlet/runtime";
 import { listDeadlineEntries } from "@/server/clients";
+import { getStore } from "@/server/store";
+import { transitionDocument, type DocumentAction } from "@/server/documents";
 import { demoPolicy } from "./policy";
-import { DEMO_USER_ID, DEMO_USER_NAME } from "./principal";
+import { demoStore } from "./store";
+import { CADENCE_SCOPE, DEMO_USER_ID, DEMO_USER_NAME } from "./principal";
 import {
   createCalendarEvent as realCreateCalendarEvent,
   sendGmail as realSendGmail,
@@ -48,8 +51,10 @@ import {
 
 const DEMO_MODEL = process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6";
 
-/** The demo's Principal: one fixed tenant + the Composio-authorized subject. */
-export const CADENCE_SCOPE: Principal = { tenantId: "cadence-demo", subject: DEMO_USER_ID };
+/** The demo's Principal: one fixed tenant + the Composio-authorized subject.
+ *  Defined in `./principal` (a dependency-free leaf) — re-exported here for
+ *  existing/plan call sites that import it from this module. */
+export { CADENCE_SCOPE };
 
 /** What the automation reads per client (the trigger-independent world view). */
 export function deadlineWorldView() {
@@ -247,10 +252,98 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
     },
   };
 
+  // ENG-193 item-4 demo fixture (same precedent as item 2's `x-flowlet-dangerous`
+  // on setDocumentStatus in openapi.json): the ONLY critical-tier tool Cadence
+  // has, exposed to the automation world so a for_each can route a critical
+  // action through parking — a critical park ALWAYS parks, even with a grant,
+  // and renders the WaitingList's ceremony row. Demo-scoped classification,
+  // not a product claim.
+  const documentsForReview: RegisteredTool = {
+    descriptor: {
+      name: "get_documents_for_review",
+      source: "caller",
+      annotations: { readOnlyHint: true },
+      hasExecute: true,
+      kind: "function",
+    },
+    description:
+      "Every uploaded client document awaiting firm review (status received or needs_review). " +
+      "Each row: docId, clientId, businessName, kind, status, note (why it was flagged, when present).",
+    modelInputSchema: { type: "object", properties: {} },
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        const store = getStore();
+        const documents = store.documents
+          .filter((d) => d.status === "received" || d.status === "needs_review")
+          .map((d) => ({
+            docId: d.id,
+            clientId: d.clientId,
+            businessName:
+              store.clients.find((c) => c.id === d.clientId)?.businessName ?? d.clientId,
+            kind: d.kind,
+            status: d.status,
+            ...(d.note !== undefined ? { note: d.note } : {}),
+          }));
+        return { ok: true, result: { documents } };
+      } catch (err) {
+        return { ok: false, error: { code: "host_error", message: String(err) } };
+      }
+    },
+  };
+
+  const setDocumentStatus: RegisteredTool = {
+    descriptor: {
+      name: "set_document_status",
+      source: "caller",
+      // Mirrors openapi.json's `"x-flowlet-dangerous": true` on the same
+      // operation (item-2 fixture): destructive → critical tier → inside a
+      // for_each it ALWAYS parks for the ceremony approval, never runs
+      // unattended (ENG-193 §8).
+      annotations: { destructiveHint: true },
+      hasExecute: true,
+      kind: "function",
+    },
+    description:
+      "Advance a client document through its review lifecycle: 'verify' confirms it, 'reject' " +
+      "returns it to missing with a reason the client sees. Input: { docId, action, reason? }.",
+    modelInputSchema: {
+      type: "object",
+      properties: {
+        docId: { type: "string", description: "Document request id (from get_documents_for_review)." },
+        action: { type: "string", enum: ["verify", "reject"], description: "Lifecycle transition." },
+        reason: { type: "string", description: "Why it was rejected (reject only)." },
+      },
+      required: ["docId", "action"],
+    },
+    inputSchema: z.object({
+      docId: z.string(),
+      action: z.enum(["verify", "reject"]),
+      reason: z.string().optional(),
+    }),
+    execute: async (input) => {
+      try {
+        const doc = transitionDocument(
+          String(input["docId"]),
+          String(input["action"]) as DocumentAction,
+          input["reason"] !== undefined ? { reason: String(input["reason"]) } : {},
+        );
+        return { ok: true, result: { docId: doc.id, status: doc.status } };
+      } catch (err) {
+        return {
+          ok: false,
+          error: { code: "document_error", message: err instanceof Error ? err.message : String(err) },
+        };
+      }
+    },
+  };
+
   const registered: Record<string, RegisteredTool> = {
     get_deadlines: getDeadlines,
     GMAIL_SEND_EMAIL: gmailSend,
     GOOGLECALENDAR_CREATE_EVENT: calendarCreate,
+    get_documents_for_review: documentsForReview,
+    set_document_status: setDocumentStatus,
   };
 
   const channels = new InAppChannels();
@@ -260,6 +353,11 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
     policy: demoPolicy,
     userClaims: async () => ({ id: DEMO_USER_ID, name: DEMO_USER_NAME }),
     agentRunner: createAgentStepRunner({ model: opts.model ?? anthropic(DEMO_MODEL) }),
+    // ENG-193 §4.6/§6.2: a parked-action resolution gets the SAME "consent"
+    // audit trail chat approvals already do (CADENCE_SCOPE is already
+    // Principal-shaped, so the runner's default identity auditPrincipal is
+    // correct — no mapping needed).
+    audit: demoStore.audit,
     channels,
     ...(opts.now ? { now: opts.now } : {}),
   });
@@ -301,6 +399,11 @@ export function demoAutomationInstructions(): string {
     '- GOOGLECALENDAR_CREATE_EVENT: book a real calendar event — input { "summary",',
     '  "start_datetime" ("YYYY-MM-DDTHH:MM:SS", naive local), "event_duration_minutes" (0-59),',
     '  "attendees"?, "description"? }.',
+    "- get_documents_for_review: every uploaded document awaiting firm review",
+    "  (status received|needs_review) with docId/clientId/businessName/kind/status (read-only).",
+    '- set_document_status: verify or reject a reviewed document — input { "docId",',
+    '  "action" ("verify"|"reject"), "reason"? }. DANGEROUS/irreversible tier: inside an',
+    "  automation it always parks for the user's explicit approval; it can never be granted.",
     "",
     "For 'every morning' schedules use cron '0 8 * * *' with timezone 'America/Los_Angeles'",
     "unless the user says otherwise. A client is 'missing documents' when status is",

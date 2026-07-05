@@ -35,6 +35,22 @@ describe("InMemoryThreadStore", () => {
       /unknown thread/i,
     );
   });
+
+  it("replaceMessages swaps the FULL list (continuation turns revise the trailing message)", async () => {
+    const store = createInMemoryStore({ now });
+    const thread = await store.threads.create(scope);
+    const msg = (id: string, extra = {}) => ({ id, role: "assistant", parts: [], ...extra }) as never;
+    await store.threads.appendMessages(scope, thread.id, [msg("u1"), msg("a1")]);
+    // Same length, revised trailing message — the case appendMessages can't express.
+    const revised = [msg("u1"), msg("a1", { metadata: { revised: true } })];
+    await store.threads.replaceMessages(scope, thread.id, revised);
+    const messages = await store.threads.getMessages(scope, thread.id);
+    expect(messages).toHaveLength(2);
+    expect((messages[1] as { metadata?: { revised?: boolean } }).metadata?.revised).toBe(true);
+    await expect(store.threads.replaceMessages(other, thread.id, [])).rejects.toThrow(
+      /unknown thread/i,
+    );
+  });
 });
 
 describe("InMemorySavedFlowletStore", () => {
@@ -120,6 +136,79 @@ describe("InMemoryAuditLog", () => {
     });
     expect(store.audit.events).toHaveLength(1);
     expect(store.audit.events[0]?.kind).toBe("approval");
+  });
+
+  const seeded = async () => {
+    const store = createInMemoryStore({ now });
+    // Deliberately appended out of chronological order: query must sort by
+    // `at` descending, not rely on insertion order.
+    await store.audit.append({
+      at: "2026-07-02T00:00:02Z",
+      principal: scope,
+      kind: "grant_revoked",
+      grantId: "g1",
+      tool: "send_email",
+    });
+    await store.audit.append({
+      at: "2026-07-02T00:00:01Z",
+      principal: scope,
+      kind: "grant_created",
+      grantId: "g1",
+      tool: "send_email",
+      scopePreview: "any input",
+    });
+    await store.audit.append({
+      at: "2026-07-02T00:00:03Z",
+      principal: scope,
+      kind: "approval",
+      toolCallId: "call-1",
+      decision: "approved",
+    });
+    await store.audit.append({
+      at: "2026-07-02T00:00:04Z",
+      principal: other,
+      kind: "approval",
+      toolCallId: "call-2",
+      decision: "denied",
+    });
+    return store;
+  };
+
+  it("query orders by `at` descending regardless of insertion order", async () => {
+    const store = await seeded();
+    const rows = await store.audit.query(scope);
+    expect(rows.map((e) => e.at)).toEqual([
+      "2026-07-02T00:00:03Z",
+      "2026-07-02T00:00:02Z",
+      "2026-07-02T00:00:01Z",
+    ]);
+  });
+
+  it("query isolates by principal scope (different subject sees nothing)", async () => {
+    const store = await seeded();
+    const rows = await store.audit.query({ tenantId: "t1", subject: "nobody" });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("query filters by kinds; an empty kinds array means no kind filter", async () => {
+    const store = await seeded();
+    const grants = await store.audit.query(scope, {
+      kinds: ["grant_created", "grant_revoked"],
+    });
+    expect(grants.map((e) => e.kind)).toEqual(["grant_revoked", "grant_created"]);
+    expect(await store.audit.query(scope, { kinds: [] })).toHaveLength(3);
+  });
+
+  it("query's since boundary is inclusive (>=)", async () => {
+    const store = await seeded();
+    const rows = await store.audit.query(scope, { since: "2026-07-02T00:00:02Z" });
+    expect(rows.map((e) => e.at)).toEqual(["2026-07-02T00:00:03Z", "2026-07-02T00:00:02Z"]);
+  });
+
+  it("query applies limit AFTER newest-first ordering", async () => {
+    const store = await seeded();
+    const rows = await store.audit.query(scope, { limit: 2 });
+    expect(rows.map((e) => e.at)).toEqual(["2026-07-02T00:00:03Z", "2026-07-02T00:00:02Z"]);
   });
 });
 

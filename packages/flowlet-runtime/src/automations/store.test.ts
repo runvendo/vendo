@@ -312,3 +312,80 @@ describe("lifecycle", () => {
     expect(stored?.pendingApproval).toBeUndefined();
   });
 });
+
+describe("parked actions", () => {
+  const scope = { tenantId: "t", subject: "u" };
+  const draft = (over: Partial<Parameters<InMemoryAutomationStore["createParkedAction"]>[1]> = {}) => ({
+    automationId: "auto-1",
+    runId: "run-1",
+    stepId: "send-reminder",
+    tool: "GMAIL_SEND_EMAIL",
+    input: { to: "acme@example.com" },
+    reason: "ungranted" as const,
+    tier: "act" as const,
+    descriptorHash: "hash-1",
+    requestedAt: "2026-07-04T00:00:00Z",
+    ...over,
+  });
+
+  it("creates a parked action with a store-assigned id, scoped to the principal", async () => {
+    const store = new InMemoryAutomationStore({ now: () => "2026-07-04T00:00:00Z" });
+    const action = await store.createParkedAction(scope, draft());
+    expect(action.id).toBeTruthy();
+    expect(action.resolution).toBeUndefined();
+    expect(await store.listParkedActions(scope, {})).toHaveLength(1);
+    expect(await store.listParkedActions({ tenantId: "t", subject: "someone-else" }, {})).toHaveLength(0);
+  });
+
+  it("filters by automationId, runId, and unresolvedOnly", async () => {
+    const store = new InMemoryAutomationStore();
+    const a1 = await store.createParkedAction(scope, draft({ runId: "run-1" }));
+    await store.createParkedAction(scope, draft({ runId: "run-2", automationId: "auto-2" }));
+    await store.resolveParkedAction(scope, a1.id, "declined", "2026-07-04T01:00:00Z");
+    expect(await store.listParkedActions(scope, { runId: "run-1" })).toHaveLength(1);
+    expect(await store.listParkedActions(scope, { automationId: "auto-2" })).toHaveLength(1);
+    expect(await store.listParkedActions(scope, { unresolvedOnly: true })).toHaveLength(1);
+  });
+
+  it("caps a large input like step outputs, flags it, and records the true size", async () => {
+    const store = new InMemoryAutomationStore();
+    const big = { blob: "x".repeat(MAX_STEP_OUTPUT_BYTES + 500) };
+    const action = await store.createParkedAction(scope, draft({ input: big }));
+    expect(action.inputTruncated).toBe(true);
+    expect(action.inputBytes).toBeGreaterThan(MAX_STEP_OUTPUT_BYTES);
+  });
+
+  it("resolve stamps resolvedAt + resolution and is idempotent-safe: a second resolve on an already-resolved row throws", async () => {
+    const store = new InMemoryAutomationStore({ now: () => "2026-07-04T02:00:00Z" });
+    const action = await store.createParkedAction(scope, draft());
+    const resolved = await store.resolveParkedAction(scope, action.id, "approved", "2026-07-04T02:00:00Z");
+    expect(resolved.resolution).toBe("approved");
+    expect(resolved.resolvedAt).toBe("2026-07-04T02:00:00Z");
+    await expect(store.resolveParkedAction(scope, action.id, "approved", "later")).rejects.toThrow(/already resolved/);
+  });
+
+  it("getParkedAction respects principal scoping", async () => {
+    const store = new InMemoryAutomationStore();
+    const action = await store.createParkedAction(scope, draft());
+    expect(await store.getParkedAction(scope, action.id)).toBeDefined();
+    expect(await store.getParkedAction({ tenantId: "t", subject: "other" }, action.id)).toBeUndefined();
+  });
+
+  it("list sweeps unresolved rows past the 7-day TTL to 'expired' — matching PendingApproval's TTL (review follow-up)", async () => {
+    const now = "2026-07-11T00:00:01Z"; // 7 days + 1s after requestedAt
+    const store = new InMemoryAutomationStore({ now: () => now });
+    const stale = await store.createParkedAction(scope, draft({ requestedAt: "2026-07-04T00:00:00Z" }));
+    const fresh = await store.createParkedAction(scope, draft({ requestedAt: "2026-07-10T00:00:00Z" }));
+
+    const unresolved = await store.listParkedActions(scope, { unresolvedOnly: true });
+    expect(unresolved.map((a) => a.id)).toEqual([fresh.id]);
+
+    const swept = await store.getParkedAction(scope, stale.id);
+    expect(swept?.resolution).toBe("expired");
+    expect(swept?.resolvedAt).toBe(now);
+    // An expired row is settled — a late human gesture cannot revive it.
+    await expect(store.resolveParkedAction(scope, stale.id, "approved", now)).rejects.toThrow(
+      /already resolved \(expired\)/,
+    );
+  });
+});

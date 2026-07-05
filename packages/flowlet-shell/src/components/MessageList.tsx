@@ -3,10 +3,12 @@ import type { UINode } from "@flowlet/core";
 import { groupThreadItems, type ThreadItem } from "../use-flowlet-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalBatchCard } from "./ApprovalBatchCard";
 import { AutomationCard, isAutomationApproval } from "./AutomationCard";
 import { UINodeView } from "./UINodeView";
 import { Skeleton } from "./Skeleton";
 import { ActivityPanel } from "./ActivityPanel";
+import { FadeProposalCard } from "./FadeProposalCard";
 import { TurnActions, type Feedback } from "./TurnActions";
 import { FileAttachment } from "./FileAttachment";
 import { FluidReveal } from "./FluidReveal";
@@ -18,16 +20,33 @@ export interface MessageListProps {
   status?: string;
   onApprove: (approvalId: string) => void;
   onDecline?: (approvalId: string) => void;
+  /** Batch decisions (ENG-193 §3 Moment 4). Omit to fall back to looping
+   *  onApprove/onDecline per item — every existing caller keeps working. */
+  onApproveBatch?: (approvalIds: string[], toolCallIds: string[]) => void;
+  onApproveSubset?: (
+    approvalIds: string[], toolCallIds: string[], allApprovalIds: string[], allToolCallIds: string[],
+  ) => void;
+  onDeclineBatch?: (approvalIds: string[]) => void;
   /** Regenerate a specific assistant turn (SDK `regenerate`). */
   onRegenerate?: (messageId: string) => void;
   /** Host feedback sink for a turn's thumbs up/down. */
   onFeedback?: (messageId: string, feedback: Feedback) => void;
+  /** A pending fade proposal for the turn (ENG-193 §3 Moment 5) — renders
+   *  right after that turn's activity panel. Null/absent -> nothing renders.
+   *  `count` (review nit) is the tracker's own yes-count at proposal time,
+   *  threaded straight to `FadeProposalCard`'s ordinal. */
+  fadeProposal?: { messageId: string; toolName: string; count?: number } | null;
+  onAcceptFade?: () => void;
+  onDeclineFade?: () => void;
   /** Pin a remix candidate onto its FlowletRemix anchor. When provided,
    *  generated views tagged with `remixAnchorId` grow an Apply bar. */
   onApplyRemix?: (node: UINode, envelope?: string) => void;
 }
 
-export function MessageList({ items, status, onApprove, onDecline, onRegenerate, onFeedback, onApplyRemix }: MessageListProps) {
+export function MessageList({
+  items, status, onApprove, onDecline, onApproveBatch, onApproveSubset, onDeclineBatch, onRegenerate, onFeedback,
+  fadeProposal, onAcceptFade, onDeclineFade, onApplyRemix,
+}: MessageListProps) {
   const rendered = useMemo(() => groupThreadItems(items), [items]);
   // Render-slot keys (ENG-205): a skeleton and the ui view that replaces it
   // carry different item keys (different part indices), but must share one
@@ -140,11 +159,20 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
               // A turn is still working if this is the last render unit and the
               // thread hasn't settled — the panel then shows its live header.
               return (
-                <ActivityPanel
-                  key={item.key}
-                  steps={item.steps}
-                  working={status !== "ready" && status !== "error" && item === rendered[rendered.length - 1]}
-                />
+                <div key={item.key} className="fl-activity-slot">
+                  <ActivityPanel
+                    steps={item.steps}
+                    working={status !== "ready" && status !== "error" && item === rendered[rendered.length - 1]}
+                  />
+                  {fadeProposal && fadeProposal.messageId === item.messageId && (
+                    <FadeProposalCard
+                      toolName={fadeProposal.toolName}
+                      count={fadeProposal.count}
+                      onAccept={() => onAcceptFade?.()}
+                      onDecline={() => onDeclineFade?.()}
+                    />
+                  )}
+                </div>
               );
             case "text":
               if (item.role === "user")
@@ -196,8 +224,37 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                   key={item.key}
                   toolName={item.toolName}
                   input={item.input}
+                  tier={item.tier}
+                  unverified={item.unverified}
+                  reason={item.reason}
                   onApprove={() => onApprove(item.approvalId)}
                   onDecline={() => onDecline?.(item.approvalId)}
+                />
+              );
+            case "approval-batch":
+              return (
+                <ApprovalBatchCard
+                  key={item.key}
+                  toolName={item.toolName}
+                  items={item.items}
+                  onApproveAll={(approvalIds, toolCallIds) =>
+                    onApproveBatch ? onApproveBatch(approvalIds, toolCallIds) : approvalIds.forEach(onApprove)
+                  }
+                  onApproveSubset={(approvalIds, toolCallIds, allApprovalIds, allToolCallIds) => {
+                    if (onApproveSubset) {
+                      onApproveSubset(approvalIds, toolCallIds, allApprovalIds, allToolCallIds);
+                      return;
+                    }
+                    // Fallback mirrors the seam: approve the selection, decline
+                    // the rest of the batch by approvalId.
+                    approvalIds.forEach(onApprove);
+                    allApprovalIds
+                      .filter((id) => !approvalIds.includes(id))
+                      .forEach((id) => onDecline?.(id));
+                  }}
+                  onDeclineAll={(approvalIds) =>
+                    onDeclineBatch ? onDeclineBatch(approvalIds) : approvalIds.forEach((id) => onDecline?.(id))
+                  }
                 />
               );
             case "ui":
