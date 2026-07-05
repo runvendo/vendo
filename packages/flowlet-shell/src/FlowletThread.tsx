@@ -19,7 +19,8 @@ import { friendlyError, logErrorDetail } from "./components/error-copy";
 import { VoiceStage } from "./voice/VoiceStage";
 import { useVoiceSession } from "./voice/use-voice-session";
 import { voiceSessionMessages } from "./voice/voice-messages";
-import type { VoiceDriver } from "./voice/voice-session";
+import { voiceSessionBrief } from "./voice/session-brief";
+import type { VoiceDriver, VoiceToolDef } from "./voice/voice-session";
 
 export interface FlowletThreadProps {
   greeting?: string;
@@ -66,17 +67,36 @@ export function FlowletThread({
   const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
   const voiceSession = useVoiceSession(voice);
 
-  // Context carry-over: a session started mid-thread knows what was just
-  // typed. Compact tail of the conversation, hard-capped.
+  // Context carry-over (spec §4): a structured session brief — conversation
+  // tail, on-screen views, tool-result digests, saved flowlets — plus the
+  // shell-contributed open_saved_flowlet tool so "open my coffee view" works.
   const startVoice = () => {
-    const lines: string[] = [];
-    for (const item of chat.items.slice(-16)) {
-      if (item.kind === "text" && item.text.trim()) {
-        lines.push(`${item.role}: ${item.text.trim()}`);
-      }
-    }
-    const context = lines.join("\n").slice(-2000);
-    voiceSession.start(context ? { context } : undefined);
+    const context = voiceSessionBrief({ items: chat.items, flows });
+    const sessionTools: VoiceToolDef[] = onOpenFlow
+      ? [
+          {
+            name: "open_saved_flowlet",
+            description:
+              "Open one of the user's saved views by its id (listed in your session brief). Use when the user asks for a saved view by name.",
+            parameters: {
+              type: "object",
+              properties: { id: { type: "string", description: "saved flowlet id" } },
+              required: ["id"],
+            },
+            tier: "read",
+            execute: async (input) => {
+              const { id } = (input ?? {}) as { id?: string };
+              const flow = flows.find((f) => f.id === id);
+              if (!flow) return { opened: false, error: `no saved view with id ${id}` };
+              onOpenFlow(flow);
+              return { opened: true, name: flow.name };
+            },
+          },
+        ]
+      : [];
+    voiceSession.start(
+      context || sessionTools.length ? { context, sessionTools } : undefined,
+    );
   };
 
   // Cmd/Ctrl+Shift+K toggles a voice session (sibling of the overlay's Cmd+K).

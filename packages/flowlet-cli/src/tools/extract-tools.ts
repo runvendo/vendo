@@ -37,7 +37,7 @@ export async function extractTools(
       );
     } else errors.push("no OpenAPI spec and no scannable routes found — write .flowlet/tools.json by hand");
   } else {
-    errors.push("no OpenAPI spec found and LLM unavailable (set ANTHROPIC_API_KEY) — tools.json skipped");
+    errors.push("no OpenAPI spec found and LLM unavailable (set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY) — tools.json skipped");
   }
 
   // Validate per entry against the frozen contract; drop and report invalid

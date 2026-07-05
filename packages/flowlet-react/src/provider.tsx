@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
+  capToolOutput,
   createRegistry,
   executeHostToolCall,
   type ComponentRegistry,
@@ -21,6 +22,9 @@ interface FlowletContextValue {
 }
 
 const FlowletContext = createContext<FlowletContextValue | null>(null);
+
+/** Chat-side cap for client-executed host-tool results (spec §5). */
+const HOST_TOOL_OUTPUT_BUDGET = { maxChars: 16_000, attachNote: true } as const;
 
 /**
  * Host-API tools executed in THIS browser on the user's existing session
@@ -137,7 +141,14 @@ function HostToolRunner({
         fetchImpl: config.fetchImpl,
       })
         .then((output) =>
-          chat.addToolOutput({ tool: call.toolName, toolCallId: call.toolCallId, output }),
+          chat.addToolOutput({
+            tool: call.toolName,
+            toolCallId: call.toolCallId,
+            // Client-executed host results are a capping point too (spec §5):
+            // a huge host API response would otherwise ride into the model
+            // context uncapped.
+            output: capToolOutput(output, HOST_TOOL_OUTPUT_BUDGET).result,
+          }),
         )
         .catch((err: unknown) =>
           chat.addToolOutput({

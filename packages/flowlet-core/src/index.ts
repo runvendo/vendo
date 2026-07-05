@@ -9,3 +9,4 @@ export * from "./genui";
 export * from "./text";
 export * from "./manifest";
 export * from "./seams";
+export * from "./prompt";

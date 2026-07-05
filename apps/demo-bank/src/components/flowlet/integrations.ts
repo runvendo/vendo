@@ -34,6 +34,9 @@ const CATALOG: { id: string; name: string }[] = [
   { id: "airtable", name: "Airtable" },
 ];
 
+/** Connectable toolkit ids — feeds the voice capability summary (spec §7). */
+export const integrationCatalogIds: string[] = CATALOG.map((c) => c.id);
+
 export function createComposioIntegrations(): FlowletIntegrations {
   let cache: Integration[] = CATALOG.map((c) => ({ ...c, connected: false }));
   const find = (id: string): Integration =>

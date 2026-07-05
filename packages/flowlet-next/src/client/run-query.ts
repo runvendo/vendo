@@ -15,7 +15,7 @@
  * exactly like the live agent path — it never transits the server handler.
  */
 import { executeHostToolCall, type DataQuery, type ManifestTool } from "@flowlet/core";
-import { manifestToolsToHostTools } from "../manifest-tools";
+import { manifestToolsToHostTools } from "@flowlet/server/manifest-tools";
 
 export type RunQuery = (query: DataQuery) => Promise<unknown>;
 

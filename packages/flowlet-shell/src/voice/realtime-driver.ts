@@ -1,11 +1,32 @@
-import type { UINode } from "@flowlet/core";
+// Protocol tool names + ALL consent phrasings come from the shared prompt
+// core (spec §1) so driver copy can never drift from the prompt's.
+import {
+  END_SESSION_TOOL,
+  RESOLVE_APPROVAL_TOOL,
+  capToolOutput,
+  endSessionToolDescription,
+  pendingActionNote,
+  resolveApprovalToolDescription,
+  voiceConsentProtocol,
+  type UINode,
+} from "@flowlet/core";
 import type {
-  ApprovalTier,
   VoiceDriver,
   VoiceDriverHandle,
   VoiceEvent,
   VoiceSessionInit,
+  VoiceToolDef,
 } from "./voice-session";
+
+// Re-exported for compatibility: VoiceToolDef moved to voice-session so
+// VoiceSessionInit can carry session tools without an import cycle.
+export type { VoiceToolDef } from "./voice-session";
+
+/** Realtime tokens are the expensive ones — cap every tool result that enters
+ *  the session (spec §5). Views still receive the full output. `attachNote`
+ *  tells the model its result is a digest, so it drills in instead of
+ *  treating a partial result as complete. */
+const VOICE_SESSION_OUTPUT_BUDGET = { maxChars: 6_000, attachNote: true } as const;
 
 /**
  * The realtime WebRTC `VoiceDriver` (ENG-185): OpenAI Realtime over a browser
@@ -15,20 +36,6 @@ import type {
  * (topology B) — the stage's consent bar is the enforcement point, so the
  * voice model cannot bypass approvals no matter what it decides to do.
  */
-
-/** A tool the voice agent may call. Same shape the chat side derives from
- *  `HostToolDefinition`s — pass host tools through `hostToolToVoiceTool`-style
- *  adapters in the app, or hand-author view tools. */
-export interface VoiceToolDef {
-  name: string;
-  description: string;
-  /** JSON Schema for the tool input. */
-  parameters: Record<string, unknown>;
-  tier: ApprovalTier | "read";
-  execute(input: unknown): Promise<unknown>;
-  /** Optional: project a successful call onto the stage as a view. */
-  toView?(input: unknown, output: unknown): UINode | undefined;
-}
 
 export interface RealtimeSessionGrant {
   /** Ephemeral client secret minted by the host backend. */
@@ -69,9 +76,6 @@ export function isSpokenDecline(text: string): boolean {
   return SPOKEN_DECLINE.test(text);
 }
 
-/** Built-in tools that implement the session protocol itself. */
-const RESOLVE_APPROVAL_TOOL = "resolve_pending_approval";
-const END_SESSION_TOOL = "end_session";
 
 /** MCP-style annotations → danger tier (mirrors the chat policy layer). */
 export function annotationsToTier(annotations: {
@@ -84,20 +88,9 @@ export function annotationsToTier(annotations: {
 }
 
 /** The consent protocol the model is held to — enforcement is client-side
- *  regardless; these instructions just make it BEHAVE well. */
+ *  regardless; the phrasing is the shared prompt core's. */
 function protocolInstructions(hasTools: boolean): string {
-  return [
-    "You are in a realtime voice session inside the product's own UI.",
-    "Speak in short, natural turns. When you show a view, give the headline and point at the screen — never read tables aloud.",
-    hasTools
-      ? "Some tool calls pause for the user's permission: you will receive a system note naming the pending action. Ask the user aloud, briefly and concretely. If they clearly consent in speech, call " +
-        RESOLVE_APPROVAL_TOOL +
-        " with approved=true. If they decline or are ambiguous, do not proceed; ask again or move on. Some actions can NEVER be approved by voice — the user must confirm on screen; tell them so."
-      : "",
-    "When the user indicates they are done (goodbye, that's all), say a brief sign-off and call " + END_SESSION_TOOL + ".",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  return voiceConsentProtocol(hasTools);
 }
 
 interface PendingApproval {
@@ -139,7 +132,14 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         if (dc && dc.readyState === "open") dc.send(JSON.stringify(payload));
       };
 
-      const tools = options.tools ?? [];
+      // Session-scoped tools (spec §4, e.g. the shell's open_saved_flowlet)
+      // merge with the driver's fixed set; per-name, session wins.
+      const tools = [
+        ...(options.tools ?? []).filter(
+          (tool) => !sessionInit?.sessionTools?.some((s) => s.name === tool.name),
+        ),
+        ...(sessionInit?.sessionTools ?? []),
+      ];
       const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
 
       const sessionTools = [
@@ -152,8 +152,7 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         {
           type: "function",
           name: RESOLVE_APPROVAL_TOOL,
-          description:
-            "Resolve the pending permission request after the user answered ALOUD. approved=true only for a clear spoken yes.",
+          description: resolveApprovalToolDescription(),
           parameters: {
             type: "object",
             properties: {
@@ -166,7 +165,7 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         {
           type: "function",
           name: END_SESSION_TOOL,
-          description: "End the voice session after the user indicates they are done.",
+          description: endSessionToolDescription(),
           parameters: { type: "object", properties: {} },
         },
       ];
@@ -232,9 +231,13 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         if (!alive) return;
         const view = def.toView?.(input, output);
         if (view) send({ type: "view", id: `view:${callId}`, node: view });
+        // The view gets the FULL output; the realtime session gets a capped one
+        // (spec §5): realtime tokens are the expensive ones, and a raw host API
+        // or integration result can be huge.
+        const capped = capToolOutput(output ?? { ok: true }, VOICE_SESSION_OUTPUT_BUDGET).result;
         sendClient({
           type: "conversation.item.create",
-          item: { type: "function_call_output", call_id: callId, output: JSON.stringify(output ?? { ok: true }) },
+          item: { type: "function_call_output", call_id: callId, output: JSON.stringify(capped) },
         });
         sendClient({ type: "response.create" });
       };
@@ -328,10 +331,11 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
             content: [
               {
                 type: "input_text",
-                text:
-                  def.tier === "critical"
-                    ? `Pending action "${def.name}" (id ${callId}) requires ON-SCREEN confirmation. Tell the user briefly to confirm on screen. Do not accept a spoken yes.`
-                    : `Pending action "${def.name}" (id ${callId}) awaits permission. Ask the user aloud, restating the key facts. On a clear spoken yes call ${RESOLVE_APPROVAL_TOOL}.`,
+                text: pendingActionNote(
+                  def.name,
+                  callId,
+                  def.tier === "critical" ? "critical" : "act",
+                ),
               },
             ],
           },
