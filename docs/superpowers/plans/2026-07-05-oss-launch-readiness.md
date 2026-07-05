@@ -894,9 +894,45 @@ npm run dev &
 
 Then with Playwright/Chrome: open http://localhost:3000, open the Vendo surface, send a message, confirm a rendered response. Screenshot: surface open + response rendered. This is the money shot for the PR.
 
-- [ ] **Step 4: Record + clean up**
+- [ ] **Step 4: Demo apps as "random codebases" (Yousef requirement)**
 
-Kill the dev server. Save screenshots to the scratchpad for the PR body. If init or boot fails, fix in the relevant package, rebuild, re-pack (Task 11 Step 1), and repeat — this task gates the launch.
+`vendo init` must also work accurately on the demo apps as if they were arbitrary host codebases that have never seen Vendo. For EACH of demo-bank and demo-accounting:
+
+```bash
+cp -R apps/demo-bank $S/e2e-maple && cd $S/e2e-maple
+```
+
+Then strip the existing Vendo integration so it simulates a pristine host app:
+remove the Vendo route handler (`app/api/vendo/`), the provider wrap
+(`<VendoRoot>` / provider imports in the layout), the `.vendo/` dir and
+sandbox assets, all `@vendoai/*` deps from its package.json, and any
+`vendo.config`/manifest files. Convert `workspace:*` leftovers; `npm i` plus
+the tarballs from Task 11. The app must build and run WITHOUT Vendo first —
+that proves the strip is clean.
+
+Then:
+
+```bash
+npx vendo init .
+```
+
+Verify **accuracy**, not just success:
+- extractor found the app's real API routes as tools (compare against the
+  app's actual route files — list them side by side);
+- theme extraction picked up the app's actual brand tokens (Maple/Cadence
+  design tokens, not defaults);
+- codemod wired the route handler + provider into the right files without
+  breaking unrelated code (`git diff`-style review of the changes);
+- app boots and the Vendo surface answers a prompt that exercises an
+  extracted tool (e.g. "show my recent transactions" in Maple).
+
+Screenshot each app's surface answering. Any inaccuracy (missed routes, wrong
+theme, broken wiring) is a real extractor/codemod bug: fix in
+`packages/vendo-cli`, rebuild, re-pack, re-run. Both apps must pass.
+
+- [ ] **Step 5: Record + clean up**
+
+Kill all dev servers. Save screenshots to the scratchpad for the PR body. If init or boot fails, fix in the relevant package, rebuild, re-pack (Task 11 Step 1), and repeat — this task gates the launch.
 
 ### Task 14: Final sweep + PR
 
