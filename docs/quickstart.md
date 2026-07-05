@@ -9,19 +9,12 @@ Vendo cloud in this path: your model key talks straight to your chosen
 provider (Anthropic, OpenAI, or Google), and everything else stays in your
 process.
 
-> **Status honesty:** the `@vendoai/*` packages are not published to npm yet
-> (publishing lands with the registry work, ENG-198). Today you install them
-> from packed tarballs or the monorepo workspace. Everything below is the
-> exact flow we verify end-to-end on a fresh `create-next-app` — including the
-> tarball install — it just isn't `npm i @vendoai/next` from the public
-> registry yet.
-
 ## Install (Next.js App Router)
 
 ```bash
 npx create-next-app@latest my-app     # or your existing app
 cd my-app
-npm install @vendoai/next             # (from tarball/workspace until ENG-198)
+npm install @vendoai/next
 npm install -D @vendoai/cli
 npx vendo init .
 ```
@@ -180,7 +173,7 @@ wrapper around `@vendoai/server`, the framework-agnostic handler core: a
 plain `(Request) => Promise<Response>` function you can mount anywhere.
 
 ```bash
-npm install @vendoai/server   # (from tarball/workspace until ENG-198, same as @vendoai/next)
+npm install @vendoai/server
 ```
 
 ```js
@@ -210,12 +203,6 @@ app.all("/api/vendo/*", (c) => vendo(c.req.raw));
 See `examples/node` for a full working server (plain `node:http` plus a Vite
 client) including serving the sandbox runtime assets that Next.js handles
 implicitly.
-
-> **Status honesty:** `@vendoai/server` isn't published to npm yet either
-> (ENG-198). And unlike a published package, the workspace's built output is
-> bundler-format ESM, not directly Node-loadable: `examples/node` runs its
-> server through `tsx` for that reason. Plain
-> `node server.js` starts working once the packages publish.
 
 ## Persistence
 
