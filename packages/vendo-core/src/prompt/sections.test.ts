@@ -10,7 +10,7 @@ import {
   registerSection,
   showVsSaySection,
   styleSection,
-} from "./sections";
+} from "./sections.js";
 
 const HOSTY = /maple|cadence|bank|acme/i;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAutomationInstructions } from "./instructions";
+import { buildAutomationInstructions } from "./instructions.js";
 
 describe("buildAutomationInstructions", () => {
   it("teaches the compiler rules and lists the declared host events", () => {

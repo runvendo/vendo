@@ -8,7 +8,7 @@
  * flagged unverified (Yousef ruling 2026-07-03): usable and grantable, with
  * the flag surfaced on cards and the Trust screen.
  */
-import type { ToolDescriptor } from "../descriptor";
+import type { ToolDescriptor } from "../descriptor.js";
 
 export type DangerTier = "read" | "act" | "critical";
 

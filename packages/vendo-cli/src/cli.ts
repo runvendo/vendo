@@ -4,6 +4,7 @@
  *   vendo init [dir]     extract theme/tools/components into <dir>/.vendo/
  *   vendo publish [dir]  stub until the cloud registry lands (ENG-198)
  */
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runInit } from "./init.js";
 import { runPublish } from "./publish.js";
@@ -90,8 +91,18 @@ export async function main(argv: string[]): Promise<number> {
 
 // Only auto-run when invoked as a bin, not when imported by tests.
 // pathToFileURL, not string concat: a checkout path with spaces (or any
-// URL-special char) percent-encodes in import.meta.url, and the naive
-// comparison silently skips main() — the CLI exits 0 having done nothing.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// URL-special char) percent-encodes in import.meta.url, so a hand-built
+// `file://` string never matches. Node also resolves the main module through
+// symlinks (npm's .bin/vendo is one), so compare against the realpath's URL.
+const invokedAsBin = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+  } catch {
+    return false;
+  }
+})();
+if (invokedAsBin) {
   main(process.argv.slice(2)).then((code) => process.exit(code));
 }

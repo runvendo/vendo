@@ -6,7 +6,7 @@ import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
 import type { ApprovalPolicy, RegisteredTool } from "@vendoai/runtime";
-import { createVendoFetchHandler, resetVendoBootRegistry } from "./fetch-handler";
+import { createVendoFetchHandler, resetVendoBootRegistry } from "./fetch-handler.js";
 
 function req(pathname: string, init?: RequestInit): Request {
   return new Request(`http://localhost:3000${pathname}`, {

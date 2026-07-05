@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { type VendoUIMessage } from "@vendoai/core";
 import { createStubAgent } from "@vendoai/core/testing";
-import { createLocalTransport } from "./transport";
+import { createLocalTransport } from "./transport.js";
 
 describe("local transport", () => {
   it("drives the agent for a turn and streams a tool-approval-request", async () => {

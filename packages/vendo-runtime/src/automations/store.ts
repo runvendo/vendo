@@ -23,7 +23,7 @@ import type {
   AutomationStore as CoreAutomationStore,
   Principal,
 } from "@vendoai/core";
-import { automationSpecSchema, type AutomationSpec } from "./schema";
+import { automationSpecSchema, type AutomationSpec } from "./schema.js";
 
 /** Per-step output cap: truncate + flag + record full size (never delete runs). */
 export const MAX_STEP_OUTPUT_BYTES = 32_768;

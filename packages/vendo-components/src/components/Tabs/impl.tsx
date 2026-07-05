@@ -1,6 +1,6 @@
-import { Tabs as UITabs, TabsList, TabsTrigger, TabsContent } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { tabsSchema } from "./descriptor";
+import { Tabs as UITabs, TabsList, TabsTrigger, TabsContent } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { tabsSchema } from "./descriptor.js";
 
 export const Tabs = createPrewiredImpl(tabsSchema, (p) => {
   const firstValue = "0";

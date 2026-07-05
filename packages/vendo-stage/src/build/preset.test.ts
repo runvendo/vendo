@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { vendoHostPreset } from "./preset";
+import { vendoHostPreset } from "./preset.js";
 
 describe("vendoHostPreset", () => {
   it("externalizes React so it is not duplicated per bundle", () => {

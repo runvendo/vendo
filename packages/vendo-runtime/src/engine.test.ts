@@ -6,20 +6,20 @@ import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
 import { SCHEMA_VERSION } from "@vendoai/core";
 import type { AuditEvent, AuditLog, VendoUIMessage, VerifiedPinBase } from "@vendoai/core";
-import { createVendoAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
-import { EDIT_VIEW_TOOL_NAME } from "./edit-view-tool";
-import { normalizeBaseline } from "./remix/baseline";
-import { createRemixSealer, deriveSealKey } from "./remix/envelope";
-import { auditPolicy, composePolicy, volumeBreaker, cautionBreaker, createBreakerState } from "./policy";
-import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy";
-import type { ComposioClient } from "./composio";
-import type { ToolDescriptor } from "./descriptor";
+import { createVendoAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine.js";
+import { EDIT_VIEW_TOOL_NAME } from "./edit-view-tool.js";
+import { normalizeBaseline } from "./remix/baseline.js";
+import { createRemixSealer, deriveSealKey } from "./remix/envelope.js";
+import { auditPolicy, composePolicy, volumeBreaker, cautionBreaker, createBreakerState } from "./policy/index.js";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy/index.js";
+import type { ComposioClient } from "./composio.js";
+import type { ToolDescriptor } from "./descriptor.js";
 
 // Replace `createComposioClient` with a spy so we can assert the engine builds
 // the client ONCE and reuses it across runs (Finding 4). `ingestComposioTools`
 // and everything else keep their real implementations.
 vi.mock("./composio", async (importActual) => {
-  const actual = await importActual<typeof import("./composio")>();
+  const actual = await importActual<typeof import("./composio.js")>();
   return {
     ...actual,
     createComposioClient: vi.fn(
@@ -276,7 +276,7 @@ describe("createVendoAgent", () => {
   });
 
   it("builds the Composio client once and reuses it across runs (Finding 4)", async () => {
-    const { createComposioClient } = await import("./composio");
+    const { createComposioClient } = await import("./composio.js");
     const spy = createComposioClient as unknown as ReturnType<typeof vi.fn>;
     spy.mockClear();
 
@@ -808,7 +808,7 @@ describe("createVendoAgent", () => {
       });
 
       // Arm caution: 1 judge-verdict escalation (consecutiveThreshold: 1).
-      const { setEscalationReason } = await import("./policy/escalation");
+      const { setEscalationReason } = await import("./policy/escalation.js");
       const escalatingJudge: ApprovalPolicy = {
         evaluate: (ctx) => {
           setEscalationReason(ctx, "judge escalation", "verdict");

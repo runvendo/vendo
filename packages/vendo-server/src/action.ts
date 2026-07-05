@@ -24,8 +24,8 @@ import { randomUUID } from "node:crypto";
 import { buildDescriptor } from "@vendoai/runtime";
 import type { ApprovalPolicy, VendoPrincipal, ToolDescriptor } from "@vendoai/runtime";
 import type { ToolSet } from "ai";
-import { resolvePrincipal } from "./guard";
-import type { VendoHandlerOptions } from "./options";
+import { resolvePrincipal } from "./guard.js";
+import type { VendoHandlerOptions } from "./options.js";
 
 interface ActionBody {
   action?: string;

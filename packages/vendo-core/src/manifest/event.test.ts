@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hostEventSchema } from "./event";
+import { hostEventSchema } from "./event.js";
 
 describe("hostEventSchema", () => {
   it("accepts a namespaced event with a payload schema", () => {

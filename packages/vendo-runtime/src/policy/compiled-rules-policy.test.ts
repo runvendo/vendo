@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compiledRulesPolicy } from "./compiled-rules-policy";
-import { composePolicy } from "./compose";
-import { createInMemoryCompiledRuleStore } from "../rule-store";
-import type { PolicyContext } from "./types";
-import type { ToolDescriptor } from "../descriptor";
+import { compiledRulesPolicy } from "./compiled-rules-policy.js";
+import { composePolicy } from "./compose.js";
+import { createInMemoryCompiledRuleStore } from "../rule-store.js";
+import type { PolicyContext } from "./types.js";
+import type { ToolDescriptor } from "../descriptor.js";
 
 const scope = { tenantId: "t", subject: "u" };
 const actDesc: ToolDescriptor = { name: "send_email", source: "caller", annotations: { readOnlyHint: false, destructiveHint: false }, hasExecute: true, kind: "function" };

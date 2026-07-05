@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { toNodeHandler, type FetchHandler } from "./node";
+import { toNodeHandler, type FetchHandler } from "./node.js";
 
 let server: Server | undefined;
 

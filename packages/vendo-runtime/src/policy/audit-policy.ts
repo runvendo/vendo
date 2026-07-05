@@ -17,8 +17,8 @@
  * the onExecuted path together yield exactly ONE event per escalated call.
  */
 import type { AuditLog, Principal } from "@vendoai/core";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
-import { getEscalationReason } from "./escalation";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
+import { getEscalationReason } from "./escalation.js";
 
 /** Bound on the recorded-escalation FIFO — plenty for the SDK's
  *  evaluations-per-call window, tiny enough to never matter. */

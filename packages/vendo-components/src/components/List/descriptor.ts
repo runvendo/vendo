@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 export const listSchema = z.object({
   items: z.array(z.object({ title: z.string(), subtitle: z.string().optional() })).min(1),

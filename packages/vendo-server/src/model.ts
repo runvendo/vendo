@@ -27,7 +27,7 @@ import {
   resolveModelChoice,
   type ModelChoice,
   type ModelProvider,
-} from "./model-choice";
+} from "./model-choice.js";
 
 // Re-exported so the package's public API (`@vendoai/server`'s index.ts)
 // stays unchanged — the pure resolution logic itself now lives in

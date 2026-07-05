@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
-import type { UINode } from "./ui";
-import type { GeneratedPayload } from "./genui";
+import type { UINode } from "./ui.js";
+import type { GeneratedPayload } from "./genui/index.js";
 
 export const SCHEMA_VERSION = 1 as const;
 

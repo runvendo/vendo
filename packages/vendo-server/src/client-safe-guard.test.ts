@@ -25,7 +25,12 @@ import { describe, expect, it } from "vitest";
 const CLIENT_SAFE_MODULES = ["capabilities.ts", "manifest-tools.ts", "catalog.ts", "model-choice.ts"];
 
 /** Relative runtime imports allowed between the client-safe modules only. */
-const ALLOWED_RELATIVE = ["./capabilities", "./manifest-tools", "./catalog", "./model-choice"];
+const ALLOWED_RELATIVE = [
+  "./capabilities.js",
+  "./manifest-tools.js",
+  "./catalog.js",
+  "./model-choice.js",
+];
 
 /** Runtime import/export-from/side-effect specifiers (type-only ones erased). */
 function runtimeSpecifiers(source: string): string[] {

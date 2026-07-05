@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Principal } from "@vendoai/core";
-import { createInMemoryStore } from "./in-memory-store";
+import { createInMemoryStore } from "./in-memory-store.js";
 
 const scope: Principal = { tenantId: "t1", subject: "u1" };
 const other: Principal = { tenantId: "t1", subject: "u2" };

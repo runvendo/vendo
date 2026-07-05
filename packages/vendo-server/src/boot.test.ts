@@ -9,8 +9,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { InProcessScheduler } from "@vendoai/runtime";
-import { startVendoScheduler } from "./boot";
-import { ensureVendoState, resetVendoBootRegistry } from "./fetch-handler";
+import { startVendoScheduler } from "./boot.js";
+import { ensureVendoState, resetVendoBootRegistry } from "./fetch-handler.js";
 
 // Point at an empty scratch dir so tests never read the repo's .vendo/.
 function emptyDir(): string {

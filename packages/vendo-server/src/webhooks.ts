@@ -54,8 +54,8 @@
  * doesn't yield both fields under any of these spellings takes the 400 path.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { ConnectionsStore } from "./connections";
-import type { VendoAutomationsWorld } from "./world";
+import type { ConnectionsStore } from "./connections.js";
+import type { VendoAutomationsWorld } from "./world.js";
 
 export interface ComposioWebhookDeps {
   /** The embedded automations world (null when `automations: false`). */

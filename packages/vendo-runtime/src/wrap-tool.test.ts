@@ -1,16 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import { tool, type Tool, type ToolExecutionOptions } from "ai";
-import { wrapTool } from "./wrap-tool";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy";
-import { grantPolicy, hashInput } from "./policy";
-import { createInMemoryGrantStore } from "./grant-store";
-import { hashDescriptor } from "./automations/grants";
-import { createRunPolicyContext } from "./policy/run-context";
-import { setEscalationReason } from "./policy/escalation";
-import type { ToolDescriptor } from "./descriptor";
-import type { VendoPrincipal } from "./principal";
-import { VendoError } from "./errors";
+import { wrapTool } from "./wrap-tool.js";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy/index.js";
+import { grantPolicy, hashInput } from "./policy/index.js";
+import { createInMemoryGrantStore } from "./grant-store.js";
+import { hashDescriptor } from "./automations/grants.js";
+import { createRunPolicyContext } from "./policy/run-context.js";
+import { setEscalationReason } from "./policy/escalation.js";
+import type { ToolDescriptor } from "./descriptor.js";
+import type { VendoPrincipal } from "./principal.js";
+import { VendoError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures / helpers

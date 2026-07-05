@@ -27,7 +27,7 @@ vi.mock("@vendoai/stage", async (importActual) => {
   };
 });
 
-import { VendoStage } from "./stage-adapter";
+import { VendoStage } from "./stage-adapter.js";
 
 const genPayload = (data: Record<string, unknown>) => ({
   formatVersion: "vendo-genui/v1",

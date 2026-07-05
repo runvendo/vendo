@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 const nodeSchema = z.object({
   id: z.string().min(1).max(80),

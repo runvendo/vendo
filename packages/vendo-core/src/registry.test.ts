@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { createRegistry } from "./registry";
+import { createRegistry } from "./registry.js";
 
 describe("component registry", () => {
   it("registers and resolves by name", () => {

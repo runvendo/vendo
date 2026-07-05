@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 export const tabsSchema = z.object({
   tabs: z.array(z.object({ label: z.string(), content: z.string() })).min(1),

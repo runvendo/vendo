@@ -6,7 +6,7 @@
  * - `roleRule`      — denies access unless the principal holds a required role.
  */
 
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

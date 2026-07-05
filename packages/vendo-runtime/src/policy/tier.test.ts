@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dangerTier, isUnverified } from "./tier";
-import type { ToolDescriptor } from "../descriptor";
+import { dangerTier, isUnverified } from "./tier.js";
+import type { ToolDescriptor } from "../descriptor.js";
 
 const desc = (annotations: ToolDescriptor["annotations"]): ToolDescriptor => ({
   name: "t", source: "caller", annotations, hasExecute: true, kind: "function",

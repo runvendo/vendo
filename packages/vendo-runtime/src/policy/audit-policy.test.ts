@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { auditPolicy } from "./audit-policy";
-import { InMemoryAuditLog } from "../embedded/in-memory-store";
-import { setEscalationReason } from "./escalation";
-import type { PolicyContext } from "./types";
-import type { ToolDescriptor } from "../descriptor";
+import { auditPolicy } from "./audit-policy.js";
+import { InMemoryAuditLog } from "../embedded/in-memory-store.js";
+import { setEscalationReason } from "./escalation.js";
+import type { PolicyContext } from "./types.js";
+import type { ToolDescriptor } from "../descriptor.js";
 
 const scope = { tenantId: "t", subject: "u" };
 const desc: ToolDescriptor = { name: "send_email", source: "caller", annotations: { readOnlyHint: false, destructiveHint: false }, hasExecute: true, kind: "function" };

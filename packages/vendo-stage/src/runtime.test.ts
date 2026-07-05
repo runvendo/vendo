@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { RESERVED_COMPONENT_NAMES } from "@vendoai/core";
-import { STAGE_RUNTIME_SRC } from "./runtime";
+import { STAGE_RUNTIME_SRC } from "./runtime.js";
 
 describe("stage runtime source", () => {
   it("is parseable JS", () => {

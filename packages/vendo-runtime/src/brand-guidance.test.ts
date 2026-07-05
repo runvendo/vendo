@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildBrandGuidance } from "./brand-guidance";
+import { buildBrandGuidance } from "./brand-guidance.js";
 
 const tokens = {
   "--vendo-accent": "#1B1C22",

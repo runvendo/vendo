@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VendoThemeProvider } from "../../theme/VendoThemeProvider";
-import { timeOfDayClockDescriptor } from "./descriptor";
-import { TimeOfDayClock } from "./impl";
+import { VendoThemeProvider } from "../../theme/VendoThemeProvider.js";
+import { timeOfDayClockDescriptor } from "./descriptor.js";
+import { TimeOfDayClock } from "./impl.js";
 
 const renderThemed = (ui: React.ReactNode) =>
   render(<VendoThemeProvider>{ui}</VendoThemeProvider>);

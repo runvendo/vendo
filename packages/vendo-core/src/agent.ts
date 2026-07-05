@@ -1,5 +1,5 @@
 import type { ToolSet, UIMessageChunk } from "ai";
-import type { VendoUIMessage } from "./protocol";
+import type { VendoUIMessage } from "./protocol.js";
 
 /**
  * Per-turn run input. The flow is turn-based: `run` is invoked with the current

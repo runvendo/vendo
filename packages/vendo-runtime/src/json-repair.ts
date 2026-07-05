@@ -7,8 +7,7 @@
  * unparsable input as a string, and the NEXT loop step 400s at the provider
  * ("tool_use.input: Input should be an object"), killing the whole turn.
  *
- * Fix, applied ENGINE-level (upstreamed from apps/gmail by the remix
- * fast-edits epic; this replaces the engine's old normalizeHistory `{}`
+ * Fix, applied at the engine level (replacing the old normalizeHistory `{}`
  * coercion — repairable history keeps its data instead of being blanked):
  *  - wrapStream: repair each streamed `tool-call` part's input so the first
  *    attempt parses and executes;

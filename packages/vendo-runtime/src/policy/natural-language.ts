@@ -13,7 +13,7 @@
  */
 
 import { generateText, type LanguageModel } from "ai";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
 
 const VALID_DECISIONS = new Set<string>(["allow", "approve", "deny"]);
 

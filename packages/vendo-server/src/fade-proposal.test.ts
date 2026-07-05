@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleFadeProposalRoute } from "./fade-proposal";
+import { handleFadeProposalRoute } from "./fade-proposal.js";
 import {
   createFadeTracker,
   createInMemoryGrantStore,

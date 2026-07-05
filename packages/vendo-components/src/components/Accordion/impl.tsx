@@ -3,9 +3,9 @@ import {
   AccordionItem,
   AccordionTrigger,
   AccordionContent,
-} from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { accordionSchema } from "./descriptor";
+} from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { accordionSchema } from "./descriptor.js";
 
 export const Accordion = createPrewiredImpl(accordionSchema, (p) => {
   const allValues = p.items.map((_, i) => `item-${i}`);

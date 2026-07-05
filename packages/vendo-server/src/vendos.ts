@@ -21,8 +21,8 @@
 import { and, desc, eq, savedVendos, type VendoDb } from "@vendoai/store";
 import type { Principal } from "@vendoai/core";
 import type { Vendo, VendoDraft } from "@vendoai/shell";
-import { resolvePrincipal, threadScope } from "./guard";
-import type { VendoHandlerOptions } from "./options";
+import { resolvePrincipal, threadScope } from "./guard.js";
+import type { VendoHandlerOptions } from "./options.js";
 
 // KEEP IN SYNC with handler.ts's `FIRST_SEGMENTS` (not imported directly —
 // handler.ts already imports this module, so importing back would cycle).

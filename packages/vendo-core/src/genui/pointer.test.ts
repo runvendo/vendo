@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPointerPatch, resolvePointer } from "./pointer";
+import { applyPointerPatch, resolvePointer } from "./pointer.js";
 
 describe("resolvePointer", () => {
   const data = {

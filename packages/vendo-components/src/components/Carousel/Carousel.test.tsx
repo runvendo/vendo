@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VendoThemeProvider } from "../../theme/VendoThemeProvider";
-import { carouselDescriptor } from "./descriptor";
-import { Carousel } from "./impl";
+import { VendoThemeProvider } from "../../theme/VendoThemeProvider.js";
+import { carouselDescriptor } from "./descriptor.js";
+import { Carousel } from "./impl.js";
 
 const renderThemed = (ui: React.ReactNode) =>
   render(<VendoThemeProvider>{ui}</VendoThemeProvider>);

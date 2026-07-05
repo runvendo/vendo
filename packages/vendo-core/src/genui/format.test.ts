@@ -8,7 +8,7 @@ import {
   validateGeneratedPayload,
   type GenNode,
   type GeneratedPayload,
-} from "./format";
+} from "./format.js";
 
 const minimal = (): unknown => ({
   formatVersion: VENDO_GENUI_VERSION,

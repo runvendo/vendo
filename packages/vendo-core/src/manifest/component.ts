@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { jsonSchemaDocument } from "./tool";
+import { jsonSchemaDocument } from "./tool.js";
 
 /**
  * The published image of one entry in `.vendo/components/` (dev-tool artifact

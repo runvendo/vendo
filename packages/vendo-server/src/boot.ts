@@ -19,8 +19,8 @@
  * external cron POSTing /tick (with `authorization: Bearer
  * <VENDO_TICK_SECRET>`).
  */
-import { bootRegistry, ensureVendoState } from "./fetch-handler";
-import type { VendoHandlerOptions } from "./options";
+import { bootRegistry, ensureVendoState } from "./fetch-handler.js";
+import type { VendoHandlerOptions } from "./options.js";
 
 export function startVendoScheduler(options: VendoHandlerOptions = {}): void {
   if (process.env["VENDO_SCHEDULER"] === "external") return;

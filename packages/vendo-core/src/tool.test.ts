@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { tool } from "./tool";
+import { tool } from "./tool.js";
 
 describe("tool re-export", () => {
   it("re-exports the ai SDK `tool` factory and builds a tool definition", () => {

@@ -17,16 +17,16 @@
  * loops) — an unattended loop that pauses per-iteration is broken UX anyway.
  */
 import type { ToolCallOutcome } from "@vendoai/core";
-import type { ApprovalPolicy } from "../policy";
-import { dangerTier } from "../policy/tier";
-import type { VendoPrincipal } from "../principal";
-import type { ToolDescriptor } from "../descriptor";
+import type { ApprovalPolicy } from "../policy/index.js";
+import { dangerTier } from "../policy/tier.js";
+import type { VendoPrincipal } from "../principal.js";
+import type { ToolDescriptor } from "../descriptor.js";
 import {
   evaluateGuard,
   resolveInput,
   type ExpressionScope,
-} from "./expressions";
-import { canonicalJson, fnv1a64, hashDescriptor, hasValidGrant } from "./grants";
+} from "./expressions.js";
+import { canonicalJson, fnv1a64, hashDescriptor, hasValidGrant } from "./grants.js";
 import type {
   AgentExecution,
   AutomationSpec,
@@ -34,13 +34,13 @@ import type {
   ForEachStep,
   ToolStep,
   AgentStep,
-} from "./schema";
+} from "./schema.js";
 import type {
   AutomationGrant,
   PendingApproval,
   StepRecord,
   TriggerEnvelope,
-} from "./store";
+} from "./store.js";
 
 /** Wall-clock ceilings (spec section a). */
 export const MAX_RUN_MS_STEPS = 5 * 60 * 1000;

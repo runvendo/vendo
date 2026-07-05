@@ -1,8 +1,8 @@
-import type { VendoUIMessage } from "../protocol";
-import type { UINode } from "../ui";
-import type { CompiledRuleStore } from "./compiled-rules";
-import type { GrantStore } from "./grants";
-import type { Principal } from "./principal";
+import type { VendoUIMessage } from "../protocol.js";
+import type { UINode } from "../ui.js";
+import type { CompiledRuleStore } from "./compiled-rules.js";
+import type { GrantStore } from "./grants.js";
+import type { Principal } from "./principal.js";
 
 /**
  * Store seam — threads, saved vendos, automations, audit (Decision 1/6).

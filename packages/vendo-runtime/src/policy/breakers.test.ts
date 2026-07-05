@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { createBreakerState, cautionBreaker, volumeBreaker } from "./breakers";
-import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
-import type { ToolDescriptor } from "../descriptor";
+import { createBreakerState, cautionBreaker, volumeBreaker } from "./breakers.js";
+import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation.js";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
+import type { ToolDescriptor } from "../descriptor.js";
 
 const actDesc: ToolDescriptor = {
   name: "GMAIL_SEND_EMAIL", source: "composio", annotations: {}, hasExecute: true, kind: "function",

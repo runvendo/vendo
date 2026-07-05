@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 export const emptyStateSchema = z.object({
   variant: z.enum(["empty", "error"]),

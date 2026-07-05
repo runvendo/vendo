@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { z } from "zod";
-import { allowlistUrl } from "./safe-url";
-import { createPrewiredImpl } from "./create-impl";
-import { resolveIcon } from "./icon";
+import { allowlistUrl } from "./safe-url.js";
+import { createPrewiredImpl } from "./create-impl.js";
+import { resolveIcon } from "./icon.js";
 
 describe("allowlistUrl", () => {
   it("passes safe data:image types, rejects https, javascript, data:text/html, and data:image/svg+xml", () => {

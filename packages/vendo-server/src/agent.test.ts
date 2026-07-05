@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LanguageModel } from "ai";
 import { defaultBrand } from "@vendoai/components/theme";
-import { buildInstructions, createAgentCache } from "./agent";
-import { defaultVendoPolicy } from "./default-policy";
+import { buildInstructions, createAgentCache } from "./agent.js";
+import { defaultVendoPolicy } from "./default-policy.js";
 
 const BASE = {
   productName: "Acme",

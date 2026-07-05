@@ -1,8 +1,8 @@
-import { FormControl, Label, Input, TextArea } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { formSchema } from "./descriptor";
+import { FormControl, Label, Input, TextArea } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { formSchema } from "./descriptor.js";
 import type { z } from "zod";
-import type { formFieldSchema } from "./descriptor";
+import type { formFieldSchema } from "./descriptor.js";
 
 type FormField = z.infer<typeof formFieldSchema>;
 

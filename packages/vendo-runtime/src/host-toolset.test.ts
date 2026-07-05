@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HostToolDefinition } from "@vendoai/core";
-import { hostToolset, CLIENT_EXECUTOR_MARKER } from "./host-toolset";
-import { buildDescriptor } from "./descriptor";
+import { hostToolset, CLIENT_EXECUTOR_MARKER } from "./host-toolset.js";
+import { buildDescriptor } from "./descriptor.js";
 
 const orderDef: HostToolDefinition = {
   name: "createOrder",

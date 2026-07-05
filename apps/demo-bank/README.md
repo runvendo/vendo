@@ -13,19 +13,20 @@ Maple is a demo consumer neobank. It is the host app for the Vendo "$87 Mystery"
 - Radix UI primitives
 - Vitest for tests
 
-## Run it
+## Setup
 
 ```bash
 cd apps/demo-bank
-npm install
-npm run dev
+cp .env.example .env.local
+$EDITOR .env.local # fill in ANTHROPIC_API_KEY
+pnpm dev
 ```
 
 Open http://localhost:3000.
 
 ```bash
-npm run build   # production build
-npm test        # vitest
+pnpm build   # production build
+pnpm test    # vitest
 ```
 
 ## Architecture

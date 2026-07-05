@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InProcessCredentialBroker } from "./in-process-credential-broker";
+import { InProcessCredentialBroker } from "./in-process-credential-broker.js";
 
 const nowMs = () => Date.parse("2026-07-02T00:00:00.000Z");
 

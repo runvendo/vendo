@@ -7,12 +7,12 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AutomationFiring, Principal } from "@vendoai/core";
-import { InProcessScheduler } from "./in-process-scheduler";
-import { createHostEventIngest, createSchedulerFiringHandler } from "./host-events";
-import { AutomationRunner } from "./runner";
-import { automationSpecSchema, type AutomationSpec } from "./schema";
-import type { RegisteredTool } from "./interpreter";
-import { InMemoryAutomationStore } from "./store";
+import { InProcessScheduler } from "./in-process-scheduler.js";
+import { createHostEventIngest, createSchedulerFiringHandler } from "./host-events.js";
+import { AutomationRunner } from "./runner.js";
+import { automationSpecSchema, type AutomationSpec } from "./schema.js";
+import type { RegisteredTool } from "./interpreter.js";
+import { InMemoryAutomationStore } from "./store.js";
 
 const alice: Principal = { tenantId: "t1", subject: "alice" };
 const bob: Principal = { tenantId: "t1", subject: "bob" };

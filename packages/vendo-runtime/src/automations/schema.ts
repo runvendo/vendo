@@ -2,8 +2,7 @@
  * The automations DSL: zod schema + inferred types.
  *
  * This is the inspectable artifact the compiler agent emits and the interpreter
- * executes (spec: docs/superpowers/specs/2026-07-01-flowlet-automations-proposal.md).
- * The schema is deliberately strict — it is also the INPUT SCHEMA of the
+ * executes. The schema is deliberately strict — it is also the INPUT SCHEMA of the
  * `create_automation` tool, so every message here is model-facing correction
  * feedback.
  *

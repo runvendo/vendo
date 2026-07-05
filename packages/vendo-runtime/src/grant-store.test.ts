@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryGrantStore } from "./grant-store";
+import { createInMemoryGrantStore } from "./grant-store.js";
 
 const scope = { tenantId: "t", subject: "u" };
 const other = { tenantId: "t", subject: "someone-else" };

@@ -1,7 +1,7 @@
 import type { ActionRequest, ActionResult, UINode } from "@vendoai/core";
-import type { MessageEndpoint } from "./protocol";
-import { makeRpc } from "./bridge";
-import { STAGE_RUNTIME_SRC } from "./runtime";
+import type { MessageEndpoint } from "./protocol.js";
+import { makeRpc } from "./bridge.js";
+import { STAGE_RUNTIME_SRC } from "./runtime.js";
 
 // ── CSP ──────────────────────────────────────────────────────────────────────
 

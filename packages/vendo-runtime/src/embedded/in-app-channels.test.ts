@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OutboundMessage } from "@vendoai/core";
-import { InAppChannels } from "./in-app-channels";
+import { InAppChannels } from "./in-app-channels.js";
 
 const message: OutboundMessage = {
   channel: "in-app",

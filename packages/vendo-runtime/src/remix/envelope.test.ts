@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GeneratedPayload } from "@vendoai/core";
-import { NORMALIZER_VERSION } from "./baseline";
-import { createRemixSealer, deriveSealKey, sealBody } from "./envelope";
+import { NORMALIZER_VERSION } from "./baseline.js";
+import { createRemixSealer, deriveSealKey, sealBody } from "./envelope.js";
 
 const payload: GeneratedPayload = {
   formatVersion: "vendo-genui/v1",

@@ -15,13 +15,13 @@
  * hides the integrations UI), POST answers 503. No errors, no crashes.
  */
 import { createComposioClient, type ComposioClient } from "@vendoai/runtime";
-import { resolvePrincipal } from "./guard";
-import type { VendoHandlerOptions } from "./options";
-import type { ConnectionsStore } from "./connections";
+import { resolvePrincipal } from "./guard.js";
+import type { VendoHandlerOptions } from "./options.js";
+import type { ConnectionsStore } from "./connections.js";
 
-export { DEFAULT_INTEGRATION_CATALOG } from "./catalog";
-export { createConnectionsStore } from "./connections";
-export type { ConnectionsStore } from "./connections";
+export { DEFAULT_INTEGRATION_CATALOG } from "./catalog.js";
+export { createConnectionsStore } from "./connections.js";
+export type { ConnectionsStore } from "./connections.js";
 
 export interface IntegrationsDeps {
   store: ConnectionsStore;

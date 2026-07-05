@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fadeShapeSchema, fadeProposalResolutionSchema } from "./fade";
-import { consentRequestSchema } from "./consent";
+import { fadeShapeSchema, fadeProposalResolutionSchema } from "./fade.js";
+import { consentRequestSchema } from "./consent.js";
 
 describe("fade wire contract", () => {
   it("accepts a constrained fade shape", () => {

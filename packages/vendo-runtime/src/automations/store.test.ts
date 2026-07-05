@@ -7,14 +7,14 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Principal } from "@vendoai/core";
-import { automationSpecSchema, type AutomationSpec } from "./schema";
+import { automationSpecSchema, type AutomationSpec } from "./schema.js";
 import {
   DuplicateRunError,
   InMemoryAutomationStore,
   MAX_STEP_OUTPUT_BYTES,
   firingRunId,
   type TriggerEnvelope,
-} from "./store";
+} from "./store.js";
 
 const NOW = "2026-07-01T08:00:00.000Z";
 const alice: Principal = { tenantId: "tenant-1", subject: "alice" };

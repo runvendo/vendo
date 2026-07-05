@@ -1,5 +1,5 @@
-import type { BrokeredGrant } from "./credential-broker";
-import type { Principal } from "./principal";
+import type { BrokeredGrant } from "./credential-broker.js";
+import type { Principal } from "./principal.js";
 
 /**
  * Executor seam — where a tool call physically runs (Decisions 1/2).

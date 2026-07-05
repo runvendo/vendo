@@ -18,11 +18,11 @@
 import { tool, type Tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { Principal, Scheduler, TimeTrigger } from "@vendoai/core";
-import { ExpressionError, validateExpression } from "./expressions";
-import { computeGrant } from "./grants";
-import { dangerTier } from "../policy/tier";
-import type { RegisteredTool } from "./interpreter";
-import type { AutomationRunner } from "./runner";
+import { ExpressionError, validateExpression } from "./expressions.js";
+import { computeGrant } from "./grants.js";
+import { dangerTier } from "../policy/tier.js";
+import type { RegisteredTool } from "./interpreter.js";
+import type { AutomationRunner } from "./runner.js";
 import {
   automationSpecInputSchema,
   automationSpecSchema,
@@ -31,12 +31,12 @@ import {
   type AutomationSpec,
   type AutomationStep,
   type AutomationTrigger,
-} from "./schema";
+} from "./schema.js";
 import type {
   AutomationEngineStore,
   AutomationGrant,
   AutomationRecord,
-} from "./store";
+} from "./store.js";
 
 export interface AutomationToolsConfig {
   store: AutomationEngineStore;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildChatInstructions, buildVoiceInstructions } from "./assemblers";
-import { capabilitySummary } from "./capability-summary";
+import { buildChatInstructions, buildVoiceInstructions } from "./assemblers.js";
+import { capabilitySummary } from "./capability-summary.js";
 
 describe("buildChatInstructions", () => {
   it("assembles in the guarded order: platform → host slots → extras → guardrails last", () => {

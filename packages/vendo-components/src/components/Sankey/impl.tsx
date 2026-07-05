@@ -2,11 +2,11 @@ import { useMemo } from "react";
 import { sankey, type SankeyGraph, type SankeyLink, type SankeyNode } from "d3-sankey";
 import { linkHorizontal } from "d3-shape";
 import type { z } from "zod";
-import { useTheme } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { defaultBrand } from "../../theme/brand";
-import { brandToChartPalette } from "../../theme/brand-to-chart-palette";
-import { sankeySchema } from "./descriptor";
+import { useTheme } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { defaultBrand } from "../../theme/brand.js";
+import { brandToChartPalette } from "../../theme/brand-to-chart-palette.js";
+import { sankeySchema } from "./descriptor.js";
 
 type SankeyProps = z.infer<typeof sankeySchema>;
 type NodeDatum = SankeyProps["nodes"][number];

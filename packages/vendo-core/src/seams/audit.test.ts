@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AuditEvent } from "./store";
+import type { AuditEvent } from "./store.js";
 
 describe("audit contract", () => {
   it("admits the ENG-193 kinds", () => {

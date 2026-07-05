@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ruleMatches } from "./rule-match";
+import { ruleMatches } from "./rule-match.js";
 import type { CompiledRule } from "@vendoai/core";
 
 const base: CompiledRule = {

@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { Component } from "react";
 import type { z } from "zod";
-import type { HostComponentDescriptor } from "./host-component";
+import type { HostComponentDescriptor } from "./host-component.js";
 
 const FALLBACK = <div data-testid="vendo-invalid-props">Invalid component props</div>;
 

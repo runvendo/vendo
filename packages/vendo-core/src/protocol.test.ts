@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SCHEMA_VERSION, type ActionRequest, type VendoMetadata } from "./protocol";
+import { SCHEMA_VERSION, type ActionRequest, type VendoMetadata } from "./protocol.js";
 
 describe("protocol", () => {
   it("exposes a schema version", () => {
@@ -63,8 +63,8 @@ describe("protocol", () => {
   });
 
   it("types the sync artifacts: RemixSourceRecord, resolver, and env manifest", async () => {
-    const { SCHEMA_VERSION: _v } = await import("./protocol");
-    const record: import("./protocol").RemixSourceRecord = {
+    const { SCHEMA_VERSION: _v } = await import("./protocol.js");
+    const record: import("./protocol.js").RemixSourceRecord = {
       file: "src/components/dashboard/deadline-list.tsx",
       exportName: "DeadlineList",
       source: "export function DeadlineList() {}",
@@ -73,11 +73,11 @@ describe("protocol", () => {
     };
     expect(record.exportName).toBe("DeadlineList");
 
-    const resolver: import("./protocol").RemixSourceResolver = (id) =>
+    const resolver: import("./protocol.js").RemixSourceResolver = (id) =>
       id === "upcoming-deadlines" ? record.source : undefined;
     expect(resolver("nope")).toBeUndefined();
 
-    const manifest: import("./protocol").EnvManifest = {
+    const manifest: import("./protocol.js").EnvManifest = {
       anchors: {
         "upcoming-deadlines": {
           "lucide-react": { kind: "real" },

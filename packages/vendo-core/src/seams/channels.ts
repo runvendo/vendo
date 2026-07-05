@@ -1,4 +1,4 @@
-import type { Principal } from "./principal";
+import type { Principal } from "./principal.js";
 
 /**
  * Channels seam — reaching the user off-thread (Decision 1).

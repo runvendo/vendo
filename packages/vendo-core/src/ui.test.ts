@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isComponentNode, isGeneratedNode, type UINode } from "./ui";
+import { isComponentNode, isGeneratedNode, type UINode } from "./ui.js";
 
 describe("UINode", () => {
   it("discriminates component vs generated", () => {

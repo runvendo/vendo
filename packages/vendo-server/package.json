@@ -1,6 +1,22 @@
 {
   "name": "@vendoai/server",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Provider-agnostic server engine for Vendo embedded agents.",
+  "keywords": ["ai", "agent", "generative-ui", "server", "llm"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendo-server"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

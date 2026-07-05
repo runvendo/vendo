@@ -14,9 +14,9 @@
  *  state value exists only client-side; validating a binding object against
  *  the prop's schema would be a false rejection).
  */
-import type { RegisteredComponent } from "../registry";
-import { isPropBinding, type GeneratedPayload } from "./format";
-import { resolvePointer } from "./pointer";
+import type { RegisteredComponent } from "../registry.js";
+import { isPropBinding, type GeneratedPayload } from "./format.js";
+import { resolvePointer } from "./pointer.js";
 
 export interface HostPropIssue {
   nodeId: string;

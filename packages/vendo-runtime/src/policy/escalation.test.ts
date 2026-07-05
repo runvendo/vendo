@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation";
-import type { PolicyContext } from "./types";
+import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation.js";
+import type { PolicyContext } from "./types.js";
 
 function ctxFor(toolName: string): PolicyContext {
   return {

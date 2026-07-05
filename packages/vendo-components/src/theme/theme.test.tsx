@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { brandTokensSchema, defaultBrand } from "./brand";
-import { mapBrandToTheme } from "./map-brand-to-theme";
-import { VendoThemeProvider } from "./VendoThemeProvider";
+import { brandTokensSchema, defaultBrand } from "./brand.js";
+import { mapBrandToTheme } from "./map-brand-to-theme.js";
+import { VendoThemeProvider } from "./VendoThemeProvider.js";
 
 describe("BrandTokens", () => {
   it("defaultBrand is valid and versioned", () => {

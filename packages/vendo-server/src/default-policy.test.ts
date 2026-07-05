@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildDescriptor } from "@vendoai/runtime";
 import type { ToolDescriptor } from "@vendoai/runtime";
 import type { VendoPrincipal } from "@vendoai/runtime";
-import { defaultVendoPolicy } from "./default-policy";
+import { defaultVendoPolicy } from "./default-policy.js";
 
 const principal: VendoPrincipal = { userId: "user-1" };
 

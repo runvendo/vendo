@@ -1,6 +1,22 @@
 {
   "name": "@vendoai/next",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Next.js integration for Vendo: the createVendoHandler route handler and VendoRoot.",
+  "keywords": ["ai", "agent", "generative-ui", "nextjs", "react"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendo-next"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

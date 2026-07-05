@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { manifestThemeSchema, manifestComponentSchema } from "@vendoai/core";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { defaultBrand, brandTokensSchema } from "./theme/brand";
-import { descriptors } from "./descriptors";
+import { defaultBrand, brandTokensSchema } from "./theme/brand.js";
+import { descriptors } from "./descriptors.js";
 
 describe("existing artifacts conform to the frozen manifest contracts", () => {
   it("defaultBrand is a valid manifest theme", () => {

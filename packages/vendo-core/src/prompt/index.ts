@@ -11,14 +11,14 @@ export {
   guardrailSection,
   novelComponentsSection,
   type PromptModality,
-} from "./sections";
+} from "./sections.js";
 export {
   buildChatInstructions,
   buildVoiceInstructions,
   type ChatInstructionsInput,
   type VoiceInstructionsInput,
-} from "./assemblers";
-export { capabilitySummary, type ToolSummaryInput } from "./capability-summary";
+} from "./assemblers.js";
+export { capabilitySummary, type ToolSummaryInput } from "./capability-summary.js";
 export {
   RESOLVE_APPROVAL_TOOL,
   END_SESSION_TOOL,
@@ -26,5 +26,5 @@ export {
   resolveApprovalToolDescription,
   endSessionToolDescription,
   pendingActionNote,
-} from "./consent-strings";
-export { capToolOutput, type CapBudget, type CappedResult } from "./cap-tool-output";
+} from "./consent-strings.js";
+export { capToolOutput, type CapBudget, type CappedResult } from "./cap-tool-output.js";

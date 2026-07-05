@@ -16,7 +16,7 @@
  *   non-deny decision is downgraded to `"allow"`.
  */
 
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // DecisionStore

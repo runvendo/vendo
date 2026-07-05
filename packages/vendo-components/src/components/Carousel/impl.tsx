@@ -1,7 +1,7 @@
-import { Carousel as UICarousel, CarouselContent, CarouselItem } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { allowlistUrl } from "../../impl-helpers/safe-url";
-import { carouselSchema } from "./descriptor";
+import { Carousel as UICarousel, CarouselContent, CarouselItem } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { allowlistUrl } from "../../impl-helpers/safe-url.js";
+import { carouselSchema } from "./descriptor.js";
 
 export const Carousel = createPrewiredImpl(carouselSchema, (p) => (
   <UICarousel variant="card" showButtons>

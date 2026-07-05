@@ -6,9 +6,9 @@
  * consent channel (item 2) is the sole caller of `create` in production.
  */
 import type { AuditLog, GrantStore, PermissionGrant, Principal } from "@vendoai/core";
-import type { ToolDescriptor } from "./descriptor";
-import { hashDescriptor } from "./automations/grants";
-import { dangerTier } from "./policy/tier";
+import type { ToolDescriptor } from "./descriptor.js";
+import { hashDescriptor } from "./automations/grants.js";
+import { dangerTier } from "./policy/tier.js";
 
 type GrantDraft = Omit<PermissionGrant, "id" | "tenantId" | "subject" | "grantedAt" | "revokedAt">;
 

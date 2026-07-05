@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 const jsonPrimitive = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 

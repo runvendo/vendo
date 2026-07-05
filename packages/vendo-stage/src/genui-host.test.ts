@@ -6,7 +6,7 @@ import {
   type RegisteredComponent,
   type VendoSchema,
 } from "@vendoai/core";
-import { createGenUISession } from "./genui-host";
+import { createGenUISession } from "./genui-host.js";
 
 const VERSION = "vendo-genui/v1";
 

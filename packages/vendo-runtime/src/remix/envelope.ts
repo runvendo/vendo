@@ -14,8 +14,8 @@ import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { GeneratedPayload, RemixEnvelopePayload, VerifiedPinBase } from "@vendoai/core";
-import { NORMALIZER_VERSION } from "./baseline";
-import { constantTimeEqual, fromBase64Url, toBase64Url } from "./bytes";
+import { NORMALIZER_VERSION } from "./baseline.js";
+import { constantTimeEqual, fromBase64Url, toBase64Url } from "./bytes.js";
 
 export interface SealKey {
   /** Key id: fingerprint of the material + derivation path (rotation signal). */

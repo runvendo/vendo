@@ -1,9 +1,8 @@
 /**
  * Connect (or re-connect) the demo's Gmail + Slack accounts via Composio.
  *
- * Run with secrets injected:
+ * Run with COMPOSIO_API_KEY set in your environment:
  *   pnpm composio:connect
- *   (= infisical run --projectId=… --env=dev -- node scripts/composio-connect.mjs)
  *
  * Prints the current connection status for userId `vendo-demo`. For any
  * toolkit not yet ACTIVE, it initiates a connection and prints an authorize URL
@@ -11,13 +10,19 @@
  */
 const USER_ID = "vendo-demo";
 const TARGETS = [
-  { name: "GMAIL", authConfigId: "ac_C0WWr2sbI7AV" },
-  { name: "SLACK", authConfigId: "ac_DT5-sR-LyeGz" },
+  {
+    name: "GMAIL",
+    authConfigId: process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID ?? "ac_C0WWr2sbI7AV",
+  },
+  {
+    name: "SLACK",
+    authConfigId: process.env.COMPOSIO_SLACK_AUTH_CONFIG_ID ?? "ac_DT5-sR-LyeGz",
+  },
 ];
 
 const apiKey = process.env.COMPOSIO_API_KEY;
 if (!apiKey) {
-  console.error("COMPOSIO_API_KEY not set — run via `pnpm composio:connect` (Infisical).");
+  console.error("COMPOSIO_API_KEY not set - set COMPOSIO_API_KEY in your environment.");
   process.exit(1);
 }
 

@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { manifestThemeSchema } from "./theme";
-import { manifestToolSchema } from "./tool";
-import { hostEventSchema } from "./event";
-import { manifestComponentSchema } from "./component";
+import { manifestThemeSchema } from "./theme.js";
+import { manifestToolSchema } from "./tool.js";
+import { hostEventSchema } from "./event.js";
+import { manifestComponentSchema } from "./component.js";
 
 /**
  * The `tools.json` FILE as it sits in `.vendo/` in the host repo:

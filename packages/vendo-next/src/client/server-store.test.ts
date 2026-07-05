@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Vendo } from "@vendoai/shell";
-import { createServerVendoStore } from "./server-store";
+import { createServerVendoStore } from "./server-store.js";
 
 const vendo: Vendo = {
   id: "f1",

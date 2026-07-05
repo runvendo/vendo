@@ -1,10 +1,27 @@
 {
   "name": "@vendoai/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "One-command Vendo install: extracts theme, tools, and components from a host app and wires in the embedded agent.",
+  "keywords": ["ai", "agent", "generative-ui", "cli", "devtool"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendo-cli"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "vendo": "./dist/cli.js"
   },
+  "files": ["dist"],
   "scripts": {
     "build": "vite build && node scripts/bundle-assets.mjs",
     "test": "vitest run",
@@ -12,11 +29,6 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
-    "@vendoai/components": "workspace:*",
-    "@vendoai/core": "workspace:*",
-    "@vendoai/sandbox-shims": "workspace:*",
-    "@vendoai/server": "workspace:*",
-    "@vendoai/telemetry": "workspace:*",
     "@scarf/scarf": "^1.4.0",
     "@tailwindcss/browser": "^4.1.0",
     "@tailwindcss/cli": "^4.1.0",
@@ -30,6 +42,11 @@
   "devDependencies": {
     "@ai-sdk/provider": "3.0.2",
     "@types/node": "^22.0.0",
+    "@vendoai/components": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/sandbox-shims": "workspace:*",
+    "@vendoai/server": "workspace:*",
+    "@vendoai/telemetry": "workspace:*",
     "ajv": "^8.17.0",
     "typescript": "^5.6.0",
     "vite": "^5.4.0",

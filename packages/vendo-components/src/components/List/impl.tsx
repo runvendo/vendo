@@ -1,6 +1,6 @@
-import { ListBlock, ListItem } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { listSchema } from "./descriptor";
+import { ListBlock, ListItem } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { listSchema } from "./descriptor.js";
 
 export const List = createPrewiredImpl(listSchema, (p) => (
   <ListBlock>

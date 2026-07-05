@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { brandToChartPalette } from "./brand-to-chart-palette";
-import { mapBrandToTheme } from "./map-brand-to-theme";
-import { defaultBrand, type BrandTokens } from "./brand";
+import { brandToChartPalette } from "./brand-to-chart-palette.js";
+import { mapBrandToTheme } from "./map-brand-to-theme.js";
+import { defaultBrand, type BrandTokens } from "./brand.js";
 
 const maple: BrandTokens = {
   version: 1,

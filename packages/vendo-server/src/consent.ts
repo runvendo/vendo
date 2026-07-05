@@ -8,7 +8,7 @@ import { handleConsent } from "@vendoai/runtime";
 import type { ConsentLedger, FadeTracker, ToolDescriptor } from "@vendoai/runtime";
 import type { AuditLog, GrantStore, Principal, ThreadStore } from "@vendoai/core";
 import { consentResponseSchema } from "@vendoai/core";
-import type { ThreadIndex } from "./threads";
+import type { ThreadIndex } from "./threads.js";
 
 export interface ConsentRouteDeps {
   grants: GrantStore;

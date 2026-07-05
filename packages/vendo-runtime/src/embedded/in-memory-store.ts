@@ -26,7 +26,7 @@ import type {
   ThreadRecord,
   ThreadStore,
 } from "@vendoai/core";
-import { InMemoryAutomationStore } from "../automations/store";
+import { InMemoryAutomationStore } from "../automations/store.js";
 
 const sameScope = (scope: Principal, owned: { tenantId: string; subject: string }): boolean =>
   scope.tenantId === owned.tenantId && scope.subject === owned.subject;

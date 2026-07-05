@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compiledRuleSchema } from "./compiled-rules";
+import { compiledRuleSchema } from "./compiled-rules.js";
 
 describe("compiled rule contract", () => {
   it("accepts an always_ask rule with a constraint", () => {

@@ -16,7 +16,7 @@ import {
   type ToolDescriptor,
   type VendoPrincipal,
 } from "@vendoai/runtime";
-import type { ConnectionsStore } from "./connections";
+import type { ConnectionsStore } from "./connections.js";
 
 const MAX_TOOLS = 40;
 const VOICE_TOOL_OUTPUT_BUDGET = { maxChars: 6_000, attachNote: true } as const;

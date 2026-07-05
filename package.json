@@ -2,16 +2,16 @@
   "name": "vendo",
   "private": true,
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "demo": "infisical run --projectId=b366cac7-1716-47a0-9617-f335500f6dee --env=dev -- pnpm --filter demo-bank dev",
-    "demo:accounting": "infisical run --projectId=b366cac7-1716-47a0-9617-f335500f6dee --env=dev -- pnpm --filter demo-accounting dev",
-    "composio:connect": "infisical run --projectId=b366cac7-1716-47a0-9617-f335500f6dee --env=dev -- node scripts/composio-connect.mjs",
-    "demo:gmail": "infisical run --projectId=b366cac7-1716-47a0-9617-f335500f6dee --env=dev -- pnpm --filter gmail-demo dev"
+    "demo": "pnpm --filter demo-bank dev",
+    "demo:accounting": "pnpm --filter demo-accounting dev",
+    "composio:connect": "node scripts/composio-connect.mjs"
   },
   "devDependencies": {
     "turbo": "^2.1.0",

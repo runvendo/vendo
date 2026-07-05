@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { z } from "zod";
-import { hostComponent } from "./host-component";
-import { bindHostImpl } from "./bind-host-impl";
+import { hostComponent } from "./host-component.js";
+import { bindHostImpl } from "./bind-host-impl.js";
 
 const descriptor = hostComponent(
   "Sparkline",

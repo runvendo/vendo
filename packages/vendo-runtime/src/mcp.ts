@@ -1,7 +1,6 @@
 /**
  * Host-configured MCP server ingestion for the Vendo agent runtime.
  *
- * Design: docs/superpowers/specs/2026-07-04-flowlet-mcp-client-design.md.
  * Mirrors the Composio adapter seam: `McpToolSource` is injectable (the real
  * adapter wraps `@ai-sdk/mcp`'s `createMCPClient`; tests inject a fake), and
  * `ingestMcpTools` FAILS CLOSED — no declared servers means no network I/O.
@@ -13,7 +12,7 @@
  */
 
 import type { ToolSet } from "ai";
-import { buildDescriptor, type ToolAnnotations, type ToolDescriptor } from "./descriptor";
+import { buildDescriptor, type ToolAnnotations, type ToolDescriptor } from "./descriptor.js";
 
 /** A single host-declared MCP server (Streamable HTTP transport only). */
 export interface McpServerConfig {

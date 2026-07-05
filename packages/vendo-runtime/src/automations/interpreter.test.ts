@@ -4,11 +4,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { ApprovalPolicy } from "../policy";
-import { automationSpecSchema, type AutomationSpec } from "./schema";
-import { computeGrant } from "./grants";
-import { interpret, type RegisteredTool } from "./interpreter";
-import type { AutomationGrant, TriggerEnvelope } from "./store";
+import type { ApprovalPolicy } from "../policy/index.js";
+import { automationSpecSchema, type AutomationSpec } from "./schema.js";
+import { computeGrant } from "./grants.js";
+import { interpret, type RegisteredTool } from "./interpreter.js";
+import type { AutomationGrant, TriggerEnvelope } from "./store.js";
 
 const NOW = "2026-07-01T08:00:00.000Z";
 

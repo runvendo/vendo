@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VendoThemeProvider } from "../../theme/VendoThemeProvider";
-import { brandToChartPalette } from "../../theme/brand-to-chart-palette";
-import { sankeyDescriptor } from "./descriptor";
-import { Sankey } from "./impl";
+import { VendoThemeProvider } from "../../theme/VendoThemeProvider.js";
+import { brandToChartPalette } from "../../theme/brand-to-chart-palette.js";
+import { sankeyDescriptor } from "./descriptor.js";
+import { Sankey } from "./impl.js";
 
 const moneyFlow = {
   title: "Monthly Cash Flow",

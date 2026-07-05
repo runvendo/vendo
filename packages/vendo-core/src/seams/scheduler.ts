@@ -10,7 +10,7 @@
  * (signed host webhooks, Composio triggers) are ingest paths that invoke the
  * same firing handler directly — they don't pass through the Scheduler.
  */
-import type { Principal } from "./principal";
+import type { Principal } from "./principal.js";
 
 export interface Scheduler {
   /** Register (or replace) the durable schedule for an automation. The scope

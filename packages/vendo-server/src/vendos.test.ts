@@ -6,9 +6,9 @@ import {
   handleVendosGet,
   handleVendosPost,
   type VendoRegistry,
-} from "./vendos";
+} from "./vendos.js";
 import { createVendoDatabase, migrateVendoDatabase } from "@vendoai/store";
-import type { VendoHandlerOptions } from "./options";
+import type { VendoHandlerOptions } from "./options.js";
 
 const scope = { tenantId: "vendo-embedded", subject: "u1" };
 const other = { tenantId: "vendo-embedded", subject: "u2" };

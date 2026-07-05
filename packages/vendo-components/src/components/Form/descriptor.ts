@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 const option = z.object({ value: z.string(), label: z.string() });
 const base = { name: z.string(), label: z.string(), required: z.boolean().optional(), placeholder: z.string().optional() };

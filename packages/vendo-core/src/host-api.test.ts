@@ -3,7 +3,7 @@ import {
   openApiToHostTools,
   executeHostToolCall,
   type HostToolDefinition,
-} from "./host-api";
+} from "./host-api.js";
 
 /** Minimal OpenAPI 3.1 fixture exercising every adapter rule. */
 const spec = {

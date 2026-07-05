@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { grantMatches, hashInput } from "./grant-match";
+import { grantMatches, hashInput } from "./grant-match.js";
 import type { PermissionGrant } from "@vendoai/core";
-import { hashDescriptor } from "../automations/grants";
-import type { ToolDescriptor } from "../descriptor";
+import { hashDescriptor } from "../automations/grants.js";
+import type { ToolDescriptor } from "../descriptor.js";
 
 const descriptor: ToolDescriptor = {
   name: "send_email", source: "caller",

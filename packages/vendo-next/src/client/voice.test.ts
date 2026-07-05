@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { replayRegistry } from "@vendoai/shell";
 import type { GeneratedPayload, HostToolDefinition } from "@vendoai/core";
-import { __voiceTesting } from "./voice";
+import { __voiceTesting } from "./voice.js";
 
 const { createVoiceInternals } = __voiceTesting;
 const disposers: Array<() => void> = [];

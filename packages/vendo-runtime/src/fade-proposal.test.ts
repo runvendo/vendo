@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { handleFadeProposal } from "./fade-proposal";
-import { createFadeTracker } from "./fade-tracker";
-import { createInMemoryGrantStore } from "./grant-store";
-import { InMemoryAuditLog } from "./embedded/in-memory-store";
-import type { ToolDescriptor } from "./descriptor";
+import { handleFadeProposal } from "./fade-proposal.js";
+import { createFadeTracker } from "./fade-tracker.js";
+import { createInMemoryGrantStore } from "./grant-store.js";
+import { InMemoryAuditLog } from "./embedded/in-memory-store.js";
+import type { ToolDescriptor } from "./descriptor.js";
 
 const scope = { tenantId: "t", subject: "u" };
 const now = () => "2026-07-04T00:00:00Z";

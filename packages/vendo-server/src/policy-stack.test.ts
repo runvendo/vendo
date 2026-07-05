@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
-import { composeProductionPolicy } from "./policy-stack";
+import { composeProductionPolicy } from "./policy-stack.js";
 import {
   createInMemoryCompiledRuleStore,
   createInMemoryGrantStore,

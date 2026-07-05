@@ -10,7 +10,7 @@
  */
 import type { AuditLog, CompiledRuleStore, GrantStore, Principal } from "@vendoai/core";
 import { createGrantManager, createRuleManager, dangerTier, type ToolDescriptor } from "@vendoai/runtime";
-import type { VendoAutomationsWorld } from "./world";
+import type { VendoAutomationsWorld } from "./world.js";
 
 export interface TrustGrantRow {
   id?: string;

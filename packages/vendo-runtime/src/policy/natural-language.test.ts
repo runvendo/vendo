@@ -11,8 +11,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
-import type { PolicyContext } from "./types";
-import { naturalLanguagePolicy } from "./natural-language";
+import type { PolicyContext } from "./types.js";
+import { naturalLanguagePolicy } from "./natural-language.js";
 
 // Minimal usage object required by LanguageModelV3GenerateResult.
 const ZERO_USAGE: LanguageModelV3GenerateResult["usage"] = {

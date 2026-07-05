@@ -24,13 +24,13 @@
 
 import type { Tool, UIMessageStreamWriter } from "ai";
 import type { VendoUIMessage } from "@vendoai/core";
-import type { ApprovalPolicy, PolicyContext } from "./policy";
-import type { ToolDescriptor } from "./descriptor";
-import type { VendoPrincipal } from "./principal";
-import { VendoError } from "./errors";
-import { dangerTier, isUnverified } from "./policy/tier";
-import { getEscalationReason } from "./policy/escalation";
-import type { RunPolicyContext } from "./policy/run-context";
+import type { ApprovalPolicy, PolicyContext } from "./policy/index.js";
+import type { ToolDescriptor } from "./descriptor.js";
+import type { VendoPrincipal } from "./principal.js";
+import { VendoError } from "./errors.js";
+import { dangerTier, isUnverified } from "./policy/tier.js";
+import { getEscalationReason } from "./policy/escalation.js";
+import type { RunPolicyContext } from "./policy/run-context.js";
 
 /** Arguments to {@link wrapClientTool}. Mirrors `WrapToolArgs`. */
 export interface WrapClientToolArgs {

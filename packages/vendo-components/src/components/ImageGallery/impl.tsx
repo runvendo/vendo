@@ -1,7 +1,7 @@
-import { ImageGallery as UIImageGallery } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { allowlistUrl } from "../../impl-helpers/safe-url";
-import { imageGallerySchema } from "./descriptor";
+import { ImageGallery as UIImageGallery } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { allowlistUrl } from "../../impl-helpers/safe-url.js";
+import { imageGallerySchema } from "./descriptor.js";
 
 export const ImageGallery = createPrewiredImpl(imageGallerySchema, (p) => {
   const safeImages = p.images

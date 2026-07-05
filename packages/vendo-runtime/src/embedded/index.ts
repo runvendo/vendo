@@ -12,16 +12,16 @@ export {
   InMemorySavedVendoStore,
   InMemoryThreadStore,
   type InMemoryStore,
-} from "./in-memory-store";
+} from "./in-memory-store.js";
 export {
   InProcessCredentialBroker,
   type InProcessCredentialBrokerConfig,
-} from "./in-process-credential-broker";
-export { InProcessExecutor, type InProcessToolFn } from "./in-process-executor";
+} from "./in-process-credential-broker.js";
+export { InProcessExecutor, type InProcessToolFn } from "./in-process-executor.js";
 export {
   InAppChannels,
   type InAppChannelsConfig,
   type RetainedDelivery,
-} from "./in-app-channels";
-export { InMemoryAutomationStore } from "../automations/store";
-export { InProcessScheduler } from "../automations/in-process-scheduler";
+} from "./in-app-channels.js";
+export { InMemoryAutomationStore } from "../automations/store.js";
+export { InProcessScheduler } from "../automations/in-process-scheduler.js";

@@ -3,7 +3,7 @@ import {
   escapeControlCharsInJsonStrings,
   repairToolInputText,
   jsonRepairMiddleware,
-} from "./json-repair";
+} from "./json-repair.js";
 
 describe("escapeControlCharsInJsonStrings", () => {
   it("escapes raw newlines/tabs inside string literals only", () => {

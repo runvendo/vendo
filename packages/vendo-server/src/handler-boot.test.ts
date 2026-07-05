@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 const resolveStorage = vi.hoisted(() => vi.fn());
 vi.mock("./storage", () => ({ resolveStorage }));
 
-import { createVendoFetchHandler } from "./fetch-handler";
+import { createVendoFetchHandler } from "./fetch-handler.js";
 
 describe("assembly failure eviction", () => {
   it("retries assembly after a transient boot failure instead of caching the rejection", async () => {

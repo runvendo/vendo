@@ -4,8 +4,8 @@
  * without pulling server modules.
  */
 import type { Principal } from "@vendoai/core";
-import type { IntegrationCatalogEntry } from "./options";
-import { WORLD_SCOPE } from "./guard";
+import type { IntegrationCatalogEntry } from "./options.js";
+import { WORLD_SCOPE } from "./guard.js";
 
 export interface ConnectionsStore {
   list(): Promise<Array<IntegrationCatalogEntry & { connected: boolean }>>;

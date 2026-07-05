@@ -10,7 +10,7 @@
 
 export const VENDO_NEXT_PACKAGE = "@vendoai/next";
 
-export { createVendoHandler, type VendoRouteHandlers } from "./handler";
+export { createVendoHandler, type VendoRouteHandlers } from "./handler.js";
 export { startVendoScheduler, ingestVendoEvent } from "@vendoai/server";
 export type { IngestVendoEventOptions, IngestVendoEventResult } from "@vendoai/server";
 export type { VendoHandlerOptions, IntegrationCatalogEntry } from "@vendoai/server";

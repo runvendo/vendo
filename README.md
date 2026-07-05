@@ -1,45 +1,78 @@
-# Vendo
+<p align="center">
+  <img src="assets/banner.svg" alt="Vendo — your product, shaped to every customer" width="100%">
+</p>
 
-Monorepo for Vendo — a drop-in agentic experience — and the demo that showcases it.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-4338CA" alt="License"></a>
+  <a href="https://github.com/runvendo/vendo/actions/workflows/ci.yml"><img src="https://github.com/runvendo/vendo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/org/vendoai"><img src="https://img.shields.io/badge/npm-%40vendoai-4338CA" alt="npm"></a>
+</p>
 
-## Telemetry
+Vendo embeds an agent in your product that lets every customer automate their
+work, build their own views, and connect their tools — inside your brand and
+your guardrails.
 
-Vendo collects anonymous, opt-out usage telemetry from build and development tooling. See [TELEMETRY.md](./TELEMETRY.md).
-
-## Layout
-
-```
-packages/
-  vendo-core    tools, UI nodes, GenUI format, generated components, stream protocol, agent, registry, stub agent
-  vendo-react   provider, useVendoChat, in-memory transport, stub renderer
-examples/
-  basic           proves the stub loop end-to-end
-apps/
-  demo-bank       Maple — a demo consumer neobank, the host app for the "$87 Mystery" demo
-docs/
-  superpowers     design and plan docs (plans/, specs/)
-```
-
-There is one UI tool, `render_view`, and its output always renders in the egress-jailed sandbox. The agent composes each view as a flat tree of nodes: prewired primitives, host catalog components, and novel generated React code bound to `$path` data. Even a single component is a one-node generated view. The only host-rendered exception is the Connect OAuth card (via `request_connect`), which needs host privileges.
+- **Automate work** — customers describe workflows; Vendo runs them through
+  your product's own API, as the customer, with approval gates you define.
+- **Build views** — the agent composes custom UI from your component catalog
+  plus generated React, rendered in an egress-jailed sandbox.
+- **Connect tools** — Gmail, Slack, Calendar, any MCP server — wired through
+  per-tool consent.
 
 ## Quickstart
 
-```bash
-pnpm install
-pnpm build
-pnpm test
-```
-
-Run the demo bank:
+One command inside a Next.js app:
 
 ```bash
-pnpm --filter demo-bank dev
+npx @vendoai/cli init .
 ```
 
-Open http://localhost:3000.
+Add a provider key to `.env.local` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+`GOOGLE_GENERATIVE_AI_API_KEY`), start your dev server, and the Vendo surface
+is live in your product. Full walkthrough: [docs/quickstart.md](docs/quickstart.md).
 
-## More
+## Packages
 
-- `apps/demo-bank/README.md` — the Maple app: stack, architecture, API endpoints, and the planted demo charge.
-- `docs/superpowers/specs/2026-06-29-flowlet-f1-foundation-design.md` — F1 foundation design.
-- Reuse: `ai` SDK (protocol), MCP (tools + permission annotations), mcp-ui (sandbox — F3), Crayon (components — F4).
+| Package | What it is |
+|---|---|
+| `@vendoai/cli` | `vendo init` — one-command install into a Next.js app |
+| `@vendoai/core` | Manifest schemas, GenUI format, the five platform seams |
+| `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |
+| `@vendoai/runtime` | Embedded runtime: tools, automations, MCP client |
+| `@vendoai/react` | React provider + `useVendoChat` |
+| `@vendoai/next` | `createVendoHandler` route handler + `<VendoRoot>` for Next.js |
+| `@vendoai/shell` | The embedded surfaces: tabbed page, overlay, slot |
+| `@vendoai/components` | Brand-themeable component catalog |
+| `@vendoai/stage` | Sandboxed stage runtime and bridge for generated UI |
+| `@vendoai/store` | Durable persistence (PGlite default, Postgres in prod) |
+| `@vendoai/telemetry` | Anonymous, opt-out build/dev telemetry |
+
+## Demos
+
+- `apps/demo-bank` — **Maple**, a consumer neobank with Vendo embedded
+  (`pnpm demo`)
+- `apps/demo-accounting` — **Cadence**, an accounting practice app with
+  automations + voice (`pnpm demo:accounting`)
+- `examples/` — minimal integration examples
+
+## How it works
+
+The agent acts through your product's OpenAPI surface as the signed-in user.
+Generated UI renders in a sandboxed iframe with no network egress; host
+components render natively from your catalog. Every mutating action flows
+through your permission policy — consent prompts, approval tokens, and judged
+guardrails. Deeper docs: [docs/](docs/).
+
+## Telemetry
+
+Build/dev tooling collects anonymous, opt-out usage telemetry — no end-user
+data, ever. Details and the opt-out switch: [TELEMETRY.md](TELEMETRY.md).
+
+## Contributing
+
+PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:
+[SECURITY.md](SECURITY.md).
+
+## License
+
+[Apache-2.0](LICENSE)

@@ -11,8 +11,8 @@ import {
 } from "@vendoai/core";
 import { Chat, useChat } from "@ai-sdk/react";
 import { lastAssistantMessageIsCompleteWithApprovalResponses, type ChatTransport } from "ai";
-import { createLocalTransport, type LocalTransport } from "./transport";
-import { hostAwareSendAutomaticallyWhen, pendingHostToolCalls } from "./host-tools";
+import { createLocalTransport, type LocalTransport } from "./transport.js";
+import { hostAwareSendAutomaticallyWhen, pendingHostToolCalls } from "./host-tools.js";
 
 interface VendoContextValue {
   registry: ComponentRegistry;

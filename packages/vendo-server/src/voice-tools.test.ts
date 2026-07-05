@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ToolSet } from "ai";
 import type { ComposioClient } from "@vendoai/runtime";
-import { createConnectionsStore } from "./connections";
-import { handleVoiceToolsGet, handleVoiceToolsPost, type VoiceToolsDeps } from "./voice-tools";
+import { createConnectionsStore } from "./connections.js";
+import { handleVoiceToolsGet, handleVoiceToolsPost, type VoiceToolsDeps } from "./voice-tools.js";
 
 const CATALOG = [
   { id: "gmail", name: "Gmail" },

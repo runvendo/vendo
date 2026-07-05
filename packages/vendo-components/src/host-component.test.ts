@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { hostComponent } from "./host-component";
+import { hostComponent } from "./host-component.js";
 import { RESERVED_COMPONENT_NAMES } from "@vendoai/core";
 
 describe("hostComponent", () => {

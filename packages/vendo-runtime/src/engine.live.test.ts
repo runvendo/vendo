@@ -3,8 +3,8 @@
  * loop (model -> tool dispatch -> guardrail policy -> data-ui stream), plus the
  * guardrail gating a real model's tool call.
  *
- * Skipped unless ANTHROPIC_API_KEY is set. Run with keys injected, e.g.:
- *   infisical run --projectId <id> --env dev -- pnpm -F @vendoai/runtime test engine.live
+ * Skipped unless ANTHROPIC_API_KEY is set. Run with keys in your environment, e.g.:
+ *   ANTHROPIC_API_KEY=sk-... pnpm -F @vendoai/runtime test engine.live
  *
  * Override the model with VENDO_E2E_MODEL if needed.
  */
@@ -13,9 +13,9 @@ import { tool } from "ai";
 import { z } from "zod";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { VendoUIMessage } from "@vendoai/core";
-import { createVendoAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
-import { createComposioClient } from "./composio";
-import type { ApprovalPolicy } from "./policy";
+import { createVendoAgent, RENDER_VIEW_TOOL_NAME } from "./engine.js";
+import { createComposioClient } from "./composio.js";
+import type { ApprovalPolicy } from "./policy/index.js";
 
 const HAS_KEY = !!process.env.ANTHROPIC_API_KEY;
 const HAS_BOTH = HAS_KEY && !!process.env.COMPOSIO_API_KEY;

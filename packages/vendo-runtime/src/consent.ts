@@ -23,11 +23,11 @@
  * critical tools never get one, checked before ever calling the manager.
  */
 import type { AuditLog, ConsentResponse, VendoUIMessage, GrantStore, Principal, FadeShape } from "@vendoai/core";
-import type { ToolDescriptor } from "./descriptor";
-import type { FadeTracker } from "./fade-tracker";
-import { createGrantManager } from "./grant-manager";
-import { hashInput } from "./policy/grant-match";
-import { dangerTier, isUnverified } from "./policy/tier";
+import type { ToolDescriptor } from "./descriptor.js";
+import type { FadeTracker } from "./fade-tracker.js";
+import { createGrantManager } from "./grant-manager.js";
+import { hashInput } from "./policy/grant-match.js";
+import { dangerTier, isUnverified } from "./policy/tier.js";
 
 /** Cap for the server-derived "allow once" grant's Trust-screen preview text
  *  (ENG-193 spec §4.3's `inputPreview` field) — mirrors `scopePreview`'s own

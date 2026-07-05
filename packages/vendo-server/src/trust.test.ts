@@ -7,10 +7,10 @@ import {
   revokeRuleRoute,
   queryAuditRoute,
   listCriticalToolsRoute,
-} from "./trust";
+} from "./trust.js";
 import { createInMemoryCompiledRuleStore, createInMemoryGrantStore, InMemoryAuditLog, buildDescriptor } from "@vendoai/runtime";
-import { createAutomationsWorld } from "./world";
-import { defaultVendoPolicy } from "./default-policy";
+import { createAutomationsWorld } from "./world.js";
+import { defaultVendoPolicy } from "./default-policy.js";
 import { automationSpecSchema } from "@vendoai/runtime";
 
 const scope = { tenantId: "vendo-embedded", subject: "vendo-default-user" };

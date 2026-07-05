@@ -4,7 +4,7 @@
  * client must never pull the Composio server module in transitively.
  * Ids must match the shell's BrandIcon ids.
  */
-import type { IntegrationCatalogEntry } from "./options";
+import type { IntegrationCatalogEntry } from "./options.js";
 
 export const DEFAULT_INTEGRATION_CATALOG: IntegrationCatalogEntry[] = [
   { id: "gmail", name: "Gmail" },

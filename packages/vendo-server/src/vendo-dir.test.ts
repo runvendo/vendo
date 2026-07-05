@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultBrand } from "@vendoai/components/theme";
-import { loadVendoDir } from "./vendo-dir";
+import { loadVendoDir } from "./vendo-dir.js";
 
 function scratch(): string {
   return mkdtempSync(path.join(tmpdir(), "vendo-next-"));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectCapabilities } from "./capabilities";
+import { detectCapabilities } from "./capabilities.js";
 
 describe("detectCapabilities", () => {
   it("is chat-only with just an Anthropic key (the one-key minimum)", () => {

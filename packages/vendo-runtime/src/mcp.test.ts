@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import type { ToolSet } from "ai";
-import { ingestMcpTools, type McpServerConfig, type McpToolSource } from "./mcp";
+import { ingestMcpTools, type McpServerConfig, type McpToolSource } from "./mcp.js";
 
 function fakeSource(
   perServer: Record<

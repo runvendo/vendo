@@ -12,9 +12,9 @@
  *   effect of evaluation or execution.
  */
 import type { GrantStore, Principal } from "@vendoai/core";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
-import { dangerTier } from "./tier";
-import { grantMatches } from "./grant-match";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
+import { dangerTier } from "./tier.js";
+import { grantMatches } from "./grant-match.js";
 
 export interface GrantPolicyOptions {
   /** Maps the policy principal to the store's Principal scope. */

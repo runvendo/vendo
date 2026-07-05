@@ -19,7 +19,7 @@
  * exists to close.
  */
 import type { CompiledRule } from "@vendoai/core";
-import { constraintResult, globMatches } from "./grant-match";
+import { constraintResult, globMatches } from "./grant-match.js";
 
 export interface RuleMatchContext {
   tool: string;

@@ -6,7 +6,7 @@ import {
   createSourceResolver,
   enrichAnchorSources,
   SOURCE_CAP_BYTES,
-} from "./remix-enrich";
+} from "./remix-enrich.js";
 
 const record = (over: Partial<RemixSourceRecord> = {}): RemixSourceRecord => ({
   file: "src/components/dashboard/deadline-list.tsx",

@@ -16,7 +16,7 @@ import {
   ensureVendoState,
   ingestVendoEvent,
   resetVendoBootRegistry,
-} from "./fetch-handler";
+} from "./fetch-handler.js";
 
 const STUB_MODEL = { modelId: "stub" } as unknown as LanguageModel;
 const ALLOW_ALL: ApprovalPolicy = { evaluate: () => "allow" };

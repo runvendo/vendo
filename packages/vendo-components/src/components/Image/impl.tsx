@@ -1,7 +1,7 @@
-import { Image as UIImage } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { allowlistUrl } from "../../impl-helpers/safe-url";
-import { imageSchema } from "./descriptor";
+import { Image as UIImage } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { allowlistUrl } from "../../impl-helpers/safe-url.js";
+import { imageSchema } from "./descriptor.js";
 
 export const Image = createPrewiredImpl(imageSchema, (p) => {
   const safeSrc = allowlistUrl(p.src);

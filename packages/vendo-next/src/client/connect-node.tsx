@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { useVendoChat } from "@vendoai/react";
 import { BrandIcon, ConnectCard, type Integration } from "@vendoai/shell";
-import { runConnectFlow } from "./connect-flow";
+import { runConnectFlow } from "./connect-flow.js";
 import { DEFAULT_INTEGRATION_CATALOG } from "@vendoai/server/catalog";
 
 const NAMES: Record<string, string> = Object.fromEntries(

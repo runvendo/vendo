@@ -22,7 +22,7 @@
  * so a later approval pattern can still earn a fresh proposal.
  */
 import type { FadeShape } from "@vendoai/core";
-import { deriveFadeShape, shapeKey, computeProposalId } from "./policy/fade-shapes";
+import { deriveFadeShape, shapeKey, computeProposalId } from "./policy/fade-shapes.js";
 
 export interface FadeTrackerOptions {
   /** "Yes" count required (same shape, zero "no") before offering. Default 3. */

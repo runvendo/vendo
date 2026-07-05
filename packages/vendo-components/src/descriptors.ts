@@ -1,27 +1,27 @@
 import type { RegisteredComponent } from "@vendoai/core";
-import type { PrewiredDescriptor } from "./descriptor";
-import { cardDescriptor } from "./components/Card/descriptor";
-import { tableDescriptor } from "./components/Table/descriptor";
-import { chartDescriptor } from "./components/Chart/descriptor";
-import { sankeyDescriptor } from "./components/Sankey/descriptor";
-import { formDescriptor } from "./components/Form/descriptor";
-import { accordionDescriptor } from "./components/Accordion/descriptor";
-import { carouselDescriptor } from "./components/Carousel/descriptor";
-import { calloutDescriptor } from "./components/Callout/descriptor";
-import { tagsDescriptor } from "./components/Tags/descriptor";
-import { stepsDescriptor } from "./components/Steps/descriptor";
-import { listDescriptor } from "./components/List/descriptor";
-import { imageDescriptor } from "./components/Image/descriptor";
-import { imageGalleryDescriptor } from "./components/ImageGallery/descriptor";
-import { markdownDescriptor } from "./components/Markdown/descriptor";
-import { codeBlockDescriptor } from "./components/CodeBlock/descriptor";
-import { tabsDescriptor } from "./components/Tabs/descriptor";
-import { timeOfDayClockDescriptor } from "./components/TimeOfDayClock/descriptor";
-import { progressDescriptor } from "./components/Progress/descriptor";
-import { donutDescriptor } from "./components/Donut/descriptor";
-import { keyValueDescriptor } from "./components/KeyValue/descriptor";
-import { actionsDescriptor } from "./components/Actions/descriptor";
-import { emptyStateDescriptor } from "./components/EmptyState/descriptor";
+import type { PrewiredDescriptor } from "./descriptor.js";
+import { cardDescriptor } from "./components/Card/descriptor.js";
+import { tableDescriptor } from "./components/Table/descriptor.js";
+import { chartDescriptor } from "./components/Chart/descriptor.js";
+import { sankeyDescriptor } from "./components/Sankey/descriptor.js";
+import { formDescriptor } from "./components/Form/descriptor.js";
+import { accordionDescriptor } from "./components/Accordion/descriptor.js";
+import { carouselDescriptor } from "./components/Carousel/descriptor.js";
+import { calloutDescriptor } from "./components/Callout/descriptor.js";
+import { tagsDescriptor } from "./components/Tags/descriptor.js";
+import { stepsDescriptor } from "./components/Steps/descriptor.js";
+import { listDescriptor } from "./components/List/descriptor.js";
+import { imageDescriptor } from "./components/Image/descriptor.js";
+import { imageGalleryDescriptor } from "./components/ImageGallery/descriptor.js";
+import { markdownDescriptor } from "./components/Markdown/descriptor.js";
+import { codeBlockDescriptor } from "./components/CodeBlock/descriptor.js";
+import { tabsDescriptor } from "./components/Tabs/descriptor.js";
+import { timeOfDayClockDescriptor } from "./components/TimeOfDayClock/descriptor.js";
+import { progressDescriptor } from "./components/Progress/descriptor.js";
+import { donutDescriptor } from "./components/Donut/descriptor.js";
+import { keyValueDescriptor } from "./components/KeyValue/descriptor.js";
+import { actionsDescriptor } from "./components/Actions/descriptor.js";
+import { emptyStateDescriptor } from "./components/EmptyState/descriptor.js";
 
 export const descriptors: PrewiredDescriptor[] = [
   timeOfDayClockDescriptor,
@@ -53,9 +53,9 @@ export const prewiredComponents: RegisteredComponent[] = descriptors.map((d) => 
 // Server-safe theme utilities (React-free, no CSS imports) — the descriptors
 // entrypoint is the one server code may import, so the token → CSS-var / chart
 // palette derivations are re-exported here for prompt assembly and manifests.
-export { brandTokensSchema, defaultBrand, type BrandTokens } from "./theme/brand";
-export { brandToCssVars } from "./theme/brand-to-css-vars";
-export { brandToChartPalette } from "./theme/brand-to-chart-palette";
-export { hostComponent, toHostRegistry, type HostComponentDescriptor } from "./host-component";
-export { componentPromptCatalog } from "./prompt-catalog";
-export { jsonValue } from "./descriptor";
+export { brandTokensSchema, defaultBrand, type BrandTokens } from "./theme/brand.js";
+export { brandToCssVars } from "./theme/brand-to-css-vars.js";
+export { brandToChartPalette } from "./theme/brand-to-chart-palette.js";
+export { hostComponent, toHostRegistry, type HostComponentDescriptor } from "./host-component.js";
+export { componentPromptCatalog } from "./prompt-catalog.js";
+export { jsonValue } from "./descriptor.js";

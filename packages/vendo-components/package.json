@@ -1,6 +1,22 @@
 {
   "name": "@vendoai/components",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Brand-themeable component catalog for Vendo generated UI.",
+  "keywords": ["ai", "agent", "generative-ui", "react", "components", "ui"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendo-components"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,6 +38,7 @@
       "default": "./dist/sandbox-install.js"
     }
   },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:sandbox": "vite build -c vite.sandbox.config.ts",

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import type { PolicyContext } from "./types";
-import type { ToolAnnotations } from "../descriptor";
-import { annotationPolicy } from "./annotation";
+import type { PolicyContext } from "./types.js";
+import type { ToolAnnotations } from "../descriptor.js";
+import { annotationPolicy } from "./annotation.js";
 
 /** Build a minimal PolicyContext with the given annotations under test. */
 function ctx(annotations: ToolAnnotations): PolicyContext {

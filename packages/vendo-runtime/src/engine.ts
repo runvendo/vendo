@@ -25,15 +25,15 @@ import {
   type ToolSet,
   type UIMessageChunk,
 } from "ai";
-import { jsonRepairMiddleware } from "./json-repair";
+import { jsonRepairMiddleware } from "./json-repair.js";
 import {
   createEditViewTool,
   EDIT_VIEW_TOOL_NAME,
   importSpecifiers,
   STAGE_IMPORTS,
-} from "./edit-view-tool";
-import { normalizeBaseline, numberedLines } from "./remix/baseline";
-import type { RemixSealer } from "./remix/envelope";
+} from "./edit-view-tool.js";
+import { normalizeBaseline, numberedLines } from "./remix/baseline.js";
+import type { RemixSealer } from "./remix/envelope.js";
 import type {
   AnchorContextBlock,
   AuditLog,
@@ -48,26 +48,26 @@ import type {
   ToolSummaryInput,
 } from "@vendoai/core";
 import { SCHEMA_VERSION } from "@vendoai/core";
-import { buildToolset, type ToolSourceInput } from "./toolset";
-import { createPausedCallTracker } from "./wrap-tool";
-import { createRenderViewTool } from "./render-view-tool";
-import { createRequestConnectTool } from "./request-connect-tool";
+import { buildToolset, type ToolSourceInput } from "./toolset.js";
+import { createPausedCallTracker } from "./wrap-tool.js";
+import { createRenderViewTool } from "./render-view-tool.js";
+import { createRequestConnectTool } from "./request-connect-tool.js";
 import {
   ingestComposioTools,
   createComposioClient,
   type ComposioClient,
   type ComposioConfig,
-} from "./composio";
+} from "./composio.js";
 import {
   ingestMcpTools,
   createMcpToolSource,
   type McpServerConfig,
   type McpToolSource,
-} from "./mcp";
-import type { ApprovalDecision, ApprovalPolicy } from "./policy";
-import type { VendoPrincipal } from "./principal";
-import { buildDescriptor, type ToolDescriptor } from "./descriptor";
-import { createRunPolicyContext } from "./policy/run-context";
+} from "./mcp.js";
+import type { ApprovalDecision, ApprovalPolicy } from "./policy/index.js";
+import type { VendoPrincipal } from "./principal.js";
+import { buildDescriptor, type ToolDescriptor } from "./descriptor.js";
+import { createRunPolicyContext } from "./policy/run-context.js";
 
 /** Canonical name of the engine's built-in composed-view tool (Tier 2.5). */
 export const RENDER_VIEW_TOOL_NAME = "render_view";
@@ -608,7 +608,7 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
   // Stable, deterministic run identity without Math.random/Date.now.
   let runCounter = 0;
 
-  // Engine-owned JSON repair (upstreamed from apps/gmail, PR #28): streamed
+  // Engine-owned JSON repair: streamed
   // tool inputs whose JSON broke on raw control chars are repaired before the
   // ai SDK gives up on them, and historical broken inputs are repaired (or
   // emptied) before they can 400 a later turn at the provider.

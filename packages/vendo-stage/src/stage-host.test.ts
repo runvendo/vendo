@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildSrcdoc, connectStage } from "./stage-host";
-import { makeRpc } from "./bridge";
-import type { MessageEndpoint } from "./protocol";
+import { buildSrcdoc, connectStage } from "./stage-host.js";
+import { makeRpc } from "./bridge.js";
+import type { MessageEndpoint } from "./protocol.js";
 
 /**
  * Mailbox pair: same semantics as bridge.test.ts.
