@@ -240,19 +240,27 @@ export async function handleComposioWebhook(req: Request, deps: ComposioWebhookD
   });
 
   const occurredAt = new Date(tsSecondsToMs(timestamp)).toISOString();
+  let fired = 0;
   for (const automation of matches) {
     // A redelivery's DuplicateRunError is swallowed INSIDE runner.fire itself
-    // (see runner.ts fireNow) — nothing to catch here.
-    await deps.world.runner.fire(owner.principal, automation.id, {
-      source: "composio",
-      eventId: id,
-      subject: owner.principal.subject,
-      occurredAt,
-      payload,
-    });
+    // (see runner.ts fireNow). Anything else (e.g. a transient store error)
+    // must not starve the remaining matches of this delivery — same isolation
+    // rule as InProcessScheduler.tick().
+    try {
+      await deps.world.runner.fire(owner.principal, automation.id, {
+        source: "composio",
+        eventId: id,
+        subject: owner.principal.subject,
+        occurredAt,
+        payload,
+      });
+      fired += 1;
+    } catch (error) {
+      console.error(`[vendo] composio webhook firing failed for automation ${automation.id}`, error);
+    }
   }
 
-  return Response.json({ ok: true, fired: matches.length });
+  return Response.json({ ok: true, fired });
 }
 
 // `timestamp` was already validated as finite by verifyComposioSignature.

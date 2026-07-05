@@ -42,7 +42,14 @@ export function createHostEventIngest(deps: {
       key: eventType,
     });
     for (const automation of matches) {
-      await deps.runner.fire(scope, automation.id, envelope);
+      try {
+        await deps.runner.fire(scope, automation.id, envelope);
+      } catch (error) {
+        // Same isolation rule as InProcessScheduler.tick(): one automation's
+        // failure (e.g. a transient store error) must not starve the other
+        // matches of this event.
+        console.error(`[vendo] host-event firing failed for automation ${automation.id}`, error);
+      }
     }
   };
 }
