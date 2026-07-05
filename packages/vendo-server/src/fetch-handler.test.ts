@@ -186,6 +186,39 @@ describe("createVendoFetchHandler", () => {
     error.mockRestore();
   });
 
+  it("fails closed on parked-actions for a non-world principal, exactly like /deliveries (single-tenant world)", async () => {
+    // Under a custom multi-user `principal` resolver, subjects other than the
+    // world's own fixed subject must not read or resolve the world's parked
+    // drafts — same 403 the /deliveries and /resume routes answer.
+    const handler = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      principal: async () => ({ userId: "not-the-world-subject" }),
+    });
+
+    const list = await handler(req("/api/vendo/parked-actions"));
+    expect(list.status).toBe(403);
+    expect(((await list.json()) as { error: string }).error).toMatch(/single-tenant/);
+
+    const resolve = await handler(
+      req("/api/vendo/parked-actions/resolve", {
+        method: "POST",
+        body: JSON.stringify({ actionId: "a1", decision: "yes" }),
+      }),
+    );
+    expect(resolve.status).toBe(403);
+    expect(((await resolve.json()) as { error: string }).error).toMatch(/single-tenant/);
+  });
+
+  it("still serves parked-actions to the world's own subject", async () => {
+    const handler = createVendoFetchHandler({
+      vendoDir: emptyDir(),
+      principal: async () => ({ userId: "vendo-default-user" }),
+    });
+    const list = await handler(req("/api/vendo/parked-actions"));
+    expect(list.status).toBe(200);
+    expect(await list.json()).toEqual({ actions: [] });
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");

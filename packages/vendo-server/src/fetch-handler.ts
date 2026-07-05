@@ -739,6 +739,15 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
+        // Same single-tenant fail-closed rule as /deliveries: the routes read/
+        // resolve under the WORLD's fixed scope, so any other subject a custom
+        // multi-user resolver produces must not see the world's parked drafts.
+        if (guard.principal.userId !== s.worldScope.subject) {
+          return Response.json(
+            { error: "parked actions are single-tenant; front your own world for multi-user installs" },
+            { status: 403 },
+          );
+        }
         return listParkedActionsRoute(req, { world: s.world, principal: guard.principal });
       }
       case "grants": {
@@ -919,6 +928,14 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
+        // Same single-tenant fail-closed rule as /deliveries and /resume (see
+        // the GET "parked-actions" case above).
+        if (guard.principal.userId !== s.worldScope.subject) {
+          return Response.json(
+            { error: "parked actions are single-tenant; front your own world for multi-user installs" },
+            { status: 403 },
+          );
+        }
         return resolveParkedActionRoute(req, { world: s.world, principal: guard.principal });
       }
       // POST /api/vendo/grants/revoke AND POST /api/vendo/rules/revoke
