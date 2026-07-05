@@ -40,9 +40,12 @@ describe("buildInstructions", () => {
     expect(on).toContain("list_things, create_thing");
   });
 
-  it("appends host extra instructions verbatim", () => {
+  it("carries host extra instructions verbatim, with only the platform guardrails after", () => {
     const text = buildInstructions({ ...BASE, extra: "ALWAYS SPEAK PIRATE." });
-    expect(text.endsWith("ALWAYS SPEAK PIRATE.")).toBe(true);
+    expect(text).toContain("ALWAYS SPEAK PIRATE.");
+    // Guarded order (spec §1): host extras never get recency over guardrails.
+    expect(text.indexOf("NON-NEGOTIABLES")).toBeGreaterThan(text.indexOf("ALWAYS SPEAK PIRATE."));
+    expect(text.trimEnd().endsWith("these rules win.")).toBe(true);
   });
 });
 
@@ -83,18 +86,41 @@ describe("createAgentCache", () => {
   });
 });
 
-// Pre-migration baseline for the default prompt (shared-prompt-core spec,
-// docs/superpowers/specs/2026-07-04-context-engineering-design.md). The
-// migration diff test anchors here — regenerate ONLY with an intentional,
-// reviewed prompt change (UPDATE_PROMPT_BASELINE=1 pnpm test).
-import { readFileSync, writeFileSync } from "node:fs";
+// Migration diff test (shared-prompt-core spec, docs/superpowers/specs/
+// 2026-07-04-context-engineering-design.md): anchored on the FROZEN
+// pre-migration fixture, so it can never compare the new path to itself.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 
-describe("default prompt baseline", () => {
+describe("default prompt migration diff", () => {
   const fixturePath = join(__dirname, "__fixtures__", "default-instructions.baseline.txt");
 
-  it("matches the frozen pre-migration fixture (all sections enabled)", () => {
+  // Legacy phrasings the shared prompt core intentionally superseded — the
+  // ONLY fixture lines allowed to disappear. Everything else must survive
+  // verbatim. Reviewed hunks; see the spec's §1 "Consumers migrated".
+  const INTENDED_REMOVALS = [
+    // show-vs-say converged to the richer shared wording (adds the example)
+    /answer is genuinely better as a chart\/table\/clock than a sentence\.$/,
+    // refreshable-views converged to the shared wording (concrete example)
+    /re-runnable: put the tool's result VERBATIM at one path in `data`, bind props/,
+    /into that subtree with \{ \$path \} or transform it inside a generated component,/,
+    /and declare queries: \[\{ path: '\/x', tool: '<tool>', input: \{\.\.\.\} \}\]\. Saved views/,
+    /^re-run those queries on reopen to show fresh data\. Do NOT reshape tool output$/,
+    /^before storing it at the declared path — reshape at render time\.$/,
+    // novel-components converged (gains React.createElement + REPLACES lines)
+    /keyboard\/mouse handlers, and useState — so games and interactive widgets live here\.$/,
+    // connect section converged to the shared wording (re-wrapped lines)
+    /^CONNECTING TOOLS — external tools \(Gmail, Slack, etc\.\) are only available once$/,
+    /^the user has CONNECTED them\. If a request needs a tool that is not yet connected$/,
+    /^\(you'll notice the tool simply isn't in your toolset\), do NOT refuse and do NOT$/,
+    /^try to render Connect via render_view\. Instead call the request_connect tool:$/,
+    /^request_connect\(\{ toolkit: "<id>", reason: "<short why>" \}\)\. Use the toolkit id$/,
+    /^\(gmail, slack\)\. You may briefly say you're$/,
+    /^requesting access\. Once the user connects it, they can re-ask and you'll have the tool\.$/,
+  ];
+
+  it("keeps every non-superseded fixture line and adds only the approved sections", () => {
     const current = buildInstructions({
       productName: "Acme",
       brand: defaultBrand,
@@ -108,9 +134,28 @@ describe("default prompt baseline", () => {
       automations: true,
       extra: "HOST EXTRA SECTION — verbatim.",
     });
-    if (process.env.UPDATE_PROMPT_BASELINE) {
-      writeFileSync(fixturePath, current);
+    const baseline = readFileSync(fixturePath, "utf8");
+    const currentLines = new Set(current.split("\n"));
+
+    const lost = baseline
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .filter((line) => !currentLines.has(line))
+      .filter((line) => !INTENDED_REMOVALS.some((re) => re.test(line)));
+    expect(lost, `fixture lines lost without an approved removal:\n${lost.join("\n")}`).toEqual([]);
+
+    // The approved additions (spec sections) are present, in guarded order.
+    for (const anchor of [
+      "TALKING ABOUT WHAT YOU CAN DO",
+      "APPROVALS:",
+      "REGISTER — how you talk",
+      "SUGGESTIONS:",
+      "NON-NEGOTIABLES",
+    ]) {
+      expect(current).toContain(anchor);
     }
-    expect(current).toBe(readFileSync(fixturePath, "utf8"));
+    expect(current.indexOf("NON-NEGOTIABLES")).toBeGreaterThan(
+      current.indexOf("HOST EXTRA SECTION — verbatim."),
+    );
   });
 });

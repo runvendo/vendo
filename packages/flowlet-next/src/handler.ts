@@ -35,6 +35,7 @@ import { detectCapabilities } from "./capabilities";
 import { loadFlowletDir } from "./flowlet-dir";
 import { manifestToolsToHostTools } from "./manifest-tools";
 import { buildInstructions, createAgentCache } from "./agent";
+import type { InstructionContext } from "@flowlet/runtime";
 import { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld } from "./world";
 import { defaultFlowletPolicy } from "./default-policy";
 import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
@@ -82,17 +83,22 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       return { ...extra, ...(world ? world.authoringTools() : {}) };
     };
 
+    // Default prompt is a per-run FUNCTION (spec §1/§7): the capability
+    // summary needs the live merged toolset, which only exists after tool
+    // ingestion inside the engine's run().
     const instructions =
       options.instructions ??
-      buildInstructions({
-        productName: options.productName ?? "this app",
-        brand: loaded.brand,
-        components: options.components ?? [],
-        hostToolNames: hostTools.map((t) => t.name),
-        integrations: capabilities.integrations ? catalog : [],
-        automations: world !== null,
-        ...(options.instructionsExtra ? { extra: options.instructionsExtra } : {}),
-      });
+      ((ctx: InstructionContext) =>
+        buildInstructions({
+          productName: options.productName ?? "this app",
+          brand: loaded.brand,
+          components: options.components ?? [],
+          hostToolNames: hostTools.map((t) => t.name),
+          integrations: capabilities.integrations ? catalog : [],
+          automations: world !== null,
+          toolSummary: ctx.toolSummary,
+          ...(options.instructionsExtra ? { extra: options.instructionsExtra } : {}),
+        }));
 
     const getAgent = createAgentCache({
       model,

@@ -8,7 +8,7 @@ export const FLOWLET_RUNTIME_PACKAGE = "@flowlet/runtime";
 
 // Engine
 export { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
-export type { FlowletAgentConfig } from "./engine";
+export type { FlowletAgentConfig, InstructionContext } from "./engine";
 
 // Principal
 export type { FlowletPrincipal } from "./principal";
