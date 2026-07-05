@@ -2,7 +2,14 @@
   "name": "@vendoai/shell",
   "version": "0.1.0",
   "description": "Vendo embedded surfaces: brand-native chat thread, overlays, slots, and toasts.",
-  "keywords": ["ai", "agent", "generative-ui", "react", "chat", "ui"],
+  "keywords": [
+    "ai",
+    "agent",
+    "generative-ui",
+    "react",
+    "chat",
+    "ui"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -21,16 +28,24 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./styles.css": "./dist/styles.css"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "peerDependencies": { "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0" },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
   "dependencies": {
     "@ai-sdk/react": "3.0.30",
     "@vendoai/core": "workspace:*",
@@ -41,7 +56,8 @@
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "fluidkit": "^0.5.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",
