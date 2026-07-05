@@ -881,12 +881,14 @@
 .fl-remix-pill-act:hover { text-decoration: underline; }
 
 /* ---- scoped-overlay header bar ---- */
-.fl-scope-bar { display: flex; align-items: center; gap: 8px; padding: 9px 16px;
+.fl-scope-bar { display: flex; align-items: center; gap: 8px; padding: 9px 56px 9px 16px;
   border-bottom: 1px solid var(--vendo-border); background: var(--vendo-accent-soft); }
-.fl-scope-label { font: 600 12px/1.3 var(--vendo-font); color: var(--vendo-fg); }
-.fl-scope-clear { margin-left: auto; border: 0; background: none; cursor: pointer;
+.fl-scope-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 600 12px/1.3 var(--vendo-font); color: var(--vendo-fg); }
+.fl-scope-clear { margin-left: auto; flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px;
+  display: grid; place-items: center; border: 0; background: transparent; cursor: pointer;
   color: var(--vendo-fg-muted); font: 600 12px/1 var(--vendo-font); }
-.fl-scope-clear:hover { color: var(--vendo-fg); }
+.fl-scope-clear:hover { background: var(--vendo-surface); color: var(--vendo-fg); }
 
 /* ---- remix-candidate apply bar (under a tagged generated view) ---- */
 .fl-applybar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
