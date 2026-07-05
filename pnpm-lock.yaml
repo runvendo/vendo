@@ -637,9 +637,6 @@ importers:
 
   packages/flowlet-next:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
       '@flowlet/components':
         specifier: workspace:*
         version: link:../flowlet-components
