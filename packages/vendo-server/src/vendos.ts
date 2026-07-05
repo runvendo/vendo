@@ -67,25 +67,30 @@ function isUnsafeVendoId(id: string): boolean {
  *     inherently CSRF-safe, no origin check needed;
  *   - a request with NO browser provenance headers (curl, server-to-server)
  *     carries no third-party-triggered ambient credentials.
- * Otherwise: `sec-fetch-site` decides when present (it distinguishes
- * same-site subdomains precisely); the `Origin` header must match the request
- * host exactly as the fallback (host/port equality — computing "same site"
- * from Origin alone needs a public-suffix list, so the fallback is stricter).
+ * When `Origin` is present it is authoritative: require exact host equality
+ * (host+port) REGARDLESS of `sec-fetch-site` — a sibling subdomain like
+ * `evil.example.com` → `app.example.com` reads `sec-fetch-site: same-site` yet
+ * is a different origin, so trusting same-site would let it through. Only when
+ * `Origin` is absent do we fall back to `sec-fetch-site`, and there we accept
+ * ONLY `same-origin`; `same-site`/`cross-site`/`none` all reject (fail closed —
+ * without an Origin we cannot verify the exact host).
  */
 function isCrossSiteRequest(req: Request): boolean {
   if (req.headers.get("authorization")) return false;
-  const site = req.headers.get("sec-fetch-site");
-  if (site !== null) return site === "cross-site";
   const origin = req.headers.get("origin");
-  if (origin === null) return false;
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    return true; // includes "Origin: null" (sandboxed iframe) — fail closed
+  if (origin !== null) {
+    let originHost: string;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      return true; // includes "Origin: null" (sandboxed iframe) — fail closed
+    }
+    const host = req.headers.get("host") ?? new URL(req.url).host;
+    return originHost !== host;
   }
-  const host = req.headers.get("host") ?? new URL(req.url).host;
-  return originHost !== host;
+  const site = req.headers.get("sec-fetch-site");
+  if (site === null) return false; // no browser provenance at all → non-browser caller
+  return site !== "same-origin";
 }
 
 /** Principal-scoped counterpart to the shell's `VendoStore` (which has no

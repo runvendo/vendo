@@ -213,6 +213,28 @@ describe("vendos endpoints — cross-site request rejection (CSRF)", () => {
     expect(await registry.load({ tenantId: "vendo-embedded", subject: "u1" }, "f1")).not.toBeNull();
   });
 
+  it("rejects a sibling-subdomain Origin even when sec-fetch-site claims same-site", async () => {
+    // https://evil.example.com → https://app.example.com is "same-site" (same
+    // registrable domain) but a DIFFERENT origin — sec-fetch-site must not let
+    // it short-circuit past host equality.
+    const registry = createInMemoryVendoRegistry();
+    const res = await handleVendosPost(
+      new Request("https://app.example.com/api/vendo/vendos", {
+        method: "POST",
+        headers: {
+          host: "app.example.com",
+          origin: "https://evil.example.com",
+          "sec-fetch-site": "same-site",
+        },
+        body: JSON.stringify(draft("f1", "first")),
+      }),
+      "vendos",
+      { registry, options: options("u1") },
+    );
+    expect(res.status).toBe(403);
+    expect(await registry.list({ tenantId: "vendo-embedded", subject: "u1" })).toEqual([]);
+  });
+
   it("allows same-origin provenance (sec-fetch-site and matching Origin)", async () => {
     expect((await save({ "sec-fetch-site": "same-origin" })).status).toBe(200);
     expect((await save({ origin: "http://localhost:3000" })).status).toBe(200);
