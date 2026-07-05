@@ -85,6 +85,10 @@ export interface FlowletHandlerOptions {
    *  consulted before `.flowlet/remix-sources.json` (`undefined` falls
    *  through). Values are raw component source strings. */
   remixSources?: Record<string, string> | ((anchorId: string) => string | undefined);
+  /** Secret for sealing remix pin envelopes. Default: `FLOWLET_SEAL_SECRET`,
+   *  else derived from `ANTHROPIC_API_KEY` on the default-model path. Without
+   *  any material, pin editing degrades to the anchor baseline. */
+  sealSecret?: string;
   /**
    * Store seam members backing grants, audit, thread persistence, and
    * breaker state (ENG-193 §6.1/§6.2/§4.7). Defaults: fresh in-memory
@@ -141,6 +145,7 @@ const optionsSchema = z
       .union([z.record(z.string(), z.string()), fn<(anchorId: string) => string | undefined>()])
       .optional(),
     maxSteps: z.number().int().positive().optional(),
+    sealSecret: z.string().min(1).optional(),
     store: z
       .object({
         grants: z.custom<GrantStore>((v) => typeof v === "object" && v !== null).optional(),

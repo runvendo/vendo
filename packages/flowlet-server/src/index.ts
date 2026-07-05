@@ -43,7 +43,13 @@ export { resolvePrincipal, DEFAULT_PRINCIPAL, type GuardResult } from "./guard";
 export { parseHandlerOptions, type FlowletHandlerOptions, type IntegrationCatalogEntry } from "./options";
 export { createFlowletFetchHandler, type FlowletFetchHandler } from "./fetch-handler";
 export { toNodeHandler, type FetchHandler, type NodeHandler } from "./node";
-export { enrichAnchorSources, createSourceResolver, capSource } from "./remix-enrich";
+export {
+  applyVerifiedPinBase,
+  enrichAnchorSources,
+  createSourceResolver,
+  capSource,
+} from "./remix-enrich";
+export { resolveRemixSealer } from "./seal";
 export { resolveMcpServers, mcpJsonSchema, mcpServerArraySchema } from "./mcp-config";
 
 // ENG-193 permissions system: production policy stack, thread index, and the

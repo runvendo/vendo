@@ -25,6 +25,10 @@ const ALLOWED_DEPENDENCIES = [
   "@composio/core",
   "@composio/vercel",
   "@flowlet/core",
+  // Audited pure-JS hashing (remix envelope seal + baseline hashes). Chosen
+  // over node:crypto because the runtime ships to browsers too — node
+  // builtins break browser bundles (example-basic, reviewed 2026-07-04).
+  "@noble/hashes",
   "ai",
   "croner",
   "jsonata",

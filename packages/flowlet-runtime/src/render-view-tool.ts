@@ -8,14 +8,9 @@
 import { tool } from "ai";
 import type { UIMessageStreamWriter } from "ai";
 import { z } from "zod";
-import {
-  hostPropIssues,
-  validateGeneratedPayload,
-  type FlowletUIMessage,
-  type RegisteredComponent,
-  type UINode,
-} from "@flowlet/core";
-import { compileComponentSource } from "./compile-component";
+import type { FlowletUIMessage, RegisteredComponent } from "@flowlet/core";
+import { materializeView } from "./materialize-view";
+import { hashSources, type RemixSealer } from "./remix/envelope";
 
 type FlowletWriter = UIMessageStreamWriter<FlowletUIMessage>;
 
@@ -28,6 +23,16 @@ export interface RenderViewToolOptions {
   /** The FlowletRemix anchor this conversation is scoped to, if any. Views
    *  rendered under a scope are tagged as remix candidates for that anchor. */
   remixAnchorId?: string;
+  /** Envelope minting for remix-tagged results (remix fast-edits epic): a
+   *  first remix rendered via render_view is immediately pin-editable. Only
+   *  set when the anchor has a captured baseline (sourceHash provenance). */
+  seal?: {
+    sealer: RemixSealer;
+    principalUserId: string;
+    /** Hash of the captured source this remix descends from. */
+    sourceHash: string;
+    now?: () => string;
+  };
 }
 
 const genNodeSchema = z.object({
@@ -81,39 +86,37 @@ export function createRenderViewTool(writer: FlowletWriter, options: RenderViewT
           "not between tool and data). Reopening a saved view re-runs these to fetch fresh data."),
     }),
     execute: async (payload) => {
-      const validation = validateGeneratedPayload(payload);
-      if (!validation.ok) {
-        return `render_view error (${validation.error.code}): ${validation.error.message}`;
+      // Validation runs on the ORIGINAL authored payload (name/cap checks apply
+      // to what the model emitted); compilation to plain ESM happens before
+      // shipping — the shared materialization path (also edit_view's tail).
+      const result = materializeView(payload, {
+        components: options.components,
+        remixAnchorId: options.remixAnchorId,
+        mintId,
+      });
+      if (!result.ok) return `render_view error ${result.error}`;
+      writer.write({ type: "data-ui", id: result.node.id, data: result.node });
+      // A remix-tagged render is immediately pin-editable: pair the authored
+      // state as a sealed envelope, same as edit_view results.
+      if (options.seal && options.remixAnchorId) {
+        const sources = result.authored.components ?? {};
+        const now = options.seal.now ?? (() => new Date().toISOString());
+        writer.write({
+          type: "data-remix-envelope",
+          data: {
+            envelope: options.seal.sealer.mint({
+              anchorId: options.remixAnchorId,
+              principalUserId: options.seal.principalUserId,
+              payload: result.authored,
+              sources,
+              sourceHash: options.seal.sourceHash,
+              baseHash: hashSources(sources),
+              issuedAt: now(),
+            }),
+            uiNodeId: result.node.id,
+          },
+        });
       }
-      if (options.components) {
-        const issues = hostPropIssues(validation.payload, options.components);
-        if (issues.length > 0) {
-          return `render_view error (host): ${issues.map((i) => i.message).join(" | ")}`;
-        }
-      }
-      // Validation ran on the ORIGINAL authored payload (name/cap checks apply
-      // to what the model emitted). Compile each component's JSX/TS to plain ESM
-      // before shipping — the sandbox has no transpiler.
-      let shipped = validation.payload;
-      if (validation.payload.components) {
-        const compiled: Record<string, string> = {};
-        for (const [name, src] of Object.entries(validation.payload.components)) {
-          try {
-            compiled[name] = compileComponentSource(src);
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            return `render_view error (compile): component "${name}": ${msg}`;
-          }
-        }
-        shipped = { ...validation.payload, components: compiled };
-      }
-      const node: UINode = {
-        id: mintId(),
-        kind: "generated",
-        payload: shipped,
-        ...(options.remixAnchorId ? { remixAnchorId: options.remixAnchorId } : {}),
-      };
-      writer.write({ type: "data-ui", id: node.id, data: node });
       return "rendered";
     },
   });

@@ -64,6 +64,7 @@ import { resolveMcpServers } from "./mcp-config";
 import { manifestToolsToHostTools } from "./manifest-tools";
 import { buildInstructions, createAgentCache } from "./agent";
 import { createSourceResolver } from "./remix-enrich";
+import { resolveRemixSealer } from "./seal";
 import { createAutomationsWorld, type FlowletAutomationsWorld } from "./world";
 import { resolveModel } from "./model";
 import { defaultFlowletPolicy } from "./default-policy";
@@ -231,6 +232,13 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       captured: loaded.remixSources,
     });
 
+    // Pin-envelope sealing (remix fast-edits). No key material → pin editing
+    // degrades to the anchor baseline; everything else is unaffected.
+    const remixSealer = resolveRemixSealer({
+      sealSecret: options.sealSecret,
+      hasInjectedModel: options.model !== undefined,
+    });
+
     const getAgent = createAgentCache({
       model,
       policy,
@@ -245,6 +253,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       ...(mcpServers.length > 0 ? { mcpServers } : {}),
       ...(options.cacheKey ? { cacheKey: options.cacheKey } : {}),
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+      ...(remixSealer ? { remixSealer } : {}),
       // ENG-193 §6.2: persist each SETTLED run's full message list to the
       // thread store. This is the single writer for thread messages (chat.ts
       // deliberately does NOT persist the request body) — the streamed
@@ -339,6 +348,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       serverTools,
       getAgent,
       resolveRemixSource,
+      remixSealer,
       approvals: createApprovalStore(),
       grants,
       rules,
@@ -447,6 +457,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
           hostTools: s.hostTools,
           options,
           resolveRemixSource: s.resolveRemixSource,
+          ...(s.remixSealer ? { remixSealer: s.remixSealer } : {}),
           // capabilities.chat is the single source of truth: it already
           // folds in an injected model (via hasInjectedModel above) alongside
           // any configured provider key.

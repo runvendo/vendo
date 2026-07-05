@@ -16,7 +16,9 @@ export type PromptModality = "chat" | "voice";
 /** The `flowlet-genui/v1` payload protocol (chat renders full views). */
 export function genuiFormatSection(): string {
   return [
-    "HOW render_view WORKS — there is ONE rendering tool. Every view you show is a",
+    "HOW render_view WORKS — render_view renders NEW views. (When the host-page context",
+    "offers edit_view for a captured element, PREFER it: patch the baseline instead of",
+    "regenerating.) Every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
     "- formatVersion: 'flowlet-genui/v1'.",
     "- root: the id of the root node.",

@@ -22,6 +22,14 @@ import {
  *  The components map is a Record with no ordering semantics, so its entries are
  *  sorted by name before stringifying: same content ⇒ same key regardless of key
  *  insertion order. Node array order is meaningful and preserved as-is. */
+/** The anchor's live data object (`data.anchor`) — the swr shim's feed. */
+const anchorDataOf = (payload: GeneratedPayload): Record<string, unknown> | undefined => {
+  const anchor = (payload.data as Record<string, unknown> | undefined)?.["anchor"];
+  return anchor !== null && typeof anchor === "object" && !Array.isArray(anchor)
+    ? (anchor as Record<string, unknown>)
+    : undefined;
+};
+
 const structureKey = (payload: GeneratedPayload): string => {
   const components = payload.components ?? {};
   const sortedComponents = Object.keys(components)
@@ -150,6 +158,7 @@ export function FlowletStage({
             // tree's root id — NOT the wrapper GeneratedNode.id — because that is
             // the id actually mounted in the stage; a later non-generated render
             // reusing the wrapper id would otherwise update an unmounted node.
+            const anchorData = anchorDataOf(payload);
             c.initialize({
               theme,
               state,
@@ -157,6 +166,7 @@ export function FlowletStage({
               componentTheme,
               tree: result.session.tree,
               generatedComponents: payload.components,
+              ...(anchorData ? { anchorData } : {}),
             });
             initedRef.current = true;
             rootIdRef.current = result.session.tree.id;
@@ -164,6 +174,9 @@ export function FlowletStage({
           }
 
           // Same structure, possibly changed data → drive a prop-level ui-delta.
+          // The anchor-data feed (swr shim) refreshes alongside the bindings.
+          const freshAnchor = anchorDataOf(payload);
+          if (freshAnchor) c.update({ anchorData: freshAnchor });
           const data = payload.data ?? {};
           const pointers = new Set(payload.nodes.flatMap(collectBindings));
           const replacements = new Map<string, UINode>();

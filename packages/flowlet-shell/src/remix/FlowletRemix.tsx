@@ -142,6 +142,9 @@ export function FlowletRemix({ id, label, context, className, children }: Flowle
       ...(label !== undefined ? { label } : {}),
       ...(context !== undefined ? { context } : {}),
       ...(hostRef.current ? { snapshot: snapshotElement(hostRef.current) } : {}),
+      // The pin's sealed envelope rides along so the agent can patch the
+      // CURRENT customization (base:"pin") instead of starting over.
+      ...(pin?.envelope !== undefined ? { envelope: pin.envelope } : {}),
     });
   };
 

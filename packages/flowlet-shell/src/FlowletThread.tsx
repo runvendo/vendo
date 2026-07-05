@@ -188,12 +188,19 @@ export function FlowletThread({
   };
   // Apply a remix candidate: pin it (stamped for drift detection) and tell the
   // mounted wrapper to swap in place.
-  const applyRemix = (node: UINode) => {
+  const applyRemix = (node: UINode, envelope?: string) => {
     if (node.kind !== "generated" || !node.remixAnchorId) return;
     const anchorId = node.remixAnchorId;
     const stamp = stampHostComponents(node, components ?? []);
     void remixes
-      .pin({ anchorId, node, ...(stamp ? { components: stamp } : {}) })
+      .pin({
+        anchorId,
+        node,
+        ...(stamp ? { components: stamp } : {}),
+        // The sealed authored state (remix fast-edits): opaque here; sent back
+        // on scoped opens so the server can offer base:"pin" hunk editing.
+        ...(envelope !== undefined ? { envelope } : {}),
+      })
       .then(() => {
         window.dispatchEvent(new CustomEvent(REMIX_CHANGED_EVENT, { detail: { anchorId } }));
       })

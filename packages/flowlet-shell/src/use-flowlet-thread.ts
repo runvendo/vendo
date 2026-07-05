@@ -43,7 +43,15 @@ export type ThreadItem =
        *  the sibling data-consent part. Absent for an ordinary approval. */
       reason?: string;
     }
-  | { kind: "ui"; key: string; messageId: string; node: UINode }
+  | {
+      kind: "ui";
+      key: string;
+      messageId: string;
+      node: UINode;
+      /** Sealed authored-state envelope paired to this node (remix fast-edits);
+       *  stored opaquely with the pin so later edits can patch base:"pin". */
+      envelope?: string;
+    }
   | { kind: "skeleton"; key: string; messageId: string; name?: string }
   | { kind: "error"; key: string; messageId: string; message: string };
 
@@ -62,7 +70,10 @@ export type RenderItem =
  * redundant sliver next to the rendered component. Mirrors `RENDER_VIEW_TOOL_NAME`
  * and `REQUEST_CONNECT_TOOL_NAME` in `@flowlet/runtime`.
  */
-const RENDER_TOOLS = new Set(["render_view", "request_connect"]);
+const RENDER_TOOLS = new Set(["render_view", "edit_view", "request_connect"]);
+
+/** Render tools that stream a view being built (skeleton-worthy). */
+const SKELETON_TOOLS = new Set(["render_view", "edit_view"]);
 
 /** Reads the streaming component name out of a render tool part's partial input (if any). */
 function renderName(input: unknown): string | undefined {
@@ -82,10 +93,16 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
     // First pass: index this message's data-consent parts by toolCallId
     // (ENG-193 §4.5) — a tool part and its tier metadata can arrive in either
     // order within the same message, so both branches below read this map
-    // rather than assuming ordering.
+    // rather than assuming ordering. The same pass collects remix envelopes
+    // by paired node id (remix fast-edits) — envelope parts emit no item of
+    // their own and pair regardless of stream order.
     const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string }>();
+    const envelopes = new Map<string, string>();
     for (const rawPart of message.parts) {
-      const part = rawPart as { type: string; data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string } };
+      const part = rawPart as {
+        type: string;
+        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; envelope?: string; uiNodeId?: string };
+      };
       if (part.type === "data-consent" && part.data?.toolCallId) {
         tierByToolCallId.set(part.data.toolCallId, {
           tier: part.data.tier as "act" | "critical",
@@ -93,10 +110,16 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
           ...(part.data.reason ? { reason: part.data.reason } : {}),
         });
       }
+      if (part.type === "data-remix-envelope" && part.data?.uiNodeId && part.data.envelope) {
+        envelopes.set(part.data.uiNodeId, part.data.envelope);
+      }
     }
     message.parts.forEach((rawPart, index) => {
       const part = rawPart as { type: string; [k: string]: unknown };
       const key = `${message.id}:${index}`;
+      if (part.type === "data-remix-envelope") {
+        return; // consumed by the pre-pass; pairs onto its ui item below
+      }
       if (part.type === "text") {
         items.push({ kind: "text", key, messageId, role, text: String(part.text ?? "") });
       } else if (part.type === "file") {
@@ -115,7 +138,15 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
         const text = String(p.errorText ?? p.error ?? "Something went wrong");
         items.push({ kind: "error", key, messageId, message: text });
       } else if (part.type === "data-ui") {
-        items.push({ kind: "ui", key, messageId, node: part.data as UINode });
+        const node = part.data as UINode;
+        const envelope = envelopes.get(node.id);
+        items.push({
+          kind: "ui",
+          key,
+          messageId,
+          node,
+          ...(envelope !== undefined ? { envelope } : {}),
+        });
       } else if (part.type === "data-consent") {
         // Consumed via tierByToolCallId above — never its own render item.
       } else if (part.type === "dynamic-tool") {
@@ -158,7 +189,7 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
           // built view — it resolves instantly into the host Connect card, so it
           // gets no skeleton (a "building your view" beat there reads absurd).
           const state = String(part.state ?? "");
-          if (toolName === "render_view" && (state === "input-streaming" || state === "input-available")) {
+          if (SKELETON_TOOLS.has(toolName) && (state === "input-streaming" || state === "input-available")) {
             items.push({ kind: "skeleton", key, messageId, name: renderName(part.input) });
           } else if (state === "output-error") {
             items.push({ kind: "error", key, messageId, message: String(part.errorText ?? "Failed to render UI") });

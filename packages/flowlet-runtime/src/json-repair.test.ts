@@ -3,7 +3,7 @@ import {
   escapeControlCharsInJsonStrings,
   repairToolInputText,
   jsonRepairMiddleware,
-} from "../flowlet/json-repair";
+} from "./json-repair";
 
 describe("escapeControlCharsInJsonStrings", () => {
   it("escapes raw newlines/tabs inside string literals only", () => {
@@ -74,17 +74,32 @@ describe("jsonRepairMiddleware.transformParams", () => {
   });
 });
 
-// Slack markup-injection defense (colocated with the other server unit tests).
-import { escapeSlackText } from "../flowlet/slack";
-describe("escapeSlackText", () => {
-  it("neutralizes mentions and links from untrusted email content", () => {
-    expect(escapeSlackText("Subject <!channel> & <http://evil|click>")).toBe(
-      "Subject &lt;!channel&gt; &amp; &lt;http://evil|click&gt;",
-    );
-  });
-  it("leaves ordinary text untouched", () => {
-    expect(escapeSlackText("PR #482 merged — all checks passed")).toBe(
-      "PR #482 merged — all checks passed",
-    );
+describe("jsonRepairMiddleware.wrapStream", () => {
+  it("repairs streamed tool-call inputs so the first attempt parses", async () => {
+    const parts = [
+      { type: "tool-call", toolCallId: "1", toolName: "render_view", input: '{"a":"x\ny"}' },
+      { type: "text-delta", id: "t", delta: "hi" },
+    ];
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const part of parts) controller.enqueue(part);
+        controller.close();
+      },
+    });
+    const { stream: wrapped } = await jsonRepairMiddleware.wrapStream!({
+      doStream: async () => ({ stream }) as never,
+      doGenerate: (() => {}) as never,
+      params: {} as never,
+      model: {} as never,
+    });
+    const out: { type: string; input?: string }[] = [];
+    const reader = wrapped.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out.push(value as never);
+    }
+    expect(JSON.parse(out[0]!.input!)).toEqual({ a: "x\ny" });
+    expect(out[1]!.type).toBe("text-delta");
   });
 });

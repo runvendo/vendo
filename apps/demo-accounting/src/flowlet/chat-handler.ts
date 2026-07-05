@@ -24,7 +24,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
 import { hostToolset } from "@flowlet/runtime";
-import { enrichAnchorSources, createSourceResolver } from "@flowlet/next";
+import {
+  applyVerifiedPinBase,
+  createSourceResolver,
+  enrichAnchorSources,
+  resolveRemixSealer,
+} from "@flowlet/next";
 import { DEMO_PRINCIPAL } from "./principal";
 import { cadenceHostToolDefs } from "./host-tools";
 import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";
@@ -39,25 +44,21 @@ interface ChatRequestBody {
 }
 
 /**
- * Remix-source map for the demo. `deadline-list.tsx` is a client component —
- * a RAW server-side file read (never an import, which would drag Next/browser
- * deps into the Node route). The @/-relative path resolves from the app root.
+ * Remix sources now come from `flowlet sync`'s capture (the anchor→file
+ * mapping lives in flowlet.config.json `remixAnchors`, so the CLI records
+ * deadline-list.tsx and the env builder vendors what IT imports). The shared
+ * resolver re-reads the mapped file in dev, so edits are never stale.
  */
-const remixSourceMap: Record<string, string> = {
-  "upcoming-deadlines": "src/components/dashboard/deadline-list.tsx",
-};
-const resolveRemixSource = createSourceResolver({
-  option: (anchorId) => {
-    const rel = remixSourceMap[anchorId];
-    if (!rel) return undefined;
-    try {
-      return readFileSync(path.join(process.cwd(), rel), "utf8");
-    } catch {
-      return undefined; // file moved — fall open to the DOM-snapshot baseline
-    }
-  },
-  captured: {},
-});
+const capturedRemixSources = (() => {
+  try {
+    return JSON.parse(
+      readFileSync(path.join(process.cwd(), ".flowlet", "remix-sources.json"), "utf8"),
+    ) as Record<string, import("@flowlet/core").RemixSourceRecord>;
+  } catch {
+    return {}; // no sync run — remix falls open to the DOM-snapshot baseline
+  }
+})();
+const resolveRemixSource = createSourceResolver({ captured: capturedRemixSources });
 
 export async function handleChat(req: Request, agent: FlowletAgent): Promise<Response> {
   if (!demoPrincipalAllowed(req)) {
@@ -73,9 +74,15 @@ export async function handleChat(req: Request, agent: FlowletAgent): Promise<Res
   const clientThreadId = typeof body.id === "string" && body.id.length > 0 ? body.id : "cadence-demo";
   const threadRecordId = await resolveThreadRecordId(CADENCE_SCOPE, clientThreadId);
   const stream = agent.run({
-    // Strip any client-supplied source, then enrich the scoped anchor from the
-    // raw file read (remix-fidelity epic).
-    messages: enrichAnchorSources(messages, resolveRemixSource),
+    // Strip any client-supplied source, enrich the scoped anchor from the raw
+    // file read (remix-fidelity epic), then verify the pin envelope into a
+    // trusted base (remix fast-edits) — same key derivation as the agent's
+    // sealer, so mint and verify agree.
+    messages: applyVerifiedPinBase(
+      enrichAnchorSources(messages, resolveRemixSource),
+      resolveRemixSealer({ hasInjectedModel: false }),
+      DEMO_PRINCIPAL.userId,
+    ),
     // Cadence's own API surface enters through the caller seam (ENG-202): no
     // execute — the policy gates each call and the BROWSER executes approved
     // ones on the user's session via the SDK's host-tool runner.

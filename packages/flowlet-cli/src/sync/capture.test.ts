@@ -64,6 +64,63 @@ export default function Page() {
     expect(records["chart"]!.exportName).toBeUndefined();
   });
 
+  it("flowlet.config.json remixAnchors overrides win over the child heuristic", () => {
+    // The wrapper's direct child is a generic ui primitive (Card) — the
+    // heuristic would capture card.tsx, but the meaningful component is the
+    // ENCLOSING one. The config override says so explicitly.
+    const dir = app({
+      "tsconfig.json": TSCONFIG,
+      "flowlet.config.json": JSON.stringify({
+        remixAnchors: {
+          "upcoming-deadlines": {
+            file: "src/components/dashboard/deadline-list.tsx",
+            exportName: "DeadlineList",
+          },
+        },
+      }),
+      "src/components/ui/card.tsx": `export function Card(p:{children?:unknown}){ return <div/> }`,
+      "src/components/dashboard/deadline-list.tsx": `import { FlowletRemix } from "@flowlet/shell"
+import { Card } from "@/components/ui/card"
+export function DeadlineList() {
+  return <FlowletRemix id="upcoming-deadlines"><Card /></FlowletRemix>
+}
+`,
+    });
+    const { records, report } = captureRemixSources(dir, { now: NOW });
+    const record = records["upcoming-deadlines"]!;
+    expect(record.file).toBe(path.join("src", "components", "dashboard", "deadline-list.tsx"));
+    expect(record.exportName).toBe("DeadlineList");
+    expect(report.join("\n")).toContain("config override");
+    // The file wraps itself in FlowletRemix → sync PREPARES the baseline:
+    // shell import stripped, wrapper unwrapped, verbatim source kept too.
+    expect(record.prepared).toBeDefined();
+    expect(record.prepared).not.toContain("FlowletRemix");
+    expect(record.prepared).toContain("<Card />");
+    expect(record.source).toContain("FlowletRemix");
+    expect(report.join("\n")).toContain("[prepared]");
+  });
+
+  it("config overrides still obey the refusal rules (server-only files never captured)", () => {
+    const dir = app({
+      "flowlet.config.json": JSON.stringify({
+        remixAnchors: { w: { file: "src/server/secrets.ts" } },
+      }),
+      "src/server/secrets.ts": `export const KEY = "x"`,
+    });
+    const { records, report } = captureRemixSources(dir, { now: NOW });
+    expect(records["w"]).toBeUndefined();
+    expect(report.join("\n")).toContain("skip w");
+  });
+
+  it("a malformed flowlet.config.json is reported, not fatal", () => {
+    const dir = app({
+      "flowlet.config.json": "{ not json",
+      "src/app/page.tsx": `export default function Page() { return null }`,
+    });
+    const { report } = captureRemixSources(dir, { now: NOW });
+    expect(report.join("\n")).toContain("flowlet.config.json");
+  });
+
   it("skips dynamic ids with a report entry", () => {
     const dir = app({
       "src/app/page.tsx": `import { FlowletRemix } from "@flowlet/shell"

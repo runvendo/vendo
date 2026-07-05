@@ -1,14 +1,15 @@
 /**
- * Tool-input JSON repair for long generated payloads (the swipe-deck beat).
+ * Tool-input JSON repair for long generated payloads.
  *
- * Failure mode, reproduced live: when render_view carries a big generated
- * component, the model sometimes emits RAW control characters (newlines/tabs)
- * inside JSON string literals. The ai SDK then keeps the unparsable input as a
- * string, and the NEXT loop step 400s at the provider ("tool_use.input:
- * Input should be an object"), killing the whole turn.
+ * Failure mode, reproduced live (PR #28): when render_view carries a big
+ * generated component, the model sometimes emits RAW control characters
+ * (newlines/tabs) inside JSON string literals. The ai SDK then keeps the
+ * unparsable input as a string, and the NEXT loop step 400s at the provider
+ * ("tool_use.input: Input should be an object"), killing the whole turn.
  *
- * Fix, applied as app-level model middleware (the engine exposes no repair
- * hook, and shared packages are frozen for this integration):
+ * Fix, applied ENGINE-level (upstreamed from apps/gmail by the remix
+ * fast-edits epic; this replaces the engine's old normalizeHistory `{}`
+ * coercion — repairable history keeps its data instead of being blanked):
  *  - wrapStream: repair each streamed `tool-call` part's input so the first
  *    attempt parses and executes;
  *  - transformParams: belt-and-braces — any assistant `tool-call` prompt part

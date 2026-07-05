@@ -280,6 +280,10 @@ export interface StageInitPayload {
   tree: UINode;
   /** Tier 2.5: name → ESM component source, loaded as blob modules in-sandbox. */
   generatedComponents?: Record<string, string>;
+  /** The anchor's live data object (payload `data.anchor`): injected as
+   *  `window.__flowletAnchorData` so the swr shim resolves keys from it
+   *  (remix fast-edits — the shim shipped in PR #35 but nothing fed it). */
+  anchorData?: Record<string, unknown>;
   /**
    * Opaque theme blob for the in-sandbox component library (OpenUI). Forwarded
    * unchanged into `ui/initialize`; the runtime hands it to the host bundle's
@@ -293,6 +297,8 @@ export interface StageInitPayload {
 export interface StageUpdatePayload {
   theme?: Record<string, string>;
   state?: Record<string, unknown>;
+  /** Refreshed anchor data (live context re-patch) for the swr shim. */
+  anchorData?: Record<string, unknown>;
   /**
    * Node patch. `nodeId` and `node` travel as one unit — you cannot pass one
    * without the other (the runtime rejects a partial patch).

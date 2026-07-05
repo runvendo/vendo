@@ -46,6 +46,7 @@ import { demoStore, CADENCE_SCOPE } from "./store";
  *  automation authoring; create/update/delete/pause/run-now stay gated). */
 const ALWAYS_ALLOW = new Set<string>([
   "render_view",
+  "edit_view",
   "list_automations",
   "get_automation_runs",
   // In-process read tool registered for the automation world (ENG-193 item-4

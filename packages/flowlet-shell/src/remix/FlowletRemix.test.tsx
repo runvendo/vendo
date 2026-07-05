@@ -85,6 +85,35 @@ describe("FlowletRemix", () => {
     expect(scope?.snapshot).toContain("<td>Acme</td>");
   });
 
+  it("scoped open of a pinned anchor carries the pin's sealed envelope (remix fast-edits)", async () => {
+    const remixes = createLocalRemixes();
+    await remixes.pin({
+      anchorId: "w1",
+      node: pinnedNode(validPayload()),
+      envelope: "sealed-authored-state",
+    });
+    mount(
+      <FlowletRemix id="w1" label="Widget">
+        <div>original</div>
+      </FlowletRemix>,
+      { remixes },
+    );
+    // Wait for the pin to load (pill appears), then open the scoped overlay.
+    await waitFor(() => expect(document.querySelector(".fl-remix-pill")).toBeTruthy());
+    fireEvent.click(screen.getByLabelText("Ask about Widget"));
+    expect(shell.scope.current()?.envelope).toBe("sealed-authored-state");
+    // An unpinned anchor scopes WITHOUT an envelope.
+    const bare = createLocalRemixes();
+    mount(
+      <FlowletRemix id="w2" label="Bare">
+        <div>original</div>
+      </FlowletRemix>,
+      { remixes: bare },
+    );
+    fireEvent.click(await screen.findByLabelText("Ask about Bare"));
+    expect(shell.scope.current()?.envelope).toBeUndefined();
+  });
+
   it("renders a valid pin in place with live anchor data, and reset restores children", async () => {
     const remixes = createLocalRemixes();
     await remixes.pin({ anchorId: "w1", node: pinnedNode(validPayload()) });

@@ -14,6 +14,9 @@ export interface RemixPin {
   prompt?: string;
   /** Host-component name → registry version (ENG-186 drift semantics). */
   components?: Record<string, string>;
+  /** Server-sealed authored state (remix fast-edits): opaque to the client;
+   *  sent with scoped opens so later edits can patch base:"pin". */
+  envelope?: string;
   /** Stamped by the store on first pin; preserved on later pins. */
   createdAt?: number;
   updatedAt: number;

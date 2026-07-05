@@ -12,6 +12,9 @@ export interface AnchorScope {
   context?: unknown;
   /** DOM baseline captured at open time (snapshotElement). */
   snapshot?: string;
+  /** The current pin's sealed envelope (remix fast-edits): rides the scoped
+   *  send so the server can verify it and offer base:"pin" editing. */
+  envelope?: string;
 }
 
 export interface ScopeStore {

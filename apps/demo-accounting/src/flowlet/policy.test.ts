@@ -26,6 +26,7 @@ describe("demoPolicy", () => {
   it("allows the render tool and the in-process reads", async () => {
     for (const name of [
       "render_view",
+      "edit_view",
       "get_dashboard",
       "get_clients",
       "get_client_documents",

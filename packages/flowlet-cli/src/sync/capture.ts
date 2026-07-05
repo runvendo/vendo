@@ -17,6 +17,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import type { RemixSourceRecord } from "@flowlet/core";
+import { prepareBaseline } from "./prepare.js";
 
 export const SOURCE_CAP_BYTES = 48 * 1024;
 
@@ -52,7 +53,7 @@ function* walk(dir: string): Generator<string> {
 }
 
 /** tsconfig `paths` aliases (e.g. `@/*`), resolved against `baseUrl`. */
-function readAliases(targetDir: string): Array<{ prefix: string; to: string }> {
+export function readAliases(targetDir: string): Array<{ prefix: string; to: string }> {
   const aliases: Array<{ prefix: string; to: string }> = [];
   try {
     const raw = readFileSync(path.join(targetDir, "tsconfig.json"), "utf8");
@@ -71,7 +72,7 @@ function readAliases(targetDir: string): Array<{ prefix: string; to: string }> {
   return aliases;
 }
 
-function resolveModuleFile(
+export function resolveModuleFile(
   specifier: string,
   fromFile: string,
   aliases: Array<{ prefix: string; to: string }>,
@@ -100,7 +101,7 @@ function resolveModuleFile(
 }
 
 /** Threat-model refusal — evaluated on the RESOLVED path + content. */
-function refusalReason(file: string, content: string, sourceRoot: string): string | undefined {
+export function refusalReason(file: string, content: string, sourceRoot: string): string | undefined {
   const rel = path.relative(sourceRoot, file);
   if (rel.startsWith("..")) return "outside the app source root";
   const segments = rel.split(path.sep);
@@ -200,6 +201,32 @@ export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}
   const records: Record<string, RemixSourceRecord> = {};
   const report: string[] = [];
 
+  // flowlet.config.json remixAnchors: explicit anchor→file overrides for
+  // cases the child heuristic gets wrong (e.g. the wrapper's direct child is
+  // a generic ui primitive but the meaningful component is the enclosing
+  // one). Overrides win; refusal rules still apply.
+  const overrides = new Map<string, { file: string; exportName?: string }>();
+  try {
+    const raw = readFileSync(path.join(targetDir, "flowlet.config.json"), "utf8");
+    const parsed = JSON.parse(raw) as {
+      remixAnchors?: Record<string, { file?: unknown; exportName?: unknown }>;
+    };
+    for (const [anchorId, entry] of Object.entries(parsed.remixAnchors ?? {})) {
+      if (typeof entry?.file === "string") {
+        overrides.set(anchorId, {
+          file: entry.file,
+          ...(typeof entry.exportName === "string" ? { exportName: entry.exportName } : {}),
+        });
+      } else {
+        report.push(`skip override ${anchorId}: remixAnchors entries need a "file"`);
+      }
+    }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+      report.push(`flowlet.config.json unreadable — overrides ignored (${(e as Error).message})`);
+    }
+  }
+
   const capture = (anchorId: string, file: string, exportName?: string): void => {
     let content: string;
     try {
@@ -218,15 +245,27 @@ export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}
         ? `${content.slice(0, SOURCE_CAP_BYTES)}\n[truncated]`
         : content;
     if (anchorId in records) report.push(`note ${anchorId}: multiple wrappers share this id — last capture wins`);
+    // Sandbox preparation (deterministic AST transform): the mechanical
+    // first-remix glue done once at sync instead of per user per remix.
+    const prepared = content.length <= SOURCE_CAP_BYTES ? prepareBaseline(content) : undefined;
     records[anchorId] = {
       file: path.relative(targetDir, file),
       ...(exportName !== undefined ? { exportName } : {}),
       source: capped,
+      ...(prepared !== undefined ? { prepared } : {}),
       sourceHash: createHash("sha256").update(content).digest("hex").slice(0, 16),
       capturedAt: now(),
     };
-    report.push(`captured ${anchorId} ← ${path.relative(targetDir, file)}${exportName ? ` (${exportName})` : ""}`);
+    report.push(
+      `captured ${anchorId} ← ${path.relative(targetDir, file)}${exportName ? ` (${exportName})` : ""}${prepared !== undefined ? " [prepared]" : ""}`,
+    );
   };
+
+  for (const [anchorId, override] of overrides) {
+    capture(anchorId, path.resolve(targetDir, override.file), override.exportName);
+    const captured = records[anchorId];
+    if (captured) report[report.length - 1] += " (config override)";
+  }
 
   for (const file of walk(targetDir)) {
     let text: string;
@@ -242,6 +281,7 @@ export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}
         report.push(`skip: dynamic FlowletRemix id in ${path.relative(targetDir, anchor.file)} — only literal ids are capturable`);
         continue;
       }
+      if (overrides.has(anchor.anchorId)) continue; // config override won
       if (anchor.childComponent) {
         const imported = findImport(sourceFile, anchor.childComponent);
         const resolved = imported

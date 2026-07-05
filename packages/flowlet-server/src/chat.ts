@@ -11,12 +11,12 @@ import type {
   Principal,
   RemixSourceResolver,
 } from "@flowlet/core";
-import { hostToolset } from "@flowlet/runtime";
+import { hostToolset, type RemixSealer } from "@flowlet/runtime";
 import type { HostToolDefinition } from "@flowlet/core";
 import { resolvePrincipal } from "./guard";
 import { EMBEDDED_TENANT } from "./policy-stack";
 import type { ThreadIndex } from "./threads";
-import { enrichAnchorSources } from "./remix-enrich";
+import { applyVerifiedPinBase, enrichAnchorSources } from "./remix-enrich";
 import type { FlowletHandlerOptions } from "./options";
 
 interface ChatRequestBody {
@@ -36,8 +36,11 @@ export interface ChatDeps {
   /** Maps the client's chat id to a store thread id (ENG-193 §6.2). */
   threadIndex: ThreadIndex;
   /** Server-side anchor source lookup (remix-fidelity). Client-supplied
-   *  `scoped.source` is stripped regardless. */
+   *  `scoped.remixSource` is stripped regardless. */
   resolveRemixSource?: RemixSourceResolver;
+  /** Verifies client-carried pin envelopes into `scoped.pinBase` (remix
+   *  fast-edits). Absent → envelopes are dropped, pin editing unavailable. */
+  remixSealer?: RemixSealer;
 }
 
 export async function handleChat(req: Request, deps: ChatDeps): Promise<Response> {
@@ -81,7 +84,14 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   // on a prefix assumption (single-client v1): the settled list strictly
   // extends what's stored.
   const stream = deps.getAgent().run({
-    messages: enrichAnchorSources(messages, deps.resolveRemixSource ?? (() => undefined)),
+    // Enrichment strips client-supplied source/pinBase and confines the raw
+    // envelope to the last user message; verification then converts it into
+    // a trusted `pinBase` (or drops it) BEFORE the engine sees anything.
+    messages: applyVerifiedPinBase(
+      enrichAnchorSources(messages, deps.resolveRemixSource ?? (() => undefined)),
+      deps.remixSealer,
+      guard.principal.userId,
+    ),
     // The app's own API surface enters through the caller seam: no execute —
     // the policy gates each call and the BROWSER executes approved ones on
     // the user's session via the SDK's host-tool runner.

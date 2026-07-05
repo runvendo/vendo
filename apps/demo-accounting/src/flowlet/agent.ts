@@ -11,15 +11,18 @@
  * provider, so it MUST stay server-only — import it from route handlers,
  * never from a client component.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { anthropic } from "@ai-sdk/anthropic";
 import {
   createFlowletAgent,
   buildBrandGuidance,
   type ComposioClient,
 } from "@flowlet/runtime";
-import type { FlowletAgent, RegisteredComponent } from "@flowlet/core";
+import type { EnvManifest, FlowletAgent, RegisteredComponent } from "@flowlet/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@flowlet/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
+import { resolveRemixSealer } from "@flowlet/next";
 import { demoPolicy } from "./policy";
 import { cadenceBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
@@ -81,7 +84,9 @@ function buildInstructions(): string {
       },
     }),
     "",
-    "HOW render_view WORKS — there is ONE rendering tool. Every view you show is a",
+    "HOW render_view WORKS — render_view renders NEW views. (When the host-page context",
+    "offers edit_view for a captured element, PREFER it: patch the baseline instead of",
+    "regenerating.) Every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
     "- formatVersion: 'flowlet-genui/v1'.",
     "- root: the id of the root node.",
@@ -194,8 +199,23 @@ export interface CreateDemoAgentOptions {
   toolkits?: string[];
 }
 
+/** The furnished-sandbox manifest from `flowlet sync` (absent → bare env). */
+function loadEnvManifest(): EnvManifest | undefined {
+  try {
+    return JSON.parse(
+      readFileSync(path.join(process.cwd(), ".flowlet", "env", "manifest.json"), "utf8"),
+    ) as EnvManifest;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent {
   const model = opts.model ?? anthropic(DEMO_MODEL);
+  // Pin-envelope sealing (remix fast-edits): ANTHROPIC_API_KEY is this demo's
+  // own key, so the HKDF fallback is meaningful here.
+  const remixSealer = resolveRemixSealer({ hasInjectedModel: false });
+  const envManifest = loadEnvManifest();
   return createFlowletAgent({
     model,
     policy: demoPolicy,
@@ -208,6 +228,8 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
     controlTools: opts.controlTools,
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
+    ...(remixSealer ? { remixSealer } : {}),
+    ...(envManifest ? { envManifest } : {}),
     // ENG-193 review follow-up (queued gap): the Trust diary read 0
     // tool_execution events despite live client-tool sends (Gmail/Calendar
     // and Cadence's own host tools all execute in the browser — there's no

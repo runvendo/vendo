@@ -37,6 +37,7 @@ import {
   componentPromptCatalog,
 } from "@flowlet/components/descriptors";
 import { buildAutomationInstructions } from "@flowlet/runtime";
+import type { RemixSealer } from "@flowlet/runtime";
 import type { IntegrationCatalogEntry } from "./options";
 
 export interface BuildInstructionsInput {
@@ -160,6 +161,9 @@ export interface AgentFactoryConfig {
   maxSteps?: number;
   /** Sandbox environment manifest (flowlet sync) → engine prompt precision. */
   envManifest?: EnvManifest;
+  /** Envelope sealer (remix fast-edits): enables edit_view pin bases and
+   *  envelope minting on remix-tagged results. */
+  remixSealer?: RemixSealer;
   /**
    * Settled-run persistence hook (ENG-193 §6.2), passed straight to every
    * cached agent. It receives the run's threadId, so one fixed hook can
@@ -205,6 +209,7 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         ...(config.audit ? { audit: config.audit } : {}),
         ...(config.auditPrincipal ? { auditPrincipal: config.auditPrincipal } : {}),
         ...(config.envManifest ? { envManifest: config.envManifest } : {}),
+        ...(config.remixSealer ? { remixSealer: config.remixSealer } : {}),
         components: config.components,
       });
       agents.set(key, agent);
