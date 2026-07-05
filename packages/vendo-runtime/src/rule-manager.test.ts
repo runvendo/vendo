@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createRuleManager } from "./rule-manager";
-import { createInMemoryCompiledRuleStore } from "./rule-store";
-import { InMemoryAuditLog } from "./embedded/in-memory-store";
+import { createRuleManager } from "./rule-manager.js";
+import { createInMemoryCompiledRuleStore } from "./rule-store.js";
+import { InMemoryAuditLog } from "./embedded/in-memory-store.js";
 
 const scope = { tenantId: "t", subject: "u" };
 

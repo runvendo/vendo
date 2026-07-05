@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createRequestConnectTool } from "./request-connect-tool";
+import { createRequestConnectTool } from "./request-connect-tool.js";
 
 function writerMock() {
   return { write: vi.fn() } as unknown as Parameters<typeof createRequestConnectTool>[0];

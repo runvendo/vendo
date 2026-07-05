@@ -10,7 +10,7 @@
  * from this descriptor — never from a field on the SDK tool object.
  */
 import { describe, it, expect } from "vitest";
-import { buildDescriptor } from "./descriptor";
+import { buildDescriptor } from "./descriptor.js";
 
 describe("buildDescriptor", () => {
   it("extracts annotations from _meta.annotations when present", () => {

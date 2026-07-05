@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { componentPromptCatalog } from "./prompt-catalog";
-import { hostComponent, toHostRegistry } from "./host-component";
-import { prewiredComponents } from "./descriptors";
+import { componentPromptCatalog } from "./prompt-catalog.js";
+import { hostComponent, toHostRegistry } from "./host-component.js";
+import { prewiredComponents } from "./descriptors.js";
 
 describe("componentPromptCatalog", () => {
   const registry = toHostRegistry([

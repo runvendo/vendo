@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { StageCapabilities } from "./index";
+import type { StageCapabilities } from "./index.js";
 
 describe("@vendoai/stage", () => {
   it("exports StageCapabilities-compatible shape", () => {

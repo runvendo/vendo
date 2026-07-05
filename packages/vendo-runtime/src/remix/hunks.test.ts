@@ -5,7 +5,7 @@ import {
   HUNK_MAX_LINE_CHARS,
   validateHunkLines,
   type Hunk,
-} from "./hunks";
+} from "./hunks.js";
 
 const BASE = ["one", "two", "three", "four", "five"].join("\n");
 

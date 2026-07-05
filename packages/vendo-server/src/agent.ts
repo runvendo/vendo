@@ -38,7 +38,7 @@ import {
 } from "@vendoai/components/descriptors";
 import { buildAutomationInstructions } from "@vendoai/runtime";
 import type { RemixSealer } from "@vendoai/runtime";
-import type { IntegrationCatalogEntry } from "./options";
+import type { IntegrationCatalogEntry } from "./options.js";
 
 export interface BuildInstructionsInput {
   productName: string;

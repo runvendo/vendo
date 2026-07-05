@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createConsentLedger, handleConsent } from "./consent";
-import { createInMemoryGrantStore } from "./grant-store";
-import { InMemoryAuditLog, InMemoryThreadStore } from "./embedded/in-memory-store";
-import { createFadeTracker } from "./fade-tracker";
-import type { FadeTracker } from "./fade-tracker";
-import { grantPolicy } from "./policy/grant-policy";
-import type { ToolDescriptor } from "./descriptor";
+import { createConsentLedger, handleConsent } from "./consent.js";
+import { createInMemoryGrantStore } from "./grant-store.js";
+import { InMemoryAuditLog, InMemoryThreadStore } from "./embedded/in-memory-store.js";
+import { createFadeTracker } from "./fade-tracker.js";
+import type { FadeTracker } from "./fade-tracker.js";
+import { grantPolicy } from "./policy/grant-policy.js";
+import type { ToolDescriptor } from "./descriptor.js";
 import type { VendoUIMessage } from "@vendoai/core";
 
 const scope = { tenantId: "t", subject: "u" };

@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
-import { createAgentStepRunner } from "./agent-step";
-import type { RegisteredTool } from "./interpreter";
+import { createAgentStepRunner } from "./agent-step.js";
+import type { RegisteredTool } from "./interpreter.js";
 
 function makeTool(name: string): RegisteredTool & { calls: Array<Record<string, unknown>> } {
   const calls: Array<Record<string, unknown>> = [];

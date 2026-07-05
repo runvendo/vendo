@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { grantDurationSchema, grantScopeSchema } from "./seams/grants";
+import { grantDurationSchema, grantScopeSchema } from "./seams/grants.js";
 
 /**
  * The consent channel (ENG-193 spec §4.5) — a Vendo-owned request/response

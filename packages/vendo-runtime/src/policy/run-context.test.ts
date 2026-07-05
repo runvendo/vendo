@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createRunPolicyContext } from "./run-context";
-import type { ToolDescriptor } from "../descriptor";
+import { createRunPolicyContext } from "./run-context.js";
+import type { ToolDescriptor } from "../descriptor.js";
 
 const readDesc: ToolDescriptor = { name: "get_x", source: "caller", annotations: { readOnlyHint: true }, hasExecute: true, kind: "function" };
 const openWorldDesc: ToolDescriptor = { name: "GMAIL_FETCH", source: "composio", annotations: { openWorldHint: true }, hasExecute: true, kind: "function" };

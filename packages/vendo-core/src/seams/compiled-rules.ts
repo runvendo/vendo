@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { Principal } from "./principal";
-import { grantConstraintSchema } from "./grants";
+import type { Principal } from "./principal.js";
+import { grantConstraintSchema } from "./grants.js";
 
 /**
  * CompiledRule — the deterministic artifact behind conversational steering's

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { jsonSchemaDocument } from "./tool";
+import { jsonSchemaDocument } from "./tool.js";
 
 /**
  * A host event type declared in `tools.json`, available as an automation

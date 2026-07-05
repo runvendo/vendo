@@ -22,7 +22,7 @@
  * swap here.
  */
 import { parkedActionResolutionSchema } from "@vendoai/core";
-import type { VendoAutomationsWorld } from "./world";
+import type { VendoAutomationsWorld } from "./world.js";
 
 export async function listParkedActionsRoute(
   _req: Request,

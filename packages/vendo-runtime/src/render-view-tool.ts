@@ -9,8 +9,8 @@ import { tool } from "ai";
 import type { UIMessageStreamWriter } from "ai";
 import { z } from "zod";
 import type { VendoUIMessage, RegisteredComponent } from "@vendoai/core";
-import { materializeView } from "./materialize-view";
-import { hashSources, type RemixSealer } from "./remix/envelope";
+import { materializeView } from "./materialize-view.js";
+import { hashSources, type RemixSealer } from "./remix/envelope.js";
 
 type VendoWriter = UIMessageStreamWriter<VendoUIMessage>;
 

@@ -4,7 +4,7 @@ import { render, waitFor } from "@testing-library/react";
 import type { Chat } from "@ai-sdk/react";
 import type { ChatTransport, UIMessageChunk } from "ai";
 import type { VendoUIMessage, HostToolDefinition } from "@vendoai/core";
-import { VendoProvider, useVendoContext } from "./provider";
+import { VendoProvider, useVendoContext } from "./provider.js";
 
 const listAccountsDef: HostToolDefinition = {
   name: "listAccounts",

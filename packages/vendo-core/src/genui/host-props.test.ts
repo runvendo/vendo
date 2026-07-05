@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { hostPropIssues } from "./host-props";
-import type { GeneratedPayload } from "./format";
-import type { RegisteredComponent, VendoSchema } from "../index";
+import { hostPropIssues } from "./host-props.js";
+import type { GeneratedPayload } from "./format.js";
+import type { RegisteredComponent, VendoSchema } from "../index.js";
 
 const badge = (schema: z.ZodType): RegisteredComponent => ({
   name: "AcmeBadge",

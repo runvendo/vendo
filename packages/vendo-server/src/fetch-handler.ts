@@ -55,41 +55,41 @@ import {
   InMemoryThreadStore,
   type InstructionContext,
 } from "@vendoai/runtime";
-import { handleChat } from "./chat";
-import { handleAction, createApprovalStore } from "./action";
-import { handleConsentRoute } from "./consent";
-import { handleFadeProposalRoute } from "./fade-proposal";
-import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
-import { listGrantsRoute, revokeGrantRoute, listRulesRoute, revokeRuleRoute, queryAuditRoute, listCriticalToolsRoute } from "./trust";
+import { handleChat } from "./chat.js";
+import { handleAction, createApprovalStore } from "./action.js";
+import { handleConsentRoute } from "./consent.js";
+import { handleFadeProposalRoute } from "./fade-proposal.js";
+import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions.js";
+import { listGrantsRoute, revokeGrantRoute, listRulesRoute, revokeRuleRoute, queryAuditRoute, listCriticalToolsRoute } from "./trust.js";
 import {
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
   handleIntegrationsGet,
   handleIntegrationsPost,
-} from "./integrations";
-import { detectCapabilities } from "./capabilities";
+} from "./integrations.js";
+import { detectCapabilities } from "./capabilities.js";
 import {
   createDrizzleVendoRegistry,
   createInMemoryVendoRegistry,
   handleVendosGet,
   handleVendosPost,
-} from "./vendos";
-import { loadVendoDir } from "./vendo-dir";
-import { resolveMcpServers } from "./mcp-config";
-import { manifestToolsToHostTools } from "./manifest-tools";
-import { buildInstructions, createAgentCache } from "./agent";
-import { createSourceResolver } from "./remix-enrich";
-import { resolveRemixSealer } from "./seal";
-import { createAutomationsWorld, type VendoAutomationsWorld } from "./world";
-import { resolveModel } from "./model";
-import { defaultVendoPolicy } from "./default-policy";
-import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
-import { createThreadIndex } from "./threads";
-import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard";
-import { resolveStorage } from "./storage";
-import { parseHandlerOptions, type VendoHandlerOptions } from "./options";
-import { devTelemetry, errorClassName } from "./telemetry-dev";
-import { handleComposioWebhook } from "./webhooks";
+} from "./vendos.js";
+import { loadVendoDir } from "./vendo-dir.js";
+import { resolveMcpServers } from "./mcp-config.js";
+import { manifestToolsToHostTools } from "./manifest-tools.js";
+import { buildInstructions, createAgentCache } from "./agent.js";
+import { createSourceResolver } from "./remix-enrich.js";
+import { resolveRemixSealer } from "./seal.js";
+import { createAutomationsWorld, type VendoAutomationsWorld } from "./world.js";
+import { resolveModel } from "./model.js";
+import { defaultVendoPolicy } from "./default-policy.js";
+import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack.js";
+import { createThreadIndex } from "./threads.js";
+import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard.js";
+import { resolveStorage } from "./storage.js";
+import { parseHandlerOptions, type VendoHandlerOptions } from "./options.js";
+import { devTelemetry, errorClassName } from "./telemetry-dev.js";
+import { handleComposioWebhook } from "./webhooks.js";
 
 // Exported for vendos.ts's save-path id validation (a saved vendo's id
 // is caller-assigned, unlike threads' store-assigned UUIDs — see the

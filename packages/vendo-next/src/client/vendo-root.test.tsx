@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import * as shell from "@vendoai/shell";
-import * as serverStore from "./server-store";
-import { VendoRoot } from "./vendo-root";
+import * as serverStore from "./server-store.js";
+import { VendoRoot } from "./vendo-root.js";
 
 function stubFetch(capabilities: { chat: boolean; integrations: boolean; voice: boolean; storage?: boolean }) {
   return vi.fn(async (input: RequestInfo | URL) => {

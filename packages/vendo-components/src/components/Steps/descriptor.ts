@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 export const stepsSchema = z.object({
   steps: z.array(z.object({ title: z.string().optional(), text: z.string() })).min(1),

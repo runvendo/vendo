@@ -12,7 +12,7 @@
  */
 
 import type { ToolSet } from "ai";
-import { buildDescriptor, type ToolAnnotations, type ToolDescriptor } from "./descriptor";
+import { buildDescriptor, type ToolAnnotations, type ToolDescriptor } from "./descriptor.js";
 
 /** A single host-declared MCP server (Streamable HTTP transport only). */
 export interface McpServerConfig {

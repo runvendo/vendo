@@ -5,8 +5,8 @@
  * to `runner.fire(scope, id, envelope)`.
  */
 import type { AutomationFiring, Principal } from "@vendoai/core";
-import type { AutomationRunner } from "./runner";
-import type { AutomationEngineStore, TriggerEnvelope } from "./store";
+import type { AutomationRunner } from "./runner.js";
+import type { AutomationEngineStore, TriggerEnvelope } from "./store.js";
 
 export interface HostEventInput {
   /** Producer-supplied id (e.g. the transaction id) — the dedup key. */

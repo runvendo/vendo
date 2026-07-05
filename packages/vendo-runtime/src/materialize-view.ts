@@ -12,7 +12,7 @@ import {
   type RegisteredComponent,
   type UINode,
 } from "@vendoai/core";
-import { compileComponentSource } from "./compile-component";
+import { compileComponentSource } from "./compile-component.js";
 
 export type MaterializeResult =
   | { ok: true; node: UINode; authored: GeneratedPayload }

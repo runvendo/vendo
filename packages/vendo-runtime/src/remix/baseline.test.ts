@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NORMALIZER_VERSION, normalizeBaseline, numberedLines } from "./baseline";
+import { NORMALIZER_VERSION, normalizeBaseline, numberedLines } from "./baseline.js";
 
 describe("normalizeBaseline", () => {
   it("normalizes CRLF/CR to LF before anything else", () => {

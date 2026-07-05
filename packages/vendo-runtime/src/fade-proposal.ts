@@ -18,11 +18,11 @@
  * no offer and fails closed instead of silently minting a duplicate grant.
  */
 import type { AuditLog, FadeProposalResolution, GrantStore, Principal } from "@vendoai/core";
-import type { ToolDescriptor } from "./descriptor";
-import type { FadeTracker } from "./fade-tracker";
-import { grantScopeFromShape } from "./policy/fade-shapes";
-import { createGrantManager } from "./grant-manager";
-import { dangerTier, isUnverified } from "./policy/tier";
+import type { ToolDescriptor } from "./descriptor.js";
+import type { FadeTracker } from "./fade-tracker.js";
+import { grantScopeFromShape } from "./policy/fade-shapes.js";
+import { createGrantManager } from "./grant-manager.js";
+import { dangerTier, isUnverified } from "./policy/tier.js";
 
 export interface HandleFadeProposalDeps {
   fadeTracker: FadeTracker;

@@ -1,4 +1,4 @@
-import type { MessageEndpoint, RpcRequest, RpcResponse, RpcError } from "./protocol";
+import type { MessageEndpoint, RpcRequest, RpcResponse, RpcError } from "./protocol.js";
 
 export interface RpcHandle {
   call(method: string, params?: unknown, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<unknown>;

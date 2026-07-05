@@ -19,7 +19,7 @@ import {
   registerSection,
   showVsSaySection,
   styleSection,
-} from "./sections";
+} from "./sections.js";
 
 export interface ChatInstructionsInput {
   /** Host identity block ("You are <product>'s assistant…"). */

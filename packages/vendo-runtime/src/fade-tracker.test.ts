@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFadeTracker } from "./fade-tracker";
+import { createFadeTracker } from "./fade-tracker.js";
 
 const p = { tenantId: "t", subject: "u" };
 const other = { tenantId: "t", subject: "u2" };

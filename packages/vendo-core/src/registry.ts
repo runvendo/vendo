@@ -1,5 +1,5 @@
-import type { VendoSchema } from "./schema";
-import type { UINodeSource } from "./ui";
+import type { VendoSchema } from "./schema.js";
+import type { UINodeSource } from "./ui.js";
 
 /** Descriptor only. Host-component *provisioning* is an F3a concern, not this. */
 export interface RegisteredComponent {

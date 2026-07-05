@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VendoThemeProvider } from "../../theme/VendoThemeProvider";
-import { formDescriptor } from "./descriptor";
-import { Form } from "./impl";
+import { VendoThemeProvider } from "../../theme/VendoThemeProvider.js";
+import { formDescriptor } from "./descriptor.js";
+import { Form } from "./impl.js";
 
 describe("Form", () => {
   it("schema accepts a multi-field form, rejects an unknown field type", () => {

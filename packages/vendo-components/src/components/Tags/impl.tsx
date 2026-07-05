@@ -1,6 +1,6 @@
-import { Tag, TagBlock } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { tagsSchema } from "./descriptor";
+import { Tag, TagBlock } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { tagsSchema } from "./descriptor.js";
 
 export const Tags = createPrewiredImpl(tagsSchema, (p) => (
   <TagBlock>

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prewired } from "../../descriptor";
+import { prewired } from "../../descriptor.js";
 
 export const tableSchema = z.object({
   caption: z.string().optional(),

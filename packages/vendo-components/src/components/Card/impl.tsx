@@ -1,7 +1,7 @@
-import { Card as UICard, CardHeader, Tag, TagBlock } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { resolveIcon } from "../../impl-helpers/icon";
-import { cardSchema } from "./descriptor";
+import { Card as UICard, CardHeader, Tag, TagBlock } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { resolveIcon } from "../../impl-helpers/icon.js";
+import { cardSchema } from "./descriptor.js";
 
 export const Card = createPrewiredImpl(cardSchema, (p) => (
   <UICard variant="card" width="standard">

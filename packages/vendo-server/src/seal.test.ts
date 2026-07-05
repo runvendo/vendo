@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveRemixSealer } from "./seal";
+import { resolveRemixSealer } from "./seal.js";
 
 describe("resolveRemixSealer", () => {
   it("explicit sealSecret option wins over everything", () => {

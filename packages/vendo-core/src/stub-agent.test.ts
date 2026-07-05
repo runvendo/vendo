@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { VendoUIMessage } from "./protocol";
-import { createStubAgent } from "./stub-agent";
+import type { VendoUIMessage } from "./protocol.js";
+import { createStubAgent } from "./stub-agent.js";
 
 async function collect(stream: ReadableStream<any>): Promise<any[]> {
   const out: any[] = [];

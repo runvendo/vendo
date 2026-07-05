@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ThemeProvider } from "@openuidev/react-ui";
-import { type BrandTokens, defaultBrand } from "./brand";
-import { mapBrandToTheme } from "./map-brand-to-theme";
+import { type BrandTokens, defaultBrand } from "./brand.js";
+import { mapBrandToTheme } from "./map-brand-to-theme.js";
 
 export interface VendoThemeProviderProps {
   brand?: BrandTokens;

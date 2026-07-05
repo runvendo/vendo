@@ -16,7 +16,7 @@ import {
   type LanguageModel,
   type ToolSet,
 } from "ai";
-import type { AgentStepRequest, AgentStepRunner } from "./interpreter";
+import type { AgentStepRequest, AgentStepRunner } from "./interpreter.js";
 
 export interface AgentStepRunnerConfig {
   model: LanguageModel;

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Principal } from "./principal";
+import type { Principal } from "./principal.js";
 
 /**
  * PermissionGrant — the ONE primitive behind every remembered consent

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compileComponentSource } from "./compile-component";
+import { compileComponentSource } from "./compile-component.js";
 
 describe("compileComponentSource", () => {
   it("compiles JSX to automatic-runtime jsx imports", () => {

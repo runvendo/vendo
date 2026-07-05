@@ -14,8 +14,8 @@
 
 import type { ToolSet } from "ai";
 import { capToolOutput } from "@vendoai/core";
-import type { VendoPrincipal } from "./principal";
-import { buildDescriptor, type ToolDescriptor } from "./descriptor";
+import type { VendoPrincipal } from "./principal.js";
+import { buildDescriptor, type ToolDescriptor } from "./descriptor.js";
 
 /**
  * Configuration for Composio ingestion. The allowlist (`toolkits`/`tools`) is

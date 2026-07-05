@@ -5,8 +5,8 @@
  * `composePolicy` which returns the most restrictive decision across all layers.
  */
 
-import type { ToolDescriptor } from "../descriptor";
-import type { VendoPrincipal } from "../principal";
+import type { ToolDescriptor } from "../descriptor.js";
+import type { VendoPrincipal } from "../principal.js";
 
 /**
  * The three possible outcomes of a policy evaluation.

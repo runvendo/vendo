@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capToolOutput } from "./cap-tool-output";
+import { capToolOutput } from "./cap-tool-output.js";
 
 const HTML_BODY = `<html><head><style>.x{color:red}</style></head><body><div><p>Order confirmed: <b>Blue Bottle</b></p><table><tr><td>Latte</td><td>$6.50</td></tr></table>${"<span>pad</span>".repeat(500)}</body></html>`;
 const BASE64 = "data:image/png;base64," + "iVBORw0KGgoAAAANSUhEUg".repeat(200);

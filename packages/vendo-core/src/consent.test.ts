@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { consentRequestSchema, consentResponseSchema, parkedActionResolutionSchema } from "./consent";
+import { consentRequestSchema, consentResponseSchema, parkedActionResolutionSchema } from "./consent.js";
 
 describe("consent wire types", () => {
   it("accepts a v1 approval consent request", () => {

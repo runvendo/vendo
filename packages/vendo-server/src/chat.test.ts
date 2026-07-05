@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createUIMessageStream, type UIMessageChunk } from "ai";
 import type { VendoAgent, VendoUIMessage } from "@vendoai/core";
 import { CLIENT_EXECUTOR_MARKER, createInMemoryStore, InMemoryThreadStore } from "@vendoai/runtime";
-import { handleChat } from "./chat";
-import { manifestToolsToHostTools } from "./manifest-tools";
-import { createThreadIndex } from "./threads";
-import { EMBEDDED_TENANT } from "./policy-stack";
+import { handleChat } from "./chat.js";
+import { manifestToolsToHostTools } from "./manifest-tools.js";
+import { createThreadIndex } from "./threads.js";
+import { EMBEDDED_TENANT } from "./policy-stack.js";
 
 const SCOPE = { tenantId: "vendo-embedded", subject: "vendo-default-user" };
 

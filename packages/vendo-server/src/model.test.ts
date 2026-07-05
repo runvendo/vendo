@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LanguageModel } from "ai";
-import { resolveModel, resolveModelChoice } from "./model";
+import { resolveModel, resolveModelChoice } from "./model.js";
 
 describe("resolveModelChoice", () => {
   it("picks Anthropic + its default id from ANTHROPIC_API_KEY alone", () => {

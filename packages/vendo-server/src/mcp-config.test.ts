@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { mcpJsonSchema, resolveMcpServers } from "./mcp-config";
+import { mcpJsonSchema, resolveMcpServers } from "./mcp-config.js";
 
 describe("mcpJsonSchema", () => {
   it("accepts a valid file shape", () => {

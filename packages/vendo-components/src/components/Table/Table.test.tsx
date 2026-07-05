@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VendoThemeProvider } from "../../theme/VendoThemeProvider";
-import { tableDescriptor } from "./descriptor";
-import { Table } from "./impl";
+import { VendoThemeProvider } from "../../theme/VendoThemeProvider.js";
+import { tableDescriptor } from "./descriptor.js";
+import { Table } from "./impl.js";
 
 describe("Table", () => {
   it("schema requires columns and rows", () => {

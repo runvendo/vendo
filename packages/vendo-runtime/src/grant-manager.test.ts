@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createGrantManager } from "./grant-manager";
-import { createInMemoryGrantStore } from "./grant-store";
-import { InMemoryAuditLog } from "./embedded/in-memory-store";
-import { hashDescriptor } from "./automations/grants";
-import type { ToolDescriptor } from "./descriptor";
+import { createGrantManager } from "./grant-manager.js";
+import { createInMemoryGrantStore } from "./grant-store.js";
+import { InMemoryAuditLog } from "./embedded/in-memory-store.js";
+import { hashDescriptor } from "./automations/grants.js";
+import type { ToolDescriptor } from "./descriptor.js";
 
 const scope = { tenantId: "t", subject: "u" };
 

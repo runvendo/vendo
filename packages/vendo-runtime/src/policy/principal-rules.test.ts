@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { PolicyContext } from "./types";
-import { thresholdRule, roleRule } from "./principal-rules";
+import type { PolicyContext } from "./types.js";
+import { thresholdRule, roleRule } from "./principal-rules.js";
 
 /** Build a minimal PolicyContext for principal-rules tests. */
 function ctx(

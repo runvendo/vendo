@@ -1,4 +1,4 @@
-import type { Principal } from "./principal";
+import type { Principal } from "./principal.js";
 
 /**
  * CredentialBroker seam — how a tool call gets user identity (Decisions 1/4).

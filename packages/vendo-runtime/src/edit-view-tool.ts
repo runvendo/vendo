@@ -22,10 +22,10 @@ import type {
   RegisteredComponent,
   VerifiedPinBase,
 } from "@vendoai/core";
-import { normalizeBaseline } from "./remix/baseline";
-import { applyHunks, HUNK_MAX_HUNKS_PER_OP, HUNK_MAX_LINE_CHARS } from "./remix/hunks";
-import { hashSources, type RemixSealer } from "./remix/envelope";
-import { materializeView } from "./materialize-view";
+import { normalizeBaseline } from "./remix/baseline.js";
+import { applyHunks, HUNK_MAX_HUNKS_PER_OP, HUNK_MAX_LINE_CHARS } from "./remix/hunks.js";
+import { hashSources, type RemixSealer } from "./remix/envelope.js";
+import { materializeView } from "./materialize-view.js";
 
 type VendoWriter = UIMessageStreamWriter<VendoUIMessage>;
 

@@ -7,11 +7,11 @@
 import { describe, expect, it } from "vitest";
 import { asSchema, type Tool, type ToolCallOptions } from "ai";
 import type { Principal, Scheduler, TimeTrigger } from "@vendoai/core";
-import { createAutomationTools } from "./tools";
-import { AutomationRunner } from "./runner";
-import type { RegisteredTool } from "./interpreter";
-import { InMemoryAutomationStore } from "./store";
-import { automationSpecSchema } from "./schema";
+import { createAutomationTools } from "./tools.js";
+import { AutomationRunner } from "./runner.js";
+import type { RegisteredTool } from "./interpreter.js";
+import { InMemoryAutomationStore } from "./store.js";
+import { automationSpecSchema } from "./schema.js";
 
 const NOW = "2026-07-01T08:00:00.000Z";
 const scope: Principal = { tenantId: "t1", subject: "user-1" };

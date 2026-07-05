@@ -11,9 +11,9 @@ import {
   rememberDecisions,
   type ApprovalPolicy,
 } from "@vendoai/runtime";
-import { createApprovalStore, handleAction, type ActionDeps } from "./action";
-import { defaultVendoPolicy } from "./default-policy";
-import { composeProductionPolicy } from "./policy-stack";
+import { createApprovalStore, handleAction, type ActionDeps } from "./action.js";
+import { defaultVendoPolicy } from "./default-policy.js";
+import { composeProductionPolicy } from "./policy-stack.js";
 
 function actionReq(body: unknown, host = "localhost:3000"): Request {
   return new Request(`http://${host}/api/vendo/action`, {

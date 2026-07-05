@@ -22,8 +22,8 @@ import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { VendoProvider, useVendoChat } from "@vendoai/react";
 import type { UINode } from "@vendoai/core";
-import { createVendoAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
-import type { ApprovalPolicy } from "./policy";
+import { createVendoAgent, RENDER_VIEW_TOOL_NAME } from "./engine.js";
+import type { ApprovalPolicy } from "./policy/index.js";
 
 afterEach(cleanup);
 

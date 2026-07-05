@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { VendoError, policyDenied, approvalRequired } from "./errors";
+import { VendoError, policyDenied, approvalRequired } from "./errors.js";
 
 describe("VendoError", () => {
   it("carries the given code and message", () => {

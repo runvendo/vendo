@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./types";
-import { composePolicy } from "./compose";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./types.js";
+import { composePolicy } from "./compose.js";
 
 /** Minimal fake context — cast is safe for pure policy logic tests. */
 const fakeCtx = {

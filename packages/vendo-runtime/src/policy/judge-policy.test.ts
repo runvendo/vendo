@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
-import { judgePolicy } from "./judge-policy";
-import { getEscalationReason, getEscalationSource } from "./escalation";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
-import type { ToolDescriptor } from "../descriptor";
+import { judgePolicy } from "./judge-policy.js";
+import { getEscalationReason, getEscalationSource } from "./escalation.js";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
+import type { ToolDescriptor } from "../descriptor.js";
 
 const ZERO_USAGE: LanguageModelV3GenerateResult["usage"] = {
   inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },

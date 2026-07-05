@@ -4,15 +4,15 @@
  * and chat authoring tools. Built against the frozen core seams
  * (@vendoai/core/seams); engine types extend them additively.
  */
-export * from "./schema";
-export * from "./expressions";
-export * from "./grants";
-export * from "./interpreter";
-export * from "./store";
-export * from "./runner";
-export * from "./in-process-scheduler";
-export * from "./host-events";
-export * from "./tools";
+export * from "./schema.js";
+export * from "./expressions.js";
+export * from "./grants.js";
+export * from "./interpreter.js";
+export * from "./store.js";
+export * from "./runner.js";
+export * from "./in-process-scheduler.js";
+export * from "./host-events.js";
+export * from "./tools.js";
 
-export * from "./agent-step";
-export * from "./instructions";
+export * from "./agent-step.js";
+export * from "./instructions.js";

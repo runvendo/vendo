@@ -1,6 +1,6 @@
-import { Callout as UICallout } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { calloutSchema } from "./descriptor";
+import { Callout as UICallout } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { calloutSchema } from "./descriptor.js";
 
 export const Callout = createPrewiredImpl(calloutSchema, (p) => (
   <UICallout

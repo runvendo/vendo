@@ -1,6 +1,6 @@
 import { Fragment } from "react";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { keyValueSchema } from "./descriptor";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { keyValueSchema } from "./descriptor.js";
 
 const MUTED = "var(--vendo-fg-muted, rgba(0,0,0,0.55))";
 const BORDER = "1px solid var(--vendo-border, rgba(0,0,0,0.08))";

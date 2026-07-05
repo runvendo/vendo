@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { manifestToolSchema } from "./tool";
+import { manifestToolSchema } from "./tool.js";
 
 const listInvoices = {
   name: "listInvoices",

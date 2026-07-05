@@ -14,13 +14,13 @@
 
 import type { ToolSet, UIMessageStreamWriter } from "ai";
 import type { VendoUIMessage } from "@vendoai/core";
-import type { ToolSource, ToolDescriptor } from "./descriptor";
-import { buildDescriptor } from "./descriptor";
-import { wrapTool, type PausedCallTracker } from "./wrap-tool";
-import { wrapClientTool } from "./wrap-client-tool";
-import type { ApprovalPolicy } from "./policy";
-import type { VendoPrincipal } from "./principal";
-import type { RunPolicyContext } from "./policy/run-context";
+import type { ToolSource, ToolDescriptor } from "./descriptor.js";
+import { buildDescriptor } from "./descriptor.js";
+import { wrapTool, type PausedCallTracker } from "./wrap-tool.js";
+import { wrapClientTool } from "./wrap-client-tool.js";
+import type { ApprovalPolicy } from "./policy/index.js";
+import type { VendoPrincipal } from "./principal.js";
+import type { RunPolicyContext } from "./policy/run-context.js";
 
 /** A single source of tools provided to `buildToolset`. */
 export interface ToolSourceInput {

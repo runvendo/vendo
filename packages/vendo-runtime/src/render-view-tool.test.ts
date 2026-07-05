@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import type { RegisteredComponent } from "@vendoai/core";
-import { createRenderViewTool } from "./render-view-tool";
+import { createRenderViewTool } from "./render-view-tool.js";
 
 const VALID = {
   formatVersion: "vendo-genui/v1",

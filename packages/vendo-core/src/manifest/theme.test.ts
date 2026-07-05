@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { manifestThemeSchema } from "./theme";
+import { manifestThemeSchema } from "./theme.js";
 
 const valid = {
   version: 1,

@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { RegisteredComponent, VendoSchema } from "@vendoai/core";
 import { RESERVED_COMPONENT_NAMES } from "@vendoai/core";
-import type { PrewiredDescriptor } from "./descriptor";
+import type { PrewiredDescriptor } from "./descriptor.js";
 
 /** A host component's registration metadata. Same shape as PrewiredDescriptor
  *  (React-free, safe for server code) — only the stamped `source` differs,

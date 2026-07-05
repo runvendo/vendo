@@ -3,7 +3,7 @@ import type { VendoUIMessage } from "@vendoai/core";
 import {
   pendingHostToolCalls,
   hostAwareSendAutomaticallyWhen,
-} from "./host-tools";
+} from "./host-tools.js";
 
 const HOST = new Set(["listAccounts", "createOrder"]);
 

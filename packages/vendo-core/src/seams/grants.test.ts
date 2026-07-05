@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { grantScopeSchema, permissionGrantSchema } from "./grants";
+import { grantScopeSchema, permissionGrantSchema } from "./grants.js";
 
 describe("grant contract", () => {
   it("accepts a constrained scope grant", () => {

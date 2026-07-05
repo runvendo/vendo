@@ -1,5 +1,5 @@
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { donutSchema } from "./descriptor";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { donutSchema } from "./descriptor.js";
 
 const MUTED = "var(--vendo-fg-muted, rgba(0,0,0,0.55))";
 /** Brand-accent opacity ramp — token-driven, on-brand for any host. */

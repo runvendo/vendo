@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VendoThemeProvider } from "../../theme/VendoThemeProvider";
-import { tagsDescriptor } from "./descriptor";
-import { Tags } from "./impl";
+import { VendoThemeProvider } from "../../theme/VendoThemeProvider.js";
+import { tagsDescriptor } from "./descriptor.js";
+import { Tags } from "./impl.js";
 
 const renderThemed = (ui: React.ReactNode) =>
   render(<VendoThemeProvider>{ui}</VendoThemeProvider>);

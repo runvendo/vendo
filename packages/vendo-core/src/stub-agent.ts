@@ -9,10 +9,10 @@ import {
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { z } from "zod";
-import type { VendoAgent, RunInput } from "./agent";
-import { SCHEMA_VERSION } from "./protocol";
-import type { VendoUIMessage } from "./protocol";
-import type { UINode } from "./ui";
+import type { VendoAgent, RunInput } from "./agent.js";
+import { SCHEMA_VERSION } from "./protocol.js";
+import type { VendoUIMessage } from "./protocol.js";
+import type { UINode } from "./ui.js";
 
 const TOOL_NAME = "renderDemoCard";
 const DEMO_TITLE = "Hello from Vendo";

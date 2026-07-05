@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { grantPolicy } from "./grant-policy";
-import { createInMemoryGrantStore } from "../grant-store";
-import type { ApprovalPolicy, PolicyContext } from "./types";
-import type { ToolDescriptor } from "../descriptor";
-import { hashDescriptor } from "../automations/grants";
+import { grantPolicy } from "./grant-policy.js";
+import { createInMemoryGrantStore } from "../grant-store.js";
+import type { ApprovalPolicy, PolicyContext } from "./types.js";
+import type { ToolDescriptor } from "../descriptor.js";
+import { hashDescriptor } from "../automations/grants.js";
 
 const scope = { tenantId: "t", subject: "u" };
 const actDesc: ToolDescriptor = { name: "send_email", source: "caller", annotations: { readOnlyHint: false }, hasExecute: true, kind: "function" };

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LanguageModel } from "ai";
 import { InProcessScheduler, type AutomationEngineStore } from "@vendoai/runtime";
-import { createAutomationsWorld } from "./world";
-import { defaultVendoPolicy } from "./default-policy";
+import { createAutomationsWorld } from "./world.js";
+import { defaultVendoPolicy } from "./default-policy.js";
 
 const STUB_MODEL = { modelId: "stub" } as unknown as LanguageModel;
 

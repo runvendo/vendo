@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
 import {
   createInMemoryDecisionStore,
   canonicalKey,
   rememberDecisions,
-} from "./remember";
+} from "./remember.js";
 
 /** Build a minimal PolicyContext for tests. */
 function ctx(

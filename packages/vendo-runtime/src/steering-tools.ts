@@ -40,11 +40,11 @@ import { tool, type Tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { AuditLog, CompiledRuleStore, GrantStore, Principal } from "@vendoai/core";
 import { grantConstraintSchema } from "@vendoai/core";
-import type { ToolDescriptor } from "./descriptor";
-import { createRuleManager } from "./rule-manager";
-import { createGrantManager } from "./grant-manager";
-import { isUnverified } from "./policy/tier";
-import { globMatches } from "./policy/grant-match";
+import type { ToolDescriptor } from "./descriptor.js";
+import { createRuleManager } from "./rule-manager.js";
+import { createGrantManager } from "./grant-manager.js";
+import { isUnverified } from "./policy/tier.js";
+import { globMatches } from "./policy/grant-match.js";
 
 export interface SteeringToolsConfig {
   principal: Principal;

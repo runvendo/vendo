@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import type { VendoUIMessage } from "@vendoai/core";
-import { useVendoContext } from "./provider";
+import { useVendoContext } from "./provider.js";
 
 /**
  * Wraps the ai SDK `useChat` with Vendo's registry and native human-in-the-loop

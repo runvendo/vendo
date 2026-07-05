@@ -1,4 +1,4 @@
-import type { BrandTokens } from "./brand";
+import type { BrandTokens } from "./brand.js";
 
 /** Parse #rgb/#rrggbb/#rrggbbaa to [r,g,b] (alpha dropped — palette colors are opaque). */
 function rgb(hex: string): [number, number, number] {

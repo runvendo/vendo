@@ -6,7 +6,7 @@
  * agent ingests; this adapter just reflects and drives it.
  */
 import type { VendoIntegrations, Integration } from "@vendoai/shell";
-import { runConnectFlow } from "./connect-flow";
+import { runConnectFlow } from "./connect-flow.js";
 
 export function createServerIntegrations(basePath: string): VendoIntegrations {
   let cache: Integration[] = [];

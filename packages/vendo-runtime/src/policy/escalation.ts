@@ -33,7 +33,7 @@
  * check only ever inspects its immediate inner, which per the composition
  * contract is `judgePolicy` directly).
  */
-import type { PolicyContext } from "./types";
+import type { PolicyContext } from "./types.js";
 
 export type EscalationSource = "verdict" | "error";
 

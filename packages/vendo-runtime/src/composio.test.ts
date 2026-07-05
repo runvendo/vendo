@@ -7,8 +7,8 @@ import {
   createComposioClient,
   type ComposioClient,
   type ComposioConfig,
-} from "./composio";
-import type { VendoPrincipal } from "./principal";
+} from "./composio.js";
+import type { VendoPrincipal } from "./principal.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures / helpers

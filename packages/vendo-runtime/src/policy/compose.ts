@@ -5,7 +5,7 @@
  * `ApprovalDecision`. Severity order: `allow` (0) < `approve` (1) < `deny` (2).
  */
 
-import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./types";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./types.js";
 
 const RANK: Record<ApprovalDecision, number> = {
   allow: 0,

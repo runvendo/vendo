@@ -53,9 +53,9 @@
  * Without this, 15 reads or `render_view` calls in one thread forced an
  * approval card, breaking Moment 1's promise.
  */
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
-import { dangerTier } from "./tier";
-import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
+import { dangerTier } from "./tier.js";
+import { getEscalationReason, getEscalationSource, setEscalationReason } from "./escalation.js";
 
 export interface BreakerState {
   /** Executed-call counts per principal::thread per tool (fed by onExecuted). */

@@ -6,9 +6,9 @@
 
 export const VENDO_NEXT_CLIENT_PACKAGE = "@vendoai/next/client";
 
-export { VendoRoot, type VendoRootProps } from "./vendo-root";
-export { SandboxStage, type SandboxStageProps } from "./sandbox-stage";
-export { createServerIntegrations } from "./integrations";
-export { createServerVendoStore } from "./server-store";
-export { createRunQuery, type RunQuery } from "./run-query";
-export { runConnectFlow, type ConnectOutcome } from "./connect-flow";
+export { VendoRoot, type VendoRootProps } from "./vendo-root.js";
+export { SandboxStage, type SandboxStageProps } from "./sandbox-stage.js";
+export { createServerIntegrations } from "./integrations.js";
+export { createServerVendoStore } from "./server-store.js";
+export { createRunQuery, type RunQuery } from "./run-query.js";
+export { runConnectFlow, type ConnectOutcome } from "./connect-flow.js";

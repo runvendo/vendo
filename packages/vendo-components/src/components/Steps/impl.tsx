@@ -1,6 +1,6 @@
-import { Steps as UISteps, StepsItem } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { stepsSchema } from "./descriptor";
+import { Steps as UISteps, StepsItem } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { stepsSchema } from "./descriptor.js";
 
 export const Steps = createPrewiredImpl(stepsSchema, (p) => (
   <UISteps>

@@ -9,7 +9,7 @@ import {
   validateExpression,
   ExpressionError,
   type ExpressionScope,
-} from "./expressions";
+} from "./expressions.js";
 
 const scope: ExpressionScope = {
   trigger: {

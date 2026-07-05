@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveFadeShape, shapeKey, grantScopeFromShape, computeProposalId } from "./fade-shapes";
+import { deriveFadeShape, shapeKey, grantScopeFromShape, computeProposalId } from "./fade-shapes.js";
 
 describe("deriveFadeShape", () => {
   it("first email-shaped string field -> matches on its domain", () => {

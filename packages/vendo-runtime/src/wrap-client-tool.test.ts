@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Tool } from "ai";
-import { wrapClientTool } from "./wrap-client-tool";
-import { buildToolset } from "./toolset";
-import { hostToolset } from "./host-toolset";
+import { wrapClientTool } from "./wrap-client-tool.js";
+import { buildToolset } from "./toolset.js";
+import { hostToolset } from "./host-toolset.js";
 import type { HostToolDefinition } from "@vendoai/core";
-import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy";
-import type { ToolDescriptor } from "./descriptor";
-import { VendoError } from "./errors";
-import { createRunPolicyContext } from "./policy/run-context";
-import { setEscalationReason } from "./policy/escalation";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./policy/index.js";
+import type { ToolDescriptor } from "./descriptor.js";
+import { VendoError } from "./errors.js";
+import { createRunPolicyContext } from "./policy/run-context.js";
+import { setEscalationReason } from "./policy/escalation.js";
 
 const PRINCIPAL = { userId: "user-1" };
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ManifestTool } from "@vendoai/core";
-import { manifestToolsToHostTools } from "./manifest-tools";
+import { manifestToolsToHostTools } from "./manifest-tools.js";
 
 function tool(overrides: Partial<ManifestTool> = {}): ManifestTool {
   return {

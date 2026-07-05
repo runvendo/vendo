@@ -34,11 +34,11 @@ import type {
 } from "@vendoai/core";
 import { hostToolset, type RemixSealer } from "@vendoai/runtime";
 import type { HostToolDefinition } from "@vendoai/core";
-import { resolvePrincipal, threadScope } from "./guard";
-import type { ThreadIndex } from "./threads";
-import { applyVerifiedPinBase, enrichAnchorSources } from "./remix-enrich";
-import type { VendoHandlerOptions } from "./options";
-import { devTelemetry } from "./telemetry-dev";
+import { resolvePrincipal, threadScope } from "./guard.js";
+import type { ThreadIndex } from "./threads.js";
+import { applyVerifiedPinBase, enrichAnchorSources } from "./remix-enrich.js";
+import type { VendoHandlerOptions } from "./options.js";
+import { devTelemetry } from "./telemetry-dev.js";
 
 interface ChatRequestBody {
   /** The ai SDK Chat's own id (DefaultChatTransport's default body key — see

@@ -19,7 +19,7 @@
  * guarantees the SAME shape always gets the SAME id (idempotent re-offers).
  */
 import type { FadeShape, GrantScope } from "@vendoai/core";
-import { canonicalJson, fnv1a64 } from "../hashing";
+import { canonicalJson, fnv1a64 } from "../hashing.js";
 
 const EMAIL_RE = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/;
 const TYPE_FIELD_NAMES = ["type", "kind", "status", "category"];

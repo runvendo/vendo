@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { defaultBrand } from "./brand";
-import { brandToCssVars } from "./brand-to-css-vars";
+import { defaultBrand } from "./brand.js";
+import { brandToCssVars } from "./brand-to-css-vars.js";
 
 describe("brandToCssVars", () => {
   it("maps 1:1 brand fields onto their --vendo-* vars", () => {

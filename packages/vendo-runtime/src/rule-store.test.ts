@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryCompiledRuleStore } from "./rule-store";
+import { createInMemoryCompiledRuleStore } from "./rule-store.js";
 
 const scope = { tenantId: "t", subject: "u" };
 const other = { tenantId: "t", subject: "someone-else" };

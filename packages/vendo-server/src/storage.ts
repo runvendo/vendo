@@ -15,7 +15,7 @@
  * (including `false`) always wins over this default, in every environment.
  */
 import { createVendoDatabase, migrateVendoDatabase, type VendoDb } from "@vendoai/store";
-import type { VendoHandlerOptions } from "./options";
+import type { VendoHandlerOptions } from "./options.js";
 
 export async function resolveStorage(
   options: VendoHandlerOptions,

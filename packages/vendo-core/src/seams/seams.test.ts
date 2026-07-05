@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CredentialBroker } from "./credential-broker";
-import type { Executor } from "./executor";
-import type { Principal } from "./principal";
-import type { Scheduler } from "./scheduler";
-import type { Channels } from "./channels";
+import type { CredentialBroker } from "./credential-broker.js";
+import type { Executor } from "./executor.js";
+import type { Principal } from "./principal.js";
+import type { Scheduler } from "./scheduler.js";
+import type { Channels } from "./channels.js";
 import type {
   Store,
   ThreadStore,
@@ -12,7 +12,7 @@ import type {
   AuditLog,
   RemixStore,
   RemixRecord,
-} from "./store";
+} from "./store.js";
 
 const principal: Principal = { tenantId: "t1", subject: "u1" };
 

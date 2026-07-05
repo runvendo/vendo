@@ -12,8 +12,8 @@
 
 export const VENDO_SERVER_PACKAGE = "@vendoai/server";
 
-export { handleChat, type ChatDeps } from "./chat";
-export { handleAction, createApprovalStore, type ActionDeps, type ApprovalStore } from "./action";
+export { handleChat, type ChatDeps } from "./chat.js";
+export { handleAction, createApprovalStore, type ActionDeps, type ApprovalStore } from "./action.js";
 export {
   DEFAULT_INTEGRATION_CATALOG,
   createConnectionsStore,
@@ -21,27 +21,27 @@ export {
   handleIntegrationsPost,
   type ConnectionsStore,
   type IntegrationsDeps,
-} from "./integrations";
+} from "./integrations.js";
 export {
   detectCapabilities,
   type VendoCapabilities,
   type EnvCapabilities,
   type DetectCapabilitiesOptions,
-} from "./capabilities";
-export { loadVendoDir, type LoadedVendoDir } from "./vendo-dir";
-export { manifestToolsToHostTools } from "./manifest-tools";
-export { buildInstructions, createAgentCache, type BuildInstructionsInput, type AgentFactoryConfig } from "./agent";
-export { createAutomationsWorld, type VendoAutomationsWorld, type CreateWorldConfig } from "./world";
+} from "./capabilities.js";
+export { loadVendoDir, type LoadedVendoDir } from "./vendo-dir.js";
+export { manifestToolsToHostTools } from "./manifest-tools.js";
+export { buildInstructions, createAgentCache, type BuildInstructionsInput, type AgentFactoryConfig } from "./agent.js";
+export { createAutomationsWorld, type VendoAutomationsWorld, type CreateWorldConfig } from "./world.js";
 export {
   resolveModel,
   resolveModelChoice,
   type ModelChoice,
   type ModelProvider,
   type ResolveModelDeps,
-} from "./model";
-export { defaultVendoPolicy } from "./default-policy";
-export { resolvePrincipal, tickServiceAuth, threadScope, DEFAULT_PRINCIPAL, WORLD_SCOPE, type GuardResult } from "./guard";
-export { parseHandlerOptions, type VendoHandlerOptions, type IntegrationCatalogEntry } from "./options";
+} from "./model.js";
+export { defaultVendoPolicy } from "./default-policy.js";
+export { resolvePrincipal, tickServiceAuth, threadScope, DEFAULT_PRINCIPAL, WORLD_SCOPE, type GuardResult } from "./guard.js";
+export { parseHandlerOptions, type VendoHandlerOptions, type IntegrationCatalogEntry } from "./options.js";
 export {
   createVendoFetchHandler,
   routeTail,
@@ -50,33 +50,33 @@ export {
   resetVendoBootRegistry,
   type VendoFetchHandler,
   type VendoState,
-} from "./fetch-handler";
-export { startVendoScheduler } from "./boot";
+} from "./fetch-handler.js";
+export { startVendoScheduler } from "./boot.js";
 export {
   createDrizzleVendoRegistry,
   createInMemoryVendoRegistry,
   handleVendosGet,
   handleVendosPost,
   type VendoRegistry,
-} from "./vendos";
-export { toNodeHandler, type FetchHandler, type NodeHandler } from "./node";
+} from "./vendos.js";
+export { toNodeHandler, type FetchHandler, type NodeHandler } from "./node.js";
 export {
   applyVerifiedPinBase,
   enrichAnchorSources,
   createSourceResolver,
   capSource,
-} from "./remix-enrich";
-export { resolveRemixSealer } from "./seal";
-export { resolveMcpServers, mcpJsonSchema, mcpServerArraySchema } from "./mcp-config";
+} from "./remix-enrich.js";
+export { resolveRemixSealer } from "./seal.js";
+export { resolveMcpServers, mcpJsonSchema, mcpServerArraySchema } from "./mcp-config.js";
 
 // ENG-193 permissions system: production policy stack, thread index, and the
 // consent/fade/trust/parked-action route handlers behind the fetch handler's
 // endpoints — exported so hosts and adapters can mount them directly.
-export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./policy-stack";
-export { createThreadIndex, type ThreadIndex } from "./threads";
-export { handleConsentRoute, type ConsentRouteDeps } from "./consent";
-export { handleFadeProposalRoute, type FadeProposalRouteDeps } from "./fade-proposal";
-export { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
+export { composeProductionPolicy, principalScope, EMBEDDED_TENANT } from "./policy-stack.js";
+export { createThreadIndex, type ThreadIndex } from "./threads.js";
+export { handleConsentRoute, type ConsentRouteDeps } from "./consent.js";
+export { handleFadeProposalRoute, type FadeProposalRouteDeps } from "./fade-proposal.js";
+export { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions.js";
 export {
   listGrantsRoute,
   revokeGrantRoute,
@@ -84,4 +84,4 @@ export {
   revokeRuleRoute,
   queryAuditRoute,
   listCriticalToolsRoute,
-} from "./trust";
+} from "./trust.js";

@@ -16,13 +16,13 @@
 
 import type { Tool, ToolExecutionOptions, UIMessageStreamWriter } from "ai";
 import type { VendoUIMessage } from "@vendoai/core";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy";
-import type { ToolDescriptor } from "./descriptor";
-import type { VendoPrincipal } from "./principal";
-import { VendoError, policyDenied, approvalRequired } from "./errors";
-import { dangerTier, isUnverified } from "./policy/tier";
-import { getEscalationReason } from "./policy/escalation";
-import type { RunPolicyContext } from "./policy/run-context";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy/index.js";
+import type { ToolDescriptor } from "./descriptor.js";
+import type { VendoPrincipal } from "./principal.js";
+import { VendoError, policyDenied, approvalRequired } from "./errors.js";
+import { dangerTier, isUnverified } from "./policy/tier.js";
+import { getEscalationReason } from "./policy/escalation.js";
+import type { RunPolicyContext } from "./policy/run-context.js";
 
 /** Bounded so a long-lived process can't grow this without limit — same FIFO
  *  shape `judgePolicy`'s memo, `breakers.ts`'s `countedEscalationIds`, and

@@ -20,7 +20,7 @@ import {
 } from "@vendoai/core";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@vendoai/components/theme";
 import type { McpServerConfig } from "@vendoai/runtime";
-import { mcpJsonSchema } from "./mcp-config";
+import { mcpJsonSchema } from "./mcp-config.js";
 
 export interface LoadedVendoDir {
   brand: BrandTokens;

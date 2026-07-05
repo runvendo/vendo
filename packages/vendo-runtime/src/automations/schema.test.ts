@@ -4,7 +4,7 @@
  * drift, these tests catch it.
  */
 import { describe, expect, it } from "vitest";
-import { automationSpecSchema } from "./schema";
+import { automationSpecSchema } from "./schema.js";
 
 const example1 = {
   dslVersion: 1,

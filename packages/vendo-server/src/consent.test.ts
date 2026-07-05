@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleConsentRoute } from "./consent";
+import { handleConsentRoute } from "./consent.js";
 import {
   createFadeTracker,
   createInMemoryGrantStore,
@@ -7,7 +7,7 @@ import {
   InMemoryThreadStore,
   buildDescriptor,
 } from "@vendoai/runtime";
-import { createThreadIndex } from "./threads";
+import { createThreadIndex } from "./threads.js";
 
 const scope = { tenantId: "vendo-embedded", subject: "vendo-default-user" };
 const now = () => "2026-07-04T00:00:00Z";

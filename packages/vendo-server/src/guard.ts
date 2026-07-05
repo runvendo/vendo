@@ -19,7 +19,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Principal } from "@vendoai/core";
 import type { VendoPrincipal } from "@vendoai/runtime";
-import type { VendoHandlerOptions } from "./options";
+import type { VendoHandlerOptions } from "./options.js";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
 

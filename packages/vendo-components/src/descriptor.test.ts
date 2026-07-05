@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { prewired, jsonValue } from "./descriptor";
+import { prewired, jsonValue } from "./descriptor.js";
 
 describe("prewired()", () => {
   it("builds a descriptor and a RegisteredComponent stamped prewired", () => {

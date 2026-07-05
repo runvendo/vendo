@@ -4,9 +4,9 @@
  *  throws (even on an adversarial deep chain it stops recursing at MAX_DEPTH and
  *  emits a contained Skeleton placeholder instead of overflowing the stack). */
 
-import type { ComponentNode, UINode } from "../ui";
-import { isPropBinding, type GeneratedPayload, type GenNode } from "./format";
-import { resolvePointer } from "./pointer";
+import type { ComponentNode, UINode } from "../ui.js";
+import { isPropBinding, type GeneratedPayload, type GenNode } from "./format.js";
+import { resolvePointer } from "./pointer.js";
 
 /** Maximum nesting depth resolved before a Skeleton placeholder caps the branch.
  *  Bounds recursion regardless of node count, preventing a stack overflow. */

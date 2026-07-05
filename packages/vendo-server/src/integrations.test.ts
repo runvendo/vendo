@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ComposioClient } from "@vendoai/runtime";
-import { WORLD_SCOPE } from "./guard";
+import { WORLD_SCOPE } from "./guard.js";
 import {
   createConnectionsStore,
   handleIntegrationsGet,
   handleIntegrationsPost,
   type IntegrationsDeps,
-} from "./integrations";
+} from "./integrations.js";
 
 const CATALOG = [
   { id: "gmail", name: "Gmail" },

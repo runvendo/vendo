@@ -6,13 +6,13 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OutboundMessage, Principal } from "@vendoai/core";
-import type { ApprovalPolicy } from "../policy";
-import { InMemoryAuditLog } from "../embedded/in-memory-store";
-import { AutomationRunner } from "./runner";
-import { hashDescriptor } from "./grants";
-import { automationSpecSchema, type AutomationSpec } from "./schema";
-import type { RegisteredTool } from "./interpreter";
-import { InMemoryAutomationStore, MAX_STEP_OUTPUT_BYTES, type TriggerEnvelope } from "./store";
+import type { ApprovalPolicy } from "../policy/index.js";
+import { InMemoryAuditLog } from "../embedded/in-memory-store.js";
+import { AutomationRunner } from "./runner.js";
+import { hashDescriptor } from "./grants.js";
+import { automationSpecSchema, type AutomationSpec } from "./schema.js";
+import type { RegisteredTool } from "./interpreter.js";
+import { InMemoryAutomationStore, MAX_STEP_OUTPUT_BYTES, type TriggerEnvelope } from "./store.js";
 
 const NOW = "2026-07-01T08:00:00.000Z";
 const scope: Principal = { tenantId: "tenant-1", subject: "user-1" };

@@ -14,7 +14,7 @@
  * A missing key never errors — the capability simply reads `false` and the
  * client hides that surface.
  */
-import { hasProviderKey, present } from "./model-choice";
+import { hasProviderKey, present } from "./model-choice.js";
 
 export interface VendoCapabilities {
   chat: boolean;

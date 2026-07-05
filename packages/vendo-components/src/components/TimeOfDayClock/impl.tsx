@@ -1,5 +1,5 @@
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { timeOfDayClockSchema } from "./descriptor";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { timeOfDayClockSchema } from "./descriptor.js";
 
 const SIZE = 320;
 const C = SIZE / 2;

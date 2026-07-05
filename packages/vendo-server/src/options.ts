@@ -23,8 +23,8 @@ import type {
   McpServerConfig,
   RegisteredTool,
 } from "@vendoai/runtime";
-import type { ConnectionsStore } from "./connections";
-import { mcpServerArraySchema } from "./mcp-config";
+import type { ConnectionsStore } from "./connections.js";
+import { mcpServerArraySchema } from "./mcp-config.js";
 
 export interface IntegrationCatalogEntry {
   /** Composio toolkit id (must match the shell's BrandIcon ids). */

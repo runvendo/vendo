@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHandlerOptions } from "./options";
+import { parseHandlerOptions } from "./options.js";
 
 describe("parseHandlerOptions: mcpServers", () => {
   it("accepts mcpServers", () => {

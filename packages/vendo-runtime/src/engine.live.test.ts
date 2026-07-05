@@ -13,9 +13,9 @@ import { tool } from "ai";
 import { z } from "zod";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { VendoUIMessage } from "@vendoai/core";
-import { createVendoAgent, RENDER_VIEW_TOOL_NAME } from "./engine";
-import { createComposioClient } from "./composio";
-import type { ApprovalPolicy } from "./policy";
+import { createVendoAgent, RENDER_VIEW_TOOL_NAME } from "./engine.js";
+import { createComposioClient } from "./composio.js";
+import type { ApprovalPolicy } from "./policy/index.js";
 
 const HAS_KEY = !!process.env.ANTHROPIC_API_KEY;
 const HAS_BOTH = HAS_KEY && !!process.env.COMPOSIO_API_KEY;

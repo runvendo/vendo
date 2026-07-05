@@ -13,7 +13,7 @@ import { VendoStage } from "@vendoai/react";
 import { ApprovalCard } from "@vendoai/shell";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@vendoai/components";
 import type { BrandTokens } from "@vendoai/components/theme";
-import { NAVIGATE_ACTION, isSafeAppPath } from "./navigate";
+import { NAVIGATE_ACTION, isSafeAppPath } from "./navigate.js";
 
 interface StageEnv {
   modules?: Record<string, string>;

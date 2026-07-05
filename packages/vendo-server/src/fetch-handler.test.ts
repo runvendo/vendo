@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createVendoFetchHandler, resetVendoBootRegistry } from "./fetch-handler";
+import { createVendoFetchHandler, resetVendoBootRegistry } from "./fetch-handler.js";
 
 function req(pathname: string, init?: RequestInit): Request {
   return new Request(`http://localhost:3000${pathname}`, {

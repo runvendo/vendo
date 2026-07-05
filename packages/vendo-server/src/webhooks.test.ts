@@ -7,10 +7,10 @@ import {
   type AutomationSpec,
   type RegisteredTool,
 } from "@vendoai/runtime";
-import { createConnectionsStore } from "./connections";
-import { WORLD_SCOPE } from "./guard";
-import { createAutomationsWorld, type VendoAutomationsWorld } from "./world";
-import { handleComposioWebhook, verifyComposioSignature } from "./webhooks";
+import { createConnectionsStore } from "./connections.js";
+import { WORLD_SCOPE } from "./guard.js";
+import { createAutomationsWorld, type VendoAutomationsWorld } from "./world.js";
+import { handleComposioWebhook, verifyComposioSignature } from "./webhooks.js";
 
 const STUB_MODEL = { modelId: "stub" } as unknown as LanguageModel;
 const allowAll: ApprovalPolicy = { evaluate: () => "allow" };
@@ -317,7 +317,7 @@ describe("handleComposioWebhook", () => {
 
   it("warns about the missing secret only once across repeated requests", async () => {
     vi.resetModules();
-    const { handleComposioWebhook: freshHandler } = await import("./webhooks");
+    const { handleComposioWebhook: freshHandler } = await import("./webhooks.js");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const world = await makeWorld();
     const connections = createConnectionsStore(CATALOG);

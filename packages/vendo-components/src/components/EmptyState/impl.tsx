@@ -1,5 +1,5 @@
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { emptyStateSchema } from "./descriptor";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { emptyStateSchema } from "./descriptor.js";
 
 const MUTED = "var(--vendo-fg-muted, rgba(0,0,0,0.55))";
 

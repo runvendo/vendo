@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import { tool } from "ai";
-import { buildToolset } from "./toolset";
-import type { ApprovalPolicy, PolicyContext } from "./policy";
-import type { VendoPrincipal } from "./principal";
-import type { ToolDescriptor } from "./descriptor";
-import { createRunPolicyContext } from "./policy/run-context";
-import { createPausedCallTracker } from "./wrap-tool";
+import { buildToolset } from "./toolset.js";
+import type { ApprovalPolicy, PolicyContext } from "./policy/index.js";
+import type { VendoPrincipal } from "./principal.js";
+import type { ToolDescriptor } from "./descriptor.js";
+import { createRunPolicyContext } from "./policy/run-context.js";
+import { createPausedCallTracker } from "./wrap-tool.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures

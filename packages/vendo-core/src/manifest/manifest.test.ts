@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { manifestComponentSchema } from "./component";
-import { vendoManifestSchema, toolsManifestSchema } from "./manifest";
+import { manifestComponentSchema } from "./component.js";
+import { vendoManifestSchema, toolsManifestSchema } from "./manifest.js";
 
 const theme = {
   version: 1,

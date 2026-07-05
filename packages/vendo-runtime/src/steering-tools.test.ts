@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createSteeringTools } from "./steering-tools";
-import { createInMemoryCompiledRuleStore } from "./rule-store";
-import { createInMemoryGrantStore } from "./grant-store";
-import { InMemoryAuditLog } from "./embedded/in-memory-store";
-import { buildDescriptor } from "./descriptor";
-import { dangerTier } from "./policy";
-import type { ToolDescriptor } from "./descriptor";
+import { createSteeringTools } from "./steering-tools.js";
+import { createInMemoryCompiledRuleStore } from "./rule-store.js";
+import { createInMemoryGrantStore } from "./grant-store.js";
+import { InMemoryAuditLog } from "./embedded/in-memory-store.js";
+import { buildDescriptor } from "./descriptor.js";
+import { dangerTier } from "./policy/index.js";
+import type { ToolDescriptor } from "./descriptor.js";
 
 const principal = { tenantId: "t", subject: "u" };
 const actDescriptor: ToolDescriptor = {

@@ -1,4 +1,4 @@
-import type { BrandTokens } from "./brand";
+import type { BrandTokens } from "./brand.js";
 
 /**
  * The single canonical `--vendo-*` producer. Both the host shell and the

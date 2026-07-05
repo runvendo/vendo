@@ -6,8 +6,8 @@
  * invalidates the grant.
  */
 import { describe, expect, it } from "vitest";
-import { hashScope } from "./grants";
-import { automationSpecSchema, type AutomationSpec, type AutomationStep } from "./schema";
+import { hashScope } from "./grants.js";
+import { automationSpecSchema, type AutomationSpec, type AutomationStep } from "./schema.js";
 
 function spec(overrides: Record<string, unknown> = {}): AutomationSpec {
   return automationSpecSchema.parse({

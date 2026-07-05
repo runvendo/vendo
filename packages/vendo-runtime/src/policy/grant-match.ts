@@ -4,8 +4,8 @@
  * call then simply asks, which is always safe).
  */
 import type { PermissionGrant } from "@vendoai/core";
-import type { ToolDescriptor } from "../descriptor";
-import { canonicalJson, fnv1a64, hashDescriptor } from "../automations/grants";
+import type { ToolDescriptor } from "../descriptor.js";
+import { canonicalJson, fnv1a64, hashDescriptor } from "../automations/grants.js";
 
 export function hashInput(input: unknown): string {
   return fnv1a64(canonicalJson(input));

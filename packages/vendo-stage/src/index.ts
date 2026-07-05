@@ -1,9 +1,9 @@
 import type { ActionRequest, ActionResult } from "@vendoai/core";
-export * from "./protocol";
-export * from "./bridge";
-export { STAGE_RUNTIME_SRC } from "./runtime";
-export * from "./stage-host";
-export * from "./genui-host";
+export * from "./protocol.js";
+export * from "./bridge.js";
+export { STAGE_RUNTIME_SRC } from "./runtime.js";
+export * from "./stage-host.js";
+export * from "./genui-host.js";
 
 /** CSS-variable brand tokens, e.g. { "--vendo-accent": "#0a7c..." }. */
 export type ThemeTokens = Record<string, string>;

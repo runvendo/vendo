@@ -5,9 +5,9 @@ import {
   TableRow as UITableRow,
   TableHead as UITableHead,
   TableCell as UITableCell,
-} from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { tableSchema } from "./descriptor";
+} from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { tableSchema } from "./descriptor.js";
 
 /** A cell renders scalars; nested values (raw tool rows carry them) show as
  *  an em dash rather than JSON noise or a whole-table validation failure. */

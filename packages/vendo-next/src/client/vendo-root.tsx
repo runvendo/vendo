@@ -28,17 +28,17 @@ import {
   type VendoIntegrations,
   type VendoToastsProps,
 } from "@vendoai/shell";
-import { createServerVendoStore } from "./server-store";
+import { createServerVendoStore } from "./server-store.js";
 import { VendoThemeProvider } from "@vendoai/components";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@vendoai/components/theme";
 import { brandToCssVars } from "@vendoai/components/descriptors";
 import { manifestToolsToHostTools } from "@vendoai/server/manifest-tools";
 import type { VendoCapabilities } from "@vendoai/server/capabilities";
-import { SandboxStage } from "./sandbox-stage";
-import { VendoConnectNode } from "./connect-node";
-import { createServerIntegrations } from "./integrations";
-import { createServerNotifications } from "./notifications";
-import { createRunQuery } from "./run-query";
+import { SandboxStage } from "./sandbox-stage.js";
+import { VendoConnectNode } from "./connect-node.js";
+import { createServerIntegrations } from "./integrations.js";
+import { createServerNotifications } from "./notifications.js";
+import { createRunQuery } from "./run-query.js";
 
 export interface VendoRootProps {
   /** `.vendo/theme.json`, imported as JSON. Invalid/absent → default brand. */

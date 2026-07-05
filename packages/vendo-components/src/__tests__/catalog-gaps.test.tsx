@@ -3,16 +3,16 @@
  *  Progress, Donut (+legend), KeyValue, Actions, EmptyState. */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { progressDescriptor } from "../components/Progress/descriptor";
-import { Progress } from "../components/Progress/impl";
-import { donutDescriptor } from "../components/Donut/descriptor";
-import { Donut } from "../components/Donut/impl";
-import { keyValueDescriptor } from "../components/KeyValue/descriptor";
-import { KeyValue } from "../components/KeyValue/impl";
-import { actionsDescriptor } from "../components/Actions/descriptor";
-import { Actions } from "../components/Actions/impl";
-import { emptyStateDescriptor } from "../components/EmptyState/descriptor";
-import { EmptyState } from "../components/EmptyState/impl";
+import { progressDescriptor } from "../components/Progress/descriptor.js";
+import { Progress } from "../components/Progress/impl.js";
+import { donutDescriptor } from "../components/Donut/descriptor.js";
+import { Donut } from "../components/Donut/impl.js";
+import { keyValueDescriptor } from "../components/KeyValue/descriptor.js";
+import { KeyValue } from "../components/KeyValue/impl.js";
+import { actionsDescriptor } from "../components/Actions/descriptor.js";
+import { Actions } from "../components/Actions/impl.js";
+import { emptyStateDescriptor } from "../components/EmptyState/descriptor.js";
+import { EmptyState } from "../components/EmptyState/impl.js";
 
 describe("Progress", () => {
   it("schema accepts a budget bar and rejects negative values", () => {

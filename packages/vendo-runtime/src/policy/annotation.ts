@@ -9,7 +9,7 @@
  * 3. no informative hints              → `"approve"` (fail-safe: gate the unknown)
  */
 
-import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./types";
+import type { ApprovalPolicy, ApprovalDecision, PolicyContext } from "./types.js";
 
 /**
  * Build a policy layer that maps a tool's annotation hints to an approval

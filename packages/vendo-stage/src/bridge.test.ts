@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { makeRpc } from "./bridge";
-import type { MessageEndpoint } from "./protocol";
+import { makeRpc } from "./bridge.js";
+import type { MessageEndpoint } from "./protocol.js";
 
 /**
  * Each endpoint is a mailbox: postMessage fires the "message" event on THAT endpoint,

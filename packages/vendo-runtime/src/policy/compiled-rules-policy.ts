@@ -16,9 +16,9 @@
  * other layers own — so it is not specially handled here either.
  */
 import type { CompiledRuleStore, Principal } from "@vendoai/core";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
-import { dangerTier } from "./tier";
-import { ruleMatches } from "./rule-match";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
+import { dangerTier } from "./tier.js";
+import { ruleMatches } from "./rule-match.js";
 
 export interface CompiledRulesPolicyOptions {
   /** Maps the policy principal to the store's Principal scope. */

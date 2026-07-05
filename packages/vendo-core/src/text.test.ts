@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripEmoji, stripEmojiDeep } from "./text";
+import { stripEmoji, stripEmojiDeep } from "./text.js";
 
 describe("stripEmoji", () => {
   it("removes emoji and tidies whitespace", () => {

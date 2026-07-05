@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExecutionContext } from "@vendoai/core";
-import { InProcessExecutor } from "./in-process-executor";
+import { InProcessExecutor } from "./in-process-executor.js";
 
 const context: ExecutionContext = { principal: { tenantId: "t1", subject: "u1" } };
 

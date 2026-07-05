@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
+import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard.js";
 
 function req(host: string): Request {
   return new Request(`http://${host}/api/vendo/chat`, {

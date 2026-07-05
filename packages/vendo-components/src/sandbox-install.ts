@@ -25,7 +25,7 @@ import { createRoot } from "react-dom/client";
 import type { ComponentType } from "react";
 import { ThemeProvider } from "@openuidev/react-ui";
 import openuiCss from "@openuidev/react-ui/index.css?inline";
-import { prewiredImpls } from "./impls";
+import { prewiredImpls } from "./impls.js";
 
 declare global {
   interface Window {

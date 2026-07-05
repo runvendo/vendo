@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { VerifiedPinBase } from "@vendoai/core";
-import { normalizeBaseline } from "./remix/baseline";
-import { createRemixSealer, deriveSealKey, hashSources } from "./remix/envelope";
-import { createEditViewTool, type EditViewToolOptions } from "./edit-view-tool";
+import { normalizeBaseline } from "./remix/baseline.js";
+import { createRemixSealer, deriveSealKey, hashSources } from "./remix/envelope.js";
+import { createEditViewTool, type EditViewToolOptions } from "./edit-view-tool.js";
 
 const BASELINE_SRC = [
   "export default function DeadlineList(props) {",

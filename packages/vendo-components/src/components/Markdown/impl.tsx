@@ -1,7 +1,7 @@
-import { MarkDownRenderer } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { markdownSchema } from "./descriptor";
-import { vendoUrlTransform } from "../../impl-helpers/safe-url";
+import { MarkDownRenderer } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { markdownSchema } from "./descriptor.js";
+import { vendoUrlTransform } from "../../impl-helpers/safe-url.js";
 
 /**
  * Security: MarkDownRenderer wraps react-markdown without rehype-raw or allowDangerousHtml.

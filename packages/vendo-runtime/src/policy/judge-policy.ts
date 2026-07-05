@@ -91,9 +91,9 @@
  * model's reasoning).
  */
 import { generateText, type LanguageModel } from "ai";
-import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types";
-import { dangerTier } from "./tier";
-import { setEscalationReason } from "./escalation";
+import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./types.js";
+import { dangerTier } from "./tier.js";
+import { setEscalationReason } from "./escalation.js";
 
 export interface JudgePolicyOptions {
   /** Absent -> judgePolicy is IDENTITY (fail-safe rollout default). */

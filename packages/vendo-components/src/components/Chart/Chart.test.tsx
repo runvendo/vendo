@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VendoThemeProvider } from "../../theme/VendoThemeProvider";
-import { chartDescriptor } from "./descriptor";
-import { Chart } from "./impl";
+import { VendoThemeProvider } from "../../theme/VendoThemeProvider.js";
+import { chartDescriptor } from "./descriptor.js";
+import { Chart } from "./impl.js";
 
 describe("Chart", () => {
   it("schema accepts a valid bar chart and rejects an unknown kind", () => {

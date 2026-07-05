@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createServerNotifications } from "./notifications";
+import { createServerNotifications } from "./notifications.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();

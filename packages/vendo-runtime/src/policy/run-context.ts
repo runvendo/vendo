@@ -23,8 +23,8 @@
  * server-executed (engine/composio/caller-in-process) results do. The host
  * API remains the real authority for those tools regardless (spec §5).
  */
-import type { ToolDescriptor } from "../descriptor";
-import { isUnverified } from "./tier";
+import type { ToolDescriptor } from "../descriptor.js";
+import { isUnverified } from "./tier.js";
 
 export interface RunPolicyContext {
   readonly request?: { text: string; messageId: string };

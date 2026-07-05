@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { LanguageModel } from "ai";
 import { automationSpecSchema, hashDescriptor, type AutomationSpec, type RegisteredTool } from "@vendoai/runtime";
-import { createAutomationsWorld } from "./world";
-import { defaultVendoPolicy } from "./default-policy";
-import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions";
+import { createAutomationsWorld } from "./world.js";
+import { defaultVendoPolicy } from "./default-policy.js";
+import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions.js";
 
 const PRINCIPAL = { userId: "u1" };
 const SCOPE = { tenantId: "vendo-embedded", subject: "u1" };

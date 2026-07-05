@@ -10,12 +10,12 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Principal } from "@vendoai/core";
-import type { ApprovalPolicy } from "../policy";
-import { AutomationRunner } from "./runner";
-import { computeGrant } from "./grants";
-import { automationSpecSchema, type AutomationSpec } from "./schema";
-import type { RegisteredTool } from "./interpreter";
-import { InMemoryAutomationStore, type AutomationGrant, type TriggerEnvelope } from "./store";
+import type { ApprovalPolicy } from "../policy/index.js";
+import { AutomationRunner } from "./runner.js";
+import { computeGrant } from "./grants.js";
+import { automationSpecSchema, type AutomationSpec } from "./schema.js";
+import type { RegisteredTool } from "./interpreter.js";
+import { InMemoryAutomationStore, type AutomationGrant, type TriggerEnvelope } from "./store.js";
 
 const NOW = "2026-07-04T08:00:00.000Z";
 const scope: Principal = { tenantId: "tenant-1", subject: "user-1" };

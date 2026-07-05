@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { actionsSchema } from "./descriptor";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { actionsSchema } from "./descriptor.js";
 import { z } from "zod";
 
 /** The runtime hands catalog components a per-node dispatch closure as

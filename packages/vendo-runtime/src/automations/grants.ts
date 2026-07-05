@@ -10,10 +10,10 @@
  * Hashes are drift detectors, not security primitives (the store is trusted),
  * so a fast pure-JS FNV-1a keeps the runtime dependency-free and portable.
  */
-import type { ToolDescriptor } from "../descriptor";
-import type { AutomationSpec, AutomationStep } from "./schema";
-import type { AutomationGrant } from "./store";
-import { canonicalJson, fnv1a64 } from "../hashing";
+import type { ToolDescriptor } from "../descriptor.js";
+import type { AutomationSpec, AutomationStep } from "./schema.js";
+import type { AutomationGrant } from "./store.js";
+import { canonicalJson, fnv1a64 } from "../hashing.js";
 
 export { canonicalJson, fnv1a64 };
 

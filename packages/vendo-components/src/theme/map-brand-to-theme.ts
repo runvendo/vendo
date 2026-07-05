@@ -1,6 +1,6 @@
 import type { Theme } from "@openuidev/react-ui";
-import type { BrandTokens } from "./brand";
-import { brandToChartPalette } from "./brand-to-chart-palette";
+import type { BrandTokens } from "./brand.js";
+import { brandToChartPalette } from "./brand-to-chart-palette.js";
 
 /** color-mix() shorthand — OpenUI theme values land in CSS, where mixes are fine. */
 const cm = (a: string, pct: number, b: string): string =>

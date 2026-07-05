@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { BarChart, LineChart, AreaChart, PieChart } from "../../openui";
-import { createPrewiredImpl } from "../../impl-helpers/create-impl";
-import { chartSchema } from "./descriptor";
+import { BarChart, LineChart, AreaChart, PieChart } from "../../openui.js";
+import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { chartSchema } from "./descriptor.js";
 
 export const Chart = createPrewiredImpl(chartSchema, (p) => {
   const slim = p.data.map((row) => {

@@ -11,15 +11,15 @@
  * disabledReason (the frozen status union stays untouched).
  */
 import type { AuditLog, AutomationDelivery, Channels, Principal } from "@vendoai/core";
-import type { ApprovalPolicy } from "../policy";
-import { evaluateGuard } from "./expressions";
-import { hashDescriptor } from "./grants";
+import type { ApprovalPolicy } from "../policy/index.js";
+import { evaluateGuard } from "./expressions.js";
+import { hashDescriptor } from "./grants.js";
 import {
   interpret,
   type AgentStepRunner,
   type RegisteredTool,
-} from "./interpreter";
-import type { AutomationSpec } from "./schema";
+} from "./interpreter.js";
+import type { AutomationSpec } from "./schema.js";
 import {
   DuplicateRunError,
   PARKED_ACTION_TTL_MS,
@@ -29,7 +29,7 @@ import {
   type AutomationRun,
   type StepRecord,
   type TriggerEnvelope,
-} from "./store";
+} from "./store.js";
 
 /** Consecutive failures before an automation is parked (spec amendment). */
 export const CONSECUTIVE_FAILURE_LIMIT = 5;

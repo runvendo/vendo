@@ -3,8 +3,8 @@ import { readFileSync, readdirSync } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { descriptors, prewiredComponents } from "../descriptors";
-import { prewiredImpls } from "../impls";
+import { descriptors, prewiredComponents } from "../descriptors.js";
+import { prewiredImpls } from "../impls.js";
 
 describe("prewired contract", () => {
   it("every descriptor has exactly one impl and vice versa", () => {
@@ -29,7 +29,7 @@ describe("prewired contract", () => {
   });
 
   it("the descriptors entrypoint exposes a non-empty descriptor array", async () => {
-    const mod = await import("../descriptors");
+    const mod = await import("../descriptors.js");
     expect(Array.isArray(mod.descriptors)).toBe(true);
     expect(mod.descriptors.length).toBeGreaterThan(0);
   });

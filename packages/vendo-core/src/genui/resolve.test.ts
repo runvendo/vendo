@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isComponentNode, type ComponentNode } from "../ui";
-import { VENDO_GENUI_VERSION, type GeneratedPayload, type GenNode } from "./format";
-import { collectBindings, resolveGeneratedPayload } from "./resolve";
+import { isComponentNode, type ComponentNode } from "../ui.js";
+import { VENDO_GENUI_VERSION, type GeneratedPayload, type GenNode } from "./format.js";
+import { collectBindings, resolveGeneratedPayload } from "./resolve.js";
 
 const payload = (
   root: string,
