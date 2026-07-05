@@ -3,8 +3,8 @@
  * loop (model -> tool dispatch -> guardrail policy -> data-ui stream), plus the
  * guardrail gating a real model's tool call.
  *
- * Skipped unless ANTHROPIC_API_KEY is set. Run with keys injected, e.g.:
- *   infisical run --projectId <id> --env dev -- pnpm -F @vendoai/runtime test engine.live
+ * Skipped unless ANTHROPIC_API_KEY is set. Run with keys in your environment, e.g.:
+ *   ANTHROPIC_API_KEY=sk-... pnpm -F @vendoai/runtime test engine.live
  *
  * Override the model with VENDO_E2E_MODEL if needed.
  */
