@@ -374,7 +374,9 @@ export function capEnvelope(envelope: TriggerEnvelope): TriggerEnvelope {
   return { ...envelope, payload: truncateValue(envelope.payload, MAX_TRIGGER_PAYLOAD_BYTES) };
 }
 
-function capParkedInput(input: unknown): { input: unknown; truncated?: boolean; bytes?: number } {
+/** Cap a parked action's frozen input (exported so durable ports apply the
+ *  EXACT same truncation the in-memory store does). */
+export function capParkedInput(input: unknown): { input: unknown; truncated?: boolean; bytes?: number } {
   const bytes = jsonBytes(input);
   if (bytes <= MAX_STEP_OUTPUT_BYTES) return { input };
   return { input: truncateValue(input, MAX_STEP_OUTPUT_BYTES), truncated: true, bytes };

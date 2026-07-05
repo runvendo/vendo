@@ -730,6 +730,7 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
         status: "failed",
         steps: [],
         error: `unsupported checkpoint version ${String(v)} — cannot resume this run`,
+        parkedActions: [],
       };
     }
     const checkpoint = input.resume.checkpoint as Checkpoint;

@@ -44,9 +44,27 @@ export const automationRuns = flowlet.table("automation_runs", {
   pendingApproval: jsonb("pending_approval"),
   error: text("error"),
   isTest: boolean("is_test").notNull(),
+  /** ENG-193 §4.6 — cumulative count of parked actions this run created. */
+  parkedCount: integer("parked_count").notNull().default(0),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).notNull(),
   finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
 }, (t) => [index("runs_automation_idx").on(t.automationId, t.tenantId, t.subject)]);
+
+/** ENG-193 §4.6 — parked automation drafts: an action a for_each iteration or
+ *  agent step couldn't run unattended, resolved standalone later. Indexed
+ *  columns cover the list filters; the full ParkedAction payload (frozen
+ *  input, guard bindings, tier, hashes, resolution detail) lives in `record`
+ *  jsonb, mirrored the way `saved_flowlets.record` already is. */
+export const parkedActions = flowlet.table("parked_actions", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  subject: text("subject").notNull(),
+  automationId: text("automation_id").notNull(),
+  runId: text("run_id").notNull(),
+  resolution: text("resolution"),
+  requestedAt: timestamp("requested_at", { withTimezone: true, mode: "string" }).notNull(),
+  record: jsonb("record").notNull(),
+}, (t) => [index("parked_actions_scope_idx").on(t.tenantId, t.subject, t.automationId, t.runId)]);
 
 export const decisions = flowlet.table("decisions", {
   tenantId: text("tenant_id").notNull(),

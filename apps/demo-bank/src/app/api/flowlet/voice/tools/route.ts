@@ -37,7 +37,7 @@ type Ingested = { toolset: ToolSet; descriptors: ToolDescriptor[] };
 const cache = new Map<string, Promise<Ingested>>();
 
 async function ingested(): Promise<Ingested> {
-  const toolkits = [...connectedToolkits()].sort();
+  const toolkits = [...(await connectedToolkits())].sort();
   const key = toolkits.join(",");
   let entry = cache.get(key);
   if (!entry) {

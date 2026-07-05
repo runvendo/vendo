@@ -8,6 +8,13 @@
       "when": 1783212246684,
       "tag": "0000_living_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783238909148,
+      "tag": "0001_brainy_tinkerer",
+      "breakpoints": true
     }
   ]
 }

@@ -32,8 +32,10 @@ import type {
 } from "@flowlet/core";
 import {
   DuplicateRunError,
+  PARKED_ACTION_TTL_MS,
   automationSpecSchema,
   capEnvelope,
+  capParkedInput,
   capStep,
   coarseStatus,
   firingRunId,
@@ -46,8 +48,12 @@ import {
   type AutomationSpec,
   type AutomationVersion,
   type CreateAutomationInput,
+  type CreateParkedActionInput,
   type CreateRunInput,
   type FinalizeRunInput,
+  type ListParkedActionsFilter,
+  type ParkedAction,
+  type ParkedActionResolution,
   type PendingApproval,
   type StepRecord,
   type TriggerEnvelope,
@@ -55,7 +61,7 @@ import {
   type UpdateAutomationInput,
 } from "@flowlet/runtime";
 import type { FlowletDb } from "./db.js";
-import { automationRuns, automations, automationVersions } from "./schema.js";
+import { automationRuns, automations, automationVersions, parkedActions } from "./schema.js";
 
 /** Postgres text timestamp -> the ISO 8601 string the runtime writes/expects. */
 export function toIso(value: string): string {
@@ -121,6 +127,7 @@ function rowToRun(row: AutomationRunRow): AutomationRun {
     trigger: row.trigger as TriggerEnvelope,
     steps: row.steps as StepRecord[],
     isTest: row.isTest,
+    parkedCount: row.parkedCount,
     startedAt: toIso(row.startedAt),
   };
   if (row.outcome != null) run.outcome = row.outcome as AutomationRun["outcome"];
@@ -491,6 +498,7 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
       trigger,
       steps: [],
       isTest: input.isTest,
+      parkedCount: 0,
       startedAt: now,
     };
     try {
@@ -508,6 +516,7 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
         pendingApproval: null,
         error: null,
         isTest: run.isTest,
+        parkedCount: 0,
         startedAt: now,
         finishedAt: null,
       });
@@ -521,7 +530,7 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
   async updateRun(
     scope: Principal,
     id: string,
-    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error">>,
+    patch: Partial<Pick<AutomationRun, "outcome" | "steps" | "pendingApproval" | "error" | "parkedCount">>,
   ): Promise<AutomationRun> {
     const run = await this.mustGetRun(scope, id);
     const steps = patch.steps ? patch.steps.map(capStep) : run.steps;
@@ -535,6 +544,7 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
         steps: next.steps,
         pendingApproval: next.pendingApproval ?? null,
         error: next.error ?? null,
+        parkedCount: next.parkedCount,
       })
       .where(and(eq(automationRuns.id, id), eq(automationRuns.tenantId, scope.tenantId), eq(automationRuns.subject, scope.subject)));
     return next;
@@ -561,6 +571,7 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
         steps,
         error: input.error,
         finishedAt: now,
+        parkedCount: input.parkedCount ?? run.parkedCount,
       };
       delete finalized.pendingApproval;
 
@@ -573,6 +584,7 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
           error: input.error ?? null,
           pendingApproval: null,
           finishedAt: now,
+          parkedCount: finalized.parkedCount,
         })
         .where(eq(automationRuns.id, id));
 
@@ -682,6 +694,134 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
         trigger: automation.spec.trigger as Extract<AutomationSpec["trigger"], { type: "schedule" }>,
         principal: { tenantId: automation.tenantId, subject: automation.subject },
       };
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Parked actions (ENG-193 §4.6) — durable port of the in-memory semantics:
+  // frozen capped input, 7-day TTL swept lazily by list (every surface reads
+  // through list), single-resolution invariant enforced at resolve time.
+  // -------------------------------------------------------------------------
+
+  async createParkedAction(scope: Principal, input: CreateParkedActionInput): Promise<ParkedAction> {
+    const id = `parked-${randomUUID()}`;
+    const { input: cappedInput, truncated, bytes } = capParkedInput(input.input);
+    const action: ParkedAction = {
+      id,
+      tenantId: scope.tenantId,
+      subject: scope.subject,
+      automationId: input.automationId,
+      runId: input.runId,
+      stepId: input.stepId,
+      tool: input.tool,
+      input: cappedInput,
+      ...(truncated ? { inputTruncated: true, inputBytes: bytes } : {}),
+      ...(input.guardExpr !== undefined ? { guardExpr: input.guardExpr } : {}),
+      ...(input.guardBindings !== undefined ? { guardBindings: input.guardBindings } : {}),
+      reason: input.reason,
+      tier: input.tier,
+      descriptorHash: input.descriptorHash,
+      requestedAt: input.requestedAt,
+    };
+    await this.db.insert(parkedActions).values({
+      id,
+      tenantId: scope.tenantId,
+      subject: scope.subject,
+      automationId: input.automationId,
+      runId: input.runId,
+      resolution: null,
+      requestedAt: input.requestedAt,
+      record: action,
+    });
+    return action;
+  }
+
+  async listParkedActions(scope: Principal, filter: ListParkedActionsFilter): Promise<ParkedAction[]> {
+    // Lazy expiry sweep (mirrors InMemoryAutomationStore): stale parked
+    // intent must never surface as approvable — 7-day TTL matching
+    // PendingApproval's. The sweep is a single UPDATE over this scope's
+    // expired-but-unresolved rows.
+    const now = this.now();
+    const cutoff = new Date(Date.parse(now) - PARKED_ACTION_TTL_MS).toISOString();
+    const expiredRows = await this.db
+      .select()
+      .from(parkedActions)
+      .where(
+        and(
+          eq(parkedActions.tenantId, scope.tenantId),
+          eq(parkedActions.subject, scope.subject),
+          isNull(parkedActions.resolution),
+          sql`${parkedActions.requestedAt} <= ${cutoff}`,
+        ),
+      );
+    for (const row of expiredRows) {
+      const expired: ParkedAction = { ...(row.record as ParkedAction), resolution: "expired", resolvedAt: now };
+      await this.db
+        .update(parkedActions)
+        .set({ resolution: "expired", record: expired })
+        .where(and(eq(parkedActions.id, row.id), isNull(parkedActions.resolution)));
+    }
+
+    const rows = await this.db
+      .select()
+      .from(parkedActions)
+      .where(
+        and(
+          eq(parkedActions.tenantId, scope.tenantId),
+          eq(parkedActions.subject, scope.subject),
+          ...(filter.automationId !== undefined ? [eq(parkedActions.automationId, filter.automationId)] : []),
+          ...(filter.runId !== undefined ? [eq(parkedActions.runId, filter.runId)] : []),
+          ...(filter.unresolvedOnly === true ? [isNull(parkedActions.resolution)] : []),
+        ),
+      );
+    return rows.map((row) => row.record as ParkedAction);
+  }
+
+  async getParkedAction(scope: Principal, id: string): Promise<ParkedAction | undefined> {
+    const rows = await this.db
+      .select()
+      .from(parkedActions)
+      .where(
+        and(
+          eq(parkedActions.id, id),
+          eq(parkedActions.tenantId, scope.tenantId),
+          eq(parkedActions.subject, scope.subject),
+        ),
+      );
+    const row = rows[0];
+    return row ? (row.record as ParkedAction) : undefined;
+  }
+
+  async resolveParkedAction(
+    scope: Principal,
+    id: string,
+    resolution: ParkedActionResolution,
+    resolvedAt: string,
+  ): Promise<ParkedAction> {
+    return this.withTransaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(parkedActions)
+        .where(
+          and(
+            eq(parkedActions.id, id),
+            eq(parkedActions.tenantId, scope.tenantId),
+            eq(parkedActions.subject, scope.subject),
+          ),
+        )
+        .for("update");
+      const row = rows[0];
+      if (!row) throw new Error(`parked action "${id}" not found`);
+      const action = row.record as ParkedAction;
+      if (action.resolution !== undefined) {
+        throw new Error(`parked action "${id}" is already resolved (${action.resolution})`);
+      }
+      const next: ParkedAction = { ...action, resolution, resolvedAt };
+      await tx
+        .update(parkedActions)
+        .set({ resolution, record: next })
+        .where(eq(parkedActions.id, id));
+      return next;
     });
   }
 
