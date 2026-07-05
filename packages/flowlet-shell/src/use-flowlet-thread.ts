@@ -26,7 +26,15 @@ export type ThreadItem =
       errorText?: string;
     }
   | { kind: "approval"; key: string; messageId: string; approvalId: string; toolName: string; input: unknown }
-  | { kind: "ui"; key: string; messageId: string; node: UINode }
+  | {
+      kind: "ui";
+      key: string;
+      messageId: string;
+      node: UINode;
+      /** Sealed authored-state envelope paired to this node (remix fast-edits);
+       *  stored opaquely with the pin so later edits can patch base:"pin". */
+      envelope?: string;
+    }
   | { kind: "skeleton"; key: string; messageId: string; name?: string }
   | { kind: "error"; key: string; messageId: string; message: string };
 
@@ -44,7 +52,10 @@ export type RenderItem =
  * redundant sliver next to the rendered component. Mirrors `RENDER_VIEW_TOOL_NAME`
  * and `REQUEST_CONNECT_TOOL_NAME` in `@flowlet/runtime`.
  */
-const RENDER_TOOLS = new Set(["render_view", "request_connect"]);
+const RENDER_TOOLS = new Set(["render_view", "edit_view", "request_connect"]);
+
+/** Render tools that stream a view being built (skeleton-worthy). */
+const SKELETON_TOOLS = new Set(["render_view", "edit_view"]);
 
 /** Reads the streaming component name out of a render tool part's partial input (if any). */
 function renderName(input: unknown): string | undefined {
@@ -61,9 +72,22 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
   for (const message of messages) {
     const role = message.role === "user" ? "user" : "assistant";
     const messageId = message.id;
+    // Pre-pass: collect this message's remix envelopes by paired node id, so
+    // pairing works whether the envelope part streams before or after its
+    // `data-ui` sibling. Envelope parts emit no item of their own.
+    const envelopes = new Map<string, string>();
+    for (const rawPart of message.parts) {
+      const part = rawPart as { type: string; data?: { envelope?: string; uiNodeId?: string } };
+      if (part.type === "data-remix-envelope" && part.data?.uiNodeId && part.data.envelope) {
+        envelopes.set(part.data.uiNodeId, part.data.envelope);
+      }
+    }
     message.parts.forEach((rawPart, index) => {
       const part = rawPart as { type: string; [k: string]: unknown };
       const key = `${message.id}:${index}`;
+      if (part.type === "data-remix-envelope") {
+        return; // consumed by the pre-pass; pairs onto its ui item below
+      }
       if (part.type === "text") {
         items.push({ kind: "text", key, messageId, role, text: String(part.text ?? "") });
       } else if (part.type === "file") {
@@ -82,7 +106,15 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
         const text = String(p.errorText ?? p.error ?? "Something went wrong");
         items.push({ kind: "error", key, messageId, message: text });
       } else if (part.type === "data-ui") {
-        items.push({ kind: "ui", key, messageId, node: part.data as UINode });
+        const node = part.data as UINode;
+        const envelope = envelopes.get(node.id);
+        items.push({
+          kind: "ui",
+          key,
+          messageId,
+          node,
+          ...(envelope !== undefined ? { envelope } : {}),
+        });
       } else if (part.type === "dynamic-tool") {
         // Dynamic tools (MCP servers, and any tool the SDK types at runtime)
         // carry their name in `toolName` instead of the part type. Same
@@ -117,7 +149,7 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
           // built view — it resolves instantly into the host Connect card, so it
           // gets no skeleton (a "building your view" beat there reads absurd).
           const state = String(part.state ?? "");
-          if (toolName === "render_view" && (state === "input-streaming" || state === "input-available")) {
+          if (SKELETON_TOOLS.has(toolName) && (state === "input-streaming" || state === "input-available")) {
             items.push({ kind: "skeleton", key, messageId, name: renderName(part.input) });
           } else if (state === "output-error") {
             items.push({ kind: "error", key, messageId, message: String(part.errorText ?? "Failed to render UI") });

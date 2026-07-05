@@ -24,7 +24,7 @@ export interface MessageListProps {
   onFeedback?: (messageId: string, feedback: Feedback) => void;
   /** Pin a remix candidate onto its FlowletRemix anchor. When provided,
    *  generated views tagged with `remixAnchorId` grow an Apply bar. */
-  onApplyRemix?: (node: UINode) => void;
+  onApplyRemix?: (node: UINode, envelope?: string) => void;
 }
 
 export function MessageList({ items, status, onApprove, onDecline, onRegenerate, onFeedback, onApplyRemix }: MessageListProps) {
@@ -220,7 +220,7 @@ export function MessageList({ items, status, onApprove, onDecline, onRegenerate,
                       <button
                         type="button"
                         className="fl-apply-btn"
-                        onClick={() => onApplyRemix(item.node)}
+                        onClick={() => onApplyRemix(item.node, item.envelope)}
                       >
                         ✦ Apply to page
                       </button>

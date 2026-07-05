@@ -130,6 +130,52 @@ describe("toThreadItems", () => {
   });
 });
 
+describe("toThreadItems — remix fast-edits", () => {
+  const uiPart = (id: string) => ({
+    type: "data-ui",
+    data: { id, kind: "generated", payload: { formatVersion: "flowlet-genui/v1", root: "r", nodes: [] } },
+  });
+  const envPart = (uiNodeId: string, envelope = "sealed-blob") => ({
+    type: "data-remix-envelope",
+    data: { envelope, uiNodeId },
+  });
+
+  it("pairs an envelope to its ui item by node id (envelope AFTER the ui part)", () => {
+    const items = toThreadItems([msg("a1", "assistant", [uiPart("view-1"), envPart("view-1")])]);
+    expect(items).toHaveLength(1); // the envelope part emits no item of its own
+    expect(items[0]).toMatchObject({ kind: "ui", envelope: "sealed-blob" });
+  });
+
+  it("pairs when the envelope streams BEFORE the ui part", () => {
+    const items = toThreadItems([msg("a1", "assistant", [envPart("view-1"), uiPart("view-1")])]);
+    expect(items[0]).toMatchObject({ kind: "ui", envelope: "sealed-blob" });
+  });
+
+  it("leaves unpaired ui items envelope-free; mismatched ids don't cross-pair", () => {
+    const items = toThreadItems([
+      msg("a1", "assistant", [uiPart("view-1"), envPart("view-OTHER"), uiPart("view-2")]),
+    ]);
+    const uis = items.filter((i) => i.kind === "ui");
+    expect(uis).toHaveLength(2);
+    for (const ui of uis) expect(ui.kind === "ui" && ui.envelope).toBeUndefined();
+  });
+
+  it("shows the pending skeleton for edit_view like render_view; suppresses its finished chip", () => {
+    const streaming = toThreadItems([
+      msg("a2", "assistant", [{ type: "tool-edit_view", state: "input-streaming", input: {} }]),
+    ]);
+    expect(streaming[0]?.kind).toBe("skeleton");
+    const done = toThreadItems([
+      msg("a3", "assistant", [{ type: "tool-edit_view", state: "output-available" }]),
+    ]);
+    expect(done).toHaveLength(0);
+    const failed = toThreadItems([
+      msg("a4", "assistant", [{ type: "tool-edit_view", state: "output-error", errorText: "mismatch" }]),
+    ]);
+    expect(failed[0]?.kind).toBe("error");
+  });
+});
+
 describe("groupThreadItems", () => {
   it("collapses a turn's tool calls into a single activity group in place", () => {
     const items: ThreadItem[] = [
