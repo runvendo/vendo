@@ -72,7 +72,7 @@ Pass `[...prewiredComponents, ...myHostComponents]` wherever the registry goes:
 
 ## Versioning & saved vendos
 
-Saved vendos (ENG-183) outlive your registry. When a view is saved, the host stamps `name → version` for every host component it uses (`stampHostComponents(node, registry)` from `@vendoai/shell`); the `version` comes from the descriptor's `{ version }` option (unset means `"1"`). On reopen, `useReopenVendo` diffs the stamp against the live registry and returns `drift: { missing, changed }` — renamed/removed components land in `missing`, version-bumped ones in `changed` — so the host can show a "components changed since this was saved" note (`.fl-drift-note`) instead of degrading silently. Bump `version` on breaking prop/behavior changes; pre-versioning records never warn retroactively.
+Saved vendos outlive your registry. When a view is saved, the host stamps `name → version` for every host component it uses (`stampHostComponents(node, registry)` from `@vendoai/shell`); the `version` comes from the descriptor's `{ version }` option (unset means `"1"`). On reopen, `useReopenVendo` diffs the stamp against the live registry and returns `drift: { missing, changed }` — renamed/removed components land in `missing`, version-bumped ones in `changed` — so the host can show a "components changed since this was saved" note (`.fl-drift-note`) instead of degrading silently. Bump `version` on breaking prop/behavior changes; pre-versioning records never warn retroactively.
 
 ## Error story
 
@@ -85,5 +85,5 @@ Saved vendos (ENG-183) outlive your registry. When a view is saved, the host sta
 ## Constraints
 
 - Props cross a JSON boundary: no functions, no React nodes, no Dates. Icons by name, dates as ISO strings.
-- The sandbox ships no host CSS: components styled by CSS-in-JS/inline styles/SVG attributes port as-is; Tailwind/external-stylesheet components need their CSS delivered into the bundle (extractor work, ENG-197) or an adapter that restyles.
+- The sandbox ships no host CSS: components styled by CSS-in-JS/inline styles/SVG attributes port as-is; Tailwind/external-stylesheet components need their CSS delivered into the bundle (extractor work) or an adapter that restyles.
 - Host CSS variables don't exist in the sandbox — map them to `--vendo-*` tokens in the adapter.

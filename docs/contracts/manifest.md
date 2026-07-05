@@ -1,6 +1,6 @@
 # Manifest contract
 
-The dev tool (`npx vendo init`, ENG-197) emits three artifacts into `.vendo/` in the host repo (architecture Decision 3). `vendo publish` assembles and uploads them as one immutable manifest to the cloud registry; sessions bind to a published manifest at init. Embedded mode reads `.vendo/` from disk; publish is a no-op.
+The dev tool (`npx vendo init`) emits three artifacts into `.vendo/` in the host repo (architecture Decision 3). `vendo publish` assembles and uploads them as one immutable manifest to the cloud registry; sessions bind to a published manifest at init. Embedded mode reads `.vendo/` from disk; publish is a no-op.
 
 Source of truth: zod schemas in `packages/vendo-core/src/manifest/`. Language-neutral JSON Schema artifacts are generated into `packages/vendo-core/schemas/` (`pnpm --filter @vendoai/core generate:schemas`; a test fails CI if they drift).
 
@@ -8,7 +8,7 @@ Validation semantics (zod and AJV agree, parity-tested):
 
 - All manifest objects are **strict**: unknown keys are rejected on both sides, never silently stripped.
 - `events` is optional in the `tools.json` file; zod parse normalizes it to `[]`. JSON Schema `default` is annotation-only, so raw-JSON consumers must treat a missing `events` as empty.
-- Nested JSON Schema documents (`inputSchema`, `payloadSchema`, `propsSchema`) are opaque to the contract; the registry validates them against the JSON Schema meta-schema at publish time (ENG-197/198).
+- Nested JSON Schema documents (`inputSchema`, `payloadSchema`, `propsSchema`) are opaque to the contract; the registry validates them against the JSON Schema meta-schema at publish time.
 
 ## theme.json
 
@@ -78,4 +78,4 @@ Dot-namespaced names (`invoice.paid`). Delivered at runtime as signed webhooks f
 
 ## Published manifest and binding
 
-`VendoManifest` = `{ schemaVersion, theme, tools, events, components }`. Registry rows are immutable — a re-publish is a new row, keyed by tenant + version + content hash (`ManifestRef`), with an active pointer per environment. Sessions carry a `ManifestRef`, never a mutable manifest. Enterprise approval/diff (ENG-194) is a review queue over these rows.
+`VendoManifest` = `{ schemaVersion, theme, tools, events, components }`. Registry rows are immutable — a re-publish is a new row, keyed by tenant + version + content hash (`ManifestRef`), with an active pointer per environment. Sessions carry a `ManifestRef`, never a mutable manifest. Enterprise approval/diff tooling is planned as a review queue over these rows.

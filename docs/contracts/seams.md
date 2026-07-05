@@ -14,9 +14,9 @@ Everything is scoped by `Principal` (`tenantId` + `subject` + vouch claims). Tim
 
 ## Store
 
-Aggregates one sub-store per concern: `threads` (persisted `VendoUIMessage` streams), `vendos` (saved UI tree + bound tool query + originating prompt), `automations` (records + run history), `audit` (append-only `AuditEvent` union: tool execution, approval, grant exchange, firing — written from day 1, ENG-194 is UI over it). The store owns identity and timestamps: `create`/`save` callers never supply `id`, `createdAt`, or `updatedAt`.
+Aggregates one sub-store per concern: `threads` (persisted `VendoUIMessage` streams), `vendos` (saved UI tree + bound tool query + originating prompt), `automations` (records + run history), `audit` (append-only `AuditEvent` union: tool execution, approval, grant exchange, firing — written from day 1; audit UI comes later). The store owns identity and timestamps: `create`/`save` callers never supply `id`, `createdAt`, or `updatedAt`.
 
-Deferred on purpose: the automation `spec` field is `unknown` until ENG-188 freezes the DSL; memory (ENG-189) has no member yet — adding one later is additive.
+Deferred on purpose: the automation `spec` field was `unknown` until the automations DSL froze; memory has no member yet — adding one later is additive.
 
 ## CredentialBroker
 
@@ -32,4 +32,4 @@ Time-based triggers only (`cron` / `at`); the runtime registers one firing handl
 
 ## Channels
 
-Message-shaped `deliver` for `in-app` and `sms`. Realtime voice is a session, not a message — it gets its own contract at ENG-185 time.
+Message-shaped `deliver` for `in-app` and `sms`. Realtime voice is a session, not a message — it gets its own contract.
