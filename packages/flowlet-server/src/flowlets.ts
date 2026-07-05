@@ -172,7 +172,8 @@ export async function handleFlowletsGet(req: Request, tail: string, deps: Flowle
   if (tail === "flowlets") {
     return Response.json(await deps.registry.list(scope));
   }
-  const id = tail.slice("flowlets/".length);
+  // routeTail preserves percent-encoding; ids may contain escaped chars.
+  const id = decodeURIComponent(tail.slice("flowlets/".length));
   const flowlet = await deps.registry.load(scope, id);
   if (!flowlet) return Response.json({ error: "not found" }, { status: 404 });
   return Response.json(flowlet);
@@ -186,7 +187,7 @@ export async function handleFlowletsPost(req: Request, tail: string, deps: Flowl
   const scope = threadScope(guard.principal);
 
   if (tail.endsWith("/delete")) {
-    const id = tail.slice("flowlets/".length, -"/delete".length);
+    const id = decodeURIComponent(tail.slice("flowlets/".length, -"/delete".length));
     await deps.registry.remove(scope, id);
     return Response.json({ ok: true });
   }

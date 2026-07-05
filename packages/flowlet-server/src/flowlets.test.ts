@@ -103,6 +103,35 @@ function endpointSuite(makeRegistry: () => FlowletRegistry | Promise<FlowletRegi
       options: options(null),
     });
     expect(anon.status).toBe(403);
+
+    // Percent-encoded ids: the client encodeURIComponent()s path ids, the
+    // server must decode — an id with a space round-trips load AND delete.
+    const spacedId = "f 2";
+    const encoded = encodeURIComponent(spacedId);
+    await handleFlowletsPost(
+      req("/api/flowlet/flowlets", { method: "POST", body: JSON.stringify(draft(spacedId, "spaced")) }),
+      "flowlets",
+      { registry, options: options("u1") },
+    );
+    const spacedLoad = await handleFlowletsGet(
+      req(`/api/flowlet/flowlets/${encoded}`),
+      `flowlets/${encoded}`,
+      { registry, options: options("u1") },
+    );
+    expect(spacedLoad.status).toBe(200);
+    expect(((await spacedLoad.json()) as Flowlet).id).toBe(spacedId);
+    const spacedDelete = await handleFlowletsPost(
+      req(`/api/flowlet/flowlets/${encoded}/delete`, { method: "POST" }),
+      `flowlets/${encoded}/delete`,
+      { registry, options: options("u1") },
+    );
+    expect(spacedDelete.status).toBe(200);
+    const spacedGone = await handleFlowletsGet(
+      req(`/api/flowlet/flowlets/${encoded}`),
+      `flowlets/${encoded}`,
+      { registry, options: options("u1") },
+    );
+    expect(spacedGone.status).toBe(404);
   };
 }
 
