@@ -335,7 +335,8 @@ export interface AutomationEngineStore extends CoreAutomationStore {
   >;
 }
 
-function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: string | null } {
+/** Exported so durable ports derive the trigger index identically. */
+export function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: string | null } {
   const t = spec.trigger;
   if (t.type === "schedule") return { kind: "schedule", key: null };
   if (t.type === "host_event") return { kind: "host_event", key: t.event };
@@ -354,7 +355,9 @@ function truncateValue(value: unknown, cap: number): unknown {
   return { truncatedPreview: text.slice(0, cap) };
 }
 
-function capStep(step: StepRecord): StepRecord {
+/** Exported so durable ports (e.g. DrizzleAutomationStore) reuse truncation
+ *  semantics verbatim instead of forking them. */
+export function capStep(step: StepRecord): StepRecord {
   if (step.output === undefined) return step;
   const bytes = jsonBytes(step.output);
   if (bytes <= MAX_STEP_OUTPUT_BYTES) return step;
@@ -366,7 +369,7 @@ function capStep(step: StepRecord): StepRecord {
   };
 }
 
-function capEnvelope(envelope: TriggerEnvelope): TriggerEnvelope {
+export function capEnvelope(envelope: TriggerEnvelope): TriggerEnvelope {
   if (jsonBytes(envelope.payload) <= MAX_TRIGGER_PAYLOAD_BYTES) return envelope;
   return { ...envelope, payload: truncateValue(envelope.payload, MAX_TRIGGER_PAYLOAD_BYTES) };
 }
@@ -377,8 +380,9 @@ function capParkedInput(input: unknown): { input: unknown; truncated?: boolean; 
   return { input: truncateValue(input, MAX_STEP_OUTPUT_BYTES), truncated: true, bytes };
 }
 
-/** Coarse status for an engine outcome (the frozen union stays exhaustive). */
-function coarseStatus(input: FinalizeRunInput): CoreAutomationRun["status"] {
+/** Coarse status for an engine outcome (the frozen union stays exhaustive).
+ *  Exported so durable ports reuse the exact mapping. */
+export function coarseStatus(input: FinalizeRunInput): CoreAutomationRun["status"] {
   if (input.outcome === "skipped") return "succeeded";
   if (input.outcome === "cancelled") return "failed";
   if (input.outcome === "waiting_approval") return "running";
