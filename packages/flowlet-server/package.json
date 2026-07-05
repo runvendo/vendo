@@ -13,6 +13,10 @@
       "types": "./dist/capabilities.d.ts",
       "default": "./dist/capabilities.js"
     },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "default": "./dist/model.js"
+    },
     "./manifest-tools": {
       "types": "./dist/manifest-tools.d.ts",
       "default": "./dist/manifest-tools.js"

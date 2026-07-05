@@ -12,6 +12,7 @@
     "@ai-sdk/anthropic": "3.0.12",
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
+    "@flowlet/server": "workspace:*",
     "ai": "6.0.28",
     "sucrase": "^3.35.0",
     "yaml": "^2.5.0",

@@ -10,6 +10,14 @@
  * and Google providers are optional peers, loaded via dynamic `import()` only
  * when actually resolved — a static import would crash installs that don't ship
  * them.
+ *
+ * Also published as the `@flowlet/server/model` subpath (see package.json) —
+ * a lean import for consumers like `@flowlet/cli` that only need model
+ * resolution and must NOT drag in the rest of `@flowlet/server`'s barrel
+ * (chat/action/world/... transitively pull `@flowlet/runtime`, whose deps
+ * like `jsonata`/`croner` aren't declared in every consumer's package.json —
+ * importing the bare package name lets a bundler's tree-shaking fail to prove
+ * those barrel modules are side-effect-free and inline them anyway).
  */
 import { anthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";

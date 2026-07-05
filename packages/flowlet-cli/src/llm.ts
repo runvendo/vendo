@@ -6,16 +6,39 @@
  * policy judge.
  */
 import { generateText, type LanguageModel } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+// Imported via the lean `/model` subpath, NOT the bare `@flowlet/server`
+// package — the barrel pulls in `@flowlet/runtime` (jsonata, croner, ...)
+// transitively, which a bundler can't tree-shake away when re-exports aren't
+// provably side-effect-free (see model.ts's header comment).
+import { resolveModel, resolveModelChoice, type ResolveModelDeps } from "@flowlet/server/model";
 import type { z } from "zod";
 
-/** Same default as demo-bank's DEMO_MODEL; override via FLOWLET_CLI_MODEL. */
-const DEFAULT_MODEL = "claude-sonnet-4-6";
-
-/** Returns null when no ANTHROPIC_API_KEY is present — callers skip LLM steps. */
-export function cliModel(): LanguageModel | null {
-  if (!process.env["ANTHROPIC_API_KEY"]) return null;
-  return anthropic(process.env["FLOWLET_CLI_MODEL"] ?? DEFAULT_MODEL);
+/**
+ * Resolves the CLI's LLM from any of the three provider keys (ANTHROPIC_API_KEY,
+ * OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY — same precedence as the runtime:
+ * Anthropic > OpenAI > Google), via `@flowlet/server`'s `resolveModelChoice`/
+ * `resolveModel`.
+ *
+ * `FLOWLET_CLI_MODEL` is the CLI-specific override, taking precedence over the
+ * shared `FLOWLET_MODEL` — both accept `provider/model` or a bare model id
+ * (applied to the detected provider). Implemented by aliasing
+ * FLOWLET_CLI_MODEL onto FLOWLET_MODEL before delegating, so it reuses
+ * `resolveModelChoice`'s parsing exactly.
+ *
+ * Returns null when nothing resolves (callers skip LLM steps and fall back to
+ * deterministic rescues) — never throws for "unconfigured". When a provider
+ * IS configured but its optional peer package (@ai-sdk/openai/@ai-sdk/google)
+ * isn't installed, `resolveModel` throws an actionable error; that's
+ * intentional here too, since the user explicitly asked for that provider.
+ */
+export async function cliModel(
+  env: Record<string, string | undefined> = process.env,
+  deps?: ResolveModelDeps,
+): Promise<LanguageModel | null> {
+  const cliOverride = env["FLOWLET_CLI_MODEL"]?.trim();
+  const resolvedEnv = cliOverride ? { ...env, FLOWLET_MODEL: cliOverride } : env;
+  if (resolveModelChoice(resolvedEnv).kind === "none") return null;
+  return resolveModel(resolvedEnv, deps);
 }
 
 function stripFences(text: string): string {

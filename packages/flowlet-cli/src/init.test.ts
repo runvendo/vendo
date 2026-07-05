@@ -42,6 +42,26 @@ describe("runInit e2e (mock model)", () => {
     await readFile(path.join(dir, ".flowlet/README.md"), "utf8");
   });
 
+  it("reports a clean error (not an unhandled rejection) when the model factory throws", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "init-"));
+    await writeFile(path.join(dir, "package.json"), "{}");
+    const prevModel = process.env["FLOWLET_CLI_MODEL"];
+    // An unknown provider prefix makes resolveModelChoice (via cliModel) throw
+    // synchronously — deterministic regardless of which optional peers happen
+    // to be installed in this workspace.
+    process.env["FLOWLET_CLI_MODEL"] = "grok/whatever";
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const code = await runInit({ targetDir: dir, skipLlm: false, force: false });
+      expect(code).toBe(1);
+      expect(errSpy.mock.calls.flat().join("\n")).toMatch(/unknown provider "grok"/);
+    } finally {
+      errSpy.mockRestore();
+      if (prevModel === undefined) delete process.env["FLOWLET_CLI_MODEL"];
+      else process.env["FLOWLET_CLI_MODEL"] = prevModel;
+    }
+  });
+
   it("--skip-llm still writes theme.json and reports skips", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "init-"));
     await writeFile(path.join(dir, "package.json"), "{}");
