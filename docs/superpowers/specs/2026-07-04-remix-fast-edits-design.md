@@ -41,9 +41,9 @@ Staleness: in dev, enrichment already re-reads the mapped file per request, so t
 Registered alongside `render_view` only when the scoped anchor has a non-truncated baseline; `base:"pin"` additionally requires a verified envelope (below). Input:
 
 - `base`: `"anchor"` (first remix — patch the normalized captured source) or `"pin"` (subsequent edit — patch the sealed authored state).
-- `ops`: **source hunks and `addComponent`, nothing else in the MVP** (structured node/data ops were reviewed out: the remix skeleton has exactly one node, so `setProp`/`addNode`/`setData` buy nothing; graph restructuring is `render_view`'s job):
+- `ops`: **source hunks only in the MVP** (structured node/data ops were reviewed out: the remix skeleton has exactly one node, so `setProp`/`addNode`/`setData` buy nothing; graph restructuring is `render_view`'s job):
   - `editSource { component, baseHash, hunks: [{ startLine, oldLines: string[], newLines: string[] }] }`
-  - `addComponent { name, sourceLines: string[] }` (line array — no multiline strings anywhere in the tool schema; existing 16-component/64 KB caps apply post-join)
+  - `addComponent` was dropped at build time: generated components load as isolated blob modules with no cross-imports, so a component without a node referencing it is unmountable — and `addNode` was already out. Sub-structure lives as inline function components in the same module (idiomatic React); multi-component views stay on `render_view`.
 
 **Hunk contract (exact):** `startLine` is 1-based against the LF-normalized base as shown numbered in the prompt. All hunks in one call are coordinates against the **original** base (not sequentially remapped); the server sorts and applies atomically in descending `startLine` and rejects overlapping ranges. `oldLines` must match the base lines at `startLine` exactly; `oldLines: []` means insert before `startLine` (`startLine = lineCount + 1` appends). Every string in `oldLines`/`newLines`/`sourceLines` must be a single line — `\r` or `\n` anywhere in them is a schema-level rejection. Caps: ≤ 32 hunks per op, ≤ 16 ops per call, ≤ 2000 chars per line. On mismatch the error names the component, the expected range, and echoes the **actual** base lines at that range (inside the untrusted-data framing) so one cheap retry can fix it.
 
