@@ -533,6 +533,40 @@ describe("handleConsent — plain 'yes' mints a session-scoped exact grant (Grep
     expect(grants[0]?.duration).toBe("standing");
   });
 
+  it("REVIEW FOLLOW-UP: a batch 'subset' decision mints the SAME implicit session-scoped exact grant a plain 'yes' does — a byte-identical repeat of a subset-approved call is suppressed", async () => {
+    const d = deps(threadWith({}));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "subset", subset: ["call-1", "call-2"] },
+    });
+    expect(result.ok).toBe(true);
+    const [grant] = await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL");
+    expect(grant).toBeDefined();
+    expect(grant?.scope.kind).toBe("exact");
+    expect(grant?.duration).toBe("session");
+    expect(grant?.contextKey).toBe("th-1");
+
+    const descriptor = d.resolveDescriptor("GMAIL_SEND_EMAIL")!;
+    const policy = grantPolicy({ evaluate: () => "approve" }, d.grants, {
+      principalScope: () => scope,
+      contextKey: (ctx) => ctx.threadId,
+    });
+    const input = { to: "acme@example.com" }; // byte-identical to threadWith's default part.input
+    expect(
+      await policy.evaluate({ toolName: "GMAIL_SEND_EMAIL", input, descriptor, principal: { userId: "u" }, threadId: "th-1" }),
+    ).toBe("allow");
+  });
+
+  it("REVIEW FOLLOW-UP: a critical tool's subset decision mints NO grant, same as a plain yes", async () => {
+    const d = deps(threadWith({ type: "tool-transfer_money", input: {} }));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "transfer_money",
+      response: { id: "call-1", decision: "subset", subset: ["call-1"] },
+    });
+    expect(result.ok).toBe(true);
+    expect(await d.grants.findForTool(scope, "transfer_money")).toHaveLength(0);
+  });
+
   it("an unverified tool's plain yes still mints (Yousef ruling: exact-scope session grants are fine for unverified tools)", async () => {
     const messages = [
       { id: "m1", role: "assistant", parts: [

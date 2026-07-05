@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { tool } from "ai";
 import { z } from "zod";
 import {
+  buildDescriptor,
   createInMemoryCompiledRuleStore,
   createInMemoryGrantStore,
+  hashDescriptor,
   InMemoryAuditLog,
   type ApprovalPolicy,
 } from "@flowlet/runtime";
@@ -187,6 +189,74 @@ describe("handleAction", () => {
         handleAction(actionReq({ action: "boom" }), deps({ policy, getTools: () => ({ boom: throwingTool }) })),
       ).rejects.toThrow("execute failed");
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe("REVIEW FOLLOW-UP: resolveDescriptor source parity (chat/steering grants vs /action dispatch)", () => {
+    const writeTool = tool({
+      description: "write things",
+      inputSchema: z.object({ amount: z.number() }).passthrough(),
+      execute: async (input: unknown) => ({ wrote: input }),
+    });
+    const scope = { tenantId: "flowlet-embedded", subject: "flowlet-default-user" };
+
+    it("a standing grant minted against the chat-side ('engine') descriptor suppresses the SAME host tool dispatched via /action when resolveDescriptor is wired", async () => {
+      const grants = createInMemoryGrantStore();
+      // Mirrors handler.ts's resolveDescriptor: a host server tool (not a
+      // client tool, not control-plane) resolves to source "engine" — the
+      // SAME mapping the chat/consent path uses to mint this grant.
+      const chatSideDescriptor = buildDescriptor("create_thing", writeTool, "engine");
+      await grants.create(scope, {
+        tool: "create_thing",
+        descriptorHash: hashDescriptor(chatSideDescriptor),
+        scope: { kind: "tool" },
+        duration: "standing",
+        source: { kind: "chat" },
+      });
+      const policy = composeProductionPolicy(defaultFlowletPolicy, {
+        grants,
+        rules: createInMemoryCompiledRuleStore(),
+        audit: new InMemoryAuditLog(),
+      });
+      const res = await handleAction(
+        actionReq({ action: "create_thing", payload: { amount: 5 } }),
+        deps({
+          policy,
+          getTools: () => ({ create_thing: writeTool }),
+          resolveDescriptor: (name) => (name === "create_thing" ? chatSideDescriptor : undefined),
+        }),
+      );
+      // Suppressed by the grant -> executes immediately, no approval gate.
+      expect(res.status).toBe(200);
+      expect((await res.json()) as { result?: unknown }).toMatchObject({
+        decision: "allow",
+        result: { wrote: { amount: 5 } },
+      });
+    });
+
+    it("REGRESSION: the SAME grant does NOT suppress when /action falls back to the OLD 'caller'-sourced descriptor (no resolveDescriptor wired) — proves the source mismatch this fix closes", async () => {
+      const grants = createInMemoryGrantStore();
+      const chatSideDescriptor = buildDescriptor("create_thing", writeTool, "engine");
+      await grants.create(scope, {
+        tool: "create_thing",
+        descriptorHash: hashDescriptor(chatSideDescriptor),
+        scope: { kind: "tool" },
+        duration: "standing",
+        source: { kind: "chat" },
+      });
+      const policy = composeProductionPolicy(defaultFlowletPolicy, {
+        grants,
+        rules: createInMemoryCompiledRuleStore(),
+        audit: new InMemoryAuditLog(),
+      });
+      // No resolveDescriptor passed -> action.ts falls back to
+      // buildDescriptor(action, tool, "caller"), which hashes differently.
+      const res = await handleAction(
+        actionReq({ action: "create_thing", payload: { amount: 5 } }),
+        deps({ policy, getTools: () => ({ create_thing: writeTool }) }),
+      );
+      const body = (await res.json()) as { needsApproval?: boolean };
+      expect(body.needsApproval).toBe(true); // still gated — the grant never matched
     });
   });
 });

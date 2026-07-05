@@ -33,10 +33,16 @@ const opts: ToolExecutionOptions = { toolCallId: "call-1", messages: [] };
  * The wrapped tool's `needsApproval` / `execute` are typed as
  * `boolean | fn | undefined` on the SDK `Tool` union, so call them through a
  * narrow cast in tests.
+ *
+ * Default toolCallId matches `opts.toolCallId` below ("call-1") — in the real
+ * SDK, `needsApproval` and `execute` for the SAME call always share one
+ * toolCallId (that correlation is what wrap-tool.ts's fail-closed pause
+ * tracking relies on); tests that exercise that correlation pass an explicit
+ * id instead.
  */
-function callNeedsApproval(t: Tool, input: unknown): Promise<boolean> {
+function callNeedsApproval(t: Tool, input: unknown, toolCallId = "call-1"): Promise<boolean> {
   const fn = t.needsApproval as (input: unknown, options: unknown) => boolean | Promise<boolean>;
-  return Promise.resolve(fn(input, { toolCallId: "na", messages: [] }));
+  return Promise.resolve(fn(input, { toolCallId, messages: [] }));
 }
 
 function callExecute(t: Tool, input: unknown, options: ToolExecutionOptions): Promise<unknown> {
@@ -249,6 +255,9 @@ describe("wrapTool", () => {
       principal,
     });
 
+    // A real "approve" execute always follows a needsApproval pause the
+    // human resolved (same toolCallId as `opts`, ENG-193 review item 3).
+    await callNeedsApproval(w, { v: 9 });
     expect(await callExecute(w, { v: 9 }, opts)).toBe("ok");
     expect(onExecuted).toHaveBeenCalledOnce();
     expect(onExecuted).toHaveBeenCalledWith(
@@ -381,6 +390,110 @@ describe("wrapTool", () => {
     expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
     expect(spy).not.toHaveBeenCalled();
     expect(call).toBe(2); // policy evaluated fresh on BOTH callbacks
+  });
+
+  describe("REVIEW FOLLOW-UP: execute fails closed on an allow→approve escalation (no human ever paused for this call)", () => {
+    it("a policy that escalates allow→approve between needsApproval and execute is refused at execute time with 'approval_required' — the real tool is NEVER called", async () => {
+      // Unlike the allow→deny flip above, "approve" is not a hard refusal —
+      // it means a human needs to look. But the SDK only calls execute AFTER
+      // a human approved an "approve" needsApproval outcome; here
+      // needsApproval saw "allow" (no pause), so execute's fresh "approve" is
+      // an ESCALATION no human has ever seen. Fail closed rather than run it.
+      let call = 0;
+      const policy: ApprovalPolicy = {
+        evaluate: () => (++call === 1 ? "allow" : "approve"),
+      };
+      const spy = vi.fn(async () => "should-not-run");
+      const w = wrapTool({
+        name: "t",
+        tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+        descriptor: descriptorFor(true),
+        policy,
+        principal,
+      });
+
+      // Preflight (call #1): allow → no pause, no approval requested.
+      expect(await callNeedsApproval(w, { v: 1 })).toBe(false);
+      // Execute (call #2, SAME toolCallId "call-1" via `opts`): policy now
+      // says "approve" — but no pause was ever recorded for this call.
+      const res = await callExecute(w, { v: 1 }, opts);
+      expect(res).toMatchObject({ code: "approval_required", tool: "t" });
+      expect(spy).not.toHaveBeenCalled();
+      expect(call).toBe(2); // policy evaluated fresh on BOTH callbacks
+    });
+
+    it("the normal approve → human-approves → execute flow still executes (a real pause WAS recorded for this toolCallId)", async () => {
+      const spy = vi.fn(async () => "ran");
+      const w = wrapTool({
+        name: "t",
+        tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+        descriptor: descriptorFor(true),
+        policy: fixedPolicy("approve"),
+        principal,
+      });
+
+      // needsApproval and execute share the SAME toolCallId ("call-1", via
+      // the helper defaults / `opts`) — exactly like the real SDK turn pair.
+      expect(await callNeedsApproval(w, { v: 2 })).toBe(true);
+      expect(await callExecute(w, { v: 2 }, opts)).toBe("ran");
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    it("a DIFFERENT toolCallId's escalation doesn't borrow another call's recorded pause", async () => {
+      let call = 0;
+      const policy: ApprovalPolicy = {
+        evaluate: () => (++call === 1 ? "allow" : "approve"),
+      };
+      const spy = vi.fn(async () => "should-not-run");
+      const w = wrapTool({
+        name: "t",
+        tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+        descriptor: descriptorFor(true),
+        policy,
+        principal,
+      });
+
+      // A DIFFERENT toolCallId ("other-call") genuinely paused earlier.
+      expect(await callNeedsApproval(w, { v: 9 }, "other-call")).toBe(false); // decision "allow" here (call #1) — no pause recorded for it either
+      // This toolCallId ("call-1") never had its own needsApproval pause.
+      const res = await callExecute(w, { v: 1 }, opts);
+      expect(res).toMatchObject({ code: "approval_required", tool: "t" });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("deny still wins over the escalation check (deny is checked first, regardless of pause state)", async () => {
+      const spy = vi.fn(async () => "should-not-run");
+      const w = wrapTool({
+        name: "t",
+        tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+        descriptor: descriptorFor(true),
+        policy: fixedPolicy("deny"),
+        principal,
+      });
+      const res = await callExecute(w, { v: 1 }, opts);
+      expect(res).toMatchObject({ code: "policy_denied", tool: "t" });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("onExecuted is NOT called when execute refuses on the approval_required path", async () => {
+      const onExecuted = vi.fn();
+      let call = 0;
+      const policy: ApprovalPolicy = {
+        evaluate: () => (++call === 1 ? "allow" : "approve"),
+        onExecuted,
+      };
+      const spy = vi.fn(async () => "should-not-run");
+      const w = wrapTool({
+        name: "t",
+        tool: tool({ inputSchema: z.object({ v: z.number() }), execute: spy }),
+        descriptor: descriptorFor(true),
+        policy,
+        principal,
+      });
+      await callNeedsApproval(w, { v: 1 });
+      await callExecute(w, { v: 1 }, opts);
+      expect(onExecuted).not.toHaveBeenCalled();
+    });
   });
 
   it("throws FlowletError('policy', ...) when wrapping a no-execute tool", () => {
@@ -610,7 +723,7 @@ describe("wrapTool", () => {
     const w = wrapTool({ name: "send_email", tool: { execute: async () => "ok" } as unknown as Tool, descriptor, policy: reasonPolicy, principal, writer });
     await callNeedsApproval(w, {});
     expect(writes).toEqual([
-      { type: "data-consent", id: "consent-na", data: { toolCallId: "na", tier: "act", unverified: false, reason: "an email I read asked for this" } },
+      { type: "data-consent", id: "consent-call-1", data: { toolCallId: "call-1", tier: "act", unverified: false, reason: "an email I read asked for this" } },
     ]);
   });
 });

@@ -14,16 +14,16 @@ export type { FlowletAgentConfig } from "./engine";
 export type { FlowletPrincipal } from "./principal";
 
 // Errors
-export { FlowletError, policyDenied } from "./errors";
-export type { FlowletErrorCode, PolicyDeniedPayload } from "./errors";
+export { FlowletError, policyDenied, approvalRequired } from "./errors";
+export type { FlowletErrorCode, PolicyDeniedPayload, ApprovalRequiredPayload } from "./errors";
 
 // Policy barrel (types, compose, annotation, natural-language, principal-rules,
 // tier, grant-match, grant-policy)
 export * from "./policy";
 
 // Tool wrapping
-export { wrapTool } from "./wrap-tool";
-export type { WrapToolArgs } from "./wrap-tool";
+export { wrapTool, createPausedCallTracker } from "./wrap-tool";
+export type { WrapToolArgs, PausedCallTracker } from "./wrap-tool";
 export { wrapClientTool } from "./wrap-client-tool";
 export type { WrapClientToolArgs } from "./wrap-client-tool";
 

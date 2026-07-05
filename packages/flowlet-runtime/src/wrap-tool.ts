@@ -19,10 +19,54 @@ import type { FlowletUIMessage } from "@flowlet/core";
 import type { ApprovalDecision, ApprovalPolicy, PolicyContext } from "./policy";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletPrincipal } from "./principal";
-import { FlowletError, policyDenied } from "./errors";
+import { FlowletError, policyDenied, approvalRequired } from "./errors";
 import { dangerTier, isUnverified } from "./policy/tier";
 import { getEscalationReason } from "./policy/escalation";
 import type { RunPolicyContext } from "./policy/run-context";
+
+/** Bounded so a long-lived process can't grow this without limit — same FIFO
+ *  shape `judgePolicy`'s memo, `breakers.ts`'s `countedEscalationIds`, and
+ *  `consent.ts`'s `ConsentLedger` all already use. */
+const MAX_PAUSED_CALLS = 512;
+
+/**
+ * Tracks, per toolCallId, whether `needsApproval` actually paused for a human
+ * (returned `true`) — the fail-closed signal `execute` checks before running
+ * an "approve" decision (review follow-up, item 3).
+ *
+ * MUST be constructed ONCE and reused across every `wrapTool` call for the
+ * same running agent, NOT recreated per call: `engine.ts` rebuilds the whole
+ * toolset (and therefore a FRESH `wrapTool` closure) on every `run()` turn —
+ * `needsApproval` and the LATER `execute` for the same human-in-the-loop call
+ * happen on two SEPARATE turns, so a tracker scoped to one `wrapTool` call
+ * would already be gone by the time `execute` needs to read it. Callers that
+ * span turns (the engine) inject one instance via `WrapToolArgs.pausedCalls`,
+ * mirroring how `engine.ts` already keeps `auditedClientCalls` alive across
+ * turns instead of resetting it per run. A caller that never sets up
+ * multi-turn plumbing (isolated unit tests, `wrapTool` called directly) gets
+ * a private, per-call default — correct for those since they exercise
+ * `needsApproval`/`execute` on the SAME wrapped-tool instance anyway.
+ */
+export interface PausedCallTracker {
+  record(toolCallId: string): void;
+  has(toolCallId: string): boolean;
+}
+
+/** A fresh in-memory {@link PausedCallTracker} — construct ONE per agent (or
+ *  per handler mount) and reuse it across every run/turn. */
+export function createPausedCallTracker(): PausedCallTracker {
+  const seen = new Map<string, true>();
+  return {
+    record(toolCallId) {
+      seen.set(toolCallId, true);
+      if (seen.size > MAX_PAUSED_CALLS) {
+        const oldest = seen.keys().next().value;
+        if (oldest !== undefined) seen.delete(oldest);
+      }
+    },
+    has: (toolCallId) => seen.has(toolCallId),
+  };
+}
 
 /** Arguments to {@link wrapTool}. */
 export interface WrapToolArgs {
@@ -58,6 +102,14 @@ export interface WrapToolArgs {
    * every layer treats as "no signal available", never a crash.
    */
   runContext?: RunPolicyContext;
+  /**
+   * See {@link PausedCallTracker} — injected so it survives the multi-turn
+   * needsApproval/execute gap. Absent -> a private per-call tracker (safe
+   * only when both callbacks run against THIS SAME wrapped-tool instance,
+   * e.g. isolated unit tests); production (`toolset.ts`/`engine.ts`) always
+   * threads one instance through every turn.
+   */
+  pausedCalls?: PausedCallTracker;
 }
 
 /**
@@ -83,6 +135,17 @@ export function wrapTool(args: WrapToolArgs): Tool {
     );
   }
   const boundExecute = originalExecute.bind(tool);
+
+  // Review follow-up (item 3): `needsApproval` and `execute` run in SEPARATE
+  // SDK turns; a stateful policy layer (breaker/rule/judge) can escalate its
+  // decision from "allow" at needsApproval time to "approve" by the time
+  // execute runs. The SDK only calls execute AFTER a human approves an
+  // "approve" needsApproval outcome — so a fresh "approve" at execute time for
+  // a toolCallId that never actually paused means this is an escalation NO
+  // human has seen, not a normal approved resume. See `PausedCallTracker`'s
+  // docstring for why this must be INJECTED, not created fresh per call, to
+  // work across the real engine's per-turn toolset rebuild.
+  const pausedCalls = args.pausedCalls ?? createPausedCallTracker();
 
   function buildCtx(input: unknown, toolCallId?: string): PolicyContext {
     return {
@@ -139,6 +202,7 @@ export function wrapTool(args: WrapToolArgs): Tool {
       const ctx = buildCtx(input, options.toolCallId);
       const decision = await policy.evaluate(ctx);
       writeConsentPart(options.toolCallId, getEscalationReason(ctx));
+      if (decision === "approve") pausedCalls.record(options.toolCallId);
       return decision === "approve";
     },
     // Authoritative, fail-closed gate. ALWAYS re-evaluates the composed policy
@@ -156,6 +220,17 @@ export function wrapTool(args: WrapToolArgs): Tool {
         // called: the real tool never ran.
         return policyDenied(name, "denied by approval policy");
       }
+      if (decision === "approve" && !pausedCalls.has(options.toolCallId)) {
+        // Fail closed: the fresh decision needs a human, but no pause was
+        // ever recorded for THIS toolCallId (an escalation between the two
+        // callbacks, or an execute reached with no prior needsApproval at
+        // all). Refuse rather than silently run an unreviewed call — the
+        // model should surface this and ask the user again.
+        return approvalRequired(
+          name,
+          `Tool "${name}" now requires the user's approval before it can run — ask them again.`,
+        );
+      }
       const result = await boundExecute(input, options);
       // A result genuinely entered context — record it for taint tracking
       // BEFORE onExecuted, so any audit/breaker layer reacting to onExecuted
@@ -169,12 +244,13 @@ export function wrapTool(args: WrapToolArgs): Tool {
       await policy.onExecuted?.(ctx, decision);
       return result;
     },
-    // Guard the model-output transform against the deny payload. When `execute`
-    // returns a `policy_denied` object, convert it to plain text rather than
-    // letting a caller's `toModelOutput` (which expects the tool's normal output
-    // shape) mis-handle it. Normal outputs delegate to the original transform.
-    // When no original existed, leave `toModelOutput` unset so the SDK applies
-    // its default (the deny payload is a plain serialisable object — safe).
+    // Guard the model-output transform against the deny/approval-required
+    // payloads. When `execute` returns one of these, convert it to plain text
+    // rather than letting a caller's `toModelOutput` (which expects the
+    // tool's normal output shape) mis-handle it. Normal outputs delegate to
+    // the original transform. When no original existed, leave `toModelOutput`
+    // unset so the SDK applies its default (both payloads are plain
+    // serialisable objects — safe).
     ...(originalToModelOutput
       ? {
           toModelOutput: (options: {
@@ -183,14 +259,20 @@ export function wrapTool(args: WrapToolArgs): Tool {
             output: unknown;
           }) => {
             const output = options.output as { code?: unknown } | null | undefined;
-            if (
-              output != null &&
-              typeof output === "object" &&
-              output.code === "policy_denied"
-            ) {
+            if (output != null && typeof output === "object" && output.code === "policy_denied") {
               return {
                 type: "text" as const,
                 value: `Tool "${name}" was denied by the approval policy.`,
+              };
+            }
+            if (
+              output != null &&
+              typeof output === "object" &&
+              output.code === "approval_required"
+            ) {
+              return {
+                type: "text" as const,
+                value: `Tool "${name}" now requires the user's approval before it can run — ask them again.`,
               };
             }
             return originalToModelOutput(

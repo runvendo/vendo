@@ -388,6 +388,12 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           policy: s.policy,
           approvals: s.approvals,
           options,
+          // Review follow-up: SAME source-mapping resolver the chat/consent
+          // path uses, so a grant minted from chat/steering (hashed with its
+          // "engine"/"control" source) matches the descriptor this route
+          // builds for the identical host/control tool — see action.ts's
+          // ActionDeps docstring.
+          resolveDescriptor: s.resolveDescriptor,
         });
       case "integrations":
         return handleIntegrationsPost(req, {

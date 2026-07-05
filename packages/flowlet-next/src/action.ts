@@ -22,7 +22,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { buildDescriptor } from "@flowlet/runtime";
-import type { ApprovalPolicy, FlowletPrincipal } from "@flowlet/runtime";
+import type { ApprovalPolicy, FlowletPrincipal, ToolDescriptor } from "@flowlet/runtime";
 import type { ToolSet } from "ai";
 import { resolvePrincipal } from "./guard";
 import type { FlowletHandlerOptions } from "./options";
@@ -79,6 +79,21 @@ export interface ActionDeps {
   policy: ApprovalPolicy;
   approvals: ApprovalStore;
   options: FlowletHandlerOptions;
+  /**
+   * Review follow-up: resolves the descriptor via the SAME source mapping the
+   * chat/consent path uses (`handler.ts`'s `resolveDescriptor` — host server
+   * tools -> "engine", control tools -> "control", client tools -> "caller").
+   * `hashDescriptor` (grant-match.ts) includes `source`, so a grant minted
+   * against the chat-side descriptor (e.g. from a steering utterance or an
+   * approved chat call) hashes differently than the "caller"-sourced
+   * descriptor this route used to build unconditionally — the SAME host
+   * server tool dispatched here never matched a standing grant minted from
+   * chat. Optional only so isolated unit tests that construct `ActionDeps`
+   * directly (not through the full handler assembly) don't need to wire it;
+   * falls back to `buildDescriptor(action, tool, "caller")` when absent or
+   * when the resolver doesn't know the name.
+   */
+  resolveDescriptor?: (toolName: string) => ToolDescriptor | undefined;
 }
 
 type ExecutableTool = { execute?: (input: unknown, opts: unknown) => Promise<unknown> };
@@ -103,10 +118,12 @@ export async function handleAction(req: Request, deps: ActionDeps): Promise<Resp
   // escalation dedupe, audit's tool_execution event) sees a genuinely unique
   // id per action rather than a shared literal every dispatch collided on.
   const toolCallId = randomUUID();
+  const descriptor =
+    deps.resolveDescriptor?.(body.action) ?? buildDescriptor(body.action, tool, "caller");
   const ctx = {
     toolName: body.action,
     input: payload,
-    descriptor: buildDescriptor(body.action, tool, "caller"),
+    descriptor,
     principal,
     toolCallId,
   };

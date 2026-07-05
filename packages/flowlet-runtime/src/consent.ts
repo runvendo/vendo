@@ -268,7 +268,7 @@ export async function handleConsent(
       const message = err instanceof Error ? err.message : String(err);
       return audited({ ok: false, status: 403, error: message });
     }
-  } else if (req.response.decision === "yes") {
+  } else if (req.response.decision === "yes" || req.response.decision === "subset") {
     // Greptile P1 (spec §4.3: "'Allow once' = a session-scoped exact grant"):
     // a plain "yes" with NO client-authored grant draft used to mint
     // nothing, so a byte-identical repeat call in the SAME conversation
@@ -278,6 +278,16 @@ export async function handleConsent(
     // (`part.input`), so a repeat of the identical call is suppressed by
     // `grantPolicy` for the rest of this thread while anything else still
     // asks.
+    //
+    // Review follow-up: "subset" (a batch approval's per-call POST for an
+    // ACCEPTED item, consentResponseSchema's third decision value) is
+    // affirmative here too — it is not a distinct outcome, just how a batch
+    // card's accepted items are individually confirmed (each POST still
+    // resolves exactly one toolCallId, ENG-193 §4.5). Before this fix only
+    // "yes" minted the implicit grant, so a byte-identical repeat of a
+    // SUBSET-approved call re-asked even though the user had just approved
+    // it. Same path, same critical-tier skip below — a batch never mints for
+    // a critical tool either.
     //
     // Critical is skipped CLEANLY here — never by relying on
     // `grantManager.create`'s own throw, which is a refusal for the EXPLICIT-

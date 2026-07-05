@@ -34,6 +34,7 @@ import type {
 } from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
+import { createPausedCallTracker } from "./wrap-tool";
 import { createRenderViewTool } from "./render-view-tool";
 import { createRequestConnectTool } from "./request-connect-tool";
 import {
@@ -290,6 +291,14 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
     return false;
   }
 
+  // Review follow-up (wrap-tool.ts item 3): PER ENGINE INSTANCE, same
+  // survives-across-turns reasoning as `auditedClientCalls` above —
+  // `needsApproval` (this turn) and `execute` (a LATER turn, after the
+  // toolset below is rebuilt from scratch) must share ONE tracker or
+  // `wrapTool`'s fail-closed escalation check would see every approved resume
+  // as an unrecorded pause and wrongly refuse to run it.
+  const pausedCalls = createPausedCallTracker();
+
   /**
    * Normalize client-supplied history so a stale turn can't wedge the thread.
    * A tool part stuck at `approval-requested` with no response (the user typed
@@ -495,6 +504,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           threadId,
           writer,
           runContext: runPolicyContext,
+          pausedCalls,
           // Surface dropped tools rather than discarding them silently.
           onCollision: (name, kept, dropped) =>
             console.warn(

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FlowletError, policyDenied } from "./errors";
+import { FlowletError, policyDenied, approvalRequired } from "./errors";
 
 describe("FlowletError", () => {
   it("carries the given code and message", () => {
@@ -31,6 +31,24 @@ describe("policyDenied", () => {
 
   it("is a plain object, not an Error", () => {
     const result = policyDenied("sendMoney", "no transfers over $500");
+    expect(result).not.toBeInstanceOf(Error);
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+  });
+});
+
+describe("approvalRequired", () => {
+  it("returns the exact structured payload, with a code distinct from policy_denied", () => {
+    const result = approvalRequired("sendMoney", "ask the user again");
+    expect(result).toEqual({
+      code: "approval_required",
+      tool: "sendMoney",
+      message: "ask the user again",
+    });
+    expect(result.code).not.toBe("policy_denied");
+  });
+
+  it("is a plain object, not an Error", () => {
+    const result = approvalRequired("sendMoney", "ask the user again");
     expect(result).not.toBeInstanceOf(Error);
     expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
   });

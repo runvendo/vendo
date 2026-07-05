@@ -35,3 +35,22 @@ export interface PolicyDeniedPayload {
 export function policyDenied(tool: string, rule: string): PolicyDeniedPayload {
   return { code: "policy_denied", tool, rule };
 }
+
+/**
+ * Review follow-up (wrap-tool.ts item 3): a DISTINCT code from `policy_denied`
+ * for the fail-closed case where a stateful policy layer (breaker/rule/judge)
+ * escalates its decision from "allow" to "approve" between `needsApproval` and
+ * `execute` — no human ever saw the escalated risk, so `execute` refuses
+ * rather than silently running. Not a denial (the action may well be fine
+ * once a human looks at it) — a distinct code lets the model tell the two
+ * apart and re-request consent instead of treating this as a hard no.
+ */
+export interface ApprovalRequiredPayload {
+  code: "approval_required";
+  tool: string;
+  message: string;
+}
+
+export function approvalRequired(tool: string, message: string): ApprovalRequiredPayload {
+  return { code: "approval_required", tool, message };
+}
