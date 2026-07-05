@@ -21,13 +21,21 @@
  */
 import { anthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
-import { DEFAULT_MODEL_ID, resolveModelChoice, type ModelChoice, type ModelProvider } from "./model-choice";
+import {
+  DEFAULT_MODEL_ID,
+  hasProviderKey,
+  resolveModelChoice,
+  type ModelChoice,
+  type ModelProvider,
+} from "./model-choice";
 
 // Re-exported so the package's public API (`@flowlet/server`'s index.ts)
 // stays unchanged — the pure resolution logic itself now lives in
 // `./model-choice`, which `capabilities.ts` also imports without pulling in
-// `@ai-sdk/anthropic`.
-export { resolveModelChoice };
+// `@ai-sdk/anthropic`. `hasProviderKey` is re-exported for consumers (like
+// `@flowlet/cli`) that must gate on credential presence: a FLOWLET_MODEL id
+// alone is not a credential.
+export { hasProviderKey, resolveModelChoice };
 export type { ModelChoice, ModelProvider };
 
 /** The optional-peer package that supplies each non-Anthropic provider. */

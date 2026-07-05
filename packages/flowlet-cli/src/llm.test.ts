@@ -114,6 +114,32 @@ describe("cliModel", () => {
     expect(await cliModel({})).toBeNull();
   });
 
+  // A model id alone is not a credential — same principle as the runtime's
+  // chat capability gate. Without a provider key the CLI must take the
+  // deterministic-rescue path (null), never construct an unkeyed model that
+  // fails mid-init with a raw SDK "API key is missing" error.
+  it("returns null for a bare FLOWLET_MODEL with zero provider keys", async () => {
+    expect(await cliModel({ FLOWLET_MODEL: "claude-sonnet-5" })).toBeNull();
+  });
+
+  it("returns null for a bare FLOWLET_CLI_MODEL with zero provider keys", async () => {
+    expect(await cliModel({ FLOWLET_CLI_MODEL: "claude-sonnet-5" })).toBeNull();
+  });
+
+  it("returns null for FLOWLET_MODEL=provider/model with zero provider keys (named provider, no credential)", async () => {
+    // Even the importer must not be touched — no key means skip LLM steps,
+    // not a missing-peer throw.
+    const importer = vi.fn(async () => {
+      throw new Error("Cannot find package '@ai-sdk/openai'");
+    });
+    expect(await cliModel({ FLOWLET_MODEL: "openai/gpt-5.5" }, { import: importer })).toBeNull();
+    expect(importer).not.toHaveBeenCalled();
+  });
+
+  it("returns null for FLOWLET_CLI_MODEL=provider/model with zero provider keys", async () => {
+    expect(await cliModel({ FLOWLET_CLI_MODEL: "google/gemini-3.5-pro" })).toBeNull();
+  });
+
   it("throws the actionable peer error when a provider is explicitly configured but its package is missing", async () => {
     const importer = vi.fn(async () => {
       throw new Error("Cannot find package '@ai-sdk/openai'");

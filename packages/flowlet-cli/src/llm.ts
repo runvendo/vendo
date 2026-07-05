@@ -10,14 +10,13 @@ import { generateText, type LanguageModel } from "ai";
 // package — the barrel pulls in `@flowlet/runtime` (jsonata, croner, ...)
 // transitively, which a bundler can't tree-shake away when re-exports aren't
 // provably side-effect-free (see model.ts's header comment).
-import { resolveModel, resolveModelChoice, type ResolveModelDeps } from "@flowlet/server/model";
+import { hasProviderKey, resolveModel, type ResolveModelDeps } from "@flowlet/server/model";
 import type { z } from "zod";
 
 /**
  * Resolves the CLI's LLM from any of the three provider keys (ANTHROPIC_API_KEY,
  * OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY — same precedence as the runtime:
- * Anthropic > OpenAI > Google), via `@flowlet/server`'s `resolveModelChoice`/
- * `resolveModel`.
+ * Anthropic > OpenAI > Google), via `@flowlet/server`'s `resolveModel`.
  *
  * `FLOWLET_CLI_MODEL` is the CLI-specific override, taking precedence over the
  * shared `FLOWLET_MODEL` — both accept `provider/model` or a bare model id
@@ -25,11 +24,15 @@ import type { z } from "zod";
  * FLOWLET_CLI_MODEL onto FLOWLET_MODEL before delegating, so it reuses
  * `resolveModelChoice`'s parsing exactly.
  *
- * Returns null when nothing resolves (callers skip LLM steps and fall back to
- * deterministic rescues) — never throws for "unconfigured". When a provider
- * IS configured but its optional peer package (@ai-sdk/openai/@ai-sdk/google)
- * isn't installed, `resolveModel` throws an actionable error; that's
- * intentional here too, since the user explicitly asked for that provider.
+ * Gated on key presence: a FLOWLET_MODEL/FLOWLET_CLI_MODEL id alone is NOT a
+ * credential (same principle as the runtime's chat capability), so with zero
+ * provider keys this returns null — callers skip LLM steps and fall back to
+ * deterministic rescues — instead of constructing an unkeyed model that would
+ * fail mid-init with a raw SDK "API key is missing" error. Only when a key IS
+ * present but the resolved provider's optional peer package
+ * (@ai-sdk/openai/@ai-sdk/google) isn't installed does `resolveModel` throw
+ * its actionable error — intentional, since the user explicitly asked for
+ * that provider.
  */
 export async function cliModel(
   env: Record<string, string | undefined> = process.env,
@@ -37,7 +40,7 @@ export async function cliModel(
 ): Promise<LanguageModel | null> {
   const cliOverride = env["FLOWLET_CLI_MODEL"]?.trim();
   const resolvedEnv = cliOverride ? { ...env, FLOWLET_MODEL: cliOverride } : env;
-  if (resolveModelChoice(resolvedEnv).kind === "none") return null;
+  if (!hasProviderKey(resolvedEnv)) return null;
   return resolveModel(resolvedEnv, deps);
 }
 

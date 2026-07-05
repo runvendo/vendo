@@ -45,10 +45,16 @@ describe("runInit e2e (mock model)", () => {
   it("reports a clean error (not an unhandled rejection) when the model factory throws", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "init-"));
     await writeFile(path.join(dir, "package.json"), "{}");
-    const prevModel = process.env["FLOWLET_CLI_MODEL"];
-    // An unknown provider prefix makes resolveModelChoice (via cliModel) throw
-    // synchronously — deterministic regardless of which optional peers happen
-    // to be installed in this workspace.
+    const prevEnv = {
+      FLOWLET_CLI_MODEL: process.env["FLOWLET_CLI_MODEL"],
+      ANTHROPIC_API_KEY: process.env["ANTHROPIC_API_KEY"],
+    };
+    // With a key present (cliModel is gated on key presence — no key means
+    // the deterministic-rescue null path, never an error), an unknown provider
+    // prefix makes resolveModelChoice (via cliModel) throw synchronously —
+    // deterministic regardless of which optional peers happen to be installed
+    // in this workspace.
+    process.env["ANTHROPIC_API_KEY"] = "sk-ant-fake-test";
     process.env["FLOWLET_CLI_MODEL"] = "grok/whatever";
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -57,8 +63,40 @@ describe("runInit e2e (mock model)", () => {
       expect(errSpy.mock.calls.flat().join("\n")).toMatch(/unknown provider "grok"/);
     } finally {
       errSpy.mockRestore();
-      if (prevModel === undefined) delete process.env["FLOWLET_CLI_MODEL"];
-      else process.env["FLOWLET_CLI_MODEL"] = prevModel;
+      for (const [k, v] of Object.entries(prevEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("skips LLM steps cleanly when FLOWLET_CLI_MODEL is set but no provider key is present", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "init-"));
+    await writeFile(path.join(dir, "package.json"), "{}");
+    await writeFile(path.join(dir, "globals.css"), ":root { --color-bg: #ffffff; }");
+    const prevEnv = {
+      FLOWLET_CLI_MODEL: process.env["FLOWLET_CLI_MODEL"],
+      ANTHROPIC_API_KEY: process.env["ANTHROPIC_API_KEY"],
+      OPENAI_API_KEY: process.env["OPENAI_API_KEY"],
+      GOOGLE_GENERATIVE_AI_API_KEY: process.env["GOOGLE_GENERATIVE_AI_API_KEY"],
+    };
+    delete process.env["ANTHROPIC_API_KEY"];
+    delete process.env["OPENAI_API_KEY"];
+    delete process.env["GOOGLE_GENERATIVE_AI_API_KEY"];
+    process.env["FLOWLET_CLI_MODEL"] = "claude-sonnet-5"; // a model id is not a credential
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const code = await runInit({ targetDir: dir, skipLlm: false, force: false });
+      const out = log.mock.calls.flat().join("\n");
+      expect(code).toBe(0);
+      expect(out).toContain("LLM steps skipped");
+      await readFile(path.join(dir, ".flowlet/theme.json"), "utf8");
+    } finally {
+      log.mockRestore();
+      for (const [k, v] of Object.entries(prevEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
     }
   });
 
