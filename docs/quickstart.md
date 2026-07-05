@@ -5,8 +5,9 @@ Zero infra. Bring your own keys. One command.
 Flowlet embeds an AI assistant in your Next.js app that chats, calls your own
 API as the signed-in user, and renders generated UI in a sandboxed,
 brand-native surface — all served from your app's own server. There is no
-Flowlet cloud in this path: your Anthropic key talks to Anthropic, and
-everything else stays in your process.
+Flowlet cloud in this path: your model key talks straight to your chosen
+provider (Anthropic, OpenAI, or Google), and everything else stays in your
+process.
 
 > **Status honesty:** the `@flowlet/*` packages are not published to npm yet
 > (publishing lands with the registry work, ENG-198). Today you install them
@@ -34,7 +35,8 @@ npx flowlet init .
   integrations, capabilities, and the automations tick;
 - writes `app/flowlet-root.tsx` (a small client wrapper) and wraps your root
   layout's `{children}` with it — idempotently, respecting existing providers;
-- drops `.env.example` documenting the three keys;
+- drops `.env.example` documenting the capability-additive key ladder (see
+  below);
 - copies the sandbox runtime assets into `public/flowlet/`;
 - adds `@flowlet/next` to your dependencies.
 
@@ -46,7 +48,7 @@ manual instruction instead. Review the whole install in one `git diff`.
 
 ```bash
 cp .env.example .env.local
-# paste your ANTHROPIC_API_KEY
+# paste your ANTHROPIC_API_KEY (or OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY: any one works)
 npm run dev
 ```
 
@@ -61,15 +63,30 @@ time this at well under ten minutes of dev effort on a fresh app.
 Keys are additive. Each one you add lights up a capability; a missing key
 hides that surface — nothing errors.
 
-| Key | Unlocks |
+| Key(s) | Unlocks |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Chat + generated UI (the one-key minimum) |
+| Any one of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY` | Chat + generated UI (the one-key minimum) |
+| `OPENAI_API_KEY` specifically | Also flips on the voice capability flag (a flag only: voice UX is in design) |
 | `+ COMPOSIO_API_KEY` | Integrations: Gmail, Slack, Notion, … via OAuth connect cards |
-| `+ OPENAI_API_KEY` | Reserved for voice — exposed as a capability flag only (voice UX is in design) |
 
 The client reads `GET /api/flowlet/capabilities` and gates its UI on the
 answer, so the integrations tray simply doesn't offer connections until the
 Composio key exists.
+
+**Choosing a model.** With no key set, precedence is Anthropic > OpenAI >
+Google, using per-provider defaults (`claude-sonnet-5`, `gpt-5.5`,
+`gemini-3.5-flash`). Override with `FLOWLET_MODEL`, either form:
+
+```bash
+FLOWLET_MODEL=openai/gpt-5.5-mini   # provider/model: picks the provider outright
+FLOWLET_MODEL=claude-sonnet-4-6     # bare id: applied to whichever provider key is set
+```
+
+`FLOWLET_MODEL` alone names a model, not a credential: without a real
+provider key (or a code-injected `model`), chat stays off. OpenAI and Google
+are optional peers (`@ai-sdk/openai`, `@ai-sdk/google`): resolving to one
+without its package installed fails fast with an actionable `npm i` hint, not
+a silent fallback.
 
 ## Your API as the agent's hands
 
@@ -93,6 +110,50 @@ options when you outgrow that: `model`, `instructions`/`instructionsExtra`,
 `connections` (bring your own store), `cacheKey`, `automations`. Our own
 demo-bank app runs entirely on this handler, with its custom policy, prompt,
 and demo world injected through those options.
+
+## Not using Next.js?
+
+Next.js is the first adapter, not a requirement. `@flowlet/next` is a thin
+wrapper around `@flowlet/server`, the framework-agnostic handler core: a
+plain `(Request) => Promise<Response>` function you can mount anywhere.
+
+```bash
+npm install @flowlet/server   # (from tarball/workspace until ENG-198, same as @flowlet/next)
+```
+
+```js
+import { createServer } from "node:http";
+import { createFlowletFetchHandler, toNodeHandler } from "@flowlet/server";
+
+createServer(toNodeHandler(createFlowletFetchHandler())).listen(3000);
+```
+
+`createFlowletFetchHandler(options)` takes the same options as
+`createFlowletHandler()` above. `toNodeHandler()` bridges the fetch handler
+onto `node:http` (streaming-safe, so SSE chat works); Express mounting is one
+line:
+
+```js
+app.all("/api/flowlet/*", toNodeHandler(createFlowletFetchHandler()));
+```
+
+Fetch-native runtimes skip the bridge entirely: Hono mounts the handler
+directly.
+
+```js
+const flowlet = createFlowletFetchHandler();
+app.all("/api/flowlet/*", (c) => flowlet(c.req.raw));
+```
+
+See `examples/node` for a full working server (plain `node:http` plus a Vite
+client) including serving the sandbox runtime assets that Next.js handles
+implicitly.
+
+> **Status honesty:** `@flowlet/server` isn't published to npm yet either
+> (ENG-198). And unlike a published package, the workspace's built output is
+> bundler-format ESM, not directly Node-loadable: `examples/node` runs its
+> server through `tsx` for that reason (same trick `apps/gmail` uses). Plain
+> `node server.js` starts working once the packages publish.
 
 ## Deploying
 
@@ -131,7 +192,8 @@ user, so:
   from the CLI's `dist/assets/`.
 - **Chat answers 403 on a deployment** — that's the local-only default; see
   Deploying above.
-- **Chat errors immediately** — check `ANTHROPIC_API_KEY` in `.env.local`
+- **Chat errors immediately** — check that one of `ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY` is set in `.env.local`
   and restart the dev server; `GET /api/flowlet/capabilities` tells you what
-  the server sees.
+  the server sees. A `FLOWLET_MODEL` alone doesn't count: it isn't a key.
 - **Integrations tray is empty** — expected without `COMPOSIO_API_KEY`.
