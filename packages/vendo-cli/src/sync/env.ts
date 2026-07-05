@@ -11,6 +11,7 @@
 import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import type { EnvManifest, RemixSourceRecord } from "@vendoai/core";
 import { classifyImport, importSpecifiers, toManifestStatus } from "./classify.js";
@@ -185,9 +186,14 @@ export async function buildEnvironment(
   //     externalized) so `next/link`/`swr`/… actually resolve in-sandbox.
   const shimToVendor = new Map<string, string>();
   if (shimsToVendor.size > 0) {
-    const requireFrom = createRequire(import.meta.url);
-    // Resolve the package's dist dir via its main entry (only "." is exported).
-    const shimsDist = path.dirname(requireFrom.resolve("@vendoai/sandbox-shims"));
+    // Prefer the shims copy that scripts/bundle-assets.mjs ships next to the
+    // built CLI (dist/shims/) — the published package cannot depend on the
+    // private @vendoai/sandbox-shims. Fall back to resolving the workspace
+    // package's dist via its main entry when running from source.
+    const bundledShims = fileURLToPath(new URL("./shims/", import.meta.url));
+    const shimsDist = existsSync(bundledShims)
+      ? bundledShims
+      : path.dirname(createRequire(import.meta.url).resolve("@vendoai/sandbox-shims"));
     for (const specifier of shimsToVendor) {
       const outName = `shim-${slug(specifier)}.js`;
       try {

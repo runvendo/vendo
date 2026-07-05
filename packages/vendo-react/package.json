@@ -1,7 +1,22 @@
 {
   "name": "@vendoai/react",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "React bindings for Vendo: VendoProvider, useVendoChat, and the sandboxed stage renderer.",
+  "keywords": ["ai", "agent", "generative-ui", "react", "chat"],
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendo-react"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,6 +26,7 @@
       "default": "./dist/index.js"
     }
   },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

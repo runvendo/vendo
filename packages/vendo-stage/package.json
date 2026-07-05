@@ -1,7 +1,22 @@
 {
   "name": "@vendoai/stage",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Sandboxed stage runtime and bridge for Vendo agent-generated UI.",
+  "keywords": ["ai", "agent", "generative-ui", "sandbox", "iframe"],
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/vendo-stage"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,6 +30,7 @@
       "default": "./dist/build/preset.js"
     }
   },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:bundle": "vite build -c tests/browser/vite.bundle.config.ts",
