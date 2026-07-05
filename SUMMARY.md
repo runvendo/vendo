@@ -1,5 +1,7 @@
 # Summary
 
+## Shell Polish
+
 Branch: `yousefh409/shell-polish`
 
 Rebased onto current `origin/main` after PR #53.
@@ -28,3 +30,31 @@ Verification:
 Notes:
 - The shell test suite still emits existing React `act(...)` and in-memory store warnings.
 - The root build still emits existing bundle-size, Turbopack NFT trace, and turbo output warnings, with no failures.
+
+## Init Host Friction
+
+Implemented `vendo init` host-app friction fixes in `packages/vendo-cli`:
+
+- Added conservative `next.config.(ts|mjs|js)` wiring in `wireNextApp`.
+  - Creates a minimal config when absent.
+  - Merges literal `transpilePackages` and `serverExternalPackages` arrays.
+  - Skips ambiguous configs and reports manual instructions without editing.
+- Added `vendo init --local <vendo-monorepo>`.
+  - Packs the local Vendo runtime package closure into `<app>/vendor/`.
+  - Copies the monorepo `vendor/fluidkit-*.tgz`.
+  - Rewrites host `package.json` with direct `file:vendor/*` deps for `@vendoai/next` and `@vendoai/shell`.
+  - Adds pnpm overrides for every packed `@vendoai/*` package plus `fluidkit`, with npm `overrides` fallback when npm is detected.
+- Extended generated `.vendo/README.md` with an Events section, including a `charge.posted` payload schema example and producer guidance.
+
+Verification:
+- `pnpm build` passed.
+- `pnpm --dir packages/vendo-cli test` passed: 28 files, 136 tests.
+- `pnpm --dir packages/vendo-cli typecheck` passed.
+
+## FIXED
+
+- Replaced `pnpm --filter <pkg> pack` with `pnpm -C <pkg.dir> pack --pack-destination <vendorDir>`.
+- Added a real-pnpm test that packs from a synthetic local repo path containing spaces.
+- Preserved existing npm and pnpm override objects while merging only Vendo tarball keys; unsupported override shapes now skip with manual instructions instead of dropping data.
+- Preflighted `fluidkit` and package.json rewrites before target writes, then staged tarballs before replacing `vendor/`.
+- Updated the generated Events README example to show the full `tools.json` shape and name `ingestVendoEvent()` plus `POST /api/vendo/events/ingest`.
