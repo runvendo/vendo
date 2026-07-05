@@ -54,15 +54,15 @@ export async function main(argv: string[]): Promise<number> {
 // Node resolves the main module through symlinks (npm's .bin/vendo is one) and
 // pathToFileURL percent-encodes special characters, so compare against the
 // realpath's file URL rather than a hand-built `file://` string.
-const invokedAsBin = (() => {
-  const entry = process.argv[1];
-  if (!entry) return false;
+export function isCliEntrypoint(metaUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) return false;
   try {
-    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+    return metaUrl === pathToFileURL(realpathSync(argv1)).href;
   } catch {
     return false;
   }
-})();
-if (invokedAsBin) {
+}
+
+if (isCliEntrypoint(import.meta.url, process.argv[1])) {
   main(process.argv.slice(2)).then((code) => process.exit(code));
 }

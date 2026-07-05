@@ -3,7 +3,7 @@
  * app via vendo.navigate; the rest throw descriptive contained errors rather
  * than silently misbehaving.
  */
-import { navigate } from "./dispatch";
+import { navigate } from "./dispatch.js";
 
 export function useRouter() {
   return {

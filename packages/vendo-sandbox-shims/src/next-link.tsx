@@ -5,7 +5,7 @@
  * iframe navigation). `default` export mirrors `next/link`.
  */
 import { createElement, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from "react";
-import { navigate } from "./dispatch";
+import { navigate } from "./dispatch.js";
 
 export interface LinkProps
   extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> {
