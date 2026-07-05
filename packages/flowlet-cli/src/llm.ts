@@ -29,10 +29,14 @@ import type { z } from "zod";
  * provider keys this returns null — callers skip LLM steps and fall back to
  * deterministic rescues — instead of constructing an unkeyed model that would
  * fail mid-init with a raw SDK "API key is missing" error. Only when a key IS
- * present but the resolved provider's optional peer package
- * (@ai-sdk/openai/@ai-sdk/google) isn't installed does `resolveModel` throw
- * its actionable error — intentional, since the user explicitly asked for
- * that provider.
+ * present can this throw, in two cases (both intentional — the user
+ * explicitly configured something broken and deserves the error over a
+ * silent deterministic fallback):
+ *   - the override names an unknown provider prefix (e.g. "grok/whatever"):
+ *     `resolveModelChoice` (inside `resolveModel`) throws its readable error;
+ *   - the resolved provider's optional peer package
+ *     (@ai-sdk/openai/@ai-sdk/google) isn't installed: `resolveModel` throws
+ *     its actionable install-command error.
  */
 export async function cliModel(
   env: Record<string, string | undefined> = process.env,
