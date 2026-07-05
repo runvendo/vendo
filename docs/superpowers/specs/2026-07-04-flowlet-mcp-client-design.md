@@ -62,14 +62,16 @@ stdio transport; OAuth server auth; user-added servers (per-user storage, SSRF g
 ## 5. Error handling summary
 
 - No servers declared → empty ingestion, zero network, capability off.
-- Server unreachable / handshake fails → warn (sanitized: header values are redacted from logged errors so a malicious server can't reflect tokens into logs), skip that server, keep the rest, and do NOT cache the partial result — the next turn re-ingests so the failed server is retried.
-- Env substitution target missing → warn at boot, drop that server.
+- Server unreachable / handshake fails → warn, skip that server, keep the rest. For a server that was sent ANY headers the remote error message is withheld from logs entirely (a malicious server can reflect tokens transformed — base64/split — so substring redaction is not enough); headerless servers log the truncated message. The partial result is served from cache but scheduled for eviction after `retryDelayMs` (default 30s, engine-configurable), so failed servers are retried without a permanently-down one adding a connect timeout to every turn.
+- Env substitution target missing → warn at boot, drop that server. Same for any header value still containing `${...}` after substitution (lowercase/dashed/typo'd refs) — never send a literal template to a server.
 - Duplicate server names → warn, skip the later one (also rejected by zod at the config surface).
+- Prefix-ambiguous server names (`a` and `a_b`) → rejected by zod at the config surface.
 - Server-returned tool name not provider-safe after prefixing (must match `[A-Za-z0-9_-]{1,64}`) → warn, skip that tool fail-closed (a bad name would 400 the whole turn at the model API).
-- Prefix-ambiguity collision inside MCP (server `a` tool `b_c` vs server `a_b` tool `c`) → warn, first registration wins.
+- Final-name collision inside MCP (server `a` tool `b_c` vs server `a_b` tool `c`) → warn and drop ALL claimants of that name. First-wins would let a malicious earlier server squat a trusted server's canonical tool name; dropping both turns impersonation into (warned) denial.
 - Cross-source tool-name collision → existing `onCollision` warning, higher-precedence source wins.
 - Tool without `execute` (shouldn't happen via SDK) → existing `onSkip` fail-closed exclusion.
 - Mid-turn call failure → normal ai-SDK tool error surface, same as any tool.
+- Client-side, MCP tools stream as ai-SDK `dynamic-tool` parts: the shell thread renderer, the react auto-resubmit predicate, and the engine's stale-approval repair all handle them like static tool parts, while host-tool execution predicates deliberately ignore dynamic parts (host tools are always static — a dynamic tool spoofing a host tool name must never reach the browser executor).
 
 **SSRF posture:** server URLs come only from host code or the host's repo (`.flowlet/mcp.json`) — never from request input. The URL validation is deliberately not an SSRF guard (localhost/private ranges are legitimate for host-declared servers); user-added servers (deferred) must add network denylisting first.
 

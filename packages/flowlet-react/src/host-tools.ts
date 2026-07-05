@@ -54,6 +54,19 @@ function isToolPart(part: { type: string }): part is ToolPartView {
   return part.type.startsWith("tool-") || part.type === "dynamic-tool";
 }
 
+/**
+ * Host tools are ALWAYS static (`tool-<name>`) parts — they are registered
+ * server-side with fixed schemas. A dynamic part (MCP) whose name happens to
+ * match a host tool must never be routed to the browser executor or hold up
+ * resubmission, so every host-execution predicate goes through this check.
+ */
+function isHostToolPart(
+  part: { type: string },
+  hostToolNames: ReadonlySet<string>,
+): part is ToolPartView {
+  return part.type.startsWith("tool-") && hostToolNames.has(toolName(part as ToolPartView));
+}
+
 /** Ready-to-execute host tool calls on the (settled) last assistant message. */
 export function pendingHostToolCalls(
   message: FlowletUIMessage | undefined,
@@ -62,7 +75,7 @@ export function pendingHostToolCalls(
   if (!message || message.role !== "assistant") return [];
   const pending: PendingHostToolCall[] = [];
   for (const part of message.parts as Array<{ type: string }>) {
-    if (!isToolPart(part) || !hostToolNames.has(toolName(part))) continue;
+    if (!isHostToolPart(part, hostToolNames)) continue;
     const ready =
       part.state === "input-available" ||
       (part.state === "approval-responded" && part.approval?.approved === true);
@@ -104,7 +117,7 @@ export function hostAwareSendAutomaticallyWhen(
     // executor still owes the result — never resubmit yet.
     const hostOwesOutput = invocations.some(
       (part) =>
-        hostToolNames.has(toolName(part)) &&
+        isHostToolPart(part, hostToolNames) &&
         (part.state === "input-available" ||
           (part.state === "approval-responded" && part.approval?.approved === true)),
     );

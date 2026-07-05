@@ -56,15 +56,19 @@ const VALID_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Sanitize an error for logging. SDK transport errors embed the raw HTTP
- * response body, which a malicious server can use to reflect the request's
- * Authorization header — so never log the error object itself, and redact
- * every configured header value from the message.
+ * response body, which a malicious server can reflect secrets into — verbatim
+ * OR transformed (base64, split), so substring redaction is not enough. For a
+ * server that was sent ANY headers, the remote message is withheld entirely
+ * and only the error's class name is logged; headerless servers get the
+ * truncated message (nothing secret was sent).
  */
 function describeError(err: unknown, headers?: Record<string, string>): string {
-  let message = err instanceof Error ? err.message : String(err);
-  for (const value of Object.values(headers ?? {})) {
-    if (value.length > 0) message = message.split(value).join("[redacted]");
+  const authenticated = Object.values(headers ?? {}).some((v) => v.length > 0);
+  if (authenticated) {
+    const name = err instanceof Error ? err.constructor.name : typeof err;
+    return `${name} (message withheld: server request carried headers)`;
   }
+  const message = err instanceof Error ? err.message : String(err);
   return message.slice(0, 300);
 }
 
@@ -76,10 +80,12 @@ function describeError(err: unknown, headers?: Record<string, string>): string {
  * recorded in `failures`, and skipped — it never breaks other servers or the
  * turn. Callers use `failures` to avoid caching a partial result.
  *
- * Name safety: duplicate final names (duplicate server names, or prefix
- * ambiguity like server "a" tool "b_c" vs server "a_b" tool "c") keep the
- * FIRST registration and warn; server-returned tool names that are not
- * provider-safe are skipped.
+ * Name safety: a duplicate final name (duplicate server names, or prefix
+ * ambiguity like server "a" tool "b_c" vs server "a_b" tool "c") drops BOTH
+ * tools with a warning — fail-closed, because keeping either would let a
+ * malicious earlier server impersonate a trusted later one under its
+ * canonical name (impersonation becomes denial). Server-returned tool names
+ * that are not provider-safe are skipped.
  */
 export async function ingestMcpTools(args: {
   servers: McpServerConfig[];
@@ -90,6 +96,9 @@ export async function ingestMcpTools(args: {
   const toolset: ToolSet = {};
   const descriptors: ToolDescriptor[] = [];
   const failures: string[] = [];
+  // Final names that collided: both parties are removed and later claimants
+  // are rejected too (a name that was ever ambiguous stays unusable).
+  const poisoned = new Set<string>();
 
   const seenServers = new Set<string>();
   for (const server of servers) {
@@ -125,10 +134,18 @@ export async function ingestMcpTools(args: {
         );
         continue;
       }
-      if (prefixed in toolset) {
+      if (prefixed in toolset || poisoned.has(prefixed)) {
+        // Fail-closed: an ambiguous name could let one server impersonate
+        // another, so NO one gets it — drop the earlier registration too.
+        poisoned.add(prefixed);
+        if (prefixed in toolset) {
+          delete toolset[prefixed];
+          const at = descriptors.findIndex((d) => d.name === prefixed);
+          if (at !== -1) descriptors.splice(at, 1);
+        }
         console.warn(
           `[flowlet] MCP tool name collision on "${prefixed}" ` +
-            `(server "${server.name}") — keeping the first registration.`,
+            `(server "${server.name}") — dropping ALL claimants of that name.`,
         );
         continue;
       }

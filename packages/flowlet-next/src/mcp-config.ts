@@ -34,7 +34,12 @@ export const mcpServerSchema = z
   })
   .strict();
 
-/** Reject duplicate server names — they'd alias each other's tools and clients. */
+/**
+ * Reject duplicate server names (they'd alias each other's tools and clients)
+ * AND prefix-ambiguous pairs like "a" and "a_b": server "a" exposing a tool
+ * "b_c" would collide with server "a_b" exposing "c" under the final name
+ * "a_b_c", letting one server squat the other's canonical tool names.
+ */
 export const mcpServerArraySchema = z.array(mcpServerSchema).superRefine((servers, ctx) => {
   const seen = new Set<string>();
   for (const s of servers) {
@@ -45,6 +50,18 @@ export const mcpServerArraySchema = z.array(mcpServerSchema).superRefine((server
       });
     }
     seen.add(s.name);
+  }
+  for (const a of servers) {
+    for (const b of servers) {
+      if (a !== b && b.name.startsWith(`${a.name}_`)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            `ambiguous MCP server names "${a.name}" and "${b.name}": ` +
+            `one extends the other with "_", so their prefixed tool names can collide`,
+        });
+      }
+    }
   }
 });
 
@@ -74,18 +91,30 @@ export function resolveMcpServers(
       continue;
     }
     let missing: string | null = null;
+    let residue: string | null = null;
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(server.headers)) {
-      headers[key] = value.replace(ENV_REF, (_, varName: string) => {
+      const substituted = value.replace(ENV_REF, (_, varName: string) => {
         const v = env[varName];
         if (v === undefined || v.trim() === "") missing = varName;
         return v ?? "";
       });
+      // Anything still looking like a template (lowercase names, dashes,
+      // typos) would otherwise be sent to the server literally — fail closed.
+      if (substituted.includes("${")) residue = key;
+      headers[key] = substituted;
     }
     if (missing) {
       console.warn(
         `[flowlet] MCP server "${server.name}" dropped: header references env var ` +
           `\${${missing}} which is not set.`,
+      );
+      continue;
+    }
+    if (residue) {
+      console.warn(
+        `[flowlet] MCP server "${server.name}" dropped: header "${residue}" still ` +
+          "contains an unresolved ${...} template (env var names must be UPPERCASE_WITH_UNDERSCORES).",
       );
       continue;
     }

@@ -93,10 +93,12 @@ describe("ingestMcpTools", () => {
     warn.mockRestore();
   });
 
-  it("redacts configured header values from failure logs (no token leakage)", async () => {
+  it("withholds remote error messages entirely for servers sent headers (no token leakage, even transformed)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const source = fakeSource({
-      leaky: new Error("HTTP 401: request had Authorization: Bearer sekrit-token"),
+      // A malicious server can reflect the token base64'd — substring
+      // redaction can't catch that, so the whole message must be withheld.
+      leaky: new Error(`HTTP 401: ${Buffer.from("Bearer sekrit-token").toString("base64")}`),
     });
     await ingestMcpTools({
       servers: [
@@ -106,7 +108,17 @@ describe("ingestMcpTools", () => {
     });
     const logged = warn.mock.calls.map((c) => c.join(" ")).join("\n");
     expect(logged).not.toContain("sekrit-token");
-    expect(logged).toContain("[redacted]");
+    expect(logged).not.toContain(Buffer.from("Bearer sekrit-token").toString("base64"));
+    expect(logged).toContain("message withheld");
+    warn.mockRestore();
+  });
+
+  it("logs the truncated message for headerless servers (nothing secret was sent)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const source = fakeSource({ open: new Error("connect ECONNREFUSED 127.0.0.1:9") });
+    await ingestMcpTools({ servers: [{ name: "open", url: "http://x" }], source });
+    const logged = warn.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(logged).toContain("ECONNREFUSED");
     warn.mockRestore();
   });
 
@@ -124,11 +136,12 @@ describe("ingestMcpTools", () => {
     warn.mockRestore();
   });
 
-  it("keeps the FIRST tool and warns on ambiguous-prefix collisions (server 'a' tool 'b_c' vs server 'a_b' tool 'c')", async () => {
+  it("drops ALL claimants of an ambiguous final name (server 'a' tool 'b_c' vs server 'a_b' tool 'c')", async () => {
+    // Fail-closed: first-wins would let a malicious earlier server squat a
+    // trusted later server's canonical tool name. Nobody gets the name.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const first = { description: "first", inputSchema: {}, execute: async () => "first" };
     const source = fakeSource({
-      a: { tools: { b_c: first } },
+      a: { tools: { b_c: echoTool, safe: echoTool } },
       a_b: { tools: { c: echoTool } },
     });
     const result = await ingestMcpTools({
@@ -138,8 +151,8 @@ describe("ingestMcpTools", () => {
       ],
       source,
     });
-    expect(Object.keys(result.toolset)).toEqual(["a_b_c"]);
-    expect(result.toolset["a_b_c"]).toBe(first);
+    expect(Object.keys(result.toolset)).toEqual(["a_safe"]);
+    expect(result.descriptors.map((d) => d.name)).toEqual(["a_safe"]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('collision on "a_b_c"'));
     warn.mockRestore();
   });

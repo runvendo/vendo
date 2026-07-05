@@ -51,6 +51,28 @@ describe("mcpJsonSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects prefix-ambiguous server names ('a' and 'a_b' can collide on prefixed tool names)", () => {
+    expect(
+      mcpJsonSchema.safeParse({
+        version: 1,
+        servers: [
+          { name: "a", url: "https://a" },
+          { name: "a_b", url: "https://ab" },
+        ],
+      }).success,
+    ).toBe(false);
+    // Non-underscore extension is fine: "shop" and "shopify" cannot collide.
+    expect(
+      mcpJsonSchema.safeParse({
+        version: 1,
+        servers: [
+          { name: "shop", url: "https://a" },
+          { name: "shopify", url: "https://b" },
+        ],
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe("resolveMcpServers", () => {
@@ -82,5 +104,19 @@ describe("resolveMcpServers", () => {
     expect(resolveMcpServers([{ name: "s", url: "https://x", tools: ["a"] }], {})).toEqual([
       { name: "s", url: "https://x", tools: ["a"] },
     ]);
+  });
+
+  it("drops a server whose header still contains an unresolved ${...} template (lowercase/dashed refs)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const resolved = resolveMcpServers(
+      [
+        { name: "typo", url: "https://x", headers: { Authorization: "Bearer ${mcp_token}" } },
+        { name: "ok", url: "https://y" },
+      ],
+      { mcp_token: "should-not-be-read" },
+    );
+    expect(resolved.map((s) => s.name)).toEqual(["ok"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"typo"'));
+    warn.mockRestore();
   });
 });

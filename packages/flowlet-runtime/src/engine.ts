@@ -73,8 +73,14 @@ export interface FlowletAgentConfig {
   tools?: ToolSet;
   /** Optional Composio ingestion. `client` is injectable for tests. */
   composio?: { config: ComposioConfig; client?: ComposioClient };
-  /** Optional MCP ingestion (host-declared servers). `source` is injectable for tests. */
-  mcp?: { servers: McpServerConfig[]; source?: McpToolSource };
+  /**
+   * Optional MCP ingestion (host-declared servers). `source` is injectable
+   * for tests. `retryDelayMs` (default 30s) is how long a partial ingestion
+   * (some server failed) is served from cache before the next turn re-ingests
+   * — immediate retry would let a permanently-down server add a connect
+   * timeout to every single turn. `0` retries on the very next turn.
+   */
+  mcp?: { servers: McpServerConfig[]; source?: McpToolSource; retryDelayMs?: number };
   /**
    * Policy version string. Forwarded to policy layers that key on it (e.g. the
    * ask-once `rememberDecisions` store). Not used by the engine itself.
@@ -241,18 +247,30 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         // 3b. MCP ingestion (fail-closed inside ingestMcpTools; per-server
         //     fault tolerance). Cached host-level: the tools/list round-trip
         //     blocks only the first turn. `ingestMcpTools` never rejects —
-        //     instead it reports per-server `failures` — so "failures are
-        //     never cached" means: any failed server evicts the cache after
-        //     resolution, and the next turn re-ingests (healthy servers are
-        //     cheap to re-fetch; their clients stay open in the source).
+        //     instead it reports per-server `failures`. A clean ingestion is
+        //     cached for the agent's lifetime; a PARTIAL one (some server
+        //     failed) is served from cache but scheduled for eviction after
+        //     `retryDelayMs`, so failed servers are retried without letting a
+        //     permanently-down one add a connect timeout to every turn.
         let mcpTools: ToolSet = {};
         let mcpDescriptors: Record<string, ToolDescriptor> = {};
         if (config.mcp && mcpSource && config.mcp.servers.length > 0) {
           const servers = config.mcp.servers;
           const source = mcpSource;
+          const retryDelayMs = config.mcp.retryDelayMs ?? 30_000;
           if (!mcpCache) {
             mcpCache = ingestMcpTools({ servers, source }).then((ingested) => {
-              if (ingested.failures.length > 0) mcpCache = null;
+              if (ingested.failures.length > 0) {
+                if (retryDelayMs <= 0) {
+                  mcpCache = null;
+                } else {
+                  const timer = setTimeout(() => {
+                    mcpCache = null;
+                  }, retryDelayMs);
+                  // Never keep the host process alive just for a retry timer.
+                  (timer as { unref?: () => void }).unref?.();
+                }
+              }
               return {
                 toolset: ingested.toolset,
                 descriptors: Object.fromEntries(ingested.descriptors.map((d) => [d.name, d])),

@@ -471,7 +471,7 @@ describe("MCP ingestion wiring", () => {
     expect(source.fetchTools).toHaveBeenCalledTimes(1);
   });
 
-  it("retries MCP ingestion on a later run after a failure (failures are not cached)", async () => {
+  it("retries MCP ingestion on a later run after a failure (failures are not cached past the retry delay)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const source = {
       fetchTools: vi
@@ -482,7 +482,8 @@ describe("MCP ingestion wiring", () => {
     const agent = createFlowletAgent({
       model: mockModel(),
       policy: allowPolicy,
-      mcp: { servers: [{ name: "srv", url: "http://x" }], source },
+      // retryDelayMs 0 = retry on the very next turn (the default backs off 30s).
+      mcp: { servers: [{ name: "srv", url: "http://x" }], source, retryDelayMs: 0 },
     });
 
     await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
