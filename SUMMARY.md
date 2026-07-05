@@ -93,3 +93,12 @@ Built zero-config voice for Vendo on branch `yousefh409/voice-zero-config`.
 - `pnpm build` passed.
 
 Notes: shell tests and root build still emit existing warnings (React `act(...)`, no-store provider warnings, Turbopack NFT tracing, and chunk-size warnings), with no failures.
+
+## Rebased
+
+- Rebased `yousefh409/voice-zero-config` onto `origin/main` after PR #53 merged.
+- Kept main's scoped-pin implementation in `@vendoai/shell`'s `VendoThread`; `@vendoai/next` now uses the plain `VendoOverlay` path from main.
+- Confirmed zero-config voice behavior still survives the rebase:
+  - `capabilities.voice === true` and no `voice` prop creates the packaged `createVendoVoice()` driver.
+  - `voice={false}` opts out entirely.
+  - A custom `VoiceDriver` prop wins over packaged voice.
