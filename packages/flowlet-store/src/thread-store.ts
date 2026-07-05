@@ -19,6 +19,16 @@
  * raises 23505 for a violation on a non-arbiter unique index. Splitting the
  * write into "plain UPDATE for existing ids" + "plain INSERT of freshly
  * reserved seqs for new ids" avoids that path entirely.)
+ *
+ * Remaining race: two CONCURRENT txns can both run their existing-ids SELECT
+ * before either commits and both classify the SAME message id as "new" —
+ * each reserves its own seq block and both attempt to INSERT that message
+ * id. The new-row INSERT below carries an `ON CONFLICT (tenant_id, subject,
+ * thread_id, message_id) DO UPDATE` naming that exact unique index as its
+ * arbiter, so the loser's insert becomes an UPDATE of the winner's row
+ * (message content only) instead of a 23505 unique-violation. The loser's
+ * reserved seq is simply never used — a benign gap in the sequence, not a
+ * correctness issue (seq only needs to be strictly ordered, not contiguous).
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -222,16 +232,25 @@ export function createDrizzleThreadStore(
 
         if (newMessages.length > 0) {
           const startSeq = await reserveSeqs(tx, scope, threadId, newMessages.length, at);
-          await tx.insert(threadMessages).values(
-            newMessages.map((m, i) => ({
-              tenantId: scope.tenantId,
-              subject: scope.subject,
-              threadId,
-              messageId: m.id,
-              seq: startSeq + i,
-              message: m,
-            })),
-          );
+          await tx
+            .insert(threadMessages)
+            .values(
+              newMessages.map((m, i) => ({
+                tenantId: scope.tenantId,
+                subject: scope.subject,
+                threadId,
+                messageId: m.id,
+                seq: startSeq + i,
+                message: m,
+              })),
+            )
+            // Concurrent-same-new-message race: see the module doc. The
+            // arbiter is the message-id unique index, not the seq one, so
+            // this can never suppress a genuine seq collision.
+            .onConflictDoUpdate({
+              target: [threadMessages.tenantId, threadMessages.subject, threadMessages.threadId, threadMessages.messageId],
+              set: { message: sql`excluded.message` },
+            });
         } else {
           // Still bump updatedAt even when nothing new was reserved.
           await tx

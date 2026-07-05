@@ -108,6 +108,38 @@ describe("upsertMessages", () => {
     expect(theirs[0]?.parts).toEqual([{ type: "text", text: "theirs" }]);
   });
 
+  // NOTE: PGlite serializes every `.transaction()` call on its single
+  // connection (`_runExclusiveTransaction` internally), so this can't force
+  // the genuine wire-level interleaving (both txns' existing-ids SELECT
+  // racing before either commits) that trips the unique-violation on real
+  // concurrent Postgres. It still guards the ON CONFLICT arbiter itself:
+  // if a future change swaps it for a plain INSERT again, or narrows the
+  // target columns, this stays green either way under PGlite — the
+  // authoritative check for the actual race is code review of the arbiter
+  // matching `thread_messages_id_uq` exactly (see the module doc).
+  it("two parallel upserts of the SAME new message id race without throwing, leaving exactly one row (review blocker)", async () => {
+    const thread = await store.create(scope);
+    await expect(
+      Promise.all([
+        store.upsertMessages(scope, thread.id, [msg("m1", [{ type: "text", text: "a" }])]),
+        store.upsertMessages(scope, thread.id, [msg("m1", [{ type: "text", text: "b" }])]),
+      ]),
+    ).resolves.toBeDefined();
+
+    const rows = await handle.db
+      .select({ messageId: threadMessages.messageId })
+      .from(threadMessages)
+      .where(
+        and(
+          eq(threadMessages.tenantId, scope.tenantId),
+          eq(threadMessages.subject, scope.subject),
+          eq(threadMessages.threadId, thread.id),
+        ),
+      );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.messageId).toBe("m1");
+  });
+
   it("two parallel upserts of DIFFERENT messages get distinct seqs with no unique violation", async () => {
     const thread = await store.create(scope);
     await Promise.all([
