@@ -10,6 +10,7 @@
       "default": "./dist/index.js"
     }
   },
+  "files": ["dist", "migrations"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
