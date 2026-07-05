@@ -2,6 +2,15 @@
   "imports": {
     "lucide-react": "./vendor/lucide-react.js",
     "next/link": "./vendor/shim-next-link.js",
-    "swr": "./vendor/shim-swr.js"
+    "swr": "./vendor/shim-swr.js",
+    "@/components/ui/badge": "./vendor/local-components-ui-badge.js",
+    "@/components/ui/card": "./vendor/local-components-ui-card.js",
+    "@/components/ui/empty-state": "./vendor/local-components-ui-empty-state.js",
+    "@/components/ui/error-state": "./vendor/local-components-ui-error-state.js",
+    "@/components/ui/progress": "./vendor/local-components-ui-progress.js",
+    "@/components/ui/skeleton": "./vendor/local-components-ui-skeleton.js",
+    "@/lib/api": "./vendor/local-lib-api.js",
+    "@/lib/cn": "./vendor/local-lib-cn.js",
+    "@/lib/format": "./vendor/local-lib-format.js"
   }
 }

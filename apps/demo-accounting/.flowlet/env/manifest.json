@@ -13,47 +13,47 @@
         "note": "useSWR resolves anchor data / declared queries; the fetcher never runs"
       },
       "@/components/ui/badge": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/components/ui/card": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/components/ui/empty-state": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/components/ui/error-state": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/components/ui/progress": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/components/ui/skeleton": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/lib/api": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/lib/cn": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       },
       "@/lib/format": {
-        "kind": "absent",
-        "alternative": "app-local helper not vendored — inline its logic from the source"
+        "kind": "real"
       }
     }
   },
   "vendorSizes": {
-    "lucide-react": 1195660,
-    "next/link": 1047,
-    "swr": 581
+    "lucide-react": 1185124,
+    "next/link": 1029,
+    "swr": 575,
+    "@/components/ui/badge": 100695,
+    "@/components/ui/card": 100402,
+    "@/components/ui/empty-state": 100761,
+    "@/components/ui/error-state": 101389,
+    "@/components/ui/progress": 100556,
+    "@/components/ui/skeleton": 100038,
+    "@/lib/api": 604,
+    "@/lib/cn": 99771,
+    "@/lib/format": 1369
   },
   "styles": {
     "css": true,

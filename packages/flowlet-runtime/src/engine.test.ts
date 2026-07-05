@@ -718,6 +718,32 @@ describe("createFlowletAgent", () => {
         expect(holder.system).not.toContain("render a view via render_view that");
       });
 
+      it("a baseline containing its own FlowletRemix wrapper gets the unwrap instruction", async () => {
+        const wrapped =
+          'import { FlowletRemix } from "@flowlet/shell"\n' +
+          'export function DeadlineList() { return <FlowletRemix id="x"><div/></FlowletRemix> }';
+        const { holder, model } = captureTools();
+        const agent = createFlowletAgent({ model, policy: allowPolicy });
+        await collect(
+          agent.run({
+            messages: sourcedTurn(wrapped, false, "DeadlineList"),
+            tools: {},
+            signal: new AbortController().signal,
+          }),
+        );
+        expect(holder.system).toContain("UNWRAP the element");
+        // And a wrapper-free baseline doesn't carry the noise.
+        const { holder: h2, model: m2 } = captureTools();
+        await collect(
+          createFlowletAgent({ model: m2, policy: allowPolicy }).run({
+            messages: sourcedTurn(NAMED_SRC, false, "DeadlineList"),
+            tools: {},
+            signal: new AbortController().signal,
+          }),
+        );
+        expect(h2.system).not.toContain("UNWRAP the element");
+      });
+
       it("truncated baseline keeps the render_view path with nonce framing (no edit_view guidance)", async () => {
         const { holder, model } = captureTools();
         const agent = createFlowletAgent({ model, policy: allowPolicy });

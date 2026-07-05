@@ -186,6 +186,13 @@ function baselineSection(
       "lists as real or shimmed. Your FIRST hunks must remove or inline every other import " +
       "(delete the import lines; replace helpers with small inline versions; replace missing " +
       "components with plain JSX). The server rejects the edit otherwise, naming the offenders.",
+    ...(baseline.text.includes("FlowletRemix")
+      ? [
+          "This baseline contains its own <FlowletRemix> wrapper. The sandbox has no " +
+            "@flowlet/shell: delete that import and UNWRAP the element (keep its children) " +
+            "in the same first hunks.",
+        ]
+      : []),
     `Example — "make the title blue" when line 12 is \`  <h2>{title}</h2>\`: ${example}`,
     ...(needsDefaultExport
       ? [

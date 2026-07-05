@@ -52,7 +52,7 @@ function* walk(dir: string): Generator<string> {
 }
 
 /** tsconfig `paths` aliases (e.g. `@/*`), resolved against `baseUrl`. */
-function readAliases(targetDir: string): Array<{ prefix: string; to: string }> {
+export function readAliases(targetDir: string): Array<{ prefix: string; to: string }> {
   const aliases: Array<{ prefix: string; to: string }> = [];
   try {
     const raw = readFileSync(path.join(targetDir, "tsconfig.json"), "utf8");
@@ -71,7 +71,7 @@ function readAliases(targetDir: string): Array<{ prefix: string; to: string }> {
   return aliases;
 }
 
-function resolveModuleFile(
+export function resolveModuleFile(
   specifier: string,
   fromFile: string,
   aliases: Array<{ prefix: string; to: string }>,
@@ -100,7 +100,7 @@ function resolveModuleFile(
 }
 
 /** Threat-model refusal — evaluated on the RESOLVED path + content. */
-function refusalReason(file: string, content: string, sourceRoot: string): string | undefined {
+export function refusalReason(file: string, content: string, sourceRoot: string): string | undefined {
   const rel = path.relative(sourceRoot, file);
   if (rel.startsWith("..")) return "outside the app source root";
   const segments = rel.split(path.sep);
