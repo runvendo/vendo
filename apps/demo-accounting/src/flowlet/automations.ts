@@ -26,6 +26,7 @@ import { z } from "zod";
 import type { Principal } from "@flowlet/core";
 import {
   AutomationRunner,
+  InAppChannels,
   InMemoryAutomationStore,
   InProcessScheduler,
   buildAutomationInstructions,
@@ -83,6 +84,8 @@ export interface CadenceAutomationsWorld {
   store: AutomationEngineStore;
   runner: AutomationRunner;
   scheduler: InProcessScheduler;
+  /** In-app deliveries (FlowletToasts): the client polls /api/flowlet/deliveries. */
+  channels: InAppChannels;
   /** The chat agent's authoring toolset (create/update/list/pause/run-now…). */
   authoringTools(threadId?: string): ToolSet;
   /** Drive due schedules (the client poller ticks this; no timers needed in dev). */
@@ -250,12 +253,14 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
     GOOGLECALENDAR_CREATE_EVENT: calendarCreate,
   };
 
+  const channels = new InAppChannels();
   const runner = new AutomationRunner({
     store,
     tools: async () => registered,
     policy: demoPolicy,
     userClaims: async () => ({ id: DEMO_USER_ID, name: DEMO_USER_NAME }),
     agentRunner: createAgentStepRunner({ model: opts.model ?? anthropic(DEMO_MODEL) }),
+    channels,
     ...(opts.now ? { now: opts.now } : {}),
   });
 
@@ -278,6 +283,7 @@ export function createAutomationsWorld(opts: CreateWorldOptions = {}): CadenceAu
     store,
     runner,
     scheduler,
+    channels,
     authoringTools,
     tick: () => scheduler.tick(),
   };

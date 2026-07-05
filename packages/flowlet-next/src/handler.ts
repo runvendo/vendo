@@ -73,6 +73,9 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
     const connections = options.connections ?? createConnectionsStore(catalog);
 
+    // SINGLE-TENANT (see world.ts): one embedded scope for the store, the
+    // deliveries feed, and approval resumes.
+    const worldScope = { tenantId: "flowlet-embedded", subject: DEFAULT_PRINCIPAL.userId };
     const world: FlowletAutomationsWorld | null =
       options.automations === false
         ? null
@@ -80,7 +83,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
             policy,
             model,
             ...(options.automations?.tools ? { tools: options.automations.tools } : {}),
-            scope: { tenantId: "flowlet-embedded", subject: DEFAULT_PRINCIPAL.userId },
+            scope: worldScope,
           });
 
     const serverTools = (): ToolSet => {
@@ -120,6 +123,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       policy,
       connections,
       world,
+      worldScope,
       serverTools,
       getAgent,
       approvals: createApprovalStore(),
@@ -138,6 +142,25 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           enabled: s.capabilities.integrations,
           options,
         });
+      case "deliveries": {
+        // FlowletToasts polls this: in-app Channels deliveries since a cursor.
+        if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        // SINGLE-TENANT world (see world.ts): the feed belongs to the world's
+        // fixed subject. Under a custom multi-user principal resolver, other
+        // subjects must NOT read it — fail closed rather than leak run
+        // summaries across users (Codex review, 2026-07-04).
+        if (guard.principal.userId !== s.worldScope.subject) {
+          return Response.json(
+            { error: "automation deliveries are single-tenant; front your own world for multi-user installs" },
+            { status: 403 },
+          );
+        }
+        const raw = Number(new URL(req.url).searchParams.get("since") ?? "0");
+        const since = Number.isFinite(raw) && raw >= 0 ? raw : 0;
+        return Response.json({ deliveries: s.world.channels.listSince(s.worldScope, since) });
+      }
       default:
         return Response.json({ error: "not found" }, { status: 404 });
     }
@@ -174,6 +197,39 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
         if (!guard.ok) return guard.response;
         await s.world.tick();
         return Response.json({ ok: true });
+      }
+      case "resume": {
+        // Approval toast → resume the paused run. Unknown/already-settled runs
+        // answer `stale` (the toast flips to its stale state) instead of 500.
+        if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        // Same single-tenant fail-closed rule as /deliveries: only the world's
+        // subject may resume its paused runs.
+        if (guard.principal.userId !== s.worldScope.subject) {
+          return Response.json(
+            { error: "automation resume is single-tenant; front your own world for multi-user installs" },
+            { status: 403 },
+          );
+        }
+        const body = (await req.json().catch(() => ({}))) as {
+          runId?: unknown;
+          approved?: unknown;
+          stepId?: unknown;
+        };
+        if (typeof body.runId !== "string" || body.runId.length === 0) {
+          return Response.json({ error: "runId is required" }, { status: 400 });
+        }
+        const run = await s.world.runner.resume(
+          s.worldScope,
+          body.runId,
+          body.approved === true,
+          typeof body.stepId === "string" ? body.stepId : undefined,
+        );
+        if (!run) return Response.json({ stale: true });
+        return Response.json({
+          run: { id: run.id, status: run.status, outcome: run.outcome ?? null },
+        });
       }
       default:
         return Response.json({ error: "not found" }, { status: 404 });

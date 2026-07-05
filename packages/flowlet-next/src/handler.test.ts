@@ -119,6 +119,48 @@ describe("createFlowletHandler", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it("serves automation deliveries since a cursor (FlowletToasts)", async () => {
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await GET(req("/api/flowlet/deliveries?since=0"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deliveries: [] });
+  });
+
+  it("404s deliveries and resume when automations are disabled", async () => {
+    const { GET, POST } = createFlowletHandler({ flowletDir: emptyDir(), automations: false });
+    expect((await GET(req("/api/flowlet/deliveries?since=0"))).status).toBe(404);
+    expect(
+      (
+        await POST(
+          req("/api/flowlet/resume", {
+            method: "POST",
+            body: JSON.stringify({ runId: "r1", approved: true }),
+          }),
+        )
+      ).status,
+    ).toBe(404);
+  });
+
+  it("answers resume for an unknown run as stale instead of erroring", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/resume", {
+        method: "POST",
+        body: JSON.stringify({ runId: "nope", approved: true }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ stale: true });
+  });
+
+  it("400s a resume request without a runId", async () => {
+    const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await POST(
+      req("/api/flowlet/resume", { method: "POST", body: JSON.stringify({ approved: true }) }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("503s a chat request when no model key is configured", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     const { POST } = createFlowletHandler({ flowletDir: emptyDir() });

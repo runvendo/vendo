@@ -29,4 +29,33 @@ describe("createAutomationsWorld", () => {
   it("ticks without registered tools or schedules", async () => {
     await expect(world.tick()).resolves.toBeUndefined();
   });
+
+  it("wires the runner to in-app channels so terminal runs surface as deliveries", async () => {
+    const scope = { tenantId: "flowlet-embedded", subject: "u1" };
+    const { automation } = await world.store.create(scope, {
+      spec: {
+        dslVersion: 1,
+        name: "Chase",
+        description: "d",
+        prompt: "p",
+        trigger: { type: "host_event", event: "invoice.overdue" },
+        execution: {
+          mode: "steps",
+          steps: [{ id: "noop", type: "tool", tool: "missing_tool", input: {} }],
+        },
+        limits: { maxFiringsPerHour: 10 },
+      } as never,
+      grants: [],
+    });
+    await world.runner.fire(scope, automation.id, {
+      source: "host",
+      eventId: "e1",
+      subject: "u1",
+      occurredAt: new Date().toISOString(),
+      payload: {},
+    });
+    const deliveries = world.channels.listSince(scope, 0);
+    expect(deliveries.length).toBeGreaterThan(0);
+    expect(deliveries[0]!.message.automation?.kind).toBe("completed");
+  });
 });

@@ -15,6 +15,9 @@ export * from "./voice/VoiceBlob";
 export * from "./voice/VoiceStage";
 export * from "./seams/store";
 export * from "./seams/web-storage";
+export * from "./seams/remixes";
+export * from "./seams/web-remixes";
+export * from "./seams/notifications";
 export * from "./seams/query";
 export * from "./reopen";
 export * from "./component-drift";
@@ -44,6 +47,13 @@ export * from "./components/ConnectDock";
 export * from "./components/ConnectTray";
 export * from "./components/ConnectCard";
 export * from "./components/BrandIcon";
+
+export * from "./remix/FlowletRemix";
+export * from "./remix/page-context-registry";
+export * from "./remix/scope";
+export * from "./remix/snapshot";
+export * from "./toasts/FlowletToasts";
+export * from "./toasts/toast-queue";
 
 export * from "./FlowletThread";
 export * from "./elements/FlowletOverlay";

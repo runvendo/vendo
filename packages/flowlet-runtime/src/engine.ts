@@ -24,7 +24,13 @@ import {
   type ToolSet,
   type UIMessageChunk,
 } from "ai";
-import type { FlowletAgent, RunInput, FlowletUIMessage, RegisteredComponent } from "@flowlet/core";
+import type {
+  AnchorContextBlock,
+  FlowletAgent,
+  RunInput,
+  FlowletUIMessage,
+  RegisteredComponent,
+} from "@flowlet/core";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import { buildToolset, type ToolSourceInput } from "./toolset";
 import { createRenderViewTool } from "./render-view-tool";
@@ -60,6 +66,60 @@ const DEFAULT_INSTRUCTIONS =
   "You are a Flowlet agent. Help the user by calling the available tools and, " +
   "when it helps, rendering UI components via the render_view tool. Only act " +
   "within the user's request; do not take destructive actions without approval.";
+
+/** Anchor block from the latest user message (FlowletRemix, 2026-07-04 spec). */
+function lastUserAnchors(messages: FlowletUIMessage[]): AnchorContextBlock | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "user") return message.metadata?.anchors;
+  }
+  return undefined;
+}
+
+/**
+ * Render the anchor block as a system-prompt section. The scoped anchor's DOM
+ * snapshot is the remix baseline: the model is told to reproduce it, then
+ * apply the requested delta — not to invent a view from scratch.
+ */
+function anchorSection(anchors: AnchorContextBlock): string {
+  const lines: string[] = ["## Host page context"];
+  const { scoped, ambient } = anchors;
+  if (scoped) {
+    lines.push(
+      `The user opened this conversation from the host element "${scoped.label ?? scoped.anchorId}" (anchor id "${scoped.anchorId}").`,
+    );
+    if (scoped.context !== undefined) {
+      lines.push(`Element data: ${JSON.stringify(scoped.context)}`);
+    }
+    if (scoped.snapshot) {
+      lines.push(
+        "Rendered baseline (sanitized DOM snapshot of the element as it looks today):",
+        scoped.snapshot,
+        "If asked to customize or remix this element, render a view via render_view that " +
+          "reproduces this baseline faithfully first, then applies the requested change. " +
+          "Put the element data in `data` and bind props with { $path } so the host can " +
+          "feed live data into the pinned view.",
+        "IMPORTANT: the snapshot's class names come from the HOST's stylesheet, which does " +
+          "NOT exist inside the render sandbox — copying them produces unstyled, overlapping " +
+          "markup. Treat them only as hints about the intended look, and style generated " +
+          "components with inline styles plus the --flowlet-* CSS variables (layout with " +
+          "flexbox gaps, explicit font sizes, no absolute positioning unless the baseline " +
+          "truly overlaps).",
+      );
+    }
+  }
+  if (ambient && ambient.length > 0) {
+    lines.push(
+      "Other elements visible on the user's current page:",
+      ...ambient.map(
+        (a) =>
+          `- "${a.label ?? a.anchorId}" (anchor id "${a.anchorId}")` +
+          (a.context !== undefined ? `: ${JSON.stringify(a.context)}` : ""),
+      ),
+    );
+  }
+  return lines.join("\n");
+}
 
 /** Configuration for {@link createFlowletAgent}. */
 export interface FlowletAgentConfig {
@@ -205,7 +265,13 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             : { userId: "" };
 
         // 2. The render + connect tools, bound to this run's stream writer.
-        const renderViewTool = createRenderViewTool(writer, { components: config.components });
+        //    A FlowletRemix-scoped conversation tags every rendered view as a
+        //    remix candidate for its anchor.
+        const anchors = lastUserAnchors(input.messages);
+        const renderViewTool = createRenderViewTool(writer, {
+          components: config.components,
+          ...(anchors?.scoped ? { remixAnchorId: anchors.scoped.anchorId } : {}),
+        });
         const requestConnectTool = createRequestConnectTool(writer);
 
         // 3. Composio ingestion (fail-closed inside ingestComposioTools).
@@ -316,9 +382,10 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
         });
 
         // 6. Drive the model->tool loop.
+        const baseSystem = input.system ?? config.instructions ?? DEFAULT_INSTRUCTIONS;
         const result = streamText({
           model: config.model,
-          system: input.system ?? config.instructions ?? DEFAULT_INSTRUCTIONS,
+          system: anchors ? `${baseSystem}\n\n${anchorSection(anchors)}` : baseSystem,
           tools,
           // `ignoreIncompleteToolCalls` drops tool parts an aborted stream left
           // at input-streaming/input-available — without it they convert to a

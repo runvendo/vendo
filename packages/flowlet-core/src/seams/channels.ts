@@ -25,4 +25,17 @@ export interface OutboundMessage {
   text: string;
   /** Thread to attach in-app deliveries to; ignored by SMS. */
   threadId?: string;
+  /** Structured automation payload (FlowletToasts, 2026-07-04 spec). The
+   *  message stays deliverable as plain text on channels that ignore it. */
+  automation?: AutomationDelivery;
+}
+
+/** The two toast-able automation moments — deliberately nothing else. */
+export interface AutomationDelivery {
+  kind: "completed" | "approval-required";
+  runId: string;
+  /** The paused step awaiting approval; only on `approval-required`. */
+  stepId?: string;
+  /** Human one-liner for the toast body. */
+  summary: string;
 }

@@ -383,6 +383,91 @@ describe("createFlowletAgent", () => {
     expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
   });
 
+  describe("anchor context (FlowletRemix, 2026-07-04 spec)", () => {
+    const scopedTurn = (payload?: unknown): FlowletUIMessage[] => [
+      {
+        id: "m1",
+        role: "user",
+        parts: [{ type: "text", text: payload ? "customize it" : "what is this?" }],
+        metadata: {
+          runId: "r0",
+          threadId: "t0",
+          schemaVersion: SCHEMA_VERSION,
+          anchors: {
+            scoped: {
+              anchorId: "invoices-widget",
+              label: "Outstanding invoices",
+              context: { rows: 3 },
+              snapshot: '<div class="invoices">3 rows</div>',
+            },
+            ambient: [{ anchorId: "deadline-list", label: "Deadlines" }],
+          },
+        },
+      },
+    ];
+
+    it("injects scoped anchor label, data, snapshot, and ambient anchors into the system prompt", async () => {
+      let seenSystem = "";
+      const model = new MockLanguageModelV3({
+        doStream: async ({ prompt }) => {
+          const sys = prompt.find((m) => m.role === "system");
+          seenSystem =
+            typeof sys?.content === "string" ? sys.content : JSON.stringify(sys?.content ?? "");
+          return {
+            stream: simulateReadableStream({
+              chunks: [
+                ...textChunks("t1", "ok"),
+                { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+              ] as LanguageModelV3StreamPart[],
+            }),
+          };
+        },
+      });
+      const agent = createFlowletAgent({ model, policy: allowPolicy });
+      await collect(
+        agent.run({ messages: scopedTurn(), tools: {}, signal: new AbortController().signal }),
+      );
+      expect(seenSystem).toContain("Outstanding invoices");
+      expect(seenSystem).toContain("invoices-widget");
+      expect(seenSystem).toContain('<div class="invoices">3 rows</div>');
+      expect(seenSystem).toContain("Deadlines");
+      // A plain turn (no anchors metadata) must not carry the section.
+      seenSystem = "";
+      await collect(
+        agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+      );
+      expect(seenSystem).not.toContain("Host page context");
+    });
+
+    it("tags views rendered in a scoped conversation as remix candidates", async () => {
+      const payload = {
+        formatVersion: "flowlet-genui/v1",
+        root: "r",
+        nodes: [{ id: "r", component: "Text", props: { text: "Hi" } }],
+      };
+      const agent = createFlowletAgent({
+        model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
+        policy: allowPolicy,
+      });
+      const parts = await collect(
+        agent.run({ messages: scopedTurn(payload), tools: {}, signal: new AbortController().signal }),
+      );
+      const ui = parts.find((p) => (p as { type: string }).type === "data-ui") as {
+        data: { remixAnchorId?: string };
+      };
+      expect(ui.data.remixAnchorId).toBe("invoices-widget");
+
+      // Unscoped turns emit untagged views.
+      const plain = await collect(
+        agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+      );
+      const plainUi = plain.find((p) => (p as { type: string }).type === "data-ui") as {
+        data: { remixAnchorId?: string };
+      };
+      expect(plainUi.data.remixAnchorId).toBeUndefined();
+    });
+  });
+
   it("repairs a stale DYNAMIC tool approval (MCP tools) the same way", async () => {
     let seenPrompt: { role: string; content: unknown }[] = [];
     const model = new MockLanguageModelV3({
