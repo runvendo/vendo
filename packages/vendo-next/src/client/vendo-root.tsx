@@ -39,6 +39,7 @@ import { VendoConnectNode } from "./connect-node";
 import { createServerIntegrations } from "./integrations";
 import { createServerNotifications } from "./notifications";
 import { createRunQuery } from "./run-query";
+import type { VoiceDriver } from "@vendoai/shell";
 
 export interface VendoRootProps {
   /** `.vendo/theme.json`, imported as JSON. Invalid/absent → default brand. */
@@ -60,6 +61,10 @@ export interface VendoRootProps {
   /** Corner for the toast stack. Default "bottom-left" (the launcher pill
    *  owns bottom-right). */
   toastPlacement?: VendoToastsProps["placement"];
+  /** Realtime voice driver (ENG-185). When provided, the overlay's composer
+   *  grows a mic. Build one with createRealtimeVoiceDriver from
+   *  @vendoai/shell against a host session-mint endpoint. */
+  voice?: VoiceDriver;
   children: ReactNode;
 }
 
@@ -110,6 +115,7 @@ export function VendoRoot({
   launcher = "pill",
   toasts = true,
   toastPlacement = "bottom-left",
+  voice,
   children,
 }: VendoRootProps) {
   const brand = useMemo(() => parseBrand(theme), [theme]);
@@ -230,6 +236,7 @@ export function VendoRoot({
               onOpenChange={setOpen}
               {...(greeting !== undefined ? { greeting } : {})}
               {...(suggestions !== undefined ? { suggestions } : {})}
+              {...(voice !== undefined && capabilities?.voice ? { voice } : {})}
             />
           )}
           {chatEnabled && launcher === "pill" && !open && (

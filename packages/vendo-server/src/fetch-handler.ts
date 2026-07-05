@@ -258,6 +258,7 @@ async function assembleVendoState(options: VendoHandlerOptions) {
             policy: worldPolicy,
             model,
             ...(options.automations?.tools ? { tools: options.automations.tools } : {}),
+            hostEvents: loaded.manifest.events,
             scope: worldScope,
             ...(engineStore ? { store: engineStore } : {}),
             // ENG-193 §4.6/§6.2: parked-action resolutions get the SAME
@@ -344,6 +345,15 @@ async function assembleVendoState(options: VendoHandlerOptions) {
           hostToolNames: hostTools.map((t) => t.name),
           integrations: capabilities.integrations ? catalog : [],
           automations: world !== null,
+          automationEvents: loaded.manifest.events.map((e) => ({
+            name: e.name,
+            description: e.description,
+            ...(e.payloadSchema &&
+            typeof e.payloadSchema["properties"] === "object" &&
+            e.payloadSchema["properties"] !== null
+              ? { payloadFields: Object.keys(e.payloadSchema["properties"] as Record<string, unknown>).join(", ") }
+              : {}),
+          })),
           toolSummary: ctx.toolSummary,
           ...(options.instructionsExtra ? { extra: options.instructionsExtra } : {}),
         }));
