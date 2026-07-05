@@ -6,13 +6,17 @@
  */
 import { runInit } from "./init.js";
 import { runPublish } from "./publish.js";
+import { runSync } from "./sync/index.js";
 
 const HELP = `flowlet — Flowlet one-click dev tool
 
 Usage:
   flowlet init [dir] [--skip-llm] [--force]   Extract theme/tools/components into .flowlet/ AND
                                               wire a Next.js App Router app (route handler,
-                                              provider, .env.example, sandbox assets)
+                                              provider, .env.example, sandbox assets, prebuild sync)
+  flowlet sync [dir]                          Capture wrapped-component source + build the sandbox
+                                              environment (deps, host CSS, manifest). Runs every
+                                              build via the prebuild script init wires.
   flowlet publish [dir]                       Publish the manifest (stub — registry lands with ENG-198)
 
 Options:
@@ -27,6 +31,8 @@ export async function main(argv: string[]): Promise<number> {
   switch (cmd) {
     case "init":
       return runInit({ targetDir: dir, skipLlm: flags.has("--skip-llm"), force: flags.has("--force") });
+    case "sync":
+      return runSync({ targetDir: dir });
     case "publish":
       return runPublish({ targetDir: dir });
     case "--version":

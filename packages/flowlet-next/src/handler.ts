@@ -36,6 +36,7 @@ import { loadFlowletDir } from "./flowlet-dir";
 import { resolveMcpServers } from "./mcp-config";
 import { manifestToolsToHostTools } from "./manifest-tools";
 import { buildInstructions, createAgentCache } from "./agent";
+import { createSourceResolver } from "./remix-enrich";
 import { createAutomationsWorld, defaultModel, type FlowletAutomationsWorld } from "./world";
 import { defaultFlowletPolicy } from "./default-policy";
 import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
@@ -103,10 +104,18 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
         ...(options.instructionsExtra ? { extra: options.instructionsExtra } : {}),
       });
 
+    // Remix-source enrichment: option first, then flowlet sync's capture
+    // (re-read from disk in dev; see remix-enrich.ts).
+    const resolveRemixSource = createSourceResolver({
+      ...(options.remixSources ? { option: options.remixSources } : {}),
+      captured: loaded.remixSources,
+    });
+
     const getAgent = createAgentCache({
       model,
       policy,
       instructions,
+      ...(loaded.envManifest ? { envManifest: loaded.envManifest } : {}),
       // The engine's render_view registry must know the prewired catalog too —
       // host-node validation rejects any name it can't find (ENG-186).
       components: [...prewiredComponents, ...(options.components ?? [])],
@@ -126,6 +135,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       worldScope,
       serverTools,
       getAgent,
+      resolveRemixSource,
       approvals: createApprovalStore(),
     };
   }
@@ -174,6 +184,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           getAgent: s.getAgent,
           hostTools: s.hostTools,
           options,
+          resolveRemixSource: s.resolveRemixSource,
           // A host that injects its own `model` owns the key; otherwise chat
           // needs ANTHROPIC_API_KEY (capabilities.chat).
           chatEnabled: options.model !== undefined || s.capabilities.chat,

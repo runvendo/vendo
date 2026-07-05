@@ -1,0 +1,9 @@
+{
+  "upcoming-deadlines": {
+    "file": "src/components/ui/card.tsx",
+    "exportName": "Card",
+    "source": "import { cn } from \"@/lib/cn\"\n\nexport function Card({ className, ...props }: React.ComponentProps<\"div\">) {\n  return (\n    <div\n      className={cn(\"rounded-xl border border-line bg-card shadow-card\", className)}\n      {...props}\n    />\n  )\n}\n\n/** Card header row: title on the left, optional action (link/button) on the right. */\nexport function CardHeader({\n  title,\n  action,\n  className,\n}: {\n  title: string\n  action?: React.ReactNode\n  className?: string\n}) {\n  return (\n    <div className={cn(\"flex items-center justify-between px-5 pt-4 pb-3\", className)}>\n      <h2 className=\"text-[13px] font-semibold tracking-tight\">{title}</h2>\n      {action}\n    </div>\n  )\n}\n",
+    "sourceHash": "c3fce036d370824a",
+    "capturedAt": "2026-07-04T23:23:43.418Z"
+  }
+}
