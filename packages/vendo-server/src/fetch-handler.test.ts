@@ -246,6 +246,54 @@ describe("createVendoFetchHandler", () => {
     expect(await list.json()).toEqual({ actions: [] });
   });
 
+  // Every browser-credentialed mutating POST route (not chat/tick/webhooks,
+  // which have their own auth or no ambient-cookie surface).
+  const CSRF_GATED_POSTS = [
+    "integrations",
+    "action",
+    "consent",
+    "fade-proposal",
+    "resume",
+    "parked-actions/resolve",
+    "grants/revoke",
+    "rules/revoke",
+    "vendos",
+  ];
+
+  it("rejects a cross-site POST to every browser-credentialed mutating route", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir(), storage: false });
+    for (const tail of CSRF_GATED_POSTS) {
+      const res = await handler(
+        new Request(`http://localhost:3000/api/vendo/${tail}`, {
+          method: "POST",
+          headers: { host: "localhost:3000", origin: "https://evil.example", "content-type": "application/json" },
+          body: JSON.stringify({}),
+        }),
+      );
+      expect(res.status, tail).toBe(403);
+      expect(((await res.json()) as { error: string }).error, tail).toMatch(/cross-site/);
+    }
+  });
+
+  it("lets a same-origin POST (host page fetch) past the CSRF gate on every gated route", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    const handler = createVendoFetchHandler({ vendoDir: emptyDir(), storage: false });
+    for (const tail of CSRF_GATED_POSTS) {
+      const res = await handler(
+        new Request(`http://localhost:3000/api/vendo/${tail}`, {
+          method: "POST",
+          headers: { host: "localhost:3000", origin: "http://localhost:3000", "content-type": "application/json" },
+          body: JSON.stringify({}),
+        }),
+      );
+      // Route logic runs (may 400/503) — it must NOT be the CSRF 403.
+      if (res.status === 403) {
+        expect(((await res.json()) as { error: string }).error, tail).not.toMatch(/cross-site/);
+      }
+    }
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");

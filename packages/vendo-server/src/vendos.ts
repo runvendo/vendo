@@ -57,42 +57,6 @@ function isUnsafeVendoId(id: string): boolean {
   return RESERVED_VENDO_IDS.has(id) || id.includes("/");
 }
 
-/**
- * CSRF gate for the mutating vendo routes (save/delete). A host `principal`
- * resolver may authenticate via ambient cookies, so a cross-site page could
- * otherwise fire authenticated mutations. Two escape hatches keep legitimate
- * callers working:
- *   - an `authorization` header is a custom-header credential a cross-site
- *     page cannot attach without a CORS preflight this handler never grants —
- *     inherently CSRF-safe, no origin check needed;
- *   - a request with NO browser provenance headers (curl, server-to-server)
- *     carries no third-party-triggered ambient credentials.
- * When `Origin` is present it is authoritative: require exact host equality
- * (host+port) REGARDLESS of `sec-fetch-site` — a sibling subdomain like
- * `evil.example.com` → `app.example.com` reads `sec-fetch-site: same-site` yet
- * is a different origin, so trusting same-site would let it through. Only when
- * `Origin` is absent do we fall back to `sec-fetch-site`, and there we accept
- * ONLY `same-origin`; `same-site`/`cross-site`/`none` all reject (fail closed —
- * without an Origin we cannot verify the exact host).
- */
-function isCrossSiteRequest(req: Request): boolean {
-  if (req.headers.get("authorization")) return false;
-  const origin = req.headers.get("origin");
-  if (origin !== null) {
-    let originHost: string;
-    try {
-      originHost = new URL(origin).host;
-    } catch {
-      return true; // includes "Origin: null" (sandboxed iframe) — fail closed
-    }
-    const host = req.headers.get("host") ?? new URL(req.url).host;
-    return originHost !== host;
-  }
-  const site = req.headers.get("sec-fetch-site");
-  if (site === null) return false; // no browser provenance at all → non-browser caller
-  return site !== "same-origin";
-}
-
 /** Principal-scoped counterpart to the shell's `VendoStore` (which has no
  *  scope param — the browser is inherently single-user). Same four verbs. */
 export interface VendoRegistry {
@@ -251,9 +215,8 @@ export async function handleVendosGet(req: Request, tail: string, deps: VendosDe
 /** POST vendos (save) | POST vendos/<id>/delete — the verb convention
  *  every mutating endpoint here uses (GET/POST only, no DELETE method). */
 export async function handleVendosPost(req: Request, tail: string, deps: VendosDeps): Promise<Response> {
-  if (isCrossSiteRequest(req)) {
-    return Response.json({ error: "cross-site request rejected" }, { status: 403 });
-  }
+  // CSRF is enforced centrally in the fetch handler's POST dispatcher
+  // (isCrossSiteRequest in guard.ts) for every mutating route family.
   const guard = await resolvePrincipal(req, deps.options);
   if (!guard.ok) return guard.response;
   const scope = threadScope(guard.principal);

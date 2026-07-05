@@ -87,7 +87,7 @@ import { ModelPeerMissingError, resolveModel } from "./model.js";
 import { defaultVendoPolicy } from "./default-policy.js";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack.js";
 import { createThreadIndex } from "./threads.js";
-import { isLocalDevRequest, resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard.js";
+import { isCrossSiteRequest, isLocalDevRequest, resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard.js";
 import { resolveStorage } from "./storage.js";
 import { parseHandlerOptions, type VendoHandlerOptions } from "./options.js";
 import { devTelemetry, errorClassName } from "./telemetry-dev.js";
@@ -135,6 +135,28 @@ export function routeTail(req: Request): string {
     if (FIRST_SEGMENTS.has(segments[i]!)) return segments.slice(i).join("/");
   }
   return segments[segments.length - 1] ?? "";
+}
+
+/**
+ * Route tails (from `routeTail`) whose POST is a browser-credentialed mutation
+ * and must clear the central CSRF gate. Excludes `chat` (policy-gated),
+ * `tick` (bearer service auth), and `webhooks/composio` (signature auth).
+ * Prefix families ("vendos/<id>/delete") are matched separately.
+ */
+const CSRF_PROTECTED_POST_TAILS = new Set([
+  "integrations",
+  "action",
+  "consent",
+  "fade-proposal",
+  "resume",
+  "parked-actions/resolve",
+  "grants/revoke",
+  "rules/revoke",
+  "vendos",
+]);
+
+function isCsrfProtectedPost(tail: string): boolean {
+  return CSRF_PROTECTED_POST_TAILS.has(tail) || tail.startsWith("vendos/");
 }
 
 export type VendoFetchHandler = (req: Request) => Promise<Response>;
@@ -809,6 +831,15 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
   }
 
   async function POST(req: Request, s: VendoState): Promise<Response> {
+    // Centralized CSRF gate: every browser-credentialed mutating route rejects
+    // cross-site provenance (isCrossSiteRequest keeps the carve-outs — custom
+    // auth header, header-less non-browser callers). EXCLUDED: `chat` (its
+    // host-tool effects are policy-gated, not direct mutations), `tick` (bearer
+    // service auth), and `webhooks/composio` (signature-authenticated, no
+    // ambient-cookie surface).
+    if (isCsrfProtectedPost(routeTail(req)) && isCrossSiteRequest(req)) {
+      return Response.json({ error: "cross-site request rejected" }, { status: 403 });
+    }
     switch (routeTail(req)) {
       case "chat":
         return handleChat(req, {
