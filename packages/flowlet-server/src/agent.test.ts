@@ -52,7 +52,7 @@ describe("buildInstructions", () => {
 describe("createAgentCache", () => {
   const model = { modelId: "stub" } as unknown as LanguageModel;
 
-  it("reuses the agent for a stable key and rebuilds when toolkits change", () => {
+  it("reuses the agent for a stable key and rebuilds when toolkits change", async () => {
     let toolkits: string[] = [];
     const getAgent = createAgentCache({
       model,
@@ -61,17 +61,32 @@ describe("createAgentCache", () => {
       components: [],
       toolkits: () => toolkits,
     });
-    const a = getAgent();
-    expect(getAgent()).toBe(a);
+    const a = await getAgent();
+    expect(await getAgent()).toBe(a);
     toolkits = ["gmail"];
-    const b = getAgent();
+    const b = await getAgent();
     expect(b).not.toBe(a);
     // order-insensitive key
     toolkits = ["gmail"];
-    expect(getAgent()).toBe(b);
+    expect(await getAgent()).toBe(b);
   });
 
-  it("rebuilds when the host cache key changes (e.g. a store generation)", () => {
+  it("also accepts an async toolkits callback (the durable connections store shape)", async () => {
+    let toolkits: string[] = [];
+    const getAgent = createAgentCache({
+      model,
+      policy: defaultFlowletPolicy,
+      instructions: "x",
+      components: [],
+      toolkits: async () => toolkits,
+    });
+    const a = await getAgent();
+    expect(await getAgent()).toBe(a);
+    toolkits = ["slack"];
+    expect(await getAgent()).not.toBe(a);
+  });
+
+  it("rebuilds when the host cache key changes (e.g. a store generation)", async () => {
     let gen = 0;
     const getAgent = createAgentCache({
       model,
@@ -80,9 +95,9 @@ describe("createAgentCache", () => {
       components: [],
       cacheKey: () => String(gen),
     });
-    const a = getAgent();
+    const a = await getAgent();
     gen = 1;
-    expect(getAgent()).not.toBe(a);
+    expect(await getAgent()).not.toBe(a);
   });
 });
 

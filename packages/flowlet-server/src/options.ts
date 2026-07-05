@@ -109,9 +109,39 @@ export interface FlowletHandlerOptions {
    *  IDENTITY (fail-safe rollout; item-2 behavior, unchanged) until a host
    *  opts in. */
   judgeModel?: LanguageModel;
+  /**
+   * Durable storage. Default: PGlite at `.flowlet/data` (or `DATABASE_URL` /
+   * `FLOWLET_DATA_DIR`) — durable by default, no config required. `false` =
+   * in-memory (opt out explicitly). `autoMigrate` defaults to `true`; set
+   * `false` to skip boot migrations and run them out-of-band (via the
+   * exported `migrateFlowletDatabase`).
+   *
+   * Test-env safety net: when `NODE_ENV === "test"` and this option is left
+   * unset entirely, the handler behaves as if `storage: false` were passed
+   * (silently — no on-disk PGlite dirs from test runs, no warning). Pass an
+   * explicit value, including `false`, to opt back in even under
+   * `NODE_ENV=test`. Corollary: never let NODE_ENV=test leak into a real
+   * deploy — it silently disables durability with no warning.
+   */
+  storage?: false | { connectionString?: string; pglite?: { dataDir: string }; autoMigrate?: boolean };
+  /**
+   * Stable identity for sharing one Flowlet world between the route handler
+   * and startFlowletScheduler when both pass options — set the same string
+   * in both places. Unnecessary for zero-config installs.
+   */
+  bootKey?: string;
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
+
+const CONNECTIONS_STORE_METHODS = [
+  "list",
+  "connect",
+  "disconnect",
+  "connectedToolkits",
+  "setConnectedAccount",
+  "findByConnectedAccount",
+] as const satisfies readonly (keyof ConnectionsStore)[];
 
 const optionsSchema = z
   .object({
@@ -130,12 +160,22 @@ const optionsSchema = z
     cacheKey: fn<() => string>().optional(),
     integrations: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) }).strict()).optional(),
     mcpServers: mcpServerArraySchema.optional(),
+    // ALL six ConnectionsStore methods: integrations calls
+    // connect/disconnect/setConnectedAccount and webhooks calls
+    // findByConnectedAccount — a legacy (list + connectedToolkits only) store
+    // must fail HERE, at boot, not at first runtime use.
     connections: z
       .custom<ConnectionsStore>(
         (v) =>
           typeof v === "object" && v !== null &&
-          typeof (v as ConnectionsStore).connectedToolkits === "function" &&
-          typeof (v as ConnectionsStore).list === "function",
+          CONNECTIONS_STORE_METHODS.every(
+            (m) => typeof (v as Record<string, unknown>)[m] === "function",
+          ),
+        {
+          message:
+            `the connections store must implement all of ${CONNECTIONS_STORE_METHODS.join(", ")} ` +
+            `(the full ConnectionsStore interface — see @flowlet/server's connections.ts)`,
+        },
       )
       .optional(),
     automations: z
@@ -158,6 +198,19 @@ const optionsSchema = z
       .strict()
       .optional(),
     judgeModel: z.custom<LanguageModel>((v) => typeof v === "string" || (typeof v === "object" && v !== null)).optional(),
+    storage: z
+      .union([
+        z.literal(false),
+        z
+          .object({
+            connectionString: z.string().min(1).optional(),
+            pglite: z.object({ dataDir: z.string().min(1) }).strict().optional(),
+            autoMigrate: z.boolean().optional(),
+          })
+          .strict(),
+      ])
+      .optional(),
+    bootKey: z.string().min(1).optional(),
   })
   .strict();
 

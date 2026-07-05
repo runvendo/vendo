@@ -25,6 +25,7 @@ export {
 export {
   detectCapabilities,
   type FlowletCapabilities,
+  type EnvCapabilities,
   type DetectCapabilitiesOptions,
 } from "./capabilities";
 export { loadFlowletDir, type LoadedFlowletDir } from "./flowlet-dir";
@@ -39,9 +40,25 @@ export {
   type ResolveModelDeps,
 } from "./model";
 export { defaultFlowletPolicy } from "./default-policy";
-export { resolvePrincipal, DEFAULT_PRINCIPAL, type GuardResult } from "./guard";
+export { resolvePrincipal, tickServiceAuth, threadScope, DEFAULT_PRINCIPAL, WORLD_SCOPE, type GuardResult } from "./guard";
 export { parseHandlerOptions, type FlowletHandlerOptions, type IntegrationCatalogEntry } from "./options";
-export { createFlowletFetchHandler, type FlowletFetchHandler } from "./fetch-handler";
+export {
+  createFlowletFetchHandler,
+  routeTail,
+  ensureFlowletState,
+  bootRegistry,
+  resetFlowletBootRegistry,
+  type FlowletFetchHandler,
+  type FlowletState,
+} from "./fetch-handler";
+export { startFlowletScheduler } from "./boot";
+export {
+  createDrizzleFlowletRegistry,
+  createInMemoryFlowletRegistry,
+  handleFlowletsGet,
+  handleFlowletsPost,
+  type FlowletRegistry,
+} from "./flowlets";
 export { toNodeHandler, type FetchHandler, type NodeHandler } from "./node";
 export {
   applyVerifiedPinBase,

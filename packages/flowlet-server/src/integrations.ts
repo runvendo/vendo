@@ -42,8 +42,8 @@ function getClient(deps: IntegrationsDeps): ComposioClient {
 }
 
 /** True iff `id` is a toolkit in the handler's catalog. */
-function isKnownToolkit(deps: IntegrationsDeps, id: string): boolean {
-  return deps.store.list().some((i) => i.id === id);
+async function isKnownToolkit(deps: IntegrationsDeps, id: string): Promise<boolean> {
+  return (await deps.store.list()).some((i) => i.id === id);
 }
 
 export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps): Promise<Response> {
@@ -58,7 +58,7 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
     if (!id || !account) {
       return Response.json({ error: "status requires id and account" }, { status: 400 });
     }
-    if (!isKnownToolkit(deps, id)) {
+    if (!(await isKnownToolkit(deps, id))) {
       return Response.json({ error: "unknown integration id" }, { status: 400 });
     }
     try {
@@ -68,14 +68,20 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
       // active connection for THIS toolkit — otherwise a caller could pass any
       // active account id against any toolkit id and flip it on without OAuth.
       if (status === "active" && (await getClient(deps).hasActiveConnection(guard.principal.userId, id))) {
-        deps.store.connect(id);
+        // This IS where the OAuth flow lands a successful connection — the
+        // client polls with the same `account` (connectedAccountId) it got
+        // back from the POST /connect leg, so this is the one place the
+        // in-memory/durable store can tie a Composio connected-account id to
+        // a toolkit for webhook routing (findByConnectedAccount). Subsumes
+        // connect(id)'s effect (marks the toolkit connected too).
+        await deps.store.setConnectedAccount(id, account);
       }
       return Response.json({ status });
     } catch {
       return Response.json({ status: "failed" as const });
     }
   }
-  return Response.json({ enabled: true, integrations: deps.store.list() });
+  return Response.json({ enabled: true, integrations: await deps.store.list() });
 }
 
 export async function handleIntegrationsPost(req: Request, deps: IntegrationsDeps): Promise<Response> {
@@ -98,7 +104,7 @@ export async function handleIntegrationsPost(req: Request, deps: IntegrationsDep
   if (!id) return Response.json({ error: "missing integration id" }, { status: 400 });
   // Validate against the catalog BEFORE touching Composio, so a caller can't
   // spend the server's Composio key initiating OAuth for arbitrary slugs.
-  if (!isKnownToolkit(deps, id)) {
+  if (!(await isKnownToolkit(deps, id))) {
     return Response.json({ error: "unknown integration id" }, { status: 400 });
   }
   const userId = guard.principal.userId;
@@ -106,8 +112,14 @@ export async function handleIntegrationsPost(req: Request, deps: IntegrationsDep
   if (body.action === "connect") {
     try {
       // Fast path: already authorized in Composio → mark connected immediately.
+      // NOTE: `hasActiveConnection` doesn't hand back a connectedAccountId, so
+      // this path can't call `setConnectedAccount` — only the status-poll
+      // branch above captures one. A user who reaches "connected" purely via
+      // this fast path won't have a Composio webhook route until they go
+      // through a fresh authorize()+poll cycle (documented gap, not fixed
+      // here — see docs/persistence-and-deploy.md when it lands).
       if (await getClient(deps).hasActiveConnection(userId, id)) {
-        deps.store.connect(id);
+        await deps.store.connect(id);
         return Response.json({ connected: true });
       }
       const { redirectUrl, connectedAccountId } = await getClient(deps).authorize(userId, id);
@@ -121,8 +133,8 @@ export async function handleIntegrationsPost(req: Request, deps: IntegrationsDep
   }
 
   if (body.action === "disconnect") {
-    deps.store.disconnect(id);
-    return Response.json({ enabled: true, integrations: deps.store.list() });
+    await deps.store.disconnect(id);
+    return Response.json({ enabled: true, integrations: await deps.store.list() });
   }
 
   return Response.json({ error: "action must be 'connect' or 'disconnect'" }, { status: 400 });

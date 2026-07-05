@@ -278,6 +278,7 @@ describe("approvals, grants, pause/resume", () => {
     expect(outcome.pendingApproval.stepId).toBe("freeze");
     expect(outcome.pendingApproval.tool).toBe("freeze_card");
     expect(outcome.pendingApproval.checkpoint).toBeTruthy();
+    expect((outcome.pendingApproval.checkpoint as { v: number }).v).toBe(1);
   });
 
   it("executes unattended with a valid scope-hashed grant, pauses on a stale one", async () => {
@@ -418,6 +419,49 @@ describe("approvals, grants, pause/resume", () => {
       resume: { checkpoint: paused.pendingApproval.checkpoint, approved: false },
     });
     expect(resumed.status).toBe("failed");
+    expect(tools.freeze_card.calls).toHaveLength(0);
+  });
+
+  it("refuses to resume a checkpoint with an unknown schema version", async () => {
+    const tools = {
+      fetch_rows: makeTool("fetch_rows"),
+      freeze_card: makeTool("freeze_card"),
+      send_msg: makeTool("send_msg"),
+    };
+    const spec = freezeSpec();
+    const paused = await interpret({ ...baseInput(spec, tools), policy: approveFor("freeze_card") });
+    if (paused.status !== "waiting_approval") throw new Error("expected pause");
+
+    const resumed = await interpret({
+      ...baseInput(spec, tools),
+      policy: approveFor("freeze_card"),
+      resume: { checkpoint: { ...paused.pendingApproval.checkpoint, v: 2 }, approved: true },
+    });
+    expect(resumed.status).toBe("failed");
+    if (resumed.status !== "failed") throw new Error("unreachable");
+    expect(resumed.error).toMatch(/unsupported checkpoint version/i);
+    expect(tools.freeze_card.calls).toHaveLength(0);
+  });
+
+  it("refuses to resume a checkpoint missing a schema version", async () => {
+    const tools = {
+      fetch_rows: makeTool("fetch_rows"),
+      freeze_card: makeTool("freeze_card"),
+      send_msg: makeTool("send_msg"),
+    };
+    const spec = freezeSpec();
+    const paused = await interpret({ ...baseInput(spec, tools), policy: approveFor("freeze_card") });
+    if (paused.status !== "waiting_approval") throw new Error("expected pause");
+
+    const { v: _v, ...unversioned } = paused.pendingApproval.checkpoint as { v: number };
+    const resumed = await interpret({
+      ...baseInput(spec, tools),
+      policy: approveFor("freeze_card"),
+      resume: { checkpoint: unversioned, approved: true },
+    });
+    expect(resumed.status).toBe("failed");
+    if (resumed.status !== "failed") throw new Error("unreachable");
+    expect(resumed.error).toMatch(/unsupported checkpoint version/i);
     expect(tools.freeze_card.calls).toHaveLength(0);
   });
 

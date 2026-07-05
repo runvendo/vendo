@@ -1,14 +1,47 @@
 import { describe, expect, it, vi } from "vitest";
-import type { FlowletAgent } from "@flowlet/core";
-import { CLIENT_EXECUTOR_MARKER, InMemoryThreadStore } from "@flowlet/runtime";
+import { createUIMessageStream, type UIMessageChunk } from "ai";
+import type { FlowletAgent, FlowletUIMessage } from "@flowlet/core";
+import { CLIENT_EXECUTOR_MARKER, createInMemoryStore, InMemoryThreadStore } from "@flowlet/runtime";
 import { handleChat } from "./chat";
 import { manifestToolsToHostTools } from "./manifest-tools";
 import { createThreadIndex } from "./threads";
 import { EMBEDDED_TENANT } from "./policy-stack";
 
+const SCOPE = { tenantId: "flowlet-embedded", subject: "flowlet-default-user" };
+
 function stubAgent() {
   const run = vi.fn(() => new ReadableStream());
   return { agent: { run } as unknown as FlowletAgent, run };
+}
+
+/** A tiny, fully controlled agent: emits ONE assistant UIMessage (given id +
+ *  text) through the real ai SDK UIMessage-chunk protocol, so
+ *  `readUIMessageStream` reduces it exactly like a real turn. */
+function chunkAgent(messageId: string, text: string) {
+  const run = vi.fn(
+    (): ReadableStream<UIMessageChunk> =>
+      createUIMessageStream<FlowletUIMessage>({
+        execute: ({ writer }) => {
+          writer.write({ type: "start", messageId });
+          writer.write({ type: "text-start", id: "t1" });
+          writer.write({ type: "text-delta", id: "t1", delta: text });
+          writer.write({ type: "text-end", id: "t1" });
+          writer.write({ type: "finish" });
+        },
+      }),
+  );
+  return { agent: { run } as unknown as FlowletAgent, run };
+}
+
+/** Fully drains a Response's body — mirrors what a real client does, and lets
+ *  the detached capture branch (the tee'd stream half) run to completion. */
+async function drainResponse(res: Response): Promise<void> {
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  for (;;) {
+    const { done } = await reader.read();
+    if (done) break;
+  }
 }
 
 function chatReq(body: unknown, host = "localhost:3000"): Request {
@@ -193,5 +226,144 @@ describe("handleChat", () => {
     const expectedThreadId = await threadIndex.resolve(scope, "chat-9");
     const input = run.mock.calls[0]![0] as Record<string, unknown>;
     expect(input["threadId"]).toBe(expectedThreadId);
+  });
+});
+
+describe("handleChat — durable threads", () => {
+  it("upserts the client's messages BEFORE streaming and the assistant turn AFTER it", async () => {
+    const threads = createInMemoryStore().threads;
+    const { agent } = chunkAgent("asst-1", "Hello from the store.");
+
+    const res = await handleChat(chatReq({ messages: MESSAGES, threadId: "t1" }), {
+      getAgent: () => agent,
+      hostTools: [],
+      options: {},
+      chatEnabled: true,
+      threadIndex: createThreadIndex(threads),
+      threads,
+    });
+    expect(res.status).toBe(200);
+
+    // Pre-stream: the incoming client message is already persisted by the
+    // time handleChat resolves — before a single response byte is consumed.
+    expect((await threads.getMessages(SCOPE, "t1")).map((m) => m.id)).toEqual(["m1"]);
+
+    // Consume the response body fully (like a real client) — this is also
+    // what lets the detached capture branch run to completion.
+    await drainResponse(res);
+
+    await vi.waitFor(async () => {
+      const messages = await threads.getMessages(SCOPE, "t1");
+      expect(messages.map((m) => m.id)).toEqual(["m1", "asst-1"]);
+    });
+    const [, assistant] = await threads.getMessages(SCOPE, "t1");
+    expect(assistant?.role).toBe("assistant");
+  });
+
+  it("updates a resume's mutated message in place instead of duplicating it", async () => {
+    // This exercises the upsert-by-id mechanics the real ai-SDK approval
+    // resume relies on (client resends the full history, including a
+    // previously-persisted assistant message id with mutated parts) — the
+    // ai-SDK's own tool-approval loop is covered separately in
+    // @flowlet/shell's approval-resume tests.
+    const threads = createInMemoryStore().threads;
+    const { agent: turn1 } = chunkAgent("asst-1", "Let me check on that.");
+    const threadIndex = createThreadIndex(threads);
+    const res1 = await handleChat(chatReq({ messages: MESSAGES, threadId: "t1" }), {
+      getAgent: () => turn1,
+      hostTools: [],
+      options: {},
+      chatEnabled: true,
+      threadIndex,
+      threads,
+    });
+    await drainResponse(res1);
+    await vi.waitFor(async () => {
+      expect((await threads.getMessages(SCOPE, "t1")).map((m) => m.id)).toEqual(["m1", "asst-1"]);
+    });
+
+    const [, persistedAssistant] = await threads.getMessages(SCOPE, "t1");
+    // The client mutates the SAME message id (e.g. answering an approval)
+    // and resends the whole history.
+    const mutatedAssistant: FlowletUIMessage = {
+      ...persistedAssistant!,
+      parts: [{ type: "text", text: "Let me check on that. (approved)" }],
+    };
+    const { agent: turn2 } = chunkAgent("asst-2", "Here you go.");
+    const res2 = await handleChat(
+      chatReq({ messages: [...MESSAGES, mutatedAssistant], threadId: "t1" }),
+      { getAgent: () => turn2, hostTools: [], options: {}, chatEnabled: true, threadIndex, threads },
+    );
+    // Pre-stream upsert already ran by the time handleChat resolves.
+    const afterPreStream = await threads.getMessages(SCOPE, "t1");
+    expect(afterPreStream.map((m) => m.id)).toEqual(["m1", "asst-1"]);
+    expect(afterPreStream[1]?.parts).toEqual(mutatedAssistant.parts);
+
+    await drainResponse(res2);
+    await vi.waitFor(async () => {
+      const messages = await threads.getMessages(SCOPE, "t1");
+      expect(messages.map((m) => m.id)).toEqual(["m1", "asst-1", "asst-2"]);
+    });
+  });
+
+  it("falls back to the shared 'default' thread when the client sends no threadId", async () => {
+    // Merged semantics (ENG-193 + durable threads): chat is ALWAYS
+    // thread-attached — a client that sends neither `threadId` nor the ai-SDK
+    // `id` lands on the fixed "default" thread rather than skipping
+    // persistence.
+    const threads = createInMemoryStore().threads;
+    const { agent } = chunkAgent("asst-1", "hi");
+    const res = await handleChat(chatReq({ messages: MESSAGES }), {
+      getAgent: () => agent,
+      hostTools: [],
+      options: {},
+      chatEnabled: true,
+      threadIndex: createThreadIndex(threads),
+      threads,
+    });
+    await drainResponse(res);
+    expect((await threads.getMessages(SCOPE, "default")).map((m) => m.id)).toContain("m1");
+  });
+
+  it("still streams when the pre-stream upsert throws — a store blip must not break chat", async () => {
+    const threads = createInMemoryStore().threads;
+    const threadIndex = createThreadIndex(threads);
+    const { agent } = chunkAgent("asst-1", "still here");
+    const upsert = vi
+      .spyOn(threads, "upsertMessages")
+      .mockRejectedValue(new Error("store down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await handleChat(chatReq({ messages: MESSAGES, threadId: "t1" }), {
+        getAgent: () => agent,
+        hostTools: [],
+        options: {},
+        chatEnabled: true,
+        threadIndex,
+        threads,
+      });
+      expect(res.status).toBe(200);
+      await drainResponse(res);
+      expect(upsert).toHaveBeenCalled();
+      // Logged, not swallowed silently.
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      upsert.mockRestore();
+      errSpy.mockRestore();
+    }
+  });
+
+  it("persists nothing when no ThreadStore is wired, even with a threadId", async () => {
+    const { agent, run } = stubAgent();
+    const { threadIndex } = storeDeps();
+    const res = await handleChat(chatReq({ messages: MESSAGES, threadId: "t1" }), {
+      getAgent: () => agent,
+      hostTools: [],
+      options: {},
+      chatEnabled: true,
+      threadIndex,
+    });
+    expect(res.status).toBe(200);
+    expect(run).toHaveBeenCalledOnce();
   });
 });

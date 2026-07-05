@@ -82,6 +82,28 @@ describe("frozen core surface", () => {
     expect(await store.get(bob, automation.id)).toBeUndefined();
     expect((await store.list(alice)).map((a) => a.id)).toEqual([automation.id]);
   });
+
+  it("recordRun never merges onto a run owned by another principal (no-op)", async () => {
+    const store = makeStore();
+    const { automation } = await create(store, alice);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    await store.recordRun(bob, {
+      id: run.id,
+      automationId: automation.id,
+      startedAt: NOW,
+      status: "failed",
+      error: "hijack",
+    });
+    const stored = await store.getRun(alice, run.id);
+    expect(stored?.status).toBe("running"); // untouched
+    expect(stored?.error).toBeUndefined();
+    expect(await store.getRun(bob, run.id)).toBeUndefined(); // not re-scoped either
+  });
 });
 
 describe("versioning", () => {
@@ -254,6 +276,91 @@ describe("runs", () => {
     const step = (await store.getRun(alice, run.id))!.steps[0]!;
     expect(step.outputTruncated).toBe(true);
     expect(JSON.stringify(step.output).length).toBeLessThanOrEqual(MAX_STEP_OUTPUT_BYTES + 256);
+  });
+});
+
+describe("claimPendingApproval", () => {
+  const pending = {
+    stepId: "notify",
+    tool: "SLACK_SEND_MESSAGE",
+    requestedAt: NOW,
+    expiresAt: NOW,
+    checkpoint: { stepIndex: 0, outputs: {} },
+  };
+
+  async function waitingRun(store: InMemoryAutomationStore) {
+    const { automation } = await create(store);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    await store.updateRun(alice, run.id, {
+      outcome: "waiting_approval",
+      pendingApproval: pending,
+    });
+    return run;
+  }
+
+  it("first claim returns the approval and removes it from the run; second claim loses", async () => {
+    const store = makeStore();
+    const run = await waitingRun(store);
+
+    const claimed = await store.claimPendingApproval(alice, run.id);
+    expect(claimed).toEqual(pending);
+    expect((await store.getRun(alice, run.id))?.pendingApproval).toBeUndefined();
+
+    expect(await store.claimPendingApproval(alice, run.id)).toBeUndefined();
+  });
+
+  it("wrong-scope claim returns undefined and leaves the approval in place", async () => {
+    const store = makeStore();
+    const run = await waitingRun(store);
+
+    expect(await store.claimPendingApproval(bob, run.id)).toBeUndefined();
+    expect((await store.getRun(alice, run.id))?.pendingApproval).toEqual(pending);
+  });
+
+  it("claim on a run with nothing pending returns undefined", async () => {
+    const store = makeStore();
+    const { automation } = await create(store);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    expect(await store.claimPendingApproval(alice, run.id)).toBeUndefined();
+  });
+});
+
+describe("listEnabledSchedules", () => {
+  it("lists enabled schedule-triggered automations across scopes with their stored principal", async () => {
+    const store = makeStore();
+    const tenantAUser1: Principal = { tenantId: "tenant-a", subject: "user1" };
+    const tenantBUser2: Principal = { tenantId: "tenant-b", subject: "user2" };
+
+    const scheduleSpec = spec({
+      trigger: { type: "schedule", cron: "0 9 * * *", timezone: "America/New_York" },
+    });
+    const { automation: scheduled } = await store.create(tenantAUser1, {
+      spec: scheduleSpec,
+      grants: [],
+    });
+    await store.create(tenantBUser2, { spec: spec(), grants: [] }); // host_event, different scope
+
+    const entries = await store.listEnabledSchedules();
+    expect(entries).toEqual([
+      {
+        automationId: scheduled.id,
+        trigger: scheduleSpec.trigger,
+        principal: tenantAUser1,
+      },
+    ]);
+
+    await store.setStatus(tenantAUser1, scheduled.id, "paused");
+    expect(await store.listEnabledSchedules()).toEqual([]);
   });
 });
 

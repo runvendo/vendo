@@ -34,7 +34,16 @@ import assert from "node:assert";
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 import {
+  DrizzleAutomationStore,
+  createDrizzleConnectionsStore,
+  createDrizzleDecisionStore,
+  createDrizzleThreadStore,
+  setMeta,
+} from "@flowlet/store";
+import {
   buildDescriptor,
+  createInMemoryDecisionStore,
+  rememberDecisions,
   createBreakerState,
   createConsentLedger,
   createFadeTracker,
@@ -59,6 +68,12 @@ import {
   handleIntegrationsPost,
 } from "./integrations";
 import { detectCapabilities } from "./capabilities";
+import {
+  createDrizzleFlowletRegistry,
+  createInMemoryFlowletRegistry,
+  handleFlowletsGet,
+  handleFlowletsPost,
+} from "./flowlets";
 import { loadFlowletDir } from "./flowlet-dir";
 import { resolveMcpServers } from "./mcp-config";
 import { manifestToolsToHostTools } from "./manifest-tools";
@@ -70,28 +85,72 @@ import { resolveModel } from "./model";
 import { defaultFlowletPolicy } from "./default-policy";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
 import { createThreadIndex } from "./threads";
-import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
+import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard";
+import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
+import { handleComposioWebhook } from "./webhooks";
 
-/** The path segment after the mount the handler was invoked with. */
-function subPath(req: Request): string {
+// Exported for flowlets.ts's save-path id validation (a saved flowlet's id
+// is caller-assigned, unlike threads' store-assigned UUIDs — see the
+// Boundary note on routeTail below). Not imported there to avoid a
+// fetch-handler.ts <-> flowlets.ts cycle (fetch-handler.ts already imports
+// flowlets.ts); flowlets.ts keeps its own minimal copy with a
+// cross-reference comment back to this Set — keep the two in sync.
+export const FIRST_SEGMENTS = new Set([
+  "chat",
+  "action",
+  "integrations",
+  "capabilities",
+  "deliveries",
+  "tick",
+  "resume",
+  "consent",
+  "fade-proposal",
+  "parked-actions",
+  "grants",
+  "rules",
+  "audit",
+  "critical-tools",
+  "webhooks",
+  "threads",
+  "flowlets",
+]);
+
+/**
+ * Everything after the catch-all mount: the suffix starting at the FIRST
+ * known segment (scanning right-to-left so a host route named e.g.
+ * `/threads/...` upstream can't confuse it). The mount itself can't be
+ * assumed to be `api/flowlet` — hosts choose their own path.
+ *
+ * Boundary: an opaque id equal to a reserved first segment (a thread
+ * literally named "chat") would shorten the tail. Ids here are UUIDs, so
+ * routes carrying ids must keep it that way.
+ */
+export function routeTail(req: Request): string {
   const segments = new URL(req.url).pathname.split("/").filter(Boolean);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (FIRST_SEGMENTS.has(segments[i]!)) return segments.slice(i).join("/");
+  }
   return segments[segments.length - 1] ?? "";
 }
 
 export type FlowletFetchHandler = (req: Request) => Promise<Response>;
 
-export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}): FlowletFetchHandler {
-  const options = parseHandlerOptions(rawOptions);
+// Bump this when the guardrail policy's decision-relevant shape changes
+// (e.g. a rewritten annotation ruleset) so old remembered decisions stop
+// suppressing prompts under the new rules — see rememberDecisions/canonicalKey.
+const DECISION_POLICY_VERSION = "v1";
 
-  // Everything below is built lazily on first request: framework adapters
-  // (e.g. `next build`) import route modules at build time, and reading
-  // `.flowlet/` or requiring keys there would break builds in clean CI
-  // environments. `assemble` is async because provider resolution loads
-  // optional peer packages via dynamic import; the memoized promise keeps
-  // the lazy-on-first-request behavior.
-  let assembled: ReturnType<typeof assemble> | null = null;
-  async function assemble() {
+/** Everything the routes (and the scheduler boot hook) need, assembled once. */
+export type FlowletState = Awaited<ReturnType<typeof assembleFlowletState>>;
+
+// Assembly is lazy (first request / scheduler boot): framework adapters
+// (e.g. `next build`) import route modules at build time, and reading
+// `.flowlet/` or requiring keys there would break builds in clean CI
+// environments. Async because provider resolution loads optional peer
+// packages via dynamic import; the memoized promise (createLazyState) keeps
+// the lazy-on-first-request behavior.
+async function assembleFlowletState(options: FlowletHandlerOptions) {
     const loaded = loadFlowletDir(options.flowletDir);
     // MCP servers: the code option OVERRIDES the file entirely; ${ENV_VAR}
     // header substitution applies only to file-sourced entries (code already
@@ -107,8 +166,19 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     const grants = options.store?.grants ?? createInMemoryGrantStore();
     const rules = options.store?.rules ?? createInMemoryCompiledRuleStore();
     const audit = options.store?.audit ?? new InMemoryAuditLog();
-    const threads = options.store?.threads ?? new InMemoryThreadStore(() => new Date().toISOString());
+    // Thread persistence reuses the shared durable handle when storage is
+    // configured; an injected `store.threads` always wins; otherwise the
+    // in-memory fallback (nothing survives a restart, same posture as the
+    // engine store's in-memory fallback below).
+    const storage = await resolveStorage(options);
+    const threads =
+      options.store?.threads ??
+      (storage ? createDrizzleThreadStore(storage) : new InMemoryThreadStore(() => new Date().toISOString()));
     const threadIndex = createThreadIndex(threads);
+    // Saved flowlets: same durable-handle-or-in-memory posture as threads, but
+    // over the shell's FlowletStore shape, not core's SavedFlowletStore — see
+    // flowlets.ts's header for why the two don't share an implementation.
+    const flowlets = storage ? createDrizzleFlowletRegistry(storage) : createInMemoryFlowletRegistry();
     const breakers = options.store?.breakers ?? createBreakerState();
     const fadeTracker = options.store?.fadeTracker ?? createFadeTracker();
     // Review follow-up: per-(principal, toolCallId) consent idempotency —
@@ -121,10 +191,61 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     // grants can suppress repeat approvals (never critical), a judge (off by
     // default) can tighten/loosen the act tier, deterministic breakers can
     // only tighten, and audit records executes.
+    //
+    // Ask-once-remember wraps the base policy INSIDE the production stack —
+    // durable decisions when storage is configured, in-memory otherwise — so
+    // chat's agent and /action share the exact same memo, while breakers
+    // (which may only tighten) still sit OUTSIDE the memo and can override it.
+    //
+    // SECURITY: the memo is for the INTERACTIVE surfaces only (chat's agent
+    // and /action, where a human is present to (re-)approve). The automations
+    // world gets `worldPolicy` — the SAME production stack composed over the
+    // UNWRAPPED base policy. The interpreter runs its grant machinery
+    // (hasValidGrant/PauseSignal) only when evaluate returns "approve";
+    // rememberDecisions downgrades a previously-executed approve to "allow"
+    // keyed on [userId, tool, input] — with no interactive-vs-unattended
+    // distinction. Wrapped, a sensitive tool the user approved once in CHAT
+    // (human present) would auto-"allow" an identical automation step and
+    // skip grant checks entirely. Grants are the SOLE unattended
+    // authorization mechanism, so the memo must never reach unattended
+    // evaluation.
+    const decisionStore = storage
+      ? createDrizzleDecisionStore(storage, WORLD_SCOPE)
+      : createInMemoryDecisionStore();
     const basePolicy = options.policy ?? defaultFlowletPolicy;
-    const policy = composeProductionPolicy(basePolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
+    const rememberedPolicy = rememberDecisions(basePolicy, decisionStore, DECISION_POLICY_VERSION);
+    const policy = composeProductionPolicy(rememberedPolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
+    const worldPolicy = composeProductionPolicy(basePolicy, { grants, rules, audit, judgeModel: options.judgeModel, breakers });
     const catalog = options.integrations ?? DEFAULT_INTEGRATION_CATALOG;
-    const connections = options.connections ?? createConnectionsStore(catalog);
+    // Connections (which toolkits are connected → what the agent ingests, and
+    // the Composio connected-account → principal map webhook routing reads)
+    // follow the same durable-handle-or-in-memory posture as everything else
+    // here: without this, a restart forgets every connected toolkit and every
+    // inbound Composio webhook is skipped until the user reconnects.
+    const connections =
+      options.connections ??
+      (storage ? createDrizzleConnectionsStore(storage, WORLD_SCOPE, catalog) : createConnectionsStore(catalog));
+
+    // The shared FlowletDb handle (resolved above): `null` means in-memory
+    // (storage: false, or the NODE_ENV=test default — see storage.ts).
+    if (storage === null && process.env["NODE_ENV"] === "production") {
+      console.warn(
+        "[flowlet] no durable storage configured in production (NODE_ENV=production) — " +
+          "automations are running against an in-memory store and will NOT survive a " +
+          "restart or scale past one instance. Pass a `storage` option (PGlite dataDir " +
+          "or a Postgres connectionString) to persist them.",
+      );
+    }
+    if (storage !== null && options.principal) {
+      console.warn(
+        "[flowlet] durable storage is configured, but the automations world remains " +
+          "single-tenant: a custom `principal` resolver gates who may reach the " +
+          "endpoints, but every caller still shares one automation store scope. " +
+          "Multi-tenant installs must front their own per-user store/world " +
+          "(see docs/quickstart.md → Deploying).",
+      );
+    }
+    const engineStore = storage ? new DrizzleAutomationStore(storage) : undefined;
 
     // SINGLE-TENANT (see world.ts): one embedded scope for the store, the
     // deliveries feed, and approval resumes.
@@ -132,11 +253,12 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     const world: FlowletAutomationsWorld | null =
       options.automations === false
         ? null
-        : createAutomationsWorld({
-            policy,
+        : await createAutomationsWorld({
+            policy: worldPolicy,
             model,
             ...(options.automations?.tools ? { tools: options.automations.tools } : {}),
             scope: worldScope,
+            ...(engineStore ? { store: engineStore } : {}),
             // ENG-193 §4.6/§6.2: parked-action resolutions get the SAME
             // "consent" audit trail chat approvals already do.
             audit,
@@ -360,15 +482,23 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       fadeTracker,
       consentSeen,
       clientTools,
+      flowlets,
+      // The shared durable handle (null = in-memory). Reused by later tasks
+      // to wire the decision/thread/flowlet/connections stores durably too.
+      storage,
     };
-  }
-  // Memoize the assembly promise, but drop it on rejection so the next
-  // request retries fresh (the old sync code threw before assignment, so a
-  // boot failure — bad FLOWLET_MODEL, missing peer — was never cached). The
-  // identity check keeps a late rejection from clobbering a newer assembly.
-  const state = () => {
+}
+
+/** Memoize the assembly promise, but drop it on rejection so the next
+ *  request retries fresh (a transient boot failure — DB blip, bad
+ *  FLOWLET_MODEL, missing peer — must not brick every request until process
+ *  restart). The identity check keeps a late rejection from clobbering a
+ *  newer assembly. */
+function createLazyState(options: FlowletHandlerOptions): () => Promise<FlowletState> {
+  let assembled: Promise<FlowletState> | null = null;
+  return () => {
     if (!assembled) {
-      const p = assemble();
+      const p = assembleFlowletState(options);
       p.catch(() => {
         if (assembled === p) assembled = null;
       });
@@ -376,6 +506,145 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     }
     return assembled;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Process-wide boot registry — ONE world per process (first-wins).
+//
+// `createFlowletFetchHandler()` is called from the adapter's route file and
+// `startFlowletScheduler()` (boot.ts) from e.g. Next.js instrumentation.ts —
+// usually in SEPARATE modules with separate options objects. Both must land
+// on the same assembled state, or the started scheduler would tick a
+// different world than the one requests write automations into. The rule is
+// deliberately simple:
+//
+//   - The first caller to need state claims the slot; its options win.
+//   - A later caller shares the slot when EITHER:
+//       (a) it passes the exact same options OBJECT (fast path — works when
+//           both sides literally `import` one shared module-level object), OR
+//       (b) it passes NO options at all (the instrumentation.ts shape), OR
+//       (c) both sides set the SAME non-empty `bootKey` string, even from
+//           TWO DIFFERENT options objects — this is the escape hatch for (a):
+//           instrumentation.ts and a route file are compiled into separate
+//           module graphs (see the Symbol.for note below), so a "shared"
+//           options module that's imported from both places is evaluated
+//           TWICE, producing two objects that are `!==` each other despite
+//           looking identical. `bootKey` gives explicit, cross-module-graph
+//           identity that survives that split.
+//   - A later `createFlowletFetchHandler` with DIFFERENT (or missing)
+//     `bootKey` and different non-empty options gets its own private world
+//     (its options — e.g. a `principal` resolver — must never be silently
+//     ignored); `ensureFlowletState` instead reuses the slot with a warning,
+//     since the boot hook has nothing else to start.
+//
+// Keyed by `Symbol.for(...)` (the runtime-wide, string-interned global symbol
+// registry) on globalThis, NOT a bare `Symbol(...)`. Next.js compiles
+// instrumentation.ts and a route file into SEPARATE module graphs even for
+// the Node.js runtime, so this module's top-level code — including this key —
+// genuinely runs more than once per server process. A bare `Symbol("x")`
+// mints a NEW, non-interned identity on every such evaluation, so each copy
+// would silently read/write its OWN `globalThis` slot and never observe the
+// other's — exactly the "first-wins" coordination this section depends on,
+// silently defeated (confirmed live: `startFlowletScheduler()`'s assembled
+// world and `createFlowletHandler()`'s never converged, so the boot-started
+// scheduler ticked a bare default world with none of the route's
+// `automations.tools`, while the route served requests from a second,
+// correctly-configured world whose OWN scheduler was never started).
+// `Symbol.for(key)` resolves to the identical value for identical `key`
+// strings from anywhere in the process, so every evaluation of this module
+// converges on one registry regardless of how many separate bundles load it.
+// ---------------------------------------------------------------------------
+
+interface BootRegistry {
+  slot: { options: FlowletHandlerOptions; state: () => Promise<FlowletState> } | null;
+  /** startFlowletScheduler's once-latch (see boot.ts). */
+  schedulerStarted: boolean;
+}
+
+const BOOT_REGISTRY_KEY = Symbol.for("flowlet.server.bootRegistry");
+
+/** @internal Shared with boot.ts; not part of the public API. */
+export function bootRegistry(): BootRegistry {
+  const g = globalThis as { [BOOT_REGISTRY_KEY]?: BootRegistry };
+  return (g[BOOT_REGISTRY_KEY] ??= { slot: null, schedulerStarted: false });
+}
+
+/** @internal Test-only: clears the first-wins slot and the scheduler latch. */
+export function resetFlowletBootRegistry(): void {
+  const registry = bootRegistry();
+  registry.slot = null;
+  registry.schedulerStarted = false;
+}
+
+function isEmptyOptions(options: FlowletHandlerOptions): boolean {
+  return Object.keys(options).length === 0;
+}
+
+/**
+ * Whether `rawOptions` may share an already-claimed boot slot assembled from
+ * `slotOptions`: same object identity, zero-config, or a matching non-empty
+ * `bootKey` (the cross-module-graph case — see the BootRegistry comment).
+ */
+function sharesBootSlot(rawOptions: FlowletHandlerOptions, slotOptions: FlowletHandlerOptions): boolean {
+  if (rawOptions === slotOptions) return true;
+  if (isEmptyOptions(rawOptions)) return true;
+  return Boolean(rawOptions.bootKey) && rawOptions.bootKey === slotOptions.bootKey;
+}
+
+/**
+ * The process-wide lazy state used by `startFlowletScheduler()` (boot.ts).
+ * First-wins: reuses the first-assembled state when one exists; passing
+ * DIFFERENT non-empty options at that point is a misuse (warned, ignored) —
+ * give instrumentation.ts the same options object as the route, or none.
+ *
+ * @internal
+ */
+export function ensureFlowletState(rawOptions: FlowletHandlerOptions = {}): Promise<FlowletState> {
+  const registry = bootRegistry();
+  if (registry.slot) {
+    if (!sharesBootSlot(rawOptions, registry.slot.options)) {
+      console.warn(
+        "[flowlet] startFlowletScheduler() was called with different options (and no " +
+          "matching `bootKey`) than the first-assembled Flowlet state — first-wins: " +
+          "reusing the existing world and ignoring these options. Pass the same options " +
+          "object, or the same `bootKey`, from instrumentation.ts as the route handler " +
+          "uses, or pass none.",
+      );
+    }
+    return registry.slot.state();
+  }
+  const state = createLazyState(parseHandlerOptions(rawOptions));
+  registry.slot = { options: rawOptions, state };
+  return state();
+}
+
+export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}): FlowletFetchHandler {
+  const options = parseHandlerOptions(rawOptions);
+
+  // Share the process-wide world when compatible (same options object, or
+  // this handler is zero-config); otherwise assemble privately and claim the
+  // slot if still free. See the BootRegistry comment above.
+  const registry = bootRegistry();
+  let state: () => Promise<FlowletState>;
+  if (registry.slot && sharesBootSlot(rawOptions, registry.slot.options)) {
+    state = registry.slot.state;
+  } else {
+    state = createLazyState(options);
+    if (!registry.slot) {
+      registry.slot = { options: rawOptions, state };
+    } else {
+      // Forking a private world: its own InProcessScheduler is NOT the one
+      // startFlowletScheduler() started, so its schedules only fire via
+      // POST /tick. Say so instead of diverging silently.
+      console.warn(
+        "[flowlet] createFlowletFetchHandler() was called with different options (and no " +
+          "matching `bootKey`) than the first-assembled Flowlet state — this handler " +
+          "gets its own private world whose internal scheduler is not started. Its " +
+          "schedules fire only via POST /tick. Pass the same options object (or the " +
+          "same `bootKey`) everywhere (route + instrumentation.ts), or none.",
+      );
+    }
+  }
 
   /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection. */
   function bootError(err: unknown): Response {
@@ -385,10 +654,13 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     );
   }
 
-  async function GET(req: Request, s: Awaited<ReturnType<typeof assemble>>): Promise<Response> {
-    switch (subPath(req)) {
+  async function GET(req: Request, s: FlowletState): Promise<Response> {
+    switch (routeTail(req)) {
       case "capabilities":
-        return Response.json(s.capabilities);
+        // `storage` depends on the ASSEMBLED state (whether a durable handle
+        // was actually built), not an env key — detectCapabilities() alone
+        // can't know it, so it's merged in here.
+        return Response.json({ ...s.capabilities, storage: s.storage !== null });
       case "integrations":
         return handleIntegrationsGet(req, {
           store: s.connections,
@@ -444,18 +716,37 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
         if (!guard.ok) return guard.response;
         return listCriticalToolsRoute(req, { toolNames: s.knownToolNames(), resolveDescriptor: s.resolveDescriptor });
       }
-      default:
+      case "threads": {
+        const guard = await resolvePrincipal(req, options);
+        if (!guard.ok) return guard.response;
+        return Response.json(await s.threads.list(threadScope(guard.principal)));
+      }
+      case "flowlets":
+        return handleFlowletsGet(req, "flowlets", { registry: s.flowlets, options });
+      default: {
+        const tail = routeTail(req);
+        if (tail.startsWith("threads/")) {
+          const guard = await resolvePrincipal(req, options);
+          if (!guard.ok) return guard.response;
+          const threadId = decodeURIComponent(tail.slice("threads/".length));
+          return Response.json(await s.threads.getMessages(threadScope(guard.principal), threadId));
+        }
+        if (tail.startsWith("flowlets/")) {
+          return handleFlowletsGet(req, tail, { registry: s.flowlets, options });
+        }
         return Response.json({ error: "not found" }, { status: 404 });
+      }
     }
   }
 
-  async function POST(req: Request, s: Awaited<ReturnType<typeof assemble>>): Promise<Response> {
-    switch (subPath(req)) {
+  async function POST(req: Request, s: FlowletState): Promise<Response> {
+    switch (routeTail(req)) {
       case "chat":
         return handleChat(req, {
           getAgent: s.getAgent,
           hostTools: s.hostTools,
           options,
+          threads: s.threads,
           resolveRemixSource: s.resolveRemixSource,
           ...(s.remixSealer ? { remixSealer: s.remixSealer } : {}),
           // capabilities.chat is the single source of truth: it already
@@ -485,11 +776,34 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
         });
       case "tick": {
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
-        const guard = await resolvePrincipal(req, options);
-        if (!guard.ok) return guard.response;
+        // Service auth first: an external cron (vercel.json, Cloudflare Cron
+        // Trigger) presents FLOWLET_TICK_SECRET as a bearer token — no user
+        // principal involved. A wrong bearer is always a hard 401 (never a
+        // fall-through); no bearer at all takes the normal principal path.
+        const service = tickServiceAuth(req);
+        if (service === "denied") {
+          return Response.json({ error: "invalid tick credential" }, { status: 401 });
+        }
+        if (service !== "allowed") {
+          const guard = await resolvePrincipal(req, options);
+          if (!guard.ok) return guard.response;
+        }
         await s.world.tick();
+        // Liveness heartbeat for durable installs — fire-and-forget: a meta
+        // write failure must never fail the tick itself.
+        if (s.storage) {
+          const handle = s.storage;
+          void setMeta(handle, "scheduler_heartbeat", { at: new Date().toISOString() }).catch(
+            (err: unknown) => console.error("[flowlet] failed to record scheduler heartbeat:", err),
+          );
+        }
         return Response.json({ ok: true });
       }
+      case "webhooks/composio":
+        // No principal guard: the Svix-style signature IS the authentication
+        // (see webhooks.ts). A host `principal` resolver has no bearing here —
+        // Composio, not a logged-in user, is the caller.
+        return handleComposioWebhook(req, { world: s.world, connections: s.connections });
       case "resume": {
         // Approval toast → resume the paused run. Unknown/already-settled runs
         // answer `stale` (the toast flips to its stale state) instead of 500.
@@ -548,35 +862,22 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
           principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
         });
       }
-      // POST /api/flowlet/parked-actions/resolve (ENG-193 §4.6) — `subPath`
-      // only inspects the LAST path segment, so this is "resolve", not the
-      // full mount path.
-      case "resolve": {
-        // Guard against a future sibling route also ending in "resolve" (the
-        // same trap the "revoke" case below already disambiguates).
-        if (!new URL(req.url).pathname.includes("/parked-actions/resolve")) {
-          return Response.json({ error: "not found" }, { status: 404 });
-        }
+      // POST /api/flowlet/parked-actions/resolve (ENG-193 §4.6) — `routeTail`
+      // resolves the full suffix from the first known segment, so the nested
+      // route matches on its complete tail (no last-segment ambiguity).
+      case "parked-actions/resolve": {
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
         return resolveParkedActionRoute(req, { world: s.world, principal: guard.principal });
       }
       // POST /api/flowlet/grants/revoke AND POST /api/flowlet/rules/revoke
-      // (ENG-193 §3 Moment 12/item-6) — `subPath` only inspects the LAST path
-      // segment, so both collapse to "revoke" here; disambiguate on the full
-      // pathname (item-6 plan deviation #6 — found while wiring this task).
-      // Review follow-up: mirror the "resolve" guard above exactly — a POST
-      // ending in "/revoke" that is neither `/rules/revoke` nor
-      // `/grants/revoke` (e.g. a typo'd `/nope/revoke`) must 404, not silently
-      // fall through to a grant revoke it was never meant to reach.
-      case "revoke": {
-        const pathname = new URL(req.url).pathname;
-        const isRuleRevoke = pathname.includes("/rules/revoke");
-        const isGrantRevoke = pathname.includes("/grants/revoke");
-        if (!isRuleRevoke && !isGrantRevoke) {
-          return Response.json({ error: "not found" }, { status: 404 });
-        }
+      // (ENG-193 §3 Moment 12/item-6) — full-tail keys keep them distinct.
+      case "flowlets":
+        return handleFlowletsPost(req, "flowlets", { registry: s.flowlets, options });
+      case "grants/revoke":
+      case "rules/revoke": {
+        const isRuleRevoke = routeTail(req) === "rules/revoke";
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
         const principal = { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId };
@@ -584,13 +885,19 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
           ? revokeRuleRoute(req, { rules: s.rules, audit: s.audit, principal })
           : revokeGrantRoute(req, { grants: s.grants, audit: s.audit, principal });
       }
-      default:
+      default: {
+        const tail = routeTail(req);
+        // Delete verb convention: POST flowlets/<id>/delete (no DELETE method).
+        if (tail.startsWith("flowlets/")) {
+          return handleFlowletsPost(req, tail, { registry: s.flowlets, options });
+        }
         return Response.json({ error: "not found" }, { status: 404 });
+      }
     }
   }
 
   return async function flowletFetchHandler(req: Request): Promise<Response> {
-    let s: Awaited<ReturnType<typeof assemble>>;
+    let s: FlowletState;
     try {
       s = await state();
     } catch (err) {

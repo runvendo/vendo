@@ -39,7 +39,7 @@ describe("listGrantsRoute", () => {
 
   it("federates automation-version grants as read-only rows with no id", async () => {
     const grants = createInMemoryGrantStore({ now });
-    const world = createAutomationsWorld({
+    const world = await createAutomationsWorld({
       policy: defaultFlowletPolicy,
       model: { modelId: "stub" } as unknown as LanguageModel,
       scope,
@@ -67,7 +67,7 @@ describe("listGrantsRoute", () => {
 
   it("FINDING 7: routes automation-version grants by the WORLD's fixed scope, not the per-request principal — a custom-principal mount still sees them (mirrors parked-actions.ts)", async () => {
     const grants = createInMemoryGrantStore({ now });
-    const world = createAutomationsWorld({
+    const world = await createAutomationsWorld({
       policy: defaultFlowletPolicy,
       model: { modelId: "stub" } as unknown as LanguageModel,
       scope,

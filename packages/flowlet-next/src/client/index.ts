@@ -9,5 +9,6 @@ export const FLOWLET_NEXT_CLIENT_PACKAGE = "@flowlet/next/client";
 export { FlowletRoot, type FlowletRootProps } from "./flowlet-root";
 export { SandboxStage, type SandboxStageProps } from "./sandbox-stage";
 export { createServerIntegrations } from "./integrations";
+export { createServerFlowletStore } from "./server-store";
 export { createRunQuery, type RunQuery } from "./run-query";
 export { runConnectFlow, type ConnectOutcome } from "./connect-flow";

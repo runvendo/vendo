@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ComposioClient } from "@flowlet/runtime";
+import { WORLD_SCOPE } from "./guard";
 import {
   createConnectionsStore,
   handleIntegrationsGet,
@@ -46,7 +47,7 @@ function post(body: unknown): Request {
 describe("integrations endpoints", () => {
   it("GET lists the catalog with connected flags", async () => {
     const d = deps();
-    d.store.connect("gmail");
+    await d.store.connect("gmail");
     const res = await handleIntegrationsGet(get("/api/flowlet/integrations"), d);
     expect(await res.json()).toEqual({
       enabled: true,
@@ -69,7 +70,7 @@ describe("integrations endpoints", () => {
     const d = deps({ client: stubClient({ hasActiveConnection: async () => true }) });
     const res = await handleIntegrationsPost(post({ id: "gmail", action: "connect" }), d);
     expect(await res.json()).toEqual({ connected: true });
-    expect(d.store.connectedToolkits()).toEqual(["gmail"]);
+    expect(await d.store.connectedToolkits()).toEqual(["gmail"]);
   });
 
   it("connect begins OAuth when not yet authorized (store untouched)", async () => {
@@ -80,17 +81,17 @@ describe("integrations endpoints", () => {
       redirectUrl: "https://oauth.example/x",
       connectedAccountId: "acc-1",
     });
-    expect(d.store.connectedToolkits()).toEqual([]);
+    expect(await d.store.connectedToolkits()).toEqual([]);
   });
 
   it("status poll marks the toolkit connected only when ACTIVE", async () => {
     const d = deps({ client: stubClient({ connectionStatus: async () => "pending" as const }) });
     await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=gmail&account=acc-1"), d);
-    expect(d.store.connectedToolkits()).toEqual([]);
+    expect(await d.store.connectedToolkits()).toEqual([]);
 
     const active = deps({ client: stubClient({ hasActiveConnection: async () => true }) });
     await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=gmail&account=acc-1"), active);
-    expect(active.store.connectedToolkits()).toEqual(["gmail"]);
+    expect(await active.store.connectedToolkits()).toEqual(["gmail"]);
   });
 
   it("status poll does NOT flip a toolkit the user has no active connection for (review P1)", async () => {
@@ -99,7 +100,7 @@ describe("integrations endpoints", () => {
       client: stubClient({ connectionStatus: async () => "active" as const, hasActiveConnection: async () => false }),
     });
     await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=slack&account=someones-gmail-acct"), d);
-    expect(d.store.connectedToolkits()).toEqual([]);
+    expect(await d.store.connectedToolkits()).toEqual([]);
   });
 
   it("rejects an unknown toolkit id before spending the Composio key (review P1)", async () => {
@@ -117,11 +118,44 @@ describe("integrations endpoints", () => {
     expect(authorizeCalls).toBe(0);
   });
 
+  it("status poll captures the connected-account id for webhook routing (Task 13 Step 1)", async () => {
+    const d = deps({
+      client: stubClient({
+        connectionStatus: async () => "active" as const,
+        hasActiveConnection: async () => true,
+      }),
+    });
+    await handleIntegrationsGet(get("/api/flowlet/integrations?status&id=gmail&account=acc-42"), d);
+    expect(await d.store.connectedToolkits()).toEqual(["gmail"]);
+    await expect(d.store.findByConnectedAccount("acc-42")).resolves.toEqual({
+      toolkit: "gmail",
+      principal: WORLD_SCOPE,
+    });
+  });
+
+  it("findByConnectedAccount resolves undefined for an account never captured", async () => {
+    const d = deps();
+    await expect(d.store.findByConnectedAccount("nope")).resolves.toBeUndefined();
+  });
+
+  it("disconnect revokes webhook routing — findByConnectedAccount no longer resolves the mapping (review blocker)", async () => {
+    const d = deps();
+    await d.store.setConnectedAccount("gmail", "acc-42");
+    await expect(d.store.findByConnectedAccount("acc-42")).resolves.toEqual({
+      toolkit: "gmail",
+      principal: WORLD_SCOPE,
+    });
+
+    await d.store.disconnect("gmail");
+
+    await expect(d.store.findByConnectedAccount("acc-42")).resolves.toBeUndefined();
+  });
+
   it("disconnect flips the store off; unknown ids never connect", async () => {
     const d = deps();
-    d.store.connect("gmail");
-    d.store.connect("not-in-catalog");
-    expect(d.store.connectedToolkits()).toEqual(["gmail"]);
+    await d.store.connect("gmail");
+    await d.store.connect("not-in-catalog");
+    expect(await d.store.connectedToolkits()).toEqual(["gmail"]);
     const res = await handleIntegrationsPost(post({ id: "gmail", action: "disconnect" }), d);
     expect(((await res.json()) as { integrations: Array<{ connected: boolean }> }).integrations[0]?.connected).toBe(false);
   });

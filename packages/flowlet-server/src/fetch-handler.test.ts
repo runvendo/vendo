@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createFlowletFetchHandler } from "./fetch-handler";
+import { createFlowletFetchHandler, resetFlowletBootRegistry } from "./fetch-handler";
 
 function req(pathname: string, init?: RequestInit): Request {
   return new Request(`http://localhost:3000${pathname}`, {
@@ -18,6 +18,9 @@ function emptyDir(): string {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  // Handlers claim the process-wide boot slot (first-wins); keep tests
+  // order-independent.
+  resetFlowletBootRegistry();
 });
 
 describe("createFlowletFetchHandler", () => {
@@ -37,7 +40,7 @@ describe("createFlowletFetchHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const handler = createFlowletFetchHandler({ flowletDir: emptyDir() });
     const res = await handler(req("/api/flowlet/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
   });
 
   it("keeps integrations inert without a Composio key", async () => {
@@ -91,7 +94,7 @@ describe("createFlowletFetchHandler", () => {
     const handler = createFlowletFetchHandler({ flowletDir: emptyDir(), model });
 
     const caps = await handler(req("/api/flowlet/capabilities"));
-    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
 
     // The chatEnabled gate (503) fires before messages validation (400), so a
     // 400 on an empty messages array proves chat was NOT gated off.
@@ -123,7 +126,7 @@ describe("createFlowletFetchHandler", () => {
     vi.stubEnv("FLOWLET_MODEL", "");
     const fixed = await handler(req("/api/flowlet/capabilities"));
     expect(fixed.status).toBe(200);
-    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {

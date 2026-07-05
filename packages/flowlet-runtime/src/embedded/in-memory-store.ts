@@ -36,13 +36,18 @@ interface OwnedThread extends ThreadRecord {
 }
 
 export class InMemoryThreadStore implements ThreadStore {
+  // Keyed by JSON-encoded [tenantId, subject, threadId] rather than threadId
+  // alone: upsertMessages lets the client supply its own threadId (auto-create
+  // on first write), and two principals may legitimately reuse the same id
+  // string. Array-of-strings JSON encoding is collision-free the way naive
+  // delimiter concatenation is not (see the "Principal scope integrity" test
+  // below, a real regression from PR #22 review).
   private threads = new Map<string, OwnedThread>();
   private idCounter = 0;
   constructor(private readonly clock: () => string) {}
 
-  private owned(scope: Principal, thread: OwnedThread | undefined): OwnedThread | undefined {
-    if (!thread) return undefined;
-    return sameScope(scope, thread) ? thread : undefined;
+  private key(scope: Principal, threadId: string): string {
+    return JSON.stringify([scope.tenantId, scope.subject, threadId]);
   }
 
   async create(scope: Principal, init: { title?: string } = {}): Promise<ThreadRecord> {
@@ -56,13 +61,13 @@ export class InMemoryThreadStore implements ThreadStore {
       updatedAt: now,
       messages: [],
     };
-    this.threads.set(thread.id, thread);
+    this.threads.set(this.key(scope, thread.id), thread);
     const { messages: _messages, ...record } = thread;
     return record;
   }
 
   async get(scope: Principal, threadId: string): Promise<ThreadRecord | undefined> {
-    const thread = this.owned(scope, this.threads.get(threadId));
+    const thread = this.threads.get(this.key(scope, threadId));
     if (!thread) return undefined;
     const { messages: _messages, ...record } = thread;
     return record;
@@ -70,7 +75,7 @@ export class InMemoryThreadStore implements ThreadStore {
 
   async list(scope: Principal): Promise<ThreadRecord[]> {
     return [...this.threads.values()]
-      .filter((t) => this.owned(scope, t) !== undefined)
+      .filter((t) => sameScope(scope, t))
       .map(({ messages: _messages, ...record }) => record);
   }
 
@@ -79,7 +84,7 @@ export class InMemoryThreadStore implements ThreadStore {
     threadId: string,
     messages: FlowletUIMessage[],
   ): Promise<void> {
-    const thread = this.owned(scope, this.threads.get(threadId));
+    const thread = this.threads.get(this.key(scope, threadId));
     if (!thread) {
       throw new Error(
         `unknown thread "${threadId}" for scope ${scope.tenantId}/${scope.subject}`,
@@ -90,7 +95,7 @@ export class InMemoryThreadStore implements ThreadStore {
   }
 
   async getMessages(scope: Principal, threadId: string): Promise<FlowletUIMessage[]> {
-    const thread = this.owned(scope, this.threads.get(threadId));
+    const thread = this.threads.get(this.key(scope, threadId));
     return thread ? structuredClone(thread.messages) : [];
   }
 
@@ -102,7 +107,7 @@ export class InMemoryThreadStore implements ThreadStore {
     threadId: string,
     messages: FlowletUIMessage[],
   ): Promise<void> {
-    const thread = this.owned(scope, this.threads.get(threadId));
+    const thread = this.threads.get(this.key(scope, threadId));
     if (!thread) {
       throw new Error(
         `unknown thread "${threadId}" for scope ${scope.tenantId}/${scope.subject}`,
@@ -110,6 +115,36 @@ export class InMemoryThreadStore implements ThreadStore {
     }
     thread.messages = structuredClone(messages);
     thread.updatedAt = this.clock();
+  }
+
+  async upsertMessages(
+    scope: Principal,
+    threadId: string,
+    messages: FlowletUIMessage[],
+  ): Promise<void> {
+    const key = this.key(scope, threadId);
+    let thread = this.threads.get(key);
+    const now = this.clock();
+    if (!thread) {
+      // The client owns thread ids for upsert (ai-SDK resume writes before
+      // any explicit create() call) — an unrecognized threadId is a
+      // first-write, not an error.
+      thread = {
+        id: threadId,
+        tenantId: scope.tenantId,
+        subject: scope.subject,
+        createdAt: now,
+        updatedAt: now,
+        messages: [],
+      };
+      this.threads.set(key, thread);
+    }
+    for (const incoming of structuredClone(messages)) {
+      const index = thread.messages.findIndex((m) => m.id === incoming.id);
+      if (index === -1) thread.messages.push(incoming);
+      else thread.messages[index] = incoming;
+    }
+    thread.updatedAt = now;
   }
 }
 

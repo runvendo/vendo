@@ -1,8 +1,10 @@
 /**
  * The handler's embedded automations world: the ENG-188 engine assembled with
- * the in-memory store and in-process scheduler (the embedded seam impls), the
- * handler's own policy, and whatever server-executed tools the host registers
- * through `automations.tools`.
+ * an engine store (in-memory by default, `DrizzleAutomationStore` when the
+ * handler resolves durable storage — see `storage.ts`) and an in-process
+ * scheduler (the embedded seam impls), the handler's own policy, and
+ * whatever server-executed tools the host registers through
+ * `automations.tools`.
  *
  * Zero-config note: host-API tools from `.flowlet/tools.json` are CLIENT-
  * executed (they ride the user's browser session) and therefore cannot run
@@ -10,14 +12,14 @@
  * step can only call tools the host registered server-side.
  *
  * SINGLE-TENANT: the world is created once per handler with a fixed scope
- * (`DEFAULT_PRINCIPAL`), and its store lives in memory. A `principal` resolver
- * gates who may reach the endpoints, but does NOT partition automations per
- * user — every caller shares one automation store. Multi-tenant installs must
- * front their own per-user store/world. (Documented in docs/quickstart.md →
- * Deploying.)
+ * (`DEFAULT_PRINCIPAL`), regardless of whether its store is in-memory or
+ * durable. A `principal` resolver gates who may reach the endpoints, but does
+ * NOT partition automations per user — every caller shares one automation
+ * store scope. Multi-tenant installs must front their own per-user
+ * store/world. (Documented in docs/quickstart.md → Deploying.)
  */
 import type { LanguageModel, ToolSet } from "ai";
-import type { AuditLog, Principal } from "@flowlet/core";
+import type { AuditLog, Principal, TimeTrigger } from "@flowlet/core";
 import {
   AutomationRunner,
   InAppChannels,
@@ -27,6 +29,8 @@ import {
   createAutomationTools,
   createSchedulerFiringHandler,
   type ApprovalPolicy,
+  type AutomationEngineStore,
+  type AutomationTrigger,
   type RegisteredTool,
 } from "@flowlet/runtime";
 
@@ -42,17 +46,25 @@ export interface CreateWorldConfig {
    *  tests that don't wire an audit log; `scope` is already Principal-shaped
    *  here, so the runner's default identity `auditPrincipal` is correct. */
   audit?: AuditLog;
+  /**
+   * The engine store. Default: a fresh `InMemoryAutomationStore` (nothing
+   * survives a restart). The handler hands in a `DrizzleAutomationStore` when
+   * durable storage is configured (see `storage.ts`).
+   */
+  store?: AutomationEngineStore;
 }
 
 export interface FlowletAutomationsWorld {
-  store: InMemoryAutomationStore;
+  store: AutomationEngineStore;
   scheduler: InProcessScheduler;
   runner: AutomationRunner;
   /** In-app deliveries (FlowletToasts): the client polls these via the
    *  handler's /deliveries route. */
   channels: InAppChannels;
   authoringTools(threadId?: string): ToolSet;
-  /** Drive due schedules — the client pings POST /tick (no server timers). */
+  /** Drive due schedules — POST /tick (client or external cron) drives one
+   *  pass; `startFlowletScheduler()` (boot.ts) starts the in-process timer
+   *  on long-lived Node servers. */
   tick(): Promise<void>;
   /**
    * The world's OWN fixed scope (= this config's `scope`), exposed so
@@ -67,9 +79,18 @@ export interface FlowletAutomationsWorld {
   scope: Principal;
 }
 
-export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutomationsWorld {
+/** Map the spec's schedule trigger to the core Scheduler seam's TimeTrigger:
+ *  `{ at }` → one-shot, `{ cron, timezone? }` → recurring. Mirrors the
+ *  runtime's authoring-time mapping (tools.ts) so rehydrated schedules fire
+ *  exactly like freshly authored ones. */
+function toTimeTrigger(trigger: Extract<AutomationTrigger, { type: "schedule" }>): TimeTrigger {
+  if (trigger.at !== undefined) return { kind: "at", at: trigger.at };
+  return { kind: "cron", expression: trigger.cron!, timezone: trigger.timezone };
+}
+
+export async function createAutomationsWorld(config: CreateWorldConfig): Promise<FlowletAutomationsWorld> {
   const registered = config.tools ?? {};
-  const store = new InMemoryAutomationStore({});
+  const store = config.store ?? new InMemoryAutomationStore({});
   const channels = new InAppChannels();
   const runner = new AutomationRunner({
     store,
@@ -82,6 +103,28 @@ export function createAutomationsWorld(config: CreateWorldConfig): FlowletAutoma
   });
   const scheduler = new InProcessScheduler();
   scheduler.onFire(createSchedulerFiringHandler(runner));
+
+  // REHYDRATION: the in-process scheduler's registrations live in memory, so
+  // a restart would silently drop every durable schedule until its automation
+  // was re-authored. Re-register everything enabled from the store at
+  // assembly (a fresh in-memory store returns [], so this is a no-op for the
+  // non-durable path).
+  const bootMs = Date.now();
+  for (const row of await store.listEnabledSchedules()) {
+    const trigger = toTimeTrigger(row.trigger);
+    // MISSED-FIRE POLICY: skipped fires stay skipped. The scheduler's tick
+    // window starts at boot, so a one-shot whose `at` passed while the
+    // process was down can never fire again — re-registering it would leave
+    // an enabled-forever zombie. Park it the way a fired one-shot completes
+    // (spent/expired one-shots must not zombie).
+    if (trigger.kind === "at" && Date.parse(trigger.at) <= bootMs) {
+      await store.setStatus(row.principal, row.automationId, "paused", {
+        disabledReason: "completed_one_shot",
+      });
+      continue;
+    }
+    await scheduler.schedule(row.automationId, trigger, row.principal);
+  }
 
   return {
     store,

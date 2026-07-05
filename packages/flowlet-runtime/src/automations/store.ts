@@ -98,7 +98,7 @@ export interface AutomationRecord extends CoreAutomationRecord {
   triggerKey: string | null;
   counters: AutomationCounters;
   /** Why a paused automation was parked by the system, if it was. */
-  disabledReason?: "consecutive_failures";
+  disabledReason?: "consecutive_failures" | "completed_one_shot";
   createdFromThreadId?: string | null;
 }
 
@@ -307,6 +307,11 @@ export interface AutomationEngineStore extends CoreAutomationStore {
   ): Promise<AutomationRun>;
   finalizeRun(scope: Principal, id: string, input: FinalizeRunInput): Promise<AutomationRun>;
   getRun(scope: Principal, id: string): Promise<AutomationRun | undefined>;
+  /** Atomically take the pending approval off a run. Exactly one caller wins.
+   *  Implementations must preserve the invariant that `pendingApproval` exists
+   *  only on runs whose outcome is `waiting_approval` — the claim is the sole
+   *  authority the runner's resume path checks. */
+  claimPendingApproval(scope: Principal, runId: string): Promise<PendingApproval | undefined>;
   /** waiting_approval runs are cancelled on pause/edit/delete (amendment 7). */
   cancelPendingRuns(scope: Principal, automationId: string): Promise<void>;
 
@@ -319,9 +324,19 @@ export interface AutomationEngineStore extends CoreAutomationStore {
     resolution: ParkedActionResolution,
     resolvedAt: string,
   ): Promise<ParkedAction>;
+
+  /** Cross-scope listing used ONLY for boot rehydration of the scheduler. */
+  listEnabledSchedules(): Promise<
+    Array<{
+      automationId: string;
+      trigger: Extract<AutomationSpec["trigger"], { type: "schedule" }>;
+      principal: Principal;
+    }>
+  >;
 }
 
-function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: string | null } {
+/** Exported so durable ports derive the trigger index identically. */
+export function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: string | null } {
   const t = spec.trigger;
   if (t.type === "schedule") return { kind: "schedule", key: null };
   if (t.type === "host_event") return { kind: "host_event", key: t.event };
@@ -340,7 +355,9 @@ function truncateValue(value: unknown, cap: number): unknown {
   return { truncatedPreview: text.slice(0, cap) };
 }
 
-function capStep(step: StepRecord): StepRecord {
+/** Exported so durable ports (e.g. DrizzleAutomationStore) reuse truncation
+ *  semantics verbatim instead of forking them. */
+export function capStep(step: StepRecord): StepRecord {
   if (step.output === undefined) return step;
   const bytes = jsonBytes(step.output);
   if (bytes <= MAX_STEP_OUTPUT_BYTES) return step;
@@ -352,19 +369,22 @@ function capStep(step: StepRecord): StepRecord {
   };
 }
 
-function capEnvelope(envelope: TriggerEnvelope): TriggerEnvelope {
+export function capEnvelope(envelope: TriggerEnvelope): TriggerEnvelope {
   if (jsonBytes(envelope.payload) <= MAX_TRIGGER_PAYLOAD_BYTES) return envelope;
   return { ...envelope, payload: truncateValue(envelope.payload, MAX_TRIGGER_PAYLOAD_BYTES) };
 }
 
-function capParkedInput(input: unknown): { input: unknown; truncated?: boolean; bytes?: number } {
+/** Cap a parked action's frozen input (exported so durable ports apply the
+ *  EXACT same truncation the in-memory store does). */
+export function capParkedInput(input: unknown): { input: unknown; truncated?: boolean; bytes?: number } {
   const bytes = jsonBytes(input);
   if (bytes <= MAX_STEP_OUTPUT_BYTES) return { input };
   return { input: truncateValue(input, MAX_STEP_OUTPUT_BYTES), truncated: true, bytes };
 }
 
-/** Coarse status for an engine outcome (the frozen union stays exhaustive). */
-function coarseStatus(input: FinalizeRunInput): CoreAutomationRun["status"] {
+/** Coarse status for an engine outcome (the frozen union stays exhaustive).
+ *  Exported so durable ports reuse the exact mapping. */
+export function coarseStatus(input: FinalizeRunInput): CoreAutomationRun["status"] {
   if (input.outcome === "skipped") return "succeeded";
   if (input.outcome === "cancelled") return "failed";
   if (input.outcome === "waiting_approval") return "running";
@@ -424,9 +444,14 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
   }
 
   async recordRun(scope: Principal, run: CoreAutomationRun): Promise<void> {
-    // Core-shaped upsert: merge onto the engine row when it exists.
+    // Core-shaped upsert: merge onto the engine row when it exists AND the
+    // caller owns it. Run ids are globally unique, so an existing id owned by
+    // another principal can neither be merged (cross-scope write) nor
+    // re-inserted (id collision): it's a no-op. Durable ports
+    // (DrizzleAutomationStore) pin the same semantics.
     const existing = this.runs.get(run.id);
     if (existing) {
+      if (existing.tenantId !== scope.tenantId || existing.subject !== scope.subject) return;
       this.runs.set(run.id, { ...existing, ...run });
       return;
     }
@@ -656,6 +681,19 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
     return run.tenantId === scope.tenantId && run.subject === scope.subject ? run : undefined;
   }
 
+  async claimPendingApproval(scope: Principal, runId: string): Promise<PendingApproval | undefined> {
+    // mustGetRun's scoping, but wrong scope / missing run loses the claim
+    // instead of throwing — callers treat both as "nothing to resume".
+    const run = this.runs.get(runId);
+    if (!run || run.tenantId !== scope.tenantId || run.subject !== scope.subject) return undefined;
+    if (!run.pendingApproval) return undefined;
+    const claimed = { ...run.pendingApproval };
+    const next: AutomationRun = { ...run };
+    delete next.pendingApproval;
+    this.runs.set(runId, next);
+    return claimed;
+  }
+
   async cancelPendingRuns(scope: Principal, automationId: string): Promise<void> {
     for (const run of this.runs.values()) {
       if (
@@ -742,6 +780,29 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
     const next: ParkedAction = { ...action, resolution, resolvedAt };
     this.parkedActions.set(id, next);
     return next;
+  }
+
+  async listEnabledSchedules(): Promise<
+    Array<{
+      automationId: string;
+      trigger: Extract<AutomationSpec["trigger"], { type: "schedule" }>;
+      principal: Principal;
+    }>
+  > {
+    const entries: Array<{
+      automationId: string;
+      trigger: Extract<AutomationSpec["trigger"], { type: "schedule" }>;
+      principal: Principal;
+    }> = [];
+    for (const a of this.automations.values()) {
+      if (a.status !== "enabled" || a.spec.trigger.type !== "schedule") continue;
+      entries.push({
+        automationId: a.id,
+        trigger: a.spec.trigger,
+        principal: { tenantId: a.tenantId, subject: a.subject },
+      });
+    }
+    return entries;
   }
 
   private mustGet(scope: Principal, id: string): AutomationRecord {

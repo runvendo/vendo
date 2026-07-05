@@ -11,6 +11,7 @@
 export const FLOWLET_NEXT_PACKAGE = "@flowlet/next";
 
 export { createFlowletHandler, type FlowletRouteHandlers } from "./handler";
+export { startFlowletScheduler } from "@flowlet/server";
 export type { FlowletHandlerOptions, IntegrationCatalogEntry } from "@flowlet/server";
 export { detectCapabilities, type FlowletCapabilities } from "@flowlet/server";
 export { loadFlowletDir, type LoadedFlowletDir } from "@flowlet/server";

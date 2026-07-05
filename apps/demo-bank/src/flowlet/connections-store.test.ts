@@ -10,37 +10,37 @@ import {
 describe("connections-store", () => {
   beforeEach(() => resetConnections());
 
-  it("starts with everything disconnected", () => {
-    expect(connectedToolkits()).toEqual([]);
-    expect(listIntegrations().every((i) => !i.connected)).toBe(true);
+  it("starts with everything disconnected", async () => {
+    expect(await connectedToolkits()).toEqual([]);
+    expect((await listIntegrations()).every((i) => !i.connected)).toBe(true);
   });
 
-  it("advertises a catalog of integrations with stable shape", () => {
-    const list = listIntegrations();
+  it("advertises a catalog of integrations with stable shape", async () => {
+    const list = await listIntegrations();
     expect(list.length).toBeGreaterThan(0);
     const gmail = list.find((i) => i.id === "gmail");
     expect(gmail).toMatchObject({ id: "gmail", name: "Gmail", connected: false });
   });
 
-  it("connect/disconnect flips the connected flag and toolkit list", () => {
-    connect("gmail");
-    expect(connectedToolkits()).toContain("gmail");
-    expect(listIntegrations().find((i) => i.id === "gmail")?.connected).toBe(true);
+  it("connect/disconnect flips the connected flag and toolkit list", async () => {
+    await connect("gmail");
+    expect(await connectedToolkits()).toContain("gmail");
+    expect((await listIntegrations()).find((i) => i.id === "gmail")?.connected).toBe(true);
 
-    disconnect("gmail");
-    expect(connectedToolkits()).not.toContain("gmail");
-    expect(listIntegrations().find((i) => i.id === "gmail")?.connected).toBe(false);
+    await disconnect("gmail");
+    expect(await connectedToolkits()).not.toContain("gmail");
+    expect((await listIntegrations()).find((i) => i.id === "gmail")?.connected).toBe(false);
   });
 
-  it("ignores unknown ids on connect", () => {
-    connect("not-a-real-tool");
-    expect(connectedToolkits()).toEqual([]);
+  it("ignores unknown ids on connect", async () => {
+    await connect("not-a-real-tool");
+    expect(await connectedToolkits()).toEqual([]);
   });
 
-  it("resetConnections disconnects everything", () => {
-    connect("gmail");
-    connect("slack");
+  it("resetConnections disconnects everything", async () => {
+    await connect("gmail");
+    await connect("slack");
     resetConnections();
-    expect(connectedToolkits()).toEqual([]);
+    expect(await connectedToolkits()).toEqual([]);
   });
 });

@@ -8,7 +8,9 @@
  * BOTH the Integrations rail UI and which toolkits the chat agent ingests, so the
  * agent's real capabilities always track the on-screen connect state.
  */
+import type { Principal } from "@flowlet/core";
 import type { Integration } from "@flowlet/shell";
+import { DEMO_USER_ID } from "./principal";
 
 /** Advertised tools. `id`s MUST match the BrandIcon ids in @flowlet/shell. */
 const CATALOG: { id: string; name: string }[] = [
@@ -33,27 +35,54 @@ const VALID_IDS = new Set(CATALOG.map((c) => c.id));
 /** Connected toolkit ids. Starts EMPTY — everything is disconnected on boot. */
 const connected = new Set<string>();
 
-/** The catalog with each tool's live `connected` flag. */
-export function listIntegrations(): Integration[] {
+/**
+ * Composio connected-account id → owner, satisfying @flowlet/next's widened
+ * `ConnectionsStore` (Task 13). The demo runs with `automations: false`, so
+ * webhook routing never actually reads this — it exists to satisfy the
+ * handler's connections seam, not because the demo fires Composio triggers.
+ */
+const byAccount = new Map<string, { toolkit: string; principal: Principal }>();
+const DEMO_SCOPE: Principal = { tenantId: "flowlet-embedded", subject: DEMO_USER_ID };
+
+/** The catalog with each tool's live `connected` flag. Async — @flowlet/next's
+ *  `ConnectionsStore` contract is fully async (the durable, DB-backed port
+ *  necessarily is), so every method here is too even though this in-memory
+ *  demo store never actually awaits anything. */
+export async function listIntegrations(): Promise<Integration[]> {
   return CATALOG.map((c) => ({ ...c, connected: connected.has(c.id) }));
 }
 
 /** Mark a toolkit connected. No-op for unknown ids. */
-export function connect(id: string): void {
+export async function connect(id: string): Promise<void> {
   if (VALID_IDS.has(id)) connected.add(id);
 }
 
 /** Mark a toolkit disconnected. */
-export function disconnect(id: string): void {
+export async function disconnect(id: string): Promise<void> {
   connected.delete(id);
 }
 
 /** The currently-connected toolkit ids (drives agent ingestion). */
-export function connectedToolkits(): string[] {
+export async function connectedToolkits(): Promise<string[]> {
   return CATALOG.filter((c) => connected.has(c.id)).map((c) => c.id);
+}
+
+/** Record the Composio connected-account id once the OAuth flow lands. */
+export async function setConnectedAccount(toolkit: string, connectedAccountId: string): Promise<void> {
+  if (!VALID_IDS.has(toolkit)) return;
+  connected.add(toolkit);
+  byAccount.set(connectedAccountId, { toolkit, principal: DEMO_SCOPE });
+}
+
+/** Webhook routing: which principal owns this connected account? */
+export async function findByConnectedAccount(
+  connectedAccountId: string,
+): Promise<{ toolkit: string; principal: Principal } | undefined> {
+  return byAccount.get(connectedAccountId);
 }
 
 /** Reset everything to disconnected (used by the demo reset). */
 export function resetConnections(): void {
   connected.clear();
+  byAccount.clear();
 }
