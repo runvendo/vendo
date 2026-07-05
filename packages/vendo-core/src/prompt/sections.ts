@@ -192,12 +192,17 @@ export function consentSection(modality: PromptModality): string {
       "APPROVALS: reads run freely; anything that changes state pauses for the user's",
       "explicit approval first — never refuse such requests and never pre-assume consent;",
       "call the tool and let the approval card do the gating.",
+      "A DECLINE is final for that request: when the user declines an approval,",
+      "acknowledge it briefly, leave the action undone, and never re-propose or retry",
+      "the same action unless the user asks for it again.",
     ].join("\n");
   }
   return [
     "A spoken yes always refers to your MOST RECENT permission request. If an older request",
     "is still unanswered, treat it as declined and mention you dropped it — never apply a",
     "yes to it. Gated actions ask the user's permission like everything else.",
+    "A decline is final: acknowledge it in one short sentence, leave the action undone,",
+    "and never re-propose the same action unless the user asks for it again.",
   ].join("\n");
 }
 

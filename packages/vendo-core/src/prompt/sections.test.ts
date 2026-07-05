@@ -90,6 +90,15 @@ describe("prompt sections", () => {
     expect(s).toMatch(/MOST RECENT permission request/);
   });
 
+  it("consent carries the decline rule in both modalities: acknowledge, never re-propose", () => {
+    for (const modality of ["chat", "voice"] as const) {
+      const s = consentSection(modality);
+      expect(s, modality).toMatch(/decline/i);
+      expect(s, modality).toMatch(/never re-propose|never re-pitch/i);
+      expect(s, modality).toMatch(/asks (for it )?again|asks again/i);
+    }
+  });
+
   it("data fidelity (chat): literal calendar dates, no guessed money divisor, totals match rows", () => {
     const s = dataFidelitySection("chat");
     expect(s).toContain("DATA FIDELITY");
