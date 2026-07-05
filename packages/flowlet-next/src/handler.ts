@@ -30,6 +30,7 @@
  * `.flowlet/` (theme, tools manifest) and just works — ANTHROPIC_API_KEY alone
  * gives working chat + generated UI.
  */
+import assert from "node:assert";
 import type { ToolSet } from "ai";
 import { prewiredComponents } from "@flowlet/components/descriptors";
 import {
@@ -120,10 +121,34 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
 
     // ENG-193 item 6: steering tools merge into the same static "engine"
     // bucket automation authoring tools use — fixed embedded principal, same
-    // single-tenant simplification world.ts documents. `resolveDescriptor` is
-    // a forward reference into this closure — safe, `serverTools` is never
-    // CALLED until `assemble()` has fully run and both consts are bound
-    // (`resolveDescriptor` itself back-references `serverTools()` already).
+    // single-tenant simplification world.ts documents. `resolveDescriptor` and
+    // `knownToolNames` are forward references into this closure — safe,
+    // `serverTools` is never CALLED until `assemble()` has fully run and all
+    // three consts are bound (`resolveDescriptor` itself back-references
+    // `serverTools()` already; `knownToolNames` does too, one line below).
+    //
+    // PRINCIPAL ASYMMETRY (review follow-up, item-6 plan's open-risks
+    // section): the rest of this mount re-resolves the Principal PER REQUEST
+    // — `resolvePrincipal(req, options)` maps whatever identity the host's
+    // `options.principal` resolver returns into `{ tenantId: EMBEDDED_TENANT,
+    // subject: guard.principal.userId }` fresh on every grants/rules/audit/
+    // consent call (see the GET/POST handlers below, and policy-stack.ts's
+    // `principalScope`). Steering tools do NOT: they mint rules/grants under
+    // this ONE fixed `DEFAULT_PRINCIPAL`-derived subject at construction
+    // time, identical to the single-tenant simplification `world.ts`
+    // documents for automation authoring tools (this bucket merges into that
+    // SAME static toolset). A host that configures a real multi-tenant
+    // `principal` resolver must know every user's "always ask before"/"stop
+    // asking about" utterances land on this ONE shared identity, not
+    // per-user. The assertion below is a cheap sanity check (not a
+    // multi-tenant guard — there is no way to detect a future per-request
+    // principal creeping into this construction site other than reading this
+    // comment) that the fixed identity this bucket relies on is actually
+    // well-formed.
+    assert(
+      typeof DEFAULT_PRINCIPAL.userId === "string" && DEFAULT_PRINCIPAL.userId.length > 0,
+      "steering tools require a non-empty fixed DEFAULT_PRINCIPAL.userId (single-tenant assumption, ENG-193 item-6)",
+    );
     const serverTools = (): ToolSet => {
       const extra = typeof options.tools === "function" ? options.tools() : options.tools ?? {};
       return {
@@ -133,6 +158,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           principal: { tenantId: EMBEDDED_TENANT, subject: DEFAULT_PRINCIPAL.userId },
           rules, grants, audit,
           resolveDescriptor: (name) => resolveDescriptor(name),
+          knownToolNames: () => knownToolNames(),
         }),
       };
     };
@@ -222,6 +248,22 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       return undefined;
     };
 
+    // Every tool name registered on this mount RIGHT NOW: host + server +
+    // automation-authoring (+ this steering bucket itself, via serverTools()).
+    // Shared by the `GET /critical-tools` route below and by
+    // `createSteeringTools`'s `always_ask_before` validation (review
+    // follow-up, FALSE-ASSURANCE FIX in steering-tools.ts) — one list, one
+    // definition. Does NOT include live Composio tool names beyond whatever
+    // `serverTools()`/`clientTools` already carry: those are fetched
+    // per-turn from Composio's MCP for the connected toolkits and are not
+    // statically enumerable here, same pre-existing limitation the
+    // `critical-tools` route already had.
+    const knownToolNames = (): string[] => [
+      ...Object.keys(clientTools),
+      ...Object.keys(serverTools()),
+      ...(world ? Object.keys(world.authoringTools()) : []),
+    ];
+
     return {
       capabilities,
       hostTools,
@@ -237,6 +279,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       threads,
       threadIndex,
       resolveDescriptor,
+      knownToolNames,
       fadeTracker,
       clientTools,
     };
@@ -282,12 +325,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       case "critical-tools": {
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
-        const names = [
-          ...Object.keys(s.clientTools),
-          ...Object.keys(s.serverTools()),
-          ...(s.world ? Object.keys(s.world.authoringTools()) : []),
-        ];
-        return listCriticalToolsRoute(req, { toolNames: names, resolveDescriptor: s.resolveDescriptor });
+        return listCriticalToolsRoute(req, { toolNames: s.knownToolNames(), resolveDescriptor: s.resolveDescriptor });
       }
       default:
         return Response.json({ error: "not found" }, { status: 404 });

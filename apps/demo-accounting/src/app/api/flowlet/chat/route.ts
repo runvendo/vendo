@@ -41,6 +41,20 @@ function getAgent(): FlowletAgent {
             grants: demoStore.grants,
             audit: demoStore.audit,
             resolveDescriptor: resolveToolDescriptor,
+            // FALSE-ASSURANCE FIX (review follow-up): every tool name
+            // `always_ask_before` can validate a glob against. Host tools +
+            // authoring-tool verbs, plus the two Composio names this demo's
+            // automation closed world actually knows about (`automations.ts`'s
+            // `registered` map) — the real schema for anything beyond those
+            // is only fetched live, per-turn, from Composio's MCP, so it
+            // can't be enumerated statically here (same limitation
+            // `tool-registry.ts`'s own docstring already calls out).
+            knownToolNames: () => [
+              ...Object.keys(demoTools()),
+              ...Object.keys(automationsWorld().authoringTools()),
+              "GMAIL_SEND_EMAIL",
+              "GOOGLECALENDAR_CREATE_EVENT",
+            ],
           }),
         },
       }),

@@ -420,6 +420,7 @@ function steeringHarness(resolveDescriptor: (name: string) => ToolDescriptor | u
     grants: createInMemoryGrantStore(),
     audit: new InMemoryAuditLog(),
     resolveDescriptor,
+    knownToolNames: () => [],
   });
 }
 
@@ -437,6 +438,16 @@ describe("ENG-193 §8/item-6 — steering invariants", () => {
     await store.create(scope, { kind: "always_ask", toolPattern: "*", plainText: "p" });
     const policy = compiledRulesPolicy(store, { principalScope: () => scope });
     expect(await policy.evaluate(ctxFor(readDesc))).toBe("allow");
+  });
+
+  it("INVARIANT: deny beats a matching always_ask rule (a rule forcing approve + a sibling deny -> deny)", async () => {
+    const store = createInMemoryCompiledRuleStore();
+    await store.create(scope, { kind: "always_ask", toolPattern: actDesc.name, plainText: "p" });
+    const composed = composePolicy(
+      roleRule({ requiredRole: "admin" }), // the principal below holds no roles -> deny
+      compiledRulesPolicy(store, { principalScope: () => scope }), // matches -> would otherwise "approve"
+    );
+    expect(await composed.evaluate(ctxFor(actDesc))).toBe("deny");
   });
 
   it("INVARIANT: stop_asking_about's own descriptor is critical tier", () => {
@@ -460,6 +471,7 @@ describe("ENG-193 §8/item-6 — steering invariants", () => {
       grants,
       audit: new InMemoryAuditLog(),
       resolveDescriptor: (n) => (n === criticalDesc.name ? criticalDesc : undefined),
+      knownToolNames: () => [],
     });
     const result = await tools["stop_asking_about"]!.execute!(
       { toolName: criticalDesc.name, plainText: "transferring money" },
@@ -480,6 +492,7 @@ describe("ENG-193 §8/item-6 — steering invariants", () => {
       grants,
       audit: new InMemoryAuditLog(),
       resolveDescriptor: (n) => (n === unverifiedDesc.name ? unverifiedDesc : undefined),
+      knownToolNames: () => [],
     });
     const result = await tools["stop_asking_about"]!.execute!(
       { toolName: unverifiedDesc.name, plainText: "using the mystery tool" },

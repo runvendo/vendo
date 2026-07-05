@@ -20,11 +20,16 @@ const unverifiedDescriptor: ToolDescriptor = {
   name: "mystery_tool", source: "composio", annotations: {}, hasExecute: true, kind: "function",
 };
 
-function harness(resolveDescriptor: (name: string) => ToolDescriptor | undefined) {
+function harness(
+  resolveDescriptor: (name: string) => ToolDescriptor | undefined,
+  knownToolNames: () => string[] = () => [],
+) {
   const rules = createInMemoryCompiledRuleStore();
   const grants = createInMemoryGrantStore();
   const audit = new InMemoryAuditLog();
-  const tools = createSteeringTools({ principal, rules, grants, audit, resolveDescriptor, now: () => "2026-07-04T00:00:00Z" });
+  const tools = createSteeringTools({
+    principal, rules, grants, audit, resolveDescriptor, knownToolNames, now: () => "2026-07-04T00:00:00Z",
+  });
   return { tools, rules, grants, audit };
 }
 
@@ -36,13 +41,60 @@ describe("createSteeringTools", () => {
   });
 
   it("always_ask_before creates a rule and returns a voice-back confirmation", async () => {
-    const { tools, rules } = harness(() => undefined);
+    const { tools, rules } = harness(
+      (n) => (n === "sendClientMessage" ? actDescriptor : undefined),
+      () => ["sendClientMessage"],
+    );
     const result = await tools["always_ask_before"]!.execute!(
       { toolPattern: "sendClientMessage", plainText: "emailing anyone at Acme" },
       { toolCallId: "c1", messages: [] } as never,
     );
     expect(result).toMatchObject({ ok: true, confirmation: expect.stringContaining("Got it") });
     expect(await rules.list(principal)).toHaveLength(1);
+  });
+
+  describe("always_ask_before FALSE-ASSURANCE FIX (review follow-up): toolPattern validation", () => {
+    it("rejects a typo'd exact tool name — never mints a rule that can't fire", async () => {
+      const { tools, rules } = harness(() => undefined, () => ["sendClientMessage", "GMAIL_SEND_EMAIL"]);
+      const result = await tools["always_ask_before"]!.execute!(
+        { toolPattern: "sendClientMesage", plainText: "emailing anyone at Acme" }, // typo: missing 's'
+        { toolCallId: "c1", messages: [] } as never,
+      );
+      expect(result).toMatchObject({ ok: false });
+      expect(await rules.list(principal)).toHaveLength(0);
+    });
+
+    it("accepts a glob pattern that matches at least one known name", async () => {
+      const { tools, rules } = harness(() => undefined, () => ["GMAIL_SEND_EMAIL", "GMAIL_LIST"]);
+      const result = await tools["always_ask_before"]!.execute!(
+        { toolPattern: "GMAIL_*", plainText: "sending or listing Gmail" },
+        { toolCallId: "c1", messages: [] } as never,
+      );
+      expect(result).toMatchObject({ ok: true });
+      expect(await rules.list(principal)).toHaveLength(1);
+    });
+
+    it("rejects a glob pattern that matches zero known names", async () => {
+      const { tools, rules } = harness(() => undefined, () => ["sendClientMessage", "get_deadlines"]);
+      const result = await tools["always_ask_before"]!.execute!(
+        { toolPattern: "SLACK_*", plainText: "sending Slack messages" },
+        { toolCallId: "c1", messages: [] } as never,
+      );
+      expect(result).toMatchObject({ ok: false });
+      expect(await rules.list(principal)).toHaveLength(0);
+    });
+
+    it("an exact name that DOES resolve via resolveDescriptor is accepted even if absent from knownToolNames", async () => {
+      // resolveDescriptor is the authoritative check for non-glob patterns;
+      // knownToolNames is only consulted for globs and for "did you mean" suggestions.
+      const { tools, rules } = harness((n) => (n === "sendClientMessage" ? actDescriptor : undefined), () => []);
+      const result = await tools["always_ask_before"]!.execute!(
+        { toolPattern: "sendClientMessage", plainText: "emailing anyone at Acme" },
+        { toolCallId: "c1", messages: [] } as never,
+      );
+      expect(result).toMatchObject({ ok: true });
+      expect(await rules.list(principal)).toHaveLength(1);
+    });
   });
 
   it("stop_asking_about mints a standing grant with source compiled-rule", async () => {
