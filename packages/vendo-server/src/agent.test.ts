@@ -22,6 +22,13 @@ describe("buildInstructions", () => {
     expect(text).toContain("source:'prewired'");
   });
 
+  it("grounds host identity: the configured product name is the only permitted name", () => {
+    const text = buildInstructions(BASE);
+    expect(text).toContain("HOST IDENTITY");
+    expect(text).toContain('"Acme"');
+    expect(text).toMatch(/never invent/i);
+  });
+
   it("only mentions connect/automations/host-API sections when enabled", () => {
     const off = buildInstructions(BASE);
     expect(off).not.toContain("request_connect({");

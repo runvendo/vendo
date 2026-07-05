@@ -86,6 +86,21 @@ export function refreshableViewsSection(modality: PromptModality): string {
   ].join("\n");
 }
 
+/** Host-name grounding (prompt-hardening wave 5, failure C: the model called
+ *  the host by an invented name in refusal prose). Parameterized like
+ *  `novelComponentsSection` — the platform owns the RULE, the host supplies
+ *  the name through the assembler's `hostName` slot. One register serves both
+ *  modalities: naming discipline doesn't differ between chat and voice. */
+export function hostIdentitySection(hostName: string): string {
+  return [
+    `HOST IDENTITY — the product you are embedded in is named "${hostName}".`,
+    `"${hostName}" is the ONLY product or company name you may use for it, verbatim —`,
+    "in prose, refusals, titles, labels, and rendered views. Never invent, guess,",
+    "abbreviate, or substitute another name for this product, even when declining",
+    "a request or speaking hypothetically.",
+  ].join("\n");
+}
+
 /** Data-fidelity floor (prompt-hardening wave 5): the baseline number/date
  *  rendering rules that hold even when a tool declares NO format hints.
  *  Per-tool `RESULT FIELD FORMATS` blocks (format-hints.ts) refine these —

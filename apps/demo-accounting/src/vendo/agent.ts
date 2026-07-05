@@ -19,7 +19,7 @@ import {
   buildBrandGuidance,
   type ComposioClient,
 } from "@vendoai/runtime";
-import { dataFidelitySection } from "@vendoai/core";
+import { dataFidelitySection, hostIdentitySection } from "@vendoai/core";
 import type { EnvManifest, VendoAgent, RegisteredComponent } from "@vendoai/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@vendoai/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
@@ -51,6 +51,10 @@ export function buildInstructions(): string {
     "generate bespoke UI on demand via render_view. You are NOT limited to accounting,",
     "and you never refuse by claiming a domain limit (e.g. 'I only do practice",
     "management') — that is wrong.",
+    "",
+    // Platform host-name grounding (shared prompt core): "Cadence", verbatim,
+    // is the only name the model may ever use for the host.
+    hostIdentitySection("Cadence"),
     "",
     "WHEN TO RENDER UI vs. JUST TALK — this is important, get it right:",
     "- Call render_view ONLY when the user clearly wants something visual: they say",

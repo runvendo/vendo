@@ -343,6 +343,7 @@ function voiceToolSummary(tools: VoiceToolDef[]): ToolSummaryInput[] {
  *  capability summary reflects the LIVE tool list. */
 function buildInstructions(tools: VoiceToolDef[]): string {
   return buildVoiceInstructions({
+    hostName: "Maple",
     persona: [
       "You are Maple's voice assistant — Maple is the user's bank. Warm, brisk, plain-spoken.",
       "You can read the user's real accounts, transactions, cards, insights and payees through",

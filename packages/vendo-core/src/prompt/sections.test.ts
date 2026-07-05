@@ -6,6 +6,7 @@ import {
   dataFidelitySection,
   genuiFormatSection,
   guardrailSection,
+  hostIdentitySection,
   proactivitySection,
   refreshableViewsSection,
   registerSection,
@@ -29,6 +30,7 @@ describe("prompt sections", () => {
       consentSection("voice"),
       dataFidelitySection("chat"),
       dataFidelitySection("voice"),
+      hostIdentitySection("Testo"),
       styleSection({ noEmoji: true }),
       registerSection("chat"),
       registerSection("voice"),
@@ -105,6 +107,15 @@ describe("prompt sections", () => {
     const s = dataFidelitySection("voice");
     expect(s).toMatch(/YYYY-MM-DD/);
     expect(s).toMatch(/never guess a (money )?divisor/i);
+  });
+
+  it("host identity: the configured name is the ONLY name, inventing is forbidden", () => {
+    const s = hostIdentitySection("Testo");
+    expect(s).toContain('"Testo"');
+    expect(s).toMatch(/ONLY/);
+    expect(s).toMatch(/verbatim/i);
+    expect(s).toMatch(/never invent/i);
+    expect(s).toMatch(/substitute/i);
   });
 
   it("guardrail says platform rules win", () => {

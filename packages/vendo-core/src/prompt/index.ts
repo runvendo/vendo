@@ -10,6 +10,7 @@ export {
   capabilitiesSection,
   proactivitySection,
   guardrailSection,
+  hostIdentitySection,
   novelComponentsSection,
   type PromptModality,
 } from "./sections.js";

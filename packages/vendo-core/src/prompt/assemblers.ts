@@ -15,6 +15,7 @@ import {
   dataFidelitySection,
   genuiFormatSection,
   guardrailSection,
+  hostIdentitySection,
   proactivitySection,
   refreshableViewsSection,
   registerSection,
@@ -25,6 +26,10 @@ import {
 export interface ChatInstructionsInput {
   /** Host identity block ("You are <product>'s assistant…"). */
   identity: string;
+  /** The host product's configured name. When set, the platform emits the
+   *  HOST IDENTITY grounding rule: this exact name, verbatim, is the only
+   *  name the assistant may ever use for the host. */
+  hostName?: string;
   /** Pre-rendered brand guidance (runtime's buildBrandGuidance output). */
   brandGuidance?: string;
   /** Pre-rendered component catalogs (building blocks + catalog + host components). */
@@ -44,6 +49,7 @@ export interface ChatInstructionsInput {
 export function buildChatInstructions(input: ChatInstructionsInput): string {
   const sections = [
     input.identity,
+    input.hostName ? hostIdentitySection(input.hostName) : undefined,
     showVsSaySection("chat"),
     styleSection(input.norms ?? { noEmoji: true }),
     input.brandGuidance,
@@ -67,6 +73,8 @@ export function buildChatInstructions(input: ChatInstructionsInput): string {
 export interface VoiceInstructionsInput {
   /** Host persona line(s) ("You are <product>'s voice assistant — …"). */
   persona: string;
+  /** See `ChatInstructionsInput.hostName` — same grounding rule, same slot. */
+  hostName?: string;
   /** Generated live-toolset digest (capability-summary.ts). */
   toolSummary?: string;
   /** Free-form host blocks (domain conventions etc.), before the guardrails. */
@@ -76,6 +84,7 @@ export interface VoiceInstructionsInput {
 export function buildVoiceInstructions(input: VoiceInstructionsInput): string {
   const sections = [
     input.persona,
+    input.hostName ? hostIdentitySection(input.hostName) : undefined,
     registerSection("voice"),
     showVsSaySection("voice"),
     refreshableViewsSection("voice"),
