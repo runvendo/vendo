@@ -23,6 +23,7 @@
 import { randomUUID } from "node:crypto";
 import { buildDescriptor } from "@vendoai/runtime";
 import type { ApprovalPolicy, VendoPrincipal, ToolDescriptor } from "@vendoai/runtime";
+import { asSchema } from "ai";
 import type { ToolSet } from "ai";
 import { resolvePrincipal } from "./guard.js";
 import type { VendoHandlerOptions } from "./options.js";
@@ -96,7 +97,28 @@ export interface ActionDeps {
   resolveDescriptor?: (toolName: string) => ToolDescriptor | undefined;
 }
 
-type ExecutableTool = { execute?: (input: unknown, opts: unknown) => Promise<unknown> };
+type ExecutableTool = {
+  execute?: (input: unknown, opts: unknown) => Promise<unknown>;
+  inputSchema?: unknown;
+};
+
+/**
+ * Sandbox payloads are caller-shaped, and unlike the chat loop (where the ai
+ * SDK validates model tool inputs at the model boundary) nothing upstream of
+ * this route checks them — validate against the tool's own input schema
+ * before executing. Returns the schema-parsed value (same semantics the SDK's
+ * own tool-call path applies: defaults filled, strict shapes enforced), or
+ * `null` when the payload does not validate. Schemas without a runtime
+ * validator (bare `jsonSchema()` descriptors) pass through unchanged — that
+ * mirrors the SDK's `safeValidateTypes` behavior for the same schema kind.
+ */
+async function validatePayload(tool: ExecutableTool, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  if (tool.inputSchema === undefined) return { ok: true, value: payload };
+  const validate = asSchema(tool.inputSchema as Parameters<typeof asSchema>[0]).validate;
+  if (!validate) return { ok: true, value: payload };
+  const result = await validate(payload);
+  return result.success ? { ok: true, value: result.value } : { ok: false };
+}
 
 export async function handleAction(req: Request, deps: ActionDeps): Promise<Response> {
   const guard = await resolvePrincipal(req, deps.options);
@@ -149,7 +171,13 @@ export async function handleAction(req: Request, deps: ActionDeps): Promise<Resp
   if (!tool?.execute) {
     return Response.json({ error: `unknown action "${body.action}"` }, { status: 404 });
   }
-  const result = await tool.execute(payload, { toolCallId, messages: [] });
+  const validated = await validatePayload(tool, payload);
+  if (!validated.ok) {
+    // Generic on purpose: validator internals (expected types, enum values)
+    // never cross to the sandbox caller.
+    return Response.json({ error: `invalid payload for action "${body.action}"` }, { status: 400 });
+  }
+  const result = await tool.execute(validated.value, { toolCallId, messages: [] });
   // Review follow-up: sandbox dispatches through /action called evaluate +
   // execute but never onExecuted, so a successful dispatch was invisible to
   // the Trust diary's audit trail and to volume-breaker counting — the ONLY

@@ -113,6 +113,38 @@ describe("handleAction", () => {
     expect((await handleAction(actionReq({}), d)).status).toBe(400);
   });
 
+  it("400s a payload that fails the tool's input schema instead of executing it", async () => {
+    const executed: unknown[] = [];
+    const strictTool = tool({
+      description: "write things",
+      inputSchema: z.object({ amount: z.number() }),
+      execute: async (input: unknown) => {
+        executed.push(input);
+        return { wrote: input };
+      },
+    });
+    const policy: ApprovalPolicy = { evaluate: () => "allow" };
+    const res = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: "not-a-number" } }),
+      deps({ policy, getTools: () => ({ create_thing: strictTool }) }),
+    );
+    expect(res.status).toBe(400);
+    expect(executed).toHaveLength(0);
+    // Generic message only — no validator internals cross to the caller.
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('invalid payload for action "create_thing"');
+  });
+
+  it("still executes a schema-valid payload", async () => {
+    const policy: ApprovalPolicy = { evaluate: () => "allow" };
+    const res = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 } }),
+      deps({ policy }),
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { result: unknown }).result).toEqual({ wrote: { amount: 5 } });
+  });
+
   it("blocks remote requests", async () => {
     const res = await handleAction(
       actionReq({ action: "get_things" }, "myapp.example.com"),
