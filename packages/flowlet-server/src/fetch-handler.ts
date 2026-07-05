@@ -72,6 +72,7 @@ import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack";
 import { createThreadIndex } from "./threads";
 import { resolvePrincipal, DEFAULT_PRINCIPAL } from "./guard";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
+import { devTelemetry, errorClassName } from "./telemetry-dev";
 
 /** The path segment after the mount the handler was invoked with. */
 function subPath(req: Request): string {
@@ -385,6 +386,16 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     );
   }
 
+  function trackErrorClass(err: unknown): void {
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        void devTelemetry().track("error_class", { errorClass: errorClassName(err) });
+      } catch {
+        // Telemetry is best-effort and must not affect the handler response.
+      }
+    }
+  }
+
   async function GET(req: Request, s: Awaited<ReturnType<typeof assemble>>): Promise<Response> {
     switch (subPath(req)) {
       case "capabilities":
@@ -594,6 +605,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
     try {
       s = await state();
     } catch (err) {
+      trackErrorClass(err);
       return bootError(err);
     }
     switch (req.method) {

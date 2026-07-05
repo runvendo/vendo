@@ -874,6 +874,9 @@ importers:
       '@flowlet/runtime':
         specifier: workspace:*
         version: link:../flowlet-runtime
+      '@flowlet/telemetry':
+        specifier: workspace:*
+        version: link:../flowlet-telemetry
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)

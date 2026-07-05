@@ -18,6 +18,7 @@ import { EMBEDDED_TENANT } from "./policy-stack";
 import type { ThreadIndex } from "./threads";
 import { applyVerifiedPinBase, enrichAnchorSources } from "./remix-enrich";
 import type { FlowletHandlerOptions } from "./options";
+import { devTelemetry } from "./telemetry-dev";
 
 interface ChatRequestBody {
   /** The ai SDK Chat's own id (DefaultChatTransport's default body key — see
@@ -83,6 +84,13 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   // turn entirely — review 2026-07-04). The onSettled writer delta-appends
   // on a prefix assumption (single-client v1): the settled list strictly
   // extends what's stored.
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      void devTelemetry().track("agent_run", {});
+    } catch {
+      // Telemetry is best-effort and must not affect the chat response.
+    }
+  }
   const stream = deps.getAgent().run({
     // Enrichment strips client-supplied source/pinBase and confines the raw
     // envelope to the last user message; verification then converts it into
