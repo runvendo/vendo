@@ -73,7 +73,9 @@ export function buildInstructions(input: BuildInstructionsInput): string {
     // injects (one source of truth).
     buildBrandGuidance({ tokens: brandToCssVars(input.brand) }),
     "",
-    "HOW render_view WORKS — there is ONE rendering tool. Every view you show is a",
+    "HOW render_view WORKS — render_view renders NEW views. (When the host-page context",
+    "offers edit_view for a captured element, PREFER it: patch the baseline instead of",
+    "regenerating.) Every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
     "- formatVersion: 'flowlet-genui/v1'.",
     "- root: the id of the root node.",

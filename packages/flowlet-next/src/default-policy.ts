@@ -18,6 +18,9 @@ import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/r
 /** Engine-owned tools that are safe by construction. */
 const ENGINE_ALLOW = new Set([
   "render_view",
+  // Same capability class as render_view (server-materialized view through
+  // identical gates); an approval per edit would erase the fast-edit win.
+  "edit_view",
   "request_connect",
   "list_automations",
   "get_automation_runs",

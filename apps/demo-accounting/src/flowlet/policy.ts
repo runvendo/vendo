@@ -19,6 +19,7 @@ import { READ_ONLY_TOOLS } from "./tools";
  *  automation authoring; create/update/delete/pause/run-now stay gated). */
 const ALWAYS_ALLOW = new Set<string>([
   "render_view",
+  "edit_view",
   "list_automations",
   "get_automation_runs",
   ...READ_ONLY_TOOLS,

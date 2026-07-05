@@ -13,6 +13,7 @@ import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/r
  *  automation authoring; create/update/delete/pause/run-now stay gated). */
 const ALWAYS_ALLOW = new Set([
   "render_view",
+  "edit_view",
   "request_connect",
   "get_transactions",
   "list_automations",

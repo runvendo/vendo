@@ -9,7 +9,8 @@
 import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@flowlet/runtime";
 import { READ_ONLY_TOOLS } from "./tools";
 
-const ALWAYS_ALLOW = new Set(["render_view", "request_connect", ...READ_ONLY_TOOLS]);
+const ALWAYS_ALLOW = new Set(["render_view",
+  "edit_view", "request_connect", ...READ_ONLY_TOOLS]);
 
 const hostAnnotations = annotationPolicy();
 
