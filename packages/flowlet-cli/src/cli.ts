@@ -7,6 +7,7 @@
 import { runInit } from "./init.js";
 import { runPublish } from "./publish.js";
 import { runSync } from "./sync/index.js";
+import { runTelemetryCmd } from "./telemetry-cmd.js";
 
 const HELP = `flowlet — Flowlet one-click dev tool
 
@@ -18,6 +19,7 @@ Usage:
                                               environment (deps, host CSS, manifest). Runs every
                                               build via the prebuild script init wires.
   flowlet publish [dir]                       Publish the manifest (stub — registry lands with ENG-198)
+  flowlet telemetry <status|enable|disable>   View or change anonymous usage telemetry (see TELEMETRY.md)
 
 Options:
   --skip-llm   Skip LLM-assisted steps (route scan, component discovery)
@@ -35,6 +37,8 @@ export async function main(argv: string[]): Promise<number> {
       return runSync({ targetDir: dir });
     case "publish":
       return runPublish({ targetDir: dir });
+    case "telemetry":
+      return runTelemetryCmd(rest.find((a) => !a.startsWith("--")), { log: (m) => console.log(m) });
     case "--version":
       console.log("0.0.0");
       return 0;

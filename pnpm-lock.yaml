@@ -529,6 +529,9 @@ importers:
       '@flowlet/server':
         specifier: workspace:*
         version: link:../flowlet-server
+      '@flowlet/telemetry':
+        specifier: workspace:*
+        version: link:../flowlet-telemetry
       '@tailwindcss/browser':
         specifier: ^4.1.0
         version: 4.3.2

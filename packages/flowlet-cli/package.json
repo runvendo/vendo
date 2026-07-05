@@ -16,6 +16,7 @@
     "@flowlet/core": "workspace:*",
     "@flowlet/sandbox-shims": "workspace:*",
     "@flowlet/server": "workspace:*",
+    "@flowlet/telemetry": "workspace:*",
     "@tailwindcss/browser": "^4.1.0",
     "@tailwindcss/cli": "^4.1.0",
     "ai": "6.0.28",
