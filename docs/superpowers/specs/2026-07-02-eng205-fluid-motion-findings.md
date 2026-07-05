@@ -5,7 +5,7 @@ perf numbers. Updated per increment.
 
 ## Consumption mechanics (decided increment 1)
 
-- **Source of truth:** fluidkit `main` (repo github.com/yousefh409/fluidkit). Consumed at
+- **Source of truth:** fluidkit `main` (repo github.com/runvendo/fluidkit). Consumed at
   `d5e0fd6` (the tab-bar merge). The touch-up worktree carries uncommitted aurora/mesh WIP,
   so main is the stable line.
 - **Linkage:** committed tarball `vendor/fluidkit-0.3.0-d5e0fd6.tgz`, packed from a clean

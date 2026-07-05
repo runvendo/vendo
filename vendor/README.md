@@ -8,7 +8,7 @@ Flowlet pins an exact built artifact instead of a live path link (works on any
 machine/CI, no dependency on a sibling checkout).
 
 - **Provenance:** packed from fluidkit `main` at the SHA in the filename
-  (repo: github.com/yousefh409/fluidkit), after a clean `npm ci && npm run build && npm test && npm pack`.
+  (repo: github.com/runvendo/fluidkit), after a clean `npm ci && npm run build && npm test && npm pack`.
 - **Consumed by:** `@flowlet/shell` via `"fluidkit": "file:../../vendor/fluidkit-<version>-<sha>.tgz"`.
 - **Refresh procedure:** clone fluidkit main into a scratch dir → `npm ci && npm run build
   && npm test && npm pack` → copy the tarball here named `fluidkit-<version>-<shortsha>.tgz` →
