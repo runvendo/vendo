@@ -7,6 +7,7 @@ describe("detectCapabilities", () => {
       chat: true,
       integrations: false,
       voice: false,
+      mcp: false,
     });
   });
 
@@ -17,12 +18,16 @@ describe("detectCapabilities", () => {
         COMPOSIO_API_KEY: "ck_x",
         OPENAI_API_KEY: "sk-x",
       }),
-    ).toEqual({ chat: true, integrations: true, voice: true });
+    ).toEqual({ chat: true, integrations: true, voice: true, mcp: false });
   });
 
   it("treats empty/whitespace values as absent", () => {
     expect(
       detectCapabilities({ ANTHROPIC_API_KEY: "  ", COMPOSIO_API_KEY: "" }),
-    ).toEqual({ chat: false, integrations: false, voice: false });
+    ).toEqual({ chat: false, integrations: false, voice: false, mcp: false });
+  });
+
+  it("reports mcp false from env detection (the handler overrides it from resolved config)", () => {
+    expect(detectCapabilities({ ANTHROPIC_API_KEY: "k" }).mcp).toBe(false);
   });
 });

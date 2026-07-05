@@ -7,8 +7,9 @@
 import { z } from "zod";
 import type { LanguageModel, ToolSet } from "ai";
 import type { HostToolDefinition, RegisteredComponent } from "@flowlet/core";
-import type { ApprovalPolicy, FlowletPrincipal, RegisteredTool } from "@flowlet/runtime";
+import type { ApprovalPolicy, FlowletPrincipal, McpServerConfig, RegisteredTool } from "@flowlet/runtime";
 import type { ConnectionsStore } from "./connections";
+import { mcpServerArraySchema } from "./mcp-config";
 
 export interface IntegrationCatalogEntry {
   /** Composio toolkit id (must match the shell's BrandIcon ids). */
@@ -46,6 +47,12 @@ export interface FlowletHandlerOptions {
   /** Integrations catalog shown by the connect UI. Default: the standard set. */
   integrations?: IntegrationCatalogEntry[];
   /**
+   * Host-declared MCP servers (Streamable HTTP). Tools are ingested through
+   * the policy engine as source "mcp", prefixed `<name>_<tool>`. OVERRIDES
+   * `.flowlet/mcp.json` entirely when provided.
+   */
+  mcpServers?: McpServerConfig[];
+  /**
    * Bring-your-own connections store (which toolkits are connected → what the
    * agent ingests). Default: a fresh in-memory store. Inject when the host
    * owns connection state elsewhere (e.g. a demo reset that clears it).
@@ -80,6 +87,7 @@ const optionsSchema = z
     principal: fn<NonNullable<FlowletHandlerOptions["principal"]>>().optional(),
     cacheKey: fn<() => string>().optional(),
     integrations: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) }).strict()).optional(),
+    mcpServers: mcpServerArraySchema.optional(),
     connections: z
       .custom<ConnectionsStore>(
         (v) =>

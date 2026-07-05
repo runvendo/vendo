@@ -117,4 +117,34 @@ describe("loadFlowletDir", () => {
     writeFileSync(path.join(dir2, ".flowlet/env/manifest.json"), JSON.stringify({ anchors: { a: { x: { kind: "??" } } } }));
     expect(() => loadFlowletDir(path.join(dir2, ".flowlet"))).toThrow(/manifest\.json/);
   });
+
+  it("returns undefined mcpServers when mcp.json is absent (zero-config)", () => {
+    const loaded = loadFlowletDir(path.join(scratch(), ".flowlet"));
+    expect(loaded.mcpServers).toBeUndefined();
+  });
+
+  it("loads and validates mcp.json when present", () => {
+    const dir = scratch();
+    mkdirSync(path.join(dir, ".flowlet"));
+    writeFileSync(
+      path.join(dir, ".flowlet/mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "weather", url: "https://mcp.example.com/mcp" }],
+      }),
+    );
+    expect(loadFlowletDir(path.join(dir, ".flowlet")).mcpServers).toEqual([
+      { name: "weather", url: "https://mcp.example.com/mcp" },
+    ]);
+  });
+
+  it("fails loud on a schema-invalid mcp.json", () => {
+    const dir = scratch();
+    mkdirSync(path.join(dir, ".flowlet"));
+    writeFileSync(
+      path.join(dir, ".flowlet/mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "x" }] }),
+    );
+    expect(() => loadFlowletDir(path.join(dir, ".flowlet"))).toThrow(/mcp\.json/);
+  });
 });

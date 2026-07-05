@@ -9,7 +9,9 @@ describe("public API", () => {
       "MessageList", "Composer", "ApprovalCard", "UINodeView", "Landing",
       "SuggestionChips", "FlowGallery", "ConnectDock", "ConnectTray", "IntegrationsPicker",
       "ConnectCard", "StreamingText", "ToolCall", "VoiceButton",
-      "themeToStyle", "createLocalStore", "createLocalIntegrations", "useVoiceInput",
+      "themeToStyle", "createLocalStore", "createLocalIntegrations",
+      "VoiceStage", "VoiceBlob", "useVoiceSession", "createScriptedVoiceDriver",
+      "voiceSessionMessages", "reduceVoice",
     ];
     for (const name of names) expect(shell).toHaveProperty(name);
   });

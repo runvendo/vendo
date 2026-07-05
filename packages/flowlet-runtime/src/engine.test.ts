@@ -652,4 +652,177 @@ describe("createFlowletAgent", () => {
       expect(plainUi.data.remixAnchorId).toBeUndefined();
     });
   });
+
+  it("repairs a stale DYNAMIC tool approval (MCP tools) the same way", async () => {
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "Continuing."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createFlowletAgent({ model, policy: allowPolicy });
+
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "echo something" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          // An MCP tool call (dynamic-tool part) the user typed past.
+          {
+            type: "dynamic-tool",
+            toolName: "everything_echo",
+            toolCallId: "call-stale-dyn",
+            state: "approval-requested",
+            input: { message: "hi" },
+            approval: { id: "appr-dyn" },
+          },
+        ],
+      },
+      { id: "m3", role: "user", parts: [{ type: "text", text: "never mind" }] },
+    ] as unknown as FlowletUIMessage[];
+
+    const parts = await collect(
+      agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
+    );
+
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+    const results = seenPrompt
+      .filter((m) => m.role === "tool")
+      .flatMap((m) => m.content as { type: string; toolCallId: string }[]);
+    expect(results.some((r) => r.type === "tool-result" && r.toolCallId === "call-stale-dyn")).toBe(true);
+  });
+});
+
+describe("MCP ingestion wiring", () => {
+  // Must be a REAL ai-SDK tool: the engine hands the toolset to streamText,
+  // which calls asSchema(tool.inputSchema) — a bare `{}` schema crashes there.
+  const echoTool = tool({
+    description: "echo",
+    inputSchema: z.object({}),
+    execute: async () => "ok",
+  });
+
+  function fakeMcpSource(result?: {
+    tools: ToolSet;
+    annotations: Record<string, Record<string, boolean>>;
+    failures?: never;
+  }) {
+    return {
+      fetchTools: vi.fn(async () =>
+        result ?? { tools: { ping: echoTool }, annotations: { ping: { readOnlyHint: true } } },
+      ),
+    };
+  }
+
+  it("ingests MCP tools once (host-level cache) across runs and principals", async () => {
+    const source = fakeMcpSource();
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      mcp: { servers: [{ name: "srv", url: "http://x" }], source },
+    });
+
+    await collect(
+      agent.run({ messages: userTurn, tools: {}, principal: { userId: "u1" }, signal: new AbortController().signal }),
+    );
+    await collect(
+      agent.run({ messages: userTurn, tools: {}, principal: { userId: "u2" }, signal: new AbortController().signal }),
+    );
+
+    expect(source.fetchTools).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries MCP ingestion on a later run after a failure (failures are not cached past the retry delay)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const source = {
+      fetchTools: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("boom"))
+        .mockResolvedValue({ tools: { ping: echoTool }, annotations: {} }),
+    };
+    const agent = createFlowletAgent({
+      model: mockModel(),
+      policy: allowPolicy,
+      // retryDelayMs 0 = retry on the very next turn (the default backs off 30s).
+      mcp: { servers: [{ name: "srv", url: "http://x" }], source, retryDelayMs: 0 },
+    });
+
+    await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+    await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+
+    expect(source.fetchTools).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it("MCP tools flow through the policy wrapper and execute like any source", async () => {
+    const ran = vi.fn(async () => "mcp-ran");
+    const source = {
+      fetchTools: vi.fn(async () => ({
+        tools: {
+          ping: tool({ description: "ping", inputSchema: z.object({}), execute: ran }),
+        },
+        annotations: { ping: { readOnlyHint: true } },
+      })),
+    };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: "srv_ping", input: {} }),
+      policy: allowPolicy,
+      mcp: { servers: [{ name: "srv", url: "http://x" }], source },
+    });
+
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+    expect(ran).toHaveBeenCalledOnce();
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+  });
+
+  it("caller tools take precedence over MCP tools on a name collision", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const callerRan = vi.fn(async () => "caller-won");
+    const mcpRan = vi.fn(async () => "mcp-lost");
+    const source = {
+      fetchTools: vi.fn(async () => ({
+        tools: { ping: tool({ description: "mcp ping", inputSchema: z.object({}), execute: mcpRan }) },
+        annotations: {},
+      })),
+    };
+    const agent = createFlowletAgent({
+      model: mockModel({ toolName: "srv_ping", input: {} }),
+      policy: allowPolicy,
+      mcp: { servers: [{ name: "srv", url: "http://x" }], source },
+    });
+
+    await collect(
+      agent.run({
+        messages: userTurn,
+        tools: {
+          srv_ping: tool({ description: "caller ping", inputSchema: z.object({}), execute: callerRan }),
+        },
+        signal: new AbortController().signal,
+      }),
+    );
+
+    expect(callerRan).toHaveBeenCalledOnce();
+    expect(mcpRan).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('tool "srv_ping" from source "mcp" dropped'));
+    warn.mockRestore();
+  });
+
+  it("runs fine with no mcp config at all", async () => {
+    const agent = createFlowletAgent({ model: mockModel(), policy: allowPolicy });
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+  });
 });

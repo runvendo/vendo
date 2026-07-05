@@ -12,7 +12,12 @@
  */
 import type { LanguageModel, ToolSet } from "ai";
 import type { EnvManifest, FlowletAgent, RegisteredComponent } from "@flowlet/core";
-import { createFlowletAgent, buildBrandGuidance, type ApprovalPolicy } from "@flowlet/runtime";
+import {
+  createFlowletAgent,
+  buildBrandGuidance,
+  type ApprovalPolicy,
+  type McpServerConfig,
+} from "@flowlet/runtime";
 import type { BrandTokens } from "@flowlet/components/theme";
 import {
   prewiredComponents,
@@ -177,6 +182,8 @@ export interface AgentFactoryConfig {
   tools?: () => ToolSet;
   /** Connected Composio toolkits to ingest (undefined = Composio off). */
   toolkits?: () => string[];
+  /** Host-declared MCP servers (already env-resolved). Empty/undefined = MCP off. */
+  mcpServers?: McpServerConfig[];
   /** Extra cache-key material from the host (e.g. store generation). */
   cacheKey?: () => string;
   maxSteps?: number;
@@ -203,6 +210,11 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         // unconnected toolkit makes the Composio fetch fail and the agent ends
         // up with NO tools at all — an empty list is the fail-closed default.
         ...(config.toolkits ? { composio: { config: { toolkits } } } : {}),
+        // MCP servers are host-level and fixed for the handler's lifetime, so
+        // they need no cache-key material (unlike connected toolkits).
+        ...(config.mcpServers && config.mcpServers.length > 0
+          ? { mcp: { servers: config.mcpServers } }
+          : {}),
         ...(config.tools ? { tools: config.tools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
         ...(config.envManifest ? { envManifest: config.envManifest } : {}),

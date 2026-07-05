@@ -43,6 +43,12 @@ import {
   type ComposioClient,
   type ComposioConfig,
 } from "./composio";
+import {
+  ingestMcpTools,
+  createMcpToolSource,
+  type McpServerConfig,
+  type McpToolSource,
+} from "./mcp";
 import type { ApprovalPolicy } from "./policy";
 import type { FlowletPrincipal } from "./principal";
 import type { ToolDescriptor } from "./descriptor";
@@ -221,6 +227,14 @@ export interface FlowletAgentConfig {
   /** Optional Composio ingestion. `client` is injectable for tests. */
   composio?: { config: ComposioConfig; client?: ComposioClient };
   /**
+   * Optional MCP ingestion (host-declared servers). `source` is injectable
+   * for tests. `retryDelayMs` (default 30s) is how long a partial ingestion
+   * (some server failed) is served from cache before the next turn re-ingests
+   * — immediate retry would let a permanently-down server add a connect
+   * timeout to every single turn. `0` retries on the very next turn.
+   */
+  mcp?: { servers: McpServerConfig[]; source?: McpToolSource; retryDelayMs?: number };
+  /**
    * Policy version string. Forwarded to policy layers that key on it (e.g. the
    * ask-once `rememberDecisions` store). Not used by the engine itself.
    */
@@ -267,6 +281,13 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
   type Ingested = { toolset: ToolSet; descriptors: Record<string, ToolDescriptor> };
   const composioCache = new Map<string, Promise<Ingested>>();
 
+  // MCP tools are HOST-level (declared by the host, shared across users), so
+  // one ingestion serves every principal — unlike the per-user Composio cache.
+  const mcpSource: McpToolSource | undefined = config.mcp
+    ? config.mcp.source ?? createMcpToolSource()
+    : undefined;
+  let mcpCache: Promise<Ingested> | null = null;
+
   /**
    * Normalize client-supplied history so a stale turn can't wedge the thread.
    * A tool part stuck at `approval-requested` with no response (the user typed
@@ -288,7 +309,10 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           approval?: { id: string; approved?: boolean | null; reason?: string };
         };
         if (
-          part.type.startsWith("tool-") &&
+          // Static tool parts are "tool-<name>"; dynamic tools (MCP) are
+          // "dynamic-tool" with the name in `toolName`. Both can strand an
+          // unanswered approval.
+          (part.type.startsWith("tool-") || part.type === "dynamic-tool") &&
           part.state === "approval-requested" &&
           part.approval != null &&
           part.approval.approved == null
@@ -395,7 +419,45 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           composioDescriptors = ingested.descriptors;
         }
 
-        // 4. Sources in precedence order: caller > engine > composio.
+        // 3b. MCP ingestion (fail-closed inside ingestMcpTools; per-server
+        //     fault tolerance). Cached host-level: the tools/list round-trip
+        //     blocks only the first turn. `ingestMcpTools` never rejects —
+        //     instead it reports per-server `failures`. A clean ingestion is
+        //     cached for the agent's lifetime; a PARTIAL one (some server
+        //     failed) is served from cache but scheduled for eviction after
+        //     `retryDelayMs`, so failed servers are retried without letting a
+        //     permanently-down one add a connect timeout to every turn.
+        let mcpTools: ToolSet = {};
+        let mcpDescriptors: Record<string, ToolDescriptor> = {};
+        if (config.mcp && mcpSource && config.mcp.servers.length > 0) {
+          const servers = config.mcp.servers;
+          const source = mcpSource;
+          const retryDelayMs = config.mcp.retryDelayMs ?? 30_000;
+          if (!mcpCache) {
+            mcpCache = ingestMcpTools({ servers, source }).then((ingested) => {
+              if (ingested.failures.length > 0) {
+                if (retryDelayMs <= 0) {
+                  mcpCache = null;
+                } else {
+                  const timer = setTimeout(() => {
+                    mcpCache = null;
+                  }, retryDelayMs);
+                  // Never keep the host process alive just for a retry timer.
+                  (timer as { unref?: () => void }).unref?.();
+                }
+              }
+              return {
+                toolset: ingested.toolset,
+                descriptors: Object.fromEntries(ingested.descriptors.map((d) => [d.name, d])),
+              };
+            });
+          }
+          const ingested = await mcpCache;
+          mcpTools = ingested.toolset;
+          mcpDescriptors = ingested.descriptors;
+        }
+
+        // 4. Sources in precedence order: caller > engine > composio > mcp.
         const sources: ToolSourceInput[] = [
           // Defensive: a non-TS caller may omit `tools` entirely.
           { source: "caller", tools: input.tools ?? {} },
@@ -408,6 +470,7 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
             },
           },
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
+          { source: "mcp", tools: mcpTools, descriptors: mcpDescriptors },
         ];
 
         // 5. Merge + uniformly policy-wrap every tool.
