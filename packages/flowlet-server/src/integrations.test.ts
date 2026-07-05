@@ -138,6 +138,19 @@ describe("integrations endpoints", () => {
     await expect(d.store.findByConnectedAccount("nope")).resolves.toBeUndefined();
   });
 
+  it("disconnect revokes webhook routing — findByConnectedAccount no longer resolves the mapping (review blocker)", async () => {
+    const d = deps();
+    await d.store.setConnectedAccount("gmail", "acc-42");
+    await expect(d.store.findByConnectedAccount("acc-42")).resolves.toEqual({
+      toolkit: "gmail",
+      principal: WORLD_SCOPE,
+    });
+
+    await d.store.disconnect("gmail");
+
+    await expect(d.store.findByConnectedAccount("acc-42")).resolves.toBeUndefined();
+  });
+
   it("disconnect flips the store off; unknown ids never connect", async () => {
     const d = deps();
     await d.store.connect("gmail");

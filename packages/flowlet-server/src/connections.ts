@@ -48,6 +48,13 @@ export function createConnectionsStore(catalog: IntegrationCatalogEntry[]): Conn
     },
     async disconnect(id) {
       connected.delete(id);
+      // Revoke webhook routing too: a redelivered/live Composio webhook for
+      // this toolkit's connected account must not resolve a principal once
+      // the user disconnected it — matches the durable port's
+      // status-filtered findByConnectedAccount (connections-store.ts).
+      for (const [accountId, entry] of byAccount) {
+        if (entry.toolkit === id) byAccount.delete(accountId);
+      }
     },
     async connectedToolkits() {
       return catalog.filter((c) => connected.has(c.id)).map((c) => c.id);

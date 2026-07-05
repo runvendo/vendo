@@ -75,4 +75,16 @@ describe("DrizzleConnectionsStore", () => {
   it("findByConnectedAccount on an unknown account resolves undefined", async () => {
     expect(await store.findByConnectedAccount("nope")).toBeUndefined();
   });
+
+  it("disconnect revokes webhook routing — findByConnectedAccount no longer resolves the mapping (review blocker)", async () => {
+    await store.setConnectedAccount("gmail", "acct-123");
+    await expect(store.findByConnectedAccount("acct-123")).resolves.toEqual({
+      toolkit: "gmail",
+      principal: scope,
+    });
+
+    await store.disconnect("gmail");
+
+    await expect(store.findByConnectedAccount("acct-123")).resolves.toBeUndefined();
+  });
 });

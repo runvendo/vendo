@@ -129,10 +129,17 @@ export function createDrizzleConnectionsStore(
     async findByConnectedAccount(
       connectedAccountId: string,
     ): Promise<{ toolkit: string; principal: Principal } | undefined> {
+      // Status-filtered: disconnect() flips the row to DISCONNECTED without
+      // clearing connectedAccountId (so reconnecting can leave routing
+      // history intact) — a redelivered/live webhook for a disconnected
+      // account must NOT resolve a principal, or a revoked toolkit would
+      // keep firing automations after the user disconnected it.
       const rows = await db
         .select()
         .from(connections)
-        .where(eq(connections.connectedAccountId, connectedAccountId));
+        .where(
+          and(eq(connections.connectedAccountId, connectedAccountId), eq(connections.status, CONNECTED)),
+        );
       const row = rows[0];
       if (!row) return undefined;
       return { toolkit: row.toolkit, principal: { tenantId: row.tenantId, subject: row.subject } };
