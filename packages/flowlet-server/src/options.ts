@@ -120,7 +120,8 @@ export interface FlowletHandlerOptions {
    * unset entirely, the handler behaves as if `storage: false` were passed
    * (silently — no on-disk PGlite dirs from test runs, no warning). Pass an
    * explicit value, including `false`, to opt back in even under
-   * `NODE_ENV=test`.
+   * `NODE_ENV=test`. Corollary: never let NODE_ENV=test leak into a real
+   * deploy — it silently disables durability with no warning.
    */
   storage?: false | { connectionString?: string; pglite?: { dataDir: string }; autoMigrate?: boolean };
 }
