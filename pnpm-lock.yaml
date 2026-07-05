@@ -438,6 +438,43 @@ importers:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)(terser@5.48.0)
 
+  examples/node:
+    dependencies:
+      '@flowlet/next':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-next
+      '@flowlet/server':
+        specifier: workspace:*
+        version: link:../../packages/flowlet-server
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.0
+        version: 19.2.3(@types/react@19.2.17)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.0
+        version: 4.7.0(vite@5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)(terser@5.48.0))
+      concurrently:
+        specifier: ^9.1.2
+        version: 9.2.3
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)(terser@5.48.0)
+
   examples/shell:
     dependencies:
       '@flowlet/core':
@@ -489,6 +526,9 @@ importers:
       '@flowlet/sandbox-shims':
         specifier: workspace:*
         version: link:../flowlet-sandbox-shims
+      '@flowlet/server':
+        specifier: workspace:*
+        version: link:../flowlet-server
       '@tailwindcss/browser':
         specifier: ^4.1.0
         version: 4.3.2
@@ -612,9 +652,6 @@ importers:
 
   packages/flowlet-next:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
       '@flowlet/components':
         specifier: workspace:*
         version: link:../flowlet-components
@@ -627,6 +664,9 @@ importers:
       '@flowlet/runtime':
         specifier: workspace:*
         version: link:../flowlet-runtime
+      '@flowlet/server':
+        specifier: workspace:*
+        version: link:../flowlet-server
       '@flowlet/shell':
         specifier: workspace:*
         version: link:../flowlet-shell
@@ -796,6 +836,43 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
+  packages/flowlet-server:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 3.0.12
+        version: 3.0.12(zod@3.25.76)
+      '@ai-sdk/google':
+        specifier: ^3.0.0
+        version: 3.0.88(zod@3.25.76)
+      '@ai-sdk/openai':
+        specifier: ^3.0.0
+        version: 3.0.80(zod@3.25.76)
+      '@flowlet/components':
+        specifier: workspace:*
+        version: link:../flowlet-components
+      '@flowlet/core':
+        specifier: workspace:*
+        version: link:../flowlet-core
+      '@flowlet/runtime':
+        specifier: workspace:*
+        version: link:../flowlet-runtime
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1)(lightningcss@1.32.0)(terser@5.48.0)
+
   packages/flowlet-shell:
     dependencies:
       '@ai-sdk/react':
@@ -917,8 +994,26 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/google@3.0.88':
+    resolution: {integrity: sha512-CN3PHCz5pa2sBowwZG4sNqE+7YfHWZT6+5KU12YMWuBssZ03s143Jr2jThkN5Fgemy8Kyg+ub2XbpHGhtIZ2yQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/mcp@1.0.6':
     resolution: {integrity: sha512-ybDhfRArYXrA6Lg6JCPgr3FI3h2COPDRLN9DW6mSFITy4eFK3EccC7UyRTJBY+qp7u2qcqUChrOuYFua/HeFPQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/openai@3.0.80':
+    resolution: {integrity: sha512-u3EfYbBG4YS/U2eOGH0yv8lPRwDj25X3sTluUKMYEwOLTZzWYv0IPtrpO7tPEra0QU4oq5Gpg49/FGFSrzE4vA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/provider-utils@4.0.35':
+    resolution: {integrity: sha512-bjYld/2KGPLt78kpqbya+fD4LYS7BqVQJyUjE3qAHrYB0FR2Q90BaWEVIBZaguTWXf/A8L6uG1zO1v9TxVlGWg==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -934,6 +1029,10 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/provider@3.0.13':
+    resolution: {integrity: sha512-ZPtVYt5QIJzOta1kdUiDuCx4HhFkvNPv/rvmZ2b1iXwybYjJsCnNYR4PAw4kW7rgVfDARvHXcU64efWuqNp6bw==}
+    engines: {node: '>=18'}
 
   '@ai-sdk/provider@3.0.2':
     resolution: {integrity: sha512-HrEmNt/BH/hkQ7zpi2o6N3k1ZR1QTb7z85WYhYygiTxOQuaml4CMtHCWRbric5WPU+RNsYI7r1EpyVQMKO1pYw==}
@@ -10188,11 +10287,30 @@ snapshots:
       '@vercel/oidc': 3.1.0
       zod: 3.25.76
 
+  '@ai-sdk/google@3.0.88(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.13
+      '@ai-sdk/provider-utils': 4.0.35(zod@3.25.76)
+      zod: 3.25.76
+
   '@ai-sdk/mcp@1.0.6(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.2
       '@ai-sdk/provider-utils': 4.0.5(zod@3.25.76)
       pkce-challenge: 5.0.1
+      zod: 3.25.76
+
+  '@ai-sdk/openai@3.0.80(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.13
+      '@ai-sdk/provider-utils': 4.0.35(zod@3.25.76)
+      zod: 3.25.76
+
+  '@ai-sdk/provider-utils@4.0.35(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.13
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.1.0
       zod: 3.25.76
 
   '@ai-sdk/provider-utils@4.0.4(zod@3.25.76)':
@@ -10208,6 +10326,10 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.1.0
       zod: 3.25.76
+
+  '@ai-sdk/provider@3.0.13':
+    dependencies:
+      json-schema: 0.4.0
 
   '@ai-sdk/provider@3.0.2':
     dependencies:

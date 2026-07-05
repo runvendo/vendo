@@ -170,6 +170,27 @@ describe("createFlowletHandler", () => {
     expect(res.status).toBe(503);
   });
 
+  it("treats an injected model as chat-enabled with zero provider keys", async () => {
+    // Pins the wiring this exists for: options.model flows into assemble's
+    // detectCapabilities as hasInjectedModel, and POST /chat gates on that
+    // same capabilities.chat (no ad-hoc override).
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "");
+    const model = { modelId: "stub" } as unknown as import("ai").LanguageModel;
+    const { GET, POST } = createFlowletHandler({ flowletDir: emptyDir(), model });
+
+    const caps = await GET(req("/api/flowlet/capabilities"));
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
+
+    // The chatEnabled gate (503) fires before messages validation (400), so a
+    // 400 on an empty messages array proves chat was NOT gated off.
+    const res = await POST(
+      req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ messages: [] }) }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("400s a chat request with no messages once a key is present", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
     const { POST } = createFlowletHandler({ flowletDir: emptyDir() });
@@ -177,6 +198,22 @@ describe("createFlowletHandler", () => {
       req("/api/flowlet/chat", { method: "POST", body: JSON.stringify({ messages: [] }) }),
     );
     expect(res.status).toBe(400);
+  });
+
+  it("500s a boot failure and retries assembly once the config is fixed", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("FLOWLET_MODEL", "grok/whatever");
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
+
+    const broken = await GET(req("/api/flowlet/capabilities"));
+    expect(broken.status).toBe(500);
+    expect(((await broken.json()) as { error: string }).error).toMatch(/Flowlet/);
+
+    // Fixing the env must NOT keep serving the cached rejection.
+    vi.stubEnv("FLOWLET_MODEL", "");
+    const fixed = await GET(req("/api/flowlet/capabilities"));
+    expect(fixed.status).toBe(200);
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false });
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {

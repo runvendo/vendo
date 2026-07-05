@@ -214,62 +214,90 @@ export function walkSteps(
   }
 }
 
-export const automationSpecSchema = z
-  .object({
-    dslVersion: z.literal(1),
-    name: z.string().min(1).max(120),
-    description: z.string().min(1),
-    prompt: z.string().min(1).describe("the user's original plain-English ask, verbatim"),
-    trigger: triggerSchema,
-    if: expression.optional().describe("guard; false at firing time records the run as skipped"),
-    execution: z.discriminatedUnion("mode", [stepsExecution, agentExecution]),
-    limits: z
-      .object({
-        maxFiringsPerHour: z
-          .number()
-          .int()
-          .min(1)
-          .max(MAX_FIRINGS_PER_HOUR)
-          .default(MAX_FIRINGS_PER_HOUR),
-      })
-      .default({ maxFiringsPerHour: MAX_FIRINGS_PER_HOUR }),
-  })
-  .superRefine((spec, ctx) => {
-    if (spec.execution.mode !== "steps") return;
+/**
+ * The spec's field shapes, without the cross-tree refinement. `dslVersion` lives
+ * here so the PERSISTED contract keeps requiring it; the LLM-facing input schema
+ * is derived by omitting it (see `automationSpecInputSchema`).
+ */
+const automationSpecObject = z.object({
+  dslVersion: z.literal(1),
+  name: z.string().min(1).max(120),
+  description: z.string().min(1),
+  prompt: z.string().min(1).describe("the user's original plain-English ask, verbatim"),
+  trigger: triggerSchema,
+  if: expression.optional().describe("guard; false at firing time records the run as skipped"),
+  execution: z.discriminatedUnion("mode", [stepsExecution, agentExecution]),
+  limits: z
+    .object({
+      maxFiringsPerHour: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_FIRINGS_PER_HOUR)
+        .default(MAX_FIRINGS_PER_HOUR),
+    })
+    .default({ maxFiringsPerHour: MAX_FIRINGS_PER_HOUR }),
+});
 
-    const seen = new Set<string>();
-    let total = 0;
-    walkSteps(spec.execution.steps, (s) => {
-      total += 1;
-      if (seen.has(s.id)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `duplicate step id "${s.id}" — ids must be unique across the whole tree`,
-        });
-      }
-      seen.add(s.id);
-      if (s.type === "for_each" && RESERVED_AS_NAMES.has(s.as)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `for_each "as" may not shadow reserved scope name "${s.as}"`,
-        });
-      }
-      if (s.type !== "branch" && s.type !== "for_each" && s.onError?.strategy !== "retry" && s.onError?.attempts !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `step "${s.id}": onError.attempts is only valid with strategy "retry"`,
-        });
-      }
-    });
-    if (total > MAX_TOTAL_STEPS) {
+/**
+ * Cross-tree validation (unique ids, reserved `as`, retry-on-idempotent,
+ * step ceiling). Shared verbatim by the persisted and the LLM-facing schemas —
+ * it only reads `execution`, so `dslVersion`'s presence is irrelevant.
+ */
+function refineAutomationSpec(
+  spec: { execution: StepsExecution | AgentExecution },
+  ctx: z.RefinementCtx,
+): void {
+  if (spec.execution.mode !== "steps") return;
+
+  const seen = new Set<string>();
+  let total = 0;
+  walkSteps(spec.execution.steps, (s) => {
+    total += 1;
+    if (seen.has(s.id)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `spec has ${total} steps; the ceiling is ${MAX_TOTAL_STEPS}`,
+        message: `duplicate step id "${s.id}" — ids must be unique across the whole tree`,
+      });
+    }
+    seen.add(s.id);
+    if (s.type === "for_each" && RESERVED_AS_NAMES.has(s.as)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `for_each "as" may not shadow reserved scope name "${s.as}"`,
+      });
+    }
+    if (s.type !== "branch" && s.type !== "for_each" && s.onError?.strategy !== "retry" && s.onError?.attempts !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `step "${s.id}": onError.attempts is only valid with strategy "retry"`,
       });
     }
   });
+  if (total > MAX_TOTAL_STEPS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `spec has ${total} steps; the ceiling is ${MAX_TOTAL_STEPS}`,
+    });
+  }
+}
+
+/** The PERSISTED spec contract: what the store validates and holds. Requires dslVersion: 1. */
+export const automationSpecSchema = automationSpecObject.superRefine(refineAutomationSpec);
 
 export type AutomationSpec = z.infer<typeof automationSpecSchema>;
+
+/**
+ * The LLM-facing input schema for create/update_automation: identical to the
+ * persisted contract but WITHOUT `dslVersion`. The agent has no business
+ * choosing a DSL version, and `z.literal(1)` serializes to a numeric
+ * const/enum in the tool's JSON schema — which Google's function-declaration
+ * format rejects with 400 INVALID_ARGUMENT. The server injects `dslVersion: 1`
+ * before validating against `automationSpecSchema`.
+ */
+export const automationSpecInputSchema = automationSpecObject
+  .omit({ dslVersion: true })
+  .superRefine(refineAutomationSpec);
 
 export type AutomationTier = "deterministic" | "hybrid" | "agentic";
 

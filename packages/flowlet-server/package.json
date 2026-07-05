@@ -1,5 +1,5 @@
 {
-  "name": "@flowlet/next",
+  "name": "@flowlet/server",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,9 +9,21 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./client": {
-      "types": "./dist/client/index.d.ts",
-      "default": "./dist/client/index.js"
+    "./capabilities": {
+      "types": "./dist/capabilities.d.ts",
+      "default": "./dist/capabilities.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "default": "./dist/model.js"
+    },
+    "./manifest-tools": {
+      "types": "./dist/manifest-tools.d.ts",
+      "default": "./dist/manifest-tools.js"
+    },
+    "./catalog": {
+      "types": "./dist/catalog.d.ts",
+      "default": "./dist/catalog.js"
     }
   },
   "files": ["dist"],
@@ -21,27 +33,23 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "react": "^18.0.0 || ^19.0.0",
-    "react-dom": "^18.0.0 || ^19.0.0"
+    "@ai-sdk/google": "^3.0.0",
+    "@ai-sdk/openai": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/google": { "optional": true },
+    "@ai-sdk/openai": { "optional": true }
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
     "@flowlet/components": "workspace:*",
     "@flowlet/core": "workspace:*",
-    "@flowlet/react": "workspace:*",
     "@flowlet/runtime": "workspace:*",
-    "@flowlet/server": "workspace:*",
-    "@flowlet/shell": "workspace:*",
     "ai": "6.0.28",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@testing-library/react": "^16.0.0",
     "@types/node": "^22.0.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
-    "jsdom": "^25.0.0",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

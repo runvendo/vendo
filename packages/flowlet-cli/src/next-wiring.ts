@@ -107,16 +107,23 @@ export function AppFlowletRoot(${propsSig}) {
 
 const ENV_EXAMPLE = `# Flowlet — capability-additive keys (add what you need, restart dev server)
 #
-# REQUIRED for chat + generated UI (the one-key minimum):
+# REQUIRED for chat + generated UI: set ONE of these three provider keys.
 ANTHROPIC_API_KEY=
+# OPENAI_API_KEY=
+# GOOGLE_GENERATIVE_AI_API_KEY=
 
 # OPTIONAL: unlocks integrations (Gmail, Slack, ...) via Composio OAuth.
 # Without it the integrations UI stays hidden — nothing breaks.
 COMPOSIO_API_KEY=
 
-# OPTIONAL: reserved for voice (in design). Detected and exposed as a
-# capability flag only — no voice UX ships yet.
-OPENAI_API_KEY=
+# OPTIONAL: OPENAI_API_KEY (above) additionally unlocks the voice capability
+# flag — detected only, no voice UX ships yet.
+
+# OPTIONAL: override the model Flowlet uses. Accepts "provider/model" (e.g.
+# "openai/gpt-5.5-mini") or a bare model id applied to whichever provider key
+# is set above. FLOWLET_MODEL is the shared override; FLOWLET_CLI_MODEL (set
+# only for \`flowlet init\`) takes precedence over it.
+# FLOWLET_MODEL=
 `;
 
 /**
@@ -384,11 +391,11 @@ export async function wireNextApp(
   if (envExisting === null) {
     await fs.writeFile(envFile, ENV_EXAMPLE);
     summary.written.push(rel(envFile));
-  } else if (!envExisting.includes("ANTHROPIC_API_KEY")) {
+  } else if (!envExisting.includes("Flowlet — capability-additive keys")) {
     await fs.writeFile(envFile, envExisting.replace(/\n?$/, "\n\n") + ENV_EXAMPLE);
     summary.edited.push(rel(envFile));
   } else {
-    summary.skipped.push({ step: ".env.example", reason: "already documents ANTHROPIC_API_KEY" });
+    summary.skipped.push({ step: ".env.example", reason: "already documents Flowlet's provider keys" });
   }
 
   // 5. Sandbox assets into public/flowlet/.

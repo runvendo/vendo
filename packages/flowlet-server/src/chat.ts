@@ -34,7 +34,10 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   // chatEnabled true.
   if (!deps.chatEnabled) {
     return Response.json(
-      { error: "chat is unavailable — set ANTHROPIC_API_KEY" },
+      {
+        error:
+          "chat is unavailable — set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY",
+      },
       { status: 503 },
     );
   }
