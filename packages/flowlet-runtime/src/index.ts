@@ -40,6 +40,12 @@ export type { ToolSourceInput } from "./toolset";
 // Render view tool
 export { createRenderViewTool } from "./render-view-tool";
 
+// Edit view tool (remix fast-edits delta path) + shared materialization
+export { createEditViewTool, EDIT_VIEW_TOOL_NAME } from "./edit-view-tool";
+export type { EditViewToolOptions } from "./edit-view-tool";
+export { materializeView } from "./materialize-view";
+export { hashSources } from "./remix/envelope";
+
 // Brand guidance (data-driven system-prompt section from host theme tokens)
 export { buildBrandGuidance } from "./brand-guidance";
 export type { BrandGuidanceInput, HostBrandNorms } from "./brand-guidance";

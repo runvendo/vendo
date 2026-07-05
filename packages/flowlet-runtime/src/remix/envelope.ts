@@ -77,6 +77,12 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Aggregate hash of an authored sources map — the envelope's `baseHash`
+ *  (per-op hashes are per-component; this one fingerprints the whole state). */
+export function hashSources(sources: Record<string, string>): string {
+  return sha256(canonical(sources));
+}
+
 /** Encode + sign a body. Exported as the mint building block (tests use it to
  *  prove defense-in-depth checks hold even under a valid signature). */
 export function sealBody(body: RemixEnvelopePayload, key: SealKey): string {
