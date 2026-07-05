@@ -21,7 +21,7 @@ describe("createTelemetry.track", () => {
     await t.track("init_started", { framework: "next" });
     expect(deps.fetchImpl).toHaveBeenCalledOnce();
     const [url, init] = deps.fetchImpl.mock.calls[0];
-    expect(String(url)).toContain("eu.i.posthog.com");
+    expect(String(url)).toContain("us.i.posthog.com");
     const body = JSON.parse((init as { body: string }).body);
     expect(body.api_key).toBe("phc_test");
     expect(body.event).toBe("init_started");

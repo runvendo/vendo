@@ -96,6 +96,6 @@ Each of these is enforced by a test:
 
 ## Open items for the plan
 
-- Confirm PostHog EU project setup and where the write key lives (it is a public client key, safe to ship, but confirm handling).
+- Resolved: PostHog US project. The write-only `phc_` project key is hardcoded as `DEFAULT_POSTHOG_KEY` in `@flowlet/telemetry` (safe to ship, capture-only), overridable via `FLOWLET_POSTHOG_KEY`.
 - Confirm Scarf account and package registration for the published npm packages.
 - Decide exact config file path convention (XDG vs `~/.flowlet`) during planning.

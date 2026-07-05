@@ -57,6 +57,6 @@ Run `flowlet telemetry enable` to clear the local opt-out flag. Scarf also honor
 
 ## Where Data Goes
 
-Product events are sent to PostHog EU Cloud when a Flowlet PostHog key is configured. Network calls are fire-and-forget, use a short timeout, and failures are swallowed so telemetry cannot break builds or dev servers.
+Product events are sent to PostHog US Cloud using a write-only project key. Network calls are fire-and-forget, use a short timeout, and failures are swallowed so telemetry cannot break builds or dev servers.
 
 Published package download attribution is wired through Scarf for npm installs. Scarf registration is an owner-operated package setup step.

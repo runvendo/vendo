@@ -1,12 +1,12 @@
 import { homedir } from "node:os";
 import { loadConfig, saveConfig } from "./config.js";
 import { maybeShowNotice } from "./notice.js";
-import { createTelemetry, type Telemetry } from "./client.js";
+import { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
 
 export { resolveConsent } from "./consent.js";
 export { loadConfig, saveConfig, configPath, type TelemetryConfig } from "./config.js";
 export { EVENT_ALLOWLIST, isAllowedProps, type EventName } from "./events.js";
-export { createTelemetry, type Telemetry } from "./client.js";
+export { createTelemetry, DEFAULT_POSTHOG_KEY, type Telemetry } from "./client.js";
 export { maybeShowNotice } from "./notice.js";
 
 export interface InitTelemetryOptions {
@@ -36,7 +36,7 @@ export function initTelemetry(opts: InitTelemetryOptions): Telemetry {
     config: afterNotice,
     env,
     runtime: opts.runtime ?? false,
-    posthogKey: opts.posthogKey ?? env.FLOWLET_POSTHOG_KEY,
+    posthogKey: opts.posthogKey ?? env.FLOWLET_POSTHOG_KEY ?? DEFAULT_POSTHOG_KEY,
     fetchImpl: opts.fetchImpl,
   });
 }

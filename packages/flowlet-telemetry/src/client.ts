@@ -3,8 +3,16 @@ import { baseProps } from "./base-props.js";
 import { EVENT_ALLOWLIST, type EventName } from "./events.js";
 import type { TelemetryConfig } from "./config.js";
 
-const POSTHOG_ENDPOINT = "https://eu.i.posthog.com/capture/";
+const POSTHOG_ENDPOINT = "https://us.i.posthog.com/capture/";
 const TIMEOUT_MS = 1500;
+
+/**
+ * The shipped default PostHog project (write-only, `phc_`) key. Safe to expose:
+ * it can only capture events, never read data. Baked in so telemetry works for
+ * users who install Flowlet without any env setup. Override with
+ * FLOWLET_POSTHOG_KEY to point at a different project.
+ */
+export const DEFAULT_POSTHOG_KEY = "phc_siVHW4wVh8yDeDzMgnjLGrYYqsHMceqfdqYF9fPEGXpS";
 
 export interface TelemetryDeps {
   version: string;
