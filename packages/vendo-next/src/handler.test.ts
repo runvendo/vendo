@@ -487,6 +487,68 @@ describe("createVendoHandler", () => {
     expect(anon.status).toBe(403);
   });
 
+  it("REGRESSION: a remote caller's boot failure gets the generic message, not the raw one", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("VENDO_MODEL", "grok/whatever");
+    const { GET } = createVendoHandler({ vendoDir: emptyDir() });
+    // Boot runs before any principal guard, so this is reachable remotely and
+    // unauthenticated — the adapter must serve the server package's sanitized
+    // body, never echo the assembly error.
+    const res = await GET(
+      new Request("http://prod.example.com/api/vendo/capabilities", {
+        headers: { host: "prod.example.com" },
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "vendo failed to start — see server logs",
+    );
+    error.mockRestore();
+  });
+
+  it("REGRESSION: a host tool execute() throw answers as JSON 500, not an escaped rejection (framework HTML 500)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { POST } = createVendoHandler({
+      vendoDir: emptyDir(),
+      storage: false,
+      tools: {
+        explode: tool({
+          description: "always throws",
+          inputSchema: z.object({}).passthrough(),
+          execute: async () => {
+            throw new Error("ECONNREFUSED 10.0.0.7:5432 at /srv/app/internal/db.ts:42");
+          },
+        }),
+      },
+    });
+    // Two-step /action: approve first (unannotated tool → approval gate),
+    // then execute with the token so the throwing execute() actually runs.
+    const gate = await POST(
+      req("/api/vendo/action", {
+        method: "POST",
+        body: JSON.stringify({ action: "explode", payload: {} }),
+      }),
+    );
+    const { approvalToken } = (await gate.json()) as { approvalToken: string };
+    const res = await POST(
+      req("/api/vendo/action", {
+        method: "POST",
+        body: JSON.stringify({ action: "explode", payload: {}, approvalToken }),
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toMatch(/application\/json/);
+    expect(await res.json()).toEqual({ error: "internal error" });
+    // The path/host detail lands in the server log, not the response.
+    expect(
+      error.mock.calls.some((call) =>
+        call.some((arg) => arg instanceof Error && arg.message.includes("ECONNREFUSED")),
+      ),
+    ).toBe(true);
+    error.mockRestore();
+  });
+
   it("guards every mutating endpoint against remote requests by default", async () => {
     // A key so chat reaches the guard rather than short-circuiting on 503.
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
