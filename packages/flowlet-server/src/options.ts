@@ -124,6 +124,12 @@ export interface FlowletHandlerOptions {
    * deploy — it silently disables durability with no warning.
    */
   storage?: false | { connectionString?: string; pglite?: { dataDir: string }; autoMigrate?: boolean };
+  /**
+   * Stable identity for sharing one Flowlet world between the route handler
+   * and startFlowletScheduler when both pass options — set the same string
+   * in both places. Unnecessary for zero-config installs.
+   */
+  bootKey?: string;
 }
 
 const fn = <T>() => z.custom<T>((v) => typeof v === "function");
@@ -185,6 +191,7 @@ const optionsSchema = z
           .strict(),
       ])
       .optional(),
+    bootKey: z.string().min(1).optional(),
   })
   .strict();
 

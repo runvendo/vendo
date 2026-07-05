@@ -513,12 +513,23 @@ function createLazyState(options: FlowletHandlerOptions): () => Promise<FlowletS
 // deliberately simple:
 //
 //   - The first caller to need state claims the slot; its options win.
-//   - A later caller with the SAME options object, or with NO options at all
-//     (the instrumentation.ts shape), reuses the slot.
-//   - A later `createFlowletFetchHandler` with DIFFERENT non-empty options
-//     gets its own private world (its options — e.g. a `principal` resolver —
-//     must never be silently ignored); `ensureFlowletState` instead reuses
-//     the slot with a warning, since the boot hook has nothing else to start.
+//   - A later caller shares the slot when EITHER:
+//       (a) it passes the exact same options OBJECT (fast path — works when
+//           both sides literally `import` one shared module-level object), OR
+//       (b) it passes NO options at all (the instrumentation.ts shape), OR
+//       (c) both sides set the SAME non-empty `bootKey` string, even from
+//           TWO DIFFERENT options objects — this is the escape hatch for (a):
+//           instrumentation.ts and a route file are compiled into separate
+//           module graphs (see the Symbol.for note below), so a "shared"
+//           options module that's imported from both places is evaluated
+//           TWICE, producing two objects that are `!==` each other despite
+//           looking identical. `bootKey` gives explicit, cross-module-graph
+//           identity that survives that split.
+//   - A later `createFlowletFetchHandler` with DIFFERENT (or missing)
+//     `bootKey` and different non-empty options gets its own private world
+//     (its options — e.g. a `principal` resolver — must never be silently
+//     ignored); `ensureFlowletState` instead reuses the slot with a warning,
+//     since the boot hook has nothing else to start.
 //
 // Keyed by `Symbol.for(...)` (the runtime-wide, string-interned global symbol
 // registry) on globalThis, NOT a bare `Symbol(...)`. Next.js compiles
@@ -564,6 +575,17 @@ function isEmptyOptions(options: FlowletHandlerOptions): boolean {
 }
 
 /**
+ * Whether `rawOptions` may share an already-claimed boot slot assembled from
+ * `slotOptions`: same object identity, zero-config, or a matching non-empty
+ * `bootKey` (the cross-module-graph case — see the BootRegistry comment).
+ */
+function sharesBootSlot(rawOptions: FlowletHandlerOptions, slotOptions: FlowletHandlerOptions): boolean {
+  if (rawOptions === slotOptions) return true;
+  if (isEmptyOptions(rawOptions)) return true;
+  return Boolean(rawOptions.bootKey) && rawOptions.bootKey === slotOptions.bootKey;
+}
+
+/**
  * The process-wide lazy state used by `startFlowletScheduler()` (boot.ts).
  * First-wins: reuses the first-assembled state when one exists; passing
  * DIFFERENT non-empty options at that point is a misuse (warned, ignored) —
@@ -574,12 +596,13 @@ function isEmptyOptions(options: FlowletHandlerOptions): boolean {
 export function ensureFlowletState(rawOptions: FlowletHandlerOptions = {}): Promise<FlowletState> {
   const registry = bootRegistry();
   if (registry.slot) {
-    if (!isEmptyOptions(rawOptions) && rawOptions !== registry.slot.options) {
+    if (!sharesBootSlot(rawOptions, registry.slot.options)) {
       console.warn(
-        "[flowlet] startFlowletScheduler() was called with different options than the " +
-          "first-assembled Flowlet state — first-wins: reusing the existing world and " +
-          "ignoring these options. Pass the same options object from instrumentation.ts " +
-          "as the route handler uses, or pass none.",
+        "[flowlet] startFlowletScheduler() was called with different options (and no " +
+          "matching `bootKey`) than the first-assembled Flowlet state — first-wins: " +
+          "reusing the existing world and ignoring these options. Pass the same options " +
+          "object, or the same `bootKey`, from instrumentation.ts as the route handler " +
+          "uses, or pass none.",
       );
     }
     return registry.slot.state();
@@ -597,7 +620,7 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
   // slot if still free. See the BootRegistry comment above.
   const registry = bootRegistry();
   let state: () => Promise<FlowletState>;
-  if (registry.slot && (registry.slot.options === rawOptions || isEmptyOptions(rawOptions))) {
+  if (registry.slot && sharesBootSlot(rawOptions, registry.slot.options)) {
     state = registry.slot.state;
   } else {
     state = createLazyState(options);
@@ -608,10 +631,11 @@ export function createFlowletFetchHandler(rawOptions: FlowletHandlerOptions = {}
       // startFlowletScheduler() started, so its schedules only fire via
       // POST /tick. Say so instead of diverging silently.
       console.warn(
-        "[flowlet] createFlowletFetchHandler() was called with different options than the " +
-          "first-assembled Flowlet state — this handler gets its own private world whose " +
-          "internal scheduler is not started. Its schedules fire only via POST /tick. " +
-          "Pass the same options object everywhere (route + instrumentation.ts), or none.",
+        "[flowlet] createFlowletFetchHandler() was called with different options (and no " +
+          "matching `bootKey`) than the first-assembled Flowlet state — this handler " +
+          "gets its own private world whose internal scheduler is not started. Its " +
+          "schedules fire only via POST /tick. Pass the same options object (or the " +
+          "same `bootKey`) everywhere (route + instrumentation.ts), or none.",
       );
     }
   }

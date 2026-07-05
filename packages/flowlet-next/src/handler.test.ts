@@ -978,3 +978,56 @@ describe("createFlowletHandler", () => {
     });
   });
 });
+
+describe("bootKey — cross-module-graph boot-slot sharing", () => {
+  // Regression: Next.js compiles instrumentation.ts and a route file into
+  // SEPARATE module graphs, so a `flowletOptions` module shared between them
+  // is evaluated TWICE — the object landing in ensureFlowletState() and the
+  // one landing in createFlowletHandler() are `!==` even though every field
+  // is identical. Before `bootKey`, that mismatch made createFlowletHandler
+  // fork a private world whose scheduler was never started.
+  it("shares one assembled world between ensureFlowletState and createFlowletHandler when both pass the same bootKey on DIFFERENT option objects", async () => {
+    const dir = emptyDir();
+    const schedulerOpts = { flowletDir: dir, bootKey: "shared-key" };
+    const routeOpts = { flowletDir: dir, bootKey: "shared-key", storage: false as const, tools: writeTool };
+    expect(schedulerOpts).not.toBe(routeOpts);
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const schedulerState = await ensureFlowletState(schedulerOpts);
+    const { POST } = createFlowletHandler(routeOpts);
+    expect(warn).not.toHaveBeenCalled();
+
+    const gate = await POST(
+      req("/api/flowlet/action", {
+        method: "POST",
+        body: JSON.stringify({ action: "create_thing", payload: { amount: 5 } }),
+      }),
+    );
+    const { approvalToken } = (await gate.json()) as { approvalToken: string };
+
+    // Proof the route landed on the SAME assembled state as the scheduler
+    // side: the scheduler-side approvals store (a private in-memory Map)
+    // recognizes the token the route just issued.
+    expect(
+      schedulerState.approvals.consume(
+        approvalToken,
+        "create_thing",
+        JSON.stringify({ amount: 5 }),
+        "flowlet-default-user",
+      ),
+    ).toBe(true);
+  });
+
+  it("forks a private world (with a warning) when bootKeys differ and options aren't otherwise shared", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = createFlowletHandler({ flowletDir: emptyDir(), bootKey: "world-a", storage: false });
+    await first.GET(req("/api/flowlet/capabilities"));
+
+    const second = createFlowletHandler({ flowletDir: emptyDir(), bootKey: "world-b", storage: false });
+    await second.GET(req("/api/flowlet/capabilities"));
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/private world/i);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/bootKey/);
+  });
+});

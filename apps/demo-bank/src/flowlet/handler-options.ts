@@ -96,6 +96,12 @@ const DRILL_PRINCIPAL: FlowletPrincipal = { userId: "flowlet-default-user" };
  *  (ES modules are singletons), passed verbatim to both `createFlowletHandler`
  *  (route.ts) and `startFlowletScheduler` (instrumentation.ts). */
 export const flowletOptions: FlowletHandlerOptions = {
+  // Belt-and-suspenders alongside the shared-object fast path above: Next.js
+  // compiles instrumentation.ts and route.ts into separate module graphs, so
+  // this module can be evaluated twice, producing two `!==` objects with
+  // identical shape — bootKey gives the boot registry a stable identity that
+  // survives that split (see handler.ts's BootRegistry comment).
+  bootKey: "demo-bank",
   model: anthropic(process.env.FLOWLET_DEMO_MODEL ?? "claude-sonnet-4-6"),
   // Per-run function (spec §7): grounds capability talk in the live toolset.
   instructions: (ctx) => buildInstructions({ toolSummary: ctx.toolSummary }),
