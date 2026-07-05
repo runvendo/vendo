@@ -10,7 +10,7 @@ machine/CI, no dependency on a sibling checkout).
 - **Provenance:** packed from fluidkit `main` at the SHA in the filename
   (repo: github.com/yousefh409/fluidkit), after a clean `npm ci && npm run build && npm test && npm pack`.
 - **Consumed by:** `@flowlet/shell` via `"fluidkit": "file:../../vendor/fluidkit-<version>-<sha>.tgz"`.
-- **Current:** `fluidkit-0.5.0-0aacc8b.tgz` — packed from the theme-provider branch
+- **Current:** `fluidkit-0.5.0-3310e48.tgz` — packed from the theme-provider branch
   (fluidkit PR #21). fluidkit 0.4.0 is on npm; swap this to `"fluidkit": "^0.5.0"`
   and delete this directory once 0.5.0 publishes.
 - **Refresh procedure:** clone fluidkit main into a scratch dir → `npm ci && npm run build
