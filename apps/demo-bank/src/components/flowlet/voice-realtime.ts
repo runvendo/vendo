@@ -16,9 +16,15 @@ import {
   type VoiceEvent,
   type VoiceToolDef,
 } from "@flowlet/shell";
-import { executeHostToolCall, type UINode } from "@flowlet/core";
+import {
+  buildVoiceInstructions,
+  capabilitySummary,
+  executeHostToolCall,
+  type ToolSummaryInput,
+  type UINode,
+} from "@flowlet/core";
 import { mapleHostToolDefs } from "@/flowlet/host-tools";
-import { createComposioIntegrations } from "./integrations";
+import { createComposioIntegrations, integrationCatalogIds } from "./integrations";
 import { mapleVoiceDriver as scriptedFallback } from "./voice-demo";
 
 let viewSeq = 0;
@@ -175,15 +181,45 @@ const hostVoiceTools: VoiceToolDef[] = mapleHostToolDefs.map((def) => ({
   execute: (input) => executeHostToolCall(def, (input ?? {}) as Record<string, unknown>),
 }));
 
-const INSTRUCTIONS = [
-  "You are Maple's voice assistant — Maple is the user's bank. Warm, brisk, plain-spoken.",
-  "You can read the user's real accounts, transactions, cards, insights and payees through your tools; the data comes back as JSON from Maple's own API.",
-  "Money amounts in the API are integer CENTS — always convert and display as dollars (941220 → $9,412.20), on screen and aloud.",
-  "When data is worth seeing, put it on screen with show_table or show_key_value and speak only the headline (totals, the outlier, what to do next). Never read rows aloud.",
-  "Integrations: if a toolkit's tools (GMAIL_*, SLACK_*, …) appear in your tool list, that integration IS connected — call them directly. Only when a requested toolkit has no tools in your list do you use request_connect to put a Connect card on screen. Gated actions ask the user's permission like everything else.",
-  "A spoken yes always refers to your MOST RECENT permission request. If an older request is still unanswered, treat it as declined and mention you dropped it — never apply a yes to it.",
-  "Keep spoken turns to one or two sentences.",
-].join(" ");
+/** Protocol/display tools are mechanics, not capabilities — keep them out of
+ *  the "what can you do" summary. */
+const MECHANIC_TOOLS = new Set(["show_table", "show_key_value", "list_integrations", "request_connect"]);
+
+/** Map the composed VoiceToolDef list to the shared capability contract. */
+function voiceToolSummary(tools: VoiceToolDef[]): ToolSummaryInput[] {
+  return tools
+    .filter((t) => !MECHANIC_TOOLS.has(t.name))
+    .map((t) => {
+      // Composio bridge tools are named TOOLKIT_ACTION (GMAIL_FETCH_EMAILS).
+      const upper = /^[A-Z0-9]+_/.test(t.name);
+      return {
+        name: t.name,
+        description: t.description,
+        tier: t.tier === "read" ? ("read" as const) : t.tier === "critical" ? ("critical" as const) : ("act" as const),
+        source: upper ? ("integration" as const) : ("host" as const),
+        ...(upper ? { toolkit: t.name.slice(0, t.name.indexOf("_")).toLowerCase() } : {}),
+      };
+    });
+}
+
+/** Maple's voice prompt — recomposed onto the shared prompt core (spec §1):
+ *  platform rules (anti-yap register, show-vs-say, source declarations,
+ *  consent recency, guardrails) come from @flowlet/core; only the persona and
+ *  the cents convention are Maple's. Assembled at session start so the
+ *  capability summary reflects the LIVE tool list. */
+function buildInstructions(tools: VoiceToolDef[]): string {
+  return buildVoiceInstructions({
+    persona: [
+      "You are Maple's voice assistant — Maple is the user's bank. Warm, brisk, plain-spoken.",
+      "You can read the user's real accounts, transactions, cards, insights and payees through",
+      "your tools; the data comes back as JSON from Maple's own API.",
+    ].join(" "),
+    toolSummary: capabilitySummary(voiceToolSummary(tools), integrationCatalogIds),
+    extras: [
+      "Money amounts in the API are integer CENTS — always convert and display as dollars (941220 → $9,412.20), on screen and aloud.",
+    ],
+  });
+}
 
 const GREETING =
   "Greet the user in ONE short sentence: you're Maple's voice assistant, ask what they need. Do not list capabilities.";
@@ -252,10 +288,11 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
           fetchIntegrationVoiceTools(),
         ]);
         if (stopped) return;
+        const tools = [...displayTools, ...integrationTools, ...composioTools, ...hostVoiceTools];
         const driver = createRealtimeVoiceDriver({
           getSession: async () => grant,
-          tools: [...displayTools, ...integrationTools, ...composioTools, ...hostVoiceTools],
-          instructions: INSTRUCTIONS,
+          tools,
+          instructions: buildInstructions(tools),
           greeting: GREETING,
         });
         adopt(driver.start(emit));
