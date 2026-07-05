@@ -2,18 +2,16 @@
  * The automation card (spec section d, content outline approved; visual
  * treatment reuses the approval-card patterns — Yousef-gated).
  *
- * Proposal state: the create/update approval. The user reads exactly what the
- * automation will do — trigger + guard, each step's tool and concrete input
- * mapping, which gated tools run unattended (grants) vs pause each firing —
- * then approves or declines the whole package. The raw spec is one disclosure
- * away (the inspectability escape hatch).
+ * Proposal state: the create/update approval. The user sees a plain-language
+ * summary of when the automation runs, what it will do, and which app actions
+ * can run automatically. The raw spec is one disclosure away for inspection.
  *
  * The shell deliberately does not import the automations engine: the card
  * parses the tool-call input defensively and falls back to the generic
  * approval JSON dump when the shape is unfamiliar.
  */
-import type { CSSProperties } from "react";
 import { ApprovalCard } from "./ApprovalCard";
+import { BrandIcon } from "./BrandIcon";
 import { humanize, toolAction } from "./tool-labels";
 
 /** The authoring tools whose approvals render as this card. */
@@ -64,29 +62,18 @@ function parseSpec(input: unknown): { spec: SpecLike; grantedTools: string[] } |
   return { spec, grantedTools };
 }
 
-function tierOf(spec: SpecLike): string {
-  if (spec.execution.mode === "agent") return "agentic";
-  let hybrid = false;
-  const walk = (steps: StepLike[] | undefined): void => {
-    for (const s of steps ?? []) {
-      if (s.type === "agent") hybrid = true;
-      walk(s.then);
-      walk(s.else);
-      walk(s.steps);
-    }
-  };
-  walk(spec.execution.steps);
-  return hybrid ? "hybrid" : "deterministic";
-}
-
 function triggerLine(spec: SpecLike): string {
   const t = spec.trigger;
   if (t.type === "schedule") {
     if (typeof t["at"] === "string") return `Once at ${t["at"]}`;
     return `On schedule ${String(t["cron"])} (${String(t["timezone"] ?? "UTC")})`;
   }
-  // Friendly event names: `transaction.created` -> "When transaction created".
-  if (t.type === "host_event") return `When ${humanize(String(t["event"]).replace(/\./g, " ")).toLowerCase()}`;
+  if (t.type === "host_event") {
+    const event = String(t["event"] ?? "");
+    if (event === "transaction.created") return "A transaction is created";
+    const label = humanize(event.replace(/\./g, " ")).toLowerCase();
+    return label ? `${label.charAt(0).toUpperCase()}${label.slice(1)}` : "Something happens";
+  }
   return `When ${humanize(String(t["trigger"]).replace(/\./g, " ")).toLowerCase()}`;
 }
 
@@ -122,6 +109,141 @@ function gatedTools(spec: SpecLike): string[] {
   return [...names];
 }
 
+function formatHour(hour: string): string {
+  const n = Number(hour);
+  if (!Number.isFinite(n)) return hour;
+  if (n === 0) return "midnight";
+  if (n < 12) return `${n}:00 AM`;
+  if (n === 12) return "noon";
+  return `${n - 12}:00 PM`;
+}
+
+function formatCondition(condition: string | undefined): string | undefined {
+  if (!condition) return undefined;
+  const amount = condition.match(/trigger\.amount\s*>\s*(\d+(?:\.\d+)?)/i)?.[1];
+  if (amount) return `For charges over $${Number(amount).toLocaleString("en-US")}`;
+
+  const debit = /trigger\.direction\s*={1,2}\s*['"]?debit['"]?/i.test(condition);
+  const beforeHour = condition.match(/trigger\.hour\s*<\s*(\d{1,2})/i)?.[1];
+  if (debit && beforeHour) return `For outgoing transactions before ${formatHour(beforeHour)}`;
+  if (beforeHour) return `Before ${formatHour(beforeHour)}`;
+  if (debit) return "For outgoing transactions";
+
+  return "Only when the saved condition matches";
+}
+
+function formatList(items: string[]): string {
+  if (items.length === 0) return "";
+  if (items.length === 1) return items[0]!;
+  // Callers pass verb-initial action phrases ("Search Gmail", "Send email").
+  if (items.length === 2) return `${items[0]} and ${items[1]!.charAt(0).toLowerCase()}${items[1]!.slice(1)}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)!.charAt(0).toLowerCase()}${items.at(-1)!.slice(1)}`;
+}
+
+function stepSummary(step: StepLike): string | undefined {
+  if (step.type === "tool") {
+    const tool = step.tool ?? "";
+    const action = toolAction(tool).request;
+    const input = step.input ?? {};
+    if (/^GMAIL_SEND/i.test(tool) && typeof input.to === "string") return `Send email to ${input.to}`;
+    if (/^SLACK_/i.test(tool) && /SEND|POST/i.test(tool) && typeof input.channel === "string") {
+      return `Post to ${input.channel}`;
+    }
+    return action;
+  }
+  if (step.type === "agent") return brief(step.goal, 90);
+  if (step.type === "branch") return "Check a condition";
+  if (step.type === "loop") return "Repeat for matching items";
+  return undefined;
+}
+
+function outcomeLine(spec: SpecLike, steps: Array<{ step: StepLike; depth: number }>): string {
+  if (spec.execution.mode === "agent") return brief(spec.execution.goal, 130) || "Let Flowlet handle the task";
+  const summaries = Array.from(new Set(steps.map(({ step }) => stepSummary(step)).filter((s): s is string => Boolean(s))));
+  if (summaries.length > 0) return formatList(summaries.slice(0, 3));
+  return brief(spec.description, 130) || "Run the approved steps";
+}
+
+const TOOL_BRANDS: Record<string, { id: string; name: string }> = {
+  GMAIL: { id: "gmail", name: "Gmail" },
+  SLACK: { id: "slack", name: "Slack" },
+  NOTION: { id: "notion", name: "Notion" },
+  GITHUB: { id: "github", name: "GitHub" },
+  GOOGLECALENDAR: { id: "googlecalendar", name: "Google Calendar" },
+  LINEAR: { id: "linear", name: "Linear" },
+  GOOGLEDRIVE: { id: "googledrive", name: "Google Drive" },
+  DISCORD: { id: "discord", name: "Discord" },
+  GOOGLESHEETS: { id: "googlesheets", name: "Google Sheets" },
+  GOOGLEDOCS: { id: "googledocs", name: "Google Docs" },
+  STRIPE: { id: "stripe", name: "Stripe" },
+  JIRA: { id: "jira", name: "Jira" },
+  ASANA: { id: "asana", name: "Asana" },
+  HUBSPOT: { id: "hubspot", name: "HubSpot" },
+  AIRTABLE: { id: "airtable", name: "Airtable" },
+};
+
+function brandForTool(tool: string): { id: string; name: string } {
+  const prefix = tool.split("_")[0]?.toUpperCase() ?? "";
+  return TOOL_BRANDS[prefix] ?? { id: prefix.toLowerCase(), name: humanize(prefix) || "Tool" };
+}
+
+export interface AutomationAppAccess {
+  key: string;
+  brandId: string;
+  name: string;
+  actions: string[];
+  canRunAutomatically: boolean;
+}
+
+function appAccessGroups(tools: string[], granted: Set<string>): AutomationAppAccess[] {
+  const groups = new Map<string, AutomationAppAccess>();
+  for (const tool of tools) {
+    const brand = brandForTool(tool);
+    const group = groups.get(brand.name) ?? {
+      key: brand.name,
+      brandId: brand.id,
+      name: brand.name,
+      actions: [],
+      canRunAutomatically: true,
+    };
+    const action = toolAction(tool).request;
+    if (!group.actions.includes(action)) group.actions.push(action);
+    if (!granted.has(tool)) group.canRunAutomatically = false;
+    groups.set(brand.name, group);
+  }
+  return [...groups.values()];
+}
+
+export interface AutomationCardModel {
+  name: string;
+  title: string;
+  trigger: string;
+  condition?: string;
+  outcome: string;
+  access: AutomationAppAccess[];
+  detailJson: string;
+}
+
+export function automationCardModel(toolName: string, input: unknown): AutomationCardModel | undefined {
+  const parsed = parseSpec(input);
+  if (!parsed) return undefined;
+  const { spec, grantedTools } = parsed;
+  const granted = new Set(grantedTools);
+  const verb = toolName === "update_automation" ? "Update" : "Turn on";
+  const steps = flattenSteps(spec.execution.steps);
+  const tools = gatedTools(spec);
+
+  return {
+    name: spec.name,
+    title: `${verb} "${spec.name}"?`,
+    trigger: triggerLine(spec),
+    condition: formatCondition(spec.if),
+    outcome: outcomeLine(spec, steps),
+    access: appAccessGroups(tools, granted),
+    detailJson: JSON.stringify({ spec, grantedTools }, null, 2),
+  };
+}
+
 export interface AutomationCardProps {
   toolName: string;
   input: unknown;
@@ -130,106 +252,82 @@ export interface AutomationCardProps {
 }
 
 export function AutomationCard({ toolName, input, onApprove, onDecline }: AutomationCardProps) {
-  const parsed = parseSpec(input);
+  const model = automationCardModel(toolName, input);
   // Unfamiliar shape: fail open to the generic approval card, never hide a call.
-  if (!parsed) {
+  if (!model) {
     return <ApprovalCard toolName={toolName} input={input} onApprove={onApprove} onDecline={onDecline} />;
   }
-  const { spec, grantedTools } = parsed;
-  const granted = new Set(grantedTools);
-  const tier = tierOf(spec);
-  const verb = toolName === "update_automation" ? "Update automation" : "New automation";
-  const steps = flattenSteps(spec.execution.steps);
-  const tools = gatedTools(spec);
-
-  const mono: CSSProperties = { fontFamily: "var(--flowlet-font-mono)", fontSize: 11 };
-  const muted: CSSProperties = { color: "var(--flowlet-fg-muted)" };
+  const { title, access, trigger, condition, outcome, detailJson } = model;
 
   return (
-    <div className="fl-approval" role="group" aria-label={`${verb}: ${spec.name}`}>
-      <div className="fl-approval-eyebrow">{verb} · approval required</div>
-
-      <div style={{ marginTop: 8, display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 14, fontWeight: 650 }}>{spec.name}</span>
-        <span className="fl-chip" style={{ fontSize: 11, textTransform: "capitalize" }}>{tier}</span>
-      </div>
-
-      {spec.description ? (
-        <div style={{ fontSize: 12, marginTop: 4 }}>{spec.description}</div>
-      ) : null}
-      {spec.prompt ? (
-        <div style={{ fontSize: 11, marginTop: 4, ...muted }}>You asked: “{spec.prompt}”</div>
-      ) : null}
-
-      <div style={{ fontSize: 12, marginTop: 10 }}>
-        <span style={muted}>Trigger · </span>
-        {triggerLine(spec)}
-        {spec.if ? (
-          <div style={{ ...mono, marginTop: 2, ...muted }}>only if {spec.if}</div>
+    <div className="fl-approval fl-automation-approval" role="group" aria-label={title}>
+      <div className="fl-auto-approval-head">
+        <div className="fl-auto-approval-heading">
+          <div className="fl-approval-eyebrow">Needs your approval</div>
+          <div className="fl-auto-approval-title">{title}</div>
+        </div>
+        {access.length > 0 ? (
+          <div className="fl-auto-logo-stack" aria-label={`Uses ${access.map((app) => app.name).join(", ")}`}>
+            {access.slice(0, 3).map((app) => (
+              <span className="fl-auto-logo" key={app.key} title={app.name}>
+                <BrandIcon id={app.brandId} size={17} />
+              </span>
+            ))}
+          </div>
         ) : null}
       </div>
 
-      <div style={{ fontSize: 12, marginTop: 10 }}>
-        <span style={muted}>Steps</span>
-        <ol style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-          {spec.execution.mode === "agent" ? (
-            <li>AI step — {brief(spec.execution.goal)}</li>
-          ) : (
-            steps.map(({ step, depth }) => (
-              <li key={step.id} style={{ marginLeft: depth * 14, marginTop: 2 }}>
-                {step.type === "tool" ? (
-                  toolAction(step.tool ?? "").request
-                ) : step.type === "agent" ? (
-                  <>AI step — {brief(step.goal)}</>
-                ) : step.type === "branch" ? (
-                  <>
-                    If <span style={{ ...mono, ...muted }}>{step.if}</span>
-                  </>
-                ) : (
-                  <>
-                    For each <span style={{ ...mono, ...muted }}>{step.items}</span>
-                  </>
-                )}
-                {step.type !== "branch" && step.if ? (
-                  <div style={{ ...mono, ...muted }}>only if {step.if}</div>
-                ) : null}
-              </li>
-            ))
-          )}
-        </ol>
+      <div className="fl-auto-summary" aria-label="Automation summary">
+        <div className="fl-auto-summary-row">
+          <span className="fl-auto-summary-k">When</span>
+          <div className="fl-auto-summary-v">
+            <strong>{trigger}</strong>
+            {condition ? <span>{condition}</span> : null}
+          </div>
+        </div>
+        <div className="fl-auto-summary-row">
+          <span className="fl-auto-summary-k">Then</span>
+          <div className="fl-auto-summary-v">
+            <strong>{outcome}</strong>
+          </div>
+        </div>
       </div>
 
-      {tools.length > 0 ? (
-        <div style={{ fontSize: 12, marginTop: 10 }}>
-          <span style={muted}>It can</span>
-          <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-            {tools.map((tool) => (
-              <li key={tool} style={{ marginTop: 2 }}>
-                {toolAction(tool).request}{" "}
-                <span style={muted}>
-                  {granted.has(tool) ? "— runs without asking" : "— asks you each time"}
-                </span>
-              </li>
-            ))}
-          </ul>
+      {access.length > 0 ? (
+        <div className="fl-auto-access">
+          <div className="fl-auto-access-label">Apps this can use</div>
+          {access.map((app) => (
+            <div className="fl-auto-access-row" key={app.key}>
+              <span className="fl-auto-access-logo" aria-hidden="true">
+                <BrandIcon id={app.brandId} size={17} />
+              </span>
+              <div className="fl-auto-access-copy">
+                <div className="fl-auto-access-title">{app.name}</div>
+                <div className="fl-auto-access-sub">{formatList(app.actions)}</div>
+              </div>
+              <span className="fl-auto-access-badge">
+                {app.canRunAutomatically ? "Can run automatically" : "Will ask first"}
+              </span>
+            </div>
+          ))}
         </div>
       ) : null}
 
-      <details style={{ marginTop: 10 }}>
-        <summary style={{ fontSize: 11, cursor: "pointer", ...muted }}>Show technical details</summary>
+      <details className="fl-auto-details">
+        <summary>View setup details</summary>
         {/* grantedTools included: friendly labels above can collapse two tool
             slugs onto one name, so the consent trail needs the raw grants. */}
-        <pre style={{ fontSize: 11, margin: "6px 0 0", whiteSpace: "pre-wrap", ...mono }}>
-          {JSON.stringify({ spec, grantedTools }, null, 2)}
+        <pre>
+          {detailJson}
         </pre>
       </details>
 
       <div className="fl-approval-actions">
         <button type="button" className="fl-btn fl-btn-primary" onClick={onApprove}>
-          Approve automation
+          Turn on automation
         </button>
         <button type="button" className="fl-btn" onClick={onDecline}>
-          Decline
+          Not now
         </button>
       </div>
     </div>
