@@ -11,12 +11,16 @@ import {
   type UINode,
 } from "@flowlet/core";
 import type {
-  ApprovalTier,
   VoiceDriver,
   VoiceDriverHandle,
   VoiceEvent,
   VoiceSessionInit,
+  VoiceToolDef,
 } from "./voice-session";
+
+// Re-exported for compatibility: VoiceToolDef moved to voice-session so
+// VoiceSessionInit can carry session tools without an import cycle.
+export type { VoiceToolDef } from "./voice-session";
 
 /** Realtime tokens are the expensive ones — cap every tool result that enters
  *  the session (spec §5). Views still receive the full output. */
@@ -30,20 +34,6 @@ const VOICE_SESSION_OUTPUT_BUDGET = { maxChars: 6_000 } as const;
  * (topology B) — the stage's consent bar is the enforcement point, so the
  * voice model cannot bypass approvals no matter what it decides to do.
  */
-
-/** A tool the voice agent may call. Same shape the chat side derives from
- *  `HostToolDefinition`s — pass host tools through `hostToolToVoiceTool`-style
- *  adapters in the app, or hand-author view tools. */
-export interface VoiceToolDef {
-  name: string;
-  description: string;
-  /** JSON Schema for the tool input. */
-  parameters: Record<string, unknown>;
-  tier: ApprovalTier | "read";
-  execute(input: unknown): Promise<unknown>;
-  /** Optional: project a successful call onto the stage as a view. */
-  toView?(input: unknown, output: unknown): UINode | undefined;
-}
 
 export interface RealtimeSessionGrant {
   /** Ephemeral client secret minted by the host backend. */
@@ -140,7 +130,14 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         if (dc && dc.readyState === "open") dc.send(JSON.stringify(payload));
       };
 
-      const tools = options.tools ?? [];
+      // Session-scoped tools (spec §4, e.g. the shell's open_saved_flowlet)
+      // merge with the driver's fixed set; per-name, session wins.
+      const tools = [
+        ...(options.tools ?? []).filter(
+          (tool) => !sessionInit?.sessionTools?.some((s) => s.name === tool.name),
+        ),
+        ...(sessionInit?.sessionTools ?? []),
+      ];
       const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
 
       const sessionTools = [

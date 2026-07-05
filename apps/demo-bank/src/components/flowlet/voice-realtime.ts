@@ -15,6 +15,7 @@ import {
   type VoiceDriver,
   type VoiceDriverHandle,
   type VoiceEvent,
+  type VoiceSessionInit,
   type VoiceToolDef,
 } from "@flowlet/shell";
 import {
@@ -380,7 +381,7 @@ async function fetchIntegrationVoiceTools(): Promise<VoiceToolDef[]> {
  * made before the mint settles are forwarded once the inner driver exists.
  */
 export const mapleRealtimeVoiceDriver: VoiceDriver = {
-  start(emit: (event: VoiceEvent) => void): VoiceDriverHandle {
+  start(emit: (event: VoiceEvent) => void, init?: VoiceSessionInit): VoiceDriverHandle {
     let inner: VoiceDriverHandle | null = null;
     let stopped = false;
     const queued: Array<(handle: VoiceDriverHandle) => void> = [];
@@ -399,7 +400,7 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
         if (stopped) return;
         if (!res.ok) {
           console.info("[flowlet voice] no realtime key — running the scripted demo session");
-          adopt(scriptedFallback.start(emit));
+          adopt(scriptedFallback.start(emit, init));
           return;
         }
         const [grant, composioTools] = await Promise.all([
@@ -414,11 +415,13 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
           instructions: buildInstructions(tools),
           greeting: GREETING,
         });
-        adopt(driver.start(emit));
+        // Forward init through the mint wrapper — before this, the session
+        // brief/carry-over silently never reached the realtime driver.
+        adopt(driver.start(emit, init));
       })
       .catch(() => {
         if (stopped) return;
-        adopt(scriptedFallback.start(emit));
+        adopt(scriptedFallback.start(emit, init));
       });
 
     return {

@@ -170,11 +170,29 @@ export interface VoiceDriverHandle extends VoiceSessionActions {
   stop(): void;
 }
 
+/** A tool the voice agent may call. Same shape the chat side derives from
+ *  `HostToolDefinition`s — pass host tools through adapter mappers in the
+ *  app, or hand-author view tools. (Lives here so `VoiceSessionInit` can
+ *  carry session-scoped tools without a driver import cycle.) */
+export interface VoiceToolDef {
+  name: string;
+  description: string;
+  /** JSON Schema for the tool input. */
+  parameters: Record<string, unknown>;
+  tier: ApprovalTier | "read";
+  execute(input: unknown): Promise<unknown>;
+  /** Optional: project a successful call onto the stage as a view. */
+  toView?(input: unknown, output: unknown): UINode | undefined;
+}
+
 /** Per-session start context (all optional; drivers may ignore). */
 export interface VoiceSessionInit {
   /** Compact rendering of the recent thread, so a session started mid-
    *  conversation isn't amnesiac about what was just typed. */
   context?: string;
+  /** Session-scoped tools merged into the driver's set (per-name, session
+   *  wins) — e.g. the shell's open_saved_flowlet (spec §4). */
+  sessionTools?: VoiceToolDef[];
 }
 
 /**
