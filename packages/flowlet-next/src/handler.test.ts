@@ -326,4 +326,27 @@ describe("createFlowletHandler", () => {
       expect(res.status, p).toBe(403);
     }
   });
+
+  it("REVIEW FOLLOW-UP: a custom principal resolver (multi-user mount) withholds steering tools — stop_asking_about is absent", async () => {
+    // stop_asking_about is critical tier (an invariants.test.ts pin), so its
+    // absence from /critical-tools is a direct signal the whole
+    // createSteeringTools() spread (which also registers always_ask_before,
+    // act tier — not observable via THIS route) was skipped.
+    const { GET } = createFlowletHandler({
+      flowletDir: emptyDir(),
+      principal: async () => ({ userId: "custom-user" }),
+    });
+    const res = await GET(req("/api/flowlet/critical-tools"));
+    const body = (await res.json()) as { tools: { name: string }[] };
+    const names = body.tools.map((t) => t.name);
+    expect(names).not.toContain("stop_asking_about");
+  });
+
+  it("the default single-principal mount (no custom principal resolver) keeps steering tools", async () => {
+    const { GET } = createFlowletHandler({ flowletDir: emptyDir() });
+    const res = await GET(req("/api/flowlet/critical-tools"));
+    const body = (await res.json()) as { tools: { name: string }[] };
+    const names = body.tools.map((t) => t.name);
+    expect(names).toContain("stop_asking_about");
+  });
 });

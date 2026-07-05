@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { handleConsent } from "./consent";
+import { createConsentLedger, handleConsent } from "./consent";
 import { createInMemoryGrantStore } from "./grant-store";
 import { InMemoryAuditLog, InMemoryThreadStore } from "./embedded/in-memory-store";
 import { createFadeTracker } from "./fade-tracker";
+import { grantPolicy } from "./policy/grant-policy";
 import type { ToolDescriptor } from "./descriptor";
 import type { FlowletUIMessage } from "@flowlet/core";
 
@@ -134,6 +135,78 @@ describe("handleConsent", () => {
     });
     expect(result.ok).toBe(true);
     expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+  });
+
+  it("REVIEW FOLLOW-UP: a session/task-duration grant mints WITH a contextKey (= the request's threadId) — grantPolicy suppresses in the SAME thread, not a different one", async () => {
+    const d = deps(threadWith({}));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "session" } },
+    });
+    expect(result.ok).toBe(true);
+    const [grant] = await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL");
+    expect(grant?.contextKey).toBe("th-1"); // dead-on-arrival before this fix (grant-match requires it)
+
+    const descriptor = d.resolveDescriptor("GMAIL_SEND_EMAIL")!;
+    const policy = grantPolicy({ evaluate: () => "approve" }, d.grants, {
+      principalScope: () => scope,
+      contextKey: (ctx) => ctx.threadId,
+    });
+    const baseCtx = { toolName: "GMAIL_SEND_EMAIL", input: {}, descriptor, principal: { userId: "u" } };
+    expect(await policy.evaluate({ ...baseCtx, threadId: "th-1" })).toBe("allow");
+    expect(await policy.evaluate({ ...baseCtx, threadId: "th-2" })).toBe("approve");
+  });
+
+  it("a STANDING grant mints WITHOUT a contextKey (unaffected by the session/task fix)", async () => {
+    const d = deps(threadWith({}));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "standing" } },
+    });
+    expect(result.ok).toBe(true);
+    const [grant] = await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL");
+    expect(grant?.contextKey).toBeUndefined();
+  });
+});
+
+describe("handleConsent — idempotency (review follow-up)", () => {
+  it("a duplicate POST for the SAME toolCallId returns the identical result and never mints a second grant or a second audit event", async () => {
+    const d = { ...deps(threadWith({})), seen: createConsentLedger() };
+    const req = {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" as const,
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" as const }, duration: "standing" as const } },
+    };
+    const first = await handleConsent(d, scope, req);
+    const second = await handleConsent(d, scope, req);
+    expect(second).toEqual(first);
+    expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+  });
+
+  it("a duplicate POST never double-records a fade decision — the 3rd DISTINCT yes, not the duplicate, is what earns the offer", async () => {
+    const messages = [
+      { id: "m1", role: "assistant", parts: [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "call-1", state: "approval-requested", input: { to: "a@example.com" }, approval: { id: "ap-1" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "call-2", state: "approval-requested", input: { to: "b@example.com" }, approval: { id: "ap-2" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "call-3", state: "approval-requested", input: { to: "c@example.com" }, approval: { id: "ap-3" } },
+      ] },
+    ] as unknown as FlowletUIMessage[];
+    const d = { ...depsWithFade(messages), seen: createConsentLedger() };
+    const post = (toolCallId: string) =>
+      handleConsent(d, scope, {
+        threadId: "th-1", toolCallId, toolName: "GMAIL_SEND_EMAIL",
+        response: { id: toolCallId, decision: "yes" },
+      });
+    await post("call-1");
+    await post("call-1"); // duplicate — must not count a second time
+    await post("call-2"); // 2nd distinct yes
+    const third = await post("call-3"); // 3rd distinct yes — earns the offer at exactly 3
+    expect(third.ok).toBe(true);
+    expect(third.ok && third.fadeEligible?.count).toBe(3);
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(3); // not 4
   });
 });
 

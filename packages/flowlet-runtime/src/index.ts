@@ -110,8 +110,8 @@ export type { SteeringToolsConfig } from "./steering-tools";
 // Consent endpoint (ENG-193 §4.5): server-validated grant creation behind
 // the consent channel. Transport-agnostic — hosts mount it behind their own
 // route (see @flowlet/next and the accounting demo).
-export { handleConsent } from "./consent";
-export type { HandleConsentDeps, HandleConsentRequest, HandleConsentResult } from "./consent";
+export { handleConsent, createConsentLedger } from "./consent";
+export type { HandleConsentDeps, HandleConsentRequest, HandleConsentResult, ConsentLedger } from "./consent";
 
 // Fade proposal endpoint (ENG-193 §4.4): server-re-derived accept/decline,
 // keyed by proposalId (not toolCallId/thread — see fade-proposal.ts).

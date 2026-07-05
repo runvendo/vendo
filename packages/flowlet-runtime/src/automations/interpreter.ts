@@ -183,6 +183,49 @@ interface ExecContext {
    *  for_each iteration (shared by reference into iterationCtx, unlike
    *  `records`, which is deliberately per-iteration). */
   parkedActions: ParkedActionDraft[];
+  /** Review follow-up: step ids parked so far in the CURRENT for_each
+   *  iteration. A later step in that SAME iteration whose unresolved input
+   *  mapping or guard references one of these ids is soft-skipped instead of
+   *  running with an undefined value (the parked step never produced an
+   *  output). Fresh per iteration (see `executeForEach`) — shared by
+   *  reference with nested branches WITHIN that iteration (branch recursion
+   *  passes the same `ExecContext`, unlike for_each, which spreads a new
+   *  one). Always empty outside a loop: parking itself never happens there
+   *  (an ungranted call outside a loop raises `PauseSignal`, not a park). */
+  parkedStepIdsThisIteration: Set<string>;
+}
+
+/** Escape a string for literal use inside a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Does `step`'s (still-unresolved) guard or input mapping reference one of
+ * `parkedIds` as a `steps.<id>` (or `steps["<id>"]`/`steps['<id>']`)
+ * expression? Reuses the id-agnostic `/\bsteps\s*[.[]/` shape `runner.ts`
+ * already scans guardExprs with, made id-SPECIFIC here: any reference at
+ * all is too broad (it would also flag a sibling reading a step that
+ * completed fine). Input mappings are JSON-serialized wholesale rather than
+ * walked field-by-field — the `{{ ... }}` templates survive JSON.stringify
+ * as literal substrings, and a false positive here only costs an extra
+ * (harmless) skip, never a wrong execute.
+ */
+function referencesParkedStep(step: AutomationStep, parkedIds: ReadonlySet<string>): string | undefined {
+  if (parkedIds.size === 0) return undefined;
+  const texts: string[] = [];
+  if (step.if !== undefined) texts.push(step.if);
+  if (step.type === "tool" || step.type === "agent") {
+    if (step.input !== undefined) texts.push(JSON.stringify(step.input));
+  } else if (step.type === "for_each") {
+    texts.push(step.items);
+  }
+  if (texts.length === 0) return undefined;
+  for (const id of parkedIds) {
+    const re = new RegExp(`\\bsteps\\s*[.[]\\s*['"\`]?${escapeRegExp(id)}\\b`);
+    if (texts.some((text) => re.test(text))) return id;
+  }
+  return undefined;
 }
 
 function specHasAgent(spec: AutomationSpec): boolean {
@@ -331,6 +374,7 @@ async function executeToolStep(ctx: ExecContext, step: ToolStep): Promise<void> 
             finishedAt: ctx.now(),
             idempotencyKey: `${ctx.input.runId}/${step.id}/0`,
           });
+          ctx.parkedStepIdsThisIteration.add(step.id);
           return;
         }
         throw new PauseSignal(step.id, step.tool, resolved);
@@ -558,6 +602,9 @@ async function executeForEach(ctx: ExecContext, step: ForEachStep): Promise<void
       records: [],
       bindings: { ...ctx.bindings, [step.as]: bounded[index], index },
       insideLoop: true,
+      // Fresh per iteration (review follow-up) — a park in iteration N must
+      // not skip an identically-named step in iteration N+1.
+      parkedStepIdsThisIteration: new Set(),
     };
     await executeSteps(iterationCtx, step.steps);
     const iterationOutputs: Record<string, unknown> = {};
@@ -592,6 +639,25 @@ async function executeSteps(ctx: ExecContext, steps: readonly AutomationStep[]):
     }
     if (ctx.resumeTarget?.stepId === step.id && !ctx.resumeTarget.approved) {
       throw new StepFailure(step.id, "approval declined by the user");
+    }
+
+    // Review follow-up: a sibling in the SAME for_each iteration whose
+    // (unresolved) guard or input mapping references an already-parked
+    // step's output is soft-skipped — evaluating or executing it would run
+    // on an undefined value the parked step never produced (e.g. "we paid
+    // $undefined"). Checked BEFORE the guard evaluation below so this never
+    // even attempts to evaluate an expression against a missing binding.
+    const dependsOnParked = referencesParkedStep(step, ctx.parkedStepIdsThisIteration);
+    if (dependsOnParked !== undefined) {
+      ctx.records.push({
+        id: step.id,
+        status: "skipped",
+        startedAt: ctx.now(),
+        finishedAt: ctx.now(),
+        note: `dependent on parked step "${dependsOnParked}"`,
+        idempotencyKey: `${ctx.input.runId}/${step.id}/0`,
+      });
+      continue;
     }
 
     // Per-step guard.
@@ -668,6 +734,7 @@ export async function interpret(input: InterpretInput): Promise<InterpretOutcome
     now,
     grants: input.grants ?? [],
     parkedActions: [],
+    parkedStepIdsThisIteration: new Set(),
   };
 
   try {

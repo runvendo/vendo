@@ -567,6 +567,70 @@ describe("ENG-193 §4.6 — for_each parks instead of failing", () => {
     expect(outcome.parkedActions).toHaveLength(1);
   });
 
+  it("REVIEW FOLLOW-UP: a sibling step whose INPUT MAPPING references the parked step's output is soft-skipped, never run with undefined", async () => {
+    const gated = makeTool("gated_act");
+    const dependent = makeTool("dependent_tool");
+    const independent = makeTool("independent_tool", { readOnly: true });
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [
+            { id: "gate", type: "tool", tool: "gated_act", input: { row: "{{ item }}" } },
+            // References the parked step's output — must never execute.
+            { id: "dependent", type: "tool", tool: "dependent_tool", input: { amount: "{{ steps.gate.output.amount }}" } },
+            // Does NOT reference "gate" — must run every iteration regardless.
+            { id: "independent", type: "tool", tool: "independent_tool", input: { row: "{{ item }}" } },
+          ],
+        },
+      ],
+    });
+    const outcome = await interpret({
+      ...baseInput(spec, { gated_act: gated, dependent_tool: dependent, independent_tool: independent }),
+      policy: approveFor("gated_act"),
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(gated.calls).toHaveLength(0); // parked, both iterations
+    expect(dependent.calls).toHaveLength(0); // dependent sibling: soft-skipped, never runs on undefined
+    expect(independent.calls).toHaveLength(2); // independent sibling: unaffected, runs both iterations
+    expect(outcome.parkedActions).toHaveLength(2);
+  });
+
+  it("REVIEW FOLLOW-UP: a park in one iteration never skips the SAME-named step in the NEXT iteration", async () => {
+    // The parked-ids tracking is per-iteration, not per-run: a step called
+    // "dependent" that happens to reference a DIFFERENT step must still run
+    // in every iteration where that other step didn't park.
+    const readable = makeTool("readable_act", { readOnly: true });
+    const dependent = makeTool("dependent_tool");
+    const spec = specOf({
+      mode: "steps",
+      steps: [
+        {
+          id: "loop",
+          type: "for_each",
+          items: "{{ trigger.rows }}",
+          maxItems: 2,
+          steps: [
+            { id: "fetch", type: "tool", tool: "readable_act", input: { row: "{{ item }}" } },
+            { id: "dependent", type: "tool", tool: "dependent_tool", input: { amount: "{{ steps.fetch.output.amount }}" } },
+          ],
+        },
+      ],
+    });
+    // Nothing here parks at all — "fetch" is read-tier, never gated.
+    const outcome = await interpret({
+      ...baseInput(spec, { readable_act: readable, dependent_tool: dependent }),
+      policy: allowAll,
+    });
+    expect(outcome.status).toBe("succeeded");
+    expect(dependent.calls).toHaveLength(2); // runs every iteration — nothing ever parked
+    expect(outcome.parkedActions).toHaveLength(0);
+  });
+
   it("direct (non-loop) steps are UNCHANGED: an ungranted gated tool still PauseSignal-checkpoints, never parks", async () => {
     const fetch = makeTool("fetch_rows");
     const freeze = makeTool("freeze_card");

@@ -54,6 +54,7 @@ export async function handleDemoConsent(req: Request): Promise<Response> {
       resolveDescriptor: resolveToolDescriptor,
       getMessages: (scope, id) => demoStore.threads.getMessages(scope, id),
       fadeTracker: demoStore.fadeTracker,
+      seen: demoStore.consentSeen,
     },
     CADENCE_SCOPE,
     consentReq,

@@ -21,7 +21,7 @@
  * `createAutomationsWorld()` call reads it). `principal.ts` is a
  * dependency-free leaf, so routing through it breaks the cycle.
  */
-import { createFadeTracker, createInMemoryCompiledRuleStore, createInMemoryGrantStore, createInMemoryStore, type FadeTracker, type InMemoryStore } from "@flowlet/runtime";
+import { createConsentLedger, createFadeTracker, createInMemoryCompiledRuleStore, createInMemoryGrantStore, createInMemoryStore, type ConsentLedger, type FadeTracker, type InMemoryStore } from "@flowlet/runtime";
 import type { CompiledRuleStore, GrantStore, Principal } from "@flowlet/core";
 import { CADENCE_SCOPE } from "./principal";
 
@@ -30,6 +30,9 @@ export interface DemoStore extends InMemoryStore {
   /** ENG-193 item 6 — compiled always-ask rules (conversational steering). */
   rules: CompiledRuleStore;
   fadeTracker: FadeTracker;
+  /** Review follow-up — per-(principal, toolCallId) consent idempotency,
+   *  constructed ONCE here alongside every other singleton this module owns. */
+  consentSeen: ConsentLedger;
 }
 
 export const demoStore: DemoStore = {
@@ -37,6 +40,7 @@ export const demoStore: DemoStore = {
   grants: createInMemoryGrantStore(),
   rules: createInMemoryCompiledRuleStore(),
   fadeTracker: createFadeTracker(),
+  consentSeen: createConsentLedger(),
 };
 
 const threadIdByClientId = new Map<string, string>();

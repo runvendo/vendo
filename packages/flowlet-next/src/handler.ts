@@ -36,6 +36,7 @@ import { prewiredComponents } from "@flowlet/components/descriptors";
 import {
   buildDescriptor,
   createBreakerState,
+  createConsentLedger,
   createFadeTracker,
   createInMemoryCompiledRuleStore,
   createInMemoryGrantStore,
@@ -97,6 +98,12 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const threadIndex = createThreadIndex(threads);
     const breakers = options.store?.breakers ?? createBreakerState();
     const fadeTracker = options.store?.fadeTracker ?? createFadeTracker();
+    // Review follow-up: per-(principal, toolCallId) consent idempotency —
+    // constructed ONCE here, alongside every other singleton dep this mount
+    // owns (grants/audit/fadeTracker/breakers), not per-request. A duplicate
+    // consent POST (double-click, client retry) would otherwise re-record a
+    // fade decision, append another audit event, and attempt a second grant.
+    const consentSeen = createConsentLedger();
     // ENG-193 item 2/3: the production stack wraps the host's base policy —
     // grants can suppress repeat approvals (never critical), a judge (off by
     // default) can tighten/loosen the act tier, deterministic breakers can
@@ -128,23 +135,28 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     // `serverTools()` already; `knownToolNames` does too, one line below).
     //
     // PRINCIPAL ASYMMETRY (review follow-up, item-6 plan's open-risks
-    // section): the rest of this mount re-resolves the Principal PER REQUEST
-    // — `resolvePrincipal(req, options)` maps whatever identity the host's
-    // `options.principal` resolver returns into `{ tenantId: EMBEDDED_TENANT,
-    // subject: guard.principal.userId }` fresh on every grants/rules/audit/
-    // consent call (see the GET/POST handlers below, and policy-stack.ts's
-    // `principalScope`). Steering tools do NOT: they mint rules/grants under
-    // this ONE fixed `DEFAULT_PRINCIPAL`-derived subject at construction
-    // time, identical to the single-tenant simplification `world.ts`
-    // documents for automation authoring tools (this bucket merges into that
-    // SAME static toolset). A host that configures a real multi-tenant
-    // `principal` resolver must know every user's "always ask before"/"stop
-    // asking about" utterances land on this ONE shared identity, not
-    // per-user. The assertion below is a cheap sanity check (not a
-    // multi-tenant guard — there is no way to detect a future per-request
-    // principal creeping into this construction site other than reading this
-    // comment) that the fixed identity this bucket relies on is actually
-    // well-formed.
+    // section, now resolved below): the rest of this mount re-resolves the
+    // Principal PER REQUEST — `resolvePrincipal(req, options)` maps whatever
+    // identity the host's `options.principal` resolver returns into
+    // `{ tenantId: EMBEDDED_TENANT, subject: guard.principal.userId }` fresh
+    // on every grants/rules/audit/consent call (see the GET/POST handlers
+    // below, and policy-stack.ts's `principalScope`). Steering tools do NOT:
+    // they mint rules/grants under this ONE fixed `DEFAULT_PRINCIPAL`-derived
+    // subject at construction time, identical to the single-tenant
+    // simplification `world.ts` documents for automation authoring tools
+    // (this bucket merges into that SAME static toolset). On a host with a
+    // custom multi-tenant `principal` resolver, every user's "always ask
+    // before"/"stop asking about" utterance would land on this ONE shared
+    // identity instead of the caller's own — a false "Got it" for anyone but
+    // DEFAULT_PRINCIPAL's subject. Until steering tools resolve their
+    // principal per-request too (declared follow-up — needs a request-scoped
+    // toolset, which this construction-time closure doesn't have), the safe
+    // fix is to not register them at all on a custom-principal (multi-user)
+    // mount; the default single-principal mount (no `principal` option)
+    // keeps them, since DEFAULT_PRINCIPAL IS the one identity every request
+    // on that mount runs as. The assertion below is a cheap sanity check
+    // (not a multi-tenant guard) that the fixed identity this bucket relies
+    // on is actually well-formed.
     assert(
       typeof DEFAULT_PRINCIPAL.userId === "string" && DEFAULT_PRINCIPAL.userId.length > 0,
       "steering tools require a non-empty fixed DEFAULT_PRINCIPAL.userId (single-tenant assumption, ENG-193 item-6)",
@@ -154,12 +166,16 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       return {
         ...extra,
         ...(world ? world.authoringTools() : {}),
-        ...createSteeringTools({
-          principal: { tenantId: EMBEDDED_TENANT, subject: DEFAULT_PRINCIPAL.userId },
-          rules, grants, audit,
-          resolveDescriptor: (name) => resolveDescriptor(name),
-          knownToolNames: () => knownToolNames(),
-        }),
+        // Custom `options.principal` resolver -> multi-user mount -> steering
+        // tools are withheld entirely (see the comment above).
+        ...(options.principal === undefined
+          ? createSteeringTools({
+              principal: { tenantId: EMBEDDED_TENANT, subject: DEFAULT_PRINCIPAL.userId },
+              rules, grants, audit,
+              resolveDescriptor: (name) => resolveDescriptor(name),
+              knownToolNames: () => knownToolNames(),
+            })
+          : {}),
       };
     };
 
@@ -281,6 +297,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       resolveDescriptor,
       knownToolNames,
       fadeTracker,
+      consentSeen,
       clientTools,
     };
   }
@@ -368,6 +385,7 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
           threadIndex: s.threadIndex,
           resolveDescriptor: s.resolveDescriptor,
           fadeTracker: s.fadeTracker,
+          seen: s.consentSeen,
           principal: { tenantId: EMBEDDED_TENANT, subject: guard.principal.userId },
         });
       }

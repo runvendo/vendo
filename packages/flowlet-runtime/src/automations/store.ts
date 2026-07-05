@@ -114,6 +114,11 @@ export interface StepRecord {
   outputBytes?: number;
   error?: string;
   attempts?: number;
+  /** Human-readable annotation for a non-obvious "skipped" (review
+   *  follow-up) — e.g. a sibling skipped because it depended on a step
+   *  parked earlier in the SAME for_each iteration. Additive/optional; a
+   *  plain guard-false skip leaves it unset. */
+  note?: string;
   /** Deterministic: `<run id>/<step id>/<attempt>`. */
   idempotencyKey: string;
 }

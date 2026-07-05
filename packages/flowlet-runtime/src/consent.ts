@@ -31,7 +31,41 @@ export interface HandleConsentDeps {
   /** ENG-193 §4.4 — optional (absent -> no fade tracking, the same graceful
    *  no-op every other optional seam in this codebase has). */
   fadeTracker?: FadeTracker;
+  /** Review follow-up — optional (absent -> no dedup, the same graceful
+   *  no-op every other optional seam here has): per-(principal, toolCallId)
+   *  idempotency for this endpoint. A double-clicked "yes" (or any client
+   *  retry) re-POSTs the SAME toolCallId; without this, each POST re-recorded
+   *  a fade decision, appended another "consent" audit event, and — worse —
+   *  tried to mint a SECOND grant. Construct ONE ledger alongside the other
+   *  singleton deps (grants/audit/fadeTracker) at the mount's assembly site,
+   *  not per-request, or it dedupes nothing. */
+  seen?: ConsentLedger;
   now?: () => string;
+}
+
+/** Bounded so a long-lived process (or a demo that never restarts) can't grow
+ *  this without limit — mirrors the FIFO-eviction shape `judgePolicy`'s memo
+ *  and `breakers.ts`'s `countedEscalationIds` already use. */
+const MAX_CONSENT_LEDGER = 1000;
+
+export interface ConsentLedger {
+  get(key: string): HandleConsentResult | undefined;
+  set(key: string, result: HandleConsentResult): void;
+}
+
+/** A fresh in-memory idempotency ledger for `HandleConsentDeps.seen`. */
+export function createConsentLedger(): ConsentLedger {
+  const map = new Map<string, HandleConsentResult>();
+  return {
+    get: (key) => map.get(key),
+    set: (key, result) => {
+      if (map.size >= MAX_CONSENT_LEDGER) {
+        const oldest = map.keys().next().value;
+        if (oldest !== undefined) map.delete(oldest);
+      }
+      map.set(key, result);
+    },
+  };
 }
 
 export interface HandleConsentRequest {
@@ -79,6 +113,17 @@ export async function handleConsent(
   req: HandleConsentRequest,
 ): Promise<HandleConsentResult> {
   const clock = deps.now ?? (() => new Date().toISOString());
+
+  // Idempotency (review follow-up): a duplicate POST for the SAME toolCallId
+  // (double-click, client retry) returns the cached result unchanged — no
+  // second audit event, fade record, or grant. Scoped by principal too, same
+  // as every other per-thread/per-call keying in this codebase.
+  const ledgerKey = deps.seen ? `${principal.tenantId}::${principal.subject}::${req.toolCallId}` : undefined;
+  if (ledgerKey !== undefined) {
+    const cached = deps.seen!.get(ledgerKey);
+    if (cached) return cached;
+  }
+
   // Every decision — accepted OR rejected past body validation — leaves one
   // consent audit event (the module docstring's "records EVERY decision"
   // contract covers the rejected outcomes too).
@@ -87,6 +132,7 @@ export async function handleConsent(
       at: clock(), principal, kind: "consent",
       consentId: req.response.id, decision: req.response.decision,
     });
+    if (ledgerKey !== undefined) deps.seen!.set(ledgerKey, result);
     return result;
   }
 
@@ -144,6 +190,24 @@ export async function handleConsent(
           tool: req.response.grant.tool,
           scope: req.response.grant.scope,
           duration: req.response.grant.duration,
+          // ENG-193 §4.3 review follow-up: session/task-duration grants MUST
+          // carry a contextKey — grant-match.ts's non-standing check
+          // (`grant.contextKey === undefined -> never matches`) fails closed
+          // on one minted without it, so it was dead on arrival. Trace for
+          // why `req.threadId` is the RIGHT id: this function already used
+          // it two lines above this block to load the thread's messages
+          // (`deps.getMessages(principal, req.threadId)`) — i.e. it's the
+          // STORE thread id the client resolved for this very consent
+          // request. On the production path (`@flowlet/next`'s
+          // policy-stack.ts), `grantPolicy` is wired with
+          // `contextKey: (ctx) => ctx.threadId`, and `ctx.threadId` is what
+          // `engine.ts`'s `run()` resolves as `RunInput.threadId` (the
+          // caller-supplied thread id, or the engine's own minted fallback)
+          // for the SAME turn — the identical id the chat wiring threads
+          // into `agent.run`. Minting with `contextKey: req.threadId`
+          // therefore lines up exactly with what grantPolicy's contextKey
+          // resolver looks up on the next call in this same thread.
+          ...(req.response.grant.duration !== "standing" ? { contextKey: req.threadId } : {}),
           source: { kind: "chat" },
         },
         descriptor,
