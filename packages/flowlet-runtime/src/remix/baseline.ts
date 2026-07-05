@@ -9,7 +9,8 @@
  * stale pin bases loudly instead of mis-applying hunks against text that a
  * newer normalizer would have shaped differently.
  */
-import { createHash } from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
 export const NORMALIZER_VERSION = "1";
 
@@ -20,7 +21,7 @@ export interface NormalizedBaseline {
 }
 
 function hash(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
+  return bytesToHex(sha256(utf8ToBytes(text)));
 }
 
 /** Rewrite `exportName` to a default export. Ordered, first match wins:

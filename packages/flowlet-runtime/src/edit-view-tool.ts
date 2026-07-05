@@ -212,7 +212,7 @@ export function createEditViewTool(writer: FlowletWriter, options: EditViewToolO
           data: { envelope, uiNodeId: result.node.id },
         });
       }
-      if (process.env["FLOWLET_BENCH"] === "1") {
+      if (typeof process !== "undefined" && process.env["FLOWLET_BENCH"] === "1") {
         console.log(
           `[flowlet-bench] edit_view apply+materialize ${Math.round(performance.now() - started)}ms`,
         );

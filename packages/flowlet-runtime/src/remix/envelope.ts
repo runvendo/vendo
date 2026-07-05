@@ -9,14 +9,18 @@
  * Format: `base64url(bodyJson).hex(hmacSha256(canonical(body)))`. The body is
  * re-canonicalized before signature check, so key order never matters.
  */
-import { createHash, createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
+import { hkdf } from "@noble/hashes/hkdf.js";
+import { hmac } from "@noble/hashes/hmac.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { GeneratedPayload, RemixEnvelopePayload, VerifiedPinBase } from "@flowlet/core";
 import { NORMALIZER_VERSION } from "./baseline";
+import { constantTimeEqual, fromBase64Url, toBase64Url } from "./bytes";
 
 export interface SealKey {
   /** Key id: fingerprint of the material + derivation path (rotation signal). */
   kid: string;
-  key: Buffer;
+  key: Uint8Array;
 }
 
 export interface SealKeySources {
@@ -32,10 +36,14 @@ export function deriveSealKey(sources: SealKeySources): SealKey | null {
   const material = sources.secret ?? sources.providerKey;
   if (!material) return null;
   const path = sources.secret ? "secret" : "provider-hkdf";
-  const key = Buffer.from(
-    hkdfSync("sha256", material, "flowlet-remix-seal", `flowlet/${path}/v1`, 32),
+  const key = hkdf(
+    sha256,
+    utf8ToBytes(material),
+    utf8ToBytes("flowlet-remix-seal"),
+    utf8ToBytes(`flowlet/${path}/v1`),
+    32,
   );
-  const kid = createHash("sha256").update(key).digest("hex").slice(0, 12);
+  const kid = bytesToHex(sha256(key)).slice(0, 12);
   return { kid, key };
 }
 
@@ -60,9 +68,15 @@ export interface RemixSealer {
   verify(envelope: string, context: VerifyContext): VerifiedPinBase | null;
 }
 
-function sha256(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
+function sha256Hex(text: string): string {
+  return bytesToHex(sha256(utf8ToBytes(text)));
 }
+
+function hmacHex(key: Uint8Array, text: string): string {
+  return bytesToHex(hmac(sha256, key, utf8ToBytes(text)));
+}
+
+const utf8Decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);
 
 /** Canonical JSON: object keys sorted recursively (arrays keep order). */
 function canonical(value: unknown): string {
@@ -80,14 +94,14 @@ function canonical(value: unknown): string {
 /** Aggregate hash of an authored sources map — the envelope's `baseHash`
  *  (per-op hashes are per-component; this one fingerprints the whole state). */
 export function hashSources(sources: Record<string, string>): string {
-  return sha256(canonical(sources));
+  return sha256Hex(canonical(sources));
 }
 
 /** Encode + sign a body. Exported as the mint building block (tests use it to
  *  prove defense-in-depth checks hold even under a valid signature). */
 export function sealBody(body: RemixEnvelopePayload, key: SealKey): string {
-  const encoded = Buffer.from(JSON.stringify(body), "utf8").toString("base64url");
-  const sig = createHmac("sha256", key.key).update(canonical(body)).digest("hex");
+  const encoded = toBase64Url(utf8ToBytes(JSON.stringify(body)));
+  const sig = hmacHex(key.key, canonical(body));
   return `${encoded}.${sig}`;
 }
 
@@ -107,7 +121,7 @@ export function createRemixSealer(
         sources: input.sources,
         sourceHash: input.sourceHash,
         baseHash: input.baseHash,
-        payloadHash: sha256(canonical(input.payload)),
+        payloadHash: sha256Hex(canonical(input.payload)),
         normalizerVersion,
         issuedAt: input.issuedAt,
       };
@@ -119,18 +133,16 @@ export function createRemixSealer(
         const dot = envelope.lastIndexOf(".");
         if (dot <= 0) return null;
         const body = JSON.parse(
-          Buffer.from(envelope.slice(0, dot), "base64url").toString("utf8"),
+          utf8Decode(fromBase64Url(envelope.slice(0, dot))),
         ) as RemixEnvelopePayload;
         const sig = envelope.slice(dot + 1);
         if (body.v !== 1 || body.kid !== key.kid) return null;
-        const expected = createHmac("sha256", key.key).update(canonical(body)).digest("hex");
-        const sigBuf = Buffer.from(sig, "hex");
-        const expBuf = Buffer.from(expected, "hex");
-        if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) return null;
+        const expected = hmacHex(key.key, canonical(body));
+        if (!constantTimeEqual(hexToBytes(sig), hexToBytes(expected))) return null;
         if (body.anchorId !== context.anchorId) return null;
         if (body.principalUserId !== context.principalUserId) return null;
         if (body.normalizerVersion !== normalizerVersion) return null;
-        if (body.payloadHash !== sha256(canonical(body.payload))) return null;
+        if (body.payloadHash !== sha256Hex(canonical(body.payload))) return null;
         if (typeof body.baseHash !== "string" || typeof body.sourceHash !== "string") return null;
         return {
           payload: body.payload,
