@@ -52,11 +52,14 @@ import {
   createFadeTracker,
   createInMemoryCompiledRuleStore,
   createInMemoryGrantStore,
+  assertTriggerPayloadWithinCap,
   fireHostEventAutomations,
   createSteeringTools,
   hostToolset,
   InMemoryAuditLog,
   InMemoryThreadStore,
+  MAX_TRIGGER_PAYLOAD_BYTES,
+  TriggerPayloadTooLargeError,
   type InstructionContext,
   type HostEventIngestResult,
 } from "@vendoai/runtime";
@@ -150,6 +153,49 @@ export type VendoFetchHandler = (req: Request) => Promise<Response>;
 // (e.g. a rewritten annotation ruleset) so old remembered decisions stop
 // suppressing prompts under the new rules — see rememberDecisions/canonicalKey.
 const DECISION_POLICY_VERSION = "v1";
+const EVENT_INGEST_BODY_MAX_BYTES = MAX_TRIGGER_PAYLOAD_BYTES + 4_096;
+
+class EventIngestBodyTooLargeError extends Error {
+  constructor(
+    readonly bytes: number,
+    readonly maxBytes: number,
+  ) {
+    super(`event ingest body is ${bytes} bytes; max is ${maxBytes}`);
+    this.name = "EventIngestBodyTooLargeError";
+  }
+}
+
+async function readBoundedText(req: Request, maxBytes: number): Promise<string> {
+  const contentLength = req.headers.get("content-length");
+  if (contentLength !== null) {
+    const declared = Number(contentLength);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      throw new EventIngestBodyTooLargeError(declared, maxBytes);
+    }
+  }
+
+  if (!req.body) return "";
+
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        throw new EventIngestBodyTooLargeError(total, maxBytes);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 /** Everything the routes (and the scheduler boot hook) need, assembled once. */
 export type VendoState = Awaited<ReturnType<typeof assembleVendoState>>;
@@ -678,6 +724,7 @@ async function ingestVendoEventOnState(
     throw new Error("automations are disabled");
   }
   assertDeclaredHostEvent(s, name);
+  assertTriggerPayloadWithinCap(payload);
   return fireHostEventAutomations({ store: s.world.store, runner: s.world.runner }, s.worldScope, name, {
     payload,
     ...(opts.eventId !== undefined ? { eventId: opts.eventId } : {}),
@@ -938,7 +985,22 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const auth = await authorizeMutationOrService(req);
         if (auth) return auth;
-        const body = (await req.json().catch(() => undefined)) as unknown;
+        let body: unknown;
+        try {
+          body = JSON.parse(await readBoundedText(req, EVENT_INGEST_BODY_MAX_BYTES)) as unknown;
+        } catch (err) {
+          if (err instanceof EventIngestBodyTooLargeError) {
+            return Response.json(
+              { error: err.message, maxBytes: err.maxBytes },
+              { status: 413 },
+            );
+          }
+          if (err instanceof SyntaxError) {
+            body = undefined;
+          } else {
+            throw err;
+          }
+        }
         if (!isRecord(body)) {
           return Response.json({ error: "JSON body is required" }, { status: 400 });
         }
@@ -948,12 +1010,13 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         if (!("payload" in body)) {
           return Response.json({ error: "payload is required" }, { status: 400 });
         }
-        if (body.eventId !== undefined && (typeof body.eventId !== "string" || body.eventId.length === 0)) {
-          return Response.json({ error: "eventId must be a non-empty string when provided" }, { status: 400 });
+        if (typeof body.eventId !== "string" || body.eventId.length === 0) {
+          return Response.json({ error: "eventId is required and must be a non-empty string" }, { status: 400 });
         }
         try {
+          assertTriggerPayloadWithinCap(body.payload);
           const result = await ingestVendoEventOnState(s, body.name, body.payload, {
-            ...(body.eventId !== undefined ? { eventId: body.eventId } : {}),
+            eventId: body.eventId,
           });
           return Response.json({
             ok: true,
@@ -966,6 +1029,12 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
             return Response.json(
               { error: err.message, declaredEvents: err.declaredEvents },
               { status: 400 },
+            );
+          }
+          if (err instanceof TriggerPayloadTooLargeError) {
+            return Response.json(
+              { error: err.message, maxBytes: err.maxBytes },
+              { status: 413 },
             );
           }
           throw err;

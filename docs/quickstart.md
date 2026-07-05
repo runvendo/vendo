@@ -173,7 +173,6 @@ import { ingestVendoEvent } from "@vendoai/next";
 
 await ingestVendoEvent("transaction.created", txn, {
   eventId: txn.id,
-  bootKey: "main-vendo",
 });
 ```
 
@@ -200,9 +199,14 @@ for (const txn of await bank.listTransactions({ since: cursor })) {
 ```
 
 Out-of-process producers can call `POST /api/vendo/events/ingest` with
-`{ "name", "payload", "eventId" }`. It uses the same local/principal guard as
+`{ "name", "payload", "eventId" }`; `eventId` is required and must be a stable
+producer delivery id. It uses the same local/principal guard as
 other mutating routes, and also accepts
 `Authorization: Bearer $VENDO_TICK_SECRET` when that secret is configured.
+`ingestVendoEvent()` accepts an omitted `eventId` for in-process fire-and-forget
+producers, but omitting it disables redelivery dedup across restarts. If you use
+`bootKey`, pass the same key to `createVendoHandler()` or `startVendoScheduler()`
+and to your producer.
 
 ## Customizing
 

@@ -5,6 +5,8 @@ import path from "node:path";
 import type { LanguageModel } from "ai";
 import {
   automationSpecSchema,
+  MAX_TRIGGER_PAYLOAD_BYTES,
+  TriggerPayloadTooLargeError,
   type ApprovalPolicy,
   type AutomationSpec,
   type RegisteredTool,
@@ -159,6 +161,7 @@ describe("host event ingest", () => {
         method: "POST",
         body: JSON.stringify({
           name: "invoice.paid",
+          eventId: "invoice-1",
           payload: { amount: 100 },
         }),
       }),
@@ -169,6 +172,71 @@ describe("host event ingest", () => {
       error: 'unknown host event "invoice.paid"',
       declaredEvents: ["transaction.created"],
     });
+  });
+
+  it("requires a non-empty eventId on HTTP ingest", async () => {
+    const { handler } = await setup();
+
+    const res = await handler(
+      req("/api/vendo/events/ingest", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "transaction.created",
+          payload: { amount: 100 },
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "eventId is required and must be a non-empty string",
+    });
+  });
+
+  it("rejects event ingest bodies over the route cap before parsing", async () => {
+    const { handler, state, automation, tool } = await setup();
+
+    const res = await handler(
+      req("/api/vendo/events/ingest", {
+        method: "POST",
+        headers: {
+          host: "localhost:3000",
+          "content-type": "application/json",
+          "content-length": String(MAX_TRIGGER_PAYLOAD_BYTES + 4_097),
+        },
+        body: JSON.stringify({
+          name: "transaction.created",
+          eventId: "txn-content-length",
+          payload: { amount: 100, merchant: "Acme" },
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(tool.calls).toHaveLength(0);
+    expect(await state.world!.store.listRuns(state.worldScope, automation.id)).toHaveLength(0);
+  });
+
+  it("rejects over-cap trigger payloads instead of guarding against raw input", async () => {
+    const { handler, state, automation, tool } = await setup();
+
+    const res = await handler(
+      req("/api/vendo/events/ingest", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "transaction.created",
+          eventId: "txn-too-large",
+          payload: {
+            amount: 100,
+            merchant: "x".repeat(MAX_TRIGGER_PAYLOAD_BYTES),
+          },
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(tool.calls).toHaveLength(0);
+    expect(await state.world!.store.listRuns(state.worldScope, automation.id)).toHaveLength(0);
   });
 
   it("dedupes duplicate eventId deliveries through deterministic run ids", async () => {
@@ -248,5 +316,35 @@ describe("host event ingest", () => {
     expect(result.fired).toBe(1);
     expect(tool.calls).toEqual([{ text: "Programmatic" }]);
     expect(await state.world!.store.listRuns(state.worldScope, automation.id)).toHaveLength(1);
+  });
+
+  it("allows programmatic ingest without eventId but returns a generated non-dedupe id", async () => {
+    const { state, automation, tool } = await setup({ bootKey: "events-generated-id" });
+
+    const result = await ingestVendoEvent(
+      "transaction.created",
+      { amount: 110, merchant: "Generated" },
+      { bootKey: "events-generated-id" },
+    );
+
+    expect(result.eventId).toMatch(/^generated:transaction\.created:/);
+    expect(result.fired).toBe(1);
+    expect(tool.calls).toEqual([{ text: "Generated" }]);
+    expect(await state.world!.store.listRuns(state.worldScope, automation.id)).toHaveLength(1);
+  });
+
+  it("rejects over-cap programmatic payloads before creating a run", async () => {
+    const { state, automation, tool } = await setup({ bootKey: "events-programmatic-cap" });
+
+    await expect(
+      ingestVendoEvent(
+        "transaction.created",
+        { amount: 110, merchant: "x".repeat(MAX_TRIGGER_PAYLOAD_BYTES) },
+        { bootKey: "events-programmatic-cap", eventId: "txn-programmatic-cap" },
+      ),
+    ).rejects.toBeInstanceOf(TriggerPayloadTooLargeError);
+
+    expect(tool.calls).toHaveLength(0);
+    expect(await state.world!.store.listRuns(state.worldScope, automation.id)).toHaveLength(0);
   });
 });
