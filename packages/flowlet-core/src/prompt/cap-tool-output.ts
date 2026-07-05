@@ -64,6 +64,7 @@ interface Cuts {
   htmlBodies: number;
   binaries: number;
   arrays: Array<{ path: string; dropped: number }>;
+  objectKeys: number;
 }
 
 function capValue(
@@ -97,8 +98,15 @@ function capValue(
     return kept.map((v, i) => capValue(v, maxArrayItems, maxStringChars, cuts, `${path}/${i}`));
   }
   if (value && typeof value === "object") {
+    // A very wide object map (thousands of small scalar fields) is as much a
+    // blowup vector as a long array — cap entries the same way, key order
+    // preserved, dropped keys recorded.
+    const entries = Object.entries(value as Record<string, unknown>);
+    const maxKeys = Math.max(24, maxArrayItems * 4);
+    const kept = entries.length > maxKeys ? entries.slice(0, maxKeys) : entries;
+    if (kept.length < entries.length) cuts.objectKeys += entries.length - kept.length;
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    for (const [k, v] of kept) {
       out[k] = capValue(v, maxArrayItems, maxStringChars, cuts, `${path}/${k}`);
     }
     return out;
@@ -118,7 +126,7 @@ export function capToolOutput(result: unknown, budget: CapBudget): CappedResult 
   let maxArrayItems = budget.maxArrayItems ?? 50;
   let maxStringChars = budget.maxStringChars ?? Math.max(500, Math.floor(budget.maxChars / 4));
 
-  let cuts: Cuts = { strings: 0, htmlBodies: 0, binaries: 0, arrays: [] };
+  let cuts: Cuts = { strings: 0, htmlBodies: 0, binaries: 0, arrays: [], objectKeys: 0 };
   let capped = capValue(result, maxArrayItems, maxStringChars, cuts, "");
 
   // Progressively tighten (deterministically) while over budget — up to three
@@ -126,19 +134,29 @@ export function capToolOutput(result: unknown, budget: CapBudget): CappedResult 
   for (let round = 0; round < 3 && sizeOf(capped) > budget.maxChars; round++) {
     maxArrayItems = Math.max(3, Math.floor(maxArrayItems / 2));
     maxStringChars = Math.max(120, Math.floor(maxStringChars / 2));
-    cuts = { strings: 0, htmlBodies: 0, binaries: 0, arrays: [] };
+    cuts = { strings: 0, htmlBodies: 0, binaries: 0, arrays: [], objectKeys: 0 };
     capped = capValue(result, maxArrayItems, maxStringChars, cuts, "");
   }
 
+  // Honest signal even when best-effort tightening could not reach the
+  // budget: never report an over-budget result as untruncated.
+  const overBudget = sizeOf(capped) > budget.maxChars;
   const truncated =
-    cuts.strings > 0 || cuts.htmlBodies > 0 || cuts.binaries > 0 || cuts.arrays.length > 0;
+    cuts.strings > 0 ||
+    cuts.htmlBodies > 0 ||
+    cuts.binaries > 0 ||
+    cuts.arrays.length > 0 ||
+    cuts.objectKeys > 0 ||
+    overBudget;
   if (!truncated) return { result: capped, truncated: false };
 
   const parts: string[] = [];
   for (const a of cuts.arrays) parts.push(`${a.dropped} item(s) dropped at ${a.path}`);
+  if (cuts.objectKeys) parts.push(`${cuts.objectKeys} object field(s) dropped`);
   if (cuts.htmlBodies) parts.push(`${cuts.htmlBodies} HTML body(ies) reduced to text`);
   if (cuts.binaries) parts.push(`${cuts.binaries} binary blob(s) omitted`);
   if (cuts.strings) parts.push(`${cuts.strings} long string(s) shortened`);
+  if (overBudget) parts.push("result still exceeds the context budget after capping");
   const note = `Output truncated to fit context: ${parts.join("; ")}. Ask for specific fields or a narrower query if you need more.`;
 
   if (

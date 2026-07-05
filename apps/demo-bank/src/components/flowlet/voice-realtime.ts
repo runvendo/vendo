@@ -39,8 +39,23 @@ let viewSeq = 0;
  */
 const sessionResults = new Map<string, unknown>();
 const SESSION_RESULTS_MAX = 32;
+
+/** Key-order-stable stringify: the model's `source.input` may order fields
+ *  differently than the call it mirrors ({limit, category} vs {category,
+ *  limit}) — both must hit the same cache entry. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
 const resultKey = (tool: string, input: unknown): string =>
-  `${tool}:${JSON.stringify(input ?? {})}`;
+  `${tool}:${stableStringify(input ?? {})}`;
 function recordResult(tool: string, input: unknown, output: unknown): void {
   const key = resultKey(tool, input);
   if (sessionResults.size >= SESSION_RESULTS_MAX && !sessionResults.has(key)) {
@@ -84,11 +99,15 @@ function matchSource(
   if (!sessionResults.has(key)) return undefined;
   const raw = sessionResults.get(key);
   const rows = resolvePointer(raw, source.rowsPath);
-  if (!Array.isArray(rows) || rows.length === 0) return undefined;
-  const first = rows[0];
-  if (!first || typeof first !== "object") return undefined;
-  const fields = new Set(Object.keys(first as Record<string, unknown>));
-  if (!columns.every((c) => fields.has(c.key))) return undefined;
+  if (!Array.isArray(rows)) return undefined;
+  // An EMPTY result is still a valid, refreshable declaration (rows may exist
+  // on a later refresh) — column validation only applies when rows exist.
+  if (rows.length > 0) {
+    const first = rows[0];
+    if (!first || typeof first !== "object") return undefined;
+    const fields = new Set(Object.keys(first as Record<string, unknown>));
+    if (!columns.every((c) => fields.has(c.key))) return undefined;
+  }
   return { raw, tool: source.tool, input: source.input ?? {}, rowsPath: source.rowsPath };
 }
 
@@ -117,7 +136,7 @@ function tableView(input: unknown): UINode | undefined {
       root: "root",
       nodes: [
         { id: "root", component: "Stack", children: title ? ["title", "table"] : ["table"] },
-        ...(title ? [{ id: "title", component: "Text", props: { value: title } }] : []),
+        ...(title ? [{ id: "title", component: "Text", props: { text: title } }] : []),
         { id: "table", component: "Table", source: "prewired", props: tableProps },
       ],
       ...(matched
@@ -393,6 +412,10 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
       inner = handle;
       for (const fn of queued.splice(0)) fn(handle);
     };
+
+    // Fresh session, fresh provenance: stale results from an earlier session
+    // must never validate a new session's source declarations.
+    sessionResults.clear();
 
     emit({ type: "status", status: "connecting" });
     void fetch("/api/flowlet/voice", { method: "POST" })

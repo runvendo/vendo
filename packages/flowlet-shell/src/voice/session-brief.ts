@@ -51,7 +51,23 @@ function describeView(node: UINode): string {
     (payload.nodes.find((n) => typeof n.props?.["title"] === "string")?.props?.[
       "title"
     ] as string | undefined);
-  const rows = table?.props?.["rows"];
+  // Data-bound tables carry rows as { $path } into payload.data — resolve the
+  // pointer so refreshable views still report a row count.
+  let rows = table?.props?.["rows"];
+  if (rows && typeof rows === "object" && !Array.isArray(rows)) {
+    const pointer = (rows as { $path?: string }).$path;
+    if (typeof pointer === "string") {
+      let current: unknown = payload.data;
+      for (const raw of pointer.split("/").slice(1)) {
+        const key = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+        current =
+          current && typeof current === "object"
+            ? (current as Record<string, unknown>)[key]
+            : undefined;
+      }
+      rows = current;
+    }
+  }
   const rowCount = Array.isArray(rows) ? `${rows.length} rows` : undefined;
   const query = payload.queries?.[0];
   const provenance = query ? `from ${query.tool} ${JSON.stringify(query.input ?? {})}` : undefined;

@@ -23,8 +23,10 @@ import type {
 export type { VoiceToolDef } from "./voice-session";
 
 /** Realtime tokens are the expensive ones — cap every tool result that enters
- *  the session (spec §5). Views still receive the full output. */
-const VOICE_SESSION_OUTPUT_BUDGET = { maxChars: 6_000 } as const;
+ *  the session (spec §5). Views still receive the full output. `attachNote`
+ *  tells the model its result is a digest, so it drills in instead of
+ *  treating a partial result as complete. */
+const VOICE_SESSION_OUTPUT_BUDGET = { maxChars: 6_000, attachNote: true } as const;
 
 /**
  * The realtime WebRTC `VoiceDriver` (ENG-185): OpenAI Realtime over a browser

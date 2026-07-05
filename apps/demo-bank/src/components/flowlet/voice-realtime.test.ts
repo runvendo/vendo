@@ -74,3 +74,42 @@ describe("voice refreshable views (spec §3)", () => {
     expect(payload.queries).toBeUndefined();
   });
 });
+
+describe("review fixes (PR #41 triage)", () => {
+  it("accepts an EMPTY result as a valid refreshable declaration", () => {
+    const emptyRaw = { ok: true, data: { transactions: [] } };
+    replayRegistry.register("listTransactions", async () => emptyRaw);
+    recordResult("listTransactions", { month: "may" }, emptyRaw);
+    const node = tableView({
+      columns: COLUMNS,
+      rows: [],
+      source: { tool: "listTransactions", input: { month: "may" }, rowsPath: "/data/transactions" },
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    expect(payload.queries).toEqual([
+      { path: "/source", tool: "listTransactions", input: { month: "may" } },
+    ]);
+  });
+
+  it("matches source inputs regardless of key order (stable cache key)", () => {
+    recordResult("listTransactions", { category: "dining", limit: 10 }, RAW);
+    const node = tableView({
+      columns: COLUMNS,
+      rows: RAW.data.transactions,
+      source: {
+        tool: "listTransactions",
+        input: { limit: 10, category: "dining" }, // reversed order
+        rowsPath: "/data/transactions",
+      },
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    expect(payload.queries?.[0]?.tool).toBe("listTransactions");
+  });
+
+  it("renders titles on the Text prop the primitive actually reads", () => {
+    const node = tableView({ title: "March", columns: COLUMNS, rows: [{ merchant: "X", amount: 1 }] });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    const titleNode = payload.nodes.find((n) => n.component === "Text");
+    expect(titleNode?.props).toEqual({ text: "March" });
+  });
+});

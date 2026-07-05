@@ -67,3 +67,23 @@ describe("capToolOutput", () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });
+
+describe("review fixes (PR #41 triage)", () => {
+  it("caps very wide object maps and reports the dropped fields", () => {
+    const wide = Object.fromEntries(Array.from({ length: 3000 }, (_, i) => [`k${i}`, i]));
+    const out = capToolOutput({ data: wide }, { maxChars: 2_000 });
+    expect(out.truncated).toBe(true);
+    expect(out.note).toMatch(/object field\(s\) dropped|exceeds the context budget/);
+    expect(JSON.stringify(out.result).length).toBeLessThan(20_000);
+  });
+
+  it("never reports an over-budget result as untruncated", () => {
+    // Many medium strings that survive per-leaf caps but exceed the total.
+    const stubborn = Object.fromEntries(
+      Array.from({ length: 40 }, (_, i) => [`f${i}`, "y".repeat(110)]),
+    );
+    const out = capToolOutput(stubborn, { maxChars: 500 });
+    expect(out.truncated).toBe(true);
+    expect(out.note).toBeTruthy();
+  });
+});
