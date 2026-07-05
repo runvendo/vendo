@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import * as shell from "@vendoai/shell";
 import * as serverStore from "./server-store.js";
 import { VendoRoot } from "./vendo-root.js";
@@ -115,6 +115,69 @@ describe("VendoRoot", () => {
     await waitFor(() => expect(screen.getByTestId("app5")).toBeDefined());
     expect(serverStoreSpy).not.toHaveBeenCalled();
     serverStoreSpy.mockRestore();
+  });
+
+  it("retries a failed capabilities fetch with backoff until the server answers", async () => {
+    vi.useFakeTimers();
+    try {
+      let capabilityCalls = 0;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/capabilities")) {
+          capabilityCalls += 1;
+          if (capabilityCalls < 3) throw new TypeError("network down");
+          return new Response(
+            JSON.stringify({ chat: true, integrations: false, voice: false, storage: false }),
+            { status: 200 },
+          );
+        }
+        return new Response("{}", { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(
+        <VendoRoot productName="Acme" toasts={false}>
+          <div />
+        </VendoRoot>,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(capabilityCalls).toBe(1);
+      // First retry after ~1s of backoff, second after ~2s more.
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(capabilityCalls).toBe(2);
+      await vi.advanceTimersByTimeAsync(2_100);
+      expect(capabilityCalls).toBe(3);
+      // Once the server answered, no further polling.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(capabilityCalls).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops pretending everything is on once the capabilities fetch has failed", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes("/capabilities")) throw new TypeError("network down");
+        return new Response("{}", { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(
+        <VendoRoot productName="Acme" toasts={false}>
+          <div />
+        </VendoRoot>,
+      );
+      // Optimistic while the first fetch is IN FLIGHT (no flicker on healthy
+      // installs)…
+      expect(screen.queryByRole("button", { name: /ask acme/i })).not.toBeNull();
+      // …but a FAILED fetch must not leave the chat surface enabled forever.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.queryByRole("button", { name: /ask acme/i })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rehydrates the durable thread on mount (GET /threads/:threadId)", async () => {

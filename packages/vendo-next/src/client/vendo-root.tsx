@@ -117,19 +117,43 @@ export function VendoRoot({
   const hostToolDefs = useMemo(() => manifestToolsToHostTools(manifestTools), [manifestTools]);
   const [open, setOpen] = useState(false);
   const [capabilities, setCapabilities] = useState<VendoCapabilities | null>(null);
+  // True after a capabilities fetch has FAILED (network error or a non-2xx).
+  // Distinct from `capabilities === null` (not answered yet): the brief
+  // in-flight window renders optimistically so healthy installs never
+  // flicker, but a failure must not leave the UI pretending everything is on.
+  const [capsFailed, setCapsFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${basePath}/capabilities`, { cache: "no-store" })
-      .then((r) => (r.ok ? (r.json() as Promise<VendoCapabilities>) : null))
-      .then((caps) => {
-        if (!cancelled && caps) setCapabilities(caps);
-      })
-      .catch(() => {
-        /* capabilities stay null → most conservative UI */
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let delay = 1_000;
+    const attempt = () => {
+      fetch(`${basePath}/capabilities`, { cache: "no-store" })
+        .then((r) =>
+          r.ok
+            ? (r.json() as Promise<VendoCapabilities>)
+            : Promise.reject(new Error(`capabilities request failed (${r.status})`)),
+        )
+        .then((caps) => {
+          if (cancelled) return;
+          setCapabilities(caps);
+          setCapsFailed(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Flip the UI to its conservative shape and retry with capped
+          // exponential backoff until the server actually answers — the
+          // zero-config "everything on" default is the SERVER's to declare,
+          // never the fallout of a failed fetch.
+          setCapsFailed(true);
+          timer = setTimeout(attempt, delay);
+          delay = Math.min(delay * 2, 30_000);
+        });
+    };
+    attempt();
     return () => {
       cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
     };
   }, [basePath]);
 
@@ -215,8 +239,10 @@ export function VendoRoot({
   // Capability-additive contract: with no ANTHROPIC_API_KEY the server reports
   // chat:false, and asking would 401 inside the stream. Hide the assistant
   // surface entirely in that case rather than degrading into a runtime error.
-  // `null` (not yet fetched) renders optimistically so there is no flicker.
-  const chatEnabled = capabilities === null || capabilities.chat;
+  // `null` with no failure yet (first fetch in flight) renders optimistically
+  // so there is no flicker; a FAILED fetch renders conservatively until a
+  // backoff retry gets a real answer.
+  const chatEnabled = capabilities ? capabilities.chat : !capsFailed;
 
   return (
     <VendoProvider
