@@ -188,7 +188,7 @@ export function VendoRemix({
         <button
           type="button"
           className="fl-remix-btn"
-          data-affordance={affordance}
+          data-affordance={affordance === "always" ? "always" : undefined}
           aria-label={`Ask about ${label ?? "this"}`}
           title={`Ask about ${label ?? "this"}`}
           onClick={openScoped}
