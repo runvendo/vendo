@@ -114,7 +114,7 @@ export interface HandleConsentRequest {
 
 export type HandleConsentResult =
   | { ok: true; fadeEligible?: { shape: FadeShape; proposalId: string; count: number } }
-  | { ok: false; status: 400 | 403 | 404; error: string };
+  | { ok: false; status: 400 | 403 | 404 | 409; error: string };
 
 /** Structural view of the ai SDK tool-part shape this reads — matches
  *  `engine.ts`'s own `normalizeHistory` scanning, just keyed by toolCallId.
@@ -232,6 +232,17 @@ export async function handleConsent(
     return audited({
       ok: false, status: 404,
       error: `no pending approval for toolCallId "${req.toolCallId}"`,
+    });
+  }
+  // A declined approval can never anchor an affirmative decision (Greptile
+  // P1, repro-verified): if the SDK persisted approval.approved === false
+  // (the user said no), a lost decline POST followed by a retried/forged
+  // "yes"/"subset" must not mint any grant or count as a fade yes.
+  const affirmative = req.response.decision === "yes" || req.response.decision === "subset";
+  if (affirmative && part.approval?.approved === false) {
+    return audited({
+      ok: false, status: 409,
+      error: `the user declined toolCallId "${req.toolCallId}" — an affirmative consent cannot be recorded over a decline`,
     });
   }
   const partToolName = part.type.slice("tool-".length);

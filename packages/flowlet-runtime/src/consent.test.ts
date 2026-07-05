@@ -230,16 +230,56 @@ describe("handleConsent", () => {
     expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(1);
   });
 
-  it("FINDING 5: also succeeds when the part settled to approval-responded (already answered elsewhere) or output-denied", async () => {
-    for (const state of ["approval-responded", "output-denied"]) {
-      const d = deps(threadWith({ state, approval: { id: "ap-1", approved: state !== "output-denied" } }));
+  it("FINDING 5: also succeeds when the part settled to approval-responded (already answered elsewhere, approved)", async () => {
+    const d = deps(threadWith({ state: "approval-responded", approval: { id: "ap-1", approved: true } }));
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes",
+        grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "standing" } },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("Greptile P1 (declined anchor): a DECLINED part (approval.approved === false) 409s an affirmative 'yes' — no grant of any kind, no fade yes", async () => {
+    for (const state of ["output-denied", "approval-responded"]) {
+      const tracker = createFadeTracker();
+      let recordCalls = 0;
+      const spyTracker: FadeTracker = {
+        ...tracker,
+        record: (...args: Parameters<FadeTracker["record"]>) => {
+          recordCalls += 1;
+          return tracker.record(...args);
+        },
+      };
+      const d = {
+        ...deps(threadWith({ state, approval: { id: "ap-1", approved: false } })),
+        fadeTracker: spyTracker,
+      };
       const result = await handleConsent(d, scope, {
         threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
         response: { id: "call-1", decision: "yes",
           grant: { tool: "GMAIL_SEND_EMAIL", scope: { kind: "tool" }, duration: "standing" } },
       });
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(409);
+      expect(await d.grants.findForTool(scope, "GMAIL_SEND_EMAIL")).toHaveLength(0);
+      expect(recordCalls).toBe(0);
     }
+  });
+
+  it("Greptile P1 (declined anchor): 'subset' is affirmative too — 409 over a decline; but a 'no' over a declined part still records fine (200)", async () => {
+    const declined = threadWith({ state: "output-denied", approval: { id: "ap-1", approved: false } });
+    const subsetResult = await handleConsent(deps(declined), scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "subset", subset: ["call-1"] },
+    });
+    expect(subsetResult.ok).toBe(false);
+    expect(subsetResult.status).toBe(409);
+    const noResult = await handleConsent(deps(declined), scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "no" },
+    });
+    expect(noResult.ok).toBe(true);
   });
 
   it("Greptile P1 (over-relaxation): an AUTO-ALLOWED part (terminal state, no `approval` metadata — never showed a card) 404s with an explicit grant draft, and mints NO grant", async () => {
