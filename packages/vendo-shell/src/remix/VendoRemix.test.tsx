@@ -48,8 +48,19 @@ describe("VendoRemix", () => {
       </VendoRemix>,
     );
     expect(screen.getByTestId("host-widget").textContent).toBe("original");
-    await waitFor(() => expect(screen.getByLabelText("Ask about Widget")).toBeTruthy());
+    const affordance = await screen.findByLabelText("Ask about Widget");
+    expect(affordance.getAttribute("data-affordance")).toBe("hover");
     expect(document.querySelector(".fl-remix-pill")).toBeNull();
+  });
+
+  it("can keep the affordance visible for discoverability", async () => {
+    mount(
+      <VendoRemix id="w1" label="Widget" affordance="always">
+        <div data-testid="host-widget">original</div>
+      </VendoRemix>,
+    );
+    const affordance = await screen.findByLabelText("Ask about Widget");
+    expect(affordance.getAttribute("data-affordance")).toBe("always");
   });
 
   it("registers with the page registry on mount and deregisters on unmount", async () => {

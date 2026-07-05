@@ -868,6 +868,7 @@
   font: 600 13px/1 var(--vendo-font); cursor: pointer;
   opacity: 0; transform: scale(.9); transition: opacity .15s, transform .15s;
   box-shadow: 0 4px 14px rgba(0,0,0,.10); }
+.fl-remix-btn[data-affordance="always"] { opacity: 1; transform: scale(1); }
 .fl-remix:hover .fl-remix-btn, .fl-remix:focus-within .fl-remix-btn { opacity: 1; transform: scale(1); }
 .fl-remix-btn:hover { background: var(--vendo-accent); color: var(--vendo-accent-fg); }
 .fl-remix-pill { position: absolute; bottom: 8px; right: 8px; z-index: 5;
