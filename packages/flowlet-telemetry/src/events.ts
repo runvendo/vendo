@@ -5,7 +5,9 @@
  */
 export const BASE_PROP_KEYS = ["flowletVersion", "osPlatform", "nodeVersion"] as const;
 
-export const EVENT_ALLOWLIST = {
+export type EventName = "init_started" | "init_completed" | "init_failed" | "agent_run" | "error_class";
+
+export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
   // CLI / build
   init_started: new Set([...BASE_PROP_KEYS, "framework"]),
   init_completed: new Set([
@@ -22,8 +24,6 @@ export const EVENT_ALLOWLIST = {
   agent_run: new Set([...BASE_PROP_KEYS]),
   error_class: new Set([...BASE_PROP_KEYS, "errorClass"]),
 } as const;
-
-export type EventName = keyof typeof EVENT_ALLOWLIST;
 
 export function isAllowedProps(event: EventName, props: Record<string, unknown>): boolean {
   const allowed = EVENT_ALLOWLIST[event];
