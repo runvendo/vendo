@@ -24,6 +24,39 @@ import type { Flowlet, FlowletDraft } from "@flowlet/shell";
 import { resolvePrincipal, threadScope } from "./guard";
 import type { FlowletHandlerOptions } from "./options";
 
+// KEEP IN SYNC with handler.ts's `FIRST_SEGMENTS` (not imported directly —
+// handler.ts already imports this module, so importing back would cycle).
+// A saved flowlet's id is caller-assigned (unlike a thread's store-assigned
+// UUID), so a client could pick an id that collides with a reserved
+// routeTail first segment (e.g. a flowlet literally named "chat"). routeTail
+// scans right-to-left for the FIRST reserved segment, so such an id would
+// shorten the tail and misroute GET/POST flowlets/<id>[/delete] onto the
+// wrong endpoint. Rejected at save time instead.
+const RESERVED_FLOWLET_IDS = new Set([
+  "chat",
+  "action",
+  "integrations",
+  "capabilities",
+  "deliveries",
+  "tick",
+  "resume",
+  "consent",
+  "fade-proposal",
+  "parked-actions",
+  "grants",
+  "rules",
+  "audit",
+  "critical-tools",
+  "webhooks",
+  "threads",
+  "flowlets",
+]);
+
+/** Would this id misroute through routeTail's first-segment scan? */
+function isUnsafeFlowletId(id: string): boolean {
+  return RESERVED_FLOWLET_IDS.has(id) || id.includes("/");
+}
+
 /** Principal-scoped counterpart to the shell's `FlowletStore` (which has no
  *  scope param — the browser is inherently single-user). Same four verbs. */
 export interface FlowletRegistry {
@@ -195,6 +228,17 @@ export async function handleFlowletsPost(req: Request, tail: string, deps: Flowl
   const draft = (await req.json().catch(() => null)) as FlowletDraft | null;
   if (!draft || typeof draft.id !== "string" || draft.id.length === 0) {
     return Response.json({ error: "invalid flowlet draft" }, { status: 400 });
+  }
+  if (isUnsafeFlowletId(draft.id)) {
+    return Response.json(
+      {
+        error:
+          `flowlet id "${draft.id}" is reserved or invalid — ids may not equal a reserved route ` +
+          `segment (${[...RESERVED_FLOWLET_IDS].join(", ")}) or contain "/", since either would ` +
+          "misroute this flowlet's GET/POST endpoints.",
+      },
+      { status: 400 },
+    );
   }
   const saved = await deps.registry.save(scope, draft);
   return Response.json(saved);

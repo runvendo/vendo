@@ -90,7 +90,13 @@ import { resolveStorage } from "./storage";
 import { parseHandlerOptions, type FlowletHandlerOptions } from "./options";
 import { handleComposioWebhook } from "./webhooks";
 
-const FIRST_SEGMENTS = new Set([
+// Exported for flowlets.ts's save-path id validation (a saved flowlet's id
+// is caller-assigned, unlike threads' store-assigned UUIDs — see the
+// Boundary note on routeTail below). Not imported there to avoid a
+// fetch-handler.ts <-> flowlets.ts cycle (fetch-handler.ts already imports
+// flowlets.ts); flowlets.ts keeps its own minimal copy with a
+// cross-reference comment back to this Set — keep the two in sync.
+export const FIRST_SEGMENTS = new Set([
   "chat",
   "action",
   "integrations",

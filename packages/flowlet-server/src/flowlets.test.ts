@@ -139,6 +139,33 @@ describe("flowlets endpoints — in-memory registry", () => {
   it("saves, lists, loads, deletes, and scopes by principal", endpointSuite(() => createInMemoryFlowletRegistry()));
 });
 
+describe("flowlets endpoints — reserved-id rejection (review blocker)", () => {
+  it.each(["chat", "action", "integrations", "capabilities", "tick", "webhooks", "threads", "flowlets"])(
+    "rejects a save whose id equals the reserved segment %s",
+    async (id) => {
+      const registry = createInMemoryFlowletRegistry();
+      const res = await handleFlowletsPost(
+        req("/api/flowlet/flowlets", { method: "POST", body: JSON.stringify(draft(id, "bad")) }),
+        "flowlets",
+        { registry, options: options("u1") },
+      );
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(/reserved/i);
+      expect(await registry.list({ tenantId: "flowlet-embedded", subject: "u1" })).toEqual([]);
+    },
+  );
+
+  it("rejects a save whose id contains a slash", async () => {
+    const registry = createInMemoryFlowletRegistry();
+    const res = await handleFlowletsPost(
+      req("/api/flowlet/flowlets", { method: "POST", body: JSON.stringify(draft("a/b", "bad")) }),
+      "flowlets",
+      { registry, options: options("u1") },
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("flowlets endpoints — Drizzle registry", () => {
   it(
     "saves, lists, loads, deletes, and scopes by principal (durable)",
