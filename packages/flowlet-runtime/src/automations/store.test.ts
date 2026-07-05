@@ -82,6 +82,28 @@ describe("frozen core surface", () => {
     expect(await store.get(bob, automation.id)).toBeUndefined();
     expect((await store.list(alice)).map((a) => a.id)).toEqual([automation.id]);
   });
+
+  it("recordRun never merges onto a run owned by another principal (no-op)", async () => {
+    const store = makeStore();
+    const { automation } = await create(store, alice);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    await store.recordRun(bob, {
+      id: run.id,
+      automationId: automation.id,
+      startedAt: NOW,
+      status: "failed",
+      error: "hijack",
+    });
+    const stored = await store.getRun(alice, run.id);
+    expect(stored?.status).toBe("running"); // untouched
+    expect(stored?.error).toBeUndefined();
+    expect(await store.getRun(bob, run.id)).toBeUndefined(); // not re-scoped either
+  });
 });
 
 describe("versioning", () => {

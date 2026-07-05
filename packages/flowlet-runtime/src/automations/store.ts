@@ -442,9 +442,14 @@ export class InMemoryAutomationStore implements AutomationEngineStore {
   }
 
   async recordRun(scope: Principal, run: CoreAutomationRun): Promise<void> {
-    // Core-shaped upsert: merge onto the engine row when it exists.
+    // Core-shaped upsert: merge onto the engine row when it exists AND the
+    // caller owns it. Run ids are globally unique, so an existing id owned by
+    // another principal can neither be merged (cross-scope write) nor
+    // re-inserted (id collision): it's a no-op. Durable ports
+    // (DrizzleAutomationStore) pin the same semantics.
     const existing = this.runs.get(run.id);
     if (existing) {
+      if (existing.tenantId !== scope.tenantId || existing.subject !== scope.subject) return;
       this.runs.set(run.id, { ...existing, ...run });
       return;
     }

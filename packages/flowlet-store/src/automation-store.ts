@@ -203,20 +203,35 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
   }
 
   async recordRun(scope: Principal, run: CoreAutomationRun): Promise<void> {
-    // Core-shaped upsert: merge onto the engine row when it exists (mirrors
-    // InMemoryAutomationStore.recordRun's `{ ...existing, ...run }`).
+    // Core-shaped upsert: merge onto the engine row when it exists AND the
+    // caller owns it (mirrors InMemoryAutomationStore.recordRun's
+    // `{ ...existing, ...run }` preserve-merge). Run ids are globally unique
+    // (the PK), so an existing id owned by ANOTHER principal can neither be
+    // merged (cross-tenant write) nor re-inserted (PK collision): it's a
+    // no-op, same as the in-memory reference.
     const existingRows = await this.db.select().from(automationRuns).where(eq(automationRuns.id, run.id));
-    if (existingRows[0]) {
+    const existing = existingRows[0];
+    if (existing) {
+      if (existing.tenantId !== scope.tenantId || existing.subject !== scope.subject) return;
+      // Preserve-merge: absent optional fields keep their stored values,
+      // matching the in-memory spread.
+      const set: Partial<typeof automationRuns.$inferInsert> = {
+        automationId: run.automationId,
+        status: run.status,
+        startedAt: run.startedAt,
+      };
+      if (run.error !== undefined) set.error = run.error;
+      if (run.finishedAt !== undefined) set.finishedAt = run.finishedAt;
       await this.db
         .update(automationRuns)
-        .set({
-          automationId: run.automationId,
-          status: run.status,
-          error: run.error ?? null,
-          startedAt: run.startedAt,
-          finishedAt: run.finishedAt ?? null,
-        })
-        .where(eq(automationRuns.id, run.id));
+        .set(set)
+        .where(
+          and(
+            eq(automationRuns.id, run.id),
+            eq(automationRuns.tenantId, scope.tenantId),
+            eq(automationRuns.subject, scope.subject),
+          ),
+        );
       return;
     }
     await this.db.insert(automationRuns).values({
@@ -299,30 +314,34 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
       createdBy: input.createdBy ?? "compiler",
       createdAt: now,
     };
-    await this.db.insert(automations).values({
-      id,
-      tenantId: scope.tenantId,
-      subject: scope.subject,
-      name: automation.name,
-      status: "enabled",
-      spec: input.spec,
-      currentVersion: 1,
-      triggerKind: kind,
-      triggerKey: key,
-      counters,
-      createdFromThreadId: automation.createdFromThreadId ?? null,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await this.db.insert(automationVersions).values({
-      automationId: id,
-      version: 1,
-      spec: input.spec,
-      dslVersion: input.spec.dslVersion,
-      manifestHash: version.manifestHash,
-      grants: input.grants,
-      createdBy: version.createdBy,
-      createdAt: now,
+    // Record + version row commit together: a crash between them must never
+    // leave an automation without its version 1.
+    await this.withTransaction(async (tx) => {
+      await tx.insert(automations).values({
+        id,
+        tenantId: scope.tenantId,
+        subject: scope.subject,
+        name: automation.name,
+        status: "enabled",
+        spec: input.spec,
+        currentVersion: 1,
+        triggerKind: kind,
+        triggerKey: key,
+        counters,
+        createdFromThreadId: automation.createdFromThreadId ?? null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await tx.insert(automationVersions).values({
+        automationId: id,
+        version: 1,
+        spec: input.spec,
+        dslVersion: input.spec.dslVersion,
+        manifestHash: version.manifestHash,
+        grants: input.grants,
+        createdBy: version.createdBy,
+        createdAt: now,
+      });
     });
     return { automation, version };
   }
@@ -332,51 +351,61 @@ export class DrizzleAutomationStore implements AutomationEngineStore {
     id: string,
     input: UpdateAutomationInput,
   ): Promise<{ automation: AutomationRecord; version: AutomationVersion }> {
-    const automation = await this.mustGet(scope, id);
     const now = this.now();
-    const nextVersion = automation.currentVersion + 1;
     const { kind, key } = triggerIndex(input.spec);
-    const version: AutomationVersion = {
-      automationId: id,
-      version: nextVersion,
-      spec: input.spec,
-      dslVersion: input.spec.dslVersion,
-      manifestHash: input.manifestHash ?? null,
-      grants: input.grants,
-      createdBy: input.createdBy,
-      createdAt: now,
-    };
-    const updated: AutomationRecord = {
-      ...automation,
-      name: input.spec.name,
-      spec: input.spec,
-      currentVersion: nextVersion,
-      triggerKind: kind,
-      triggerKey: key,
-      updatedAt: now,
-    };
-    await this.db.insert(automationVersions).values({
-      automationId: id,
-      version: nextVersion,
-      spec: input.spec,
-      dslVersion: input.spec.dslVersion,
-      manifestHash: version.manifestHash,
-      grants: input.grants,
-      createdBy: input.createdBy,
-      createdAt: now,
-    });
-    await this.db
-      .update(automations)
-      .set({
-        name: updated.name,
+    // currentVersion is read and bumped in ONE transaction with the version
+    // insert: a crash between the insert and the pointer bump would otherwise
+    // wedge every later update on the (automation_id, version) PK forever.
+    return this.withTransaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(automations)
+        .where(and(eq(automations.id, id), eq(automations.tenantId, scope.tenantId), eq(automations.subject, scope.subject)));
+      if (!rows[0]) throw new Error(`automation "${id}" not found`);
+      const automation = rowToAutomation(rows[0]);
+      const nextVersion = automation.currentVersion + 1;
+      const version: AutomationVersion = {
+        automationId: id,
+        version: nextVersion,
+        spec: input.spec,
+        dslVersion: input.spec.dslVersion,
+        manifestHash: input.manifestHash ?? null,
+        grants: input.grants,
+        createdBy: input.createdBy,
+        createdAt: now,
+      };
+      const updated: AutomationRecord = {
+        ...automation,
+        name: input.spec.name,
         spec: input.spec,
         currentVersion: nextVersion,
         triggerKind: kind,
         triggerKey: key,
         updatedAt: now,
-      })
-      .where(and(eq(automations.id, id), eq(automations.tenantId, scope.tenantId), eq(automations.subject, scope.subject)));
-    return { automation: updated, version };
+      };
+      await tx.insert(automationVersions).values({
+        automationId: id,
+        version: nextVersion,
+        spec: input.spec,
+        dslVersion: input.spec.dslVersion,
+        manifestHash: version.manifestHash,
+        grants: input.grants,
+        createdBy: input.createdBy,
+        createdAt: now,
+      });
+      await tx
+        .update(automations)
+        .set({
+          name: updated.name,
+          spec: input.spec,
+          currentVersion: nextVersion,
+          triggerKind: kind,
+          triggerKey: key,
+          updatedAt: now,
+        })
+        .where(and(eq(automations.id, id), eq(automations.tenantId, scope.tenantId), eq(automations.subject, scope.subject)));
+      return { automation: updated, version };
+    });
   }
 
   async getVersion(scope: Principal, id: string, version: number): Promise<AutomationVersion | undefined> {

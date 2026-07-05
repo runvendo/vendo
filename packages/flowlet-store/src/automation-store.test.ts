@@ -95,6 +95,47 @@ describe("frozen core surface", () => {
     expect(await store.get(bob, automation.id)).toBeUndefined();
     expect((await store.list(alice)).map((a) => a.id)).toEqual([automation.id]);
   });
+
+  it("recordRun never merges onto a run owned by another principal (no-op)", async () => {
+    const { automation } = await create(alice);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    await store.recordRun(bob, {
+      id: run.id,
+      automationId: automation.id,
+      startedAt: NOW,
+      status: "failed",
+      error: "hijack",
+    });
+    const stored = await store.getRun(alice, run.id);
+    expect(stored?.status).toBe("running"); // untouched
+    expect(stored?.error).toBeUndefined();
+    expect(await store.getRun(bob, run.id)).toBeUndefined(); // not re-scoped either
+  });
+
+  it("recordRun merge preserves stored error/finishedAt when the patch omits them", async () => {
+    const { automation } = await create(alice);
+    const run = await store.createRun(alice, {
+      automation,
+      version: 1,
+      envelope: envelope(),
+      isTest: false,
+    });
+    await store.finalizeRun(alice, run.id, { status: "failed", error: "boom" });
+    await store.recordRun(alice, {
+      id: run.id,
+      automationId: automation.id,
+      startedAt: run.startedAt,
+      status: "failed",
+    });
+    const stored = await store.getRun(alice, run.id);
+    expect(stored?.error).toBe("boom");
+    expect(stored?.finishedAt).toBe(NOW);
+  });
 });
 
 describe("versioning", () => {
@@ -120,6 +161,22 @@ describe("versioning", () => {
     expect(v1?.spec.name).toBe("Test automation");
     expect(v1?.grants).toEqual([]);
     expect(v2?.grants).toHaveLength(1);
+  });
+
+  it("sequential updates keep incrementing the version pointer (2 -> 3)", async () => {
+    const { automation } = await create();
+    await store.update(alice, automation.id, {
+      spec: spec({ name: "v2" }),
+      grants: [],
+      createdBy: "user_edit",
+    });
+    const third = await store.update(alice, automation.id, {
+      spec: spec({ name: "v3" }),
+      grants: [],
+      createdBy: "user_edit",
+    });
+    expect(third.automation.currentVersion).toBe(3);
+    expect((await store.getVersion(alice, automation.id, 3))?.spec.name).toBe("v3");
   });
 });
 
