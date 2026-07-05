@@ -34,7 +34,7 @@ describe("useTrustData", () => {
     expect(result.current.automationGrants[0]?.automationName).toBe("Morning chase");
   });
 
-  it("summarizes the diary from audit rows (reads/approved/automation runs/money moves)", async () => {
+  it("summarizes the diary from audit rows (reads/approved/automation runs/big actions)", async () => {
     const rows: TrustAuditRow[] = [
       { at: "1", kind: "tool_execution", toolName: "get_x", mutating: false },
       { at: "2", kind: "tool_execution", toolName: "send_email", mutating: true, dangerous: false },
@@ -47,14 +47,14 @@ describe("useTrustData", () => {
       listRules: async () => [], revokeRule: async () => {},
     };
     const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
-    // 1 read + 1 approved + 1 automation run + 1 money move — money moves
-    // fold into the total too (review nit: a week of only money moves must
+    // 1 read + 1 approved + 1 automation run + 1 big action — big actions
+    // fold into the total too (review nit: a week of only big actions must
     // not read "handled 0 things").
     await waitFor(() => expect(result.current.diary.total).toBe(4));
-    expect(result.current.diary).toMatchObject({ reads: 1, approved: 1, automationRuns: 1, moneyMoves: 1 });
+    expect(result.current.diary).toMatchObject({ reads: 1, approved: 1, automationRuns: 1, bigActions: 1 });
   });
 
-  it("a week of ONLY money moves is never counted as 0 (review nit)", async () => {
+  it("a week of ONLY big actions is never counted as 0 (review nit)", async () => {
     const rows: TrustAuditRow[] = [
       { at: "1", kind: "tool_execution", toolName: "transfer_money", mutating: true, dangerous: true },
       { at: "2", kind: "tool_execution", toolName: "transfer_money", mutating: true, dangerous: true },
@@ -65,7 +65,7 @@ describe("useTrustData", () => {
       listRules: async () => [], revokeRule: async () => {},
     };
     const { result } = renderHook(() => useTrustData(), { wrapper: wrap(trust) });
-    await waitFor(() => expect(result.current.diary.moneyMoves).toBe(2));
+    await waitFor(() => expect(result.current.diary.bigActions).toBe(2));
     expect(result.current.diary.total).toBe(2);
   });
 

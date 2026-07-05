@@ -22,7 +22,9 @@ export interface TrustScreenProps {
 function auditLine(row: TrustAuditRow): string {
   switch (row.kind) {
     case "tool_execution":
-      return row.dangerous ? `${toolAction(row.toolName ?? "").done} — a money move` : toolAction(row.toolName ?? "").done;
+      return row.dangerous
+        ? `${toolAction(row.toolName ?? "").done} — an action that always needs you`
+        : toolAction(row.toolName ?? "").done;
     case "automation_firing":
       return "An automation ran";
     case "grant_created":
@@ -117,7 +119,7 @@ export function TrustScreen({ onClose }: TrustScreenProps) {
         <div className="fl-trust-diary">
           This week I handled {diary.total} thing{diary.total === 1 ? "" : "s"} — {diary.reads} reads,{" "}
           {diary.approved} action{diary.approved === 1 ? "" : "s"} you approved, {diary.automationRuns} ran in
-          automations. Money moves: {diary.moneyMoves}.
+          automations. Big actions: {diary.bigActions}.
         </div>
         <div className="fl-trust-activity">
           {activity.slice(0, 20).map((row, i) => (

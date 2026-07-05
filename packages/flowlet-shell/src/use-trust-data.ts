@@ -21,24 +21,27 @@ export interface DiaryData {
   reads: number;
   approved: number;
   automationRuns: number;
-  moneyMoves: number;
+  /** Rows flagged `dangerous: true` — critical-tier calls, not only literal
+   *  money movement (polish, review follow-up: the old "money move" label
+   *  read as finance-app-specific copy in a general-purpose product). */
+  bigActions: number;
 }
 
 function summarize(rows: TrustAuditRow[]): DiaryData {
-  let reads = 0, approved = 0, automationRuns = 0, moneyMoves = 0;
+  let reads = 0, approved = 0, automationRuns = 0, bigActions = 0;
   for (const row of rows) {
     if (row.kind === "tool_execution") {
       if (row.mutating === false) reads += 1;
-      else if (row.dangerous === true) moneyMoves += 1;
+      else if (row.dangerous === true) bigActions += 1;
       else approved += 1;
     } else if (row.kind === "automation_firing") {
       automationRuns += 1;
     }
   }
-  // Money moves fold into the total too (review nit): a week of ONLY money
-  // moves must never read "handled 0 things" just because they're broken out
-  // as their own counter.
-  return { total: reads + approved + automationRuns + moneyMoves, reads, approved, automationRuns, moneyMoves };
+  // Big actions fold into the total too (review nit): a week of ONLY big
+  // actions must never read "handled 0 things" just because they're broken
+  // out as their own counter.
+  return { total: reads + approved + automationRuns + bigActions, reads, approved, automationRuns, bigActions };
 }
 
 export function useTrustData() {

@@ -43,7 +43,10 @@ describe("TrustScreen (ENG-193 §3 Moment 12)", () => {
     await waitFor(() => screen.getByText(/Handled without asking/i));
     expect(screen.getByText(/Handled without asking/i)).toBeTruthy();
     expect(screen.getByText(/^Automations$/i)).toBeTruthy();
-    expect(screen.getByText(/Always needs you/i)).toBeTruthy();
+    // Anchored: the audit row for a dangerous execution ALSO reads "...an
+    // action that always needs you" (polish, review follow-up) — an
+    // unanchored match would hit both that row and this section heading.
+    expect(screen.getByText(/^Always needs you$/i)).toBeTruthy();
     expect(screen.getByText(/Activity —/i)).toBeTruthy();
   });
 
@@ -78,13 +81,13 @@ describe("TrustScreen (ENG-193 §3 Moment 12)", () => {
     );
     await waitFor(() => screen.getByText(/This week I handled/i));
     const diary = screen.getByText(/This week I handled/i).textContent ?? "";
-    // 4, not 3 — money moves fold into the total too (review nit: a week of
-    // only money moves must not read "handled 0 things").
+    // 4, not 3 — big actions fold into the total too (review nit: a week of
+    // only big actions must not read "handled 0 things").
     expect(diary).toMatch(/4 things/);
     expect(diary).toMatch(/1 reads/);
     expect(diary).toMatch(/1 action you approved/);
     expect(diary).toMatch(/1 ran in/);
-    expect(diary).toMatch(/Money moves: 1/);
+    expect(diary).toMatch(/Big actions: 1/);
   });
 
   it("renders a rule under the Rules heading with a Remove rule button that calls revokeRule (ENG-193 item 6)", async () => {
