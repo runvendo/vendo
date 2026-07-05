@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createVendoDatabase, migrateVendoDatabase } from "./db.js";
+import { createPgPool, createVendoDatabase, migrateVendoDatabase } from "./db.js";
+import { vi } from "vitest";
 
 let savedEnv: NodeJS.ProcessEnv;
 let suffix = 0;
@@ -86,5 +87,18 @@ describe("migrateVendoDatabase", () => {
     const handle = await createVendoDatabase({ pglite: { dataDir: uniqueDataDir() } });
     await expect(migrateVendoDatabase(handle)).resolves.toBeUndefined();
     await expect(migrateVendoDatabase(handle)).resolves.toBeUndefined();
+  });
+});
+
+describe("createPgPool", () => {
+  it("survives an idle-connection 'error' event instead of crashing the process", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const pool = createPgPool("postgres://vendo:vendo@localhost:1/vendo");
+    // pg.Pool re-emits idle client errors on itself; with no listener,
+    // EventEmitter escalates to an uncaught exception and kills the host.
+    expect(() => pool.emit("error", new Error("idle client lost connection"))).not.toThrow();
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+    void pool.end();
   });
 });
