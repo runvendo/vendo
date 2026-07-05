@@ -12,3 +12,4 @@ export { createServerIntegrations } from "./integrations";
 export { createServerVendoStore } from "./server-store";
 export { createRunQuery, type RunQuery } from "./run-query";
 export { runConnectFlow, type ConnectOutcome } from "./connect-flow";
+export { createVendoVoice, type CreateVendoVoiceOptions } from "./voice";
