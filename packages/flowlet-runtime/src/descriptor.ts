@@ -7,8 +7,21 @@
  * policy engine always reads from a single, normalised source of truth.
  */
 
-/** Where a tool originated — used for merge precedence and provenance. */
-export type ToolSource = "caller" | "engine" | "composio" | "mcp";
+/**
+ * Where a tool originated — used for merge precedence and provenance.
+ *
+ * `"control"` is RESERVED for Flowlet's own control-plane tools: the engine's
+ * built-in `render_view`/`request_connect`, conversational steering
+ * (`always_ask_before`/`stop_asking_about`), and automation authoring tools.
+ * These are the ONLY tools `judgePolicy`/`cautionBreaker`/`volumeBreaker`
+ * exempt (ENG-193 PR #40 review — ENG-193 item A: the judge/breaker exemption
+ * must never fall through to host-supplied server tools). `"engine"` is a
+ * mount-registered SERVER tool the host itself supplies (e.g. `@flowlet/next`'s
+ * `options.tools`, a demo's `extraTools`) — judged/breaker-gated exactly like
+ * any other tool, NOT exempt. Do not repurpose `"engine"` for control-plane
+ * tools again; use `"control"`.
+ */
+export type ToolSource = "caller" | "engine" | "control" | "composio" | "mcp";
 
 /** Standard MCP annotation hints surfaced on a registered tool. */
 export interface ToolAnnotations {

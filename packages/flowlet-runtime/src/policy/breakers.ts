@@ -36,15 +36,19 @@
  * caution mode (Moment 1's promise has no exception), and critical's
  * ceremony is unconditional either way — caution can tighten nothing there
  * because nothing is ever loosened for critical in the first place. Review
- * follow-up: an active caution also never forces an engine-source (control-
+ * follow-up: an active caution also never forces a source-"control" (control-
  * plane) act-tier call — the user's own "always ask before"/"stop asking
  * about" utterances only ever ADD safety, so gating them behind a caution
- * card would be counterproductive.
+ * card would be counterproductive. A host-supplied server tool (source
+ * "engine") is NOT exempt here — ENG-193 PR #40 review (item A): only
+ * Flowlet's own control-plane tools (render_view/request_connect, steering,
+ * automation authoring) carry source "control"; a mount's own business tools
+ * must never ride that exemption.
  *
  * `volumeBreaker` carries the SAME two exemptions (review follow-up — it
- * previously had neither): a read-tier or engine-source call is never forced
- * to approve on volume, and — since "reads just flow" has no exception and an
- * engine-source call is the user's own literal instruction, not agent
+ * previously had neither): a read-tier or source-"control" call is never
+ * forced to approve on volume, and — since "reads just flow" has no exception
+ * and a control-plane call is the user's own literal instruction, not agent
  * behavior to rate-limit — is never even COUNTED toward the threshold either.
  * Without this, 15 reads or `render_view` calls in one thread forced an
  * approval card, breaking Moment 1's promise.
@@ -113,10 +117,11 @@ export function volumeBreaker(
       if (dangerTier(ctx.descriptor) === "critical") return decision;
       // Same two exemptions cautionBreaker has (review follow-up, see this
       // module's docstring): reads never get a forced card, and a
-      // control-plane (engine-source) call is the user's own instruction, not
-      // agent volume to rate-limit.
+      // control-plane (source "control") call is the user's own instruction,
+      // not agent volume to rate-limit. A host-supplied "engine"-source tool
+      // is NOT exempt (ENG-193 PR #40 review — item A).
       if (dangerTier(ctx.descriptor) === "read") return decision;
-      if (ctx.descriptor.source === "engine") return decision;
+      if (ctx.descriptor.source === "control") return decision;
       const key = threadKey(ctx);
       if (key === undefined) return decision; // automation context — item 4
       if (decision !== "allow") return decision; // nothing to force — already asking
@@ -129,10 +134,10 @@ export function volumeBreaker(
     },
     async onExecuted(ctx, decision) {
       await inner.onExecuted?.(ctx, decision);
-      // Don't even COUNT a read or engine-source execute toward the
+      // Don't even COUNT a read or source-"control" execute toward the
       // threshold (review follow-up) — symmetric with the exemption above.
       if (dangerTier(ctx.descriptor) === "read") return;
-      if (ctx.descriptor.source === "engine") return;
+      if (ctx.descriptor.source === "control") return;
       const key = threadKey(ctx);
       if (key === undefined) return;
       let perTool = state.volumeCounts.get(key);
@@ -219,14 +224,16 @@ export function cautionBreaker(
       }
 
       // Review follow-up: an active caution must never block the user's OWN
-      // "always ask me"/"stop asking about" command (engine-source, act
+      // "always ask me"/"stop asking about" command (source "control", act
       // tier) — tightening tools only ever ADD safety, so gating them behind
-      // a caution card is counterproductive, not protective.
+      // a caution card is counterproductive, not protective. A host-supplied
+      // "engine"-source tool IS still gated by caution (ENG-193 PR #40
+      // review — item A).
       if (
         dangerTier(ctx.descriptor) === "act" &&
         rec.active &&
         decision === "allow" &&
-        ctx.descriptor.source !== "engine"
+        ctx.descriptor.source !== "control"
       ) {
         setEscalationReason(ctx, "a few things seemed unusual, so I'm checking with you for a bit");
         return "approve";

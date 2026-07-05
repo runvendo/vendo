@@ -181,9 +181,15 @@ export interface CreateDemoAgentOptions {
   model?: LanguageModel;
   /** Inject a Composio client (tests pass a stub; production builds the real one). */
   composioClient?: ComposioClient;
-  /** Extra in-process tools — the chat route passes demoTools() + the
-   *  automation world's authoring tools so they share one world. */
+  /** Extra in-process HOST tools (demoTools() only) — judged/breaker-gated
+   *  normally (source "engine"). ENG-193 PR #40 review (item A): must NOT
+   *  carry the automation world's authoring tools or steering tools; see
+   *  `controlTools`. */
   extraTools?: ToolSet;
+  /** Flowlet's own control-plane tools — the automation world's authoring
+   *  tools + steering tools, so they share one world. Exempt from the
+   *  judge/breakers (source "control"). */
+  controlTools?: ToolSet;
   /** Composio toolkits to ingest; defaults to the demo's standing pair. */
   toolkits?: string[];
 }
@@ -199,6 +205,7 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): FlowletAgent
       client: opts.composioClient,
     },
     tools: opts.extraTools,
+    controlTools: opts.controlTools,
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
     // ENG-193 review follow-up (queued gap): the Trust diary read 0

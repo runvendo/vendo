@@ -178,8 +178,18 @@ export interface AgentFactoryConfig {
   policy: ApprovalPolicy;
   instructions: string;
   components: RegisteredComponent[];
-  /** Per-request extra server tools (authoring tools + host `tools` option). */
+  /**
+   * Per-request host-supplied server tools (the mount's `tools` option ONLY).
+   * Judged/breaker-gated normally (source "engine") — ENG-193 PR #40 review
+   * (item A): never merge authoring/steering tools in here.
+   */
   tools?: () => ToolSet;
+  /**
+   * Per-request Flowlet control-plane tools (automation authoring + steering)
+   * the handler assembles itself. Merged under source "control" — the ONLY
+   * source the judge/breakers exempt (ENG-193 PR #40 review — item A).
+   */
+  controlTools?: () => ToolSet;
   /** Connected Composio toolkits to ingest (undefined = Composio off). */
   toolkits?: () => string[];
   /** Extra cache-key material from the host (e.g. store generation). */
@@ -219,6 +229,7 @@ export function createAgentCache(config: AgentFactoryConfig): () => FlowletAgent
         // up with NO tools at all — an empty list is the fail-closed default.
         ...(config.toolkits ? { composio: { config: { toolkits } } } : {}),
         ...(config.tools ? { tools: config.tools() } : {}),
+        ...(config.controlTools ? { controlTools: config.controlTools() } : {}),
         ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
         ...(config.onSettled ? { onSettled: config.onSettled } : {}),
         ...(config.audit ? { audit: config.audit } : {}),

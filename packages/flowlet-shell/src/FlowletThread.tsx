@@ -15,11 +15,15 @@ import { ConnectDock } from "./components/ConnectDock";
 import { ConnectTray } from "./components/ConnectTray";
 import { friendlyError, logErrorDetail } from "./components/error-copy";
 
-/** Review follow-up: `approve()` races the consent POST against this timeout
- *  so a HUNG (not failed — `postConsent` above already swallows a rejection)
- *  fetch can never block the SDK's own approval resume forever. On timeout,
- *  `fadeEligible` is simply lost — the same "best-effort, never blocking"
- *  posture this module's docstring already promises for a failed POST. */
+/**
+ * ENG-193 PR #40 review — item B: nothing requires the SDK's approval resume
+ * to wait on the consent POST — `fadeEligible` is purely client-side state
+ * applied whenever the POST later settles, so `approve()` fires the POST and
+ * resumes the SDK IMMEDIATELY, in parallel. This timeout still bounds how
+ * long we keep watching a slow/HUNG POST for a `fadeEligible` result before
+ * giving up on it — the same "best-effort, never blocking" posture this
+ * module's docstring already promises for a failed POST, just no longer
+ * gating the resume itself. */
 const CONSENT_TIMEOUT_MS = 4000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
@@ -132,11 +136,17 @@ export function FlowletThread({
 
   const approve = (approvalId: string) => {
     const item = findApproval(approvalId);
-    const consentPost = item?.toolCallId
-      ? withTimeout(postConsent({ id: item.toolCallId, decision: "yes" }, item.toolName), CONSENT_TIMEOUT_MS)
-      : Promise.resolve(undefined);
+    // ENG-193 PR #40 review — item B: resume the SDK approval IMMEDIATELY —
+    // nothing orders it after the consent POST. The POST (and any
+    // `fadeEligible` it returns) proceeds independently in the background.
+    chat.addToolApprovalResponse({ id: approvalId, approved: true });
+    if (!item?.toolCallId) return;
+    const consentPost = withTimeout(
+      postConsent({ id: item.toolCallId, decision: "yes" }, item.toolName),
+      CONSENT_TIMEOUT_MS,
+    );
     void consentPost.then((result) => {
-      if (result?.fadeEligible && item) {
+      if (result?.fadeEligible) {
         setFadeProposal({
           messageId: item.messageId,
           toolName: item.toolName,
@@ -144,7 +154,6 @@ export function FlowletThread({
           count: result.fadeEligible.count,
         });
       }
-      chat.addToolApprovalResponse({ id: approvalId, approved: true });
     });
   };
   const resolveFade = (accept: boolean) => {
@@ -165,17 +174,17 @@ export function FlowletThread({
   // Batch semantics: the consent `subset` field lists the BATCH's toolCallIds
   // for audit context, while the per-id SDK responses below carry the actual
   // approve/decline split.
+  // ENG-193 PR #40 review — item B: batch approvals resume the SDK
+  // IMMEDIATELY too, same as the single `approve()` above — the consent
+  // POSTs fire in parallel, fire-and-forget (mirrors `declineBatch` below,
+  // which never waited on them either).
   const approveBatch = (approvalIds: string[], toolCallIds: string[]) => {
-    const consentPosts = Promise.all(
-      toolCallIds.map((id) =>
-        postConsent(
-          { id, decision: "yes", subset: toolCallIds },
-          findApprovalByCall(id)?.toolName ?? "",
-        ),
+    approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
+    toolCallIds.forEach((id) =>
+      void postConsent(
+        { id, decision: "yes", subset: toolCallIds },
+        findApprovalByCall(id)?.toolName ?? "",
       ),
-    );
-    void consentPosts.then(() =>
-      approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true })),
     );
   };
   const approveSubset = (
@@ -187,24 +196,20 @@ export function FlowletThread({
     const declinedToolCallIds = declinedApprovalIds
       .map((id) => findApproval(id)?.toolCallId)
       .filter((id): id is string => !!id);
-    const consentPosts = Promise.all([
-      ...toolCallIds.map((id) =>
-        postConsent(
-          { id, decision: "subset", subset: allToolCallIds },
-          findApprovalByCall(id)?.toolName ?? "",
-        ),
+    approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
+    declinedApprovalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: false }));
+    toolCallIds.forEach((id) =>
+      void postConsent(
+        { id, decision: "subset", subset: allToolCallIds },
+        findApprovalByCall(id)?.toolName ?? "",
       ),
-      ...declinedToolCallIds.map((id) =>
-        postConsent(
-          { id, decision: "no", subset: allToolCallIds },
-          findApprovalByCall(id)?.toolName ?? "",
-        ),
+    );
+    declinedToolCallIds.forEach((id) =>
+      void postConsent(
+        { id, decision: "no", subset: allToolCallIds },
+        findApprovalByCall(id)?.toolName ?? "",
       ),
-    ]);
-    void consentPosts.then(() => {
-      approvalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: true }));
-      declinedApprovalIds.forEach((id) => chat.addToolApprovalResponse({ id, approved: false }));
-    });
+    );
   };
   const declineBatch = (approvalIds: string[]) => {
     approvalIds.forEach((approvalId) => {

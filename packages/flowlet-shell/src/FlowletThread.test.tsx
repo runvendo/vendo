@@ -101,7 +101,7 @@ describe("FlowletThread consent channel", () => {
     );
   });
 
-  it("REVIEW FOLLOW-UP: a never-settling consent POST still resolves the SDK approval (4s race timeout) — a HUNG fetch must never block it forever", async () => {
+  it("ENG-193 PR #40 review — item B: a never-settling consent POST does NOT delay the SDK approval resume — it fires immediately, in parallel", async () => {
     vi.useFakeTimers();
     const sendConsent = vi.fn(() => new Promise<void>(() => {})); // never settles
     mountWithConsent(sendConsent);
@@ -109,14 +109,15 @@ describe("FlowletThread consent channel", () => {
     await vi.waitFor(() => screen.getByText("Send it"));
     fireEvent.click(screen.getByText("Send it"));
     await vi.waitFor(() => expect(sendConsent).toHaveBeenCalled());
-    // The consent POST is still pending — nothing has resolved it yet.
-    expect(screen.queryByTestId("demo-card")).toBeNull();
+    // The consent POST is still pending (never settles) — but the SDK resume
+    // never waited on it in the first place, so the render already happened.
+    await vi.waitFor(() => screen.getByTestId("demo-card"));
+    // Advancing past the old 4s race window changes nothing further — this
+    // pins that the timeout no longer gates anything observable here.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4000);
     });
-    // Past the timeout, the SDK approval response still fires — the resume
-    // proceeds even though the consent POST never settled.
-    await vi.waitFor(() => screen.getByTestId("demo-card"));
+    expect(screen.getByTestId("demo-card")).toBeTruthy();
     vi.useRealTimers();
   });
 });

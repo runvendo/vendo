@@ -180,7 +180,11 @@ export function toThreadItems(messages: FlowletUIMessage[]): ThreadItem[] {
  * data-consent part (ENG-193 §4.1/§4.5); if that part was lost or never
  * arrived, the item's true tier is simply unknown, and batching it as if it
  * were a confirmed "act" call would be a false assurance — it renders its
- * own individual card instead, same as critical.
+ * own individual card instead, same as critical. An item carrying a judge/
+ * breaker `reason` (ENG-193 PR #40 review — item C) is EXEMPT too, even at
+ * tier "act": a reason means the judge/cautionBreaker/volumeBreaker escalated
+ * this SPECIFIC call above its siblings — the "Hold on" ceremony (its own
+ * card, the reason legible) must not be swallowed into a bulk "Approve all N".
  */
 export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
   const out: RenderItem[] = [];
@@ -206,8 +210,11 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
       // the same treatment: it means the sibling data-consent part carrying
       // the real tier was lost or never arrived, so this item's true
       // dangerousness is simply unknown — batching it as if it were a
-      // confirmed "act" call would be a false assurance.
-      if (item.tier !== "act") {
+      // confirmed "act" call would be a false assurance. A `reason` (ENG-193
+      // PR #40 review — item C) is exempt too, however "act" its tier: the
+      // judge/breaker specifically escalated THIS call — batching would lose
+      // the "Hold on" treatment for exactly the call that most needs it.
+      if (item.tier !== "act" || item.reason !== undefined) {
         out.push(item);
         continue;
       }
@@ -242,10 +249,11 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
       const toolName = groupKey.slice(groupKey.indexOf("::") + 2);
       const siblings = items.filter(
         (i): i is Extract<ThreadItem, { kind: "approval" }> =>
-          // tier === "act" mirrors the skip above: a critical OR undefined-tier
-          // item that shares a message+tool with act siblings must not be
-          // pulled into their batch during promotion either.
-          i.kind === "approval" && i.tier === "act" &&
+          // tier === "act" && reason === undefined mirrors the skip above: a
+          // critical, undefined-tier, OR reasoned item that shares a
+          // message+tool with act siblings must not be pulled into their
+          // batch during promotion either.
+          i.kind === "approval" && i.tier === "act" && i.reason === undefined &&
           i.messageId === entry.messageId && i.toolName === toolName,
       );
       if (siblings.length > 1) {

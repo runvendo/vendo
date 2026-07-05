@@ -37,6 +37,11 @@ function deps(threadMessages: FlowletUIMessage[]) {
           ? { name, source: "caller", annotations: { destructiveHint: true }, hasExecute: true, kind: "function" }
           : undefined,
     async getMessages() { return threadMessages; },
+    // Instant in every test by default — real retry TIMING isn't under test
+    // here (item F's regression below only cares that a later lookup sees
+    // freshly-arrived messages), and a real 250ms wait per retry would slow
+    // every 404 case in this suite for nothing.
+    sleep: async () => {},
   };
 }
 
@@ -99,6 +104,44 @@ describe("handleConsent", () => {
     expect(result.ok).toBe(false);
     expect(result.status).toBe(404);
     expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+  });
+
+  it("REGRESSION (ENG-193 PR #40 review — item F): a miss on the FIRST lookup retries and succeeds once the engine's onSettled write lands between attempts", async () => {
+    // Simulates the documented onSettled fire-and-forget race: the first
+    // lookup finds nothing (persistence hasn't landed yet), but the SECOND
+    // lookup (the first retry) does — before this fix that first miss would
+    // have 404'd outright.
+    let calls = 0;
+    const getMessages = async () => {
+      calls += 1;
+      return calls >= 2 ? threadWith({}) : [];
+    };
+    const sleepCalls: number[] = [];
+    const d = {
+      ...deps([]),
+      getMessages,
+      sleep: async (ms: number) => { sleepCalls.push(ms); },
+    };
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-1", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-1", decision: "yes" },
+    });
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(2); // one miss, one retry that hits
+    expect(sleepCalls).toEqual([250]); // exactly one retry delay elapsed
+  });
+
+  it("REGRESSION (ENG-193 PR #40 review — item F): still 404s after exhausting BOTH retries (3 lookups total)", async () => {
+    let calls = 0;
+    const getMessages = async () => { calls += 1; return []; };
+    const d = { ...deps([]), getMessages };
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-missing", toolName: "GMAIL_SEND_EMAIL",
+      response: { id: "call-missing", decision: "yes" },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(404);
+    expect(calls).toBe(3); // the initial lookup + 2 retries
   });
 
   it("400s a grant draft whose tool differs from the consented tool — grant.tool is bound server-side", async () => {

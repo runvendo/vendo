@@ -31,8 +31,11 @@ function getAgent(): FlowletAgent {
     cached = {
       gen,
       agent: createDemoAgent({
-        extraTools: {
-          ...demoTools(),
+        // ENG-193 PR #40 review (item A): demoTools() (the app's OWN
+        // in-process host tools) stays OUT of controlTools — mixing it in
+        // let host tools ride the judge/breaker control-plane exemption.
+        extraTools: { ...demoTools() },
+        controlTools: {
           ...automationsWorld().authoringTools(),
           // ENG-193 item 6: conversational steering — same static
           // single-tenant registration the authoring tools above use.

@@ -56,8 +56,18 @@ const criticalDesc: ToolDescriptor = {
   hasExecute: true,
   kind: "function",
 };
-const engineActDesc: ToolDescriptor = {
+const controlActDesc: ToolDescriptor = {
   name: "always_ask_before",
+  source: "control",
+  annotations: { readOnlyHint: false, destructiveHint: false },
+  hasExecute: true,
+  kind: "function",
+};
+/** A host-supplied server tool (source "engine") — NOT control-plane.
+ *  ENG-193 PR #40 review (item A): must be judged/breaker-gated normally;
+ *  only source "control" is exempt. */
+const hostEngineActDesc: ToolDescriptor = {
+  name: "issue_refund",
   source: "engine",
   annotations: { readOnlyHint: false, destructiveHint: false },
   hasExecute: true,
@@ -109,7 +119,7 @@ describe("ENG-193 §8 permanent invariants", () => {
       registeredTools: async () => ({}),
     });
     for (const name of ["create_automation", "update_automation", "delete_automation"]) {
-      const descriptor = buildDescriptor(name, toolset[name], "engine");
+      const descriptor = buildDescriptor(name, toolset[name], "control");
       expect(dangerTier(descriptor), name).toBe("critical");
     }
   });
@@ -230,14 +240,24 @@ describe("ENG-193 item 3 — judge + breaker invariants", () => {
     }
   });
 
-  it("INVARIANT (review follow-up): an engine-source (control-plane) tool is exempt from the judge, even with a model configured", async () => {
+  it("INVARIANT (review follow-up): a source-\"control\" (control-plane) tool is exempt from the judge, even with a model configured", async () => {
     const approveInner: ApprovalPolicy = { evaluate: () => "approve" };
     const policy = judgePolicy(approveInner, {
       model: judgeReturning("escalate: whatever"),
     });
-    const ctx = { ...ctxFor(engineActDesc), threadId: "th-1" };
+    const ctx = { ...ctxFor(controlActDesc), threadId: "th-1" };
     expect(await policy.evaluate(ctx)).toBe("approve"); // inner's own decision, untouched
     expect(getEscalationReason(ctx)).toBeUndefined();
+  });
+
+  it("REGRESSION (ENG-193 PR #40 review — item A): a host-supplied server tool (source \"engine\") is judged, even though it entered via the SAME construction-time bucket steering/authoring tools use", async () => {
+    const approveInner: ApprovalPolicy = { evaluate: () => "approve" };
+    const policy = judgePolicy(approveInner, {
+      model: judgeReturning("escalate: whatever"),
+    });
+    const ctx = { ...ctxFor(hostEngineActDesc), threadId: "th-1" };
+    expect(await policy.evaluate(ctx)).toBe("approve"); // still approve, but via the judge's OWN escalation
+    expect(getEscalationReason(ctx)).toBe("whatever");
   });
 
   it("INVARIANT (review follow-up): judge-policy's escalate-ON-ERROR forced approvals never trip cautionBreaker, however many", async () => {
@@ -267,7 +287,7 @@ describe("ENG-193 item 3 — judge + breaker invariants", () => {
     expect(await withCaution.evaluate(probeCtx)).toBe("allow");
   });
 
-  it("INVARIANT (review follow-up): an active caution never blocks an engine-source (control-plane) act-tier call", async () => {
+  it("INVARIANT (review follow-up): an active caution never blocks a source-\"control\" (control-plane) act-tier call", async () => {
     const state = createBreakerState();
     for (let i = 0; i < 3; i++) {
       const escalating: ApprovalPolicy = {
@@ -283,8 +303,28 @@ describe("ENG-193 item 3 — judge + breaker invariants", () => {
     }
     const allowInner: ApprovalPolicy = { evaluate: () => "allow" };
     const policy = cautionBreaker(allowInner, state);
-    const ctx = { ...ctxFor(engineActDesc), threadId: "th-1" };
-    expect(await policy.evaluate(ctx)).toBe("allow"); // engine-source: never gated, even while caution is active
+    const ctx = { ...ctxFor(controlActDesc), threadId: "th-1" };
+    expect(await policy.evaluate(ctx)).toBe("allow"); // source "control": never gated, even while caution is active
+  });
+
+  it("REGRESSION (ENG-193 PR #40 review — item A): an active caution DOES gate a host-supplied server tool (source \"engine\")", async () => {
+    const state = createBreakerState();
+    for (let i = 0; i < 3; i++) {
+      const escalating: ApprovalPolicy = {
+        evaluate: (ctx) => {
+          setEscalationReason(ctx, "x", "verdict");
+          return "approve";
+        },
+      };
+      const wrapped = cautionBreaker(escalating, state, { consecutiveThreshold: 3 });
+      const ctx = { ...ctxFor(actDesc), threadId: "th-1", toolCallId: `h-${i}` };
+      await wrapped.evaluate(ctx);
+      await wrapped.onExecuted!(ctx, "approve");
+    }
+    const allowInner: ApprovalPolicy = { evaluate: () => "allow" };
+    const policy = cautionBreaker(allowInner, state);
+    const ctx = { ...ctxFor(hostEngineActDesc), threadId: "th-1" };
+    expect(await policy.evaluate(ctx)).toBe("approve"); // host tool: still gated by caution
   });
 });
 
@@ -452,13 +492,13 @@ describe("ENG-193 §8/item-6 — steering invariants", () => {
 
   it("INVARIANT: stop_asking_about's own descriptor is critical tier", () => {
     const tools = steeringHarness(() => undefined);
-    const descriptor = buildDescriptor("stop_asking_about", tools["stop_asking_about"], "engine");
+    const descriptor = buildDescriptor("stop_asking_about", tools["stop_asking_about"], "control");
     expect(dangerTier(descriptor)).toBe("critical");
   });
 
   it("INVARIANT: always_ask_before's own descriptor is act tier, not unverified", () => {
     const tools = steeringHarness(() => undefined);
-    const descriptor = buildDescriptor("always_ask_before", tools["always_ask_before"], "engine");
+    const descriptor = buildDescriptor("always_ask_before", tools["always_ask_before"], "control");
     expect(dangerTier(descriptor)).toBe("act");
     expect(isUnverified(descriptor)).toBe(false);
   });

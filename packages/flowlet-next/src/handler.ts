@@ -126,13 +126,16 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
             audit,
           });
 
-    // ENG-193 item 6: steering tools merge into the same static "engine"
-    // bucket automation authoring tools use — fixed embedded principal, same
-    // single-tenant simplification world.ts documents. `resolveDescriptor` and
-    // `knownToolNames` are forward references into this closure — safe,
-    // `serverTools` is never CALLED until `assemble()` has fully run and all
-    // three consts are bound (`resolveDescriptor` itself back-references
-    // `serverTools()` already; `knownToolNames` does too, one line below).
+    // ENG-193 item 6: steering tools merge into the same static "control"
+    // bucket automation authoring tools use (ENG-193 PR #40 review — item A:
+    // renamed from "engine" to "control" to stop the host's OWN server tools
+    // from riding this same, judge/breaker-exempt bucket) — fixed embedded
+    // principal, same single-tenant simplification world.ts documents.
+    // `resolveDescriptor` and `knownToolNames` are forward references into
+    // this closure — safe, `controlTools`/`serverTools` are never CALLED
+    // until `assemble()` has fully run and all three consts are bound
+    // (`resolveDescriptor` itself back-references `controlTools()` already;
+    // `knownToolNames` does too, one line below).
     //
     // PRINCIPAL ASYMMETRY (review follow-up, item-6 plan's open-risks
     // section, now resolved below): the rest of this mount re-resolves the
@@ -161,23 +164,33 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       typeof DEFAULT_PRINCIPAL.userId === "string" && DEFAULT_PRINCIPAL.userId.length > 0,
       "steering tools require a non-empty fixed DEFAULT_PRINCIPAL.userId (single-tenant assumption, ENG-193 item-6)",
     );
-    const serverTools = (): ToolSet => {
-      const extra = typeof options.tools === "function" ? options.tools() : options.tools ?? {};
-      return {
-        ...extra,
-        ...(world ? world.authoringTools() : {}),
-        // Custom `options.principal` resolver -> multi-user mount -> steering
-        // tools are withheld entirely (see the comment above).
-        ...(options.principal === undefined
-          ? createSteeringTools({
-              principal: { tenantId: EMBEDDED_TENANT, subject: DEFAULT_PRINCIPAL.userId },
-              rules, grants, audit,
-              resolveDescriptor: (name) => resolveDescriptor(name),
-              knownToolNames: () => knownToolNames(),
-            })
-          : {}),
-      };
-    };
+    // ENG-193 PR #40 review (item A): the HOST's own server tools
+    // (`options.tools`) must stay SEPARATE from Flowlet's control-plane tools
+    // (steering + automation authoring) — `createFlowletAgent` labels them
+    // "engine" vs "control" respectively, and only "control" is exempt from
+    // the judge/`cautionBreaker`/`volumeBreaker`. Merging them into one
+    // bucket (the pre-fix shape) let a host's own business tools ride the
+    // control-plane exemption.
+    const hostServerTools = (): ToolSet =>
+      typeof options.tools === "function" ? options.tools() : options.tools ?? {};
+
+    const controlTools = (): ToolSet => ({
+      ...(world ? world.authoringTools() : {}),
+      // Custom `options.principal` resolver -> multi-user mount -> steering
+      // tools are withheld entirely (see the comment above).
+      ...(options.principal === undefined
+        ? createSteeringTools({
+            principal: { tenantId: EMBEDDED_TENANT, subject: DEFAULT_PRINCIPAL.userId },
+            rules, grants, audit,
+            resolveDescriptor: (name) => resolveDescriptor(name),
+            knownToolNames: () => knownToolNames(),
+          })
+        : {}),
+    });
+
+    // Union of both, for name resolution ONLY (knownToolNames/critical-tools
+    // route) — never fed to the engine as one bucket (see above).
+    const serverTools = (): ToolSet => ({ ...hostServerTools(), ...controlTools() });
 
     const instructions =
       options.instructions ??
@@ -198,7 +211,8 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
       // The engine's render_view registry must know the prewired catalog too —
       // host-node validation rejects any name it can't find (ENG-186).
       components: [...prewiredComponents, ...(options.components ?? [])],
-      tools: serverTools,
+      tools: hostServerTools,
+      controlTools,
       ...(capabilities.integrations ? { toolkits: () => connections.connectedToolkits() } : {}),
       ...(options.cacheKey ? { cacheKey: options.cacheKey } : {}),
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
@@ -258,7 +272,13 @@ export function createFlowletHandler(rawOptions: FlowletHandlerOptions = {}): Fl
     const resolveDescriptor = (toolName: string) => {
       const client = clientTools[toolName];
       if (client) return buildDescriptor(toolName, client, "caller");
-      const server = serverTools()[toolName];
+      // Control-plane tools resolve to source "control" (grant-hash parity
+      // with the live engine descriptor, ENG-193 PR #40 review — item A) —
+      // checked BEFORE the host's own server tools so a same-named host tool
+      // can never masquerade as control-plane here.
+      const control = controlTools()[toolName];
+      if (control) return buildDescriptor(toolName, control, "control");
+      const server = hostServerTools()[toolName];
       if (server) return buildDescriptor(toolName, server, "engine");
       if (/^[A-Z]+_[A-Z_]+$/.test(toolName)) return buildDescriptor(toolName, {}, "composio");
       return undefined;

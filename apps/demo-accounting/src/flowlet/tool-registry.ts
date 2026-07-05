@@ -47,7 +47,11 @@ export function resolveToolDescriptor(toolName: string): ToolDescriptor | undefi
   if (host) return buildDescriptor(toolName, host, "caller");
 
   const authoring = automationsWorld().authoringTools()[toolName];
-  if (authoring) return buildDescriptor(toolName, authoring, "engine");
+  // ENG-193 PR #40 review (item A): source "control" — authoring tools are
+  // Flowlet's own control-plane tools, judge/breaker-exempt at the live
+  // engine (agent.ts's `controlTools`); this resolver must agree (see this
+  // module's "GRANT HASH PARITY" note above).
+  if (authoring) return buildDescriptor(toolName, authoring, "control");
 
   // Composio-ingested tools: no static tool object exists to introspect (the
   // real schema is fetched per-principal at chat time), but the ANNOTATIONS

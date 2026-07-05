@@ -52,8 +52,16 @@ const readDesc: ToolDescriptor = {
 const criticalDesc: ToolDescriptor = {
   name: "transfer_money", source: "caller", annotations: { destructiveHint: true }, hasExecute: true, kind: "function",
 };
-const engineActDesc: ToolDescriptor = {
-  name: "always_ask_before", source: "engine", annotations: { readOnlyHint: false, destructiveHint: false },
+const controlActDesc: ToolDescriptor = {
+  name: "always_ask_before", source: "control", annotations: { readOnlyHint: false, destructiveHint: false },
+  hasExecute: true, kind: "function",
+};
+/** A host-supplied server tool (e.g. a mount's `options.tools`/a demo's
+ *  `extraTools`) — source "engine", NOT control-plane. ENG-193 PR #40 review
+ *  (item A): this must be judged like any other act-tier tool; only source
+ *  "control" is exempt. */
+const hostEngineActDesc: ToolDescriptor = {
+  name: "issue_refund", source: "engine", annotations: { readOnlyHint: false, destructiveHint: false },
   hasExecute: true, kind: "function",
 };
 
@@ -249,13 +257,22 @@ describe("judgePolicy", () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it("INVARIANT: an engine-source (control-plane) tool is exempt from the judge — model never invoked", async () => {
+  it("INVARIANT: a source-\"control\" (control-plane) tool is exempt from the judge — model never invoked", async () => {
     const { model, spy } = spyMock(() => "escalate: whatever");
     const policy = judgePolicy(fixed("approve"), { model });
-    const ctx = ctxFor(engineActDesc);
+    const ctx = ctxFor(controlActDesc);
     expect(await policy.evaluate(ctx)).toBe("approve");
     expect(spy).not.toHaveBeenCalled();
     expect(getEscalationReason(ctx)).toBeUndefined();
+  });
+
+  it("REGRESSION (ENG-193 PR #40 review — item A): a host-supplied server tool (source \"engine\") is judged like any other act-tier tool, NOT exempt", async () => {
+    const { model, spy } = spyMock(() => "escalate: whatever");
+    const policy = judgePolicy(fixed("approve"), { model });
+    const ctx = ctxFor(hostEngineActDesc);
+    expect(await policy.evaluate(ctx)).toBe("approve");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(getEscalationReason(ctx)).toBe("whatever");
   });
 
   describe("parser hardening (review follow-up: haiku's prose fails a strict one-line regex)", () => {

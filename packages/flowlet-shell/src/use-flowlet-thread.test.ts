@@ -253,6 +253,28 @@ describe("groupThreadItems — batching sibling approvals", () => {
     expect(batch?.items.map((i) => i.approvalId)).toEqual(["ap1", "ap2"]);
     expect(grouped.filter((g) => g.kind === "approval")).toHaveLength(1); // the critical one, alone
   });
+
+  it("REGRESSION (ENG-193 PR #40 review — item C): a reasoned act-tier sibling never batches — it renders its own individual card", () => {
+    const items = toThreadItems([
+      msg("m8", "assistant", [
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c1", state: "approval-requested", input: {}, approval: { id: "ap1" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c2", state: "approval-requested", input: {}, approval: { id: "ap2" } },
+        { type: "tool-GMAIL_SEND_EMAIL", toolCallId: "c3", state: "approval-requested", input: {}, approval: { id: "ap3" } },
+        { type: "data-consent", data: { toolCallId: "c1", tier: "act", unverified: false } },
+        { type: "data-consent", data: { toolCallId: "c2", tier: "act", unverified: false } },
+        // c3 shares the same tool/message as c1/c2 but carries an escalation
+        // reason (judge/breaker "Hold on") — must NOT be swept into the batch.
+        { type: "data-consent", data: { toolCallId: "c3", tier: "act", unverified: false, reason: "unusual volume" } },
+      ]),
+    ]);
+    const grouped = groupThreadItems(items);
+    const batch = grouped.find((g) => g.kind === "approval-batch") as { items: { approvalId: string }[] } | undefined;
+    expect(batch?.items.map((i) => i.approvalId)).toEqual(["ap1", "ap2"]);
+    const solo = grouped.filter((g) => g.kind === "approval") as Extract<ReturnType<typeof groupThreadItems>[number], { kind: "approval" }>[];
+    expect(solo).toHaveLength(1); // the reasoned one, alone
+    expect(solo[0]?.approvalId).toBe("ap3");
+    expect((solo[0] as { reason?: string }).reason).toBe("unusual volume");
+  });
 });
 
 describe("originatingPrompt", () => {

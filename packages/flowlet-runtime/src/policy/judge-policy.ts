@@ -16,13 +16,18 @@
  *                              money/irreversible never depends on a model
  *                              (spec §2 principle 6).
  *   - descriptor.source ===
- *     "engine"              -> returned untouched, model never called. These
- *                              are control-plane tools (steering, automation
- *                              authoring) — the agent doing exactly what the
- *                              user literally said via the tool call itself.
- *                              Judging "did this match the user's intent" is
- *                              a category error when the call IS the user's
- *                              stated intent (review follow-up).
+ *     "control"              -> returned untouched, model never called. These
+ *                              are Flowlet's OWN control-plane tools
+ *                              (render_view/request_connect, steering,
+ *                              automation authoring) — the agent doing
+ *                              exactly what the user literally said via the
+ *                              tool call itself. Judging "did this match the
+ *                              user's intent" is a category error when the
+ *                              call IS the user's stated intent (review
+ *                              follow-up). Host-supplied server tools land
+ *                              under source "engine" instead (ENG-193 PR #40
+ *                              review — item A) and ARE judged like any other
+ *                              tool; only "control" is exempt.
  *   - no `model` configured -> IDENTITY. This is the fail-safe default during
  *                              rollout (today's item-2 behavior, unchanged) —
  *                              see the invariants test for the pinned proof.
@@ -245,9 +250,11 @@ export function judgePolicy(inner: ApprovalPolicy, opts: JudgePolicyOptions): Ap
       const decision = await inner.evaluate(ctx);
       if (decision === "deny") return decision;
       if (dangerTier(ctx.descriptor) === "critical") return decision;
-      // Control-plane (engine-source) tools — the judge never runs (review
-      // follow-up, see this function's docstring above).
-      if (ctx.descriptor.source === "engine") return decision;
+      // Control-plane (source "control") tools — the judge never runs
+      // (ENG-193 PR #40 review — item A; see this function's docstring
+      // above). Host-supplied tools land under "engine" and fall through to
+      // be judged normally.
+      if (ctx.descriptor.source === "control") return decision;
       if (opts.model === undefined) return decision;
       if (ctx.threadId === undefined) return decision; // automation context — item 4
       if (dangerTier(ctx.descriptor) !== "act") return decision;

@@ -41,12 +41,31 @@ export interface HandleConsentDeps {
    *  not per-request, or it dedupes nothing. */
   seen?: ConsentLedger;
   now?: () => string;
+  /** Test seam only — overrides the real `setTimeout`-based wait the retry
+   *  below uses between lookups. Production never sets this. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** Bounded so a long-lived process (or a demo that never restarts) can't grow
  *  this without limit — mirrors the FIFO-eviction shape `judgePolicy`'s memo
  *  and `breakers.ts`'s `countedEscalationIds` already use. */
 const MAX_CONSENT_LEDGER = 1000;
+
+/**
+ * ENG-193 PR #40 review (documented v1 gap, item F) — `engine.ts`'s
+ * `onSettled` persists the run's messages fire-and-forget AFTER the stream
+ * response has already gone out; a client that sees the streamed
+ * approval-requested part and POSTs consent immediately can race that write.
+ * Without changing the persistence architecture, a couple of short retries on
+ * a miss closes most of the real window cheaply: 2 retries, 250ms apart (3
+ * lookups total) before giving up and 404ing.
+ */
+const APPROVAL_LOOKUP_RETRIES = 2;
+const APPROVAL_LOOKUP_RETRY_DELAY_MS = 250;
+
+function realSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface ConsentLedger {
   get(key: string): HandleConsentResult | undefined;
@@ -136,8 +155,18 @@ export async function handleConsent(
     return result;
   }
 
-  const messages = await deps.getMessages(principal, req.threadId);
-  const part = findApprovalPart(messages, req.toolCallId);
+  // Retry the lookup on a miss (ENG-193 PR #40 review — item F): the
+  // engine's onSettled persistence is fire-and-forget and can still be in
+  // flight when this POST arrives. `sleep` between attempts is a test seam
+  // only (default: a real setTimeout wait).
+  const sleep = deps.sleep ?? realSleep;
+  let messages = await deps.getMessages(principal, req.threadId);
+  let part = findApprovalPart(messages, req.toolCallId);
+  for (let attempt = 0; !part && attempt < APPROVAL_LOOKUP_RETRIES; attempt++) {
+    await sleep(APPROVAL_LOOKUP_RETRY_DELAY_MS);
+    messages = await deps.getMessages(principal, req.threadId);
+    part = findApprovalPart(messages, req.toolCallId);
+  }
   if (!part) {
     return audited({
       ok: false, status: 404,

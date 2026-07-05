@@ -10,8 +10,15 @@ const actDesc: ToolDescriptor = {
 const criticalDesc: ToolDescriptor = {
   name: "transfer_money", source: "caller", annotations: { destructiveHint: true }, hasExecute: true, kind: "function",
 };
-const engineActDesc: ToolDescriptor = {
-  name: "always_ask_before", source: "engine", annotations: { readOnlyHint: false, destructiveHint: false },
+const controlActDesc: ToolDescriptor = {
+  name: "always_ask_before", source: "control", annotations: { readOnlyHint: false, destructiveHint: false },
+  hasExecute: true, kind: "function",
+};
+/** A host-supplied server tool (source "engine") — NOT control-plane.
+ *  ENG-193 PR #40 review (item A): breakers must gate/count this normally;
+ *  only source "control" is exempt. */
+const hostEngineActDesc: ToolDescriptor = {
+  name: "issue_refund", source: "engine", annotations: { readOnlyHint: false, destructiveHint: false },
   hasExecute: true, kind: "function",
 };
 
@@ -139,16 +146,16 @@ describe("volumeBreaker", () => {
     expect(await policy.evaluate(ctxFor(readDesc))).toBe("allow"); // never tripped
   });
 
-  it("REVIEW FOLLOW-UP: never forces a card for an engine-source (control-plane) call, however many, and never counts it", async () => {
+  it("REVIEW FOLLOW-UP: never forces a card for a source-\"control\" (control-plane) call, however many, and never counts it", async () => {
     const state = createBreakerState();
     const policy = volumeBreaker(fixed("allow"), state, { threshold: 3 });
     for (let i = 0; i < 20; i++) {
-      const ctx = ctxFor(engineActDesc);
+      const ctx = ctxFor(controlActDesc);
       expect(await policy.evaluate(ctx)).toBe("allow");
       await policy.onExecuted!(ctx, "allow");
     }
-    expect(await policy.evaluate(ctxFor(engineActDesc))).toBe("allow"); // never tripped
-    // An ordinary act-tier tool's OWN tally is untouched by the engine-source
+    expect(await policy.evaluate(ctxFor(controlActDesc))).toBe("allow"); // never tripped
+    // An ordinary act-tier tool's OWN tally is untouched by the control-plane
     // calls above (they were never counted at all).
     const ordinaryPolicy = volumeBreaker(fixed("allow"), state, { threshold: 3 });
     for (let i = 0; i < 2; i++) {
@@ -157,6 +164,19 @@ describe("volumeBreaker", () => {
       await ordinaryPolicy.onExecuted!(ctx, "allow");
     }
     expect(await ordinaryPolicy.evaluate(ctxFor(actDesc))).toBe("allow"); // only 2 counted, below threshold 3
+  });
+
+  it("REGRESSION (ENG-193 PR #40 review — item A): a host-supplied server tool (source \"engine\") IS counted and forced to approve past the threshold", async () => {
+    const state = createBreakerState();
+    const policy = volumeBreaker(fixed("allow"), state, { threshold: 3 });
+    for (let i = 0; i < 3; i++) {
+      const ctx = ctxFor(hostEngineActDesc);
+      expect(await policy.evaluate(ctx)).toBe("allow");
+      await policy.onExecuted!(ctx, "allow");
+    }
+    const ctx4 = ctxFor(hostEngineActDesc);
+    expect(await policy.evaluate(ctx4)).toBe("approve");
+    expect(getEscalationReason(ctx4)).toMatch(/volume/);
   });
 });
 
@@ -309,9 +329,9 @@ describe("cautionBreaker", () => {
     expect(getEscalationSource(ctx)).toBe("verdict");
   });
 
-  it("REVIEW FOLLOW-UP: an active caution does not block an engine-source (control-plane) act-tier call", async () => {
+  it("REVIEW FOLLOW-UP: an active caution does not block a source-\"control\" (control-plane) act-tier call", async () => {
     const state = createBreakerState();
-    // Trip caution with 3 consecutive REAL judge escalations on a non-engine tool.
+    // Trip caution with 3 consecutive REAL judge escalations on a non-control tool.
     for (let i = 0; i < 3; i++) {
       const esc = cautionBreaker(escalatingStub("approve"), state, { consecutiveThreshold: 3 });
       const ctx = { ...ctxFor(actDesc), toolCallId: `t-${i}` };
@@ -321,11 +341,25 @@ describe("cautionBreaker", () => {
     // Confirm it IS active for the ordinary act-tier tool...
     const ordinary = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 });
     expect(await ordinary.evaluate(ctxFor(actDesc))).toBe("approve");
-    // ...but an engine-source tool's "allow" (e.g. always_ask_before) passes straight through.
-    const engineCtx = ctxFor(engineActDesc);
-    const engine = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 });
-    expect(await engine.evaluate(engineCtx)).toBe("allow");
-    expect(getEscalationReason(engineCtx)).toBeUndefined();
+    // ...but a control-plane tool's "allow" (e.g. always_ask_before) passes straight through.
+    const controlCtx = ctxFor(controlActDesc);
+    const control = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 });
+    expect(await control.evaluate(controlCtx)).toBe("allow");
+    expect(getEscalationReason(controlCtx)).toBeUndefined();
+  });
+
+  it("REGRESSION (ENG-193 PR #40 review — item A): an active caution DOES gate a host-supplied server tool (source \"engine\")", async () => {
+    const state = createBreakerState();
+    for (let i = 0; i < 3; i++) {
+      const esc = cautionBreaker(escalatingStub("approve"), state, { consecutiveThreshold: 3 });
+      const ctx = { ...ctxFor(actDesc), toolCallId: `h-${i}` };
+      await esc.evaluate(ctx);
+      await esc.onExecuted!(ctx, "approve");
+    }
+    const hostCtx = ctxFor(hostEngineActDesc);
+    const policy = cautionBreaker(fixed("allow"), state, { consecutiveThreshold: 3 });
+    expect(await policy.evaluate(hostCtx)).toBe("approve");
+    expect(getEscalationReason(hostCtx)).toBeTruthy();
   });
 
   it("caution state is scoped per principal — the same threadId under a different user starts fresh", async () => {

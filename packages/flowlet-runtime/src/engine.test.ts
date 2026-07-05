@@ -7,6 +7,7 @@ import { z } from "zod";
 import { SCHEMA_VERSION } from "@flowlet/core";
 import type { AuditEvent, AuditLog, FlowletUIMessage } from "@flowlet/core";
 import { createFlowletAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine";
+import { auditPolicy, composePolicy, volumeBreaker, createBreakerState } from "./policy";
 import type { ApprovalPolicy, PolicyContext } from "./policy";
 import type { ComposioClient } from "./composio";
 
@@ -620,13 +621,22 @@ describe("createFlowletAgent", () => {
       };
     }
 
+    // ENG-193 PR #40 review (item G): client-tool auditing now happens by
+    // routing through the COMPOSED `policy`'s own `onExecuted` (auditPolicy
+    // appends the event, volumeBreaker counts) instead of the engine
+    // appending to a separately-wired `audit` log — so every test below
+    // composes `auditPolicy` into `policy` itself, exactly as a real host's
+    // policy stack does (`composeProductionPolicy`/`demoPolicy` both already
+    // wire `auditPolicy` this way).
+    function policyWithAudit(audit: AuditLog): ApprovalPolicy {
+      return composePolicy(allowPolicy, auditPolicy(audit, { principalScope: (ctx) => ({ tenantId: "t", subject: ctx.principal.userId }) }));
+    }
+
     it("appends exactly one tool_execution event for an output-available client-tool part", async () => {
       const audit = makeAudit();
       const agent = createFlowletAgent({
         model: mockModel(),
-        policy: allowPolicy,
-        audit,
-        auditPrincipal: (p) => ({ tenantId: "t", subject: p.userId }),
+        policy: policyWithAudit(audit),
       });
 
       await collect(
@@ -655,9 +665,7 @@ describe("createFlowletAgent", () => {
       const audit = makeAudit();
       const agent = createFlowletAgent({
         model: mockModel(),
-        policy: allowPolicy,
-        audit,
-        auditPrincipal: (p) => ({ tenantId: "t", subject: p.userId }),
+        policy: policyWithAudit(audit),
       });
       const serverTool = tool({
         description: "server tool",
@@ -681,9 +689,7 @@ describe("createFlowletAgent", () => {
       const audit = makeAudit();
       const agent = createFlowletAgent({
         model: mockModel(),
-        policy: allowPolicy,
-        audit,
-        auditPrincipal: (p) => ({ tenantId: "t", subject: p.userId }),
+        policy: policyWithAudit(audit),
       });
       const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
       const messages = historyWithClientResult("call-client-2");
@@ -691,6 +697,37 @@ describe("createFlowletAgent", () => {
       await collect(agent.run({ messages, tools, signal: new AbortController().signal }));
       await collect(agent.run({ messages, tools, signal: new AbortController().signal }));
 
+      expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(1);
+    });
+
+    it("REGRESSION (ENG-193 PR #40 review — item G): a client-tool execution now counts toward volumeBreaker's threshold", async () => {
+      const audit = makeAudit();
+      const state = createBreakerState();
+      const policy = volumeBreaker(policyWithAudit(audit), state, { threshold: 1 });
+      const tools = { send_thing: clientTool({ readOnlyHint: false, destructiveHint: false }) };
+      const agent = createFlowletAgent({ model: mockModel(), policy });
+
+      // First call executes under the threshold...
+      await collect(
+        agent.run({
+          messages: historyWithClientResult("call-vol-1"),
+          tools,
+          principal: { userId: "user-1" },
+          threadId: "th-1",
+          signal: new AbortController().signal,
+        }),
+      );
+      // ...a SECOND client tool call in the same thread is now past threshold
+      // 1 and must be forced to "approve" by volumeBreaker's evaluate — proof
+      // the first call was actually COUNTED via onExecuted.
+      const forced = await policy.evaluate({
+        toolName: "send_thing",
+        input: {},
+        descriptor: { name: "send_thing", source: "caller", annotations: { readOnlyHint: false }, hasExecute: false, kind: "function", executor: "client" },
+        principal: { userId: "user-1" },
+        threadId: "th-1",
+      });
+      expect(forced).toBe("approve");
       expect(audit.events.filter((e) => e.kind === "tool_execution")).toHaveLength(1);
     });
 
@@ -704,6 +741,63 @@ describe("createFlowletAgent", () => {
         }),
       );
       expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+    });
+  });
+
+  describe("tool source labeling (ENG-193 PR #40 review — item A)", () => {
+    /** Records every descriptor.source the policy sees, keyed by tool name. */
+    function recordingPolicy(): { policy: ApprovalPolicy; sources: Record<string, string> } {
+      const sources: Record<string, string> = {};
+      return {
+        sources,
+        policy: {
+          evaluate: (ctx: PolicyContext) => {
+            sources[ctx.toolName] = ctx.descriptor.source;
+            return "allow";
+          },
+        },
+      };
+    }
+
+    it('config.tools (host-supplied server tools) land under source "engine", NOT the control-plane bucket', async () => {
+      const { policy, sources } = recordingPolicy();
+      const agent = createFlowletAgent({
+        model: mockModel({ toolName: "issue_refund", input: {} }),
+        policy,
+        tools: {
+          issue_refund: tool({ inputSchema: z.object({}), execute: async () => "ok" }),
+        },
+      });
+      await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+      expect(sources["issue_refund"]).toBe("engine");
+    });
+
+    it('config.controlTools (steering/authoring) land under source "control", alongside render_view/request_connect', async () => {
+      const { policy, sources } = recordingPolicy();
+      const agent = createFlowletAgent({
+        model: mockModel({ toolName: "always_ask_before", input: {} }),
+        policy,
+        controlTools: {
+          always_ask_before: tool({ inputSchema: z.object({}), execute: async () => "ok" }),
+        },
+      });
+      await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+      expect(sources["always_ask_before"]).toBe("control");
+    });
+
+    it("render_view and request_connect are always source \"control\", never \"engine\"", async () => {
+      const { policy, sources } = recordingPolicy();
+      const payload = {
+        formatVersion: "flowlet-genui/v1",
+        root: "r1",
+        nodes: [{ id: "r1", component: "Text", source: "prewired", props: { text: "hi" } }],
+      };
+      const agent = createFlowletAgent({
+        model: mockModel({ toolName: RENDER_VIEW_TOOL_NAME, input: payload }),
+        policy,
+      });
+      await collect(agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }));
+      expect(sources[RENDER_VIEW_TOOL_NAME]).toBe("control");
     });
   });
 });

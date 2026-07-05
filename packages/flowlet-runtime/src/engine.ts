@@ -71,8 +71,24 @@ export interface FlowletAgentConfig {
   policy: ApprovalPolicy;
   /** Default system prompt; a grounded default is used when omitted. */
   instructions?: string;
-  /** The engine's own in-process tools (the render tool is always added). */
+  /**
+   * Host-supplied server-executed tools (a mount's `options.tools`, a demo's
+   * `extraTools`). Labeled `source: "engine"` — judged and breaker-gated
+   * exactly like any other tool. NEVER exempt from the judge/breakers; do not
+   * put steering or automation-authoring tools here (see `controlTools`).
+   */
   tools?: ToolSet;
+  /**
+   * Flowlet's OWN control-plane tools — conversational steering
+   * (`always_ask_before`/`stop_asking_about`) and automation authoring tools
+   * a mount assembles itself. Merged alongside the engine's built-in
+   * `render_view`/`request_connect` under `source: "control"` (ENG-193 PR #40
+   * review — item A), the ONLY source the judge/`cautionBreaker`/
+   * `volumeBreaker` exempt. A mount must NEVER put a host-supplied business
+   * tool here — that reopens the exact mislabeling this field was added to
+   * close (host tools riding the control-plane exemption via `config.tools`).
+   */
+  controlTools?: ToolSet;
   /** Optional Composio ingestion. `client` is injectable for tests. */
   composio?: { config: ComposioConfig; client?: ComposioClient };
   /**
@@ -107,40 +123,27 @@ export interface FlowletAgentConfig {
    */
   components?: RegisteredComponent[];
   /**
-   * ENG-193 review follow-up (queued gap): audits client-executed tool calls
-   * (topology B host tools, ENG-202) that the run's INCOMING messages carry
-   * in `output-available` state. `wrapClientTool`'s `needsApproval` is the
-   * only server-side chokepoint for these tools — there is no server
-   * `execute` for `auditPolicy`'s `onExecuted` to observe (the browser is the
-   * executor) — so without this the Trust diary silently undercounts every
-   * client-tool execution. Absent -> no auditing, the same graceful no-op
-   * every other optional seam here has. Dedup is a bounded (~512) in-memory
-   * FIFO of toolCallIds PER ENGINE INSTANCE: a process restart forgets it, so
-   * a host that restarts between a tool's completion and its next turn could
-   * double-audit that one call — an accepted v1 limitation (the diary is a
-   * count, not a ledger of record).
+   * UNUSED by the engine itself since ENG-193 PR #40 review (item G) — kept
+   * on the public config shape for source compatibility with existing mounts
+   * (mirrors `policyVersion` above). Client-executed tool calls (topology B
+   * host tools, ENG-202) that the run's INCOMING messages carry in
+   * `output-available` state are now audited by routing them through
+   * `policy`'s OWN `onExecuted` (see `auditClientExecutedTools` below) — the
+   * SAME composed policy every other tool's execution already flows through
+   * — rather than appending to a separately-wired log here. A host's
+   * `policy` must itself compose an `auditPolicy` (both `@flowlet/next` and
+   * the demo hosts already do) for this trail to appear; passing `audit`
+   * here no longer does anything on its own.
    */
   audit?: AuditLog;
-  /**
-   * Maps the run's `FlowletPrincipal` onto the core audit `Principal` shape
-   * (mirrors `AutomationRunnerConfig.auditPrincipal` / flowlet-next's
-   * `policy-stack.ts` `principalScope`). Defaults to
-   * `{ tenantId: "", subject: principal.userId }` when `audit` is set
-   * without an explicit mapping.
-   */
+  /** UNUSED by the engine itself — see `audit` above. Kept for source
+   *  compatibility only. */
   auditPrincipal?: (principal: FlowletPrincipal) => Principal;
 }
 
-/** Default `auditPrincipal` mapping (see `FlowletAgentConfig.auditPrincipal`)
- *  — an empty tenantId is a safe placeholder; hosts that set `audit` always
- *  supply their own scoped mapping alongside it. */
-function defaultAuditPrincipal(principal: FlowletPrincipal): Principal {
-  return { tenantId: "", subject: principal.userId };
-}
-
-/** Bound on the client-tool-audit dedupe FIFO (see `FlowletAgentConfig.audit`).
- *  Sized so a long-lived instance can't realistically evict a live id and
- *  double-count within one process lifetime (PR #40 review). */
+/** Bound on the client-tool-audit dedupe FIFO (see `auditClientExecutedTools`
+ *  below). Sized so a long-lived instance can't realistically evict a live id
+ *  and double-count within one process lifetime (PR #40 review). */
 const MAX_AUDITED_CLIENT_CALLS = 4096;
 
 /** Structural view of the ai SDK tool-part shape scanned for client-executed
@@ -150,6 +153,7 @@ interface ClientResultPart {
   type: string;
   toolCallId?: string;
   state?: string;
+  input?: unknown;
 }
 
 /** Merge `sources` into a name -> descriptor map WITHOUT policy-wrapping —
@@ -167,19 +171,38 @@ function resolveSourceDescriptors(sources: ToolSourceInput[]): Map<string, ToolD
   return map;
 }
 
-/** Scan `messages` for output-available CLIENT-executed tool parts not yet
- *  audited and append a `tool_execution` event for each (ENG-193 review
- *  follow-up). `seen` both checks and marks — see `alreadyAuditedClientCall`.
- *  Audit is a trail, not a gate: a write failure is swallowed, never thrown
- *  into the run. */
+/**
+ * Scan `messages` for output-available CLIENT-executed tool parts not yet
+ * observed and route each one through `policy.onExecuted` (ENG-193 review
+ * follow-up; PR #40 review — item G). `wrapClientTool.needsApproval` is the
+ * only server-side chokepoint for these tools — there is no server `execute`
+ * for the SDK to call `onExecuted` from — so without this scan a client-tool
+ * success never reaches the policy stack's `onExecuted` at all: `auditPolicy`
+ * never appends its `tool_execution` event for these, AND `volumeBreaker`
+ * never counts them toward its threshold.
+ *
+ * Routing through `policy.onExecuted` (rather than appending an audit event
+ * directly, the old shape) means this ONE call now drives both effects
+ * uniformly — no separate, parallel bookkeeping to keep in sync. `seen` is
+ * the ONLY dedupe gate: `auditPolicy.onExecuted` itself appends
+ * `tool_execution` unconditionally on every call (no toolCallId dedupe of its
+ * own — only its ESCALATION append is deduped, see audit-policy.ts), so
+ * calling this scan again over the SAME settled history must never re-invoke
+ * `onExecuted` for a toolCallId it already processed, or every re-scan would
+ * double-append.
+ *
+ * `seen` both checks and marks — see `alreadyAuditedClientCall`. A failure is
+ * swallowed, never thrown into the run — this is a trail/counter, not a gate.
+ */
 async function auditClientExecutedTools(args: {
   messages: FlowletUIMessage[];
   descriptors: Map<string, ToolDescriptor>;
-  audit: AuditLog;
-  principal: Principal;
+  policy: ApprovalPolicy;
+  principal: FlowletPrincipal;
+  threadId?: string;
   seen: (toolCallId: string) => boolean;
 }): Promise<void> {
-  const { messages, descriptors, audit, principal, seen } = args;
+  const { messages, descriptors, policy, principal, threadId, seen } = args;
   for (const message of messages) {
     for (const rawPart of message.parts) {
       const part = rawPart as ClientResultPart;
@@ -189,16 +212,17 @@ async function auditClientExecutedTools(args: {
       if (!descriptor || descriptor.executor !== "client") continue;
       if (seen(part.toolCallId)) continue;
       try {
-        await audit.append({
-          at: new Date().toISOString(),
-          principal,
-          kind: "tool_execution",
-          toolName,
-          toolCallId: part.toolCallId,
-          mutating: descriptor.annotations.readOnlyHint !== true,
-          dangerous: descriptor.annotations.destructiveHint === true,
-          outcome: "ok",
-        });
+        await policy.onExecuted?.(
+          {
+            toolName,
+            input: part.input,
+            descriptor,
+            principal,
+            threadId,
+            toolCallId: part.toolCallId,
+          },
+          "allow",
+        );
       } catch (err) {
         console.error(`[flowlet] failed to audit client-executed tool "${toolName}":`, err);
       }
@@ -407,35 +431,47 @@ export function createFlowletAgent(config: FlowletAgentConfig): FlowletAgent {
           composioDescriptors = ingested.descriptors;
         }
 
-        // 4. Sources in precedence order: caller > engine > composio.
+        // 4. Sources in precedence order: caller > control > engine > composio.
+        //    `control` (steering/authoring + the engine's own render/connect
+        //    tools) sits ABOVE `engine` (host-supplied server tools) so a host
+        //    tool can never shadow a control-plane name (ENG-193 PR #40 review
+        //    — item A: these two buckets must stay SEPARATE — merging a host's
+        //    tools into `control` is exactly the mislabeling that let host
+        //    tools ride the judge/breaker exemption).
         const sources: ToolSourceInput[] = [
           // Defensive: a non-TS caller may omit `tools` entirely.
           { source: "caller", tools: input.tools ?? {} },
           {
-            source: "engine",
+            source: "control",
             tools: {
-              ...config.tools,
+              ...config.controlTools,
               [RENDER_VIEW_TOOL_NAME]: renderViewTool,
               [REQUEST_CONNECT_TOOL_NAME]: requestConnectTool,
             },
           },
+          { source: "engine", tools: config.tools ?? {} },
           { source: "composio", tools: composioTools, descriptors: composioDescriptors },
         ];
 
-        // 4b. ENG-193 review follow-up (queued gap): audit client-executed
-        // tool calls the INCOMING history already carries resolved
-        // (output-available) — there is no server execute for the normal
-        // auditPolicy.onExecuted to observe for these. Absent `config.audit`
-        // this is a no-op, same as every other optional seam here.
-        if (config.audit) {
-          await auditClientExecutedTools({
-            messages: input.messages,
-            descriptors: resolveSourceDescriptors(sources),
-            audit: config.audit,
-            principal: (config.auditPrincipal ?? defaultAuditPrincipal)(principal),
-            seen: alreadyAuditedClientCall,
-          });
-        }
+        // 4b. ENG-193 review follow-up (queued gap) + PR #40 review (item G):
+        // client-executed tool calls the INCOMING history already carries
+        // resolved (output-available) never reach `onExecuted` any other way
+        // — there is no server `execute` for the SDK to call it from. Routed
+        // through `config.policy.onExecuted` (not gated on `config.audit`
+        // anymore, unlike the old audit-only shape): this is what lets
+        // `auditPolicy` append its `tool_execution` trail AND `volumeBreaker`
+        // count these calls toward its threshold, for every host regardless
+        // of whether it wires an audit log. `resolveSourceDescriptors` and the
+        // dedupe below make this cheap even when nothing in the composed
+        // policy consumes `onExecuted`.
+        await auditClientExecutedTools({
+          messages: input.messages,
+          descriptors: resolveSourceDescriptors(sources),
+          policy: config.policy,
+          principal,
+          threadId,
+          seen: alreadyAuditedClientCall,
+        });
 
         // 5. Merge + uniformly policy-wrap every tool.
         const tools = buildToolset({
