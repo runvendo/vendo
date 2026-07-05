@@ -98,6 +98,10 @@ const FIRST_SEGMENTS = new Set([
  * known segment (scanning right-to-left so a host route named e.g.
  * `/threads/...` upstream can't confuse it). The mount itself can't be
  * assumed to be `api/flowlet` — hosts choose their own path.
+ *
+ * Boundary: an opaque id equal to a reserved first segment (a thread
+ * literally named "chat") would shorten the tail. Ids here are UUIDs, so
+ * routes carrying ids must keep it that way.
  */
 export function routeTail(req: Request): string {
   const segments = new URL(req.url).pathname.split("/").filter(Boolean);
