@@ -37,6 +37,7 @@ import {
   TabsList as _TabsList,
   TabsTrigger as _TabsTrigger,
   TabsContent as _TabsContent,
+  useTheme as _useTheme,
 } from "@openuidev/react-ui";
 import type {
   CardProps,
@@ -150,3 +151,5 @@ export const Tabs = ui<TabsProps & { children?: ReactNode }>(_Tabs);
 export const TabsList = ui<TabsListProps & { children?: ReactNode }>(_TabsList);
 export const TabsTrigger = ui<TabsTriggerProps>(_TabsTrigger);
 export const TabsContent = ui<TabsContentProps & { children?: ReactNode }>(_TabsContent);
+
+export const useTheme = _useTheme;

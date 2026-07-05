@@ -3,6 +3,7 @@ import type { PrewiredDescriptor } from "./descriptor";
 import { cardDescriptor } from "./components/Card/descriptor";
 import { tableDescriptor } from "./components/Table/descriptor";
 import { chartDescriptor } from "./components/Chart/descriptor";
+import { sankeyDescriptor } from "./components/Sankey/descriptor";
 import { formDescriptor } from "./components/Form/descriptor";
 import { accordionDescriptor } from "./components/Accordion/descriptor";
 import { carouselDescriptor } from "./components/Carousel/descriptor";
@@ -27,6 +28,7 @@ export const descriptors: PrewiredDescriptor[] = [
   cardDescriptor,
   tableDescriptor,
   chartDescriptor,
+  sankeyDescriptor,
   formDescriptor,
   accordionDescriptor,
   carouselDescriptor,

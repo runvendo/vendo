@@ -55,14 +55,7 @@ export default function TransactionDetailPage() {
   const { data: t, isLoading, error } = useTransaction(id)
   const { data: accounts } = useAccounts()
 
-  const [category, setCategory] = React.useState<Category | null>(null)
-
-  // Sync the editable category only when the transaction loads/changes,
-  // not on every SWR revalidation (which would clobber a local edit).
-  React.useEffect(() => {
-    if (t) setCategory(t.category)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t?.id])
+  const [categoryOverride, setCategoryOverride] = React.useState<{ id: string; category: Category } | null>(null)
 
   if (isLoading || (!t && !error)) {
     return (
@@ -96,7 +89,7 @@ export default function TransactionDetailPage() {
   }
 
   const credit = t.amount > 0
-  const cat = category ?? t.category
+  const cat = categoryOverride?.id === t.id ? categoryOverride.category : t.category
   const account = accounts?.find((a) => a.id === t.accountId)
   const statusTone = t.status === "posted" ? "positive" : "neutral"
   const statusLabel = t.status.charAt(0).toUpperCase() + t.status.slice(1)
@@ -155,7 +148,7 @@ export default function TransactionDetailPage() {
                       <DropdownItem
                         key={c}
                         onSelect={() => {
-                          setCategory(c)
+                          setCategoryOverride({ id: t.id, category: c })
                           toast({ title: "Category updated", description: "Demo only" })
                         }}
                       >

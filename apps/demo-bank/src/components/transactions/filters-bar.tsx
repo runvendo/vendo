@@ -74,16 +74,14 @@ export function FiltersBar({
   onChange: (f: Filters) => void
 }) {
   const { data: accounts } = useAccounts()
-  const [text, setText] = React.useState(value.search)
+  const [draft, setDraft] = React.useState(() => ({ search: value.search, source: value.search }))
+  const text = draft.source === value.search ? draft.search : value.search
   const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
-  // Keep local input synced if filters are reset externally (e.g. Clear filters).
-  React.useEffect(() => { setText(value.search) }, [value.search])
 
   const patch = (p: Partial<Filters>) => onChange({ ...value, ...p })
 
   const onText = (next: string) => {
-    setText(next)
+    setDraft({ search: next, source: value.search })
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => onChange({ ...value, search: next }), 250)
   }

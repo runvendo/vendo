@@ -26,7 +26,10 @@ export function FlowletPoller({
   intervalMs?: number;
 }) {
   const onFireRef = useRef(onFire);
-  onFireRef.current = onFire;
+
+  useEffect(() => {
+    onFireRef.current = onFire;
+  }, [onFire]);
 
   useEffect(() => {
     let stopped = false;
