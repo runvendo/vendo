@@ -4,6 +4,7 @@ import { useShell } from "../context";
 import { Skeleton } from "../components/Skeleton";
 import { toolAction } from "../components/tool-labels";
 import { AutomationCard, isAutomationApproval } from "../components/AutomationCard.js";
+import { AutomationCreatedMorph, type AutomationCreatedNotice } from "../components/AutomationCreatedMorph.js";
 import { VoiceBlob } from "./VoiceBlob";
 import type { VoiceFeedEntry, VoiceSnapshot } from "./voice-session";
 import type { VoiceBlobState } from "./VoiceBlob";
@@ -91,6 +92,10 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
   // A settled consent lingers briefly as a receipt in the bar, then clears —
   // the audit copy lives in the transcript/thread, not on the stage.
   const [receipt, setReceipt] = useState<ApprovalEntry | null>(null);
+  // When a voice automation approval is approved, play the SAME card->top-right
+  // pill morph chat does (the morph is body-portaled, so it docks itself).
+  const [morphNotice, setMorphNotice] = useState<AutomationCreatedNotice | null>(null);
+  const automationCardRef = useRef<HTMLDivElement>(null);
   const resolvedCount = approvals.filter((entry) => entry.resolution).length;
   const prevResolved = useRef(0);
   const receiptTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -326,11 +331,21 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
           yes (and stays tappable); critical demands the named tap. A settled
           decision lingers as a receipt, then clears. */}
       {pendingApproval && isAutomationApproval(pendingApproval.toolName) ? (
-        <div className="fl-voice-consent is-automation" role="group" aria-label="Automation approval">
+        <div className="fl-voice-consent is-automation" role="group" aria-label="Automation approval" ref={automationCardRef}>
           <AutomationCard
             toolName={pendingApproval.toolName}
             input={pendingApproval.input}
-            onApprove={() => onApprove(pendingApproval.id, "tap")}
+            onApprove={() => {
+              const card = automationCardRef.current?.querySelector<HTMLElement>(".fl-automation-approval") ?? automationCardRef.current;
+              const rect = card?.getBoundingClientRect();
+              setMorphNotice({
+                id: pendingApproval.id,
+                toolName: pendingApproval.toolName,
+                input: pendingApproval.input,
+                ...(rect ? { sourceRect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height } } : {}),
+              });
+              onApprove(pendingApproval.id, "tap");
+            }}
             onDecline={() => onDecline(pendingApproval.id)}
           />
         </div>
@@ -466,6 +481,9 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
             </div>
           ))}
         </div>
+      )}
+      {morphNotice && (
+        <AutomationCreatedMorph notice={morphNotice} onDone={() => setMorphNotice(null)} />
       )}
     </div>
   );
