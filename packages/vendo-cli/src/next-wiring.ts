@@ -61,6 +61,9 @@ export const VENDO_TRANSPILE_PACKAGES = [
 const NEXT_SERVER_EXTERNAL_PACKAGES = ["@electric-sql/pglite"] as const;
 const PGLITE_DEPENDENCY = "@electric-sql/pglite";
 const PGLITE_VERSION = "^0.2.0";
+const VENDO_CLI_DEPENDENCY = "@vendoai/cli";
+const VENDO_CLI_VERSION = "latest";
+const VENDO_SYNC_COMMAND = "node ./node_modules/@vendoai/cli/dist/cli.js sync";
 
 /** Locate the App Router directory (`app/` or `src/app/`) with a root layout. */
 export async function findAppDir(
@@ -324,9 +327,9 @@ export function addDependency(pkgJson: string, name: string, version: string): s
   return JSON.stringify(pkg, null, 2) + "\n";
 }
 
-/** Add `vendo sync` to the app's `prebuild` script (create or extend),
- *  so every production build refreshes the capture + sandbox environment.
- *  Idempotent: never adds a second copy. */
+/** Add the installed Vendo CLI's sync command to the app's `prebuild` script
+ *  (create or extend), so every production build refreshes the capture +
+ *  sandbox environment. Idempotent: never adds a second copy. */
 export function addPrebuildSync(pkgJson: string): string | null {
   let pkg: Record<string, unknown>;
   try {
@@ -336,8 +339,14 @@ export function addPrebuildSync(pkgJson: string): string | null {
   }
   const scripts = (pkg["scripts"] ?? {}) as Record<string, string>;
   const existing = scripts["prebuild"];
-  if (existing?.includes("vendo sync")) return pkgJson; // already wired
-  scripts["prebuild"] = existing ? `${existing} && vendo sync` : "vendo sync";
+  if (existing?.includes(VENDO_SYNC_COMMAND)) return pkgJson; // already wired
+  if (existing?.trim() === "vendo sync") {
+    scripts["prebuild"] = VENDO_SYNC_COMMAND;
+  } else if (existing?.endsWith(" && vendo sync")) {
+    scripts["prebuild"] = `${existing.slice(0, -" && vendo sync".length)} && ${VENDO_SYNC_COMMAND}`;
+  } else {
+    scripts["prebuild"] = existing ? `${existing} && ${VENDO_SYNC_COMMAND}` : VENDO_SYNC_COMMAND;
+  }
   pkg["scripts"] = scripts;
   return JSON.stringify(pkg, null, 2) + "\n";
 }
@@ -831,27 +840,29 @@ export async function wireNextApp(
     summary.written.push(rel(dest));
   }
 
-  // 8. package.json: @vendoai/next + PGlite dependencies + prebuild sync
-  // wiring. PGlite is also server-externalized in next.config, but pnpm's
+  // 8. package.json: @vendoai/next + PGlite + CLI dependencies + prebuild
+  // sync wiring. PGlite is also server-externalized in next.config, but pnpm's
   // strict node_modules still requires it to be resolvable from the app root.
   if (pkgRaw) {
     const withDep = addDependency(pkgRaw, "@vendoai/next", "latest");
     if (withDep === null) {
-      summary.skipped.push({ step: "package.json", reason: "unparsable — add @vendoai/next and @electric-sql/pglite yourself" });
+      summary.skipped.push({ step: "package.json", reason: "unparsable — add @vendoai/next, @electric-sql/pglite, and @vendoai/cli yourself" });
       summary.manual.push('add "@vendoai/next" to package.json dependencies and install');
       summary.manual.push('add "@electric-sql/pglite" to package.json dependencies and install');
-      summary.manual.push('add "vendo sync" to your package.json "prebuild" script');
+      summary.manual.push(`add "${VENDO_CLI_DEPENDENCY}" to package.json dependencies and install`);
+      summary.manual.push(`add "${VENDO_SYNC_COMMAND}" to your package.json "prebuild" script`);
     } else {
       const withPglite = addDependency(withDep, PGLITE_DEPENDENCY, PGLITE_VERSION) ?? withDep;
-      const withSync = addPrebuildSync(withPglite) ?? withPglite;
+      const withCli = addDependency(withPglite, VENDO_CLI_DEPENDENCY, VENDO_CLI_VERSION) ?? withPglite;
+      const withSync = addPrebuildSync(withCli) ?? withCli;
       if (withSync !== pkgRaw) {
         await fs.writeFile(path.join(targetDir, "package.json"), withSync);
         summary.edited.push("package.json");
-        if (withPglite !== pkgRaw) {
-          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @vendoai/next and @electric-sql/pglite");
+        if (withCli !== pkgRaw) {
+          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @vendoai/next, @electric-sql/pglite, and @vendoai/cli");
         }
       } else {
-        summary.skipped.push({ step: "package.json", reason: "@vendoai/next + @electric-sql/pglite + prebuild sync already present" });
+        summary.skipped.push({ step: "package.json", reason: "@vendoai/next + @electric-sql/pglite + @vendoai/cli + prebuild sync already present" });
       }
     }
   }

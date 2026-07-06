@@ -41,6 +41,13 @@ async function createWorkspace(): Promise<string> {
     main: "index.js",
     files: ["index.js"],
   });
+  await writeJson(path.join(workspaceRoot, "packages/vendo-cli/package.json"), {
+    name: "@vendoai/cli",
+    version: "0.1.0",
+    type: "module",
+    main: "index.js",
+    files: ["index.js"],
+  });
   await writeJson(path.join(workspaceRoot, "packages/vendo-next/package.json"), {
     name: "@vendoai/next",
     version: "0.1.0",
@@ -61,7 +68,7 @@ async function createWorkspace(): Promise<string> {
       "@vendoai/core": "0.1.0",
     },
   });
-  for (const dir of ["vendo-core", "vendo-next", "vendo-shell"]) {
+  for (const dir of ["vendo-cli", "vendo-core", "vendo-next", "vendo-shell"]) {
     await writeFile(path.join(workspaceRoot, "packages", dir, "index.js"), "export {};\n");
   }
   await mkdir(path.join(workspaceRoot, "vendor"), { recursive: true });
@@ -127,26 +134,30 @@ describe("createLocalVendoInjector", () => {
     expect(second.repoDir).toBe(repoTwo);
     expect(buildCount).toBe(1);
     expect([...packCounts.entries()].sort()).toEqual([
+      ["@vendoai/cli", 1],
       ["@vendoai/core", 1],
       ["@vendoai/next", 1],
       ["@vendoai/shell", 1],
     ]);
     await expect(readdir(path.join(repoOne, "vendor"))).resolves.toEqual(expect.arrayContaining([
       "fluidkit-0.5.0-test.tgz",
+      "vendoai-cli-0.1.0.tgz",
       "vendoai-core-0.1.0.tgz",
       "vendoai-next-0.1.0.tgz",
       "vendoai-shell-0.1.0.tgz",
     ]));
     await expect(readdir(path.join(repoTwo, "vendor"))).resolves.toEqual(expect.arrayContaining([
+      "vendoai-cli-0.1.0.tgz",
       "vendoai-core-0.1.0.tgz",
       "vendoai-next-0.1.0.tgz",
       "vendoai-shell-0.1.0.tgz",
     ]));
 
     const pkg = await readPackageJson(repoTwo);
+    expect(pkg.dependencies["@vendoai/cli"]).toBe("file:vendor/vendoai-cli-0.1.0.tgz");
     expect(pkg.dependencies["@vendoai/next"]).toBe("file:vendor/vendoai-next-0.1.0.tgz");
     expect(pkg.dependencies["@vendoai/shell"]).toBe("file:vendor/vendoai-shell-0.1.0.tgz");
-    for (const name of ["@vendoai/core", "@vendoai/next", "@vendoai/shell"]) {
+    for (const name of ["@vendoai/cli", "@vendoai/core", "@vendoai/next", "@vendoai/shell"]) {
       expect(pkg.pnpm.overrides[name]).toMatch(/^file:vendor\/vendoai-/);
     }
     expect(pkg.pnpm.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");

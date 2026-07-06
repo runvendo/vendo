@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-export const LOCAL_DIRECT_DEPENDENCIES = ["@vendoai/next", "@vendoai/shell"] as const;
+export const LOCAL_DIRECT_DEPENDENCIES = ["@vendoai/cli", "@vendoai/next", "@vendoai/shell"] as const;
 
 type PackageJson = Record<string, unknown>;
 
