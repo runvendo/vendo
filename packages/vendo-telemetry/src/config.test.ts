@@ -13,8 +13,11 @@ afterEach(() => {
 });
 
 describe("config store", () => {
+  // These pass an explicit empty env: loadConfig defaults to process.env, and
+  // under a real CI runner CI=true is an env opt-out (ephemeral config, nothing
+  // persisted), which is exactly the behavior the "(review)" cases below pin.
   it("creates a random anonymous id on first load", () => {
-    const c = loadConfig(home);
+    const c = loadConfig(home, {});
     expect(c.anonymousId).toMatch(/[0-9a-f-]{36}/);
     expect(c.optedOut).toBe(false);
     expect(c.noticeShown).toBe(false);
@@ -22,15 +25,15 @@ describe("config store", () => {
   });
 
   it("returns the same id on subsequent loads", () => {
-    const a = loadConfig(home);
-    const b = loadConfig(home);
+    const a = loadConfig(home, {});
+    const b = loadConfig(home, {});
     expect(b.anonymousId).toBe(a.anonymousId);
   });
 
   it("persists updates", () => {
-    const c = loadConfig(home);
+    const c = loadConfig(home, {});
     saveConfig(home, { ...c, optedOut: true, noticeShown: true });
-    const reread = loadConfig(home);
+    const reread = loadConfig(home, {});
     expect(reread.optedOut).toBe(true);
     expect(reread.noticeShown).toBe(true);
   });
