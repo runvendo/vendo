@@ -98,7 +98,7 @@ export default function Page() {
 `,
     });
     const state = await inspectVendoState(dir);
-    expect(state.remixAnchors).toEqual([{ file: path.join("src", "app", "page.tsx"), ids: ["upcoming-deadlines"] }]);
+    expect(state.remixAnchors).toEqual([{ file: "src/app/page.tsx", ids: ["upcoming-deadlines"] }]);
   });
 
   it("finds a single-quoted literal-id VendoRemix anchor (capture.ts's AST walk accepts both quote styles)", async () => {
@@ -110,7 +110,7 @@ export default function Page() {
 `,
     });
     const state = await inspectVendoState(dir);
-    expect(state.remixAnchors).toEqual([{ file: path.join("src", "app", "page.tsx"), ids: ["upcoming-deadlines"] }]);
+    expect(state.remixAnchors).toEqual([{ file: "src/app/page.tsx", ids: ["upcoming-deadlines"] }]);
   });
 
   it("finds a dynamic-id VendoRemix anchor with an empty ids list", async () => {
@@ -122,7 +122,7 @@ export default function Page({ id }: { id: string }) {
 `,
     });
     const state = await inspectVendoState(dir);
-    expect(state.remixAnchors).toEqual([{ file: path.join("src", "app", "page.tsx"), ids: [] }]);
+    expect(state.remixAnchors).toEqual([{ file: "src/app/page.tsx", ids: [] }]);
   });
 
   it("reports a fully wired app (route file + vendo-root present under src/app)", async () => {

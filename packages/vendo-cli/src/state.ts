@@ -46,7 +46,7 @@ const EMPTY_TOOLS_FALLBACK = { version: 1, tools: [], events: [] };
 export type ToolsStatus = "missing" | "empty-fallback" | "real";
 
 export interface RemixAnchorSite {
-  /** Path relative to targetDir. */
+  /** Path relative to targetDir, forward-slash separated. */
   file: string;
   /** Literal anchor ids found in this file (dynamic `id={...}` anchors contribute no id here). */
   ids: string[];
@@ -71,11 +71,11 @@ export interface VendoState {
   wired: WiringState;
 }
 
-// Literal-id capture inside a <VendoRemix ...> opening tag. Cheap regex, not a
-// full parse (mirrors what sync/capture.ts effectively keys on — a literal
-// string `id` attribute; its AST walk accepts either quote style); dynamic
-// ids (`id={...}`) simply yield no match here.
-const ANCHOR_ID_RE = /<VendoRemix\b[^>]*?\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/gs;
+// Literal-id capture inside a <VendoRemix ...> opening tag. A cheap regex for
+// fact-gathering, not a parse: consumers key on file-level detection; the ids
+// list is best-effort and may diverge from sync/capture.ts's AST walk on
+// exotic attribute layouts. Dynamic ids (`id={...}`) simply yield no match.
+const ANCHOR_ID_RE = /<VendoRemix\b[^>]*?\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 async function inspectRemixAnchors(targetDir: string): Promise<RemixAnchorSite[]> {
   const files = await walk(targetDir, (rel) => /\.(tsx|jsx)$/.test(rel));
@@ -89,7 +89,7 @@ async function inspectRemixAnchors(targetDir: string): Promise<RemixAnchorSite[]
     }
     if (!text.includes("VendoRemix")) continue;
     const ids = [...text.matchAll(ANCHOR_ID_RE)].map((m) => (m[1] ?? m[2])!);
-    sites.push({ file: path.relative(targetDir, file), ids });
+    sites.push({ file: path.relative(targetDir, file).split(path.sep).join("/"), ids });
   }
   return sites.sort((a, b) => a.file.localeCompare(b.file));
 }
