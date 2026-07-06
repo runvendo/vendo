@@ -421,6 +421,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
         console.error(`LLM-assisted component discovery failed; continuing without generated components: ${message}`);
         report.components = {
           candidates: 0,
+          offered: 0,
           written: [],
           excluded: [],
           failed: [{ file: "(component discovery)", error: message }],
@@ -528,9 +529,10 @@ export async function runInit(opts: InitOptions): Promise<number> {
     // Which command drove the pipeline — `refresh` delegates to runInit, so
     // both commands emit init_completed; this is how they're distinguished.
     command: opts.mode ?? "init",
-    // Catalog picker: offered = candidates scanned, accepted = componentCount
-    // (written wrappers). Deterministic (no-model) runs never run the picker → 0.
-    componentsOffered: report.components?.candidates ?? 0,
+    // Catalog picker: offered = the FILTERED set shown to the picker (unwrapped
+    // -only on re-runs, all under --force), accepted = componentCount (written
+    // wrappers). Deterministic (no-model) runs never run the picker → 0.
+    componentsOffered: report.components?.offered ?? 0,
     componentCount: report.components?.written.length ?? 0,
     // Remix picker (splices <VendoRemix> anchors into host source): offered =
     // candidateCount, and how many were wrapped vs skipped. Null when the step

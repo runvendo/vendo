@@ -208,6 +208,63 @@ describe("init telemetry", () => {
     }
   });
 
+  it("componentsOffered reflects the FILTERED picker count on a re-run (already-wrapped not counted)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "vendo-init-tele-"));
+    const target = mkdtempSync(join(tmpdir(), "vendo-init-comp-"));
+    // Two ui/ primitives (badge, panel); no app/api routes so the ONLY model
+    // calls are the catalog propose/analyze (+ an empty remix discovery).
+    writeFileSync(join(target, "package.json"), JSON.stringify({ name: "host", dependencies: { next: "15.0.0" } }));
+    for (const [rel, body] of Object.entries({
+      "src/app/globals.css": ":root { --color-bg: #fff; }",
+      "src/components/ui/badge.tsx": "export const Badge = () => null",
+      "src/components/ui/panel.tsx": "export const Panel = () => null",
+      // A pre-existing wrapper for Badge → discovered-but-already-wrapped, so it
+      // is filtered out BEFORE the picker and must not count as offered.
+      ".vendo/components/Badge/descriptor.ts": "export const d = {};\n",
+      ".vendo/components/Badge/impl.tsx": "export const C = () => null;\n",
+    })) {
+      mkdirSync(dirname(join(target, rel)), { recursive: true });
+      writeFileSync(join(target, rel), body);
+    }
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true });
+    // Only panel is proposed (badge is filtered before propose); pick it.
+    const proposePanel = JSON.stringify({ proposals: [{ file: "src/components/ui/panel.tsx", wrappable: true, reason: "Container." }] });
+    const panelInclude = JSON.stringify({
+      include: true, reason: "primitive", name: "Panel", description: "A container.",
+      imports: ["Panel"], props: [{ name: "text", type: "string", optional: false, description: "Body." }],
+      jsx: "<Panel>{p.text}</Panel>",
+    });
+    const emptyRemix = JSON.stringify({ proposals: [] });
+    const interactor: Interactor = {
+      async maskedInput() {
+        return null;
+      },
+      async multiSelect() {
+        return ["src/components/ui/panel.tsx"] as never;
+      },
+    };
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await runInit({
+        targetDir: target,
+        skipLlm: false,
+        force: false,
+        interactive: true,
+        interactor,
+        model: textModel([proposePanel, panelInclude, emptyRemix]),
+        telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
+      });
+      const props = completedProps(fetchImpl);
+      // Two components discovered, but Badge was already wrapped → offered = 1.
+      expect(props.componentsOffered).toBe(1);
+      expect(props.componentCount).toBe(1); // only Panel written
+    } finally {
+      log.mockRestore();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
   it("records remix picker counts (offered/wrapped) without leaking names or paths", async () => {
     const home = mkdtempSync(join(tmpdir(), "vendo-init-tele-"));
     const target = mkdtempSync(join(tmpdir(), "vendo-init-remix-"));

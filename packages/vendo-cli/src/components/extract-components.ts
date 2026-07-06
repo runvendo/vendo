@@ -33,6 +33,14 @@ async function hostAliases(targetDir: string): Promise<Record<string, string>> {
 
 export interface ComponentsSummary {
   candidates: number;
+  /**
+   * How many candidates were actually offered to the catalog picker — the
+   * filtered set (unwrapped-only on an additive re-run; all of them under
+   * `--force`). Differs from {@link candidates} (total discovered) whenever a
+   * re-run finds already-wrapped components, so telemetry's "offered" count
+   * stays honest instead of over-reporting on refresh.
+   */
+  offered: number;
   written: string[];
   excluded: Array<{ file: string; reason: string }>;
   failed: Array<{ file: string; error: string }>;
@@ -167,6 +175,7 @@ export async function extractComponents(
   }
   return {
     candidates: all.length,
+    offered: candidates.length,
     written,
     excluded,
     failed,
