@@ -427,7 +427,25 @@ describe("createLocalVendoInjector", () => {
     expect(notes.join("\n")).toMatch(/workspace root/i);
     await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"@repo/ui": "workspace:*"');
     await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"vendoai": "file:vendor/vendoai-0.1.0.tgz"');
-    await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.not.toContain("vendoai");
+    const rootPkg = await readAnyPackageJson(repoDir) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      pnpm: { overrides: Record<string, string> };
+    };
+    expect(rootPkg.dependencies?.["vendoai"]).toBeUndefined();
+    expect(rootPkg.devDependencies?.["@vendoai/cli"]).toBeUndefined();
+    const workspaceYaml = await readFile(path.join(repoDir, "pnpm-workspace.yaml"), "utf8");
+    expect(workspaceYaml).toContain('"@vendoai/server": "file:apps/web/vendor/vendoai-server-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"@vendoai/server@0.1.0": "file:apps/web/vendor/vendoai-server-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"vendoai": "file:apps/web/vendor/vendoai-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"vendoai@0.1.0": "file:apps/web/vendor/vendoai-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"fluidkit": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
+    expect(workspaceYaml).toContain('"fluidkit@0.5.0-test": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
+    expect(workspaceYaml).toContain('"fluidkit@0.5.0": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
+    expect(rootPkg.pnpm.overrides["@vendoai/server"]).toBe("file:apps/web/vendor/vendoai-server-0.1.0.tgz");
+    expect(rootPkg.pnpm.overrides["@vendoai/server@0.1.0"]).toBe("file:apps/web/vendor/vendoai-server-0.1.0.tgz");
+    expect(rootPkg.pnpm.overrides["vendoai"]).toBe("file:apps/web/vendor/vendoai-0.1.0.tgz");
+    expect(rootPkg.pnpm.overrides["vendoai@0.1.0"]).toBe("file:apps/web/vendor/vendoai-0.1.0.tgz");
   });
 
   it("rejects lockfiles that still point Vendo packages at the registry", async () => {

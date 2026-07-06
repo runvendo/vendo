@@ -42,6 +42,7 @@ import {
   type ScoredLayerRunResult,
 } from "./layers/scored.js";
 import {
+  corpusHostCommandEnv,
   runStructuralLayer as defaultRunStructuralLayer,
   type StructuralCheckResult,
   type StructuralCommandResult,
@@ -362,7 +363,7 @@ function runShellCommand(command: string, options: { cwd: string; env?: NodeJS.P
   return new Promise((resolve, reject) => {
     const child = spawn(command, {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      env: corpusHostCommandEnv(options.env),
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
