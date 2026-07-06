@@ -124,6 +124,13 @@ export function VendoRoot({
   const [capsFailed, setCapsFailed] = useState(false);
 
   useEffect(() => {
+    // (Re)starting for this basePath: drop whatever a PREVIOUS endpoint
+    // answered. Without this, a basePath change whose new fetch fails would
+    // flip capsFailed while the stale `capabilities` object kept the chat
+    // surface and the toasts gate running on another endpoint's answer.
+    // No-op on first mount (already null/false).
+    setCapabilities(null);
+    setCapsFailed(false);
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let delay = 1_000;

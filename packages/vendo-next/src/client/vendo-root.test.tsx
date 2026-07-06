@@ -211,6 +211,34 @@ describe("VendoRoot", () => {
     }
   });
 
+  it("stops trusting a previous endpoint's capabilities when basePath changes and the new fetch fails", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/a/capabilities")) {
+        return new Response(
+          JSON.stringify({ chat: true, integrations: false, voice: false, storage: false }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/api/b/capabilities")) throw new TypeError("network down");
+      return new Response("{}", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ui = (basePath: string) => (
+      <VendoRoot productName="Acme" basePath={basePath} toasts={false}>
+        <div />
+      </VendoRoot>
+    );
+    const { rerender } = render(ui("/api/a"));
+    // Endpoint A answered chat:true → the launcher is up.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /ask acme/i })).not.toBeNull());
+
+    // Point the SAME root at endpoint B, whose capabilities fetch fails: the
+    // UI must not keep running on A's answer — B never said chat is on.
+    rerender(ui("/api/b"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /ask acme/i })).toBeNull());
+  });
+
   it("rehydrates the durable thread on mount (GET /threads/:threadId)", async () => {
     const fetchMock = stubFetch({ chat: true, integrations: false, voice: false });
     vi.stubGlobal("fetch", fetchMock);
