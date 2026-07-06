@@ -72,6 +72,12 @@ describe("inspectVendoState", () => {
     expect(state.tools).toEqual({ exists: true, status: "real" });
   });
 
+  it("classifies a malformed (unparseable) tools.json as real — additive consumers keep it", async () => {
+    const dir = app({ ".vendo/tools.json": "{ not json" });
+    const state = await inspectVendoState(dir);
+    expect(state.tools).toEqual({ exists: true, status: "real" });
+  });
+
   it("lists component wrapper dirs that have both descriptor.ts and impl.tsx", async () => {
     const dir = app({
       ".vendo/components/Badge/descriptor.ts": "export const badgeSchema = {}",
@@ -88,6 +94,18 @@ describe("inspectVendoState", () => {
       "src/app/page.tsx": `import { VendoRemix } from "@vendoai/shell"
 export default function Page() {
   return <VendoRemix id="upcoming-deadlines"><DeadlineList /></VendoRemix>
+}
+`,
+    });
+    const state = await inspectVendoState(dir);
+    expect(state.remixAnchors).toEqual([{ file: path.join("src", "app", "page.tsx"), ids: ["upcoming-deadlines"] }]);
+  });
+
+  it("finds a single-quoted literal-id VendoRemix anchor (capture.ts's AST walk accepts both quote styles)", async () => {
+    const dir = app({
+      "src/app/page.tsx": `import { VendoRemix } from '@vendoai/shell'
+export default function Page() {
+  return <VendoRemix id='upcoming-deadlines'><DeadlineList /></VendoRemix>
 }
 `,
     });

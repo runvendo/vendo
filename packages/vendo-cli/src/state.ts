@@ -73,8 +73,9 @@ export interface VendoState {
 
 // Literal-id capture inside a <VendoRemix ...> opening tag. Cheap regex, not a
 // full parse (mirrors what sync/capture.ts effectively keys on — a literal
-// `id="..."` attribute); dynamic ids (`id={...}`) simply yield no match here.
-const ANCHOR_ID_RE = /<VendoRemix\b[^>]*?\bid\s*=\s*"([^"]*)"/gs;
+// string `id` attribute; its AST walk accepts either quote style); dynamic
+// ids (`id={...}`) simply yield no match here.
+const ANCHOR_ID_RE = /<VendoRemix\b[^>]*?\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/gs;
 
 async function inspectRemixAnchors(targetDir: string): Promise<RemixAnchorSite[]> {
   const files = await walk(targetDir, (rel) => /\.(tsx|jsx)$/.test(rel));
@@ -87,7 +88,7 @@ async function inspectRemixAnchors(targetDir: string): Promise<RemixAnchorSite[]
       continue;
     }
     if (!text.includes("VendoRemix")) continue;
-    const ids = [...text.matchAll(ANCHOR_ID_RE)].map((m) => m[1]!);
+    const ids = [...text.matchAll(ANCHOR_ID_RE)].map((m) => (m[1] ?? m[2])!);
     sites.push({ file: path.relative(targetDir, file), ids });
   }
   return sites.sort((a, b) => a.file.localeCompare(b.file));
