@@ -21,6 +21,7 @@ export type StructuralCheckId =
 export interface StructuralCheckResult {
   id: StructuralCheckId;
   pass: boolean;
+  status?: "skipped-baseline-broken";
   detail: string;
 }
 
@@ -41,6 +42,17 @@ export type StructuralCommandRunner = (
   options: StructuralCommandOptions,
 ) => Promise<StructuralCommandResult>;
 
+export interface StructuralCommandSnapshot {
+  command: string;
+  result?: StructuralCommandResult;
+  error?: string;
+}
+
+export interface StructuralHostBaseline {
+  typecheck?: StructuralCommandSnapshot;
+  build?: StructuralCommandSnapshot;
+}
+
 export interface StructuralLayerContext {
   repoDir: string;
   initExitCode: number | null;
@@ -51,6 +63,7 @@ export interface StructuralLayerContext {
   secondRunNoop?: boolean;
   typecheckCommand?: string;
   buildCommand?: string;
+  baseline?: StructuralHostBaseline;
   commandRunner?: StructuralCommandRunner;
   expectedFiles?: string[];
   env?: NodeJS.ProcessEnv;
@@ -126,6 +139,21 @@ function rootRel(info: AppRouterInfo): string {
 function instrumentationRel(info: AppRouterInfo): string {
   const dir = info.appDirRel === "app" ? "." : "src";
   return path.posix.join(dir, info.ts ? "instrumentation.ts" : "instrumentation.js");
+}
+
+function commandPassed(snapshot: StructuralCommandSnapshot): boolean {
+  return snapshot.result?.code === 0 && !snapshot.error;
+}
+
+function commandStatus(result: StructuralCommandResult): string {
+  return result.code === null ? `signal ${result.signal ?? "unknown"}` : `exit code ${result.code}`;
+}
+
+function describeSnapshot(snapshot: StructuralCommandSnapshot): string {
+  if (snapshot.error) return `command failed to start: ${snapshot.error}`;
+  if (!snapshot.result) return "command did not produce a result";
+  if (snapshot.result.code === 0) return `succeeded: ${snapshot.command}`;
+  return `failed with ${commandStatus(snapshot.result)}: ${trimOutput(snapshot.result.stderr || snapshot.result.stdout)}`;
 }
 
 async function readText(repoDir: string, rel: string): Promise<string | null> {
@@ -284,19 +312,43 @@ async function checkCommand(
   if (!command) {
     return { id, pass: false, detail: `no ${label} command was provided` };
   }
+  const baseline = id === "host.typecheck" ? ctx.baseline?.typecheck : ctx.baseline?.build;
   const runner = ctx.commandRunner ?? runShellCommand;
   try {
     const result = await runner(command, { cwd: ctx.repoDir, env: ctx.env });
-    if (result.code === 0) {
-      return { id, pass: true, detail: `${label} command succeeded: ${command}` };
+    if (baseline && !commandPassed(baseline)) {
+      return {
+        id,
+        pass: true,
+        status: "skipped-baseline-broken",
+        detail: `${label} skipped-baseline-broken; baseline before vendo init ${describeSnapshot(baseline)}; post-init ${describeSnapshot({ command, result })}`,
+      };
     }
-    const status = result.code === null ? `signal ${result.signal ?? "unknown"}` : `exit code ${result.code}`;
+    if (result.code === 0) {
+      return {
+        id,
+        pass: true,
+        detail: baseline
+          ? `${label} command succeeded before and after vendo init: ${command}`
+          : `${label} command succeeded: ${command}`,
+      };
+    }
     return {
       id,
       pass: false,
-      detail: `${label} command failed with ${status}: ${trimOutput(result.stderr || result.stdout)}`,
+      detail: baseline && commandPassed(baseline)
+        ? `${label} regressed after vendo init; baseline succeeded but post-init failed with ${commandStatus(result)}: ${trimOutput(result.stderr || result.stdout)}`
+        : `${label} command failed with ${commandStatus(result)}: ${trimOutput(result.stderr || result.stdout)}`,
     };
   } catch (err) {
+    if (baseline && !commandPassed(baseline)) {
+      return {
+        id,
+        pass: true,
+        status: "skipped-baseline-broken",
+        detail: `${label} skipped-baseline-broken; baseline before vendo init ${describeSnapshot(baseline)}; post-init command failed to start: ${errorMessage(err)}`,
+      };
+    }
     return { id, pass: false, detail: `${label} command failed: ${errorMessage(err)}` };
   }
 }
