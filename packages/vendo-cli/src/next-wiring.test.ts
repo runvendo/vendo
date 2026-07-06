@@ -171,12 +171,21 @@ describe("addDependency", () => {
 describe("addPrebuildSync", () => {
   it("creates a prebuild script, extends an existing one, and is idempotent", () => {
     const created = addPrebuildSync(JSON.stringify({ name: "x" }))!;
-    expect(JSON.parse(created).scripts.prebuild).toBe("vendo sync");
+    expect(JSON.parse(created).scripts.prebuild).toBe("node ./node_modules/@vendoai/cli/dist/cli.js sync");
 
     const extended = addPrebuildSync(
       JSON.stringify({ name: "x", scripts: { prebuild: "generate-types" } }),
     )!;
-    expect(JSON.parse(extended).scripts.prebuild).toBe("generate-types && vendo sync");
+    expect(JSON.parse(extended).scripts.prebuild).toBe(
+      "generate-types && node ./node_modules/@vendoai/cli/dist/cli.js sync",
+    );
+
+    const migrated = addPrebuildSync(
+      JSON.stringify({ name: "x", scripts: { prebuild: "generate-types && vendo sync" } }),
+    )!;
+    expect(JSON.parse(migrated).scripts.prebuild).toBe(
+      "generate-types && node ./node_modules/@vendoai/cli/dist/cli.js sync",
+    );
 
     // Re-run leaves it alone.
     expect(addPrebuildSync(extended)).toBe(extended);
@@ -301,9 +310,14 @@ describe("wireNextApp", () => {
     expect(JSON.parse(await fs.readFile(path.join(dir, ".vendo/tools.json"), "utf8")).tools).toEqual([]);
     const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
+      scripts: Record<string, string>;
     };
     expect(pkg.dependencies["@vendoai/next"]).toBeDefined();
+    expect(pkg.dependencies["@vendoai/cli"]).toBeDefined();
     expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
+    expect(pkg.scripts.prebuild).toBe(
+      "node ./node_modules/@vendoai/cli/dist/cli.js sync",
+    );
     const nextConfig = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(nextConfig).toContain('transpilePackages: [');
     expect(nextConfig).toContain('"@vendoai/next"');

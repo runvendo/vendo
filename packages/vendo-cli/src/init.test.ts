@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runInit } from "./init.js";
@@ -14,6 +14,25 @@ const COMPONENT_REPLY = JSON.stringify({
   imports: ["Badge"], props: [{ name: "text", type: "string", optional: false, description: "Text." }],
   jsx: "<Badge>{p.text}</Badge>",
 });
+
+async function snapshotTree(root: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  async function visit(dir: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(full);
+      } else if (entry.isFile()) {
+        out[path.relative(root, full).split(path.sep).join("/")] = await readFile(full, "utf8");
+      } else {
+        await stat(full);
+      }
+    }
+  }
+  await visit(root);
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
 
 describe("runInit e2e (mock model)", () => {
   it("emits all three artifacts + README into .vendo only", async () => {
@@ -47,6 +66,44 @@ describe("runInit e2e (mock model)", () => {
     expect(readme).toContain("ingestVendoEvent()");
     expect(readme).toContain("POST /api/vendo/events/ingest");
     expect(readme).toContain("push at the source, relay webhooks, or poll upstream systems");
+  });
+
+  it("is idempotent on a plain second run without --force", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "init-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "host-app", dependencies: { next: "16.0.0", tailwindcss: "^4.0.0" } }));
+    await writeFile(path.join(dir, "tsconfig.json"), "{}");
+    await mkdir(path.join(dir, "app/api/things"), { recursive: true });
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(path.join(dir, "app/globals.css"), "@theme { --color-bg: #ffffff; --color-ink: #111111; }");
+    await writeFile(
+      path.join(dir, "app/layout.tsx"),
+      "export default function RootLayout({ children }: { children: React.ReactNode }) { return <html><body>{children}</body></html>; }\n",
+    );
+    await writeFile(path.join(dir, "app/api/things/route.ts"), "export async function GET() {}");
+    await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const first = await runInit({
+        targetDir: dir,
+        skipLlm: false,
+        force: false,
+        model: textModel([ROUTE_REPLY, COMPONENT_REPLY]),
+      });
+      expect(first).toBe(0);
+      const afterFirst = await snapshotTree(dir);
+
+      const second = await runInit({
+        targetDir: dir,
+        skipLlm: false,
+        force: false,
+        model: throwingModel("second init should not regenerate .vendo artifacts"),
+      });
+      expect(second).toBe(0);
+      expect(await snapshotTree(dir)).toEqual(afterFirst);
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("reports a clean error (not an unhandled rejection) when the model factory throws", async () => {
