@@ -42,9 +42,13 @@ Every capture below is a real agent run in a demo host app, not a mockup.
     </td>
   </tr>
   <tr>
-    <td colspan="2" align="center">
-      <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="48%">
+    <td width="50%" valign="top">
+      <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="100%">
       <p align="center"><sub><b>Automate across tools.</b> Plain language in, standing automation out, every tool gated by approval.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/voice.gif" alt="A Maple voice session: the user asks out loud where their money went and the agent renders the view while talking back" width="100%">
+      <p align="center"><sub><b>Talk to it.</b> A live voice session: ask out loud, the agent talks back and renders the view.</sub></p>
     </td>
   </tr>
 </table>

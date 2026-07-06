@@ -208,3 +208,66 @@ describe("createVendoVoice internals", () => {
     expect(internals.instructions).not.toContain("show_table");
   });
 });
+
+// Voice data-fidelity (voice-view-formats fix): a bound table discards the
+// model's formatting in favor of the verbatim raw result, so the tool's
+// declared `formats` map must reach the Table columns — and the format hints
+// must reach the voice model's tool descriptions, like the chat hostToolset.
+describe("declared result-field formats in voice", () => {
+  const listTransactions: HostToolDefinition = {
+    name: "list_transactions",
+    description: "List recent transactions",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    http: { method: "get", path: "/api/transactions", params: [], hasBody: false },
+    formats: { amount: "cents", postedAt: "iso-datetime" },
+  };
+
+  it("appends RESULT FIELD FORMATS to annotated host tools' voice descriptions", () => {
+    const internals = trackedInternals({ hostTools: [listTransactions, readAccounts] });
+    const byName = (name: string) => internals.tools.find((t) => t.name === name);
+    const annotated = byName("list_transactions")?.description ?? "";
+    expect(annotated).toContain("RESULT FIELD FORMATS");
+    expect(annotated).toContain('"amount"');
+    expect(annotated).toMatch(/divide by (exactly )?100/i);
+    // A tool without formats keeps its plain description.
+    expect(byName("list_accounts")?.description).toBe("List the user's accounts");
+  });
+
+  it("stamps declared formats onto matching columns when the source binds", () => {
+    const internals = trackedInternals({ hostTools: [listTransactions] });
+    const raw = { ok: true, data: { rows: [{ merchant: "Cafe", amount: 650 }] } };
+    internals.recordResult("list_transactions", { limit: 10 }, raw);
+
+    const node = internals.tableView({
+      columns: [
+        { key: "merchant", label: "Merchant" },
+        { key: "amount", label: "Amount" },
+      ],
+      rows: raw.data.rows,
+      source: { tool: "list_transactions", input: { limit: 10 }, rowsPath: "/data/rows" },
+    }) as { payload: GeneratedPayload };
+
+    const table = node.payload.nodes.find((n) => n.component === "Table");
+    expect(node.payload.queries?.[0]?.tool).toBe("list_transactions");
+    expect(table?.props?.columns).toEqual([
+      { key: "merchant", label: "Merchant" },
+      { key: "amount", label: "Amount", format: "cents" },
+    ]);
+  });
+
+  it("leaves snapshot (unbound) columns unstamped", () => {
+    const internals = trackedInternals({ hostTools: [listTransactions] });
+    const node = internals.tableView({
+      columns: [{ key: "amount", label: "Amount" }],
+      rows: [{ amount: "$6.50" }],
+    }) as { payload: GeneratedPayload };
+    const table = node.payload.nodes.find((n) => n.component === "Table");
+    expect(table?.props?.columns).toEqual([{ key: "amount", label: "Amount" }]);
+  });
+});

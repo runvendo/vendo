@@ -23,6 +23,7 @@ import {
   capabilitySummary,
   executeHostToolCall,
   renderFormatHints,
+  type FieldFormat,
   type ToolSummaryInput,
   type UINode,
 } from "@vendoai/core";
@@ -40,6 +41,15 @@ let viewSeq = 0;
  */
 const sessionResults = new Map<string, unknown>();
 const SESSION_RESULTS_MAX = 32;
+
+/** Declared result-field formats by tool name: a BOUND table shows the raw
+ *  cached result verbatim (the model's formatting is discarded by design),
+ *  so the format must be stamped onto the columns for the Table to apply. */
+const formatsByTool = new Map<string, Record<string, FieldFormat>>(
+  mapleHostToolDefs
+    .filter((def) => def.formats)
+    .map((def) => [def.name, def.formats as Record<string, FieldFormat>]),
+);
 
 /** Key-order-stable stringify: the model's `source.input` may order fields
  *  differently than the call it mirrors ({limit, category} vs {category,
@@ -133,8 +143,15 @@ function tableView(input: unknown): UINode | undefined {
   if (!columns?.length || !rows) return undefined;
 
   const matched = matchSource(source, columns);
+  // Bound rows are guaranteed RAW (verbatim cached result), so the source
+  // tool's declared formats apply deterministically. Snapshot rows are the
+  // model's own — its prompt-side format rules govern those.
+  const formats = matched ? formatsByTool.get(matched.tool) : undefined;
+  const boundColumns = formats
+    ? columns.map((c) => (formats[c.key] ? { ...c, format: formats[c.key] } : c))
+    : columns;
   const tableProps = matched
-    ? { columns, rows: { $path: `/source${matched.rowsPath}` } }
+    ? { columns: boundColumns, rows: { $path: `/source${matched.rowsPath}` } }
     : { columns, rows };
   return {
     id: `voice-table-${++viewSeq}`,
