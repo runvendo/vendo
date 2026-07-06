@@ -157,7 +157,7 @@ function findAnchors(sourceFile: ts.SourceFile): Array<FoundAnchor | { dynamic: 
 }
 
 /** The import that brings `name` into the file → { specifier, exportName }. */
-function findImport(
+export function findImport(
   sourceFile: ts.SourceFile,
   name: string,
 ): { specifier: string; exportName?: string } | undefined {

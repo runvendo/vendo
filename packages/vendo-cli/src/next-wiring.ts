@@ -239,7 +239,7 @@ export function mergeInstrumentation(source: string): string | null {
  * or a comment (`// rename AppVendoRoot`) can never be matched or mistaken
  * for existing wiring — then splice edits back into the ORIGINAL by offset.
  */
-function maskLiterals(source: string): string {
+export function maskLiterals(source: string): string {
   const out = source.split("");
   let i = 0;
   const n = source.length;
@@ -276,6 +276,29 @@ function maskLiterals(source: string): string {
   return out.join("");
 }
 
+/**
+ * Insert `importStmt` at an ALWAYS-VALID position: immediately after a leading
+ * "use client"/"use server" directive if present, else at the very top.
+ * (Anchoring after "the last import" is unsafe — a Prettier-wrapped multi-line
+ *  import would land the new line INSIDE the brace block.)
+ *
+ * A directive must remain the FIRST statement, but Next allows comments above
+ * it — so skip leading comments/whitespace (found on the masked copy, which has
+ * comment CONTENT blanked but delimiters/offsets intact) before checking, then
+ * detect the directive on the ORIGINAL at that offset (the mask also blanks the
+ * "use client" string interior). Shared by wrapLayoutChildren and the remix
+ * anchor splice so both call sites agree byte-for-byte.
+ */
+export function insertImportAfterDirectives(source: string, importStmt: string): string {
+  const headerLen = maskLiterals(source).match(/^\s*/)?.[0].length ?? 0;
+  const directive = source.slice(headerLen).match(/^(['"]use [a-z ]+['"];?[^\n]*\n)/);
+  if (directive) {
+    const end = headerLen + directive[0].length;
+    return source.slice(0, end) + importStmt + source.slice(end);
+  }
+  return importStmt + source;
+}
+
 export function wrapLayoutChildren(source: string, componentName = "AppVendoRoot"): string | null {
   const masked = maskLiterals(source);
   // Idempotence: already wired (by us or by hand). Checked against the masked
@@ -304,26 +327,8 @@ export function wrapLayoutChildren(source: string, componentName = "AppVendoRoot
     `</${componentName}>` +
     source.slice(start + match[0].length);
 
-  // Insert the import at an ALWAYS-VALID position: immediately after a leading
-  // "use client"/"use server" directive if present, else at the very top.
-  // (Anchoring after "the last import" is unsafe — a Prettier-wrapped
-  //  multi-line import would land the new line INSIDE the brace block.)
-  //
-  // A directive must remain the FIRST statement, but Next allows comments above
-  // it — so skip leading comments/whitespace (found on the masked copy, which
-  // has comment CONTENT blanked but delimiters/offsets intact) before checking.
   const importStmt = `import { ${componentName} } from "./vendo-root";\n`;
-  // maskLiterals blanks comment bodies AND their delimiters to spaces, so the
-  // leading `\s*` on the masked copy skips whitespace and header comments in
-  // one go. Detect the directive on the ORIGINAL at that offset, though — the
-  // mask also blanks the "use client" string interior.
-  const headerLen = maskLiterals(wrapped).match(/^\s*/)?.[0].length ?? 0;
-  const directive = wrapped.slice(headerLen).match(/^(['"]use [a-z ]+['"];?[^\n]*\n)/);
-  if (directive) {
-    const end = headerLen + directive[0].length;
-    return wrapped.slice(0, end) + importStmt + wrapped.slice(end);
-  }
-  return importStmt + wrapped;
+  return insertImportAfterDirectives(wrapped, importStmt);
 }
 
 /** Merge `@vendoai/next` into package.json dependencies (format-preserving-ish:
