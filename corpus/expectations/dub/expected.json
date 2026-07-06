@@ -14,7 +14,7 @@
       "name": "getActivityLogs",
       "method": "GET",
       "path": "/api/activity-logs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAiCompletion",
@@ -44,37 +44,37 @@
       "name": "getAnalytics",
       "method": "GET",
       "path": "/api/analytics",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAnalyticsEventType",
       "method": "GET",
       "path": "/api/analytics/{eventType}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAnalyticsEventTypeEndpoint",
       "method": "GET",
       "path": "/api/analytics/{eventType}/{endpoint}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAnalyticsDashboard",
       "method": "GET",
       "path": "/api/analytics/dashboard",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAnalyticsExport",
       "method": "GET",
       "path": "/api/analytics/export",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAuthNextauth",
       "method": "GET",
       "path": "/api/auth/{nextauth}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthNextauth",
@@ -116,7 +116,7 @@
       "name": "getDashboards",
       "method": "GET",
       "path": "/api/dashboards",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postDashboards",
@@ -140,13 +140,13 @@
       "name": "getDocsGuidesGuide",
       "method": "GET",
       "path": "/api/docs/guides/{guide}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getDomains",
       "method": "GET",
       "path": "/api/domains",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postDomains",
@@ -158,7 +158,7 @@
       "name": "getDomainsDomain",
       "method": "GET",
       "path": "/api/domains/{domain}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchDomainsDomain",
@@ -188,13 +188,13 @@
       "name": "getDomainsDomainValidate",
       "method": "GET",
       "path": "/api/domains/{domain}/validate",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getDomainsDomainVerify",
       "method": "GET",
       "path": "/api/domains/{domain}/verify",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postDomainsClientRegister",
@@ -212,13 +212,13 @@
       "name": "getDomainsCount",
       "method": "GET",
       "path": "/api/domains/count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getDomainsDefault",
       "method": "GET",
       "path": "/api/domains/default",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchDomainsDefault",
@@ -230,7 +230,7 @@
       "name": "getDomainsSearchAvailability",
       "method": "GET",
       "path": "/api/domains/search-availability",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postDubWebhook",
@@ -242,7 +242,7 @@
       "name": "getFolders",
       "method": "GET",
       "path": "/api/folders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postFolders",
@@ -254,7 +254,7 @@
       "name": "getFoldersFolderId",
       "method": "GET",
       "path": "/api/folders/{folderId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchFoldersFolderId",
@@ -272,37 +272,37 @@
       "name": "getFoldersFolderIdDashboard",
       "method": "GET",
       "path": "/api/folders/{folderId}/dashboard",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getFoldersFolderIdUsers",
       "method": "GET",
       "path": "/api/folders/{folderId}/users",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getFoldersAccessRequests",
       "method": "GET",
       "path": "/api/folders/access-requests",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getFoldersCount",
       "method": "GET",
       "path": "/api/folders/count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getFoldersPermissions",
       "method": "GET",
       "path": "/api/folders/permissions",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getIntegrations",
       "method": "GET",
       "path": "/api/integrations",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteIntegrationsUninstall",
@@ -314,7 +314,7 @@
       "name": "getLinks",
       "method": "GET",
       "path": "/api/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinks",
@@ -326,7 +326,7 @@
       "name": "getLinksLinkId",
       "method": "GET",
       "path": "/api/links/{linkId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putLinksLinkId",
@@ -350,7 +350,7 @@
       "name": "getLinksLinkIdDashboard",
       "method": "GET",
       "path": "/api/links/{linkId}/dashboard",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksLinkIdTransfer",
@@ -380,43 +380,43 @@
       "name": "getLinksCount",
       "method": "GET",
       "path": "/api/links/count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksExists",
       "method": "GET",
       "path": "/api/links/exists",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksExport",
       "method": "GET",
       "path": "/api/links/export",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksIframeable",
       "method": "GET",
       "path": "/api/links/iframeable",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksInfo",
       "method": "GET",
       "path": "/api/links/info",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksMetatags",
       "method": "GET",
       "path": "/api/links/metatags",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksRandom",
       "method": "GET",
       "path": "/api/links/random",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksSync",
@@ -434,43 +434,43 @@
       "name": "getLogs",
       "method": "GET",
       "path": "/api/logs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLogsLogId",
       "method": "GET",
       "path": "/api/logs/{logId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLogsCount",
       "method": "GET",
       "path": "/api/logs/count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMe",
       "method": "GET",
       "path": "/api/me",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMiscCheckFavicon",
       "method": "GET",
       "path": "/api/misc/check-favicon",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMiscCheckWorkspaceSlug",
       "method": "GET",
       "path": "/api/misc/check-workspace-slug",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOauthApps",
       "method": "GET",
       "path": "/api/oauth/apps",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postOauthApps",
@@ -482,7 +482,7 @@
       "name": "getOauthAppsAppId",
       "method": "GET",
       "path": "/api/oauth/apps/{appId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchOauthAppsAppId",
@@ -512,37 +512,37 @@
       "name": "getOauthUserinfo",
       "method": "GET",
       "path": "/api/oauth/userinfo",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOgAnalytics",
       "method": "GET",
       "path": "/api/og/analytics",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOgAvatarSeed",
       "method": "GET",
       "path": "/api/og/avatar/{[...seed]}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOgPartnerEarnings",
       "method": "GET",
       "path": "/api/og/partner-earnings",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOgPartnerRewind",
       "method": "GET",
       "path": "/api/og/partner-rewind",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOgProgram",
       "method": "GET",
       "path": "/api/og/program",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postPostbacksCallback",
@@ -554,7 +554,7 @@
       "name": "getProjects",
       "method": "GET",
       "path": "/api/projects",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postProjects",
@@ -566,7 +566,7 @@
       "name": "getProjectsSlug",
       "method": "GET",
       "path": "/api/projects/{slug}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putProjectsSlug",
@@ -590,7 +590,7 @@
       "name": "getProjectsSlugDomains",
       "method": "GET",
       "path": "/api/projects/{slug}/domains",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postProjectsSlugDomains",
@@ -602,7 +602,7 @@
       "name": "getProjectsSlugDomainsDomain",
       "method": "GET",
       "path": "/api/projects/{slug}/domains/{domain}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchProjectsSlugDomainsDomain",
@@ -620,13 +620,13 @@
       "name": "getProjectsSlugDomainsDomainVerify",
       "method": "GET",
       "path": "/api/projects/{slug}/domains/{domain}/verify",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getProjectsSlugDomainsDefault",
       "method": "GET",
       "path": "/api/projects/{slug}/domains/default",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchProjectsSlugDomainsDefault",
@@ -638,7 +638,7 @@
       "name": "getProjectsSlugLinks",
       "method": "GET",
       "path": "/api/projects/{slug}/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postProjectsSlugLinks",
@@ -650,7 +650,7 @@
       "name": "getProjectsSlugLinksLinkId",
       "method": "GET",
       "path": "/api/projects/{slug}/links/{linkId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putProjectsSlugLinksLinkId",
@@ -692,25 +692,25 @@
       "name": "getProjectsSlugLinksCount",
       "method": "GET",
       "path": "/api/projects/{slug}/links/count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getProjectsSlugLinksInfo",
       "method": "GET",
       "path": "/api/projects/{slug}/links/info",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getProjectsSlugLinksRandom",
       "method": "GET",
       "path": "/api/projects/{slug}/links/random",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getProjectsSlugTags",
       "method": "GET",
       "path": "/api/projects/{slug}/tags",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postProjectsSlugTags",
@@ -740,13 +740,13 @@
       "name": "getProviders",
       "method": "GET",
       "path": "/api/providers",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getQr",
       "method": "GET",
       "path": "/api/qr",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postResendWebhook",
@@ -776,13 +776,13 @@
       "name": "getSupportedCountries",
       "method": "GET",
       "path": "/api/supported-countries",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTags",
       "method": "GET",
       "path": "/api/tags",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTags",
@@ -812,13 +812,13 @@
       "name": "getTagsCount",
       "method": "GET",
       "path": "/api/tags/count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTokens",
       "method": "GET",
       "path": "/api/tokens",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTokens",
@@ -830,7 +830,7 @@
       "name": "getTokensId",
       "method": "GET",
       "path": "/api/tokens/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTokensId",
@@ -860,13 +860,13 @@
       "name": "getUnsplashSearch",
       "method": "GET",
       "path": "/api/unsplash/search",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUser",
       "method": "GET",
       "path": "/api/user",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putUser",
@@ -890,7 +890,7 @@
       "name": "getUserNotificationPreferences",
       "method": "GET",
       "path": "/api/user/notification-preferences",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUserNotificationPreferences",
@@ -908,7 +908,7 @@
       "name": "getUserReferralsToken",
       "method": "GET",
       "path": "/api/user/referrals-token",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUserSetPassword",
@@ -920,7 +920,7 @@
       "name": "getUserTokens",
       "method": "GET",
       "path": "/api/user/tokens",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteUserTokens",
@@ -932,7 +932,7 @@
       "name": "getUtm",
       "method": "GET",
       "path": "/api/utm",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUtm",
@@ -962,7 +962,7 @@
       "name": "getWebhooks",
       "method": "GET",
       "path": "/api/webhooks",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebhooks",
@@ -974,7 +974,7 @@
       "name": "getWebhooksWebhookId",
       "method": "GET",
       "path": "/api/webhooks/{webhookId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchWebhooksWebhookId",
@@ -992,19 +992,19 @@
       "name": "getWebhooksWebhookIdEvents",
       "method": "GET",
       "path": "/api/webhooks/{webhookId}/events",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebhooksWebhookIdFolders",
       "method": "GET",
       "path": "/api/webhooks/{webhookId}/folders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebhooksWebhookIdLinks",
       "method": "GET",
       "path": "/api/webhooks/{webhookId}/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebhooksCallback",
@@ -1016,7 +1016,7 @@
       "name": "getWorkspaces",
       "method": "GET",
       "path": "/api/workspaces",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspaces",
@@ -1028,7 +1028,7 @@
       "name": "getWorkspacesIdOrSlug",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putWorkspacesIdOrSlug",
@@ -1064,13 +1064,13 @@
       "name": "getWorkspacesIdOrSlugBillingInvoices",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/billing/invoices",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWorkspacesIdOrSlugBillingInvoicesInvoiceId",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/billing/invoices/{invoiceId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugBillingManage",
@@ -1082,7 +1082,7 @@
       "name": "getWorkspacesIdOrSlugBillingPaymentMethods",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugBillingPaymentMethods",
@@ -1112,19 +1112,19 @@
       "name": "getWorkspacesIdOrSlugBillingUsage",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/billing/usage",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWorkspacesIdOrSlugImportImportIdDownload",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/import/{importId}/download",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWorkspacesIdOrSlugImportBitly",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/import/bitly",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugImportBitly",
@@ -1142,7 +1142,7 @@
       "name": "getWorkspacesIdOrSlugImportRebrandly",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/import/rebrandly",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugImportRebrandly",
@@ -1160,7 +1160,7 @@
       "name": "getWorkspacesIdOrSlugImportShort",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/import/short",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugImportShort",
@@ -1178,7 +1178,7 @@
       "name": "getWorkspacesIdOrSlugInvites",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/invites",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugInvites",
@@ -1220,13 +1220,13 @@
       "name": "getWorkspacesIdOrSlugNotificationPreferences",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/notification-preferences",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWorkspacesIdOrSlugSaml",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/saml",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugSaml",
@@ -1244,7 +1244,7 @@
       "name": "getWorkspacesIdOrSlugScim",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/scim",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugScim",
@@ -1268,7 +1268,7 @@
       "name": "getWorkspacesIdOrSlugStatsEndpoint",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/stats/{endpoint}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkspacesIdOrSlugSupportSlackInvite",
@@ -1286,7 +1286,7 @@
       "name": "getWorkspacesIdOrSlugUsers",
       "method": "GET",
       "path": "/api/workspaces/{idOrSlug}/users",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchWorkspacesIdOrSlugUsers",
@@ -1304,7 +1304,7 @@
   "annotations": [
     {
       "name": "getActivityLogs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1329,32 +1329,32 @@
     },
     {
       "name": "getAnalytics",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAnalyticsEventType",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAnalyticsEventTypeEndpoint",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAnalyticsDashboard",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAnalyticsExport",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAuthNextauth",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1389,7 +1389,7 @@
     },
     {
       "name": "getDashboards",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1405,16 +1405,17 @@
     {
       "name": "deleteDashboardsId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getDocsGuidesGuide",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getDomains",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1424,7 +1425,7 @@
     },
     {
       "name": "getDomainsDomain",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1435,7 +1436,8 @@
     {
       "name": "deleteDomainsDomain",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postDomainsDomainPrimary",
@@ -1449,12 +1451,12 @@
     },
     {
       "name": "getDomainsDomainValidate",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getDomainsDomainVerify",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1469,12 +1471,12 @@
     },
     {
       "name": "getDomainsCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getDomainsDefault",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1484,7 +1486,7 @@
     },
     {
       "name": "getDomainsSearchAvailability",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1494,7 +1496,7 @@
     },
     {
       "name": "getFolders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1504,7 +1506,7 @@
     },
     {
       "name": "getFoldersFolderId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1515,46 +1517,48 @@
     {
       "name": "deleteFoldersFolderId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getFoldersFolderIdDashboard",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getFoldersFolderIdUsers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getFoldersAccessRequests",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getFoldersCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getFoldersPermissions",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getIntegrations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "deleteIntegrationsUninstall",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1564,13 +1568,14 @@
     },
     {
       "name": "getLinksLinkId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putLinksLinkId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchLinksLinkId",
@@ -1580,11 +1585,12 @@
     {
       "name": "deleteLinksLinkId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getLinksLinkIdDashboard",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1605,41 +1611,42 @@
     {
       "name": "deleteLinksBulk",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getLinksCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksExists",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksExport",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksIframeable",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksInfo",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksMetatags",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksRandom",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1650,41 +1657,42 @@
     {
       "name": "putLinksUpsert",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "getLogs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLogsLogId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLogsCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMiscCheckFavicon",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMiscCheckWorkspaceSlug",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOauthApps",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1694,7 +1702,7 @@
     },
     {
       "name": "getOauthAppsAppId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1705,7 +1713,8 @@
     {
       "name": "deleteOauthAppsAppId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postOauthAuthorize",
@@ -1719,32 +1728,32 @@
     },
     {
       "name": "getOauthUserinfo",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOgAnalytics",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOgAvatarSeed",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOgPartnerEarnings",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOgPartnerRewind",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOgProgram",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1754,7 +1763,7 @@
     },
     {
       "name": "getProjects",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1764,13 +1773,14 @@
     },
     {
       "name": "getProjectsSlug",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putProjectsSlug",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchProjectsSlug",
@@ -1780,11 +1790,12 @@
     {
       "name": "deleteProjectsSlug",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getProjectsSlugDomains",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1794,7 +1805,7 @@
     },
     {
       "name": "getProjectsSlugDomainsDomain",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1805,16 +1816,17 @@
     {
       "name": "deleteProjectsSlugDomainsDomain",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getProjectsSlugDomainsDomainVerify",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getProjectsSlugDomainsDefault",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1824,7 +1836,7 @@
     },
     {
       "name": "getProjectsSlugLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1834,13 +1846,14 @@
     },
     {
       "name": "getProjectsSlugLinksLinkId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putProjectsSlugLinksLinkId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchProjectsSlugLinksLinkId",
@@ -1850,7 +1863,8 @@
     {
       "name": "deleteProjectsSlugLinksLinkId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postProjectsSlugLinksBulk",
@@ -1865,26 +1879,27 @@
     {
       "name": "deleteProjectsSlugLinksBulk",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getProjectsSlugLinksCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getProjectsSlugLinksInfo",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getProjectsSlugLinksRandom",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getProjectsSlugTags",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1895,7 +1910,8 @@
     {
       "name": "putProjectsSlugTagsId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchProjectsSlugTagsId",
@@ -1905,22 +1921,23 @@
     {
       "name": "deleteProjectsSlugTagsId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getProviders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getQr",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postResendWebhook",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postResumesUploadUrl",
@@ -1939,12 +1956,12 @@
     },
     {
       "name": "getSupportedCountries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTags",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1955,7 +1972,8 @@
     {
       "name": "putTagsId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchTagsId",
@@ -1965,16 +1983,17 @@
     {
       "name": "deleteTagsId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getTagsCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTokens",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1984,7 +2003,7 @@
     },
     {
       "name": "getTokensId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1995,7 +2014,8 @@
     {
       "name": "deleteTokensId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postTokensEmbedReferrals",
@@ -2009,18 +2029,19 @@
     },
     {
       "name": "getUnsplashSearch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUser",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putUser",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchUser",
@@ -2030,11 +2051,12 @@
     {
       "name": "deleteUser",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getUserNotificationPreferences",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2049,7 +2071,7 @@
     },
     {
       "name": "getUserReferralsToken",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2059,17 +2081,18 @@
     },
     {
       "name": "getUserTokens",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "deleteUserTokens",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getUtm",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2085,7 +2108,8 @@
     {
       "name": "deleteUtmId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postVeriffWebhook",
@@ -2094,7 +2118,7 @@
     },
     {
       "name": "getWebhooks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2104,7 +2128,7 @@
     },
     {
       "name": "getWebhooksWebhookId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2115,21 +2139,22 @@
     {
       "name": "deleteWebhooksWebhookId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getWebhooksWebhookIdEvents",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebhooksWebhookIdFolders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebhooksWebhookIdLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2139,7 +2164,7 @@
     },
     {
       "name": "getWorkspaces",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2149,13 +2174,14 @@
     },
     {
       "name": "getWorkspacesIdOrSlug",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putWorkspacesIdOrSlug",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchWorkspacesIdOrSlug",
@@ -2165,7 +2191,8 @@
     {
       "name": "deleteWorkspacesIdOrSlug",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postWorkspacesIdOrSlugBillingActivatePaidPlan",
@@ -2179,12 +2206,12 @@
     },
     {
       "name": "getWorkspacesIdOrSlugBillingInvoices",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWorkspacesIdOrSlugBillingInvoicesInvoiceId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2194,7 +2221,7 @@
     },
     {
       "name": "getWorkspacesIdOrSlugBillingPaymentMethods",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2210,7 +2237,8 @@
     {
       "name": "deleteWorkspacesIdOrSlugBillingPaymentMethods",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postWorkspacesIdOrSlugBillingUpgrade",
@@ -2219,17 +2247,17 @@
     },
     {
       "name": "getWorkspacesIdOrSlugBillingUsage",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWorkspacesIdOrSlugImportImportIdDownload",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWorkspacesIdOrSlugImportBitly",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2244,7 +2272,7 @@
     },
     {
       "name": "getWorkspacesIdOrSlugImportRebrandly",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2255,11 +2283,12 @@
     {
       "name": "putWorkspacesIdOrSlugImportRebrandly",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "getWorkspacesIdOrSlugImportShort",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2270,11 +2299,12 @@
     {
       "name": "putWorkspacesIdOrSlugImportShort",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "getWorkspacesIdOrSlugInvites",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2290,7 +2320,8 @@
     {
       "name": "deleteWorkspacesIdOrSlugInvites",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postWorkspacesIdOrSlugInvitesAccept",
@@ -2309,12 +2340,12 @@
     },
     {
       "name": "getWorkspacesIdOrSlugNotificationPreferences",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWorkspacesIdOrSlugSaml",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2325,11 +2356,12 @@
     {
       "name": "deleteWorkspacesIdOrSlugSaml",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getWorkspacesIdOrSlugScim",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2340,7 +2372,8 @@
     {
       "name": "deleteWorkspacesIdOrSlugScim",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postWorkspacesIdOrSlugSitemapsImport",
@@ -2349,13 +2382,13 @@
     },
     {
       "name": "getWorkspacesIdOrSlugStatsEndpoint",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postWorkspacesIdOrSlugSupportSlackInvite",
       "mutating": true,
-      "dangerous": false
+      "dangerous": true
     },
     {
       "name": "postWorkspacesIdOrSlugUploadUrl",
@@ -2364,7 +2397,7 @@
     },
     {
       "name": "getWorkspacesIdOrSlugUsers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2375,7 +2408,8 @@
     {
       "name": "deleteWorkspacesIdOrSlugUsers",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     }
   ],
   "components": []

@@ -14,7 +14,7 @@
       "name": "getAdminTopSpenders",
       "method": "GET",
       "path": "/api/admin/top-spenders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAiAnalyzeSenderPattern",
@@ -44,7 +44,7 @@
       "name": "getAiModels",
       "method": "GET",
       "path": "/api/ai/models",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAiSummarise",
@@ -68,7 +68,7 @@
       "name": "getAuthAll",
       "method": "GET",
       "path": "/api/auth/{all}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthAll",
@@ -122,13 +122,13 @@
       "name": "getChats",
       "method": "GET",
       "path": "/api/chats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getChatsChatId",
       "method": "GET",
       "path": "/api/chats/{chatId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchChatsChatId",
@@ -158,7 +158,7 @@
       "name": "getCleanHistory",
       "method": "GET",
       "path": "/api/clean/history",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getCronAutomationJobs",
@@ -212,13 +212,13 @@
       "name": "getDigestPreview",
       "method": "GET",
       "path": "/api/digest-preview",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getEmailStream",
       "method": "GET",
       "path": "/api/email-stream",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postEmailRenderHtml",
@@ -230,7 +230,7 @@
       "name": "getFollowUpReminders",
       "method": "GET",
       "path": "/api/follow-up-reminders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postFollowUpReminders",
@@ -254,7 +254,7 @@
       "name": "getGoogleCalendarAuthUrl",
       "method": "GET",
       "path": "/api/google/calendar/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getGoogleCalendarCallback",
@@ -266,13 +266,13 @@
       "name": "getGoogleContacts",
       "method": "GET",
       "path": "/api/google/contacts",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getGoogleDriveAuthUrl",
       "method": "GET",
       "path": "/api/google/drive/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getGoogleDriveCallback",
@@ -284,7 +284,7 @@
       "name": "getGoogleLinkingAuthUrl",
       "method": "GET",
       "path": "/api/google/linking/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getGoogleLinkingCallback",
@@ -302,25 +302,25 @@
       "name": "getHealth",
       "method": "GET",
       "path": "/api/health",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getImageProxy",
       "method": "GET",
       "path": "/api/image-proxy",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getKnowledge",
       "method": "GET",
       "path": "/api/knowledge",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLabels",
       "method": "GET",
       "path": "/api/labels",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLabelsCreate",
@@ -338,7 +338,7 @@
       "name": "getMcpIntegrationAuthUrl",
       "method": "GET",
       "path": "/api/mcp/{integration}/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMcpIntegrationCallback",
@@ -350,13 +350,13 @@
       "name": "getMcpIntegrations",
       "method": "GET",
       "path": "/api/mcp/integrations",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMeetingBriefs",
       "method": "GET",
       "path": "/api/meeting-briefs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postMeetingBriefs",
@@ -368,19 +368,19 @@
       "name": "getMessages",
       "method": "GET",
       "path": "/api/messages",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMessagesAttachment",
       "method": "GET",
       "path": "/api/messages/attachment",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMessagesBatch",
       "method": "GET",
       "path": "/api/messages/batch",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMobileAuthCallback",
@@ -410,55 +410,55 @@
       "name": "getMobileReviewStatus",
       "method": "GET",
       "path": "/api/mobile-review/status",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOrganizationsOrganizationId",
       "method": "GET",
       "path": "/api/organizations/{organizationId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOrganizationsOrganizationIdExecutedRulesCount",
       "method": "GET",
       "path": "/api/organizations/{organizationId}/executed-rules-count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOrganizationsOrganizationIdMembers",
       "method": "GET",
       "path": "/api/organizations/{organizationId}/members",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOrganizationsOrganizationIdRules",
       "method": "GET",
       "path": "/api/organizations/{organizationId}/rules",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOrganizationsOrganizationIdStatsEmailBuckets",
       "method": "GET",
       "path": "/api/organizations/{organizationId}/stats/email-buckets",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOrganizationsOrganizationIdStatsRulesBuckets",
       "method": "GET",
       "path": "/api/organizations/{organizationId}/stats/rules-buckets",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOrganizationsOrganizationIdStatsTotals",
       "method": "GET",
       "path": "/api/organizations/{organizationId}/stats/totals",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOutlookAdminConsent",
       "method": "GET",
       "path": "/api/outlook/admin-consent",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOutlookAdminConsentCallback",
@@ -470,7 +470,7 @@
       "name": "getOutlookCalendarAuthUrl",
       "method": "GET",
       "path": "/api/outlook/calendar/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOutlookCalendarCallback",
@@ -482,7 +482,7 @@
       "name": "getOutlookDriveAuthUrl",
       "method": "GET",
       "path": "/api/outlook/drive/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOutlookDriveCallback",
@@ -494,7 +494,7 @@
       "name": "getOutlookLinkingAuthUrl",
       "method": "GET",
       "path": "/api/outlook/linking/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOutlookLinkingCallback",
@@ -506,13 +506,13 @@
       "name": "getOutlookWatch",
       "method": "GET",
       "path": "/api/outlook/watch",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOutlookWatchAll",
       "method": "GET",
       "path": "/api/outlook/watch/all",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postOutlookWatchAll",
@@ -530,13 +530,13 @@
       "name": "getPublicBookingLinksSlug",
       "method": "GET",
       "path": "/api/public/booking-links/{slug}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getPublicBookingLinksSlugAvailability",
       "method": "GET",
       "path": "/api/public/booking-links/{slug}/availability",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postPublicBookings",
@@ -560,13 +560,13 @@
       "name": "getReferralsCode",
       "method": "GET",
       "path": "/api/referrals/code",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getReferralsStats",
       "method": "GET",
       "path": "/api/referrals/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postReplyTrackerDisableUnusedAutoDraft",
@@ -578,7 +578,7 @@
       "name": "getResendDigest",
       "method": "GET",
       "path": "/api/resend/digest",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postResendDigest",
@@ -590,7 +590,7 @@
       "name": "getResendDigestAll",
       "method": "GET",
       "path": "/api/resend/digest/all",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postResendDigestAll",
@@ -608,7 +608,7 @@
       "name": "getResendSummary",
       "method": "GET",
       "path": "/api/resend/summary",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postResendSummary",
@@ -620,7 +620,7 @@
       "name": "getResendSummaryAll",
       "method": "GET",
       "path": "/api/resend/summary/all",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postResendSummaryAll",
@@ -644,7 +644,7 @@
       "name": "getSlackAuthUrl",
       "method": "GET",
       "path": "/api/slack/auth-url",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getSlackCallback",
@@ -668,13 +668,13 @@
       "name": "getSsoSignin",
       "method": "GET",
       "path": "/api/sso/signin",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getStripeSuccess",
       "method": "GET",
       "path": "/api/stripe/success",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postStripeWebhook",
@@ -698,13 +698,13 @@
       "name": "getThreads",
       "method": "GET",
       "path": "/api/threads",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getThreadsId",
       "method": "GET",
       "path": "/api/threads/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postThreadsIdArchive",
@@ -716,19 +716,19 @@
       "name": "getThreadsBasic",
       "method": "GET",
       "path": "/api/threads/basic",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getThreadsBatch",
       "method": "GET",
       "path": "/api/threads/batch",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUnsubscribe",
       "method": "GET",
       "path": "/api/unsubscribe",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUnsubscribe",
@@ -740,49 +740,49 @@
       "name": "getUserAiAutomationStatus",
       "method": "GET",
       "path": "/api/user/ai-automation-status",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserApiKeys",
       "method": "GET",
       "path": "/api/user/api-keys",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserAutomationJobs",
       "method": "GET",
       "path": "/api/user/automation-jobs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserAvailability",
       "method": "GET",
       "path": "/api/user/availability",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserBookingLinks",
       "method": "GET",
       "path": "/api/user/booking-links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserCalendarUpcomingEvents",
       "method": "GET",
       "path": "/api/user/calendar/upcoming-events",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserCalendars",
       "method": "GET",
       "path": "/api/user/calendars",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserCategories",
       "method": "GET",
       "path": "/api/user/categories",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUserCategorizeSendersBatch",
@@ -800,25 +800,25 @@
       "name": "getUserCategorizeSendersCategorized",
       "method": "GET",
       "path": "/api/user/categorize/senders/categorized",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserCategorizeSendersProgress",
       "method": "GET",
       "path": "/api/user/categorize/senders/progress",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserCategorizeSendersUncategorized",
       "method": "GET",
       "path": "/api/user/categorize/senders/uncategorized",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserColdEmail",
       "method": "GET",
       "path": "/api/user/cold-email",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUserCompleteRegistration",
@@ -830,289 +830,289 @@
       "name": "getUserDebugFollowUp",
       "method": "GET",
       "path": "/api/user/debug/follow-up",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDebugMemories",
       "method": "GET",
       "path": "/api/user/debug/memories",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDebugRules",
       "method": "GET",
       "path": "/api/user/debug/rules",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDigestSchedule",
       "method": "GET",
       "path": "/api/user/digest-schedule",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDraftActions",
       "method": "GET",
       "path": "/api/user/draft-actions",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDraftCleanupSettings",
       "method": "GET",
       "path": "/api/user/draft-cleanup-settings",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDriveConnections",
       "method": "GET",
       "path": "/api/user/drive/connections",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDriveFilings",
       "method": "GET",
       "path": "/api/user/drive/filings",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDriveFolders",
       "method": "GET",
       "path": "/api/user/drive/folders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDriveFoldersFolderId",
       "method": "GET",
       "path": "/api/user/drive/folders/{folderId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDrivePreview",
       "method": "GET",
       "path": "/api/user/drive/preview",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDrivePreviewAttachments",
       "method": "GET",
       "path": "/api/user/drive/preview/attachments",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDriveSourceItems",
       "method": "GET",
       "path": "/api/user/drive/source-items",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserDriveSourceItemsFolderId",
       "method": "GET",
       "path": "/api/user/drive/source-items/{folderId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserEmailAccount",
       "method": "GET",
       "path": "/api/user/email-account",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserEmailAccounts",
       "method": "GET",
       "path": "/api/user/email-accounts",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserExecutedRulesBatch",
       "method": "GET",
       "path": "/api/user/executed-rules/batch",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserExecutedRulesHistory",
       "method": "GET",
       "path": "/api/user/executed-rules/history",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserFolders",
       "method": "GET",
       "path": "/api/user/folders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserGroup",
       "method": "GET",
       "path": "/api/user/group",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserGroupGroupIdItems",
       "method": "GET",
       "path": "/api/user/group/{groupId}/items",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserGroupGroupIdRules",
       "method": "GET",
       "path": "/api/user/group/{groupId}/rules",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserLabels",
       "method": "GET",
       "path": "/api/user/labels",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserMe",
       "method": "GET",
       "path": "/api/user/me",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserMeetingBriefs",
       "method": "GET",
       "path": "/api/user/meeting-briefs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserMeetingBriefsHistory",
       "method": "GET",
       "path": "/api/user/meeting-briefs/history",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserMessagingChannels",
       "method": "GET",
       "path": "/api/user/messaging-channels",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserMessagingChannelsChannelIdTargets",
       "method": "GET",
       "path": "/api/user/messaging-channels/{channelId}/targets",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserNoReply",
       "method": "GET",
       "path": "/api/user/no-reply",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserOnboardingProcessedEmails",
       "method": "GET",
       "path": "/api/user/onboarding/processed-emails",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserOrganizationMembership",
       "method": "GET",
       "path": "/api/user/organization-membership",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserPersona",
       "method": "GET",
       "path": "/api/user/persona",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserRules",
       "method": "GET",
       "path": "/api/user/rules",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserRulesId",
       "method": "GET",
       "path": "/api/user/rules/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserScheduleId",
       "method": "GET",
       "path": "/api/user/schedule/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserSettingsMultiAccount",
       "method": "GET",
       "path": "/api/user/settings/multi-account",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserSetupProgress",
       "method": "GET",
       "path": "/api/user/setup-progress",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsByPeriod",
       "method": "GET",
       "path": "/api/user/stats/by-period",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsEmailActions",
       "method": "GET",
       "path": "/api/user/stats/email-actions",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsNewsletters",
       "method": "GET",
       "path": "/api/user/stats/newsletters",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsNewslettersSummary",
       "method": "GET",
       "path": "/api/user/stats/newsletters/summary",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsRecipients",
       "method": "GET",
       "path": "/api/user/stats/recipients",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsResponseTime",
       "method": "GET",
       "path": "/api/user/stats/response-time",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsRuleStats",
       "method": "GET",
       "path": "/api/user/stats/rule-stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsSenderEmails",
       "method": "GET",
       "path": "/api/user/stats/sender-emails",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUserStatsSenders",
       "method": "GET",
       "path": "/api/user/stats/senders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1Openapi",
       "method": "GET",
       "path": "/api/v1/openapi",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1Rules",
       "method": "GET",
       "path": "/api/v1/rules",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV1Rules",
@@ -1124,7 +1124,7 @@
       "name": "getV1RulesId",
       "method": "GET",
       "path": "/api/v1/rules/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV1RulesId",
@@ -1142,25 +1142,25 @@
       "name": "getV1StatsByPeriod",
       "method": "GET",
       "path": "/api/v1/stats/by-period",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1StatsResponseTime",
       "method": "GET",
       "path": "/api/v1/stats/response-time",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWatch",
       "method": "GET",
       "path": "/api/watch",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWatchAll",
       "method": "GET",
       "path": "/api/watch/all",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWatchAll",
@@ -1178,13 +1178,13 @@
   "annotations": [
     {
       "name": "getAdminTopSpenders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postAiAnalyzeSenderPattern",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postAiComposeAutocomplete",
@@ -1203,7 +1203,7 @@
     },
     {
       "name": "getAiModels",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1223,7 +1223,7 @@
     },
     {
       "name": "getAuthAll",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1234,7 +1234,8 @@
     {
       "name": "putAuthAll",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchAuthAll",
@@ -1244,7 +1245,8 @@
     {
       "name": "deleteAuthAll",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postAutomationJobsExecute",
@@ -1268,12 +1270,12 @@
     },
     {
       "name": "getChats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getChatsChatId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1284,7 +1286,8 @@
     {
       "name": "deleteChatsChatId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postClean",
@@ -1298,7 +1301,7 @@
     },
     {
       "name": "getCleanHistory",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1314,12 +1317,12 @@
     {
       "name": "getCronDraftCleanup",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postCronDraftCleanup",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getCronReasoningRetention",
@@ -1343,12 +1346,12 @@
     },
     {
       "name": "getDigestPreview",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getEmailStream",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1358,7 +1361,7 @@
     },
     {
       "name": "getFollowUpReminders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1378,7 +1381,7 @@
     },
     {
       "name": "getGoogleCalendarAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1388,12 +1391,12 @@
     },
     {
       "name": "getGoogleContacts",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getGoogleDriveAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1403,7 +1406,7 @@
     },
     {
       "name": "getGoogleLinkingAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1418,22 +1421,22 @@
     },
     {
       "name": "getHealth",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getImageProxy",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getKnowledge",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLabels",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1448,7 +1451,7 @@
     },
     {
       "name": "getMcpIntegrationAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1458,12 +1461,12 @@
     },
     {
       "name": "getMcpIntegrations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMeetingBriefs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1473,17 +1476,17 @@
     },
     {
       "name": "getMessages",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMessagesAttachment",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMessagesBatch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1508,47 +1511,47 @@
     },
     {
       "name": "getMobileReviewStatus",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOrganizationsOrganizationId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOrganizationsOrganizationIdExecutedRulesCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOrganizationsOrganizationIdMembers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOrganizationsOrganizationIdRules",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOrganizationsOrganizationIdStatsEmailBuckets",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOrganizationsOrganizationIdStatsRulesBuckets",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOrganizationsOrganizationIdStatsTotals",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOutlookAdminConsent",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1558,7 +1561,7 @@
     },
     {
       "name": "getOutlookCalendarAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1568,7 +1571,7 @@
     },
     {
       "name": "getOutlookDriveAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1578,7 +1581,7 @@
     },
     {
       "name": "getOutlookLinkingAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1588,12 +1591,12 @@
     },
     {
       "name": "getOutlookWatch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOutlookWatchAll",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1608,12 +1611,12 @@
     },
     {
       "name": "getPublicBookingLinksSlug",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getPublicBookingLinksSlugAvailability",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1633,68 +1636,68 @@
     },
     {
       "name": "getReferralsCode",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getReferralsStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postReplyTrackerDisableUnusedAutoDraft",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getResendDigest",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postResendDigest",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getResendDigestAll",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postResendDigestAll",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postResendDigestQueue",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getResendSummary",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postResendSummary",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getResendSummaryAll",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postResendSummaryAll",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postResendSummaryQueue",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postScheduledActionsExecute",
@@ -1703,7 +1706,7 @@
     },
     {
       "name": "getSlackAuthUrl",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1723,12 +1726,12 @@
     },
     {
       "name": "getSsoSignin",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getStripeSuccess",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1748,107 +1751,107 @@
     },
     {
       "name": "getThreads",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getThreadsId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postThreadsIdArchive",
       "mutating": true,
-      "dangerous": false
+      "dangerous": true
     },
     {
       "name": "getThreadsBasic",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getThreadsBatch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUnsubscribe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postUnsubscribe",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getUserAiAutomationStatus",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserApiKeys",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserAutomationJobs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserAvailability",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserBookingLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserCalendarUpcomingEvents",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserCalendars",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserCategories",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "postUserCategorizeSendersBatch",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postUserCategorizeSendersBatchSimple",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getUserCategorizeSendersCategorized",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserCategorizeSendersProgress",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserCategorizeSendersUncategorized",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserColdEmail",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1858,242 +1861,242 @@
     },
     {
       "name": "getUserDebugFollowUp",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDebugMemories",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDebugRules",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDigestSchedule",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDraftActions",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDraftCleanupSettings",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDriveConnections",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDriveFilings",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDriveFolders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDriveFoldersFolderId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDrivePreview",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDrivePreviewAttachments",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDriveSourceItems",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserDriveSourceItemsFolderId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserEmailAccount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserEmailAccounts",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserExecutedRulesBatch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserExecutedRulesHistory",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserFolders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserGroup",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserGroupGroupIdItems",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserGroupGroupIdRules",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserLabels",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserMe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserMeetingBriefs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserMeetingBriefsHistory",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserMessagingChannels",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserMessagingChannelsChannelIdTargets",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserNoReply",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserOnboardingProcessedEmails",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserOrganizationMembership",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserPersona",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserRules",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserRulesId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserScheduleId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserSettingsMultiAccount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserSetupProgress",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsByPeriod",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsEmailActions",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsNewsletters",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsNewslettersSummary",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsRecipients",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsResponseTime",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsRuleStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsSenderEmails",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUserStatsSenders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1Openapi",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1Rules",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2103,37 +2106,39 @@
     },
     {
       "name": "getV1RulesId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV1RulesId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV1RulesId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV1StatsByPeriod",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1StatsResponseTime",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWatch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWatchAll",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2144,7 +2149,7 @@
     {
       "name": "postWatchUnwatch",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     }
   ],
   "components": []

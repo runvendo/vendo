@@ -14,7 +14,7 @@
       "name": "getAuthNextauth",
       "method": "GET",
       "path": "/api/auth/{nextauth}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthNextauth",
@@ -32,7 +32,7 @@
       "name": "getAuthOauthMe",
       "method": "GET",
       "path": "/api/auth/oauth/me",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthOauthMe",
@@ -98,7 +98,7 @@
       "name": "getAvailabilityCalendar",
       "method": "GET",
       "path": "/api/availability/calendar",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAvailabilityCalendar",
@@ -116,7 +116,7 @@
       "name": "getAvatarUuid",
       "method": "GET",
       "path": "/api/avatar/{uuid}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postBookEvent",
@@ -188,19 +188,19 @@
       "name": "getCsrf",
       "method": "GET",
       "path": "/api/csrf",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getEmail",
       "method": "GET",
       "path": "/api/email",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getGeolocation",
       "method": "GET",
       "path": "/api/geolocation",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postIntegrationsArgs",
@@ -236,25 +236,25 @@
       "name": "getIp",
       "method": "GET",
       "path": "/api/ip",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLink",
       "method": "GET",
       "path": "/api/link",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLogo",
       "method": "GET",
       "path": "/api/logo",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMe",
       "method": "GET",
       "path": "/api/me",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postRecordedDailyVideo",
@@ -266,7 +266,7 @@
       "name": "getSocialOgImage",
       "method": "GET",
       "path": "/api/social/og/image",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postStripeWebhook",
@@ -296,7 +296,7 @@
       "name": "getTrpcAdminTrpc",
       "method": "GET",
       "path": "/api/trpc/admin/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcAdminTrpc",
@@ -308,7 +308,7 @@
       "name": "getTrpcApiKeysTrpc",
       "method": "GET",
       "path": "/api/trpc/apiKeys/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcApiKeysTrpc",
@@ -320,7 +320,7 @@
       "name": "getTrpcAppsTrpc",
       "method": "GET",
       "path": "/api/trpc/apps/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcAppsTrpc",
@@ -332,7 +332,7 @@
       "name": "getTrpcAppsRouterTrpc",
       "method": "GET",
       "path": "/api/trpc/appsRouter/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcAppsRouterTrpc",
@@ -344,7 +344,7 @@
       "name": "getTrpcAuthTrpc",
       "method": "GET",
       "path": "/api/trpc/auth/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcAuthTrpc",
@@ -356,7 +356,7 @@
       "name": "getTrpcAvailabilityTrpc",
       "method": "GET",
       "path": "/api/trpc/availability/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcAvailabilityTrpc",
@@ -368,7 +368,7 @@
       "name": "getTrpcBookingsTrpc",
       "method": "GET",
       "path": "/api/trpc/bookings/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcBookingsTrpc",
@@ -380,7 +380,7 @@
       "name": "getTrpcCalendarsTrpc",
       "method": "GET",
       "path": "/api/trpc/calendars/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcCalendarsTrpc",
@@ -392,7 +392,7 @@
       "name": "getTrpcCalVideoTrpc",
       "method": "GET",
       "path": "/api/trpc/calVideo/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcCalVideoTrpc",
@@ -404,7 +404,7 @@
       "name": "getTrpcCredentialsTrpc",
       "method": "GET",
       "path": "/api/trpc/credentials/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcCredentialsTrpc",
@@ -416,7 +416,7 @@
       "name": "getTrpcDeploymentSetupTrpc",
       "method": "GET",
       "path": "/api/trpc/deploymentSetup/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcDeploymentSetupTrpc",
@@ -428,7 +428,7 @@
       "name": "getTrpcEventTypesTrpc",
       "method": "GET",
       "path": "/api/trpc/eventTypes/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcEventTypesTrpc",
@@ -440,7 +440,7 @@
       "name": "getTrpcEventTypesHeavyTrpc",
       "method": "GET",
       "path": "/api/trpc/eventTypesHeavy/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcEventTypesHeavyTrpc",
@@ -452,7 +452,7 @@
       "name": "getTrpcFeaturesTrpc",
       "method": "GET",
       "path": "/api/trpc/features/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcFeaturesTrpc",
@@ -464,7 +464,7 @@
       "name": "getTrpcFeedbackTrpc",
       "method": "GET",
       "path": "/api/trpc/feedback/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcFeedbackTrpc",
@@ -476,7 +476,7 @@
       "name": "getTrpcGoogleWorkspaceTrpc",
       "method": "GET",
       "path": "/api/trpc/googleWorkspace/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcGoogleWorkspaceTrpc",
@@ -488,7 +488,7 @@
       "name": "getTrpcHolidaysTrpc",
       "method": "GET",
       "path": "/api/trpc/holidays/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcHolidaysTrpc",
@@ -500,7 +500,7 @@
       "name": "getTrpcI18nTrpc",
       "method": "GET",
       "path": "/api/trpc/i18n/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcI18nTrpc",
@@ -512,7 +512,7 @@
       "name": "getTrpcLoggedInViewerRouterTrpc",
       "method": "GET",
       "path": "/api/trpc/loggedInViewerRouter/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcLoggedInViewerRouterTrpc",
@@ -524,7 +524,7 @@
       "name": "getTrpcMeTrpc",
       "method": "GET",
       "path": "/api/trpc/me/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcMeTrpc",
@@ -536,7 +536,7 @@
       "name": "getTrpcOAuthTrpc",
       "method": "GET",
       "path": "/api/trpc/oAuth/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcOAuthTrpc",
@@ -548,7 +548,7 @@
       "name": "getTrpcOooTrpc",
       "method": "GET",
       "path": "/api/trpc/ooo/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcOooTrpc",
@@ -560,7 +560,7 @@
       "name": "getTrpcPublicTrpc",
       "method": "GET",
       "path": "/api/trpc/public/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcPublicTrpc",
@@ -572,7 +572,7 @@
       "name": "getTrpcSlotsTrpc",
       "method": "GET",
       "path": "/api/trpc/slots/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcSlotsTrpc",
@@ -584,7 +584,7 @@
       "name": "getTrpcTimezonesTrpc",
       "method": "GET",
       "path": "/api/trpc/timezones/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcTimezonesTrpc",
@@ -596,7 +596,7 @@
       "name": "getTrpcTravelSchedulesTrpc",
       "method": "GET",
       "path": "/api/trpc/travelSchedules/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcTravelSchedulesTrpc",
@@ -608,7 +608,7 @@
       "name": "getTrpcUsersTrpc",
       "method": "GET",
       "path": "/api/trpc/users/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcUsersTrpc",
@@ -620,7 +620,7 @@
       "name": "getTrpcViewerTrpc",
       "method": "GET",
       "path": "/api/trpc/viewer/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcViewerTrpc",
@@ -644,7 +644,7 @@
       "name": "getUserReferralsToken",
       "method": "GET",
       "path": "/api/user/referrals-token",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUsername",
@@ -656,7 +656,7 @@
       "name": "getVerifyBookingToken",
       "method": "GET",
       "path": "/api/verify-booking-token",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postVerifyBookingToken",
@@ -668,7 +668,7 @@
       "name": "getVersion",
       "method": "GET",
       "path": "/api/version",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postVideoGuestSession",
@@ -680,7 +680,7 @@
       "name": "getVideoRecording",
       "method": "GET",
       "path": "/api/video/recording",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebhookAppCredential",
@@ -698,7 +698,7 @@
   "annotations": [
     {
       "name": "getAuthNextauth",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -713,7 +713,7 @@
     },
     {
       "name": "getAuthOauthMe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -749,7 +749,7 @@
     {
       "name": "postAuthTwoFactorTotpDisable",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postAuthTwoFactorTotpEnable",
@@ -768,7 +768,7 @@
     },
     {
       "name": "getAvailabilityCalendar",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -779,11 +779,12 @@
     {
       "name": "deleteAvailabilityCalendar",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getAvatarUuid",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -804,7 +805,8 @@
     {
       "name": "deleteCancel",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postCronBookingReminder",
@@ -819,7 +821,7 @@
     {
       "name": "getCronCalendarSubscriptionsCleanup",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "postCronChangeTimeZone",
@@ -843,17 +845,17 @@
     },
     {
       "name": "getCsrf",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getEmail",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getGeolocation",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -883,22 +885,22 @@
     },
     {
       "name": "getIp",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLink",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLogo",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -908,7 +910,7 @@
     },
     {
       "name": "getSocialOgImage",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -924,7 +926,7 @@
     {
       "name": "getTasksCleanup",
       "mutating": true,
-      "dangerous": true
+      "dangerous": false
     },
     {
       "name": "getTasksCron",
@@ -933,7 +935,7 @@
     },
     {
       "name": "getTrpcAdminTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -943,7 +945,7 @@
     },
     {
       "name": "getTrpcApiKeysTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -953,7 +955,7 @@
     },
     {
       "name": "getTrpcAppsTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -963,7 +965,7 @@
     },
     {
       "name": "getTrpcAppsRouterTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -973,7 +975,7 @@
     },
     {
       "name": "getTrpcAuthTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -983,7 +985,7 @@
     },
     {
       "name": "getTrpcAvailabilityTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -993,7 +995,7 @@
     },
     {
       "name": "getTrpcBookingsTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1003,7 +1005,7 @@
     },
     {
       "name": "getTrpcCalendarsTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1013,7 +1015,7 @@
     },
     {
       "name": "getTrpcCalVideoTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1023,7 +1025,7 @@
     },
     {
       "name": "getTrpcCredentialsTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1033,7 +1035,7 @@
     },
     {
       "name": "getTrpcDeploymentSetupTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1043,7 +1045,7 @@
     },
     {
       "name": "getTrpcEventTypesTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1053,7 +1055,7 @@
     },
     {
       "name": "getTrpcEventTypesHeavyTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1063,7 +1065,7 @@
     },
     {
       "name": "getTrpcFeaturesTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1073,7 +1075,7 @@
     },
     {
       "name": "getTrpcFeedbackTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1083,7 +1085,7 @@
     },
     {
       "name": "getTrpcGoogleWorkspaceTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1093,7 +1095,7 @@
     },
     {
       "name": "getTrpcHolidaysTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1103,7 +1105,7 @@
     },
     {
       "name": "getTrpcI18nTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1113,7 +1115,7 @@
     },
     {
       "name": "getTrpcLoggedInViewerRouterTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1123,7 +1125,7 @@
     },
     {
       "name": "getTrpcMeTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1133,7 +1135,7 @@
     },
     {
       "name": "getTrpcOAuthTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1143,7 +1145,7 @@
     },
     {
       "name": "getTrpcOooTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1153,7 +1155,7 @@
     },
     {
       "name": "getTrpcPublicTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1163,7 +1165,7 @@
     },
     {
       "name": "getTrpcSlotsTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1173,7 +1175,7 @@
     },
     {
       "name": "getTrpcTimezonesTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1183,7 +1185,7 @@
     },
     {
       "name": "getTrpcTravelSchedulesTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1193,7 +1195,7 @@
     },
     {
       "name": "getTrpcUsersTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1203,7 +1205,7 @@
     },
     {
       "name": "getTrpcViewerTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1223,7 +1225,7 @@
     },
     {
       "name": "getUserReferralsToken",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1233,7 +1235,7 @@
     },
     {
       "name": "getVerifyBookingToken",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1243,7 +1245,7 @@
     },
     {
       "name": "getVersion",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1253,7 +1255,7 @@
     },
     {
       "name": "getVideoRecording",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
