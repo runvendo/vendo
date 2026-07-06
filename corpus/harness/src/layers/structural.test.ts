@@ -1,0 +1,233 @@
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  runStructuralLayer,
+  type StructuralCommandRunner,
+  type StructuralLayerContext,
+} from "./structural.js";
+
+const tempRoots: string[] = [];
+
+const theme = {
+  version: 1,
+  accent: "#0A7CFF",
+  background: "#FFFFFF",
+  surface: "#F5F7FA",
+  text: "#111418",
+  mutedText: "#5B6470",
+  fontFamily: "system-ui, sans-serif",
+  radius: 8,
+  mode: "light",
+};
+
+const safeTools = {
+  version: 1,
+  tools: [
+    {
+      name: "listInvoices",
+      description: "List invoices.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { mutating: false, dangerous: false },
+      binding: { type: "http", method: "GET", path: "/api/invoices" },
+    },
+    {
+      name: "createInvoice",
+      description: "Create an invoice.",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { mutating: true, dangerous: false },
+      binding: { type: "http", method: "POST", path: "/api/invoices" },
+    },
+  ],
+  events: [],
+};
+
+afterEach(async () => {
+  await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
+  tempRoots.length = 0;
+});
+
+async function makeTempRepo(): Promise<string> {
+  const repoDir = await mkdtemp(path.join(tmpdir(), "vendo-corpus-structural-"));
+  tempRoots.push(repoDir);
+  await writeFile(
+    path.join(repoDir, "package.json"),
+    JSON.stringify(
+      {
+        name: "fixture-app",
+        scripts: {
+          prebuild: "vendo sync",
+          build: "next build",
+          typecheck: "tsc --noEmit",
+        },
+        dependencies: {
+          "@electric-sql/pglite": "^0.2.0",
+          "@vendoai/next": "latest",
+          next: "16.0.0",
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  await writeFile(
+    path.join(repoDir, "next.config.ts"),
+    [
+      "import type { NextConfig } from \"next\";",
+      "",
+      "const nextConfig: NextConfig = {",
+      "  transpilePackages: [\"@vendoai/next\"],",
+      "  serverExternalPackages: [\"@electric-sql/pglite\"],",
+      "};",
+      "",
+      "export default nextConfig;",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(path.join(repoDir, ".env.example"), "ANTHROPIC_API_KEY=\nDATABASE_URL=\n");
+  await writeFile(
+    path.join(repoDir, "instrumentation.ts"),
+    [
+      "export async function register() {",
+      "  if (process.env.NEXT_RUNTIME === \"nodejs\") {",
+      "    const { startVendoScheduler } = await import(\"@vendoai/next\");",
+      "    startVendoScheduler();",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  await mkdir(path.join(repoDir, "app/api/vendo/[...path]"), { recursive: true });
+  await writeFile(
+    path.join(repoDir, "app/api/vendo/[...path]/route.ts"),
+    "import { createVendoHandler } from \"@vendoai/next\";\n\nexport const { GET, POST } = createVendoHandler();\n",
+  );
+  await writeFile(
+    path.join(repoDir, "app/layout.tsx"),
+    [
+      "import { AppVendoRoot } from \"./vendo-root\";",
+      "",
+      "export default function RootLayout({ children }: { children: React.ReactNode }) {",
+      "  return <html><body><AppVendoRoot>{children}</AppVendoRoot></body></html>;",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    path.join(repoDir, "app/vendo-root.tsx"),
+    [
+      "\"use client\";",
+      "import { VendoRoot } from \"@vendoai/next/client\";",
+      "import theme from \"../.vendo/theme.json\";",
+      "import tools from \"../.vendo/tools.json\";",
+      "export function AppVendoRoot({ children }: { children: React.ReactNode }) {",
+      "  return <VendoRoot theme={theme} tools={tools}>{children}</VendoRoot>;",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+  await writeFile(path.join(repoDir, ".vendo/README.md"), "# .vendo\n");
+  await writeFile(path.join(repoDir, ".vendo/theme.json"), JSON.stringify(theme, null, 2) + "\n");
+  await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify(safeTools, null, 2) + "\n");
+  await mkdir(path.join(repoDir, "public/vendo"), { recursive: true });
+  await writeFile(path.join(repoDir, "public/vendo/react-runtime.js"), "window.__React = {};\n");
+  await writeFile(path.join(repoDir, "public/vendo/components-sandbox.js"), "window.__VENDO_COMPONENTS__ = {};\n");
+  return repoDir;
+}
+
+function passingContext(repoDir: string, runner: StructuralCommandRunner): StructuralLayerContext {
+  return {
+    repoDir,
+    initExitCode: 0,
+    secondInitExitCode: 0,
+    secondRunDiff: "",
+    typecheckCommand: "pnpm typecheck",
+    buildCommand: "pnpm build",
+    commandRunner: runner,
+  };
+}
+
+function byId(results: Awaited<ReturnType<typeof runStructuralLayer>>) {
+  return Object.fromEntries(results.map((result) => [result.id, result]));
+}
+
+describe("runStructuralLayer", () => {
+  it("passes all Layer 1 structural checks for a generated App Router fixture", async () => {
+    const repoDir = await makeTempRepo();
+    const calls: string[] = [];
+    const runner: StructuralCommandRunner = async (command, options) => {
+      calls.push(`${command} @ ${options.cwd}`);
+      return { code: 0, stdout: "ok", stderr: "" };
+    };
+
+    const results = await runStructuralLayer(passingContext(repoDir, runner));
+
+    expect(results.map((result) => result.id)).toEqual([
+      "init.exit",
+      "files.expected",
+      "config.schema",
+      "host.typecheck",
+      "host.build",
+      "init.idempotent",
+      "tools.fail-closed",
+    ]);
+    expect(results.every((result) => result.pass)).toBe(true);
+    expect(calls).toEqual([
+      `pnpm typecheck @ ${repoDir}`,
+      `pnpm build @ ${repoDir}`,
+    ]);
+  });
+
+  it("reports targeted failures without throwing and still runs every check", async () => {
+    const repoDir = await makeTempRepo();
+    await unlink(path.join(repoDir, "app/api/vendo/[...path]/route.ts"));
+    await writeFile(path.join(repoDir, ".vendo/theme.json"), JSON.stringify({ ...theme, accent: "var(--accent)" }));
+    await writeFile(
+      path.join(repoDir, ".vendo/tools.json"),
+      JSON.stringify(
+        {
+          ...safeTools,
+          tools: [
+            {
+              ...safeTools.tools[1],
+              annotations: { mutating: false, dangerous: false },
+            },
+          ],
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    const calls: string[] = [];
+    const runner: StructuralCommandRunner = async (command, options) => {
+      calls.push(`${command} @ ${options.cwd}`);
+      if (command.includes("typecheck")) throw new Error("typecheck command could not start");
+      return { code: 2, stdout: "build stdout", stderr: "build stderr" };
+    };
+
+    const results = byId(await runStructuralLayer({
+      repoDir,
+      initExitCode: 1,
+      secondInitExitCode: 0,
+      secondRunDiff: "M app/layout.tsx\n",
+      typecheckCommand: "pnpm typecheck",
+      buildCommand: "pnpm build",
+      commandRunner: runner,
+    }));
+
+    expect(Object.values(results)).toHaveLength(7);
+    expect(results["init.exit"]).toMatchObject({ pass: false });
+    expect(results["files.expected"]?.detail).toContain("app/api/vendo/[...path]/route.ts");
+    expect(results["config.schema"]?.detail).toContain("theme.json");
+    expect(results["host.typecheck"]?.detail).toContain("typecheck command could not start");
+    expect(results["host.build"]?.detail).toContain("exit code 2");
+    expect(results["init.idempotent"]?.detail).toContain("M app/layout.tsx");
+    expect(results["tools.fail-closed"]?.detail).toContain("createInvoice");
+    expect(calls).toEqual([
+      `pnpm typecheck @ ${repoDir}`,
+      `pnpm build @ ${repoDir}`,
+    ]);
+  });
+});
