@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, saveConfig, configPath } from "./config.js";
+import { loadConfig, saveConfig, configPath, configDir } from "./config.js";
 
 let home: string;
 beforeEach(() => {
@@ -33,5 +33,12 @@ describe("config store", () => {
     const reread = loadConfig(home);
     expect(reread.optedOut).toBe(true);
     expect(reread.noticeShown).toBe(true);
+  });
+
+  it("honors a hand-written opt-out even without an anonymous id (review)", () => {
+    mkdirSync(configDir(home), { recursive: true });
+    writeFileSync(configPath(home), JSON.stringify({ optedOut: true }), "utf8");
+    const c = loadConfig(home);
+    expect(c.optedOut).toBe(true);
   });
 });

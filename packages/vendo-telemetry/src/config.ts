@@ -22,10 +22,15 @@ export function loadConfig(home = homedir()): TelemetryConfig {
   if (existsSync(path)) {
     try {
       const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<TelemetryConfig>;
-      if (typeof raw.anonymousId === "string" && raw.anonymousId.length > 0) {
+      const hasId = typeof raw.anonymousId === "string" && raw.anonymousId.length > 0;
+      const optedOut = raw.optedOut === true;
+      // Honor the file when it carries EITHER an id or an explicit decision. A
+      // hand-written {optedOut:true} with no id must never be silently
+      // overwritten back to opted-in; synthesize an (unsent) id and keep it.
+      if (hasId || optedOut) {
         return {
-          anonymousId: raw.anonymousId,
-          optedOut: raw.optedOut === true,
+          anonymousId: hasId ? (raw.anonymousId as string) : randomUUID(),
+          optedOut,
           noticeShown: raw.noticeShown === true,
         };
       }
