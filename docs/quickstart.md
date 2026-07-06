@@ -321,8 +321,10 @@ scheduler and Composio webhook setup you'll want on a real deployment.
 ## Troubleshooting
 
 - **"Sandbox unavailable / react shim missing"** — `public/vendo/` is
-  missing its two assets; re-run `npx vendo init . --force` or copy them
-  from the CLI's `dist/assets/`.
+  missing its two assets; re-run `npx vendo init .` to restore them (init
+  copies any missing sandbox asset even without `--force`; add `--force` only
+  if the files exist but are stale). `vendo sync` does NOT copy these — it
+  only captures wrapped-component source, so it won't fix this.
 - **Chat answers 403 on a deployment** — that's the local-only default; see
   Deploying above.
 - **Chat errors immediately** — check that one of `ANTHROPIC_API_KEY`,

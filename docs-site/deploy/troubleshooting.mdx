@@ -9,13 +9,13 @@ Use the headings and error snippets to find the matching cause.
 
 Cause: `public/vendo/react-runtime.js` is missing.
 
-Fix: run `npx vendo init . --force`, or copy the Vendo sandbox assets into `public/vendo/` as part of your own setup.
+Fix: run `npx vendo init .` — init copies any missing sandbox asset even without `--force` (add `--force` only to overwrite files that already exist but are stale). `vendo sync` does not restore these assets.
 
 ## Sandbox unavailable: components bundle missing
 
 Cause: `public/vendo/components-sandbox.js` is missing.
 
-Fix: run `npx vendo init . --force`, or copy the Vendo sandbox assets into `public/vendo/`.
+Fix: run `npx vendo init .` — init copies any missing sandbox asset even without `--force` (add `--force` only to overwrite files that already exist but are stale). `vendo sync` does not restore these assets.
 
 ## Chat is unavailable
 
