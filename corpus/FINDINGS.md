@@ -6,6 +6,10 @@ Mode: real `vendo init` with LLM enabled. API keys were sourced from `apps/demo-
 Scorecard artifacts: `corpus/.repos/.logs/scorecard.json` and `corpus/.repos/.logs/scorecard.md`
 Latest scorecard: `2026-07-06T08:10:47.953Z`
 
+## Task 9 Manifest Substitution
+
+- `plane` was not added because `makeplane/plane` default branch `preview` is no longer a Next.js app: the current web package builds with React Router (`react-router build`) and the tree only keeps `app/compat/next` compatibility shims. It was substituted with `teable`, a comparable collaborative OSS app whose `apps/nextjs-app` package is a current Next.js app.
+
 ## Summary Scorecard
 
 | Repo | Layer 1 | Score | Hard failures |
