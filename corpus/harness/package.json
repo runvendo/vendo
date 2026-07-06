@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@vendoai/core": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

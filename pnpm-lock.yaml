@@ -258,6 +258,9 @@ importers:
 
   corpus/harness:
     dependencies:
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../../packages/vendo-core
       zod:
         specifier: ^3.24.0
         version: 3.25.76
