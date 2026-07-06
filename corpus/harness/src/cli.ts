@@ -29,6 +29,8 @@ import {
   type StructuralCheckResult,
   type StructuralCommandResult,
   type StructuralCommandRunner,
+  type StructuralCommandSnapshot,
+  type StructuralHostBaseline,
   type StructuralLayerContext,
 } from "./layers/structural.js";
 import { loadManifest as defaultLoadManifest, type CorpusManifest, type ManifestEntry } from "./manifest.js";
@@ -72,6 +74,7 @@ export interface CorpusCliDependencies {
   createInjector?: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit?: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
+  commandRunner?: StructuralCommandRunner;
 }
 
 interface ResolvedDeps {
@@ -87,6 +90,7 @@ interface ResolvedDeps {
   createInjector: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
+  commandRunner: StructuralCommandRunner;
 }
 
 interface RunCommandOptions {
@@ -116,6 +120,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     createInjector: deps.createInjector ?? createLocalVendoInjector,
     runInit: deps.runInit ?? runVendoInitStep,
     runStructuralLayer: deps.runStructuralLayer ?? defaultRunStructuralLayer,
+    commandRunner: deps.commandRunner ?? runShellCommand,
   };
 }
 
@@ -282,7 +287,11 @@ function commandLogLabel(command: string, index: number): string {
   return `command-${index + 1}`;
 }
 
-function createLoggedCommandRunner(logsDir: string): LoggedCommandRunner {
+function createLoggedCommandRunner(
+  logsDir: string,
+  logPrefix: string,
+  commandRunner: StructuralCommandRunner,
+): LoggedCommandRunner {
   const logPaths: string[] = [];
   let commandIndex = 0;
 
@@ -291,16 +300,55 @@ function createLoggedCommandRunner(logsDir: string): LoggedCommandRunner {
     async runner(command, options) {
       const label = commandLogLabel(command, commandIndex);
       commandIndex += 1;
-      const stdoutPath = path.join(logsDir, `structural.${label}.stdout.log`);
-      const stderrPath = path.join(logsDir, `structural.${label}.stderr.log`);
+      const stdoutPath = path.join(logsDir, `${logPrefix}.${label}.stdout.log`);
+      const stderrPath = path.join(logsDir, `${logPrefix}.${label}.stderr.log`);
       await mkdir(logsDir, { recursive: true });
-      const result = await runShellCommand(command, options);
-      await writeFile(stdoutPath, result.stdout);
-      await writeFile(stderrPath, result.stderr);
-      logPaths.push(stdoutPath, stderrPath);
-      return result;
+      try {
+        const result = await commandRunner(command, options);
+        await writeFile(stdoutPath, result.stdout);
+        await writeFile(stderrPath, result.stderr);
+        logPaths.push(stdoutPath, stderrPath);
+        return result;
+      } catch (error) {
+        await writeFile(stdoutPath, "");
+        await writeFile(stderrPath, errorMessage(error));
+        logPaths.push(stdoutPath, stderrPath);
+        throw error;
+      }
     },
   };
+}
+
+async function captureBaselineCommand(
+  command: string | undefined,
+  repoDir: string,
+  env: NodeJS.ProcessEnv | undefined,
+  runner: StructuralCommandRunner,
+): Promise<StructuralCommandSnapshot | undefined> {
+  if (!command) return undefined;
+  try {
+    return {
+      command,
+      result: await runner(command, { cwd: repoDir, env }),
+    };
+  } catch (error) {
+    return {
+      command,
+      error: errorMessage(error),
+    };
+  }
+}
+
+async function captureHostBaseline(
+  repoDir: string,
+  typecheckCommand: string | undefined,
+  buildCommand: string | undefined,
+  env: NodeJS.ProcessEnv | undefined,
+  runner: StructuralCommandRunner,
+): Promise<StructuralHostBaseline> {
+  const typecheck = await captureBaselineCommand(typecheckCommand, repoDir, env, runner);
+  const build = await captureBaselineCommand(buildCommand, repoDir, env, runner);
+  return { typecheck, build };
 }
 
 async function runRepoThroughLayerOne(
@@ -319,6 +367,18 @@ async function runRepoThroughLayerOne(
 
     const injectResult = await injector.inject(repo);
     const localVendoDir = localVendoDirFromInitArgs(injectResult.initArgs.length > 0 ? injectResult.initArgs : injector.initArgs());
+    const typecheckCommand = repo.bootstrap.typecheckCommand ?? await detectTypecheckCommand(repoDir);
+    const buildCommand = repo.bootstrap.buildCommand;
+    const baselineCommands = createLoggedCommandRunner(context.logsDir(repo.name), "baseline", deps.commandRunner);
+    const baseline = await captureHostBaseline(
+      repoDir,
+      typecheckCommand,
+      buildCommand,
+      deps.env,
+      baselineCommands.runner,
+    );
+    logPaths.push(...baselineCommands.logPaths);
+
     const initOptions: RunVendoInitStepOptions = {
       context,
       env: deps.env,
@@ -330,7 +390,7 @@ async function runRepoThroughLayerOne(
     const secondInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.second" });
     logPaths.push(...artifactPaths(secondInit.artifacts));
 
-    const loggedCommands = createLoggedCommandRunner(context.logsDir(repo.name));
+    const loggedCommands = createLoggedCommandRunner(context.logsDir(repo.name), "structural", deps.commandRunner);
     const checks = await deps.runStructuralLayer({
       repoDir,
       initExitCode: firstInit.exitCode,
@@ -338,8 +398,9 @@ async function runRepoThroughLayerOne(
       secondInitExitCode: secondInit.exitCode,
       secondRunDiff: await readOptional(secondInit.artifacts.diff),
       secondRunDetail: await readOptional(secondInit.artifacts.log),
-      typecheckCommand: repo.bootstrap.typecheckCommand ?? await detectTypecheckCommand(repoDir),
-      buildCommand: repo.bootstrap.buildCommand,
+      typecheckCommand,
+      buildCommand,
+      baseline,
       commandRunner: loggedCommands.runner,
       env: deps.env,
     });

@@ -230,4 +230,79 @@ describe("runStructuralLayer", () => {
       `pnpm build @ ${repoDir}`,
     ]);
   });
+
+  it("skips host command failures when the baseline was already broken", async () => {
+    const repoDir = await makeTempRepo();
+    const calls: string[] = [];
+    const runner: StructuralCommandRunner = async (command, options) => {
+      calls.push(`${command} @ ${options.cwd}`);
+      return { code: 2, stdout: `${command} post stdout`, stderr: `${command} post stderr` };
+    };
+
+    const results = byId(await runStructuralLayer({
+      ...passingContext(repoDir, runner),
+      baseline: {
+        typecheck: {
+          command: "pnpm typecheck",
+          result: { code: 1, stdout: "baseline typecheck stdout", stderr: "baseline typecheck stderr" },
+        },
+        build: {
+          command: "pnpm build",
+          error: "spawn pnpm ENOENT",
+        },
+      },
+    }));
+
+    expect(results["host.typecheck"]).toMatchObject({
+      pass: true,
+      status: "skipped-baseline-broken",
+    });
+    expect(results["host.typecheck"]?.detail).toContain("baseline before vendo init failed with exit code 1");
+    expect(results["host.typecheck"]?.detail).toContain("post-init failed with exit code 2");
+    expect(results["host.build"]).toMatchObject({
+      pass: true,
+      status: "skipped-baseline-broken",
+    });
+    expect(results["host.build"]?.detail).toContain("baseline before vendo init command failed to start");
+    expect(calls).toEqual([
+      `pnpm typecheck @ ${repoDir}`,
+      `pnpm build @ ${repoDir}`,
+    ]);
+  });
+
+  it("fails host commands only when a passing baseline regresses after init", async () => {
+    const repoDir = await makeTempRepo();
+    const calls: string[] = [];
+    const runner: StructuralCommandRunner = async (command, options) => {
+      calls.push(`${command} @ ${options.cwd}`);
+      if (command.includes("build")) {
+        return { code: 1, stdout: "post build stdout", stderr: "post build stderr" };
+      }
+      return { code: 0, stdout: "post typecheck ok", stderr: "" };
+    };
+
+    const results = byId(await runStructuralLayer({
+      ...passingContext(repoDir, runner),
+      baseline: {
+        typecheck: {
+          command: "pnpm typecheck",
+          result: { code: 0, stdout: "baseline typecheck ok", stderr: "" },
+        },
+        build: {
+          command: "pnpm build",
+          result: { code: 0, stdout: "baseline build ok", stderr: "" },
+        },
+      },
+    }));
+
+    expect(results["host.typecheck"]).toMatchObject({ pass: true });
+    expect(results["host.typecheck"]?.detail).toContain("succeeded before and after vendo init");
+    expect(results["host.build"]).toMatchObject({ pass: false });
+    expect(results["host.build"]?.detail).toContain("regressed after vendo init");
+    expect(results["host.build"]?.detail).toContain("baseline succeeded but post-init failed with exit code 1");
+    expect(calls).toEqual([
+      `pnpm typecheck @ ${repoDir}`,
+      `pnpm build @ ${repoDir}`,
+    ]);
+  });
 });

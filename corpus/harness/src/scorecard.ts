@@ -7,6 +7,7 @@ export type ScorecardLayerStatus = "pass" | "fail" | "skip";
 export interface ScorecardCheck {
   id: string;
   pass: boolean;
+  status?: string;
   detail: string;
 }
 

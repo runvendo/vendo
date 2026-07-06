@@ -121,6 +121,15 @@ describe("runCli run", () => {
           },
         };
       },
+      commandRunner: async (command, commandOptions) => {
+        events.push(`baseline:${command}`);
+        return {
+          code: command.includes("typecheck") ? 1 : 0,
+          signal: null,
+          stdout: `${command} stdout @ ${commandOptions.cwd}`,
+          stderr: command.includes("typecheck") ? "pre-existing type error" : "",
+        };
+      },
       runInit: async (entry, options) => {
         initOptions.push(options ?? {});
         const ordinal = initOptions.length;
@@ -152,6 +161,8 @@ describe("runCli run", () => {
       "clone:repo-one",
       "bootstrap:repo-one",
       "inject:repo-one",
+      "baseline:pnpm typecheck",
+      "baseline:pnpm build",
       "init1:repo-one",
       "init2:repo-one",
       "layer1:repo-one",
@@ -168,6 +179,16 @@ describe("runCli run", () => {
       secondRunDiff: "",
       typecheckCommand: "pnpm typecheck",
       buildCommand: "pnpm build",
+    });
+    expect(structuralContexts[0]?.baseline).toMatchObject({
+      typecheck: {
+        command: "pnpm typecheck",
+        result: { code: 1, stderr: "pre-existing type error" },
+      },
+      build: {
+        command: "pnpm build",
+        result: { code: 0 },
+      },
     });
     expect(stdout.join("\n")).toContain("| repo-one | Layer 1 structural | PASS | 4/4 |");
     await expect(readFile(path.join(context.reposDir, ".logs", "scorecard.json"), "utf8")).resolves.toContain("\"repo\": \"repo-one\"");
@@ -208,6 +229,7 @@ describe("runCli run", () => {
           };
         },
       }),
+      commandRunner: async () => ({ code: 0, signal: null, stdout: "ok", stderr: "" }),
       runInit: async (entry, options) => {
         skipLlmValues.push(options?.skipLlm);
         const logsDir = context.logsDir(entry.name);
@@ -273,6 +295,7 @@ describe("runCli run", () => {
             };
           },
         }),
+        commandRunner: async () => ({ code: 0, signal: null, stdout: "ok", stderr: "" }),
         runInit: async (entry) => {
           events.push(`init:${entry.name}`);
           const logsDir = context.logsDir(entry.name);
