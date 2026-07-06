@@ -84,11 +84,14 @@ function useHostRoute(): StageRoute {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const params = useParams();
-  const search = searchParams.toString();
+  // useSearchParams() can be null in hybrid/pages-dir apps — guard it. params
+  // can likewise be null; normalize to {} so catch-all segments (string[]) still
+  // survive when present.
+  const search = searchParams?.toString() ?? "";
   return {
     pathname: pathname ?? "",
     search: search ? `?${search}` : "",
-    params: params as Record<string, string | string[]>, // catch-all segments stay string[]
+    params: (params ?? {}) as Record<string, string | string[]>,
   };
 }
 

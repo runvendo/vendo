@@ -14,9 +14,10 @@
  * Capability-additive: the integrations tray only appears when the server
  * reports the Composio capability; voice stays behind its flag (ENG-185).
  */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { VendoUIMessage, ManifestTool, UINode } from "@vendoai/core";
+import type { StageRoute } from "@vendoai/stage";
 import { VendoProvider } from "@vendoai/react";
 import {
   VendoOverlay,
@@ -66,6 +67,24 @@ export interface VendoRootProps {
    *  handler reports `voice:true`; pass `false` to opt out, or a custom
    *  driver to override the packaged OpenAI Realtime wiring. */
   voice?: VoiceDriver | false;
+  /** OPTIONAL live route supplier, threaded to the sandbox stage so generated
+   *  views' next/link + next/navigation shims resolve the host's REAL location.
+   *  This package stays framework-agnostic, so a Next host supplies it from its
+   *  OWN `next/navigation` (declare `next` >= 13.3.0 in the host — `useParams`
+   *  landed in 13.3), e.g.:
+   *    routeSource={() => {
+   *      const params = useParams();
+   *      return {
+   *        pathname: usePathname() ?? "",
+   *        search: useSearchParams()?.toString() ? `?${useSearchParams()!.toString()}` : "",
+   *        params: (params ?? {}) as Record<string, string | string[]>,
+   *      };
+   *    }}
+   *  (`useSearchParams()` can be null in hybrid/pages-dir apps — guard it.) It's
+   *  invoked inside the stage's Suspense boundary, so `useSearchParams` re-renders
+   *  the sandbox on query-only navigation without opting the page into CSR. Omit
+   *  it (any non-Next host) and the sandbox route shims resolve empty. */
+  routeSource?: () => StageRoute;
   children: ReactNode;
 }
 
@@ -117,9 +136,15 @@ export function VendoRoot({
   toasts = true,
   toastPlacement = "bottom-left",
   voice,
+  routeSource,
   children,
 }: VendoRootProps) {
   const brand = useMemo(() => parseBrand(theme), [theme]);
+  // Held in a ref so the memoized renderNode below stays stable (a Next host
+  // typically passes a fresh inline `routeSource` each render); renderNode reads
+  // the latest supplier at call time without re-creating on its identity.
+  const routeSourceRef = useRef(routeSource);
+  routeSourceRef.current = routeSource;
   const manifestTools = useMemo(() => parseManifestTools(tools), [tools]);
   const hostToolDefs = useMemo(() => manifestToolsToHostTools(manifestTools), [manifestTools]);
   const [open, setOpen] = useState(false);
@@ -260,7 +285,15 @@ export function VendoRoot({
       }
       // Everything else the agent produces renders untrusted in the sandbox.
       if (node.kind === "generated") {
-        return <SandboxStage node={node} brand={brand} components={[]} basePath={basePath} />;
+        return (
+          <SandboxStage
+            node={node}
+            brand={brand}
+            components={[]}
+            basePath={basePath}
+            {...(routeSourceRef.current ? { routeSource: routeSourceRef.current } : {})}
+          />
+        );
       }
       // Unexpected: only "Connect" is host-rendered. Fail loud but contained.
       return <div data-testid="unexpected-node">{node.name} (not renderable)</div>;
