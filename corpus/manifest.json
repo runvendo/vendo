@@ -27,7 +27,7 @@
       "buildCommand": "pnpm --ignore-workspace build",
       "devServer": {
         "command": "pnpm --ignore-workspace dev",
-        "readinessUrl": "http://127.0.0.1:3000",
+        "readinessUrl": "http://localhost:3000",
         "readinessTimeoutMs": 120000,
         "readinessIntervalMs": 1000
       }
