@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import Link from "./next-link";
 import Image from "./next-image";
-import { useRouter } from "./next-navigation";
+import {
+  useRouter,
+  useParams,
+  redirect,
+  notFound,
+  useSelectedLayoutSegment,
+  useSelectedLayoutSegments,
+} from "./next-navigation";
 import useSWR from "./swr";
 import { NAVIGATE_ACTION } from "./dispatch";
 
@@ -55,6 +62,27 @@ describe("useRouter shim", () => {
     router.push("/settings");
     expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/settings" } }]);
     expect(() => router.back()).toThrow(/not available/);
+  });
+});
+
+describe("next/navigation extra exports", () => {
+  it("useParams returns an empty object (no route channel in the sandbox)", () => {
+    expect(useParams()).toEqual({});
+  });
+
+  it("redirect routes through the same navigate bridge (does not throw)", () => {
+    const calls = captureDispatch();
+    expect(() => redirect("/login")).not.toThrow();
+    expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/login" } }]);
+  });
+
+  it("notFound is a safe no-op (does not throw)", () => {
+    expect(() => notFound()).not.toThrow();
+  });
+
+  it("useSelectedLayoutSegment(s) return null / []", () => {
+    expect(useSelectedLayoutSegment()).toBeNull();
+    expect(useSelectedLayoutSegments()).toEqual([]);
   });
 });
 

@@ -6,5 +6,14 @@
 export { NAVIGATE_ACTION, navigate, dispatch } from "./dispatch.js";
 export { default as Link, type LinkProps } from "./next-link.js";
 export { default as Image, type ImageProps } from "./next-image.js";
-export { useRouter, usePathname, useSearchParams } from "./next-navigation.js";
+export {
+  useRouter,
+  usePathname,
+  useSearchParams,
+  useParams,
+  redirect,
+  notFound,
+  useSelectedLayoutSegment,
+  useSelectedLayoutSegments,
+} from "./next-navigation.js";
 export { default as useSWR, type SWRResponse } from "./swr.js";
