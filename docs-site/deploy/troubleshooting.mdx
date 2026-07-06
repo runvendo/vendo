@@ -5,6 +5,21 @@ description: "Common failure modes and their fixes"
 
 Use the headings and error snippets to find the matching cause.
 
+## Start with `vendo doctor`
+
+Before matching an error below, run the health check from your app root:
+
+```bash
+npx vendo doctor .
+```
+
+`doctor` is strictly read-only — it never writes to your app. It reports on keys, model override, wiring (route handler, layout wrap, vendo-root, next.config, sandbox assets, installed deps), `.vendo/` state, storage, scheduler, and telemetry, and prints a fix for anything wrong.
+
+- **Hard failures** exit non-zero and mean the install will not work: a missing route handler or vendo-root, a root layout that does not wrap `{children}`, a Vendo dependency not installed, `next.config` missing the required Vendo entries, or a model override naming an unknown provider while a key is set.
+- **Warnings** exit zero and mean degraded but functional: no provider key (deterministic-only), empty-fallback tools, missing or stale sandbox assets (chat works, only generated UI degrades), no scheduler, or a data directory not yet created. Warnings never flip the exit code.
+
+Many of the sections below map to a `doctor` line; the fix it prints is the same one documented here.
+
 ## Sandbox unavailable: react shim missing
 
 Cause: `public/vendo/react-runtime.js` is missing.
