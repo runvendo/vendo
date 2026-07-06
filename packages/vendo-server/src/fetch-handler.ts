@@ -159,6 +159,7 @@ export function routeTail(req: Request): string {
  */
 const CSRF_PROTECTED_POST_TAILS = new Set([
   "integrations",
+  "voice/tools",
   "action",
   "consent",
   "fade-proposal",
@@ -913,7 +914,11 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           store: s.connections,
           enabled: s.capabilities.integrations,
           principal: guard.principal,
-          controlTools: s.controlTools(),
+          // SINGLE-TENANT world (see world.ts / deliveries route): automation
+          // authoring tools mutate the fixed-scope world, so only the world's
+          // own subject may see or drive them. A different resolved principal
+          // on a custom multi-user mount gets integration tools only.
+          ...(guard.principal.userId === s.worldScope.subject ? { controlTools: s.controlTools() } : {}),
         });
       }
       case "deliveries": {
@@ -1054,7 +1059,7 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           store: s.connections,
           enabled: s.capabilities.integrations,
           principal: guard.principal,
-          controlTools: s.controlTools(),
+          ...(guard.principal.userId === s.worldScope.subject ? { controlTools: s.controlTools() } : {}),
         });
       }
       case "tick": {

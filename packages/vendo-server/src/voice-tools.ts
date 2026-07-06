@@ -43,9 +43,19 @@ export interface VoiceToolsDeps {
   controlTools?: ToolSet;
 }
 
-/** Tier for an authoring/control tool: they mutate state, so act-tier
- *  (voice-approved) unless a read-only hint says otherwise. */
-function controlTier(name: string): "read" | "act" | "critical" {
+/**
+ * Tier for an authoring/control tool. These mutate the automation store, so
+ * they default to act-tier (voice-approvable). A DESTRUCTIVE control tool
+ * (create/update/delete_automation, stop_asking_about — flagged with a
+ * `destructiveHint` annotation) MUST be critical so the realtime driver
+ * refuses a spoken "yes" and requires an explicit tap, matching chat's
+ * dangerTier for the same tools (Codex security review).
+ */
+function controlTier(name: string, tool: unknown): "read" | "act" | "critical" {
+  const annotations = (tool as { annotations?: ToolDescriptor["annotations"] }).annotations ?? {};
+  if (annotations.destructiveHint) return "critical";
+  if (annotations.readOnlyHint) return "read";
+  if (DESTRUCTIVE_NAME.test(name)) return "critical";
   if (READ_NAME.test(name)) return "read";
   return "act";
 }
@@ -60,7 +70,7 @@ function controlToolList(deps: VoiceToolsDeps, maxTools: number): Array<{
       name,
       description: String((tool as { description?: string }).description ?? name),
       parameters: schemaOf(tool),
-      tier: controlTier(name),
+      tier: controlTier(name, tool),
     }));
 }
 
