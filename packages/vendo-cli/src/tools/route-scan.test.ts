@@ -63,6 +63,58 @@ describe("scanRoutes", () => {
     expect(warnings[0]).toMatch(/no route file matches/);
   });
 
+  it("discovers App Router routes under route groups and strips the groups from the URL path", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "app/(internal)/api/widgets"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/(internal)/api/widgets/route.ts"),
+      `export async function GET() { return Response.json([]); }\n`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path, tool.annotations.mutating])).toEqual([
+      ["getWidgets", "GET", "/api/widgets", true],
+    ]);
+  });
+
+  it("discovers nested route-group-only roots and parallel routes with deterministic URL paths", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/(api)/(v1)/bases/[baseId]"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/(api)/(v1)/bases/[baseId]/route.ts"),
+      `export async function PATCH() { return Response.json({ ok: true }); }\n`,
+    );
+    await mkdir(path.join(dir, "src/app/@modal/(api)/spaces"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/@modal/(api)/spaces/route.ts"),
+      `export async function POST() { return Response.json({ ok: true }); }\n`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path, tool.annotations.mutating])).toEqual([
+      ["patchBasesBaseId", "PATCH", "/bases/{baseId}", true],
+      ["postSpaces", "POST", "/spaces", true],
+    ]);
+  });
+
+  it("does not treat non-API route groups as agent tools", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/(collect)/q/[slug]"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/(collect)/q/[slug]/route.ts"),
+      `export async function GET() { return Response.json({ ok: true }); }\n`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(tools).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
   it("returns no tools when there are no route files (no LLM call)", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     const { tools } = await scanRoutes(dir, textModel(["[]"]));

@@ -38,9 +38,18 @@ function cleanSegment(segment: string): string | null {
   return segment;
 }
 
+function routeGroupName(segment: string): string | null {
+  if (!segment.startsWith("(") || !segment.endsWith(")")) return null;
+  return segment.slice(1, -1).toLowerCase();
+}
+
 function pathFromSegments(segments: readonly string[]): string {
   const cleaned = segments.map(cleanSegment).filter((segment): segment is string => Boolean(segment));
   return `/${cleaned.join("/")}`.replace(/\/+/g, "/");
+}
+
+function isApiAppRoute(routeSegments: readonly string[], urlPath: string): boolean {
+  return urlPath === "/api" || urlPath.startsWith("/api/") || routeSegments.some((segment) => routeGroupName(segment) === "api");
 }
 
 function appRoutePath(relPath: string): string | null {
@@ -50,10 +59,11 @@ function appRoutePath(relPath: string): string | null {
 
   const appIndex = parts.findIndex((part) => part === "app");
   if (appIndex === -1) return null;
-  const apiIndex = parts.findIndex((part, index) => index > appIndex && part === "api");
-  if (apiIndex === -1) return null;
 
-  return pathFromSegments(parts.slice(apiIndex, -1));
+  const routeSegments = parts.slice(appIndex + 1, -1);
+  const urlPath = pathFromSegments(routeSegments);
+  if (!isApiAppRoute(routeSegments, urlPath)) return null;
+  return urlPath;
 }
 
 function pagesRoutePath(relPath: string): string | null {
@@ -185,20 +195,7 @@ export interface RouteScanResult {
   warnings: string[];
 }
 
-/**
- * Vendo's own generated catch-all handler (`app/api/vendo/[...path]/route.ts`,
- * or `src/app/api/vendo/...`) must never enter the scan: the LLM would
- * otherwise propose a tool for Vendo's own endpoint, which the export checker
- * then drops with a confusing "exports: none" line (it doesn't recognize the
- * `export const { GET, POST } = createVendoHandler()` destructuring). Anchored
- * on a trailing slash after "vendo" so a legitimate route like `api/vendors`
- * is never caught by this.
- *
- * The `api/vendo` segment is also encoded in state.ts (route path constants)
- * and next-wiring.ts (path.join segments) — a rename must touch all three.
- */
-const VENDO_OWN_ROUTE = /(^|\/)app\/api\/vendo\//;
-
+/** Vendo's own generated catch-all handler must never enter the host tool scan. */
 function isVendoOwnRoute(urlPath: string): boolean {
   return urlPath === "/api/vendo" || urlPath.startsWith("/api/vendo/");
 }
@@ -290,10 +287,8 @@ function inferredPageDefaultVerbs(source: string, kind: RouteSource["kind"]): Se
 async function routeSources(targetDir: string): Promise<RouteSource[]> {
   const files = await walk(targetDir, (p) => {
     const norm = p.replace(/\\/g, "/");
-    return (
-      (/\/?app\/.*\/?api\/.*route\.tsx?$/.test(norm) && !VENDO_OWN_ROUTE.test(norm)) ||
-      /(^|\/)(?:src\/)?pages\/api\/.*\.(?:tsx?|jsx?)$/.test(norm)
-    );
+    const route = routePathForRel(norm);
+    return Boolean(route && !isVendoOwnRoute(route.urlPath));
   }, 5_000);
 
   const routes: RouteSource[] = [];
