@@ -13,9 +13,11 @@
   &nbsp;·&nbsp;
   <a href="https://docs.vendo.run">Docs</a>
   &nbsp;·&nbsp;
-  <a href="docs/quickstart.md">Quickstart</a>
+  <a href="https://docs.vendo.run/quickstart">Quickstart</a>
   &nbsp;·&nbsp;
   <a href="#see-it-in-action">Demos</a>
+  &nbsp;·&nbsp;
+  <a href="https://vendo.run/pricing">Cloud</a>
 </p>
 
 ```bash
@@ -90,7 +92,7 @@ outside your permission policy.
 </p>
 <p align="center"><sub>A real <code>vendo init</code> run: theme extracted from your CSS, 17 agent tools derived from the app's OpenAPI spec, 11 components wrapped for generated UI, routes wired.</sub></p>
 
-Full walkthrough: [docs/quickstart.md](docs/quickstart.md).
+Full walkthrough: [docs.vendo.run/quickstart](https://docs.vendo.run/quickstart).
 
 Want to try it before integrating? `pnpm demo` runs Maple, a demo bank with
 Vendo embedded. `pnpm demo:accounting` runs Cadence, an accounting firm app
@@ -101,14 +103,14 @@ with remix, automations, and voice.
 The agent acts through your product's OpenAPI surface as the signed-in user.
 Generated UI renders in a sandboxed iframe with no network egress, and host
 components render natively from your catalog. Every mutating action flows
-through your permission policy. Deeper docs: [docs/](docs/).
+through your permission policy. Deeper docs: [docs.vendo.run](https://docs.vendo.run).
 
 <details>
 <summary><b>Packages</b></summary>
 
 | Package | What it is |
 |---|---|
-| `vendoai` | The public install (interim name; bare `vendo` pending an npm name-dispute) — `vendoai/server` (`createVendoHandler`) + `vendoai/react` (`<VendoRoot>`) |
+| `vendoai` | The public install (interim name; bare `vendo` pending an npm name-dispute): `vendoai/server` (`createVendoHandler`) + `vendoai/react` (`<VendoRoot>`) |
 | `@vendoai/cli` | `vendo init`, a one-command install into a Next.js app |
 | `@vendoai/core` | Manifest schemas, GenUI format, the five platform seams |
 | `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |
@@ -136,7 +138,7 @@ through your permission policy. Deeper docs: [docs/](docs/).
 
 <details>
 <summary><b>What does it cost?</b></summary>
-<br>The code is Apache-2.0 and free. You pay your model provider for the tokens your customers use.
+<br>Self-hosting is free: the code is Apache-2.0 and you pay your model provider for the tokens your customers use. A managed cloud with enterprise controls is on the way, see <a href="https://vendo.run/pricing">vendo.run/pricing</a>.
 </details>
 
 <details>
@@ -148,8 +150,3 @@ through your permission policy. Deeper docs: [docs/](docs/).
 <summary><b>How does it match my brand?</b></summary>
 <br><code>vendo init</code> extracts design tokens from your app, and generated UI composes your own wrapped components plus a themeable catalog.
 </details>
-
----
-
-PRs welcome: [CONTRIBUTING.md](CONTRIBUTING.md) · telemetry: [TELEMETRY.md](TELEMETRY.md) ·
-security reports: [SECURITY.md](SECURITY.md) · [Apache-2.0](LICENSE)
