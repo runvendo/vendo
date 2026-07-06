@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { descriptorSource, implSource, entrySource, registryName, assertParses } from "./codegen.js";
+import { descriptorSource, implSource, entrySource, registryName, assertParses, assertSchemaValid, exampleProps } from "./codegen.js";
 import type { ComponentAnalysis } from "./analyze.js";
 import type { ComponentCandidate } from "./scan.js";
 
@@ -81,6 +81,41 @@ describe("codegen", () => {
 
   it("rejects broken generated JSX", () => {
     expect(() => assertParses("impl", "const x = <div>")).toThrow(/syntax error/);
+  });
+
+  describe("assertSchemaValid", () => {
+    it("passes a healthy descriptor (schema evaluates and accepts its own example)", () => {
+      expect(() => assertSchemaValid(analysis)).not.toThrow();
+    });
+
+    it("synthesizes a type-appropriate example object accepted by a healthy schema", () => {
+      expect(exampleProps(analysis.props)).toEqual({ label: "example", variant: "primary" });
+    });
+
+    it("detects a degenerate empty enum (z.enum([]) rejects every input)", () => {
+      const bad: ComponentAnalysis = {
+        ...analysis,
+        props: [{ name: "status", type: "enum", enumValues: [], optional: false, description: "Status." }],
+      };
+      expect(() => assertSchemaValid(bad)).toThrow(/degenerate/);
+      expect(() => assertSchemaValid(bad)).toThrow(/empty enum for "status"/);
+    });
+
+    it("detects a degenerate empty enum even when the prop is optional", () => {
+      const bad: ComponentAnalysis = {
+        ...analysis,
+        props: [{ name: "status", type: "enum", enumValues: undefined, optional: true, description: "Status." }],
+      };
+      expect(() => assertSchemaValid(bad)).toThrow(/rejects its own example props/);
+    });
+
+    it("guards against a non-identifier prop name before evaluating", () => {
+      const bad: ComponentAnalysis = {
+        ...analysis,
+        props: [{ name: "x); throw new Error('pwned'); (", type: "string", optional: false, description: "d" }],
+      };
+      expect(() => assertSchemaValid(bad)).toThrow(/not a valid identifier/);
+    });
   });
 
   it("re-roots tsconfig path aliases for the emitted vite config", async () => {

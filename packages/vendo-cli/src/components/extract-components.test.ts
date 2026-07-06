@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { extractComponents } from "./extract-components.js";
-import { textModel } from "../test-helpers.js";
+import { textModel, countingModel } from "../test-helpers.js";
 
 const INCLUDE = JSON.stringify({
   include: true,
@@ -51,5 +51,39 @@ describe("extractComponents", () => {
     const summary = await extractComponents(dir, textModel([BROKEN, INCLUDE]), { force: false });
     expect(summary.written).toEqual(["Badge"]);
     expect(summary.failed).toEqual([]);
+  });
+
+  // Syntax-valid but degenerate: an enum prop with no values compiles to
+  // z.enum([]), which rejects every render at runtime. The old syntax-only
+  // rescue passed this through; the schema rescue catches it.
+  const EMPTY_ENUM = JSON.stringify({
+    include: true, reason: "primitive", name: "Badge", description: "A badge.",
+    imports: ["Badge"], props: [{ name: "status", type: "enum", enumValues: [], optional: false, description: "Status." }],
+    jsx: "<Badge>{p.status}</Badge>",
+  });
+
+  it("repairs a degenerate empty-enum schema once via the round-trip", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "comp-"));
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
+    const { model, count } = countingModel([EMPTY_ENUM, INCLUDE]);
+    const summary = await extractComponents(dir, model, { force: false });
+    expect(summary.written).toEqual(["Badge"]);
+    expect(summary.failed).toEqual([]);
+    expect(count()).toBe(2); // original call + exactly one repair round-trip
+    await readFile(path.join(dir, ".vendo/components/Badge/descriptor.ts"), "utf8");
+  });
+
+  it("reports a never-fixing degenerate schema as failed and writes nothing", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "comp-"));
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
+    const { model, count } = countingModel([EMPTY_ENUM, EMPTY_ENUM]);
+    const summary = await extractComponents(dir, model, { force: false });
+    expect(summary.written).toEqual([]);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]!.error).toMatch(/degenerate/);
+    expect(count()).toBe(2); // one repair attempt, then give up — never a second retry
+    await expect(readFile(path.join(dir, ".vendo/components/Badge/descriptor.ts"), "utf8")).rejects.toThrow();
   });
 });

@@ -25,6 +25,27 @@ export function textModel(responses: string[]): MockLanguageModelV3 {
   });
 }
 
+/**
+ * Like {@link textModel}, but also reports how many times it was invoked — so
+ * tests can assert the repair round-trip fired exactly once (2 total calls).
+ */
+export function countingModel(responses: string[]): { model: MockLanguageModelV3; count: () => number } {
+  let i = 0;
+  const model = new MockLanguageModelV3({
+    doGenerate: async (): Promise<LanguageModelV3GenerateResult> => {
+      const text = responses[Math.min(i, responses.length - 1)]!;
+      i++;
+      return {
+        content: [{ type: "text", text }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: ZERO_USAGE,
+        warnings: [],
+      };
+    },
+  });
+  return { model, count: () => i };
+}
+
 export function throwingModel(message: string): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     doGenerate: async (): Promise<LanguageModelV3GenerateResult> => {
