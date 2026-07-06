@@ -18,7 +18,11 @@ listener, provider-peer degradation, server-side error hygiene, the two
 release gates, and residuals the gates caught on top of launch prep
 (sandbox-shims dist was still not Node-loadable; CLI's conflicting duplicate
 typescript pins). Wave 3 (policy/approval integrity, twice Codex-reviewed)
-is PR #64 stacked on #56. **Merge order: #60 → #56 → #64.**
+is PR #64 stacked on #56. Wave 4 (client/state reliability) is PR #66 and
+wave 5 (generated-view data correctness) is PR #65 — siblings stacked on #64,
+no file overlap, either merges first. **Merge order: #60 → #56 → #64 → #65+#66.**
+The shell-UI wave (your four approved designs) is building now and will follow
+as its own PR with screenshots.
 
 ## Judgment calls I made that you should ratify (all in PR #56)
 
