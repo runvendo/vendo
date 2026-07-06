@@ -11,7 +11,7 @@ import {
   useSelectedLayoutSegments,
 } from "./next-navigation";
 import useSWR, { useSWRConfig, mutate, SWRConfig, preload } from "./swr";
-import { NAVIGATE_ACTION } from "./dispatch";
+import { NAVIGATE_ACTION, dispatch, navigate } from "./dispatch";
 
 afterEach(() => {
   cleanup();
@@ -102,6 +102,22 @@ describe("useSWR shim", () => {
     expect(result.data).toBeUndefined();
     expect(result.isLoading).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("dispatch bridge-promise handling", () => {
+  it("dispatch returns the bridge promise, resolving with its result on success", async () => {
+    (globalThis as Record<string, unknown>)["__vendoDispatch"] = () => Promise.resolve("ok");
+    await expect(dispatch("vendo.something")).resolves.toBe("ok");
+  });
+
+  it("swallows a bridge rejection (policy deny) with a warning — no unhandled rejection or dead click", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    (globalThis as Record<string, unknown>)["__vendoDispatch"] = () =>
+      Promise.reject(Object.assign(new Error("policy deny"), { code: "policy" }));
+    await expect(navigate("/blocked")).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

@@ -13,17 +13,29 @@ interface ShimWindow {
   __vendoDispatch?: Dispatch;
 }
 
-export function dispatch(action: string, payload?: unknown): void {
+export function dispatch(action: string, payload?: unknown): Promise<unknown> {
   const fn = (globalThis as unknown as ShimWindow).__vendoDispatch;
-  if (typeof fn === "function") {
-    fn({ action, payload });
-  } else if (typeof console !== "undefined") {
-    console.warn(`[vendo] shim dispatch "${action}" with no bridge — ignored`);
+  if (typeof fn !== "function") {
+    if (typeof console !== "undefined") {
+      console.warn(`[vendo] shim dispatch "${action}" with no bridge — ignored`);
+    }
+    return Promise.resolve(undefined);
   }
+  // The runtime bridge returns a Promise that REJECTS on a blocked action
+  // (policy deny, capability mismatch). Dropping it left an unhandled rejection
+  // and a dead click; own the Promise and swallow-with-log so a blocked action
+  // fails quietly instead of crashing.
+  return Promise.resolve(fn({ action, payload })).catch((err: unknown) => {
+    if (typeof console !== "undefined") {
+      console.warn(`[vendo] shim dispatch "${action}" was blocked:`, err);
+    }
+    return undefined;
+  });
 }
 
 /** Navigate the host app. Only same-app paths are meaningful; the host
- *  receiver validates before touching the router. */
-export function navigate(href: string): void {
-  dispatch(NAVIGATE_ACTION, { href });
+ *  receiver validates before touching the router. Returns the (already
+ *  rejection-handled) dispatch Promise so callers never drop it. */
+export function navigate(href: string): Promise<unknown> {
+  return dispatch(NAVIGATE_ACTION, { href });
 }
