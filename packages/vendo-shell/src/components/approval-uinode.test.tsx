@@ -33,20 +33,21 @@ describe("ApprovalCard", () => {
     expect(container.textContent).not.toContain("{");
   });
 
-  it("renders parameters as labelled fields and hides empty ones", () => {
-    render(
+  it("shows ONLY the human-readable summary — raw parameter key/values never render (Yousef: summary only)", () => {
+    const { container } = render(
       <ApprovalCard
         toolName="GMAIL_CREATE_EMAIL_DRAFT"
-        input={{ recipient_email: "a@b.com", subject: "Hi", cc: [], bcc: [], extra_recipients: [] }}
+        input={{ recipient_email: "a@b.com", subject: "Hi", user_id: "me", is_html: false }}
         onApprove={() => {}}
         onDecline={() => {}}
       />,
     );
-    expect(screen.getByText("Recipient email")).toBeTruthy();
-    expect(screen.getByText("a@b.com")).toBeTruthy();
-    expect(screen.getByText("Subject")).toBeTruthy();
-    expect(screen.queryByText("Cc")).toBeNull();
-    expect(screen.queryByText("Bcc")).toBeNull();
+    expect(screen.getByText("Create Gmail email draft?")).toBeTruthy();
+    // Removed entirely — not behind a disclosure.
+    expect(container.querySelector(".fl-approval-fields")).toBeNull();
+    expect(screen.queryByText(/is html/i)).toBeNull();
+    expect(screen.queryByText(/user id/i)).toBeNull();
+    expect(screen.queryByText("a@b.com")).toBeNull();
   });
 
   it("renders a bare title card for empty input", () => {
@@ -77,22 +78,33 @@ describe("ApprovalCard", () => {
     expect(screen.getByText("Confirm transfer money")).toBeTruthy();
   });
 
-  it("does not truncate material fields on a critical card even past 160 chars", () => {
+  it("critical cards are summary-only too — the ceremony register carries the weight", () => {
     const long = "x".repeat(300);
-    render(
+    const { container } = render(
       <ApprovalCard toolName="transfer_money" input={{ note: long }} tier="critical" onApprove={() => {}} onDecline={() => {}} />,
     );
-    expect(screen.getByText(long)).toBeTruthy();
+    expect(container.querySelector(".fl-approval-fields")).toBeNull();
+    expect(screen.queryByText(long)).toBeNull();
+    expect(screen.getByText("This can't be undone.")).toBeTruthy();
+    expect(screen.getByText("Confirm transfer money")).toBeTruthy();
   });
 
-  it("shows an unverified tag when the tool carries no annotation hints", () => {
+  it("shows the unverified tag ONLY for genuinely unknown sources, never for catalog-known Composio tools", () => {
+    // A stock Composio tool carries no annotations (so the policy flags it
+    // unverified), but its source is the known connect catalog — badge off.
     render(
       <ApprovalCard toolName="GMAIL_SEND_EMAIL" input={{}} tier="act" unverified onApprove={() => {}} onDecline={() => {}} />,
+    );
+    expect(screen.queryByText(/unverified/i)).toBeNull();
+
+    // An unclassified name (e.g. an MCP dynamic tool) keeps the badge.
+    render(
+      <ApprovalCard toolName="mystery_tool" input={{}} tier="act" unverified onApprove={() => {}} onDecline={() => {}} />,
     );
     expect(screen.getByText(/unverified/i)).toBeTruthy();
   });
 
-  it("act-tier (default) still truncates and keeps the plain 'Send it'/'No' buttons", () => {
+  it("act-tier (default) keeps the plain 'Send it'/'No' buttons", () => {
     const long = "x".repeat(300);
     render(<ApprovalCard toolName="GMAIL_SEND_EMAIL" input={{ note: long }} onApprove={() => {}} onDecline={() => {}} />);
     expect(screen.queryByText(long)).toBeNull();

@@ -1,8 +1,10 @@
-import { toolAction } from "./tool-labels";
-import { approvalRows } from "./field-rows";
+import { isCatalogTool, toolAction } from "./tool-labels";
 
 export interface ApprovalCardProps {
   toolName: string;
+  /** The tool call's raw input. NOT rendered (summary only — Yousef,
+   *  2026-07-05); kept in the contract so every caller keeps passing it and
+   *  voice/receipt surfaces can keep deriving their own copy from it. */
   input: unknown;
   /** ENG-193 §4.1 — from the sibling data-consent part. Defaults to "act". */
   tier?: "act" | "critical";
@@ -23,8 +25,6 @@ export interface ApprovalCardProps {
   onDecline: () => void;
 }
 
-const MAX_VALUE_CHARS = 160;
-
 /**
  * The consent moment (spec §3 Moments 3, 6 & 9): a plain yes/no card for an
  * act-tier action, the ceremony variant for critical (money/irreversible)
@@ -35,18 +35,29 @@ const MAX_VALUE_CHARS = 160;
  * register — money/irreversible ceremony doesn't need a reason to already
  * be maximally careful.
  *
+ * Summary only (Yousef, 2026-07-05): end users see the human-readable action
+ * summary — raw parameter key/values ("Is html: false", "User id: me") are
+ * REMOVED from the card entirely, not tucked behind a disclosure. The settled
+ * receipt (ActivityStep) still carries the full field detail for anyone who
+ * wants to audit what ran. The "Unverified tool" badge shows only for tools
+ * whose SOURCE is genuinely unknown — stock catalog Composio tools (flagged
+ * unverified merely for shipping no annotations) don't wear it. Display
+ * changes only; the approval mechanism is untouched.
+ *
  * Voice sessions (ENG-185) layer on top: `listening` adds a soft ring while
  * a spoken yes is acceptable, and a `resolution` turns the card into a
  * receipt of how consent was given (buttons collapse into an outcome line).
  */
 export function ApprovalCard({
-  toolName, input, tier = "act", unverified = false, reason, listening = false, resolution, consequence, onApprove, onDecline,
+  toolName, tier = "act", unverified = false, reason, listening = false, resolution, consequence, onApprove, onDecline,
 }: ApprovalCardProps) {
   const action = toolAction(toolName);
   const critical = tier === "critical";
   const escalated = Boolean(reason) && !critical;
   const settled = resolution !== undefined;
-  const { rows, more } = approvalRows(input, critical ? null : MAX_VALUE_CHARS);
+  // Badge only when the SOURCE is genuinely unknown: catalog-known Composio
+  // tools are unverified-by-annotation, not unverified-by-provenance.
+  const showUnverified = unverified && !isCatalogTool(toolName);
   const confirmLabel = critical ? `Confirm ${action.request.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : "Send it";
   const declineLabel = critical ? "Cancel" : "No";
   const approveClass = critical ? "fl-btn-ceremony" : escalated ? "fl-btn" : "fl-btn-primary";
@@ -80,24 +91,13 @@ export function ApprovalCard({
                 covers money AND irreversible/permission-changing tools — the
                 spec's Trust-screen phrase, not money-specific copy. */}
             {critical ? "Always needs you" : escalated ? "Hold on — checking with you first" : "Needs your approval"}
-            {unverified && <span className="fl-approval-unverified">Unverified tool</span>}
+            {showUnverified && <span className="fl-approval-unverified">Unverified tool</span>}
           </div>
           <div className="fl-approval-title">{action.question}</div>
         </div>
       </div>
       {escalated && (
         <div className="fl-approval-reason">Hold on — I stopped to check: {reason}</div>
-      )}
-      {rows.length > 0 && (
-        <dl className="fl-approval-fields">
-          {rows.map((row) => (
-            <div key={row.label} className="fl-approval-field">
-              <dt>{row.label}</dt>
-              <dd>{row.value}</dd>
-            </div>
-          ))}
-          {more > 0 && <div className="fl-approval-more">+{more} more</div>}
-        </dl>
       )}
       {critical && !settled && (
         <div className="fl-approval-consequence">{consequence ?? "This can't be undone."}</div>
