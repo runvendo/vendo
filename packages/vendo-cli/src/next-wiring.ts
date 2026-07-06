@@ -168,6 +168,33 @@ export async function register() {
 }
 `;
 
+const NEXT_CONFIG_SOURCE = `/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Vendo boots its automation scheduler from instrumentation.ts. Next 13/14
+  // load that file only when this flag is set; Next 15+ ignore it (default on).
+  experimental: { instrumentationHook: true },
+};
+
+export default nextConfig;
+`;
+
+/** The Next major version from package.json (dependencies or devDependencies),
+ *  or undefined when absent/unparsable. Used to gate the instrumentationHook
+ *  step — Next 15+ enables it by default and needs no config edit. */
+export function nextMajorVersion(pkgJson: string): number | undefined {
+  try {
+    const pkg = JSON.parse(pkgJson) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const v = pkg.dependencies?.["next"] ?? pkg.devDependencies?.["next"];
+    const m = typeof v === "string" ? v.match(/(\d+)/) : null;
+    return m ? Number(m[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Merge the scheduler-boot `register()` into an existing `instrumentation.ts`
  * non-destructively. Returns the merged source, the input unchanged when
@@ -492,6 +519,42 @@ export async function wireNextApp(
       summary.edited.push(rel(instrumentationFile));
     } else {
       summary.skipped.push({ step: "instrumentation", reason: "already wired" });
+    }
+  }
+
+  // 4b. experimental.instrumentationHook — Next 13/14 load instrumentation.ts
+  // ONLY with this flag; 15+ ignore it (default on). Version-gated so we never
+  // touch a config that doesn't need it. Undetermined version → treat as
+  // needing it (the flag is harmless on 15+). Following the codemod's fail-safe
+  // convention, an EXISTING config is never AST-edited — we skip + print a
+  // manual step; only an absent config is written for us.
+  const nextMajor = pkgRaw ? nextMajorVersion(pkgRaw) : undefined;
+  if (nextMajor === undefined || nextMajor < 15) {
+    const configNames = ["next.config.js", "next.config.mjs", "next.config.ts", "next.config.cjs"];
+    let configFile: string | undefined;
+    for (const name of configNames) {
+      if (await exists(path.join(targetDir, name))) {
+        configFile = path.join(targetDir, name);
+        break;
+      }
+    }
+    if (!configFile) {
+      const dest = path.join(targetDir, "next.config.mjs");
+      await fs.writeFile(dest, NEXT_CONFIG_SOURCE);
+      summary.written.push(rel(dest));
+    } else {
+      const configSrc = (await readIf(configFile)) ?? "";
+      if (maskLiterals(configSrc).includes("instrumentationHook")) {
+        summary.skipped.push({ step: "next.config", reason: `${rel(configFile)} already sets instrumentationHook` });
+      } else {
+        summary.skipped.push({
+          step: "next.config",
+          reason: `${rel(configFile)} exists — left untouched (Next <15 needs experimental.instrumentationHook)`,
+        });
+        summary.manual.push(
+          `add experimental: { instrumentationHook: true } to ${rel(configFile)} (required on Next 13/14 so instrumentation.ts loads)`,
+        );
+      }
     }
   }
 
