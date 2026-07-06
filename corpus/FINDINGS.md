@@ -5,6 +5,10 @@ Command: `pnpm corpus run --layer 1`
 Mode: real `vendo init` with LLM enabled. API keys were sourced from `apps/demo-bank/.env.local`; key values were not printed or committed.
 Scorecard artifacts: `corpus/.repos/.logs/scorecard.json` and `corpus/.repos/.logs/scorecard.md`
 
+## Task 9 Manifest Substitution
+
+- `plane` was not added because `makeplane/plane` default branch `preview` is no longer a Next.js app: the current web package builds with React Router (`react-router build`) and the tree only keeps `app/compat/next` compatibility shims. It was substituted with `teable`, a comparable collaborative OSS app whose `apps/nextjs-app` package is a current Next.js app.
+
 ## Summary Scorecard
 
 | Repo | Layer 1 | Score | Hard failures |
