@@ -130,6 +130,36 @@ it doesn't get the mobile takeover (shell elements do — wiring it is a 1-liner
 you want it); MCP "yes" writes the consent/audit row but mints no reusable grant
 (descriptor can't enumerate MCP tools server-side — repeats re-ask).
 
+## Final browser pass — outcomes (integration build)
+
+Consolidated pass ran all shell-UI + data-correctness checks. PASS: glass
+skeleton (render_view placeholder, Cadence-green), mobile takeover (full-screen
+<768px, composer visible), ordinary summary-only consent card (no params, no
+badge on catalog tools), decline semantics (acknowledges, no re-pitch, re-asks
+on new intent). Two items needed follow-up and were chased down:
+
+- **Donut center 100× ($40.18)** — the prompt "convert-once" rule didn't hold
+  (model re-divided the centerValue). FIXED DETERMINISTICALLY: the Donut now
+  derives its center money-total from the sum of the legend values
+  (`resolveCenterValue`), so it structurally can't disagree; non-currency
+  centers pass through. Shipped in PR #65. Re-verifying in browser.
+- **Cadence chart palette warnings / non-green bars** — under investigation.
+  Ruled out: build staleness (forced rebuild = no change; bridge already in
+  both served bundles) and app-wiring divergence (Cadence and Maple use
+  byte-identical VendoThemeProvider + SandboxStage). Maple's rendered chart
+  is a Donut, which uses `--vendo-accent` and bypasses OpenUI palettes, so
+  its clean console doesn't actually exercise the palette path — the
+  Maple-clean/Cadence-dirty split may be an observation asymmetry. A targeted
+  console measurement on both apps is running to settle whether the warnings
+  are universal+benign or a real Cadence-only defect. Cosmetic either way
+  (charts render); not blocking the OSS PRs.
+
+- **Critical consent card:** couldn't be exercised live — NEITHER demo exposes
+  a critical-tier (irreversible/money) tool, so demo-bank's agent refuses
+  transfers ("Maple's API doesn't expose a transfer tool"). The humanized
+  material-fields behavior is covered by jsdom unit tests; a live screenshot
+  needs a host with a genuinely critical tool (demo gap, not a code gap).
+
 ## New flags from wave 4 (client/state fixes)
 
 - **Cadence has no thread persistence at all** — its hand-rolled routes never
