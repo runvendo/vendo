@@ -2,7 +2,13 @@
   "name": "@vendoai/cli",
   "version": "0.1.0",
   "description": "One-command Vendo install: extracts theme, tools, and components from a host app and wires in the embedded agent.",
-  "keywords": ["ai", "agent", "generative-ui", "cli", "devtool"],
+  "keywords": [
+    "ai",
+    "agent",
+    "generative-ui",
+    "cli",
+    "devtool"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -21,7 +27,9 @@
   "bin": {
     "vendo": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "vite build && node scripts/bundle-assets.mjs",
     "test": "vitest run",
@@ -29,11 +37,13 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
+    "@clack/prompts": "^1.7.0",
     "@scarf/scarf": "^1.4.0",
     "@tailwindcss/browser": "^4.1.0",
     "@tailwindcss/cli": "^4.1.0",
     "ai": "6.0.28",
     "esbuild": "^0.25.0",
+    "picocolors": "^1.1.1",
     "sucrase": "^3.35.0",
     "typescript": "^5.9.0",
     "yaml": "^2.5.0",
