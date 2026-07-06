@@ -17,7 +17,6 @@
       <path d="M60 12 C74 15 85 26 86 41 C87 54 80 62 82 72 C83.5 80 76 86 68 83 C60 80 56 84 46 85 C30 86.5 14 76 12 59 C10 42 20 30 33 22 C42 16.5 50 10 60 12 Z"/>
     </clipPath>
   </defs>
-  <rect width="1280" height="320" fill="#0d1117"/>
   <g>
     <ellipse cx="965" cy="70" rx="225" ry="170" fill="url(#g0)" filter="url(#soft)"/>
     <ellipse cx="1120" cy="220" rx="185" ry="150" fill="url(#g1)" filter="url(#soft)"/>
