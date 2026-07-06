@@ -743,9 +743,14 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
         // to the model (see declineReason above). A part that already carries
         // a reason — including the stranded-approval text stamped by the
         // branch above on an earlier turn — is left alone.
+        // Two shapes carry an explicit decline: `output-denied` (already
+        // settled) and `approval-responded` with approved:false — the LIVE
+        // path, where the react layer auto-resubmits right after the card is
+        // answered and the SDK's resume synthesizes the execution-denied
+        // result from THIS part's approval.reason.
         if (
           (part.type.startsWith("tool-") || part.type === "dynamic-tool") &&
-          part.state === "output-denied" &&
+          (part.state === "output-denied" || part.state === "approval-responded") &&
           part.approval != null &&
           part.approval.approved === false &&
           (part.approval.reason == null || part.approval.reason.trim() === "")

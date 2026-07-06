@@ -476,6 +476,73 @@ describe("createVendoAgent", () => {
     expect(text).toMatch(/re-propose/i);
   });
 
+  it("stamps the LIVE decline path too: approval-responded (approved: false) on auto-resubmit", async () => {
+    // The real client decline never arrives as output-denied: the shell
+    // answers the card and the react layer auto-resubmits with the part still
+    // in state `approval-responded` + approved:false (vendo-react
+    // host-tools.ts). The SDK resume path then synthesizes an
+    // execution-denied tool result from approvalResponse.reason — which is
+    // undefined, so the model again sees the bare fallback. The same
+    // serialization-layer stamping must cover this shape.
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "Understood."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createVendoAgent({ model, policy: allowPolicy });
+
+    // Auto-resubmit shape: the assistant message with the responded approval
+    // is the LAST message — no new user text.
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "send the chase email" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-send_email",
+            toolCallId: "call-live-declined",
+            state: "approval-responded",
+            input: { to: "client@example.com" },
+            approval: { id: "appr-live", approved: false },
+          },
+        ],
+      },
+    ] as unknown as VendoUIMessage[];
+
+    const parts = await collect(
+      agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
+    );
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+
+    const results = seenPrompt
+      .filter((m) => m.role === "tool")
+      .flatMap(
+        (m) =>
+          m.content as {
+            type: string;
+            toolCallId: string;
+            output?: { type: string; value?: string; reason?: string };
+          }[],
+      );
+    const denied = results.find((r) => r.type === "tool-result" && r.toolCallId === "call-live-declined");
+    expect(denied).toBeDefined();
+    // The resume path emits `execution-denied` with the approval reason.
+    const text = denied!.output?.reason ?? denied!.output?.value ?? "";
+    expect(text).toMatch(/user DECLINED/);
+    expect(text).toContain("send_email");
+    expect(text).toMatch(/re-propose/i);
+  });
+
   it("never overwrites a decline reason the part already carries", async () => {
     let seenPrompt: { role: string; content: unknown }[] = [];
     const model = new MockLanguageModelV3({
