@@ -1,12 +1,18 @@
 /**
  * @vendoai/cli — the one-click dev tool (ENG-197). The shebang is added by the
  * vite build banner (see vite.config.ts).
- *   vendo init [dir]     extract theme/tools/components into <dir>/.vendo/
- *   vendo publish [dir]  stub until the cloud registry lands (ENG-198)
+ *
+ * Three tiers of commands:
+ *   vendo init [dir]     set up Vendo in a Next.js app (run once)
+ *   vendo refresh [dir]  catch up an existing install; offers only what's new
+ *   vendo doctor [dir]   check the install (read-only)
+ * plus vendo sync (automatic in your build) and vendo publish (ENG-198 stub).
  */
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runInit } from "./init.js";
+import { runRefresh } from "./refresh.js";
+import { runDoctor } from "./doctor.js";
 import { runPublish } from "./publish.js";
 import { runSync } from "./sync/index.js";
 import { runTelemetryCmd } from "./telemetry-cmd.js";
@@ -14,23 +20,37 @@ import { CLI_VERSION } from "./version.js";
 
 const HELP = `vendo — Vendo one-click dev tool
 
-Usage:
-  vendo init [dir] [--skip-llm] [--force] [--yes] [--local <vendo-monorepo>]
-                                            Extract theme/tools/components into .vendo/ AND
-                                            wire a Next.js App Router app (route handler,
-                                            provider, .env.example, sandbox assets, prebuild sync)
-  vendo sync [dir]                          Capture wrapped-component source + build the sandbox
-                                              environment (deps, host CSS, manifest). Runs every
-                                              build via the prebuild script init wires.
-  vendo publish [dir]                       Publish the manifest (stub — registry lands with ENG-198)
-  vendo telemetry <status|enable|disable>   View or change anonymous usage telemetry (see TELEMETRY.md)
+Usage: vendo <command> [dir] [options]
+
+Setup (you run these):
+  init [dir]      Set up Vendo in a Next.js app: extract theme/tools/components into
+                  .vendo/ and wire the app (route handler, provider, sandbox assets,
+                  prebuild sync). Interactive — prompts for a provider key and lets you
+                  pick components to wrap and widgets to make remixable. Safe to re-run:
+                  additive (fills gaps, never overwrites); on a wired app it behaves
+                  like refresh.
+  refresh [dir]   Catch up an existing install: fill gaps and offer only what's new,
+                  with the same pickers as init. Run it after your app has grown.
+  doctor [dir]    Check your Vendo install — keys, wiring, .vendo state, storage,
+                  scheduler, telemetry — and report problems with fixes. Read-only.
+
+Runs automatically in your build:
+  sync [dir]      Capture wrapped-component source + rebuild the sandbox environment.
+                  init wires this into your prebuild script; you rarely run it by hand.
+
+Coming with the registry:
+  publish [dir]   Validate and (soon) publish the manifest — stub until ENG-198.
+
+Management:
+  telemetry <status|enable|disable>   View or change anonymous usage telemetry (TELEMETRY.md)
 
 Options:
-  --skip-llm   Skip LLM-assisted steps (route scan, component discovery)
-  --force      Overwrite existing .vendo/ files
-  --yes        Skip interactive prompts (e.g. the provider-key prompt); resolve
-               keys from env / .env.local only
+  --skip-llm   Skip LLM-assisted steps (route scan, component/remix discovery)
+  --force      Overwrite existing .vendo/ files (init/refresh; warns before overwriting)
+  --yes        Non-interactive: no prompts; resolve keys from env / .env.local only;
+               skip the component/remix pickers (source edits stay human-gated)
   --local      Pack local @vendoai packages from a Vendo monorepo into ./vendor
+  --version    Print the CLI version
 `;
 
 export function parseInitArgs(args: string[]):
@@ -67,20 +87,26 @@ export async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   const dir = rest.find((a) => !a.startsWith("--")) ?? process.cwd();
   switch (cmd) {
-    case "init": {
+    case "init":
+    case "refresh": {
       const parsed = parseInitArgs(rest);
       if (!parsed.ok) {
         console.error(parsed.error);
         return 1;
       }
-      return runInit({
+      const opts = {
         targetDir: parsed.targetDir,
         skipLlm: parsed.skipLlm,
         force: parsed.force,
         yes: parsed.yes,
         localVendoDir: parsed.localVendoDir,
-      });
+      };
+      // `refresh` is init's catch-up mode; `init` on an already-wired app
+      // delegates to the same behavior (see init.ts / refresh.ts).
+      return cmd === "refresh" ? runRefresh(opts) : runInit(opts);
     }
+    case "doctor":
+      return runDoctor({ targetDir: dir });
     case "sync":
       return runSync({ targetDir: dir });
     case "publish":

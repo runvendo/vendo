@@ -7,7 +7,20 @@ describe("cli dispatch", () => {
   it("prints help and exits 0 with no command", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     expect(await main([])).toBe(0);
-    expect(log.mock.calls.flat().join("\n")).toContain("vendo init");
+    expect(log.mock.calls.flat().join("\n")).toContain("vendo — Vendo one-click dev tool");
+    log.mockRestore();
+  });
+
+  it("groups commands in help across the three tiers", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await main(["--help"]);
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).toContain("Setup (you run these):");
+    expect(help).toContain("Runs automatically in your build:");
+    expect(help).toContain("Coming with the registry:");
+    for (const cmd of ["init", "refresh", "doctor", "sync", "publish", "telemetry"]) {
+      expect(help).toContain(cmd);
+    }
     log.mockRestore();
   });
 
@@ -29,11 +42,18 @@ describe("cli dispatch", () => {
     log.mockRestore();
   });
 
-  it("lists the sync command in help", async () => {
+  it("routes doctor to a read-only health check (unwired dir → exit 1)", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const dir = mkdtempSync(path.join(tmpdir(), "vendo-cli-doctor-"));
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    await main([]);
-    expect(log.mock.calls.flat().join("\n")).toContain("vendo sync");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    // An empty dir is not wired, so doctor reports hard failures and exits 1 —
+    // this proves the `doctor` route reaches runDoctor.
+    expect(await main(["doctor", dir])).toBe(1);
     log.mockRestore();
+    err.mockRestore();
   });
 
   it("runs sync against an empty dir (fresh install: captures nothing, exits 0)", async () => {
