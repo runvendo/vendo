@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { LanguageModel } from "ai";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
@@ -8,6 +9,7 @@ import { extractComponents } from "./components/extract-components.js";
 import { cliModel } from "./llm.js";
 import { renderReport, type InitReport } from "./report.js";
 import { writeGenerated } from "./fsx.js";
+import { inspectVendoState, type VendoState } from "./state.js";
 import { wireNextApp, renderWiring } from "./next-wiring.js";
 import { installLocalVendoPackages, type LocalVendoInstallSummary } from "./local-pack.js";
 import { CLI_VERSION } from "./version.js";
@@ -121,6 +123,28 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** The `--force` warning: list every existing generated file about to be overwritten. */
+async function forceOverwriteWarning(targetDir: string, state: VendoState): Promise<string | null> {
+  const overwrites: string[] = [];
+  if (state.theme.exists) overwrites.push(".vendo/theme.json");
+  if (state.tools.exists) overwrites.push(".vendo/tools.json");
+  for (const name of state.components) overwrites.push(`.vendo/components/${name}/`);
+  const readmeExists = await fs.access(path.join(targetDir, ".vendo/README.md")).then(() => true, () => false);
+  if (readmeExists) overwrites.push(".vendo/README.md");
+  if (overwrites.length === 0) return null;
+  return [
+    "--force: regenerating .vendo/ — these existing files will be OVERWRITTEN (hand-edits will be lost):",
+    ...overwrites.map((f) => `  ${f}`),
+  ].join("\n");
+}
+
+const COACHING_LINE = [
+  "",
+  "No provider API key found, so the LLM steps were skipped (route scan, component discovery).",
+  "Add ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY and re-run `vendo init` —",
+  "re-running only fills gaps; it never overwrites your edits.",
+].join("\n");
+
 export async function runInit(opts: InitOptions): Promise<number> {
   const startedAt = Date.now();
   const targetDir = path.resolve(opts.targetDir);
@@ -143,6 +167,18 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return 1;
   }
 
+  // A run without a provider key still succeeds in deterministic mode; it
+  // ends with a coaching line (add a key, re-run — init only fills gaps).
+  const noProviderKey = model === null && !opts.skipLlm;
+
+  // What already exists drives every skip/extract decision below: re-runs are
+  // additive (fill gaps, never clobber); --force regenerates but warns first.
+  const state = await inspectVendoState(targetDir);
+  if (opts.force) {
+    const warning = await forceOverwriteWarning(targetDir, state);
+    if (warning) console.log(warning);
+  }
+
   const report: InitReport = {
     info,
     theme: null,
@@ -156,28 +192,41 @@ export async function runInit(opts: InitOptions): Promise<number> {
   let failedStep: InitFailedStep = "theme";
   try {
     failedStep = "theme";
-    report.theme = await extractTheme(targetDir, info, opts);
+    if (state.theme.exists && !opts.force) {
+      report.keptTheme = true;
+    } else {
+      report.theme = await extractTheme(targetDir, info, opts);
+    }
     failedStep = "tools";
-    try {
-      report.tools = await extractTools(targetDir, info, model, opts);
-    } catch (err) {
-      // LLM route scanning is optional. If the provider rejects, warns via an
-      // exception, or otherwise fails, keep the deterministic init path moving
-      // so Next wiring still happens and the developer gets a reviewable diff.
-      // Deterministic OpenAPI conversion errors still fail init normally.
-      if (!model || info.openapiPath) throw err;
-      const message = errorMessage(err);
-      console.error(`LLM-assisted route scan failed; continuing without LLM: ${message}`);
-      model = null;
-      report.llmSkipped = true;
-      report.llmSkippedReason = "LLM-assisted route scan failed; continuing without LLM";
-      report.tools = await extractTools(targetDir, info, null, opts);
-      report.tools.errors.unshift(`LLM-assisted route scan failed (${message}) — continuing without LLM`);
+    if (state.tools.status === "real" && !opts.force) {
+      report.keptTools = true;
+    } else {
+      // The wiring-written empty fallback ({version:1, tools:[], events:[]})
+      // carries no developer content — extraction may replace it in place.
+      const toolOpts = { force: opts.force || state.tools.status === "empty-fallback" };
+      try {
+        report.tools = await extractTools(targetDir, info, model, toolOpts);
+      } catch (err) {
+        // LLM route scanning is optional. If the provider rejects, warns via an
+        // exception, or otherwise fails, keep the deterministic init path moving
+        // so Next wiring still happens and the developer gets a reviewable diff.
+        // Deterministic OpenAPI conversion errors still fail init normally.
+        if (!model || info.openapiPath) throw err;
+        const message = errorMessage(err);
+        console.error(`LLM-assisted route scan failed; continuing without LLM: ${message}`);
+        model = null;
+        report.llmSkipped = true;
+        report.llmSkippedReason = "LLM-assisted route scan failed; continuing without LLM";
+        report.tools = await extractTools(targetDir, info, null, toolOpts);
+        report.tools.errors.unshift(`LLM-assisted route scan failed (${message}) — continuing without LLM`);
+      }
     }
     if (model) {
       failedStep = "components";
       try {
-        report.components = await extractComponents(targetDir, model, opts);
+        // Only unwrapped candidates are analyzed/proposed; existing wrapper
+        // dirs are untouched (unless --force regenerates everything).
+        report.components = await extractComponents(targetDir, model, opts, state.components);
       } catch (err) {
         const message = errorMessage(err);
         console.error(`LLM-assisted component discovery failed; continuing without generated components: ${message}`);
@@ -189,7 +238,12 @@ export async function runInit(opts: InitOptions): Promise<number> {
         };
       }
     }
-    await writeGenerated(path.join(targetDir, ".vendo/README.md"), readmeSource(report), opts);
+    // The README is generated documentation, kept when present (it tells the
+    // developer the directory is theirs to edit).
+    await writeGenerated(path.join(targetDir, ".vendo/README.md"), readmeSource(report), {
+      force: opts.force,
+      ifExists: "skip",
+    });
   } catch (err) {
     console.error(errorMessage(err));
     await t.track("init_failed", { framework, failedStep });
@@ -235,6 +289,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
       ].join("\n"),
     );
   }
+  if (noProviderKey) console.log(COACHING_LINE);
   await t.track("init_completed", {
     framework,
     provider: model === null ? "none" : "configured",

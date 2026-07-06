@@ -33,20 +33,25 @@ export async function walk(
   return results.sort();
 }
 
-/** Write a generated artifact; refuse to clobber developer-edited output unless forced. */
+/**
+ * Write a generated artifact. Outputs are developer-editable, so an existing
+ * file is never silently clobbered: `force` overwrites unconditionally,
+ * otherwise `ifExists` picks the policy — "error" (the fail-closed default)
+ * throws, "skip" leaves the file untouched. Returns whether it wrote.
+ */
 export async function writeGenerated(
   file: string,
   content: string,
-  opts: { force: boolean },
-): Promise<void> {
+  opts: { force: boolean; ifExists?: "error" | "skip" },
+): Promise<boolean> {
   if (!opts.force) {
-    try {
-      await fs.access(file);
+    const present = await fs.access(file).then(() => true, () => false);
+    if (present) {
+      if ((opts.ifExists ?? "error") === "skip") return false;
       throw new Error(`${file} already exists — outputs are developer-editable; re-run with --force to overwrite`);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }
   }
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content);
+  return true;
 }

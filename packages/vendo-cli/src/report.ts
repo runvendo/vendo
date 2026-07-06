@@ -8,6 +8,10 @@ export interface InitReport {
   theme: ThemeSummary | null;
   tools: ToolsSummary | null;
   components: ComponentsSummary | null;
+  /** Artifact already existed and was left untouched (additive re-run). */
+  keptTheme?: boolean;
+  /** tools.json already had real content and was left untouched (additive re-run). */
+  keptTools?: boolean;
   llmSkipped: boolean;
   llmSkippedReason?: string;
 }
@@ -15,6 +19,7 @@ export interface InitReport {
 export function renderReport(r: InitReport): string {
   const lines: string[] = [];
   lines.push(`framework: ${r.info.framework}   tailwind: ${r.info.tailwind}   openapi: ${r.info.openapiPath ?? "none"}`);
+  if (r.keptTheme) lines.push("theme.json: kept (already exists — edit it directly; --force regenerates)");
   if (r.theme) {
     lines.push(`theme.json: ${r.theme.written ? "written" : "SKIPPED"} (${r.theme.varCount} vars scanned)`);
     for (const [slot, v] of Object.entries(r.theme.matched)) lines.push(`  ${slot} <- ${v}`);
@@ -22,6 +27,7 @@ export function renderReport(r: InitReport): string {
     if (r.theme.hasDarkVariant) lines.push("  note: dark-scoped vars exist; BrandTokens holds one mode — see .vendo/README.md");
     for (const e of r.theme.errors) lines.push(`  warning: ${e}`);
   }
+  if (r.keptTools) lines.push("tools.json: kept (already has tool definitions — edit it directly; --force regenerates)");
   if (r.tools) {
     lines.push(`tools.json: ${r.tools.toolCount} tools (source: ${r.tools.source})`);
     for (const e of r.tools.errors) lines.push(`  warning: ${e}`);

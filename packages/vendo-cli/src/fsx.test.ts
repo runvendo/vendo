@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { walk, writeGenerated } from "./fsx.js";
@@ -33,5 +33,21 @@ describe("writeGenerated", () => {
     const dir = await scratch();
     await writeGenerated(path.join(dir, "a/b/out.json"), "1", { force: false });
     await writeGenerated(path.join(dir, "a/b/out.json"), "2", { force: true });
+  });
+
+  it('leaves existing files untouched when ifExists is "skip" and reports whether it wrote', async () => {
+    const dir = await scratch();
+    const file = path.join(dir, "out.json");
+    expect(await writeGenerated(file, "1", { force: false, ifExists: "skip" })).toBe(true);
+    expect(await writeGenerated(file, "2", { force: false, ifExists: "skip" })).toBe(false);
+    expect(await readFile(file, "utf8")).toBe("1");
+  });
+
+  it('force overrides ifExists: "skip"', async () => {
+    const dir = await scratch();
+    const file = path.join(dir, "out.json");
+    await writeGenerated(file, "1", { force: false });
+    expect(await writeGenerated(file, "2", { force: true, ifExists: "skip" })).toBe(true);
+    expect(await readFile(file, "utf8")).toBe("2");
   });
 });
