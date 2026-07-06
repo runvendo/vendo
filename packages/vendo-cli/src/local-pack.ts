@@ -12,6 +12,7 @@ export const LOCAL_DIRECT_DEPENDENCIES = ["vendoai"] as const;
 export const LOCAL_DEV_DEPENDENCIES = ["@vendoai/cli"] as const;
 
 type PackageJson = Record<string, unknown>;
+export type LocalPackageManager = "pnpm" | "npm" | "yarn-classic" | "yarn-berry";
 
 export interface LocalTarball {
   name: string;
@@ -23,8 +24,9 @@ export type LocalPackageRewriteResult =
   | { kind: "skipped"; reason: string; manual: string };
 
 export interface LocalVendoInstallSummary {
-  packageManager: "pnpm" | "npm";
-  installCommand: "pnpm install" | "npm install";
+  packageManager: LocalPackageManager;
+  installCommand: string;
+  installDir?: string;
   packages: string[];
   vendorDir: string;
 }
@@ -61,6 +63,11 @@ function sortedRecord<T>(record: Record<string, T>): Record<string, T> {
 
 function fileSpec(fileName: string): string {
   return `file:vendor/${fileName.split(path.sep).join("/")}`;
+}
+
+function fileSpecFromPackageDir(packageDir: string, vendorDir: string, fileName: string): string {
+  const tarballPath = path.join(vendorDir, fileName);
+  return `file:${path.relative(packageDir, tarballPath).split(path.sep).join("/")}`;
 }
 
 function npmPackFileName(name: string, version: string): string {
@@ -167,23 +174,95 @@ async function defaultPackRunner(
   }
 }
 
-async function detectPackageManager(targetDir: string, pkg: PackageJson): Promise<"pnpm" | "npm"> {
-  if (typeof pkg["packageManager"] === "string") {
-    if (pkg["packageManager"].startsWith("pnpm@")) return "pnpm";
-    if (pkg["packageManager"].startsWith("npm@")) return "npm";
-  }
+function packageManagerFromField(value: unknown): LocalPackageManager | null {
+  if (typeof value !== "string") return null;
+  if (value.startsWith("pnpm@")) return "pnpm";
+  if (value.startsWith("npm@")) return "npm";
+  if (!value.startsWith("yarn@")) return null;
+  const version = value.slice("yarn@".length);
+  const major = Number.parseInt(version.split(".")[0] ?? "", 10);
+  if (!Number.isFinite(major)) return "yarn-berry";
+  return major >= 2 ? "yarn-berry" : "yarn-classic";
+}
+
+async function readOptional(file: string): Promise<string | null> {
   try {
-    await fs.access(path.join(targetDir, "package-lock.json"));
-    return "npm";
+    return await fs.readFile(file, "utf8");
   } catch {
-    return "pnpm";
+    return null;
   }
+}
+
+async function readOptionalPackageJson(dir: string): Promise<PackageJson | null> {
+  const source = await readOptional(path.join(dir, "package.json"));
+  if (!source) return null;
+  try {
+    return JSON.parse(source) as PackageJson;
+  } catch {
+    return null;
+  }
+}
+
+async function detectYarnLockfileKind(dir: string): Promise<LocalPackageManager | null> {
+  const lockfile = await readOptional(path.join(dir, "yarn.lock"));
+  if (!lockfile) return null;
+  return lockfile.includes("__metadata:") ? "yarn-berry" : "yarn-classic";
+}
+
+async function packageManagerSearchDirs(targetDir: string, packageManagerRoot?: string): Promise<string[]> {
+  const resolvedTarget = path.resolve(targetDir);
+  const explicitRoot = packageManagerRoot ? path.resolve(packageManagerRoot) : null;
+  const dirs: string[] = [];
+  let current = resolvedTarget;
+  while (true) {
+    dirs.push(current);
+    if (explicitRoot && current === explicitRoot) break;
+    if (!explicitRoot && await pathExists(path.join(current, ".git"))) break;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    if (explicitRoot && !current.startsWith(`${explicitRoot}${path.sep}`)) {
+      dirs.push(explicitRoot);
+      break;
+    }
+    current = parent;
+  }
+  return [...new Set(dirs)];
+}
+
+async function detectPackageManager(
+  targetDir: string,
+  targetPkg: PackageJson,
+  packageManagerRoot?: string,
+): Promise<{ packageManager: LocalPackageManager; installDir: string }> {
+  const resolvedTarget = path.resolve(targetDir);
+  const roots = await packageManagerSearchDirs(resolvedTarget, packageManagerRoot);
+  const targetField = packageManagerFromField(targetPkg["packageManager"]);
+  if (targetField) return { packageManager: targetField, installDir: resolvedTarget };
+  for (const dir of roots) {
+    if (dir === resolvedTarget) continue;
+    const pkg = await readOptionalPackageJson(dir);
+    const field = packageManagerFromField(pkg?.["packageManager"]);
+    if (field) return { packageManager: field, installDir: dir };
+  }
+  for (const dir of roots) {
+    const yarnKind = await detectYarnLockfileKind(dir);
+    if (yarnKind) return { packageManager: yarnKind, installDir: dir };
+  }
+  for (const dir of roots) {
+    if (await pathExists(path.join(dir, "package-lock.json")) || await pathExists(path.join(dir, "npm-shrinkwrap.json"))) {
+      return { packageManager: "npm", installDir: dir };
+    }
+  }
+  for (const dir of roots) {
+    if (await pathExists(path.join(dir, "pnpm-lock.yaml"))) return { packageManager: "pnpm", installDir: dir };
+  }
+  return { packageManager: "pnpm", installDir: resolvedTarget };
 }
 
 export function rewritePackageJsonForLocalVendo(
   pkgJson: string,
   tarballs: readonly LocalTarball[],
-  opts: { packageManager: "pnpm" | "npm" },
+  opts: { packageManager: LocalPackageManager },
 ): LocalPackageRewriteResult {
   let pkg: PackageJson;
   try {
@@ -241,7 +320,7 @@ export function rewritePackageJsonForLocalVendo(
     }
     pnpm["overrides"] = sortedRecord({ ...overridesResult.value, ...localOverrides });
     pkg["pnpm"] = pnpm;
-  } else {
+  } else if (opts.packageManager === "npm") {
     const overridesResult = objectRecord(pkg["overrides"], "overrides");
     if (!overridesResult.ok) {
       return {
@@ -251,11 +330,31 @@ export function rewritePackageJsonForLocalVendo(
       };
     }
     pkg["overrides"] = sortedRecord({ ...overridesResult.value, ...localOverrides });
+  } else {
+    const resolutionsResult = objectRecord(pkg["resolutions"], "resolutions");
+    if (!resolutionsResult.ok) {
+      return {
+        kind: "skipped",
+        reason: resolutionsResult.reason,
+        manual: localPackageManualInstructions(tarballs, opts.packageManager),
+      };
+    }
+    pkg["resolutions"] = sortedRecord({ ...resolutionsResult.value, ...localOverrides });
   }
   return { kind: "updated", source: JSON.stringify(pkg, null, 2) + "\n" };
 }
 
-function localPackageManualInstructions(tarballs: readonly LocalTarball[], packageManager: "pnpm" | "npm"): string {
+function packageManagerResolutionField(packageManager: LocalPackageManager): string {
+  if (packageManager === "pnpm") return "pnpm.overrides";
+  if (packageManager === "npm") return "overrides";
+  return "resolutions";
+}
+
+function isYarnPackageManager(packageManager: LocalPackageManager): boolean {
+  return packageManager === "yarn-classic" || packageManager === "yarn-berry";
+}
+
+function localPackageManualInstructions(tarballs: readonly LocalTarball[], packageManager: LocalPackageManager): string {
   const byName = new Map(tarballs.map((tarball) => [tarball.name, tarball.fileName]));
   const spec = (name: string) =>
     `${JSON.stringify(name)}: ${JSON.stringify(byName.has(name) ? fileSpec(byName.get(name)!) : "file:vendor/<tarball>")}`;
@@ -264,7 +363,50 @@ function localPackageManualInstructions(tarballs: readonly LocalTarball[], packa
   const overrides = tarballs
     .map((tarball) => `${JSON.stringify(tarball.name)}: ${JSON.stringify(fileSpec(tarball.fileName))}`)
     .join(", ");
-  return `manually add package.json dependencies { ${direct} }, devDependencies { ${dev} }, and ${packageManager === "pnpm" ? "pnpm.overrides" : "overrides"} { ${overrides} }`;
+  return `manually add package.json dependencies { ${direct} }, devDependencies { ${dev} }, and ${packageManagerResolutionField(packageManager)} { ${overrides} }`;
+}
+
+function rewriteYarnRootResolutionsForLocalVendo(
+  pkgJson: string,
+  tarballs: readonly LocalTarball[],
+  opts: { packageDir: string; vendorDir: string },
+): LocalPackageRewriteResult {
+  let pkg: PackageJson;
+  try {
+    pkg = JSON.parse(pkgJson) as PackageJson;
+  } catch {
+    return {
+      kind: "skipped",
+      reason: "package.json is not valid JSON",
+      manual: localPackageManualInstructions(tarballs, "yarn-berry"),
+    };
+  }
+  const byName = new Map(tarballs.map((tarball) => [tarball.name, tarball]));
+  for (const name of [...LOCAL_DIRECT_DEPENDENCIES, ...LOCAL_DEV_DEPENDENCIES, "fluidkit"]) {
+    if (!byName.has(name)) {
+      return {
+        kind: "skipped",
+        reason: `local tarball map is missing ${name}`,
+        manual: localPackageManualInstructions(tarballs, "yarn-berry"),
+      };
+    }
+  }
+  const resolutionsResult = objectRecord(pkg["resolutions"], "resolutions");
+  if (!resolutionsResult.ok) {
+    return {
+      kind: "skipped",
+      reason: resolutionsResult.reason,
+      manual: localPackageManualInstructions(tarballs, "yarn-berry"),
+    };
+  }
+  const localResolutions = sortedRecord(
+    Object.fromEntries(tarballs.map((tarball) => [
+      tarball.name,
+      fileSpecFromPackageDir(opts.packageDir, opts.vendorDir, tarball.fileName),
+    ])),
+  );
+  pkg["resolutions"] = sortedRecord({ ...resolutionsResult.value, ...localResolutions });
+  return { kind: "updated", source: JSON.stringify(pkg, null, 2) + "\n" };
 }
 
 async function pathExists(p: string): Promise<boolean> {
@@ -292,7 +434,7 @@ async function replaceVendorDir(stagingDir: string, vendorDir: string): Promise<
 export async function installLocalVendoPackages(
   targetDir: string,
   repoDir: string,
-  opts: { pack?: LocalPackRunner } = {},
+  opts: { pack?: LocalPackRunner; packageManagerRoot?: string } = {},
 ): Promise<LocalVendoInstallSummary> {
   const resolvedTarget = path.resolve(targetDir);
   const resolvedRepo = path.resolve(repoDir);
@@ -313,10 +455,21 @@ export async function installLocalVendoPackages(
   } catch {
     /* rewritePackageJsonForLocalVendo returns the actionable manual path */
   }
-  const packageManager = await detectPackageManager(resolvedTarget, parsedPkg);
+  const detectedPackageManager = await detectPackageManager(resolvedTarget, parsedPkg, opts.packageManagerRoot);
+  const packageManager = detectedPackageManager.packageManager;
   const rewritten = rewritePackageJsonForLocalVendo(pkgJson, tarballs, { packageManager });
   if (rewritten.kind === "skipped") {
     throw new Error(`${rewritten.reason}; ${rewritten.manual}`);
+  }
+  const rootPkgPath = path.join(detectedPackageManager.installDir, "package.json");
+  const rootRewritten = isYarnPackageManager(packageManager) && detectedPackageManager.installDir !== resolvedTarget
+    ? rewriteYarnRootResolutionsForLocalVendo(await fs.readFile(rootPkgPath, "utf8"), tarballs, {
+        packageDir: detectedPackageManager.installDir,
+        vendorDir,
+      })
+    : null;
+  if (rootRewritten?.kind === "skipped") {
+    throw new Error(`${rootRewritten.reason}; ${rootRewritten.manual}`);
   }
 
   const pack = opts.pack ?? defaultPackRunner;
@@ -337,10 +490,20 @@ export async function installLocalVendoPackages(
   }
 
   await fs.writeFile(pkgPath, rewritten.source);
+  if (rootRewritten?.kind === "updated") {
+    await fs.writeFile(rootPkgPath, rootRewritten.source);
+  }
 
   return {
     packageManager,
-    installCommand: packageManager === "pnpm" ? "pnpm install" : "npm install",
+    installCommand: packageManager === "pnpm"
+      ? "pnpm install"
+      : packageManager === "npm"
+        ? "npm install"
+        : packageManager === "yarn-berry"
+          ? "YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install"
+          : "yarn install",
+    installDir: detectedPackageManager.installDir,
     packages: packages.map((pkg) => pkg.name),
     vendorDir,
   };

@@ -87,6 +87,36 @@ describe("rewritePackageJsonForLocalVendo", () => {
     expect(pkg.pnpm).toBeUndefined();
   });
 
+  it("uses Yarn resolutions for local package pins", () => {
+    const out = rewritePackageJsonForLocalVendo(
+      JSON.stringify({
+        name: "host",
+        packageManager: "yarn@4.10.3",
+        dependencies: { react: "^19.0.0" },
+        resolutions: { "left-pad": "1.3.0" },
+      }),
+      LOCAL_TARBALLS,
+      { packageManager: "yarn-berry" },
+    );
+    expect(out.kind).toBe("updated");
+    if (out.kind !== "updated") throw new Error("expected local package rewrite");
+    const pkg = JSON.parse(out.source) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+      resolutions: Record<string, string>;
+      overrides?: unknown;
+      pnpm?: unknown;
+    };
+    expect(pkg.dependencies["vendoai"]).toBe(`file:vendor/${vendoPkgTarball}`);
+    expect(pkg.devDependencies["@vendoai/cli"]).toBe(`file:vendor/${cliTarball}`);
+    expect(pkg.resolutions["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
+    expect(pkg.resolutions["@vendoai/core"]).toBe(`file:vendor/${coreTarball}`);
+    expect(pkg.resolutions["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-656857b.tgz");
+    expect(pkg.resolutions["left-pad"]).toBe("1.3.0");
+    expect(pkg.overrides).toBeUndefined();
+    expect(pkg.pnpm).toBeUndefined();
+  });
+
   it("skips with manual instructions for invalid or unsupported package.json shapes", () => {
     const invalid = rewritePackageJsonForLocalVendo("{nope", LOCAL_TARBALLS, { packageManager: "pnpm" });
     expect(invalid.kind).toBe("skipped");
@@ -172,6 +202,25 @@ async function createTargetApp(): Promise<string> {
   return targetDir;
 }
 
+async function createYarnTargetApp(options: { packageManager?: string; lockfile: string; appDir?: string }): Promise<{ rootDir: string; targetDir: string }> {
+  const rootDir = await mkdtemp(path.join(tmpdir(), "vendo-local-yarn-target-"));
+  await writeJson(path.join(rootDir, "package.json"), {
+    name: "host-root",
+    private: true,
+    ...(options.packageManager ? { packageManager: options.packageManager } : {}),
+    ...(options.appDir ? { workspaces: ["apps/*"] } : {}),
+  });
+  await writeFile(path.join(rootDir, "yarn.lock"), options.lockfile);
+  const targetDir = options.appDir ? path.join(rootDir, options.appDir) : rootDir;
+  if (options.appDir) {
+    await writeJson(path.join(targetDir, "package.json"), {
+      name: "@host/web",
+      dependencies: { next: "16.0.0" },
+    });
+  }
+  return { rootDir, targetDir };
+}
+
 describe("installLocalVendoPackages", () => {
   it("packs with real pnpm from a local repo path containing spaces", async () => {
     const repoDir = await createPackableLocalRepo();
@@ -206,5 +255,57 @@ describe("installLocalVendoPackages", () => {
     const targetDir = await createTargetApp();
     await expect(installLocalVendoPackages(targetDir, repoDir)).rejects.toThrow("fluidkit");
     await expect(readdir(path.join(targetDir, "vendor"))).rejects.toThrow();
+  });
+
+  it("detects Yarn Berry from the workspace root and returns an immutable-disabled install command", async () => {
+    const repoDir = await createPackableLocalRepo();
+    const { rootDir, targetDir } = await createYarnTargetApp({
+      packageManager: "yarn@4.10.3",
+      lockfile: "__metadata:\n  version: 8\n",
+      appDir: "apps/web",
+    });
+    const summary = await installLocalVendoPackages(targetDir, repoDir, {
+      async pack(pkg, opts) {
+        await mkdir(opts.vendorDir, { recursive: true });
+        await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+      },
+    });
+
+    expect(summary.packageManager).toBe("yarn-berry");
+    expect(summary.installCommand).toBe("YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install");
+    expect(summary.installDir).toBe(rootDir);
+    const rootPkg = JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      resolutions: Record<string, string>;
+    };
+    expect(rootPkg.dependencies?.["vendoai"]).toBeUndefined();
+    expect(rootPkg.resolutions["@vendoai/shell"]).toBe(`file:apps/web/vendor/${shellTarball}`);
+    expect(rootPkg.resolutions["fluidkit"]).toBe("file:apps/web/vendor/fluidkit-0.5.0-test.tgz");
+    const pkg = JSON.parse(await readFile(path.join(targetDir, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+      resolutions: Record<string, string>;
+    };
+    expect(pkg.dependencies["vendoai"]).toBe(`file:vendor/${vendoPkgTarball}`);
+    expect(pkg.devDependencies["@vendoai/cli"]).toBe(`file:vendor/${cliTarball}`);
+    expect(pkg.resolutions["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
+    await expect(readdir(path.join(targetDir, "vendor"))).resolves.toContain(vendoPkgTarball);
+  });
+
+  it("detects Yarn classic from a v1 lockfile without enabling Berry install flags", async () => {
+    const repoDir = await createPackableLocalRepo();
+    const { rootDir } = await createYarnTargetApp({
+      lockfile: "# yarn lockfile v1\n",
+    });
+    const summary = await installLocalVendoPackages(rootDir, repoDir, {
+      async pack(pkg, opts) {
+        await mkdir(opts.vendorDir, { recursive: true });
+        await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+      },
+    });
+
+    expect(summary.packageManager).toBe("yarn-classic");
+    expect(summary.installCommand).toBe("yarn install");
+    expect(summary.installDir).toBe(rootDir);
   });
 });
