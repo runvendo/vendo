@@ -3,8 +3,28 @@
   <img src="assets/banner-light.svg" alt="Vendo: your product, shaped to every customer" width="100%">
 </picture>
 
-Vendo puts an agent inside your product. Customers automate work, build views,
-and connect their tools. You set the guardrails.
+<p align="center">
+  <b>Vendo puts an agent inside your product.</b><br>
+  Customers automate work, build their own views, and connect their tools. You set the guardrails.
+</p>
+
+<p align="center">
+  <a href="https://vendo.run">Website</a>
+  &nbsp;·&nbsp;
+  <a href="https://docs.vendo.run">Docs</a>
+  &nbsp;·&nbsp;
+  <a href="docs/quickstart.md">Quickstart</a>
+  &nbsp;·&nbsp;
+  <a href="#see-it-in-action">Demos</a>
+</p>
+
+```bash
+npx @vendoai/cli init .
+```
+
+<p align="center"><sub>One command inside your Next.js app. Bring your own Anthropic, OpenAI, or Google key. No account, no hosted dependency.</sub></p>
+
+<br>
 
 ## See it in action
 
@@ -22,8 +42,8 @@ Every capture below is a real agent run in a demo host app, not a mockup.
     </td>
   </tr>
   <tr>
-    <td width="50%" valign="top">
-      <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="100%">
+    <td colspan="2" align="center">
+      <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="48%">
       <p align="center"><sub><b>Automate across tools.</b> Plain language in, standing automation out, every tool gated by approval.</sub></p>
     </td>
   </tr>
@@ -38,7 +58,7 @@ Every capture below is a real agent run in a demo host app, not a mockup.
 | **Automations** | Standing workflows from plain language, run on schedules or triggers, durable across restarts. |
 | **Integrations** | Gmail, Slack, Calendar, and any MCP server, each behind per-tool consent. |
 | **Guardrails** | Generated UI runs in a sandboxed iframe with no network egress. Every mutating action passes your permission policy: consent prompts, approval tokens, judged rules. |
-| **Any provider** | Bring your own key for Anthropic, OpenAI, or Google. No Vendo account, no hosted dependency. |
+| **Any provider** | Bring your own key for Anthropic, OpenAI, or Google. Works with any AI SDK provider. |
 
 ## Get started
 
@@ -48,13 +68,15 @@ Every capture below is a real agent run in a demo host app, not a mockup.
    npx @vendoai/cli init .
    ```
 
+   The command extracts your theme, derives agent tools from your OpenAPI
+   spec, and wires the routes.
+
 2. Add one provider key to `.env.local`: `ANTHROPIC_API_KEY`,
    `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`.
 
 3. Start your dev server. The Vendo surface is live in your product.
 
-The init command extracts your theme, derives agent tools from your OpenAPI
-spec, and wires the routes. Full walkthrough: [docs/quickstart.md](docs/quickstart.md).
+Full walkthrough: [docs/quickstart.md](docs/quickstart.md).
 
 Want to try it before integrating? `pnpm demo` runs Maple, a demo bank with
 Vendo embedded. `pnpm demo:accounting` runs Cadence, an accounting firm app
