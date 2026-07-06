@@ -193,11 +193,22 @@ describe("dispatch bridge-promise handling", () => {
     await expect(dispatch("vendo.something")).resolves.toBe("ok");
   });
 
-  it("swallows a bridge rejection (policy deny) with a warning — no unhandled rejection or dead click", async () => {
+  it("propagates a bridge rejection to awaiters (does NOT swallow policy/capability failures)", async () => {
+    (globalThis as Record<string, unknown>)["__vendoDispatch"] = () =>
+      Promise.reject(Object.assign(new Error("policy deny"), { code: "policy" }));
+    await expect(dispatch("vendo.blocked")).rejects.toThrow(/policy deny/);
+    await expect(navigate("/blocked")).rejects.toThrow(/policy deny/);
+  });
+
+  it("a blocked navigation from a Link click is caught (no unhandled rejection, no dead crash)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     (globalThis as Record<string, unknown>)["__vendoDispatch"] = () =>
       Promise.reject(Object.assign(new Error("policy deny"), { code: "policy" }));
-    await expect(navigate("/blocked")).resolves.toBeUndefined();
+    render(<Link href="/blocked">go</Link>);
+    expect(() => fireEvent.click(screen.getByText("go"))).not.toThrow();
+    // flush the navigate() promise's rejection handler
+    await Promise.resolve();
+    await Promise.resolve();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });

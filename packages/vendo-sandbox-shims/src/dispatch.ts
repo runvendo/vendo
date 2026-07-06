@@ -22,20 +22,16 @@ export function dispatch(action: string, payload?: unknown): Promise<unknown> {
     return Promise.resolve(undefined);
   }
   // The runtime bridge returns a Promise that REJECTS on a blocked action
-  // (policy deny, capability mismatch). Dropping it left an unhandled rejection
-  // and a dead click; own the Promise and swallow-with-log so a blocked action
-  // fails quietly instead of crashing.
-  return Promise.resolve(fn({ action, payload })).catch((err: unknown) => {
-    if (typeof console !== "undefined") {
-      console.warn(`[vendo] shim dispatch "${action}" was blocked:`, err);
-    }
-    return undefined;
-  });
+  // (policy deny, capability mismatch, pending-then-denied). Return it RAW so a
+  // caller that awaits dispatch()/navigate() sees the failure — swallowing it
+  // here would hide policy/nav errors from component code. Fire-and-forget call
+  // sites (e.g. Link.onClick) are responsible for catching.
+  return Promise.resolve(fn({ action, payload }));
 }
 
 /** Navigate the host app. Only same-app paths are meaningful; the host
- *  receiver validates before touching the router. Returns the (already
- *  rejection-handled) dispatch Promise so callers never drop it. */
+ *  receiver validates before touching the router. Returns the RAW bridge
+ *  Promise — awaiters see a rejection; fire-and-forget callers must catch. */
 export function navigate(href: string): Promise<unknown> {
   return dispatch(NAVIGATE_ACTION, { href });
 }

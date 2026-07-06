@@ -65,7 +65,14 @@ export default function Link({ href, children, onClick, prefetch: _p, replace: _
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         if (rest.target && rest.target !== "_self") return;
         event.preventDefault();
-        navigate(url);
+        // Fire-and-forget: navigate() returns the raw bridge Promise, which
+        // rejects on a blocked navigation. Catch here so a denied click logs
+        // instead of surfacing as an unhandled rejection.
+        void navigate(url).catch((err: unknown) => {
+          if (typeof console !== "undefined") {
+            console.warn(`[vendo] Link navigation to "${url}" was blocked:`, err);
+          }
+        });
       },
     },
     children,
