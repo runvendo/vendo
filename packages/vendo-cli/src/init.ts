@@ -35,6 +35,12 @@ export interface InitOptions {
   yes?: boolean;
   /** Pack local Vendo workspace packages into the host app's vendor/ dir. */
   localVendoDir?: string;
+
+  // ---- test seams below this line ------------------------------------------
+  // Everything above maps 1:1 to a CLI flag/argument; everything below exists
+  // so tests can inject fakes (models, prompts, network, telemetry) and is
+  // omitted in production. Keep new options on the right side of this line.
+
   /** test seam — pass null to force LLM-off, a mock to avoid the network */
   model?: LanguageModel | null;
   /**
@@ -197,6 +203,11 @@ interface KeyPromptResult {
  * peer saves the shape-detected key anyway (it can't be verified without the
  * package) and prints the install hint. Enter or Ctrl-C at any point skips into
  * deterministic mode. Never logs or echoes the pasted key.
+ *
+ * Termination: the `for (;;)` relies on the interactor eventually yielding an
+ * empty/null answer — the real clack prompt always can (Enter or Ctrl-C), but a
+ * test fake that keeps replaying a rejected key would loop forever, so fakes
+ * must end their scripts with "" or null.
  */
 async function promptForKey(
   targetDir: string,

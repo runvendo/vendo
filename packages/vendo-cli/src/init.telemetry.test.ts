@@ -109,6 +109,34 @@ describe("init telemetry", () => {
     }
   });
 
+  it("records keyPrompt=invalid when a rejected key is followed by an Enter-skip", async () => {
+    const home = mkdtempSync(join(tmpdir(), "vendo-init-tele-"));
+    const target = mkdtempSync(join(tmpdir(), "vendo-init-target-"));
+    writeFileSync(join(target, "package.json"), "{}");
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true });
+    // An unrecognized key shape counts as a rejection (no network needed);
+    // Enter then ends the loop in skip → the recorded outcome is "invalid".
+    const { interactor } = fakeInteractor(["not-a-real-key", ""]);
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await runInit({
+        targetDir: target,
+        skipLlm: false,
+        force: false,
+        interactive: true,
+        interactor,
+        telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
+      });
+      expect(completedProps(fetchImpl).keyPrompt).toBe("invalid");
+    } finally {
+      log.mockRestore();
+      err.mockRestore();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
   it("records keyPrompt=skipped when the prompt is Enter-skipped", async () => {
     const home = mkdtempSync(join(tmpdir(), "vendo-init-tele-"));
     const target = mkdtempSync(join(tmpdir(), "vendo-init-target-"));
