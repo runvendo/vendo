@@ -86,8 +86,18 @@ export function VendoStage({
   route,
 }: VendoStageProps) {
   // Read-only route channel spread into every initialize() so the shims resolve
-  // the host's real location regardless of which tree is mounted.
-  const routeInit = route ? { route } : {};
+  // the host's real location regardless of which tree is mounted. Read from a
+  // ref (refreshed every render) rather than a render-time snapshot: the node
+  // effect waits on `c.ready` before initializing, so a route that changes
+  // while the stage is still initializing (node unchanged, so the effect never
+  // re-runs; route effect skips because not-yet-inited) would otherwise
+  // initialize with the STALE route and never re-run. `routeInit()` reads the
+  // latest route at the moment initialize is called.
+  // (theme/state are still captured in the effect closure below and share the
+  // same latent pre-ready race — left out of scope; only route is fixed here.)
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const routeInit = () => (routeRef.current ? { route: routeRef.current } : {});
   const slotRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<StageController | null>(null);
   const initedRef = useRef(false);
@@ -144,7 +154,7 @@ export function VendoStage({
         c.ready
           .then(() => {
             if (cancelled) return;
-            c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit, tree: CLEARED_TREE });
+            c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: CLEARED_TREE });
             rootIdRef.current = CLEARED_TREE.id;
             sessionRef.current = null;
             payloadRef.current = null;
@@ -183,7 +193,7 @@ export function VendoStage({
                 name: "Text",
                 props: { text: "Failed to render generated UI: " + result.error.message },
               };
-              c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit, tree: errorTree });
+              c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: errorTree });
               initedRef.current = true;
               rootIdRef.current = node.id;
               // Drop any prior session so the next valid payload re-initializes
@@ -205,7 +215,7 @@ export function VendoStage({
               state,
               bundleSource,
               componentTheme,
-              ...routeInit,
+              ...routeInit(),
               tree: result.session.tree,
               generatedComponents: payload.components,
               ...(anchorData ? { anchorData } : {}),
@@ -246,14 +256,14 @@ export function VendoStage({
           payloadRef.current = null;
         }
         if (!initedRef.current) {
-          c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: node });
           initedRef.current = true;
           rootIdRef.current = node.id;
         } else if (switchedFromGenerated || node.id !== rootIdRef.current) {
           // New tree (root id changed, or we just switched off a generated tree
           // whose mounted root id differs from this node). Re-initialize — a
           // plain update would target a nodeId that no longer exists and no-op.
-          c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: node });
           rootIdRef.current = node.id;
         } else {
           c.update({ replace: { nodeId: node.id, node } });
