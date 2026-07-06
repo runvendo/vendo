@@ -1,11 +1,11 @@
 /**
  * The client is the exact same surface `vendo init` wires into Next.js
- * apps: VendoRoot from `@vendoai/next/client` is plain React (the package
- * imports nothing from Next.js) — launcher pill, Cmd/Ctrl+K overlay, chat,
- * and sandboxed generated views, all talking to the node:http server through
+ * apps: VendoRoot from `vendoai/react` is plain React (the package imports
+ * nothing from Next.js) — launcher pill, Cmd/Ctrl+K overlay, chat, and
+ * sandboxed generated views, all talking to the node:http server through
  * Vite's /api/vendo proxy.
  */
-import { VendoRoot } from "@vendoai/next/client";
+import { VendoRoot } from "vendoai/react";
 
 export function App() {
   return (

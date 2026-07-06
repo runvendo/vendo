@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react"
 import {
+  GlassVeil,
   VendoThread,
   VendoToast,
   useVendoThread,
@@ -37,6 +38,7 @@ function PageSurface() {
   const parked = useParkedActions()
   const [active, setActive] = useState<string>(CHAT)
   const [saved, setSaved] = useState<Vendo[]>([])
+  const [savedLoaded, setSavedLoaded] = useState(false)
   const [trustOpen, setTrustOpen] = useState(false)
 
   // Hydrate the tab strip from the store (ENG-183): saved vendos survive
@@ -44,7 +46,9 @@ function PageSurface() {
   useEffect(() => {
     let cancelled = false
     void store.list().then((all) => {
-      if (!cancelled) setSaved(all.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)))
+      if (cancelled) return
+      setSaved(all.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)))
+      setSavedLoaded(true)
     })
     return () => { cancelled = true }
   }, [store])
@@ -167,6 +171,7 @@ function PageSurface() {
             suggestions={SUGGESTIONS}
             heroComposer
             flows={saved}
+            flowsLoading={!savedLoaded}
             onOpenFlow={(f) => setActive(f.id)}
             onRenameFlow={(f, name) => persistPatch(f, { name })}
             onPinFlow={(f, pinned) => persistPatch(f, { pinned })}
@@ -202,10 +207,11 @@ function PageSurface() {
  */
 function SavedPane({ vendo }: { vendo: Vendo }) {
   const { renderNode } = useShell()
-  const { node, status, errors, drift } = useReopenVendo(vendo)
+  const { node, status, errors, drift, refreshing } = useReopenVendo(vendo)
   const drifted = [...drift.missing, ...drift.changed]
   return (
     <div className="fl-saved-pane">
+      {refreshing && <GlassVeil />}
       {drifted.length > 0 && (
         <div className="fl-drift-note">
           {drifted.join(", ")} {drifted.length === 1 ? "has" : "have"} changed in Cadence since this

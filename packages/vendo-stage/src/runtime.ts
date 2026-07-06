@@ -340,6 +340,9 @@ export const STAGE_RUNTIME_SRC = String.raw`
     // Anchor data feed for the swr shim (set BEFORE any generated module
     // evaluates or renders — useSWR reads it synchronously).
     window.__vendoAnchorData = params.anchorData || {};
+    // Read-only route channel for the next/navigation shims (usePathname /
+    // useSearchParams / useParams). Set alongside anchorData, before any render.
+    window.__vendoRouteData = params.route || {};
     injectTheme(params.theme || {});
     cachedHost = await loadBundle(params.bundleSource);
     var gen = await loadGeneratedComponents(params.generatedComponents);
@@ -436,6 +439,12 @@ export const STAGE_RUNTIME_SRC = String.raw`
       if (p.anchorData) {
         currentParams = Object.assign({}, currentParams, { anchorData: p.anchorData });
         window.__vendoAnchorData = p.anchorData;
+      }
+
+      // Refresh the read-only route channel (live re-patch, same lifecycle).
+      if (p.route) {
+        currentParams = Object.assign({}, currentParams, { route: p.route });
+        window.__vendoRouteData = p.route;
       }
 
       // Apply node patch (find-and-replace by id, including root).

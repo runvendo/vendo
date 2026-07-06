@@ -7,7 +7,7 @@
  * recorded — resolving means the message actually reached the host surface.
  *
  * Deliveries are also retained in a capped, cursor-stamped log so a polling
- * client (VendoToasts via the @vendoai/next deliveries route) can read
+ * client (VendoToasts via the vendo/server deliveries route) can read
  * everything for its principal since its last cursor. Cursors are monotonic
  * per instance and survive retention drops.
  */

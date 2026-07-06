@@ -7,7 +7,7 @@
  */
 
 /** Scope for every seed — matches WORLD_SCOPE in
- *  packages/vendo-next/src/guard.ts, and the drill principal demo-bank's
+ *  packages/vendo-server/src/guard.ts, and the drill principal demo-bank's
  *  route.ts resolves to under VENDO_DRILL=1. */
 export const SCOPE = { tenantId: "vendo-embedded", subject: "vendo-default-user" };
 
@@ -56,5 +56,5 @@ export const DECISION_CONTEXT = {
   input: { probe: "drill" },
 };
 
-/** Must match DECISION_POLICY_VERSION in packages/vendo-next/src/handler.ts. */
+/** Must match DECISION_POLICY_VERSION in packages/vendo-server/src/fetch-handler.ts. */
 export const DECISION_POLICY_VERSION = "v1";

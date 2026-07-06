@@ -1,6 +1,6 @@
 /**
  * All Vendo endpoints (chat, action, integrations, capabilities, tick) —
- * served by `createVendoHandler()` from @vendoai/next, wired to Maple's
+ * served by `createVendoHandler()` from `vendoai/server`, wired to Maple's
  * demo modules. This replaces the hand-rolled chat/action/integrations
  * routes and is the proof the handler covers a real host's needs:
  *
@@ -21,7 +21,7 @@
  * The sibling static routes (poll, reset) remain demo-custom and win over
  * this catch-all in Next routing.
  */
-import { createVendoHandler } from "@vendoai/next";
+import { createVendoHandler } from "vendoai/server";
 import { vendoOptions } from "@/vendo/handler-options";
 
 export const runtime = "nodejs";

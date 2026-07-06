@@ -41,6 +41,28 @@ describe("toThreadItems", () => {
     });
   });
 
+  it("a DYNAMIC approval carries its toolCallId + sibling data-consent tier — the consent POST must not be dropped (MCP gap)", () => {
+    // Without toolCallId the shell's approve() silently skipped the consent
+    // POST for MCP tools, bypassing the audit/grant channel host tools use.
+    const items = toThreadItems([
+      msg("m2d", "assistant", [
+        {
+          type: "dynamic-tool",
+          toolName: "everything_echo",
+          toolCallId: "call-mcp-1",
+          state: "approval-requested",
+          approval: { id: "a9" },
+          input: { message: "hi" },
+        },
+        { type: "data-consent", data: { toolCallId: "call-mcp-1", tier: "act", unverified: true } },
+      ]),
+    ]);
+    expect(items[0]).toEqual({
+      kind: "approval", key: "m2d:0", messageId: "m2d", approvalId: "a9", toolCallId: "call-mcp-1",
+      toolName: "everything_echo", input: { message: "hi" }, tier: "act", unverified: true,
+    });
+  });
+
   it("emits a tool item for a dynamic tool part in other states", () => {
     const items = toThreadItems([
       msg("m3d", "assistant", [
@@ -202,6 +224,51 @@ describe("toThreadItems — consent tier correlation", () => {
     ]);
     const approval = items.find((i) => i.kind === "approval");
     expect(approval).toMatchObject({ toolCallId: "call-1", tier: "act", unverified: true });
+  });
+
+  it("carries the tool's field formats from a sibling data-consent part onto the approval item", () => {
+    const items = toThreadItems([
+      msg("mfmt", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-1", state: "approval-requested",
+          input: { amount: 50000 }, approval: { id: "ap-1" } },
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "critical", unverified: false, formats: { amount: "cents" } } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect(approval).toMatchObject({ toolCallId: "call-1", tier: "critical", formats: { amount: "cents" } });
+  });
+
+  it("carries field formats onto a settled tool item too (the receipt formats like the card)", () => {
+    const items = toThreadItems([
+      msg("mfmt2", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-2", state: "output-available", input: { amount: 50000 }, output: "ok" },
+        { type: "data-consent", data: { toolCallId: "call-2", tier: "critical", unverified: false, formats: { amount: "cents" } } },
+      ]),
+    ]);
+    const tool = items.find((i) => i.kind === "tool");
+    expect(tool).toMatchObject({ tier: "critical", formats: { amount: "cents" } });
+  });
+
+  it("drops a malformed formats value (non-object) from the data-consent part — never trusts it blindly", () => {
+    const items = toThreadItems([
+      msg("mbad", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-1", state: "approval-requested", input: { amount: 50000 }, approval: { id: "ap-1" } },
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "critical", unverified: false, formats: "garbage" } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect((approval as { formats?: unknown }).formats).toBeUndefined();
+  });
+
+  it("drops unknown format values but keeps known ones from the data-consent part", () => {
+    const items = toThreadItems([
+      msg("mmix", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-1", state: "approval-requested", input: {}, approval: { id: "ap-1" } },
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "critical", unverified: false, formats: { amount: "cents", bad: "wizardry" } } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect((approval as { formats?: unknown }).formats).toEqual({ amount: "cents" });
   });
 
   it("an approval with no matching data-consent part gets no tier (defensive — never crashes)", () => {

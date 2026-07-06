@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { scanRoutes } from "./route-scan.js";
-import { textModel } from "../test-helpers.js";
+import { capturingModel, textModel } from "../test-helpers.js";
 
 const ROUTE = `
 import { ok } from "@/server/http";
@@ -67,5 +67,62 @@ describe("scanRoutes", () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     const { tools } = await scanRoutes(dir, textModel(["[]"]));
     expect(tools).toEqual([]);
+  });
+
+  it("excludes Vendo's own generated catch-all route from the scan", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
+    await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE);
+    await mkdir(path.join(dir, "src/app/api/vendo/[...path]"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/api/vendo/[...path]/route.ts"),
+      `import { createVendoHandler } from "vendo/server";\nexport const { GET, POST } = createVendoHandler();\n`,
+    );
+    const { model, calls } = capturingModel(LLM_REPLY);
+    const { tools, warnings } = await scanRoutes(dir, model);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({ name: "list_transactions" });
+    // No mention of the vendo route at all — it must never reach the LLM prompt or warnings.
+    expect(warnings).toEqual([]);
+    expect(warnings.join("\n")).not.toMatch(/vendo/i);
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(calls[0])).not.toMatch(/createVendoHandler/);
+  });
+
+  it("also excludes the Vendo route when the app dir has no src/ prefix", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "app/api/transactions"), { recursive: true });
+    await writeFile(path.join(dir, "app/api/transactions/route.ts"), ROUTE);
+    await mkdir(path.join(dir, "app/api/vendo/[...path]"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/api/vendo/[...path]/route.ts"),
+      `export const { GET, POST } = createVendoHandler();\n`,
+    );
+    const { model, calls } = capturingModel(LLM_REPLY);
+    const { tools, warnings } = await scanRoutes(dir, model);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({ name: "list_transactions" });
+    expect(warnings).toEqual([]);
+    // The relPath here is `app/api/vendo/...` with no leading slash: only the
+    // `^` branch of the exclusion regex catches it. This pins the anchor.
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(calls[0])).not.toMatch(/createVendoHandler/);
+  });
+
+  it("does not exclude a legitimately named route like api/vendors", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/api/vendors"), { recursive: true });
+    await writeFile(path.join(dir, "src/app/api/vendors/route.ts"), ROUTE);
+    const vendorsReply = JSON.stringify([{
+      name: "list_vendors",
+      description: "List vendors.",
+      method: "get",
+      path: "/api/vendors",
+      inputSchema: { type: "object", properties: {} },
+    }]);
+    const { tools, warnings } = await scanRoutes(dir, textModel([vendorsReply]));
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({ name: "list_vendors" });
+    expect(warnings).toEqual([]);
   });
 });

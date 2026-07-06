@@ -96,6 +96,52 @@ describe("handleConsent", () => {
     expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
   });
 
+  it("MCP dynamic-tool approvals ride the SAME channel: a dynamic-tool part anchors the consent, audits it, and mints the implicit allow-once grant", async () => {
+    // ai-SDK MCP tools persist as `dynamic-tool` parts (name in `toolName`,
+    // not the part type). The lookup and tool-name cross-check must treat
+    // them exactly like static tool-* parts — this was the remaining
+    // tool-*-only path from the MCP work.
+    const messages = [
+      { id: "m1", role: "assistant", parts: [
+        { type: "dynamic-tool", toolName: "everything_echo", toolCallId: "call-mcp",
+          state: "approval-requested", input: { message: "hi" }, approval: { id: "ap-mcp" } },
+      ] },
+    ] as unknown as VendoUIMessage[];
+    const d = {
+      ...deps(messages),
+      resolveDescriptor: (name: string): ToolDescriptor | undefined =>
+        name === "everything_echo"
+          ? { name, source: "mcp", annotations: { readOnlyHint: false }, hasExecute: false, kind: "dynamic" }
+          : undefined,
+    };
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-mcp", toolName: "everything_echo",
+      response: { id: "call-mcp", decision: "yes" },
+    });
+    expect(result.ok).toBe(true);
+    // Same rows a host-tool approval writes: one consent audit event + the
+    // implicit session-scoped exact grant (spec §4.3 "allow once").
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+    expect(await d.grants.findForTool(scope, "everything_echo")).toHaveLength(1);
+  });
+
+  it("a dynamic-tool part still enforces the tool-name cross-check (400 on mismatch, decision audited)", async () => {
+    const messages = [
+      { id: "m1", role: "assistant", parts: [
+        { type: "dynamic-tool", toolName: "everything_echo", toolCallId: "call-mcp",
+          state: "approval-requested", input: {}, approval: { id: "ap-mcp" } },
+      ] },
+    ] as unknown as VendoUIMessage[];
+    const d = deps(messages);
+    const result = await handleConsent(d, scope, {
+      threadId: "th-1", toolCallId: "call-mcp", toolName: "some_other_tool",
+      response: { id: "call-mcp", decision: "yes" },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(400);
+    expect(await d.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+  });
+
   it("404s when no approval-requested part with that toolCallId exists (and still audits the decision)", async () => {
     const d = deps([]);
     const result = await handleConsent(d, scope, {

@@ -35,3 +35,21 @@ describe("componentPromptCatalog", () => {
     for (const line of lines) expect(line).toMatch(/^- [A-Z][A-Za-z0-9]*: .+/);
   });
 });
+
+describe("Donut centerValue guidance", () => {
+  it("tells the model centerValue reuses the slices' converted values (never re-divide)", () => {
+    const lines = componentPromptCatalog(prewiredComponents).split("\n");
+    const entry = lines.find((l) => l.includes("Donut"));
+    expect(entry).toBeDefined();
+    expect(entry!).toMatch(/same .*converted values|never re-divide/i);
+  });
+
+  it("forbids raw cents in slice.value and asks for a formatted display per slice", () => {
+    const lines = componentPromptCatalog(prewiredComponents).split("\n");
+    const entry = lines.find((l) => l.includes("Donut"))!;
+    // value carries the final display amount (never raw cents), and each slice
+    // provides its formatted `display` so the center is derived from them.
+    expect(entry).toMatch(/never raw cents|not raw cents/i);
+    expect(entry).toMatch(/display/);
+  });
+});

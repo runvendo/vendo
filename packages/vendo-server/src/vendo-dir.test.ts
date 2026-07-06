@@ -59,6 +59,16 @@ describe("loadVendoDir", () => {
     expect(() => loadVendoDir(path.join(dir, ".vendo"))).toThrow(/tools\.json/);
   });
 
+  it("fails loud when a file is PRESENT but unreadable (EACCES/EIO class) instead of silently serving defaults", () => {
+    const dir = scratch();
+    // A directory named tools.json makes readFileSync throw EISDIR — the same
+    // not-ENOENT class as EACCES/EIO, reproducible without root/chmod tricks.
+    mkdirSync(path.join(dir, ".vendo/tools.json"), { recursive: true });
+    expect(() => loadVendoDir(path.join(dir, ".vendo"))).toThrow(
+      /tools\.json exists but could not be read/,
+    );
+  });
+
   it("fails loud on invalid JSON in theme.json", () => {
     const dir = scratch();
     mkdirSync(path.join(dir, ".vendo"));

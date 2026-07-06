@@ -40,7 +40,7 @@ export function ActivityStep({ step, showPeek = false }: ActivityStepProps) {
   // that guarantee just because the card is gone and only the receipt is
   // left to show the same fields.
   const { rows: detailRows } = isReceipt
-    ? approvalRows(step.input, step.tier === "critical" ? null : 160)
+    ? approvalRows(step.input, step.tier === "critical" ? null : 160, step.formats)
     : { rows: [] };
 
   return (

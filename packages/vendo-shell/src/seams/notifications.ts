@@ -1,6 +1,6 @@
 /**
  * Notifications seam (VendoToasts, 2026-07-04 spec): the client-side view of
- * the runtime's in-app Channels deliveries. The real client (@vendoai/next's
+ * the runtime's in-app Channels deliveries. The real client (`vendo/react`'s
  * VendoRoot) polls the handler's /deliveries route and posts approvals to
  * /resume; the local default is an inert seed for tests and storybook-style
  * hosts.
@@ -23,8 +23,10 @@ export interface AutomationNotice {
 export type ResumeOutcome = "resumed" | "stale";
 
 export interface VendoNotifications {
-  /** All notices with cursor > `since`, oldest first. */
-  listSince(since: number): Promise<AutomationNotice[]>;
+  /** All notices with cursor > `since`, oldest first. `"disabled"` means the
+   *  feed does not exist on this host (automations off) — the poller must
+   *  stop for good instead of retrying forever. */
+  listSince(since: number): Promise<AutomationNotice[] | "disabled">;
   /** Approve/deny the paused run behind an approval notice. Pass the notice's
    *  `stepId` so a run that has since paused on a DIFFERENT step answers
    *  `stale` instead of approving something the user never saw. `stale` also

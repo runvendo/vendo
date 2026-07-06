@@ -59,6 +59,9 @@ export interface ChatDeps {
   options: VendoHandlerOptions;
   /** False when no model key is configured → chat answers 503 instead of streaming a provider error. */
   chatEnabled: boolean;
+  /** Replaces the generic set-a-key hint in the disabled 503 (e.g. the
+   *  missing-provider-peer install hint). */
+  chatDisabledReason?: string;
   /** Maps the client's chat id to a store thread id (ENG-193 §6.2). */
   threadIndex: ThreadIndex;
   /** Durable (or in-memory) thread persistence. Optional — deps built before
@@ -102,6 +105,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     return Response.json(
       {
         error:
+          deps.chatDisabledReason ??
           "chat is unavailable — set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY",
       },
       { status: 503 },

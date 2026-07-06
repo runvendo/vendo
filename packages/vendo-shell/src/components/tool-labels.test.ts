@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toolAction, humanize } from "./tool-labels";
+import { toolAction, humanize, isCatalogTool } from "./tool-labels";
 
 describe("toolAction", () => {
   it("keeps the hand-tuned host tool labels", () => {
@@ -81,5 +81,20 @@ describe("humanize", () => {
     expect(humanize("renderDemoCard")).toBe("Render Demo Card");
     expect(humanize("set_rule")).toBe("Set Rule");
     expect(humanize("GMAIL_FETCH")).toBe("Gmail Fetch");
+  });
+});
+
+describe("isCatalogTool", () => {
+  it("recognizes tools whose toolkit prefix is in the connect catalog", () => {
+    expect(isCatalogTool("GMAIL_SEND_EMAIL")).toBe(true);
+    expect(isCatalogTool("SLACK_API_TEST")).toBe(true);
+    expect(isCatalogTool("GOOGLECALENDAR_CREATE_EVENT")).toBe(true);
+  });
+
+  it("treats everything else as unclassified (MCP/dynamic names keep their badge)", () => {
+    expect(isCatalogTool("mystery_tool")).toBe(false);
+    expect(isCatalogTool("search_docs")).toBe(false);
+    expect(isCatalogTool("ACME_DO_THING")).toBe(false);
+    expect(isCatalogTool("transfer_money")).toBe(false);
   });
 });

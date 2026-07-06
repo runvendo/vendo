@@ -1,48 +1,74 @@
 /**
  * @vendoai/cli — the one-click dev tool (ENG-197). The shebang is added by the
  * vite build banner (see vite.config.ts).
- *   vendo init [dir]     extract theme/tools/components into <dir>/.vendo/
- *   vendo publish [dir]  stub until the cloud registry lands (ENG-198)
+ *
+ * Three tiers of commands:
+ *   vendo init [dir]     set up Vendo in a Next.js app (run once)
+ *   vendo refresh [dir]  catch up an existing install; offers only what's new
+ *   vendo doctor [dir]   check the install (read-only)
+ * plus vendo sync (automatic in your build) and vendo publish (ENG-198 stub).
  */
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runInit } from "./init.js";
+import { runRefresh } from "./refresh.js";
+import { runDoctor } from "./doctor.js";
 import { runPublish } from "./publish.js";
 import { runSync } from "./sync/index.js";
 import { runTelemetryCmd } from "./telemetry-cmd.js";
+import { CLI_VERSION } from "./version.js";
 
 const HELP = `vendo — Vendo one-click dev tool
 
-Usage:
-  vendo init [dir] [--skip-llm] [--force] [--local <vendo-monorepo>]
-                                            Extract theme/tools/components into .vendo/ AND
-                                            wire a Next.js App Router app (route handler,
-                                            provider, .env.example, sandbox assets, prebuild sync)
-  vendo sync [dir]                          Capture wrapped-component source + build the sandbox
-                                              environment (deps, host CSS, manifest). Runs every
-                                              build via the prebuild script init wires.
-  vendo publish [dir]                       Publish the manifest (stub — registry lands with ENG-198)
-  vendo telemetry <status|enable|disable>   View or change anonymous usage telemetry (see TELEMETRY.md)
+Usage: vendo <command> [dir] [options]
+
+Setup (you run these):
+  init [dir]      Set up Vendo in a Next.js app: extract theme/tools/components into
+                  .vendo/ and wire the app (route handler, provider, sandbox assets,
+                  prebuild sync). Interactive — prompts for a provider key and lets you
+                  pick components to wrap and widgets to make remixable. Safe to re-run:
+                  additive (fills gaps, never overwrites); on a wired app it behaves
+                  like refresh.
+  refresh [dir]   Catch up an existing install: fill gaps and offer only what's new,
+                  with the same pickers as init. Run it after your app has grown.
+  doctor [dir]    Check your Vendo install — keys, wiring, .vendo state, storage,
+                  scheduler, telemetry — and report problems with fixes. Read-only.
+
+Runs automatically in your build:
+  sync [dir]      Capture wrapped-component source + rebuild the sandbox environment.
+                  init wires this into your prebuild script; you rarely run it by hand.
+
+Coming with the registry:
+  publish [dir]   Validate and (soon) publish the manifest — stub until ENG-198.
+
+Management:
+  telemetry <status|enable|disable>   View or change anonymous usage telemetry (TELEMETRY.md)
 
 Options:
-  --skip-llm   Skip LLM-assisted steps (route scan, component discovery)
-  --force      Overwrite existing .vendo/ files
-  --local      Pack local @vendoai packages from a Vendo monorepo into ./vendor
+  --skip-llm   Skip LLM-assisted steps (route scan, component/remix discovery)
+  --force      Overwrite existing .vendo/ files (init/refresh; warns before overwriting)
+  --yes        Non-interactive: no prompts; resolve keys from env / .env.local only;
+               skip the component/remix pickers (source edits stay human-gated)
+  --local      Pack local vendo + @vendoai packages from a Vendo monorepo into ./vendor
+  --version    Print the CLI version
 `;
 
-function parseInitArgs(args: string[]):
-  | { ok: true; targetDir: string; skipLlm: boolean; force: boolean; localVendoDir?: string }
+export function parseInitArgs(args: string[]):
+  | { ok: true; targetDir: string; skipLlm: boolean; force: boolean; yes: boolean; localVendoDir?: string }
   | { ok: false; error: string } {
   const positionals: string[] = [];
   let localVendoDir: string | undefined;
   let skipLlm = false;
   let force = false;
+  let yes = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--skip-llm") {
       skipLlm = true;
     } else if (arg === "--force") {
       force = true;
+    } else if (arg === "--yes") {
+      yes = true;
     } else if (arg === "--local") {
       const value = args[++i];
       if (!value || value.startsWith("--")) return { ok: false, error: "--local requires a path to the Vendo monorepo" };
@@ -54,26 +80,33 @@ function parseInitArgs(args: string[]):
       positionals.push(arg);
     }
   }
-  return { ok: true, targetDir: positionals[0] ?? process.cwd(), skipLlm, force, localVendoDir };
+  return { ok: true, targetDir: positionals[0] ?? process.cwd(), skipLlm, force, yes, localVendoDir };
 }
 
 export async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   const dir = rest.find((a) => !a.startsWith("--")) ?? process.cwd();
   switch (cmd) {
-    case "init": {
+    case "init":
+    case "refresh": {
       const parsed = parseInitArgs(rest);
       if (!parsed.ok) {
         console.error(parsed.error);
         return 1;
       }
-      return runInit({
+      const opts = {
         targetDir: parsed.targetDir,
         skipLlm: parsed.skipLlm,
         force: parsed.force,
+        yes: parsed.yes,
         localVendoDir: parsed.localVendoDir,
-      });
+      };
+      // `refresh` is init's catch-up mode; `init` on an already-wired app
+      // delegates to the same behavior (see init.ts / refresh.ts).
+      return cmd === "refresh" ? runRefresh(opts) : runInit(opts);
     }
+    case "doctor":
+      return runDoctor({ targetDir: dir });
     case "sync":
       return runSync({ targetDir: dir });
     case "publish":
@@ -81,7 +114,7 @@ export async function main(argv: string[]): Promise<number> {
     case "telemetry":
       return runTelemetryCmd(rest.find((a) => !a.startsWith("--")), { log: (m) => console.log(m) });
     case "--version":
-      console.log("0.1.0");
+      console.log(CLI_VERSION);
       return 0;
     default:
       console.log(HELP);
@@ -90,19 +123,19 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 // Only auto-run when invoked as a bin, not when imported by tests.
-// pathToFileURL, not string concat: a checkout path with spaces (or any
-// URL-special char) percent-encodes in import.meta.url, so a hand-built
-// `file://` string never matches. Node also resolves the main module through
-// symlinks (npm's .bin/vendo is one), so compare against the realpath's URL.
-const invokedAsBin = (() => {
-  const entry = process.argv[1];
-  if (!entry) return false;
+// Node resolves the main module through symlinks (npm's .bin/vendo is one) and
+// pathToFileURL percent-encodes special characters (a checkout path with
+// spaces), so compare against the realpath's file URL, not a hand-built
+// `file://` string. Exported so the entrypoint logic is unit-testable.
+export function isCliEntrypoint(metaUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) return false;
   try {
-    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+    return metaUrl === pathToFileURL(realpathSync(argv1)).href;
   } catch {
     return false;
   }
-})();
-if (invokedAsBin) {
+}
+
+if (isCliEntrypoint(import.meta.url, process.argv[1])) {
   main(process.argv.slice(2)).then((code) => process.exit(code));
 }

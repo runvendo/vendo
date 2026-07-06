@@ -3,8 +3,8 @@
  * (ENG-193 §4.6) — the "Waiting on you" surface's data plane, mounted behind
  * this app's own hand-rolled routes the same way every other Vendo route
  * here is a thin adapter over a testable handler function (see
- * consent-handler.ts). The `@vendoai/next` production mount of the SAME
- * runtime logic lives in packages/vendo-next/src/parked-actions.ts; this app
+ * consent-handler.ts). The `vendo/server` production mount of the SAME
+ * runtime logic lives in packages/vendo-server/src/parked-actions.ts; this app
  * hasn't migrated to the handler ("Plan deviations" #1).
  */
 import { parkedActionResolutionSchema } from "@vendoai/core";

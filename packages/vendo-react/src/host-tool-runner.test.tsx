@@ -123,6 +123,147 @@ describe("chat identity stability", () => {
     expect(seen.length).toBeGreaterThanOrEqual(3);
     expect(new Set(seen).size).toBe(1);
   });
+
+  it("keeps the same Chat when the same tool set is rebuilt in a different order", () => {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useVendoContext().chat);
+      return null;
+    }
+    const ui = (definitions: HostToolDefinition[]) => (
+      <VendoProvider transport={transport} components={[]} hostTools={{ definitions }} key="stable">
+        <Probe />
+      </VendoProvider>
+    );
+    // Same tool SET, different array order — a host assembling definitions
+    // from an unordered source (object keys, a Map, a fetch) must not mint a
+    // new Chat (wiping the conversation) just because iteration order moved.
+    const { rerender } = render(ui([listAccountsDef, createOrderDef]));
+    rerender(ui([createOrderDef, listAccountsDef]));
+
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen).size).toBe(1);
+  });
+
+  it("mints a NEW Chat when the tool set genuinely changes", () => {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useVendoContext().chat);
+      return null;
+    }
+    const ui = (definitions: HostToolDefinition[]) => (
+      <VendoProvider transport={transport} components={[]} hostTools={{ definitions }} key="stable">
+        <Probe />
+      </VendoProvider>
+    );
+    const { rerender } = render(ui([listAccountsDef, createOrderDef]));
+    rerender(ui([listAccountsDef]));
+
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen).size).toBe(2);
+  });
+
+  it("keeps the same Chat when the definitions ARRAY identity changes but its content does not", () => {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useVendoContext().chat);
+      return null;
+    }
+    const ui = (nonce: number) => (
+      <VendoProvider
+        transport={transport}
+        components={[]}
+        // A fresh definitions ARRAY every render — a host that builds it
+        // inline (e.g. `hostTools={{ definitions: toHostTools(tools) }}`
+        // without memoizing) re-renders with a new identity but identical
+        // content. Keying the Chat on array identity wipes the ENTIRE
+        // conversation on such a re-render.
+        hostTools={{ definitions: [{ ...listAccountsDef }, { ...createOrderDef }] }}
+        key="stable"
+        data-nonce={nonce}
+      >
+        <Probe />
+      </VendoProvider>
+    );
+    const { rerender } = render(ui(1));
+    rerender(ui(2));
+    rerender(ui(3));
+
+    expect(seen.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(seen).size).toBe(1);
+  });
+});
+
+describe("thread rehydration (loadHistory)", () => {
+  const restoredMessages: VendoUIMessage[] = [
+    { id: "m1", role: "user", parts: [{ type: "text", text: "what did I spend?" }] },
+    { id: "m2", role: "assistant", parts: [{ type: "text", text: "You spent $87." }] },
+  ] as VendoUIMessage[];
+
+  function probeSetup(loadHistory: () => Promise<VendoUIMessage[]>) {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+    let chat: Chat<VendoUIMessage> | undefined;
+    function Probe() {
+      chat = useVendoContext().chat;
+      return null;
+    }
+    render(
+      <VendoProvider transport={transport} components={[]} loadHistory={loadHistory}>
+        <Probe />
+      </VendoProvider>,
+    );
+    if (!chat) throw new Error("chat not captured");
+    return chat;
+  }
+
+  it("seeds an empty chat with the persisted thread messages", async () => {
+    const chat = probeSetup(async () => restoredMessages);
+    await waitFor(() => expect(chat.messages.length).toBe(2));
+    expect(chat.messages[0]!.id).toBe("m1");
+    expect(chat.messages[1]!.id).toBe("m2");
+  });
+
+  it("never clobbers a conversation that started before the history resolved", async () => {
+    let resolveHistory!: (m: VendoUIMessage[]) => void;
+    const gate = new Promise<VendoUIMessage[]>((resolve) => {
+      resolveHistory = resolve;
+    });
+    const chat = probeSetup(() => gate);
+
+    await chat.sendMessage({ text: "fresh question" });
+    await waitFor(() => expect(chat.status).toBe("ready"));
+    const liveIds = chat.messages.map((m) => m.id);
+    expect(liveIds.length).toBeGreaterThan(0);
+
+    resolveHistory(restoredMessages);
+    // Give the (skipped) seeding a chance to run; the live turn must survive.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(chat.messages.map((m) => m.id)).toEqual(liveIds);
+  });
+
+  it("ignores a failed history load", async () => {
+    const chat = probeSetup(async () => {
+      throw new Error("boom");
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(chat.messages.length).toBe(0);
+  });
 });
 
 describe("host tool runner", () => {

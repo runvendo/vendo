@@ -71,6 +71,12 @@ describe("stage runtime source", () => {
       "if (params.componentTheme && window.__VENDO_THEME_WRAP__)",
     );
   });
+  it("injects the read-only route channel (window.__vendoRouteData) on init and re-patches it on ui/update", () => {
+    // Parallel to __vendoAnchorData: set on the full render (init) and refreshed
+    // on ui/update, so the next/navigation shims resolve the host's real route.
+    expect(STAGE_RUNTIME_SRC).toContain("window.__vendoRouteData = params.route || {}");
+    expect(STAGE_RUNTIME_SRC).toContain("window.__vendoRouteData = p.route");
+  });
   it("Text/Skeleton primitives read the canonical --vendo-* theme vars, not --brand-*", () => {
     // TU-2: --brand-* is retired in favor of --vendo-* (see TU-1's brandToCssVars).
     expect(STAGE_RUNTIME_SRC).toContain("--vendo-fg");

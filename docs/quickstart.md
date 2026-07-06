@@ -14,9 +14,8 @@ process.
 ```bash
 npx create-next-app@latest my-app     # or your existing app
 cd my-app
-npm install @vendoai/next
-npm install -D @vendoai/cli
-npx vendo init .
+npm install vendoai
+npx vendo init
 ```
 
 `vendo init` is a codemod, not a scaffold. On a Next.js App Router app it:
@@ -36,13 +35,26 @@ npx vendo init .
   below) plus the storage and scheduler env vars (see
   [Persistence](#persistence));
 - copies the sandbox runtime assets into `public/vendo/`;
-- adds `@vendoai/next` to your dependencies.
+- adds `vendoai` to your dependencies and a `prebuild` script that runs
+  `vendo sync`. By default the sync runs via npx, which needs registry access
+  at build time; add `@vendoai/cli` as a devDependency for hermetic or
+  offline builds — the `vendo` bin picks it up automatically.
 
 It never breaks existing code: any step it can't perform with certainty (an
 unusual layout, an unparsable package.json) is skipped and printed as an exact
 manual instruction instead. Review the whole install in one `git diff`.
 
+`init` is interactive: it prompts for a provider key (saved to `.env.local`),
+then offers a picker of **components** to wrap for generated UI and a picker of
+**widgets** to make remixable in your source. It's safe to re-run — it fills
+gaps and never overwrites. Once installed, `vendo refresh` catches the install
+up as your app grows (or after you add a key). `vendo doctor` runs a read-only
+health check on the whole install.
+
 ## One key = working product
+
+If you pasted a key at the `init` prompt, it's already in `.env.local` — just
+run the app. Otherwise set one by hand:
 
 ```bash
 cp .env.example .env.local
@@ -79,14 +91,16 @@ respectively). Override with `VENDO_MODEL`, either form:
 
 ```bash
 VENDO_MODEL=openai/gpt-5.5-mini   # provider/model: picks the provider outright
-VENDO_MODEL=claude-sonnet-4-6     # bare id: applied to whichever provider key is set
+VENDO_MODEL=claude-sonnet-5       # bare id: applied to whichever provider key is set
 ```
 
 `VENDO_MODEL` alone names a model, not a credential: without a real
 provider key (or a code-injected `model`), chat stays off. OpenAI and Google
 are optional peers (`@ai-sdk/openai`, `@ai-sdk/google`): resolving to one
-without its package installed fails fast with an actionable `npm i` hint, not
-a silent fallback.
+without its package installed degrades like the keyless state — every route
+stays healthy, `/capabilities` reports `chat: false`, and the server log and
+the chat 503 both carry an actionable `npm i` hint. A misconfigured
+`VENDO_MODEL` (unknown provider) still fails loudly.
 
 ## MCP servers
 
@@ -162,7 +176,7 @@ the automation authoring agent can compile `host_event` triggers from chat.
 Produce event instances at the source whenever you can:
 
 ```ts
-import { ingestVendoEvent } from "@vendoai/next";
+import { ingestVendoEvent } from "vendoai/server";
 
 await ingestVendoEvent("transaction.created", txn, {
   eventId: txn.id,
@@ -172,7 +186,7 @@ await ingestVendoEvent("transaction.created", txn, {
 Relay third-party webhooks into your declared event names:
 
 ```ts
-import { ingestVendoEvent } from "@vendoai/next";
+import { ingestVendoEvent } from "vendoai/server";
 
 const body = await req.json();
 await ingestVendoEvent("transaction.created", body.data, {
@@ -226,17 +240,16 @@ before they reach the model.
 
 ## Not using Next.js?
 
-Next.js is the first adapter, not a requirement. `@vendoai/next` is a thin
-wrapper around `@vendoai/server`, the framework-agnostic handler core: a
-plain `(Request) => Promise<Response>` function you can mount anywhere.
-
-```bash
-npm install @vendoai/server
-```
+Next.js is the first adapter, not a requirement. The core is framework-agnostic:
+`createVendoHandler()` (above) is just a `{ GET, POST }` pair of plain
+`(Request) => Promise<Response>` functions — that's why a Next.js App Router
+catch-all can export it directly. Everywhere else, `vendoai/server` exposes the
+same core as `createVendoFetchHandler()`, a single fetch handler you mount on
+any runtime. No extra install — it's the same `vendoai` dependency.
 
 ```js
 import { createServer } from "node:http";
-import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+import { createVendoFetchHandler, toNodeHandler } from "vendoai/server";
 
 createServer(toNodeHandler(createVendoFetchHandler())).listen(3000);
 ```
@@ -254,6 +267,8 @@ Fetch-native runtimes skip the bridge entirely: Hono mounts the handler
 directly.
 
 ```js
+import { createVendoFetchHandler } from "vendoai/server";
+
 const vendo = createVendoFetchHandler();
 app.all("/api/vendo/*", (c) => vendo(c.req.raw));
 ```
@@ -316,8 +331,10 @@ scheduler and Composio webhook setup you'll want on a real deployment.
 ## Troubleshooting
 
 - **"Sandbox unavailable / react shim missing"** — `public/vendo/` is
-  missing its two assets; re-run `npx vendo init . --force` or copy them
-  from the CLI's `dist/assets/`.
+  missing its two assets; re-run `npx vendo init` to restore them (init
+  copies any missing sandbox asset even without `--force`; add `--force` only
+  if the files exist but are stale). `vendo sync` does NOT copy these — it
+  only captures wrapped-component source, so it won't fix this.
 - **Chat answers 403 on a deployment** — that's the local-only default; see
   Deploying above.
 - **Chat errors immediately** — check that one of `ANTHROPIC_API_KEY`,

@@ -97,3 +97,42 @@ describe("voice integration tools bridge", () => {
     expect(d.client?.fetchTools).not.toHaveBeenCalled();
   });
 });
+
+describe("voice control (automation authoring) tools bridge", () => {
+  function control(): ToolSet {
+    return {
+      // destructive authoring tools carry a destructiveHint annotation
+      create_automation: { description: "Create an automation", execute: vi.fn(async () => ({ ok: true })), annotations: { destructiveHint: true } },
+      delete_automation: { description: "Delete an automation", execute: vi.fn(async () => ({ ok: true })), annotations: { destructiveHint: true } },
+      list_automations: { description: "List automations", execute: vi.fn(async () => ({ ok: true })), annotations: { readOnlyHint: true } },
+    } as unknown as ToolSet;
+  }
+
+  it("lists control tools with correct tiers even when integrations are disabled", async () => {
+    const store = createConnectionsStore(CATALOG);
+    const d: VoiceToolsDeps = { store, enabled: false, principal: { userId: "world" }, controlTools: control() };
+    const res = await handleVoiceToolsGet(get(), d);
+    const body = (await res.json()) as { tools: Array<{ name: string; tier: string }> };
+    const byName = Object.fromEntries(body.tools.map((t) => [t.name, t.tier]));
+    // destructive authoring must be CRITICAL (spoken-yes refused; tap required)
+    expect(byName["create_automation"]).toBe("critical");
+    expect(byName["delete_automation"]).toBe("critical");
+    // a read-shaped control tool is read-tier
+    expect(byName["list_automations"]).toBe("read");
+  });
+
+  it("executes a control tool via the bridge with integrations off", async () => {
+    const store = createConnectionsStore(CATALOG);
+    const d: VoiceToolsDeps = { store, enabled: false, principal: { userId: "world" }, controlTools: control() };
+    const res = await handleVoiceToolsPost(post({ tool: "create_automation", input: {} }), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ result: { ok: true } });
+  });
+
+  it("404s a control tool that was not exposed (e.g. cross-scope principal got none)", async () => {
+    const store = createConnectionsStore(CATALOG);
+    const d: VoiceToolsDeps = { store, enabled: false, principal: { userId: "other" } };
+    const res = await handleVoiceToolsPost(post({ tool: "delete_automation", input: {} }), d);
+    expect(res.status).toBe(404);
+  });
+});

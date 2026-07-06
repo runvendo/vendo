@@ -179,3 +179,62 @@ describe("heterogeneous rows (PR #43 review P1)", () => {
     expect(payload.queries).toBeUndefined();
   });
 });
+
+describe("data-bound views carry the source tool's declared field formats", () => {
+  // The live repro (voice-view-formats): a bound Spending Breakdown table
+  // rendered raw integer cents because the model's formatting is DISCARDED
+  // when rows bind to the verbatim cached result — the declared
+  // x-vendo-formats map must travel into the Table columns instead.
+  it("stamps format onto matching columns when the source binds", () => {
+    const raw = { ok: true, data: { data: [{ category: "housing", amount: 285000 }] } };
+    replayRegistry.register("getSpendingInsights", async () => raw);
+    recordResult("getSpendingInsights", { month: "2026-07" }, raw);
+    const node = tableView({
+      title: "Spending Breakdown by Category",
+      columns: [
+        { key: "category", label: "Category" },
+        { key: "amount", label: "Amount" },
+      ],
+      rows: raw.data.data,
+      source: { tool: "getSpendingInsights", input: { month: "2026-07" }, rowsPath: "/data/data" },
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    expect(payload.queries?.[0]?.tool).toBe("getSpendingInsights");
+    const table = payload.nodes.find((n) => n.component === "Table");
+    expect(table?.props?.columns).toEqual([
+      { key: "category", label: "Category" },
+      { key: "amount", label: "Amount", format: "cents" },
+    ]);
+  });
+
+  it("leaves snapshot (unbound) columns unstamped — the model formats those rows", () => {
+    const node = tableView({
+      columns: [{ key: "amount", label: "Amount" }],
+      rows: [{ amount: "$2,850.00" }],
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    const table = payload.nodes.find((n) => n.component === "Table");
+    expect(table?.props?.columns).toEqual([{ key: "amount", label: "Amount" }]);
+  });
+});
+
+describe("voice host tools carry result-field format hints", () => {
+  it("appends RESULT FIELD FORMATS to annotated tools' voice descriptions", () => {
+    const { hostVoiceTools } = __voiceTesting;
+    const byName = (name: string) => {
+      const tool = hostVoiceTools.find((t) => t.name === name);
+      if (!tool) throw new Error(`missing voice tool ${name}`);
+      return tool;
+    };
+    // Money-bearing reads: the cents rule must reach the voice model too.
+    for (const name of ["listTransactions", "listAccounts", "getBudgets"]) {
+      const description = byName(name).description;
+      expect(description, name).toContain("RESULT FIELD FORMATS");
+      expect(description, name).toMatch(/divide by (exactly )?100/i);
+    }
+    expect(byName("listTransactions").description).toContain('"amount"');
+    expect(byName("listAccounts").description).toContain('"balance"');
+    // A tool without formats keeps its plain description.
+    expect(byName("listPayees").description).not.toContain("RESULT FIELD FORMATS");
+  });
+});

@@ -10,6 +10,7 @@
       "get": {
         "operationId": "listAccounts",
         "summary": "List the user's bank accounts with balances.",
+        "x-vendo-formats": { "balance": "cents" },
         "responses": { "200": { "description": "Accounts" } }
       }
     },
@@ -17,6 +18,7 @@
       "get": {
         "operationId": "getAccount",
         "summary": "Fetch one account by id.",
+        "x-vendo-formats": { "balance": "cents" },
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Account id, e.g. acct_checking" }
         ],
@@ -27,6 +29,7 @@
       "get": {
         "operationId": "listAccountTransactions",
         "summary": "List recent transactions for one account.",
+        "x-vendo-formats": { "amount": "cents" },
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Account id" }
         ],
@@ -37,6 +40,7 @@
       "get": {
         "operationId": "listTransactions",
         "summary": "Search and list transactions across all accounts, with filters, sorting and cursor pagination.",
+        "x-vendo-formats": { "amount": "cents" },
         "parameters": [
           { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Free-text match on merchant/descriptor" },
           { "name": "category", "in": "query", "schema": { "type": "string" }, "description": "Category, e.g. dining, groceries, coffee, transport, subscriptions" },
@@ -57,6 +61,7 @@
       "get": {
         "operationId": "getTransaction",
         "summary": "Fetch one transaction by id, including its status timeline.",
+        "x-vendo-formats": { "amount": "cents" },
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
@@ -74,6 +79,7 @@
       "get": {
         "operationId": "listCardTransactions",
         "summary": "List recent transactions charged to one card.",
+        "x-vendo-formats": { "amount": "cents" },
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Card id" }
         ],
@@ -91,6 +97,7 @@
       "get": {
         "operationId": "listGoals",
         "summary": "List savings goals with progress.",
+        "x-vendo-formats": { "target": "cents", "saved": "cents" },
         "responses": { "200": { "description": "Goals" } }
       }
     },
@@ -98,6 +105,7 @@
       "get": {
         "operationId": "getProfile",
         "summary": "Fetch the signed-in user's profile.",
+        "x-vendo-formats": { "netWorth": "cents" },
         "responses": { "200": { "description": "Profile" } }
       }
     },
@@ -112,27 +120,31 @@
       "get": {
         "operationId": "listScheduledPayments",
         "summary": "List upcoming scheduled payments.",
+        "x-vendo-formats": { "amount": "cents" },
         "responses": { "200": { "description": "Scheduled payments" } }
       }
     },
     "/api/insights/spending": {
       "get": {
         "operationId": "getSpendingInsights",
-        "summary": "Spending by category for the current period.",
-        "responses": { "200": { "description": "Spending breakdown" } }
+        "summary": "Spending by category for the current period. Amounts are integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute.",
+        "x-vendo-formats": { "amount": "cents" },
+        "responses": { "200": { "description": "Spending breakdown: { data: [{ category, amount }] } — amount is integer cents" } }
       }
     },
     "/api/insights/cashflow": {
       "get": {
         "operationId": "getCashflowInsights",
-        "summary": "Cash inflow/outflow summary.",
-        "responses": { "200": { "description": "Cashflow" } }
+        "summary": "Cash inflow/outflow summary. Amounts are integer cents (e.g. 1284000 = $12,840.00): divide by 100 exactly once before displaying, including any totals you compute.",
+        "x-vendo-formats": { "in": "cents", "out": "cents" },
+        "responses": { "200": { "description": "Cashflow: { data: [{ label, in, out }] } — in/out are integer cents" } }
       }
     },
     "/api/insights/budgets": {
       "get": {
         "operationId": "getBudgets",
         "summary": "Budgets with spend-to-date per category.",
+        "x-vendo-formats": { "limit": "cents", "spent": "cents" },
         "responses": { "200": { "description": "Budgets" } }
       }
     },
@@ -140,6 +152,7 @@
       "get": {
         "operationId": "getRecurringInsights",
         "summary": "Detected recurring charges and subscriptions.",
+        "x-vendo-formats": { "amount": "cents" },
         "responses": { "200": { "description": "Recurring charges" } }
       }
     },
@@ -147,6 +160,7 @@
       "post": {
         "operationId": "createOrder",
         "summary": "Place a delivery order on the user's account. This MOVES MONEY: it charges the user's card and appends a transaction.",
+        "x-vendo-formats": { "amount": "cents" },
         "requestBody": {
           "required": true,
           "content": {
@@ -166,6 +180,20 @@
           }
         },
         "responses": { "200": { "description": "The appended transaction" } }
+      }
+    },
+    "/api/transfers": {
+      "post": {
+        "operationId": "transferMoney",
+        "summary": "Send money to a person from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a transfer. There is no undo.",
+        "x-vendo-dangerous": true,
+        "x-vendo-formats": { "amount": "cents" },
+        "parameters": [
+          { "name": "amount", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 }, "description": "Amount to send in cents (positive whole number), e.g. 50000 = $500.00" },
+          { "name": "recipient_name", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Who the money goes to, e.g. Alex Rivera" },
+          { "name": "memo", "in": "query", "schema": { "type": "string" }, "description": "Optional note shown on the transfer, e.g. June rent" }
+        ],
+        "responses": { "200": { "description": "The appended transfer transaction" } }
       }
     }
   }

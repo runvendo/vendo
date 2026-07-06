@@ -16,6 +16,10 @@
         "type": "http",
         "method": "GET",
         "path": "/api/dashboard"
+      },
+      "formats": {
+        "nearestDeadline": "iso-datetime",
+        "filingDeadline": "iso-datetime"
       }
     },
     {
@@ -45,6 +49,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/clients"
+      },
+      "formats": {
+        "filingDeadline": "iso-datetime"
       }
     },
     {
@@ -70,6 +77,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/clients/{id}"
+      },
+      "formats": {
+        "filingDeadline": "iso-datetime"
       }
     },
     {
@@ -235,6 +245,9 @@
         "type": "http",
         "method": "GET",
         "path": "/api/deadlines"
+      },
+      "formats": {
+        "filingDeadline": "iso-datetime"
       }
     },
     {

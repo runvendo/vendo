@@ -22,6 +22,16 @@ import type {
 // VoiceSessionInit can carry session tools without an import cycle.
 export type { VoiceToolDef } from "./voice-session";
 
+/** A short, human label for the "building view" skeleton shown while a
+ *  display tool's arguments stream in. */
+function viewPendingLabel(toolName: string): string {
+  if (toolName === "show_money_flow") return "Building the money flow";
+  if (toolName === "show_table") return "Building the table";
+  if (toolName === "show_key_value") return "Building the summary";
+  return "Building your view";
+}
+
+
 /** Realtime tokens are the expensive ones — cap every tool result that enters
  *  the session (spec §5). Views still receive the full output. `attachNote`
  *  tells the model its result is a digest, so it drills in instead of
@@ -405,7 +415,21 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
           if (status === "listening") send({ type: "status", status: "thinking" });
           return;
         }
-        if (type === "response.function_call_arguments.done") {
+        // A display tool's args can stream for a second or two; surface a
+        // "building view" skeleton the moment the call starts (name known),
+        // keyed to the SAME id completeToolCall's `view` event will use so the
+        // stage swaps skeleton -> view. Mirrors chat's generating-view state.
+        if (type === "response.output_item.added") {
+          const item = evt.item as { type?: string; name?: string; call_id?: string } | undefined;
+          if (item?.type === "function_call" && item.call_id && item.name) {
+            const def = toolByName.get(item.name);
+            if (def?.toView) {
+              send({ type: "view-pending", id: `view:${item.call_id}`, name: viewPendingLabel(item.name) });
+            }
+          }
+          return;
+        }
+                if (type === "response.function_call_arguments.done") {
           handleFunctionCall(String(evt.name ?? ""), String(evt.call_id ?? ""), String(evt.arguments ?? ""));
           return;
         }

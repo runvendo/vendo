@@ -13,7 +13,7 @@
  * `pages/api/`, or outside the app source root are refused.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import type { RemixSourceRecord } from "@vendoai/core";
@@ -102,7 +102,16 @@ export function resolveModuleFile(
 
 /** Threat-model refusal — evaluated on the RESOLVED path + content. */
 export function refusalReason(file: string, content: string, sourceRoot: string): string | undefined {
-  const rel = path.relative(sourceRoot, file);
+  // Realpath both sides before the path checks: a symlink under src/ pointing
+  // at out-of-root or server/ code would otherwise pass on its unresolved path.
+  const real = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
+  const rel = path.relative(real(sourceRoot), real(file));
   if (rel.startsWith("..")) return "outside the app source root";
   const segments = rel.split(path.sep);
   if (segments.includes("server")) return "under a server/ directory";
@@ -157,7 +166,7 @@ function findAnchors(sourceFile: ts.SourceFile): Array<FoundAnchor | { dynamic: 
 }
 
 /** The import that brings `name` into the file → { specifier, exportName }. */
-function findImport(
+export function findImport(
   sourceFile: ts.SourceFile,
   name: string,
 ): { specifier: string; exportName?: string } | undefined {
@@ -180,23 +189,28 @@ function findImport(
 
 export interface CaptureOptions {
   now?: () => string;
-  /** App source root for the refusal check. Default: `<targetDir>/src` when it
-   *  exists, else the targetDir. */
+  /** App source root for the refusal check. Default: {@link resolveSourceRoot}. */
   sourceRoot?: string;
+}
+
+/**
+ * The app source root the capture threat model is evaluated against:
+ * `<targetDir>/src` when that directory exists, else the targetDir itself.
+ * Exported so remix discovery scopes itself to the SAME root — a candidate
+ * proposed outside this root would pass discovery but be refused at sync.
+ */
+export function resolveSourceRoot(targetDir: string): string {
+  const src = path.join(targetDir, "src");
+  try {
+    return statSync(src).isDirectory() ? src : targetDir;
+  } catch {
+    return targetDir;
+  }
 }
 
 export function captureRemixSources(targetDir: string, opts: CaptureOptions = {}): CaptureResult {
   const now = opts.now ?? (() => new Date().toISOString());
-  const defaultRoot = path.join(targetDir, "src");
-  const sourceRoot =
-    opts.sourceRoot ??
-    (() => {
-      try {
-        return statSync(defaultRoot).isDirectory() ? defaultRoot : targetDir;
-      } catch {
-        return targetDir;
-      }
-    })();
+  const sourceRoot = opts.sourceRoot ?? resolveSourceRoot(targetDir);
   const aliases = readAliases(targetDir);
   const records: Record<string, RemixSourceRecord> = {};
   const report: string[] = [];

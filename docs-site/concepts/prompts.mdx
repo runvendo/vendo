@@ -33,7 +33,7 @@ final guardrail section, so you can add product-specific behavior without
 replacing the platform prompt.
 
 ```ts
-import { createVendoHandler } from "@vendoai/next";
+import { createVendoHandler } from "vendoai/server";
 
 export const { GET, POST } = createVendoHandler({
   productName: "Acme",
@@ -57,7 +57,7 @@ to own the whole system prompt.
 after the live toolset is assembled, and receives `ctx.toolSummary`.
 
 ```ts
-import { createVendoHandler } from "@vendoai/next";
+import { createVendoHandler } from "vendoai/server";
 
 export const { GET, POST } = createVendoHandler({
   instructions: (ctx) => {

@@ -1,32 +1,108 @@
 ---
-title: "Introduction"
+title: "Vendo"
 description: "Vendo embeds an agent in your product that lets every customer automate their work, build their own views, and connect their tools, inside your brand and your guardrails."
+mode: "custom"
 ---
 
+<div style={{ maxWidth: "1080px", margin: "0 auto", padding: "0 24px" }}>
+
+<div style={{ textAlign: "center", paddingTop: "72px" }}>
+
+<span style={{ display: "inline-block", fontSize: "13px", fontWeight: 500, color: "#4338CA", background: "#eef0ff", border: "1px solid #e0e3ff", padding: "5px 14px", borderRadius: "999px" }}>Open source · Apache-2.0 · bring your own key</span>
+
+<h1 style={{ fontSize: "52px", lineHeight: 1.05, letterSpacing: "-0.035em", fontWeight: 650, margin: "22px auto 0", maxWidth: "15ch" }}>
+Your product, shaped to <span style={{ background: "linear-gradient(100deg,#818CF8,#4338CA)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>every customer</span>
+</h1>
+
+<p style={{ fontSize: "19px", color: "#6b6b70", maxWidth: "60ch", margin: "20px auto 0" }}>
+Vendo embeds an agent in your app. Customers build their own views, remix your UI, and automate work, all through your own API, rendered in your brand, inside your guardrails.
+</p>
+
+</div>
+
 ```bash
-npx vendo init
+npm install vendoai && npx vendo init
 ```
 
-One command. It reads your app, extracts your theme, tools, and components, and wires the agent into your routes. Add one model key and it works.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Install, add one key, and open your first generated view.
+  </Card>
+  <Card title="Give it to your agent" icon="robot" href="/llms-full.txt">
+    The full docs as one file, ready to paste into your coding agent.
+  </Card>
+</CardGroup>
 
-{/* TODO: Add a hero screenshot or GIF showing Vendo chat beside a generated view. */}
+<Frame caption="A Maple customer asks where their money went; the agent composes a live spending view from the host's own components and API.">
+  <img src="/images/hero.gif" alt="Vendo composing a generated view beside chat in a demo bank app" />
+</Frame>
 
-Vendo gives your app a chat surface and a generated UI surface. The agent can talk with your customers, call tools through your own API as the signed-in user, and render generated charts, tables, forms, and workflows in a sandboxed stage.
+<div style={{ textAlign: "center", marginTop: "64px" }}>
+  <h2 style={{ fontSize: "32px", letterSpacing: "-0.03em", fontWeight: 640, margin: 0 }}>What your customers can do</h2>
+  <p style={{ color: "#6b6b70", fontSize: "16px", margin: "10px auto 0", maxWidth: "56ch" }}>Four surfaces, one embedded agent, every action still passes your permission policy.</p>
+</div>
 
-Your product stays the system of record. Vendo reads the reviewable `.vendo/` files in your repo, serves a single handler from your app, and uses the model keys you provide. There is no extra infrastructure to run for the embedded path.
+<CardGroup cols={2}>
+  <Card title="Build views" img="/images/hero.gif" href="/concepts/generated-ui">
+    Ask a question, get a live view composed from your components and API data.
+  </Card>
+  <Card title="Remix the UI" img="/images/remix.gif" href="/capabilities/saved-views">
+    Hover a component, describe the change, apply it in place, scoped to that customer.
+  </Card>
+  <Card title="Automate across tools" img="/images/automation.gif" href="/capabilities/automations">
+    Plain language in, standing automation out, every tool gated by approval.
+  </Card>
+  <Card title="Talk to it" img="/images/voice.gif" href="/capabilities/voice">
+    A live voice session: ask out loud, the agent talks back and renders the view.
+  </Card>
+</CardGroup>
 
-With Vendo embedded, your customers can:
-
-- Ask for a custom view and get generated UI inside your product.
-- Let the agent use your existing API through their current session.
-- Connect external tools through the integrations surface when you provide a Composio key.
-- Create automations that use the same tools and approval policy as chat.
+<div style={{ textAlign: "center", marginTop: "56px" }}>
+  <h2 style={{ fontSize: "32px", letterSpacing: "-0.03em", fontWeight: 640, margin: 0 }}>Start here</h2>
+</div>
 
 <CardGroup cols={2}>
   <Card title="Quickstart: Next.js" icon="bolt" href="/quickstart">
-    Run `npx vendo init` in a Next.js App Router app, add one provider key, and open your first generated view.
+    Install `vendoai`, run `npx vendo init`, add one provider key, and open your first generated view.
   </Card>
   <Card title="Quickstart: any Node server" icon="server" href="/quickstart-node">
-    Mount the `@vendoai/server` fetch handler on `node:http`, Express, Hono, or another Node runtime.
+    Mount the `vendoai/server` fetch handler on `node:http`, Express, Hono, or another Node runtime.
   </Card>
 </CardGroup>
+
+<div style={{ textAlign: "center", marginTop: "56px" }}>
+  <h2 style={{ fontSize: "32px", letterSpacing: "-0.03em", fontWeight: 640, margin: 0 }}>Explore</h2>
+</div>
+
+<CardGroup cols={2}>
+  <Card title="How it works" icon="diagram-project" href="/concepts/architecture">
+    The agent, the sandboxed stage, and how generated UI reaches your components.
+  </Card>
+  <Card title="Connect your app" icon="plug" href="/connect/vendo-init">
+    What `vendo init` extracts, and how to wire tools, host components, and theme.
+  </Card>
+  <Card title="Tools and safety" icon="shield-check" href="/concepts/tools-and-safety">
+    Consent prompts, approval tokens, and judged rules on every mutating action.
+  </Card>
+  <Card title="Capabilities" icon="wand-magic-sparkles" href="/capabilities/integrations">
+    Integrations, MCP, automations, saved views, and voice.
+  </Card>
+</CardGroup>
+
+<div style={{ background: "linear-gradient(120deg,#17171a,#241f52)", color: "#fff", borderRadius: "20px", padding: "44px 40px", textAlign: "center", marginTop: "56px" }}>
+  <h2 style={{ fontSize: "28px", letterSpacing: "-0.03em", margin: 0, color: "#fff" }}>Self-hosted. One key. No signup.</h2>
+  <p style={{ color: "#c9c9d6", margin: "12px auto 0", maxWidth: "52ch" }}>The code is Apache-2.0, you bring a provider key and pay only for the tokens your customers use. A managed cloud is on the way.</p>
+</div>
+
+<CardGroup cols={2}>
+  <Card title="Get started" icon="bolt" href="/quickstart">
+    Install Vendo and open your first generated view.
+  </Card>
+  <Card title="Star on GitHub" icon="github" href="https://github.com/runvendo/vendo">
+    Vendo is open source under Apache-2.0.
+  </Card>
+</CardGroup>
+
+<div style={{ height: "48px" }} />
+
+</div>

@@ -3,8 +3,10 @@ import {
   capabilitiesSection,
   connectSection,
   consentSection,
+  dataFidelitySection,
   genuiFormatSection,
   guardrailSection,
+  hostIdentitySection,
   proactivitySection,
   refreshableViewsSection,
   registerSection,
@@ -26,6 +28,9 @@ describe("prompt sections", () => {
       connectSection("voice"),
       consentSection("chat"),
       consentSection("voice"),
+      dataFidelitySection("chat"),
+      dataFidelitySection("voice"),
+      hostIdentitySection("Testo"),
       styleSection({ noEmoji: true }),
       registerSection("chat"),
       registerSection("voice"),
@@ -85,6 +90,43 @@ describe("prompt sections", () => {
     expect(s).toMatch(/MOST RECENT permission request/);
   });
 
+  it("consent carries the decline rule in both modalities: acknowledge, never re-propose", () => {
+    for (const modality of ["chat", "voice"] as const) {
+      const s = consentSection(modality);
+      expect(s, modality).toMatch(/decline/i);
+      expect(s, modality).toMatch(/never re-propose|never re-pitch/i);
+      expect(s, modality).toMatch(/asks (for it )?again|asks again/i);
+    }
+  });
+
+  it("data fidelity (chat): literal calendar dates, no guessed money divisor, totals match rows", () => {
+    const s = dataFidelitySection("chat");
+    expect(s).toContain("DATA FIDELITY");
+    expect(s).toMatch(/YYYY-MM-DD/);
+    expect(s).toMatch(/never timezone/i);
+    expect(s).toMatch(/NEVER guess a divisor/i);
+    // The ambiguity rule: money-suggesting names stay raw without a hint.
+    expect(s).toMatch(/amount|total|balance/);
+    expect(s).toMatch(/raw value/i);
+    // The 100x stat-tile bug: summaries computed from the same values as rows.
+    expect(s).toMatch(/rows it summarizes|same values/i);
+  });
+
+  it("data fidelity (voice) carries the same date and divisor rules", () => {
+    const s = dataFidelitySection("voice");
+    expect(s).toMatch(/YYYY-MM-DD/);
+    expect(s).toMatch(/never guess a (money )?divisor/i);
+  });
+
+  it("host identity: the configured name is the ONLY name, inventing is forbidden", () => {
+    const s = hostIdentitySection("Testo");
+    expect(s).toContain('"Testo"');
+    expect(s).toMatch(/ONLY/);
+    expect(s).toMatch(/verbatim/i);
+    expect(s).toMatch(/never invent/i);
+    expect(s).toMatch(/substitute/i);
+  });
+
   it("guardrail says platform rules win", () => {
     expect(guardrailSection("chat")).toMatch(/these rules win/i);
   });
@@ -100,5 +142,15 @@ describe("integrations completeness (live check feedback)", () => {
   it("voice: the complete list goes on screen, not recited aloud", () => {
     const s = capabilitiesSection("voice");
     expect(s).toMatch(/complete\s+connectable list on screen/);
+  });
+});
+
+describe("data fidelity — summary strings", () => {
+  it("covers pre-formatted summary strings (donut centerValue class) in both modalities", () => {
+    for (const modality of ["chat", "voice"] as const) {
+      const s = dataFidelitySection(modality);
+      expect(s).toMatch(/summary string|pre-formatted/i);
+      expect(s).toMatch(/convert(ed)? once|never .*(divide|convert).* again/i);
+    }
   });
 });

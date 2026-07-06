@@ -93,7 +93,7 @@ describe("handleChat", () => {
     // The old design persisted the client-SENT messages here, which meant the
     // STREAMED assistant turn (carrying any approval-requested parts) was
     // missing from the store when a consent POST arrived (ENG-193 review
-    // 2026-07-04, mirrors packages/vendo-next's chat.ts fix). Chat now only
+    // 2026-07-04, mirrors packages/vendo-server's chat.ts fix). Chat now only
     // resolves the thread id; createDemoAgent's onSettled hook (agent.ts) is
     // the sole writer — see agent.test.ts for that regression coverage.
     const agent: VendoAgent = { run: () => new ReadableStream({ start: (c) => c.close() }) };

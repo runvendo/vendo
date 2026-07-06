@@ -9,10 +9,13 @@ Every event uses a random anonymous id plus the event properties listed here. Th
 | Event | Properties |
 | --- | --- |
 | `init_started` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework` |
-| `init_completed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `provider`, `llmSkipped`, `componentCount`, `toolCount`, `durationMs` |
+| `init_completed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `provider`, `llmSkipped`, `keyPrompt`, `command`, `componentsOffered`, `componentCount`, `remixOffered`, `remixWrapped`, `remixSkipped`, `toolCount`, `durationMs` |
 | `init_failed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `failedStep` |
+| `doctor_run` | `vendoVersion`, `osPlatform`, `nodeVersion`, `failures`, `warnings`, `wired` |
 | `agent_run` | `vendoVersion`, `osPlatform`, `nodeVersion` |
 | `error_class` | `vendoVersion`, `osPlatform`, `nodeVersion`, `errorClass` |
+
+`init_completed` fields are all small integers or short enums: `command` is `init` or `refresh`; `componentsOffered`/`componentCount` are the catalog picker's offered/accepted counts; `remixOffered`/`remixWrapped`/`remixSkipped` are the remix picker's anchor counts. `doctor_run` carries the health-check's hard-`failures` count, `warnings` count, and a `wired` bool. No event carries component names, ids, labels, file paths, keys, or any other content — counts and enums only.
 
 Example payload:
 
@@ -28,7 +31,13 @@ Example payload:
     "framework": "next",
     "provider": "configured",
     "llmSkipped": false,
+    "keyPrompt": "provided",
+    "command": "init",
+    "componentsOffered": 6,
     "componentCount": 4,
+    "remixOffered": 3,
+    "remixWrapped": 2,
+    "remixSkipped": 0,
     "toolCount": 7,
     "durationMs": 1200
   }

@@ -129,6 +129,10 @@ export function useReopenVendo(
     const runOnce = async (initial: boolean) => {
       if (inFlight) return;
       inFlight = true;
+      // Every in-flight refresh — the initial reopen AND interval ticks —
+      // reports `refreshing`, so consumers can shimmer over the stale view
+      // (the glass veil) instead of flashing when fresh data lands.
+      setRefreshing(true);
       try {
         const fresh = await refreshVendoNode(baseNode, runQuery);
         if (cancelled) return;
@@ -158,13 +162,11 @@ export function useReopenVendo(
         }
       } finally {
         inFlight = false;
+        if (!cancelled) setRefreshing(false);
       }
     };
 
-    setRefreshing(true);
-    void runOnce(true).finally(() => {
-      if (!cancelled) setRefreshing(false);
-    });
+    void runOnce(true);
 
     if (refreshIntervalMs > 0) {
       timer = setInterval(() => {

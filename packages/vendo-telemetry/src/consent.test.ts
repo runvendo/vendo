@@ -31,4 +31,12 @@ describe("resolveConsent", () => {
   it("allows runtime callers in development", () => {
     expect(resolveConsent({ ...base, runtime: true, env: { NODE_ENV: "development" } }).allowed).toBe(true);
   });
+
+  it("blocks runtime callers when NODE_ENV is unset (fail closed, review)", () => {
+    expect(resolveConsent({ ...base, runtime: true, env: {} }).allowed).toBe(false);
+  });
+
+  it("blocks runtime callers on an unknown NODE_ENV (fail closed, review)", () => {
+    expect(resolveConsent({ ...base, runtime: true, env: { NODE_ENV: "staging" } }).allowed).toBe(false);
+  });
 });

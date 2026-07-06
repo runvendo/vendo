@@ -6,6 +6,7 @@ import {
   type StageController,
   type OnAction,
   type GenUISession,
+  type StageRoute,
 } from "@vendoai/stage";
 import {
   isGeneratedNode,
@@ -38,6 +39,17 @@ const structureKey = (payload: GeneratedPayload): string => {
   return JSON.stringify([payload.nodes, sortedComponents]);
 };
 
+/** Inert tree mounted when `node` becomes null: renders nothing, carries no
+ *  actions — clearing the node must clear the stage (audit: a stale tree
+ *  stayed mounted and actionable). Reserved id so no real node collides. */
+const CLEARED_TREE: UINode = {
+  id: "__vendo-stage-cleared__",
+  kind: "component",
+  source: "prewired",
+  name: "Text",
+  props: { text: "" },
+};
+
 export interface VendoStageProps {
   node: UINode | null;
   bundleSource?: string;
@@ -53,6 +65,12 @@ export interface VendoStageProps {
   /** Opaque OpenUI theme the sandbox bundle mounts; @vendoai/react does not
    *  interpret its shape. */
   componentTheme?: unknown;
+  /** The host's real route (read-only), fed into the sandbox as
+   *  `window.__vendoRouteData` so the next/navigation shims resolve the host's
+   *  actual location. Supply it from the host's own next/navigation, e.g.
+   *  `{ pathname: usePathname(), search: useSearchParams().toString(), params }`.
+   *  Omit and the shims fall back to empty values. */
+  route?: StageRoute;
 }
 
 export function VendoStage({
@@ -65,7 +83,21 @@ export function VendoStage({
   onAction,
   components,
   componentTheme,
+  route,
 }: VendoStageProps) {
+  // Read-only route channel spread into every initialize() so the shims resolve
+  // the host's real location regardless of which tree is mounted. Read from a
+  // ref (refreshed every render) rather than a render-time snapshot: the node
+  // effect waits on `c.ready` before initializing, so a route that changes
+  // while the stage is still initializing (node unchanged, so the effect never
+  // re-runs; route effect skips because not-yet-inited) would otherwise
+  // initialize with the STALE route and never re-run. `routeInit()` reads the
+  // latest route at the moment initialize is called.
+  // (theme/state are still captured in the effect closure below and share the
+  // same latent pre-ready race — left out of scope; only route is fixed here.)
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const routeInit = () => (routeRef.current ? { route: routeRef.current } : {});
   const slotRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<StageController | null>(null);
   const initedRef = useRef(false);
@@ -110,8 +142,27 @@ export function VendoStage({
   // Initialize or update whenever node changes (after ready).
   useEffect(() => {
     const c = ctrlRef.current;
-    if (!c || !node) return;
+    if (!c) return;
     let cancelled = false;
+    if (!node) {
+      // node={null} means "show nothing": an initialized stage must unmount
+      // its tree, not leave the previous view visible and actionable. An
+      // inert empty tree replaces it (the protocol has no dedicated clear
+      // op); the session/payload refs drop too so the next node — generated
+      // or not — re-initializes instead of data-delta'ing a cleared tree.
+      if (initedRef.current) {
+        c.ready
+          .then(() => {
+            if (cancelled) return;
+            c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: CLEARED_TREE });
+            rootIdRef.current = CLEARED_TREE.id;
+            sessionRef.current = null;
+            payloadRef.current = null;
+          })
+          .catch((err) => console.error("[vendo] stage failed to become ready", err));
+      }
+      return () => { cancelled = true; };
+    }
     c.ready
       .then(() => {
         if (cancelled) return;
@@ -142,7 +193,7 @@ export function VendoStage({
                 name: "Text",
                 props: { text: "Failed to render generated UI: " + result.error.message },
               };
-              c.initialize({ theme, state, bundleSource, componentTheme, tree: errorTree });
+              c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: errorTree });
               initedRef.current = true;
               rootIdRef.current = node.id;
               // Drop any prior session so the next valid payload re-initializes
@@ -164,6 +215,7 @@ export function VendoStage({
               state,
               bundleSource,
               componentTheme,
+              ...routeInit(),
               tree: result.session.tree,
               generatedComponents: payload.components,
               ...(anchorData ? { anchorData } : {}),
@@ -204,14 +256,14 @@ export function VendoStage({
           payloadRef.current = null;
         }
         if (!initedRef.current) {
-          c.initialize({ theme, state, bundleSource, componentTheme, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: node });
           initedRef.current = true;
           rootIdRef.current = node.id;
         } else if (switchedFromGenerated || node.id !== rootIdRef.current) {
           // New tree (root id changed, or we just switched off a generated tree
           // whose mounted root id differs from this node). Re-initialize — a
           // plain update would target a nodeId that no longer exists and no-op.
-          c.initialize({ theme, state, bundleSource, componentTheme, tree: node });
+          c.initialize({ theme, state, bundleSource, componentTheme, ...routeInit(), tree: node });
           rootIdRef.current = node.id;
         } else {
           c.update({ replace: { nodeId: node.id, node } });
@@ -246,6 +298,13 @@ export function VendoStage({
     if (!c || !initedRef.current) return;
     c.update({ state });
   }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-patch the read-only route channel after init when the host route changes.
+  useEffect(() => {
+    const c = ctrlRef.current;
+    if (!c || !initedRef.current || !route) return;
+    c.update({ route });
+  }, [route]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={slotRef} data-vendo-stage />;
 }

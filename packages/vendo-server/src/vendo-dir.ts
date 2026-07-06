@@ -59,8 +59,15 @@ function readJson(file: string): unknown | undefined {
   let raw: string;
   try {
     raw = readFileSync(file, "utf8");
-  } catch {
-    return undefined; // absent → caller defaults
+  } catch (err) {
+    // Only ENOENT means "absent → caller defaults". Anything else (EACCES,
+    // EIO, EISDIR) is a PRESENT-but-unreadable file — silently serving
+    // defaults would drop the developer's config (empty tool manifest,
+    // default brand) with no signal, so fail boot loudly instead.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new Error(
+      `[vendo] ${path.basename(file)} exists but could not be read (${file}): ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
   try {
     return JSON.parse(raw);

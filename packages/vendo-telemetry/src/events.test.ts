@@ -7,6 +7,7 @@ describe("event allowlist", () => {
       "init_started",
       "init_completed",
       "init_failed",
+      "doctor_run",
       "agent_run",
       "error_class",
     ];

@@ -11,13 +11,13 @@
  *
  * NO persistence here — the SINGLE writer for thread messages is the engine's
  * `onSettled` hook, wired at agent construction in `agent.ts`'s
- * `createDemoAgent` (mirrors `packages/vendo-next/src/handler.ts`). It fires
+ * `createDemoAgent` (mirrors `packages/vendo-server/src/fetch-handler.ts`). It fires
  * with the FULL settled message list — including the streamed assistant turn
  * and any approval-requested parts — keyed by the threadId resolved below, so
  * the consent endpoint can read this turn's approval part BEFORE the client's
  * next chat turn. Persisting the request body here too would double-append it
  * (and, alone, it would miss the streamed turn entirely — ENG-193 review
- * 2026-07-04, see `packages/vendo-next`'s equivalent chat.ts/handler.ts fix).
+ * 2026-07-04, see `packages/vendo-server`'s equivalent chat.ts/fetch-handler.ts fix).
  */
 import { createUIMessageStreamResponse } from "ai";
 import { readFileSync } from "node:fs";
@@ -29,7 +29,7 @@ import {
   createSourceResolver,
   enrichAnchorSources,
   resolveRemixSealer,
-} from "@vendoai/next";
+} from "vendoai/server";
 import { DEMO_PRINCIPAL } from "./principal";
 import { cadenceHostToolDefs } from "./host-tools";
 import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";

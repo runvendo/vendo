@@ -2,6 +2,25 @@ import { useMemo } from "react";
 import type { VendoUIMessage } from "@vendoai/core";
 import type { UINode } from "@vendoai/core";
 import { useVendoChat } from "@vendoai/react";
+import type { FieldFormat, FieldFormats } from "./components/field-rows";
+
+/** The closed format vocabulary (mirrors @vendoai/core's `FieldFormat`). A
+ *  data-consent part is typed protocol, but stream data can still be malformed
+ *  (an older/forged emitter), so the shell validates before rendering. */
+const KNOWN_FORMATS: ReadonlySet<string> = new Set<FieldFormat>(["cents", "iso-date", "iso-datetime", "percent"]);
+
+/** Defensively normalize a data-consent part's `formats`: keep only string→
+ *  known-format entries, drop everything else. Returns `undefined` when the
+ *  input isn't a plain object or has no usable entries — never handing an
+ *  unvalidated value to `approvalRows`. */
+function normalizeFormats(raw: unknown): FieldFormats | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, FieldFormat> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && KNOWN_FORMATS.has(v)) out[k] = v as FieldFormat;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 export type ThreadItem =
   | { kind: "text"; key: string; messageId: string; role: "user" | "assistant"; text: string }
@@ -28,6 +47,9 @@ export type ThreadItem =
        *  read-tier calls and for messages from before this shipped. */
       tier?: "act" | "critical";
       unverified?: boolean;
+      /** Per-field display-format hints from the sibling data-consent part, so
+       *  the settled receipt formats a money/date field like the card did. */
+      formats?: FieldFormats;
     }
   | {
       kind: "approval";
@@ -42,6 +64,9 @@ export type ThreadItem =
       /** The judge/breaker's plain-language reason (ENG-193 §4.2/§4.7), from
        *  the sibling data-consent part. Absent for an ordinary approval. */
       reason?: string;
+      /** Per-field display-format hints from the sibling data-consent part, so
+       *  a money/date input renders faithfully ($500.00, not 50000). */
+      formats?: FieldFormats;
     }
   | {
       kind: "ui";
@@ -96,18 +121,20 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
     // rather than assuming ordering. The same pass collects remix envelopes
     // by paired node id (remix fast-edits) — envelope parts emit no item of
     // their own and pair regardless of stream order.
-    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string }>();
+    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string; formats?: FieldFormats }>();
     const envelopes = new Map<string, string>();
     for (const rawPart of message.parts) {
       const part = rawPart as {
         type: string;
-        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; envelope?: string; uiNodeId?: string };
+        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; formats?: unknown; envelope?: string; uiNodeId?: string };
       };
       if (part.type === "data-consent" && part.data?.toolCallId) {
+        const formats = normalizeFormats(part.data.formats);
         tierByToolCallId.set(part.data.toolCallId, {
           tier: part.data.tier as "act" | "critical",
           unverified: Boolean(part.data.unverified),
           ...(part.data.reason ? { reason: part.data.reason } : {}),
+          ...(formats ? { formats } : {}),
         });
       }
       if (part.type === "data-remix-envelope" && part.data?.uiNodeId && part.data.envelope) {
@@ -154,21 +181,34 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
         // carry their name in `toolName` instead of the part type. Same
         // approval/chip treatment as static tool parts; RENDER_TOOLS never
         // ingest as dynamic, so no skeleton branch is needed here.
+        // toolCallId MUST ride along (MCP consent gap, 2026-07-05): without
+        // it the shell's approve()/decline() silently skipped the consent
+        // POST, so MCP approvals bypassed the audit/grant channel host tools
+        // use. The sibling data-consent tier pairs by the same id.
         const toolName = String(part.toolName ?? "unknown");
+        const toolCallId = part.toolCallId as string | undefined;
+        const tierInfo = toolCallId ? tierByToolCallId.get(toolCallId) : undefined;
         if (part.state === "approval-requested") {
           const approval = part.approval as { id: string };
-          items.push({ kind: "approval", key, messageId, approvalId: approval.id, toolName, input: part.input });
+          items.push({
+            kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.reason ? { reason: tierInfo.reason } : {}),
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
+          });
         } else {
           items.push({
             kind: "tool",
             key,
             messageId,
             toolName,
-            toolCallId: part.toolCallId as string | undefined,
+            toolCallId,
             state: String(part.state ?? ""),
             input: part.input,
             output: part.output,
             errorText: part.errorText as string | undefined,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
           });
         }
       } else if (part.type.startsWith("tool-")) {
@@ -181,6 +221,7 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
             kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
             tier: tierInfo?.tier, unverified: tierInfo?.unverified,
             ...(tierInfo?.reason ? { reason: tierInfo.reason } : {}),
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
           });
         } else if (RENDER_TOOLS.has(toolName)) {
           // A render tool's finished output is the sibling data-ui node (so no chip).
@@ -210,6 +251,7 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
             output: part.output,
             errorText: part.errorText as string | undefined,
             tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
           });
         }
       }

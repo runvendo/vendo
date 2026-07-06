@@ -217,6 +217,8 @@ export async function handleVendosGet(req: Request, tail: string, deps: VendosDe
 /** POST vendos (save) | POST vendos/<id>/delete — the verb convention
  *  every mutating endpoint here uses (GET/POST only, no DELETE method). */
 export async function handleVendosPost(req: Request, tail: string, deps: VendosDeps): Promise<Response> {
+  // CSRF is enforced centrally in the fetch handler's POST dispatcher
+  // (isCrossSiteRequest in guard.ts) for every mutating route family.
   const guard = await resolvePrincipal(req, deps.options);
   if (!guard.ok) return guard.response;
   const scope = threadScope(guard.principal);

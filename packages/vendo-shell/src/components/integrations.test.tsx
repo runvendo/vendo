@@ -84,8 +84,57 @@ describe("ConnectCard", () => {
   it("renders reason and triggers connect", () => {
     const onConnect = vi.fn();
     render(<ConnectCard integration={list[1]!} reason="read your invoices" onConnect={onConnect} />);
-    expect(screen.getByText(/read your invoices/)).toBeTruthy();
+    expect(screen.getByText("So I can read your invoices.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Connect Gmail/ }));
     expect(onConnect).toHaveBeenCalledOnce();
+  });
+
+  it("strips a leading 'To ' from an LLM reason instead of rendering 'So I can To …'", () => {
+    // The reason field's own canonical examples are purpose clauses ("to
+    // read the receipt"); the template supplies "So I can", so a leading
+    // to-infinitive must be folded in, not concatenated (browser-observed:
+    // "So I can To send you a weekly emailed summary…").
+    render(
+      <ConnectCard
+        integration={list[1]!}
+        reason="To send you a weekly emailed summary"
+        onConnect={() => {}}
+      />,
+    );
+    expect(screen.getByText("So I can send you a weekly emailed summary.")).toBeTruthy();
+
+    render(<ConnectCard integration={list[1]!} reason="to read the receipt" onConnect={() => {}} />);
+    expect(screen.getByText("So I can read the receipt.")).toBeTruthy();
+  });
+
+  it("leaves a reason that merely STARTS with 'to…' letters intact", () => {
+    render(<ConnectCard integration={list[1]!} reason="total up your invoices" onConnect={() => {}} />);
+    expect(screen.getByText("So I can total up your invoices.")).toBeTruthy();
+  });
+});
+
+describe("IntegrationsPicker — loading state", () => {
+  it("shows glass shimmer placeholder rows while the first list is in flight", () => {
+    const { container } = render(
+      <IntegrationsPicker integrations={[]} loading onConnect={() => {}} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    const placeholders = container.querySelectorAll(".fl-picker-grid .fl-glass-shimmer");
+    expect(placeholders.length).toBeGreaterThan(0);
+    expect(container.querySelector(".fl-picker-loading")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("never blanks an already-listed tray during a background refresh", () => {
+    const { container } = render(
+      <IntegrationsPicker integrations={list} loading onConnect={() => {}} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    expect(container.querySelector(".fl-picker-loading")).toBeNull();
+    expect(screen.getByText("Gmail")).toBeTruthy();
+  });
+
+  it("shows no placeholders once loading settles on an empty catalog", () => {
+    const { container } = render(
+      <IntegrationsPicker integrations={[]} onConnect={() => {}} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    expect(container.querySelector(".fl-picker-loading")).toBeNull();
   });
 });

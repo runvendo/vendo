@@ -27,10 +27,27 @@ export interface Telemetry {
   track(event: EventName, props: Record<string, unknown>): Promise<void>;
 }
 
+const MAX_STRING_LEN = 512;
+
+/**
+ * Bound an allowed value to a primitive: cap oversized strings and drop
+ * anything non-primitive (objects, arrays, null) so an allowed key can't smuggle
+ * an arbitrary or oversized payload through the allowlist.
+ */
+function boundValue(v: unknown): string | number | boolean | undefined {
+  if (typeof v === "string") return v.length > MAX_STRING_LEN ? v.slice(0, MAX_STRING_LEN) : v;
+  if (typeof v === "number" || typeof v === "boolean") return v;
+  return undefined;
+}
+
 function filterToAllowlist(event: EventName, props: Record<string, unknown>): Record<string, unknown> {
   const allowed = EVENT_ALLOWLIST[event];
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(props)) if (allowed.has(k)) out[k] = v;
+  for (const [k, v] of Object.entries(props)) {
+    if (!allowed.has(k)) continue;
+    const bounded = boundValue(v);
+    if (bounded !== undefined) out[k] = bounded;
+  }
   return out;
 }
 

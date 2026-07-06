@@ -5,6 +5,16 @@ import type { UINode } from "@vendoai/core";
 const initialize = vi.fn();
 const update = vi.fn();
 const stageDispose = vi.fn();
+// Controllable `ready` gate: tests that need to observe the pre-ready window
+// swap in a deferred before rendering; connectStage reads it at mount time.
+let readyPromise: Promise<void> = Promise.resolve();
+function deferredReady(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 // Keep the real @vendoai/stage exports (notably `createGenUISession`) and only
 // stub the DOM-bound stage mount/controller so generated-node resolution runs
 // against the real host session.
@@ -22,7 +32,7 @@ vi.mock("@vendoai/stage", async (importActual) => {
       update,
       resolveAction: vi.fn(),
       dispose: vi.fn(),
-      ready: Promise.resolve(),
+      ready: readyPromise,
     }),
   };
 });
@@ -63,6 +73,35 @@ describe("VendoStage", () => {
     const node2 = { ...node, props: { title: "x" } };
     rerender(<VendoStage node={node2} bundleSource="/*bundle*/" />);
     await waitFor(() => expect(update).toHaveBeenCalled());
+  });
+
+  // Race: route A mounts → route B renders BEFORE `c.ready` resolves → the
+  // route re-patch effect skips (not yet inited) and the node effect does not
+  // re-run (node unchanged), so the pending ready callback must initialize with
+  // the CURRENT route (B), never the stale render-time snapshot (A).
+  it("initializes with the latest route when it changes before the stage is ready", async () => {
+    initialize.mockClear();
+    update.mockClear();
+    const gate = deferredReady();
+    readyPromise = gate.promise;
+    try {
+      const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+      const routeA = { pathname: "/a", search: "", params: {} };
+      const routeB = { pathname: "/b", search: "?x=1", params: { id: "b", slug: ["x", "y"] } };
+      const { rerender } = render(<VendoStage node={node} route={routeA} />);
+      // Ready is still pending: nothing initialized yet.
+      expect(initialize).not.toHaveBeenCalled();
+      // Route changes to B before ready resolves; node is unchanged.
+      rerender(<VendoStage node={node} route={routeB} />);
+      expect(initialize).not.toHaveBeenCalled();
+      // Now the stage becomes ready and the pending callback fires.
+      gate.resolve();
+      await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+      // Must carry route B (current), not route A (render-time snapshot).
+      expect(initialize.mock.calls[0][0].route).toEqual(routeB);
+    } finally {
+      readyPromise = Promise.resolve();
+    }
   });
 
   it("calls the stage's dispose on unmount (deterministic resize-listener teardown)", async () => {
@@ -137,6 +176,48 @@ describe("VendoStage", () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("bundleSource changed after init")),
     );
     warn.mockRestore();
+  });
+
+  it("clears the mounted tree when node becomes null (no stale interactive view)", async () => {
+    const node = { id: "c1", kind: "component", source: "host", name: "Card", props: {} } as const;
+    const theme = {};
+    const state = {};
+    update.mockClear();
+    initialize.mockClear();
+    const { rerender } = render(<VendoStage node={node} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+
+    rerender(<VendoStage node={null} theme={theme} state={state} />);
+    // The previous tree must be unmounted — an inert empty tree replaces it,
+    // so the stale view can no longer be seen or interacted with.
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+    expect(initialize.mock.calls[1][0].tree).toMatchObject({ props: { text: "" } });
+
+    // And a later node mounts fresh (re-initialize, not a no-op update).
+    rerender(<VendoStage node={node} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(3));
+    expect(initialize.mock.calls[2][0]).toMatchObject({ tree: node });
+  });
+
+  it("clears a generated tree when node becomes null, then re-resolves the next payload", async () => {
+    const theme = {};
+    const state = {};
+    update.mockClear();
+    initialize.mockClear();
+    const { rerender } = render(
+      <VendoStage node={makeGenNode({ title: "Hello" })} theme={theme} state={state} />,
+    );
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
+
+    rerender(<VendoStage node={null} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2));
+
+    // The next generated payload re-initializes (never a stale data-delta
+    // against the cleared tree).
+    rerender(<VendoStage node={makeGenNode({ title: "World" })} theme={theme} state={state} />);
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(3));
+    expect(initialize.mock.calls[2][0].tree).toMatchObject({ props: { title: "World" } });
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ replace: expect.anything() }));
   });
 
   // ---- Generated nodes (ENG-180) ----

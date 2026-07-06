@@ -18,7 +18,6 @@
     "@ai-sdk/react": "3.0.30",
     "@vendoai/components": "workspace:*",
     "@vendoai/core": "workspace:*",
-    "@vendoai/next": "workspace:*",
     "@vendoai/react": "workspace:*",
     "@vendoai/runtime": "workspace:*",
     "@vendoai/shell": "workspace:*",
@@ -33,6 +32,7 @@
     "react-dom": "19.2.4",
     "swr": "^2.4.2",
     "tailwind-merge": "^3.6.0",
+    "vendoai": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

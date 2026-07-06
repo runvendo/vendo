@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
-import { cliModel, generateJson } from "./llm.js";
+import { cliEnvForDir, cliModel, generateJson, parseEnvFile, resolveCliModel } from "./llm.js";
 import { textModel } from "./test-helpers.js";
+
+async function scratch(): Promise<string> {
+  return mkdtemp(path.join(tmpdir(), "vendo-cli-llm-"));
+}
 
 const schema = z.object({ ok: z.boolean() });
 const ZERO_USAGE: LanguageModelV3GenerateResult["usage"] = {
@@ -170,5 +177,56 @@ describe("cliModel", () => {
     await expect(cliModel({ OPENAI_API_KEY: "sk-x" }, { import: importer })).rejects.toThrow(
       'Vendo: model "openai/gpt-5.5" requires @ai-sdk/openai — run: npm i @ai-sdk/openai',
     );
+  });
+});
+
+describe("parseEnvFile", () => {
+  it("parses KEY=value lines and ignores comments and blanks", () => {
+    const parsed = parseEnvFile("# a comment\n\nANTHROPIC_API_KEY=sk-ant-x\nOTHER=1\n");
+    expect(parsed).toEqual({ ANTHROPIC_API_KEY: "sk-ant-x", OTHER: "1" });
+  });
+
+  it("strips an optional export prefix and one layer of surrounding quotes", () => {
+    const parsed = parseEnvFile(`export OPENAI_API_KEY="sk-x"\nGOOGLE_GENERATIVE_AI_API_KEY='AIzaY'\n`);
+    expect(parsed).toEqual({ OPENAI_API_KEY: "sk-x", GOOGLE_GENERATIVE_AI_API_KEY: "AIzaY" });
+  });
+});
+
+describe("cliEnvForDir", () => {
+  it("reads the Vendo-relevant keys from .env.local when process.env has none", async () => {
+    const dir = await scratch();
+    await writeFile(path.join(dir, ".env.local"), "ANTHROPIC_API_KEY=sk-ant-fromfile\nUNRELATED=nope\n");
+    const env = await cliEnvForDir(dir, {});
+    expect(env["ANTHROPIC_API_KEY"]).toBe("sk-ant-fromfile");
+    // Only the model-relevant keys are lifted out of the file.
+    expect(env).not.toHaveProperty("UNRELATED");
+  });
+
+  it("lets real process.env win over .env.local (dotenv/Next convention)", async () => {
+    const dir = await scratch();
+    await writeFile(path.join(dir, ".env.local"), "ANTHROPIC_API_KEY=sk-ant-fromfile\n");
+    const env = await cliEnvForDir(dir, { ANTHROPIC_API_KEY: "sk-ant-fromenv" });
+    expect(env["ANTHROPIC_API_KEY"]).toBe("sk-ant-fromenv");
+  });
+
+  it("falls back to base env alone when .env.local is absent", async () => {
+    const dir = await scratch();
+    const env = await cliEnvForDir(dir, { OPENAI_API_KEY: "sk-env" });
+    expect(env["OPENAI_API_KEY"]).toBe("sk-env");
+    expect(env["ANTHROPIC_API_KEY"]).toBeUndefined();
+  });
+});
+
+describe("resolveCliModel", () => {
+  it("resolves a model from an ANTHROPIC_API_KEY present only in .env.local", async () => {
+    const dir = await scratch();
+    await writeFile(path.join(dir, ".env.local"), "ANTHROPIC_API_KEY=sk-ant-x\n");
+    const model = await resolveCliModel(dir, undefined, {});
+    expect(modelId(model)).toBe("claude-sonnet-5");
+  });
+
+  it("returns null when neither env nor .env.local carries a provider key", async () => {
+    const dir = await scratch();
+    expect(await resolveCliModel(dir, undefined, {})).toBeNull();
   });
 });

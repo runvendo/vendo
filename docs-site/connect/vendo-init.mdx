@@ -3,13 +3,19 @@ title: "The vendo init codemod"
 description: "What vendo init writes, what it never touches, and how to re-run it"
 ---
 
-`npx vendo init .` is a codemod for connecting Vendo to an existing app. It extracts reviewable config into `.vendo/`, then wires a Next.js App Router app when it can do so without guessing.
+`npx vendo init` is a codemod for connecting Vendo to an existing app. It extracts reviewable config into `.vendo/`, then wires a Next.js App Router app when it can do so without guessing.
 
 Run it from your app root:
 
 ```bash
-npx vendo init .
+npx vendo init
 ```
+
+`init` is interactive. With a provider key present, it prompts for the key (saving it to `.env.local`), then opens two pickers: **components** to wrap as generated-UI building blocks, and **widgets** to make remixable in your source. See [Refresh and remix](/connect/refresh-and-remix) for both pickers and the re-run story.
+
+<Note>
+  Run `init` once. After that, use [`vendo refresh`](/connect/refresh-and-remix) to catch up. Re-running `init` on an already-wired app does the same thing.
+</Note>
 
 ## What it writes
 
@@ -30,18 +36,22 @@ On a Next.js App Router app, the codemod also writes or edits:
 | File | Purpose |
 | --- | --- |
 | `app/api/vendo/[...path]/route.ts` or `src/app/api/vendo/[...path]/route.ts` | Catch-all route exporting `GET` and `POST` from `createVendoHandler()`. |
-| `app/vendo-root.tsx` or `src/app/vendo-root.tsx` | Client wrapper using `VendoRoot` from `@vendoai/next/client`, imported `.vendo/theme.json`, and imported `.vendo/tools.json`. |
+| `app/vendo-root.tsx` or `src/app/vendo-root.tsx` | Client wrapper using `VendoRoot` from `vendoai/react`, imported `.vendo/theme.json`, and imported `.vendo/tools.json`. |
 | `app/layout.*` or `src/app/layout.*` | Wraps the single root `{children}` expression in `<AppVendoRoot>`. |
 | `instrumentation.ts` or `src/instrumentation.ts` | Calls `startVendoScheduler()` in the Node.js runtime. |
 | `.env.example` | Provider keys, integration keys, model override, storage, scheduler, and webhook comments. |
 | `public/vendo/react-runtime.js` | React runtime shim for the sandbox. |
 | `public/vendo/components-sandbox.js` | Prewired component bundle for the sandbox. |
-| `package.json` | Adds `@vendoai/next` and a `prebuild` script that runs `vendo sync`. |
+| `package.json` | Adds `vendoai` and a `prebuild` script that runs `vendo sync`. |
+
+By default the `prebuild` sync runs via npx, which needs registry access at
+build time. For hermetic or offline builds, add `@vendoai/cli` as a
+devDependency — the `vendo` bin picks it up automatically.
 
 The generated route has this shape:
 
 ```ts
-import { createVendoHandler } from "@vendoai/next";
+import { createVendoHandler } from "vendoai/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,20 +89,24 @@ The extraction order is:
 If LLM steps are unavailable, or you pass `--skip-llm`, the codemod still extracts deterministic files such as theme tokens and still attempts Next.js wiring.
 
 ```bash
-npx vendo init . --skip-llm
+npx vendo init --skip-llm
 ```
 
 For init-time LLM steps, the CLI reads the same provider keys as the runtime. It also honors `VENDO_CLI_MODEL`; when set, that init-only override takes precedence over `VENDO_MODEL`.
 
-## Idempotence and `--force`
+## Safe to re-run
 
-Files under `.vendo/` are developer-editable. By default, `vendo init` refuses to overwrite existing generated artifacts there. Re-run with `--force` when you want to replace extracted `.vendo/` files with fresh output:
+`init` and `refresh` share one additive code path, so re-running is safe. Your theme is kept, tools are gap-filled, only new components are wrapped, and only unanchored widgets are offered. Nothing under `.vendo/` is overwritten, and Next.js wiring is idempotent: existing route and root wrapper files are skipped, an already wrapped layout is left alone, and existing sandbox assets are skipped unless `--force` is set.
+
+<Note>
+  **Added an API key later?** Add it to `.env.local` and run `vendo refresh` (or `vendo init` again). Both pick up the key and offer the LLM-assisted steps — tools, components, and remix — that ran without a key the first time. Grew your API since install? Same command catches up the new tools and components.
+</Note>
+
+Re-run with `--force` only when you want to replace extracted `.vendo/` files with fresh output:
 
 ```bash
-npx vendo init . --force
+npx vendo init --force
 ```
-
-Next.js wiring is separately idempotent. Existing route and root wrapper files are skipped. An already wrapped layout is left alone. Existing sandbox assets are skipped unless `--force` is set.
 
 Review the result with `git diff` after every run. `.vendo/` is meant to be committed, edited, and reviewed like application code.
 

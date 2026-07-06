@@ -36,7 +36,7 @@ const VALID_IDS = new Set(CATALOG.map((c) => c.id));
 const connected = new Set<string>();
 
 /**
- * Composio connected-account id → owner, satisfying @vendoai/next's widened
+ * Composio connected-account id → owner, satisfying `vendo/server`'s widened
  * `ConnectionsStore` (Task 13). The demo runs with `automations: false`, so
  * webhook routing never actually reads this — it exists to satisfy the
  * handler's connections seam, not because the demo fires Composio triggers.
@@ -44,7 +44,7 @@ const connected = new Set<string>();
 const byAccount = new Map<string, { toolkit: string; principal: Principal }>();
 const DEMO_SCOPE: Principal = { tenantId: "vendo-embedded", subject: DEMO_USER_ID };
 
-/** The catalog with each tool's live `connected` flag. Async — @vendoai/next's
+/** The catalog with each tool's live `connected` flag. Async — `vendo/server`'s
  *  `ConnectionsStore` contract is fully async (the durable, DB-backed port
  *  necessarily is), so every method here is too even though this in-memory
  *  demo store never actually awaits anything. */

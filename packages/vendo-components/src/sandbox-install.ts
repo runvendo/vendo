@@ -23,9 +23,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import type { ComponentType } from "react";
-import { ThemeProvider } from "@openuidev/react-ui";
+import { ThemeProvider, type Theme } from "@openuidev/react-ui";
 import openuiCss from "@openuidev/react-ui/index.css?inline";
 import { prewiredImpls } from "./impls.js";
+import { ChartPaletteBridge, splitChartPalettes } from "./theme/chart-palette-bridge.js";
 
 declare global {
   interface Window {
@@ -73,10 +74,15 @@ export function installVendoHost(
 
   window.__VENDO_THEME_WRAP__ = (blob, children) => {
     const b = blob as { mode?: "light" | "dark"; theme?: Record<string, unknown> } | undefined;
+    // Chart palettes ride OpenUI's theme CONTEXT via the bridge, not the
+    // validated lightTheme/darkTheme props — same split VendoThemeProvider
+    // does host-side (kills the "[OpenUI] … unknown key" spam without
+    // dropping the brand's chart colors).
+    const { theme, palettes } = splitChartPalettes((b?.theme ?? {}) as Theme);
     return React.createElement(
       ThemeProvider,
-      { mode: b?.mode ?? "light", lightTheme: b?.theme, darkTheme: b?.theme },
-      children as React.ReactNode,
+      { mode: b?.mode ?? "light", lightTheme: theme, darkTheme: theme },
+      React.createElement(ChartPaletteBridge, { palettes }, children as React.ReactNode),
     );
   };
 

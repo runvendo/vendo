@@ -30,7 +30,7 @@ interface Sources { react: string; bundle: string; env?: StageEnv }
 /** Fetch the vendo-sync furnished env (import map + vendored modules + host
  *  CSS + Tailwind JIT) on the host origin; the stage blobs them so the iframe
  *  CSP never changes. Missing env is normal (no sync) — undefined, never
- *  throws. Same rules as @vendoai/next's SandboxStage: only `./` entries,
+ *  throws. Same rules as `vendo/react`'s SandboxStage: only `./` entries,
  *  resolved strictly under /vendo/env/. */
 async function loadEnv(): Promise<StageEnv | undefined> {
   const mapRes = await fetch("/vendo/env/import-map.json").catch(() => null);

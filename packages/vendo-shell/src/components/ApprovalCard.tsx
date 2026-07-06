@@ -1,8 +1,12 @@
-import { toolAction } from "./tool-labels";
-import { approvalRows } from "./field-rows";
+import { isCatalogTool, toolAction } from "./tool-labels";
+import { approvalRows, type FieldFormats } from "./field-rows";
 
 export interface ApprovalCardProps {
   toolName: string;
+  /** The tool call's input. Ordinary cards never render it (summary only —
+   *  Yousef, 2026-07-05); CRITICAL cards show its non-empty fields with
+   *  humanized labels/values, untruncated (the ENG-193 §4.5 safety intent —
+   *  the human must see WHAT they are irreversibly approving). */
   input: unknown;
   /** ENG-193 §4.1 — from the sibling data-consent part. Defaults to "act". */
   tier?: "act" | "critical";
@@ -11,6 +15,10 @@ export interface ApprovalCardProps {
   /** The judge/breaker's plain-language escalation reason (ENG-193 §4.2/§4.7),
    *  from the sibling data-consent part. Absent for an ordinary approval. */
   reason?: string;
+  /** Per-field display-format hints (`{ amount: "cents" }`) from the tool's
+   *  manifest, carried on the sibling data-consent part. Makes a critical
+   *  card's money/date fields render faithfully ($500.00, not 50000). */
+  formats?: FieldFormats;
   /** Voice sessions (ENG-185): a soft listening ring while a spoken yes is
    *  acceptable. Critical-tier cards never listen — voice only announces. */
   listening?: boolean;
@@ -23,8 +31,6 @@ export interface ApprovalCardProps {
   onDecline: () => void;
 }
 
-const MAX_VALUE_CHARS = 160;
-
 /**
  * The consent moment (spec §3 Moments 3, 6 & 9): a plain yes/no card for an
  * act-tier action, the ceremony variant for critical (money/irreversible)
@@ -35,18 +41,36 @@ const MAX_VALUE_CHARS = 160;
  * register — money/irreversible ceremony doesn't need a reason to already
  * be maximally careful.
  *
+ * Summary only (Yousef, 2026-07-05 + same-day amendment): ORDINARY cards show
+ * only the human-readable action summary — raw parameter key/values ("Is
+ * html: false", "User id: me") are REMOVED entirely, not tucked behind a
+ * disclosure. CRITICAL cards keep their material fields (ENG-193 §4.5): the
+ * tool's declared non-empty input fields with humanized labels and readable
+ * values, never truncated — the human must see the amount/recipient they are
+ * irreversibly approving. The settled receipt (ActivityStep) still carries
+ * full field detail for every tier. The "Unverified tool" badge shows only
+ * for tools whose SOURCE is genuinely unknown — stock catalog Composio tools
+ * (flagged unverified merely for shipping no annotations) don't wear it.
+ * Display changes only; the approval mechanism is untouched.
+ *
  * Voice sessions (ENG-185) layer on top: `listening` adds a soft ring while
  * a spoken yes is acceptable, and a `resolution` turns the card into a
  * receipt of how consent was given (buttons collapse into an outcome line).
  */
 export function ApprovalCard({
-  toolName, input, tier = "act", unverified = false, reason, listening = false, resolution, consequence, onApprove, onDecline,
+  toolName, input, tier = "act", unverified = false, reason, formats, listening = false, resolution, consequence, onApprove, onDecline,
 }: ApprovalCardProps) {
   const action = toolAction(toolName);
   const critical = tier === "critical";
   const escalated = Boolean(reason) && !critical;
   const settled = resolution !== undefined;
-  const { rows, more } = approvalRows(input, critical ? null : MAX_VALUE_CHARS);
+  // Badge only when the SOURCE is genuinely unknown: catalog-known Composio
+  // tools are unverified-by-annotation, not unverified-by-provenance.
+  const showUnverified = unverified && !isCatalogTool(toolName);
+  // Material fields are a CRITICAL-tier concern only: the tool's declared
+  // non-empty input fields, humanized labels + readable values, untruncated
+  // (maxChars null is the same critical signal field-rows.ts always used).
+  const materialRows = critical ? approvalRows(input, null, formats).rows : [];
   const confirmLabel = critical ? `Confirm ${action.request.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : "Send it";
   const declineLabel = critical ? "Cancel" : "No";
   const approveClass = critical ? "fl-btn-ceremony" : escalated ? "fl-btn" : "fl-btn-primary";
@@ -80,7 +104,7 @@ export function ApprovalCard({
                 covers money AND irreversible/permission-changing tools — the
                 spec's Trust-screen phrase, not money-specific copy. */}
             {critical ? "Always needs you" : escalated ? "Hold on — checking with you first" : "Needs your approval"}
-            {unverified && <span className="fl-approval-unverified">Unverified tool</span>}
+            {showUnverified && <span className="fl-approval-unverified">Unverified tool</span>}
           </div>
           <div className="fl-approval-title">{action.question}</div>
         </div>
@@ -88,15 +112,14 @@ export function ApprovalCard({
       {escalated && (
         <div className="fl-approval-reason">Hold on — I stopped to check: {reason}</div>
       )}
-      {rows.length > 0 && (
+      {materialRows.length > 0 && (
         <dl className="fl-approval-fields">
-          {rows.map((row) => (
+          {materialRows.map((row) => (
             <div key={row.label} className="fl-approval-field">
               <dt>{row.label}</dt>
               <dd>{row.value}</dd>
             </div>
           ))}
-          {more > 0 && <div className="fl-approval-more">+{more} more</div>}
         </dl>
       )}
       {critical && !settled && (

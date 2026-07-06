@@ -15,7 +15,7 @@
  *   node drill-persistence-store.mjs verify <autoId>   — read run history + the decision back
  *
  * Env: VENDO_DATA_DIR (PGlite) or DATABASE_URL (Postgres) — same env the
- * server itself resolves storage from (see packages/vendo-next/src/storage.ts).
+ * server itself resolves storage from (see packages/vendo-server/src/storage.ts).
  */
 import { register } from "node:module";
 import path from "node:path";
@@ -66,9 +66,9 @@ async function openHandle() {
 }
 
 /**
- * Mirrors `createDrizzleVendoRegistry` (packages/vendo-next/src/vendos.ts)
+ * Mirrors `createDrizzleVendoRegistry` (packages/vendo-server/src/vendos.ts)
  * against the SAME `saved_vendos` table — inlined here rather than deep-
- * imported from @vendoai/next's dist, whose compiled relative imports (e.g.
+ * imported from `vendo/server`'s dist, whose compiled relative imports (e.g.
  * "./guard", no ".js") are only resolvable through a bundler, not plain Node
  * ESM (unlike @vendoai/store and @vendoai/runtime, which are written to run
  * standalone). The row shape only needs to match what the `/vendos` HTTP

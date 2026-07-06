@@ -31,6 +31,18 @@ const registry: Registry = ((globalThis as Record<string, unknown>)["__vendoStor
   migrated: new Map(),
 }) as Registry;
 
+/**
+ * pg.Pool re-emits idle-client errors (backend restart, dropped connection)
+ * on itself; with no 'error' listener Node escalates that to an uncaught
+ * exception and kills the host process. The pool already discards the dead
+ * client — log and keep serving.
+ */
+export function createPgPool(connectionString: string): Pool {
+  const pool = new Pool({ connectionString });
+  pool.on("error", (err) => console.error("[vendo] postgres pool: idle connection error (recovering)", err));
+  return pool;
+}
+
 export function createVendoDatabase(config: VendoDatabaseConfig = {}): Promise<VendoDb> {
   // Precedence: explicit connectionString > explicit pglite > env DATABASE_URL
   // > default PGlite — an explicitly passed `pglite` config must not lose to
@@ -45,7 +57,7 @@ export function createVendoDatabase(config: VendoDatabaseConfig = {}): Promise<V
   if (existing) return existing;
 
   const created: Promise<VendoDb> = (async () => {
-    if (conn) return { kind: "pg" as const, db: drizzlePg(new Pool({ connectionString: conn })), cacheKey };
+    if (conn) return { kind: "pg" as const, db: drizzlePg(createPgPool(conn)), cacheKey };
     const onServerless = SERVERLESS_ENVS.find((e) => process.env[e]);
     if (onServerless) {
       throw new Error(
