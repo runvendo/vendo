@@ -7,7 +7,7 @@
  * guarded principal, with a voice-sized output cap before results hit the
  * expensive realtime context (ENG-185).
  */
-import type { ToolSet } from "ai";
+import { asSchema, type ToolSet } from "ai";
 import { capToolOutput } from "@vendoai/core";
 import {
   createComposioClient,
@@ -128,9 +128,21 @@ function tierOf(name: string, annotations: ToolDescriptor["annotations"]): "read
 }
 
 function schemaOf(tool: unknown): Record<string, unknown> {
-  const input = (tool as { inputSchema?: { jsonSchema?: unknown } }).inputSchema;
-  const json = input?.jsonSchema;
-  if (json && typeof json === "object") return json as Record<string, unknown>;
+  const input = (tool as { inputSchema?: unknown }).inputSchema;
+  // Composio tools carry a pre-built JSON Schema at inputSchema.jsonSchema.
+  const composioJson = (input as { jsonSchema?: unknown } | undefined)?.jsonSchema;
+  if (composioJson && typeof composioJson === "object") return composioJson as Record<string, unknown>;
+  // Authoring/control tools are `tool({ inputSchema: zodSchema })` — convert the
+  // zod schema to JSON Schema so the voice model gets the real parameter shape
+  // (without this it saw an empty object and produced malformed specs).
+  if (input) {
+    try {
+      const json = asSchema(input as Parameters<typeof asSchema>[0]).jsonSchema;
+      if (json && typeof json === "object") return json as Record<string, unknown>;
+    } catch {
+      /* fall through to the permissive default */
+    }
+  }
   return { type: "object", properties: {}, additionalProperties: true };
 }
 
