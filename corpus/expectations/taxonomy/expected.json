@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#ffffff",
+    "surface": "#ffffff",
+    "accent": "#0f172a",
+    "text": "#0f172a",
+    "mutedText": "#64748b",
+    "radius": 8,
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOg",
+      "method": "GET",
+      "path": "/api/og",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPosts",
+      "method": "GET",
+      "path": "/api/posts",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postPosts",
+      "method": "POST",
+      "path": "/api/posts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchPostsPostId",
+      "method": "PATCH",
+      "path": "/api/posts/{postId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePostsPostId",
+      "method": "DELETE",
+      "path": "/api/posts/{postId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchUsersUserId",
+      "method": "PATCH",
+      "path": "/api/users/{userId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUsersStripe",
+      "method": "GET",
+      "path": "/api/users/stripe",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebhooksStripe",
+      "method": "POST",
+      "path": "/api/webhooks/stripe",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "getAuthNextauth",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthNextauth",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getOg",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getPosts",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postPosts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchPostsPostId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deletePostsPostId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "patchUsersUserId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUsersStripe",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebhooksStripe",
+      "mutating": true,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}

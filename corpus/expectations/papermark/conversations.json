@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "seedNotes": "Pinned Papermark has no committed seed script; the deep-tier fixture for Layer 3 should provision a team with Corpus Q3 Board Packet.pdf, Pricing Memo.pdf, Security Overview.pdf, Investor Room, and a test recipient analyst@example.test.",
+  "k": 2,
+  "timeoutMs": 90000,
+  "threshold": 0.8,
+  "conversations": [
+    {
+      "id": "list-documents",
+      "description": "Inspect the seeded team document list.",
+      "prompts": [
+        "Show the documents in my team workspace with their visibility or processing status."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "document|file|team|folder" } },
+        { "kind": "view-rendered", "role": "table" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "document-analytics-summary",
+      "description": "Ask for analytics on a seeded document.",
+      "prompts": [
+        "Summarize recent viewer activity for Corpus Q3 Board Packet.pdf."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "document|view|visit|analytics|stats" } },
+        { "kind": "view-rendered", "testId": "ui-node", "text": { "regex": "viewer|visit|document|activity" } },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "create-share-link-approval",
+      "description": "Share-a-document flow must ask before creating a link.",
+      "prompts": [
+        "Create a share link for Corpus Q3 Board Packet.pdf that analyst@example.test can open."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "share|link|document|recipient|create" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "add-document-to-dataroom-approval",
+      "description": "Adding a document to a dataroom is a write requiring approval.",
+      "prompts": [
+        "Add Pricing Memo.pdf to the Investor Room dataroom."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "dataroom|document|add|move|share" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "update-link-settings-approval",
+      "description": "Changing link permissions must surface approval.",
+      "prompts": [
+        "Make the share link for Security Overview.pdf download-only and hide the document from search."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "link|document|download|hide|update" } },
+        { "kind": "approval-card-shown" },
+        { "kind": "no-error-toast" }
+      ]
+    }
+  ]
+}

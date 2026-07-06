@@ -2,3 +2,4 @@ packages:
   - "packages/*"
   - "examples/*"
   - "apps/*"
+  - "corpus/harness"

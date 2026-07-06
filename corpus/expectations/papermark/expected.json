@@ -1,0 +1,4285 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#ffffff",
+    "surface": "#ffffff",
+    "accent": "#111827",
+    "text": "#030712",
+    "mutedText": "#6b7280",
+    "radius": 8,
+    "fontFamily": "Inter, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "patchAccount",
+      "method": "PATCH",
+      "path": "/api/account",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAccountPasskeys",
+      "method": "GET",
+      "path": "/api/account/passkeys",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteAccountPasskeys",
+      "method": "DELETE",
+      "path": "/api/account/passkeys",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAgreementsSigningAgreementResponseIdDownload",
+      "method": "GET",
+      "path": "/api/agreements/signing/{agreementResponseId}/download",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAgreementsSigningComplete",
+      "method": "POST",
+      "path": "/api/agreements/signing/complete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAgreementsSigningSession",
+      "method": "POST",
+      "path": "/api/agreements/signing/session",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAgreementsSigningStatus",
+      "method": "GET",
+      "path": "/api/agreements/signing/status",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAiChat",
+      "method": "GET",
+      "path": "/api/ai/chat",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAiChat",
+      "method": "POST",
+      "path": "/api/ai/chat",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAiChatChatId",
+      "method": "GET",
+      "path": "/api/ai/chat/{chatId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteAiChatChatId",
+      "method": "DELETE",
+      "path": "/api/ai/chat/{chatId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAiChatChatIdMessages",
+      "method": "POST",
+      "path": "/api/ai/chat/{chatId}/messages",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAiStoreRunsRunId",
+      "method": "GET",
+      "path": "/api/ai/store/runs/{runId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAiStoreTeamsTeamId",
+      "method": "GET",
+      "path": "/api/ai/store/teams/{teamId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAiStoreTeamsTeamIdDataroomsDataroomId",
+      "method": "POST",
+      "path": "/api/ai/store/teams/{teamId}/datarooms/{dataroomId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAiStoreTeamsTeamIdDocumentsDocumentId",
+      "method": "POST",
+      "path": "/api/ai/store/teams/{teamId}/documents/{documentId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteAiStoreTeamsTeamIdDocumentsDocumentId",
+      "method": "DELETE",
+      "path": "/api/ai/store/teams/{teamId}/documents/{documentId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAnalytics",
+      "method": "GET",
+      "path": "/api/analytics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAuthSamlAuthorize",
+      "method": "GET",
+      "path": "/api/auth/saml/authorize",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAuthSamlAuthorize",
+      "method": "POST",
+      "path": "/api/auth/saml/authorize",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthSamlCallback",
+      "method": "POST",
+      "path": "/api/auth/saml/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthSamlToken",
+      "method": "POST",
+      "path": "/api/auth/saml/token",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAuthSamlUserinfo",
+      "method": "GET",
+      "path": "/api/auth/saml/userinfo",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAuthSamlVerify",
+      "method": "POST",
+      "path": "/api/auth/saml/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthVerifyCode",
+      "method": "POST",
+      "path": "/api/auth/verify-code",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getConversationsConversations",
+      "method": "GET",
+      "path": "/api/conversations/{conversations}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postConversationsConversations",
+      "method": "POST",
+      "path": "/api/conversations/{conversations}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDataroomDigestDaily",
+      "method": "POST",
+      "path": "/api/cron/dataroom-digest/daily",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDataroomDigestWeekly",
+      "method": "POST",
+      "path": "/api/cron/dataroom-digest/weekly",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDomains",
+      "method": "POST",
+      "path": "/api/cron/domains",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronWelcomeUser",
+      "method": "POST",
+      "path": "/api/cron/welcome-user",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronYearInReview",
+      "method": "POST",
+      "path": "/api/cron/year-in-review",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCspReport",
+      "method": "POST",
+      "path": "/api/csp-report",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFaqs",
+      "method": "GET",
+      "path": "/api/faqs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getFeatureFlags",
+      "method": "GET",
+      "path": "/api/feature-flags",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postFeedback",
+      "method": "POST",
+      "path": "/api/feedback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileBrowserUpload",
+      "method": "POST",
+      "path": "/api/file/browser-upload",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileImageUpload",
+      "method": "POST",
+      "path": "/api/file/image-upload",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileNotion",
+      "method": "POST",
+      "path": "/api/file/notion",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileS3GetPresignedGetUrl",
+      "method": "POST",
+      "path": "/api/file/s3/get-presigned-get-url",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileS3GetPresignedGetUrlProxy",
+      "method": "POST",
+      "path": "/api/file/s3/get-presigned-get-url-proxy",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileS3GetPresignedPostUrl",
+      "method": "POST",
+      "path": "/api/file/s3/get-presigned-post-url",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileS3Multipart",
+      "method": "POST",
+      "path": "/api/file/s3/multipart",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileTusViewerFile",
+      "method": "POST",
+      "path": "/api/file/tus-viewer/{file}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postFileTusFile",
+      "method": "POST",
+      "path": "/api/file/tus/{file}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getHealth",
+      "method": "GET",
+      "path": "/api/health",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getHelp",
+      "method": "GET",
+      "path": "/api/help",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getIntegrationsSlackOauthAuthorize",
+      "method": "GET",
+      "path": "/api/integrations/slack/oauth/authorize",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getIntegrationsSlackOauthCallback",
+      "method": "GET",
+      "path": "/api/integrations/slack/oauth/callback",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postInternalBillingAutomaticUnpause",
+      "method": "POST",
+      "path": "/api/internal/billing/automatic-unpause",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getJobsGetThumbnail",
+      "method": "GET",
+      "path": "/api/jobs/get-thumbnail",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postJobsProcessDownloadBatch",
+      "method": "POST",
+      "path": "/api/jobs/process-download-batch",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postJobsSendConversationNewMessageNotification",
+      "method": "POST",
+      "path": "/api/jobs/send-conversation-new-message-notification",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postJobsSendConversationTeamMemberNotification",
+      "method": "POST",
+      "path": "/api/jobs/send-conversation-team-member-notification",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postJobsSendDataroomNewDocumentNotification",
+      "method": "POST",
+      "path": "/api/jobs/send-dataroom-new-document-notification",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postJobsSendDataroomUploadNotification",
+      "method": "POST",
+      "path": "/api/jobs/send-dataroom-upload-notification",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postJobsSendNotification",
+      "method": "POST",
+      "path": "/api/jobs/send-notification",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postJobsSendPauseResumeNotification",
+      "method": "POST",
+      "path": "/api/jobs/send-pause-resume-notification",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLinks",
+      "method": "POST",
+      "path": "/api/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksId",
+      "method": "GET",
+      "path": "/api/links/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putLinksId",
+      "method": "PUT",
+      "path": "/api/links/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteLinksId",
+      "method": "DELETE",
+      "path": "/api/links/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksIdAnnotations",
+      "method": "GET",
+      "path": "/api/links/{id}/annotations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putLinksIdArchive",
+      "method": "PUT",
+      "path": "/api/links/{id}/archive",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksIdDocumentsDocumentIdAnnotations",
+      "method": "GET",
+      "path": "/api/links/{id}/documents/{documentId}/annotations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksIdDuplicate",
+      "method": "POST",
+      "path": "/api/links/{id}/duplicate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLinksIdPreview",
+      "method": "POST",
+      "path": "/api/links/{id}/preview",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLinksIdTransfer",
+      "method": "POST",
+      "path": "/api/links/{id}/transfer",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksIdUpload",
+      "method": "GET",
+      "path": "/api/links/{id}/upload",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksIdUpload",
+      "method": "POST",
+      "path": "/api/links/{id}/upload",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksDomainsDomainSlug",
+      "method": "GET",
+      "path": "/api/links/domains/{domainSlug}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksDownload",
+      "method": "POST",
+      "path": "/api/links/download",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksDownloadJobId",
+      "method": "GET",
+      "path": "/api/links/download/{jobId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksDownloadBulk",
+      "method": "POST",
+      "path": "/api/links/download/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLinksDownloadDataroomDocument",
+      "method": "POST",
+      "path": "/api/links/download/dataroom-document",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLinksDownloadDataroomFolder",
+      "method": "POST",
+      "path": "/api/links/download/dataroom-folder",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksDownloadFileJobIdPartIndex",
+      "method": "GET",
+      "path": "/api/links/download/file/{jobId}/{partIndex}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksDownloadJobs",
+      "method": "GET",
+      "path": "/api/links/download/jobs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksDownloadVerify",
+      "method": "GET",
+      "path": "/api/links/download/verify",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksDownloadVerify",
+      "method": "POST",
+      "path": "/api/links/download/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLinksGenerateIndex",
+      "method": "POST",
+      "path": "/api/links/generate-index",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postMupdfAnnotateDocument",
+      "method": "POST",
+      "path": "/api/mupdf/annotate-document",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postMupdfConvertPage",
+      "method": "POST",
+      "path": "/api/mupdf/convert-page",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postMupdfGetPages",
+      "method": "POST",
+      "path": "/api/mupdf/get-pages",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getNotificationPreferencesDataroom",
+      "method": "GET",
+      "path": "/api/notification-preferences/dataroom",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postNotificationPreferencesDataroom",
+      "method": "POST",
+      "path": "/api/notification-preferences/dataroom",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOg",
+      "method": "GET",
+      "path": "/api/og",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getOgYir",
+      "method": "GET",
+      "path": "/api/og/yir",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postPasskeysRegister",
+      "method": "POST",
+      "path": "/api/passkeys/register",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgressToken",
+      "method": "GET",
+      "path": "/api/progress-token",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postRecordClick",
+      "method": "POST",
+      "path": "/api/record_click",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postRecordReaction",
+      "method": "POST",
+      "path": "/api/record_reaction",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postRecordVideoView",
+      "method": "POST",
+      "path": "/api/record_video_view",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postRecordView",
+      "method": "POST",
+      "path": "/api/record_view",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReport",
+      "method": "POST",
+      "path": "/api/report",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getRevalidate",
+      "method": "GET",
+      "path": "/api/revalidate",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getScimV20Directory",
+      "method": "GET",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postScimV20Directory",
+      "method": "POST",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putScimV20Directory",
+      "method": "PUT",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchScimV20Directory",
+      "method": "PATCH",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteScimV20Directory",
+      "method": "DELETE",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeams",
+      "method": "GET",
+      "path": "/api/teams",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeams",
+      "method": "POST",
+      "path": "/api/teams",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteTeamsTeamId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdAgreements",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/agreements",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdAgreements",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/agreements",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdAgreementsAgreementId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdAgreementsAgreementId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdDownload",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}/download",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdAgreementsAgreementIdResponses",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}/responses",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdAgreementsAgreementIdResponsesResponseIdDownload",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}/responses/{responseId}/download",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdSigningPresign",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}/signing/presign",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdSigningSetup",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}/signing/setup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdAgreementsAgreementIdSigningSetupStatus",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}/signing/setup-status",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdSigningSync",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/agreements/{agreementId}/signing/sync",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdAiSettings",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/ai-settings",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdAiSettings",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/ai-settings",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdBranding",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/branding",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdBranding",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/branding",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdBranding",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/branding",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdBranding",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/branding",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdChangeRole",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/change-role",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDatarooms",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDatarooms",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/datarooms/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdApplyPermissions",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/apply-permissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdApplyTemplate",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/apply-template",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdBranding",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/branding",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdBranding",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/branding",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdBranding",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/datarooms/{id}/branding",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdBranding",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/branding",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdCalculateIndexes",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/calculate-indexes",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdConversationsConversations",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/conversations/{conversations}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdConversationsConversations",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/conversations/{conversations}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdConversationsConversations",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/datarooms/{id}/conversations/{conversations}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdConversationsConversations",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/datarooms/{id}/conversations/{conversations}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdConversationsConversations",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/conversations/{conversations}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdConversationsToggleConversations",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/conversations/toggle-conversations",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDocuments",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/documents",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdDocuments",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/documents",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdDocumentsDocumentId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/datarooms/{id}/documents/{documentId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdDocumentsDocumentId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/documents/{documentId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdOverview",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/documents/{documentId}/overview",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdStats",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/documents/{documentId}/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdDocumentsMove",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/datarooms/{id}/documents/move",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDownloadJobId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/download/{jobId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdDownloadBulk",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/download/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDownloadJobs",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/download/jobs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdDuplicate",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/duplicate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdExportVisits",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/export-visits",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdExportVisits",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/export-visits",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFaqs",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/faqs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFaqs",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/faqs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdFaqsFaqId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/datarooms/{id}/faqs/{faqId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdFaqsFaqId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/faqs/{faqId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFolderDocumentsName",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folder-documents/{name}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFolders",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFolders",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFoldersName",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/{name}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersName",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/{name}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersBulk",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdFoldersManage",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/manage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdFoldersManageFolderId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/manage/{folderId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersManageFolderIdDataroomToDataroom",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/manage/{folderId}/dataroom-to-dataroom",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdFoldersMove",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/move",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFoldersParentsName",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/parents/{name}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersParentsName",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/folders/parents/{name}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFreeze",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/freeze",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFreezeDownload",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/freeze/download",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFreezeMonitorToken",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/freeze/monitor-token",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFreezeRetryArchive",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/freeze/retry-archive",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFreezeSendToken",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/freeze/send-token",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGenerateIndex",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/generate-index",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroups",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroups",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdGroupsGroupId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdGroupsGroupId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdDuplicate",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/duplicate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdExportVisits",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/export-visits",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdExportVisits",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/export-visits",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdInvite",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/invite",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdLinks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdMembers",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/members",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdGroupsGroupIdMembersMemberId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/members/{memberId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdPermissions",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/permissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdUninvited",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/uninvited",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdViews",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/views",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdLinks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdLinksLinkIdInvite",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/links/{linkId}/invite",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdLinksBulk",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdMembers",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/members",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdMembers",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/members",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdPermissionGroups",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdPermissionGroups",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups/{permissionGroupId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups/{permissionGroupId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups/{permissionGroupId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups/{permissionGroupId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdReorder",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/reorder",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdSearch",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/search",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdStats",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdUsers",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/{id}/users",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewers",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/viewers",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViews",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/views",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsCount",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/views-count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdCustomFields",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/custom-fields",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdDocumentStats",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/document-stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdHistory",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/history",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdUserAgent",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/user-agent",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsCreateFromFolder",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/create-from-folder",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsGenerate",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/generate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsGenerateAi",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/generate-ai",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsGenerateAiStructure",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/generate-ai-structure",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsTrial",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/datarooms/trial",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDirectorySync",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/directory-sync",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDirectorySync",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/directory-sync",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDirectorySync",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/directory-sync",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocuments",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocuments",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdDocumentsId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/documents/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/documents/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDocumentsId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/documents/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAddToDataroom",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/add-to-dataroom",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAdvancedMode",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/advanced-mode",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdAnnotations",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/annotations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAnnotations",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/annotations",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/annotations/{annotationId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/documents/{id}/annotations/{annotationId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/documents/{id}/annotations/{annotationId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAnnotationsAnnotationIdImages",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/annotations/{annotationId}/images",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdChangeOrientation",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/change-orientation",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdCheckNotionAccessibility",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/check-notion-accessibility",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdDuplicate",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/duplicate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdExportVisits",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/export-visits",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdExportVisits",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/export-visits",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdLinks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdLinksBulk",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdOverview",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/overview",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdPreviewData",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/preview-data",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdPreviewPages",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/preview-pages",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdStats",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdToggleDarkMode",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/documents/{id}/toggle-dark-mode",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdToggleDownloadOnly",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/documents/{id}/toggle-download-only",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdUpdateLinkUrl",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/documents/{id}/update-link-url",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdUpdateName",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/update-name",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdUpdateNotionUrl",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/documents/{id}/update-notion-url",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdVersions",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/versions",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdVersions",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/{id}/versions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdVideoAnalytics",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/video-analytics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViews",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/views",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsCount",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/views-count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdClickEvents",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/click-events",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdCustomFields",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/custom-fields",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdStats",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdUserAgent",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/user-agent",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdVideoStats",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/video-stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsAgreement",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/agreement",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsAgreement",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/agreement",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsDocumentProcessingStatus",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/document-processing-status",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsHidden",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/hidden",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsHide",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/hide",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsMove",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/documents/move",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsSearch",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/documents/search",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsUpdate",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/documents/update",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDomains",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/domains",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdDomains",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/domains",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdDomainsDomain",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdDomainsDomain",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdDomainsDomain",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdDomainsDomainValidate",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/domains/{domain}/validate",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdDomainsDomainVerify",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/domains/{domain}/verify",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdEnableAdvancedMode",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/enable-advanced-mode",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdExportJobs",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/export-jobs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdExportJobs",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/export-jobs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdExportJobsExportId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/export-jobs/{exportId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdExportJobsExportId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/export-jobs/{exportId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdExportJobsExportId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/export-jobs/{exportId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdExportJobsExportIdSendEmail",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/export-jobs/{exportId}/send-email",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdFolderDocumentsName",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/folder-documents/{name}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdFolders",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/folders",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdFolders",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/folders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdFoldersName",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/folders/{name}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdFoldersBulk",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/folders/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdFoldersHide",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/folders/hide",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdFoldersManage",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/folders/manage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdFoldersManageFolderId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/folders/manage/{folderId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdFoldersManageFolderIdAddToDataroom",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/folders/manage/{folderId}/add-to-dataroom",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdFoldersMove",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/folders/move",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdFoldersParentsName",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/folders/parents/{name}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdGlobalBlockList",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/global-block-list",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdGlobalBlockList",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/global-block-list",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdIgnoredDomains",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/ignored-domains",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdIgnoredDomains",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/ignored-domains",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdIncomingWebhooks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/incoming-webhooks",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdIncomingWebhooks",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/incoming-webhooks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdIncomingWebhooks",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/incoming-webhooks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdIntegrationsSlack",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/integrations/slack",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdIntegrationsSlack",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/integrations/slack",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdIntegrationsSlack",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/integrations/slack",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdIntegrationsSlackChannels",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/integrations/slack/channels",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdIntegrationsSlackChannels",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/integrations/slack/channels",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdInvitations",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/invitations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteTeamsTeamIdInvitations",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/invitations",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdInvitationsAccept",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/invitations/accept",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdInvitationsResend",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/invitations/resend",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTeamsTeamIdInvite",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/invite",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdLimits",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/limits",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteTeamsTeamIdLinksId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/links/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdLinksIdVisits",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/links/{id}/visits",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdLinksBulk",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdNotificationsPreferences",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/notifications/preferences",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdNotificationsPreferences",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/notifications/preferences",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdPresets",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/presets",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdPresets",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/presets",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdPresetsId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/presets/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdPresetsId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/presets/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdPresetsId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/presets/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdRemoveTeammate",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/remove-teammate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdSaml",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/saml",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdSaml",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/saml",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdSaml",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/saml",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdSaml",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/saml",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdSettings",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/settings",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdSettings",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/settings",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdSurvey",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/survey",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdSurvey",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/survey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdTags",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/tags",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdTags",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/tags",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTeamsTeamIdTagsId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdTagsId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdTokens",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/tokens",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdTokens",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/tokens",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdTokens",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/tokens",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdTokens",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/tokens",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdUpdateAdvancedMode",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/update-advanced-mode",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdUpdateName",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/update-name",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTeamsTeamIdUpdateReplicateFolders",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/update-replicate-folders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdViewers",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/viewers",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdViewersId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/viewers/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdViewsIdArchive",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/views/{id}/archive",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdVisitorGroups",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/visitor-groups",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdVisitorGroups",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/visitor-groups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdVisitorGroupsGroupId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/visitor-groups/{groupId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putTeamsTeamIdVisitorGroupsGroupId",
+      "method": "PUT",
+      "path": "/api/teams/{teamId}/visitor-groups/{groupId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdVisitorGroupsGroupId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/visitor-groups/{groupId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdWebhooks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/webhooks",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdWebhooks",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/webhooks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdWebhooksId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/webhooks/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTeamsTeamIdWebhooksId",
+      "method": "PATCH",
+      "path": "/api/teams/{teamId}/webhooks/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdWebhooksId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/webhooks/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdWebhooksIdEvents",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/webhooks/{id}/events",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdWorkflowLinks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/workflow-links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdYearlyRecap",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/yearly-recap",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getUnsubscribeDataroom",
+      "method": "GET",
+      "path": "/api/unsubscribe/dataroom",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUnsubscribeDataroom",
+      "method": "POST",
+      "path": "/api/unsubscribe/dataroom",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUnsubscribeYir",
+      "method": "GET",
+      "path": "/api/unsubscribe/yir",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUnsubscribeYir",
+      "method": "POST",
+      "path": "/api/unsubscribe/yir",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUserSubscribe",
+      "method": "GET",
+      "path": "/api/user/subscribe",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUserSubscribe",
+      "method": "POST",
+      "path": "/api/user/subscribe",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteUserSubscribe",
+      "method": "DELETE",
+      "path": "/api/user/subscribe",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getVerifyLoginLink",
+      "method": "GET",
+      "path": "/api/verify/login-link",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postViews",
+      "method": "POST",
+      "path": "/api/views",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postViewsDataroom",
+      "method": "POST",
+      "path": "/api/views-dataroom",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postViewsPages",
+      "method": "POST",
+      "path": "/api/views/pages",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWebhooksCallback",
+      "method": "POST",
+      "path": "/api/webhooks/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWebhooksServicesPath",
+      "method": "POST",
+      "path": "/api/webhooks/services/{path}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWebhooksSigning",
+      "method": "POST",
+      "path": "/api/webhooks/signing",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkflowEntryDomainsDomainSlug",
+      "method": "POST",
+      "path": "/api/workflow-entry/domains/{domainSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkflowEntryLinkEntryLinkIdAccess",
+      "method": "POST",
+      "path": "/api/workflow-entry/link/{entryLinkId}/access",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkflowEntryLinkEntryLinkIdVerify",
+      "method": "POST",
+      "path": "/api/workflow-entry/link/{entryLinkId}/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkflows",
+      "method": "GET",
+      "path": "/api/workflows",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkflows",
+      "method": "POST",
+      "path": "/api/workflows",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkflowsWorkflowId",
+      "method": "GET",
+      "path": "/api/workflows/{workflowId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchWorkflowsWorkflowId",
+      "method": "PATCH",
+      "path": "/api/workflows/{workflowId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkflowsWorkflowId",
+      "method": "DELETE",
+      "path": "/api/workflows/{workflowId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkflowsWorkflowIdExecutions",
+      "method": "GET",
+      "path": "/api/workflows/{workflowId}/executions",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWorkflowsWorkflowIdSteps",
+      "method": "GET",
+      "path": "/api/workflows/{workflowId}/steps",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkflowsWorkflowIdSteps",
+      "method": "POST",
+      "path": "/api/workflows/{workflowId}/steps",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putWorkflowsWorkflowIdSteps",
+      "method": "PUT",
+      "path": "/api/workflows/{workflowId}/steps",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchWorkflowsWorkflowIdStepsStepId",
+      "method": "PATCH",
+      "path": "/api/workflows/{workflowId}/steps/{stepId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkflowsWorkflowIdStepsStepId",
+      "method": "DELETE",
+      "path": "/api/workflows/{workflowId}/steps/{stepId}",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "patchAccount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAccountPasskeys",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteAccountPasskeys",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getAgreementsSigningAgreementResponseIdDownload",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAgreementsSigningComplete",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAgreementsSigningSession",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAgreementsSigningStatus",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAiChat",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAiChat",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAiChatChatId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteAiChatChatId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postAiChatChatIdMessages",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAiStoreRunsRunId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAiStoreTeamsTeamId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAiStoreTeamsTeamIdDataroomsDataroomId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAiStoreTeamsTeamIdDocumentsDocumentId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteAiStoreTeamsTeamIdDocumentsDocumentId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getAnalytics",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAuthNextauth",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthNextauth",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAuthSamlAuthorize",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlAuthorize",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlToken",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAuthSamlUserinfo",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthVerifyCode",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getConversationsConversations",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postConversationsConversations",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDataroomDigestDaily",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDataroomDigestWeekly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDomains",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronWelcomeUser",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronYearInReview",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCspReport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getFaqs",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getFeatureFlags",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postFeedback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileBrowserUpload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileImageUpload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileNotion",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileS3GetPresignedGetUrl",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileS3GetPresignedGetUrlProxy",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileS3GetPresignedPostUrl",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileS3Multipart",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileTusViewerFile",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postFileTusFile",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getHealth",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getHelp",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getIntegrationsSlackOauthAuthorize",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getIntegrationsSlackOauthCallback",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postInternalBillingAutomaticUnpause",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getJobsGetThumbnail",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postJobsProcessDownloadBatch",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postJobsSendConversationNewMessageNotification",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postJobsSendConversationTeamMemberNotification",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postJobsSendDataroomNewDocumentNotification",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postJobsSendDataroomUploadNotification",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postJobsSendNotification",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postJobsSendPauseResumeNotification",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putLinksId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteLinksId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getLinksIdAnnotations",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putLinksIdArchive",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getLinksIdDocumentsDocumentIdAnnotations",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksIdDuplicate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksIdPreview",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksIdTransfer",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getLinksIdUpload",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksIdUpload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksDomainsDomainSlug",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksDownload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksDownloadJobId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksDownloadBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksDownloadDataroomDocument",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksDownloadDataroomFolder",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksDownloadFileJobIdPartIndex",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksDownloadJobs",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksDownloadVerify",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksDownloadVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksGenerateIndex",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postMupdfAnnotateDocument",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postMupdfConvertPage",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postMupdfGetPages",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getNotificationPreferencesDataroom",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postNotificationPreferencesDataroom",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getOg",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getOgYir",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postPasskeysRegister",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgressToken",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postRecordClick",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postRecordReaction",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postRecordVideoView",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postRecordView",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getRevalidate",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getScimV20Directory",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postScimV20Directory",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putScimV20Directory",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchScimV20Directory",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteScimV20Directory",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeams",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeams",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdAgreements",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdAgreements",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdAgreementsAgreementId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdAgreementsAgreementId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdDownload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdAgreementsAgreementIdResponses",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdAgreementsAgreementIdResponsesResponseIdDownload",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdSigningPresign",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdSigningSetup",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdAgreementsAgreementIdSigningSetupStatus",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdAgreementsAgreementIdSigningSync",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdAiSettings",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdAiSettings",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdBranding",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdBranding",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdBranding",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdBranding",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "putTeamsTeamIdChangeRole",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDatarooms",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDatarooms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdApplyPermissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdApplyTemplate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdBranding",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdBranding",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdBranding",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdBranding",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdCalculateIndexes",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdConversationsConversations",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdConversationsConversations",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdConversationsConversations",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdConversationsConversations",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdConversationsConversations",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdConversationsToggleConversations",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDocuments",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdDocuments",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdDocumentsDocumentId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdDocumentsDocumentId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdOverview",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdDocumentsMove",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDownloadJobId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdDownloadBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdDownloadJobs",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdDuplicate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdExportVisits",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdExportVisits",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFaqs",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFaqs",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdFaqsFaqId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdFaqsFaqId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFolderDocumentsName",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFolders",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFolders",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFoldersName",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersName",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdFoldersManage",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdFoldersManageFolderId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersManageFolderIdDataroomToDataroom",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdFoldersMove",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFoldersParentsName",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFoldersParentsName",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFreeze",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFreezeDownload",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdFreezeMonitorToken",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFreezeRetryArchive",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdFreezeSendToken",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGenerateIndex",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroups",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroups",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdGroupsGroupId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdGroupsGroupId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdDuplicate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdExportVisits",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdExportVisits",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdInvite",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdMembers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdGroupsGroupIdMembersMemberId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdPermissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdUninvited",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdViews",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdLinksLinkIdInvite",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdLinksBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdMembers",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdMembers",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdPermissionGroups",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdPermissionGroups",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdReorder",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdSearch",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsIdUsers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewers",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViews",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdCustomFields",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdDocumentStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdHistory",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDataroomsIdViewsViewIdUserAgent",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsCreateFromFolder",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsGenerate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsGenerateAi",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsGenerateAiStructure",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDataroomsTrial",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDirectorySync",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDirectorySync",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDirectorySync",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdDocuments",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocuments",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDocumentsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDocumentsId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAddToDataroom",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAdvancedMode",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdAnnotations",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAnnotations",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdAnnotationsAnnotationIdImages",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdChangeOrientation",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdCheckNotionAccessibility",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdDuplicate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdExportVisits",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdExportVisits",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdLinksBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdOverview",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdPreviewData",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdPreviewPages",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdToggleDarkMode",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdToggleDownloadOnly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdUpdateLinkUrl",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdUpdateName",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsIdUpdateNotionUrl",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdVersions",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsIdVersions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdVideoAnalytics",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViews",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdClickEvents",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdCustomFields",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdUserAgent",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsIdViewsViewIdVideoStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsAgreement",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsAgreement",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsDocumentProcessingStatus",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsHidden",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsHide",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDocumentsMove",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDocumentsSearch",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDocumentsUpdate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDomains",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdDomains",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdDomainsDomain",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdDomainsDomain",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdDomainsDomain",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdDomainsDomainValidate",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdDomainsDomainVerify",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdEnableAdvancedMode",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdExportJobs",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdExportJobs",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdExportJobsExportId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdExportJobsExportId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdExportJobsExportId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdExportJobsExportIdSendEmail",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdFolderDocumentsName",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdFolders",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdFolders",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdFoldersName",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdFoldersBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdFoldersHide",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdFoldersManage",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdFoldersManageFolderId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTeamsTeamIdFoldersManageFolderIdAddToDataroom",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdFoldersMove",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdFoldersParentsName",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdGlobalBlockList",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdGlobalBlockList",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdIgnoredDomains",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdIgnoredDomains",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdIncomingWebhooks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdIncomingWebhooks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdIncomingWebhooks",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdIntegrationsSlack",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdIntegrationsSlack",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdIntegrationsSlack",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdIntegrationsSlackChannels",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdIntegrationsSlackChannels",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdInvitations",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdInvitations",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdInvitationsAccept",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdInvitationsResend",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdInvite",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdLimits",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdLinksId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdLinksIdVisits",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdLinksBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdNotificationsPreferences",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdNotificationsPreferences",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdPresets",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdPresets",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdPresetsId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdPresetsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdPresetsId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "deleteTeamsTeamIdRemoveTeammate",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdSaml",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdSaml",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdSaml",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdSaml",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdSettings",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdSettings",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdSurvey",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdSurvey",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdTags",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdTags",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdTagsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdTagsId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdTokens",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdTokens",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdTokens",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdTokens",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "patchTeamsTeamIdUpdateAdvancedMode",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdUpdateName",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdUpdateReplicateFolders",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdViewers",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdViewersId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdViewsIdArchive",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdVisitorGroups",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdVisitorGroups",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdVisitorGroupsGroupId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putTeamsTeamIdVisitorGroupsGroupId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdVisitorGroupsGroupId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdWebhooks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdWebhooks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdWebhooksId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTeamsTeamIdWebhooksId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdWebhooksId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdWebhooksIdEvents",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdWorkflowLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdYearlyRecap",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getUnsubscribeDataroom",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUnsubscribeDataroom",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUnsubscribeYir",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUnsubscribeYir",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUserSubscribe",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUserSubscribe",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteUserSubscribe",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getVerifyLoginLink",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postViews",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postViewsDataroom",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postViewsPages",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWebhooksCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWebhooksServicesPath",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWebhooksSigning",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkflowEntryDomainsDomainSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkflowEntryLinkEntryLinkIdAccess",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkflowEntryLinkEntryLinkIdVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkflows",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkflows",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkflowsWorkflowId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchWorkflowsWorkflowId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkflowsWorkflowId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWorkflowsWorkflowIdExecutions",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkflowsWorkflowIdSteps",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkflowsWorkflowIdSteps",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putWorkflowsWorkflowIdSteps",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchWorkflowsWorkflowIdStepsStepId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkflowsWorkflowIdStepsStepId",
+      "mutating": true,
+      "dangerous": true
+    }
+  ],
+  "components": []
+}

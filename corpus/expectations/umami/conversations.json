@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "seedNotes": "Pinned Umami seed-data creates Demo Blog at blog.example.com and Demo SaaS at app.example.com with 30 days of sessions, page paths, custom events, and revenue data.",
+  "k": 2,
+  "timeoutMs": 90000,
+  "threshold": 0.8,
+  "conversations": [
+    {
+      "id": "saas-top-pages-week",
+      "description": "Ask for the highest-traffic pages on the seeded Demo SaaS site.",
+      "prompts": [
+        "For Demo SaaS at app.example.com, show the top pages by views for the last 7 days."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "website|page|stats|metric|analytics" } },
+        { "kind": "view-rendered", "role": "table" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "blog-post-performance",
+      "description": "Ask about seeded Demo Blog article performance.",
+      "prompts": [
+        "On Demo Blog, compare traffic for /blog/privacy-first-tracking and /blog/getting-started-with-analytics this month."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "website|page|event|stats|metric|analytics" } },
+        { "kind": "view-rendered", "role": "table" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "saas-revenue-summary",
+      "description": "Ask for seeded purchase/revenue tracking on Demo SaaS.",
+      "prompts": [
+        "Summarize purchase revenue for Demo SaaS this month and break it down by pro versus enterprise if the data is available."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "revenue|event|website|stats|metric" } },
+        { "kind": "view-rendered", "testId": "ui-node", "text": { "regex": "revenue|purchase|plan|enterprise|pro" } },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "saas-signup-funnel",
+      "description": "Ask for signup funnel events seeded on Demo SaaS.",
+      "prompts": [
+        "For app.example.com, compare signup_started and signup_completed events over the last 30 days."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "event|website|stats|metric|analytics" } },
+        { "kind": "view-rendered", "role": "table" },
+        { "kind": "no-error-toast" }
+      ]
+    },
+    {
+      "id": "blog-referrer-breakdown",
+      "description": "Ask for a behavioral acquisition breakdown on the seeded Demo Blog.",
+      "prompts": [
+        "For blog.example.com, show the top referrers or traffic sources for the last 30 days."
+      ],
+      "assertions": [
+        { "kind": "tool-called", "name": { "regex": "referrer|website|session|stats|metric|analytics" } },
+        { "kind": "view-rendered", "role": "table" },
+        { "kind": "no-error-toast" }
+      ]
+    }
+  ]
+}

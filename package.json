@@ -9,6 +9,7 @@
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
+    "corpus": "pnpm --filter @vendoai/corpus-harness corpus",
     "demo": "pnpm --filter demo-bank dev",
     "demo:accounting": "pnpm --filter demo-accounting dev",
     "composio:connect": "node scripts/composio-connect.mjs"

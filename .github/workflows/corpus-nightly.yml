@@ -1,0 +1,140 @@
+name: Corpus Nightly
+
+on:
+  schedule:
+    # 08:00 UTC daily (after most upstream activity settles)
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: "Space-separated repo names to run (blank = all)"
+        required: false
+        default: ""
+      layer:
+        description: "Highest layer to run (1=structural, 2=scored, 3=e2e)"
+        required: false
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: corpus-nightly
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Check required secrets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. The corpus sweep runs real vendo init and needs an LLM key."
+            echo "Add it under Settings → Secrets and variables → Actions. Per-repo bootstrap secrets use CORPUS_<REPO>_<KEY>."
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Download previous scorecard (for trend)
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const fs = require("fs");
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "corpus-nightly.yml",
+              status: "completed",
+              per_page: 10,
+            });
+            const prior = runs.data.workflow_runs.find((r) => r.id !== context.runId);
+            if (!prior) { core.info("No prior run; baseline."); return; }
+            const arts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: prior.id,
+            });
+            const art = arts.data.artifacts.find((a) => a.name === "corpus-scorecard");
+            if (!art) { core.info("Prior run has no scorecard artifact."); return; }
+            const dl = await github.rest.actions.downloadArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: art.id,
+              archive_format: "zip",
+            });
+            fs.mkdirSync("previous-scorecard", { recursive: true });
+            fs.writeFileSync("previous-scorecard/artifact.zip", Buffer.from(dl.data));
+            await exec.exec("unzip", ["-o", "previous-scorecard/artifact.zip", "-d", "previous-scorecard"]);
+
+      - name: Run corpus sweep
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CORPUS_REPOS: ${{ github.event.inputs.repos }}
+          CORPUS_LAYER: ${{ github.event.inputs.layer }}
+        run: |
+          set -euo pipefail
+          layer="${CORPUS_LAYER:-2}"
+          case "$layer" in
+            1|2|3) ;;
+            *) echo "::error::layer input must be 1, 2, or 3 (got '$layer')"; exit 1 ;;
+          esac
+          # Validate repo names against a strict allowlist pattern before use.
+          repos=()
+          for repo in ${CORPUS_REPOS:-}; do
+            if ! printf '%s' "$repo" | grep -Eq '^[a-z0-9][a-z0-9-]*$'; then
+              echo "::error::invalid repo name '$repo'"; exit 1
+            fi
+            repos+=("$repo")
+          done
+          pnpm corpus run "${repos[@]}" --layer "$layer" --json || true
+
+      - name: Publish scorecard to job summary
+        run: |
+          if [ -f corpus/.repos/.logs/scorecard.md ]; then
+            cat corpus/.repos/.logs/scorecard.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No scorecard produced (sweep may have failed before scoring)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Append trend to job summary
+        run: |
+          node corpus/scripts/corpus-trend.mjs \
+            previous-scorecard/scorecard.json \
+            corpus/.repos/.logs/scorecard.json >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Annotate regressions
+        # Warning annotations surface regressions in the Actions UI without
+        # making the (LLM-nondeterministic) sweep a hard gate.
+        run: |
+          node corpus/scripts/corpus-trend.mjs \
+            previous-scorecard/scorecard.json \
+            corpus/.repos/.logs/scorecard.json --annotate || true
+
+      - name: Upload scorecard + logs
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        with:
+          name: corpus-scorecard
+          path: |
+            corpus/.repos/.logs/scorecard.json
+            corpus/.repos/.logs/scorecard.md
+            corpus/.repos/.logs/**/*.log
+          retention-days: 30
+          if-no-files-found: warn
