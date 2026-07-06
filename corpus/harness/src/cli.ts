@@ -25,6 +25,11 @@ import {
   type RunVendoInitStepOptions,
 } from "./init-step.js";
 import {
+  runScoredLayer as defaultRunScoredLayer,
+  type ScoredLayerContext,
+  type ScoredLayerRunResult,
+} from "./layers/scored.js";
+import {
   runStructuralLayer as defaultRunStructuralLayer,
   type StructuralCheckResult,
   type StructuralCommandResult,
@@ -74,6 +79,7 @@ export interface CorpusCliDependencies {
   createInjector?: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit?: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
+  runScoredLayer?: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
   commandRunner?: StructuralCommandRunner;
 }
 
@@ -90,6 +96,7 @@ interface ResolvedDeps {
   createInjector: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
+  runScoredLayer: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
   commandRunner: StructuralCommandRunner;
 }
 
@@ -120,6 +127,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     createInjector: deps.createInjector ?? createLocalVendoInjector,
     runInit: deps.runInit ?? runVendoInitStep,
     runStructuralLayer: deps.runStructuralLayer ?? defaultRunStructuralLayer,
+    runScoredLayer: deps.runScoredLayer ?? defaultRunScoredLayer,
     commandRunner: deps.commandRunner ?? runShellCommand,
   };
 }
@@ -225,6 +233,20 @@ function layerName(layer: number): string {
   if (layer === 1) return "structural";
   if (layer === 2) return "scored";
   return "e2e";
+}
+
+function printBaselineUpdate(
+  repo: ManifestEntry,
+  update: ScoredLayerRunResult["baselineUpdate"],
+  context: CorpusRunContext,
+  deps: ResolvedDeps,
+  options: RunCommandOptions,
+): void {
+  if (!update) return;
+  const relPath = path.relative(context.corpusRoot, update.path).split(path.sep).join("/");
+  const write = options.json ? deps.stderr : deps.stdout;
+  write(`Layer 2 baseline candidate for ${repo.name}: ${relPath}`);
+  write(update.source.trimEnd());
 }
 
 async function pathExists(file: string): Promise<boolean> {
@@ -414,7 +436,22 @@ async function runRepoThroughLayerOne(
       },
     ];
 
-    for (const layer of requestedLayers(options.layer).filter((value) => value > 1)) {
+    if (requestedLayers(options.layer).includes(2)) {
+      try {
+        const scored = await deps.runScoredLayer({
+          repoName: repo.name,
+          repoDir,
+          expectationsRoot: path.join(context.corpusRoot, "expectations"),
+          now: deps.now,
+        });
+        layers.push(scored.layer);
+        printBaselineUpdate(repo, scored.baselineUpdate, context, deps, options);
+      } catch (error) {
+        layers.push(failureLayer(2, "scored", "scored layer", error, logPaths));
+      }
+    }
+
+    for (const layer of requestedLayers(options.layer).filter((value) => value > 2)) {
       layers.push({
         layer,
         name: layerName(layer),

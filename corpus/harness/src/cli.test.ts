@@ -7,6 +7,7 @@ import { runCli, type CorpusCliDependencies } from "./cli.js";
 import { createRunContext } from "./run-context.js";
 import type { ManifestEntry } from "./manifest.js";
 import type { InitStepResult, RunVendoInitStepOptions } from "./init-step.js";
+import type { ScoredLayerContext, ScoredLayerRunResult } from "./layers/scored.js";
 import type { StructuralLayerContext } from "./layers/structural.js";
 
 const tempRoots: string[] = [];
@@ -251,6 +252,111 @@ describe("runCli run", () => {
       strict: false,
       repos: [{ repo: "repo-json", layers: [{ status: "pass" }] }],
     });
+  });
+
+  it("runs Layer 1 then Layer 2 and prints baseline update candidates", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = manifestEntry("repo-one");
+    const events: string[] = [];
+    const scoredContexts: ScoredLayerContext[] = [];
+    const stdout: string[] = [];
+    const deps: CorpusCliDependencies = {
+      now: () => new Date("2026-07-06T12:00:00.000Z"),
+      stdout: (line) => { stdout.push(line); },
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        events.push(`clone:${entry.name}`);
+        await writeHostPackage(context.repoDir(entry.name));
+        return context.repoDir(entry.name);
+      },
+      bootstrapRepo: async (entry) => {
+        events.push(`bootstrap:${entry.name}`);
+        return {
+          repoDir: context.repoDir(entry.name),
+          envPath: path.join(context.repoDir(entry.name), ".env"),
+          logs: {
+            stdout: path.join(context.logsDir(entry.name), "bootstrap.stdout.log"),
+            stderr: path.join(context.logsDir(entry.name), "bootstrap.stderr.log"),
+          },
+        };
+      },
+      createInjector: () => ({
+        initArgs: () => ["--local", "/workspace/vendo"],
+        async inject(entry) {
+          events.push(`inject:${entry.name}`);
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(context.repoDir(entry.name), "vendor"),
+            installCommand: "pnpm install",
+            initArgs: ["--local", "/workspace/vendo"],
+          };
+        },
+      }),
+      commandRunner: async (command) => {
+        events.push(`baseline:${command}`);
+        return { code: 0, signal: null, stdout: "ok", stderr: "" };
+      },
+      runInit: async (entry) => {
+        events.push(`init:${entry.name}`);
+        const logsDir = context.logsDir(entry.name);
+        await mkdir(logsDir, { recursive: true });
+        const log = path.join(logsDir, `${events.filter((event) => event === `init:${entry.name}`).length}.log`);
+        const diff = path.join(logsDir, `${events.filter((event) => event === `init:${entry.name}`).length}.diff`);
+        await writeFile(log, "ok");
+        await writeFile(diff, "");
+        return makeInitResult(context.repoDir(entry.name), log, diff);
+      },
+      runStructuralLayer: async () => {
+        events.push("layer1:repo-one");
+        return [{ id: "init.exit", pass: true, detail: "ok" }];
+      },
+      runScoredLayer: async (layerContext): Promise<ScoredLayerRunResult> => {
+        events.push("layer2:repo-one");
+        scoredContexts.push(layerContext);
+        return {
+          layer: {
+            layer: 2,
+            name: "scored",
+            status: "pass",
+            score: { passed: 10, total: 10, value: 1 },
+            checks: [{ id: "baseline.regression", pass: true, detail: "score above baseline" }],
+            hardFailure: false,
+          },
+          baselineUpdate: {
+            path: path.join(context.corpusRoot, "expectations/repo-one/baseline.json"),
+            source: "{\n  \"version\": 1,\n  \"score\": { \"value\": 1 }\n}\n",
+          },
+        };
+      },
+    };
+
+    const exitCode = await runCli(["run", "repo-one", "--layer", "2"], deps);
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "clone:repo-one",
+      "bootstrap:repo-one",
+      "inject:repo-one",
+      "baseline:pnpm typecheck",
+      "baseline:pnpm build",
+      "init:repo-one",
+      "init:repo-one",
+      "layer1:repo-one",
+      "layer2:repo-one",
+    ]);
+    expect(scoredContexts[0]).toMatchObject({
+      repoName: "repo-one",
+      repoDir: context.repoDir("repo-one"),
+      expectationsRoot: path.join(context.corpusRoot, "expectations"),
+    });
+    expect(stdout.join("\n")).toContain("baseline.json");
+    expect(stdout.join("\n")).toContain("\"value\": 1");
+    expect(stdout.join("\n")).toContain("| repo-one | Layer 2 scored | PASS | 10/10 |");
   });
 
   it("continues after a repo failure and makes only --strict return nonzero", async () => {
