@@ -6,7 +6,17 @@ import { detectTarget } from "./detect.js";
 import { extractTheme } from "./theme/extract-theme.js";
 import { extractTools } from "./tools/extract-tools.js";
 import { extractComponents } from "./components/extract-components.js";
-import { cliModel } from "./llm.js";
+import type { ResolveModelDeps } from "@vendoai/server/model";
+import { resolveCliModel } from "./llm.js";
+import {
+  appendProviderKey,
+  detectProvider,
+  validateKey,
+  PROVIDER_ENV_VAR,
+  type ValidateKeyDeps,
+} from "./keys.js";
+import { createInteractor, type Interactor } from "./interact.js";
+import { isInteractive } from "./ui.js";
 import { renderReport, type InitReport } from "./report.js";
 import { writeGenerated } from "./fsx.js";
 import { inspectVendoState, type VendoState } from "./state.js";
@@ -18,12 +28,27 @@ export interface InitOptions {
   targetDir: string;
   skipLlm: boolean;
   force: boolean;
-  /** Accept defaults / skip confirmation prompts. Not yet wired to any prompt. */
+  /**
+   * Skip every interactive prompt (today: the provider-key prompt). Forces
+   * non-interactive key resolution — env / `.env.local` only, never a prompt.
+   */
   yes?: boolean;
   /** Pack local Vendo workspace packages into the host app's vendor/ dir. */
   localVendoDir?: string;
   /** test seam — pass null to force LLM-off, a mock to avoid the network */
   model?: LanguageModel | null;
+  /**
+   * Whether the run may open interactive prompts. Defaults to `ui.ts`'s
+   * `isInteractive()` (TTY && !CI); `--yes` forces it off regardless. Tests
+   * set it explicitly to drive (or suppress) the key-prompt path.
+   */
+  interactive?: boolean;
+  /** test seam — the masked-input prompt seam (a fake avoids a real terminal). */
+  interactor?: Interactor;
+  /** test seam — `validateKey` deps: inject a model/import to skip the network. */
+  keyValidateDeps?: ValidateKeyDeps;
+  /** test seam — model-resolution deps (optional-peer import) for `cliModel`. */
+  modelResolveDeps?: ResolveModelDeps;
   /** test seam — telemetry wiring overrides; omit in production for real env/key */
   telemetry?: {
     home?: string;
@@ -149,6 +174,85 @@ const COACHING_LINE = [
   "re-running only fills gaps; it never overwrites your edits.",
 ].join("\n");
 
+const KEY_PROMPT_MESSAGE =
+  "Paste a provider API key to enable the LLM steps (Anthropic sk-ant-…, OpenAI sk-…, or Google AIza…) — or press Enter to skip";
+
+/** Telemetry outcome of the key-prompt step. `not-shown`: never prompted
+ *  (key already present, `--yes`, non-interactive, or `--skip-llm`). */
+type KeyPromptOutcome = "provided" | "skipped" | "invalid" | "not-shown";
+
+interface KeyPromptResult {
+  /** The usable model built from a saved+validated key, else null (deterministic). */
+  model: LanguageModel | null;
+  outcome: KeyPromptOutcome;
+  /** A key was written to `.env.local` (valid, or shape-detected-but-unverifiable). */
+  saved: boolean;
+}
+
+/**
+ * The interactive provider-key prompt. Loops on paste: a valid key is saved to
+ * `.env.local` and resolved into a usable model; a rejected or unrecognized key
+ * re-prompts; an unreachable provider warns and drops to deterministic mode
+ * (key NOT saved — say nothing about the key's validity); a missing optional
+ * peer saves the shape-detected key anyway (it can't be verified without the
+ * package) and prints the install hint. Enter or Ctrl-C at any point skips into
+ * deterministic mode. Never logs or echoes the pasted key.
+ */
+async function promptForKey(
+  targetDir: string,
+  interactor: Interactor,
+  opts: InitOptions,
+): Promise<KeyPromptResult> {
+  let sawRejection = false;
+  const skip = (): KeyPromptResult => ({
+    model: null,
+    outcome: sawRejection ? "invalid" : "skipped",
+    saved: false,
+  });
+
+  for (;;) {
+    const raw = await interactor.maskedInput({ message: KEY_PROMPT_MESSAGE });
+    const key = raw?.trim() ?? "";
+    // Enter (empty) or Ctrl-C (null) → skip into deterministic mode.
+    if (key === "") return skip();
+
+    const provider = detectProvider(key);
+    if (!provider) {
+      sawRejection = true;
+      console.error(
+        "That doesn't look like a supported key. Expected an Anthropic (sk-ant-…), OpenAI (sk-…), or Google (AIza…) key. Try again, or press Enter to skip.",
+      );
+      continue;
+    }
+
+    const validation = await validateKey(provider, key, opts.keyValidateDeps);
+    if (validation.status === "valid") {
+      await appendProviderKey(targetDir, provider, key);
+      const model = await resolveCliModel(targetDir, opts.modelResolveDeps);
+      console.log(`✓ ${PROVIDER_ENV_VAR[provider]} saved to .env.local and verified.`);
+      return { model, outcome: "provided", saved: true };
+    }
+    if (validation.status === "invalid") {
+      sawRejection = true;
+      console.error(`That key was rejected (${validation.reason}). Try again, or press Enter to skip.`);
+      continue;
+    }
+    if (validation.status === "unavailable") {
+      // Can't validate without the optional peer, but the shape is recognized —
+      // save it so a re-run (after installing the package) picks it up.
+      await appendProviderKey(targetDir, provider, key);
+      const pkg = validation.reason.replace(/^install\s+/, "");
+      console.log(
+        `${PROVIDER_ENV_VAR[provider]} saved to .env.local, but it couldn't be verified: ${pkg} isn't installed. Run \`pnpm add ${pkg}\`, then re-run \`vendo init\`.`,
+      );
+      return { model: null, outcome: "provided", saved: true };
+    }
+    // unreachable: do NOT save; the failure says nothing about the key.
+    console.error(`Couldn't verify the key: ${validation.reason}. Re-run \`vendo init\` when back online.`);
+    return skip();
+  }
+}
+
 export async function runInit(opts: InitOptions): Promise<number> {
   const startedAt = Date.now();
   const targetDir = path.resolve(opts.targetDir);
@@ -158,8 +262,28 @@ export async function runInit(opts: InitOptions): Promise<number> {
   await t.track("init_started", { framework });
 
   let model: LanguageModel | null;
+  let keyPrompt: KeyPromptOutcome = "not-shown";
+  let keySaved = false;
   try {
-    model = opts.skipLlm ? null : opts.model !== undefined ? opts.model : await cliModel();
+    if (opts.skipLlm) {
+      model = null;
+    } else if (opts.model !== undefined) {
+      // Test seam: an explicit model (or explicit null) bypasses self-resolution
+      // and the prompt entirely — the caller has already decided.
+      model = opts.model;
+    } else {
+      // Resolve from env + <targetDir>/.env.local (a hand-added key there is
+      // picked up without exporting it into the shell).
+      model = await resolveCliModel(targetDir, opts.modelResolveDeps);
+      // No key found: when we can prompt (interactive, not --yes), offer to
+      // paste one; otherwise fall through to deterministic mode + coaching.
+      if (model === null && (opts.interactive ?? isInteractive()) && !opts.yes) {
+        const result = await promptForKey(targetDir, opts.interactor ?? createInteractor(), opts);
+        model = result.model;
+        keyPrompt = result.outcome;
+        keySaved = result.saved;
+      }
+    }
   } catch (err) {
     // A provider was explicitly configured (a key or VENDO_MODEL/
     // VENDO_CLI_MODEL) but resolution failed (unknown provider prefix, or a
@@ -171,9 +295,11 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return 1;
   }
 
-  // A run without a provider key still succeeds in deterministic mode; it
-  // ends with a coaching line (add a key, re-run — init only fills gaps).
-  const noProviderKey = model === null && !opts.skipLlm;
+  // A run without a usable provider key still succeeds in deterministic mode; it
+  // ends with a coaching line (add a key, re-run — init only fills gaps). A key
+  // the prompt saved but couldn't verify (missing optional peer) prints its own
+  // install hint instead, so the generic coaching line is suppressed there.
+  const noProviderKey = model === null && !opts.skipLlm && !keySaved;
 
   // What already exists drives every skip/extract decision below: re-runs are
   // additive (fill gaps, never clobber); --force regenerates but warns first.
@@ -302,6 +428,9 @@ export async function runInit(opts: InitOptions): Promise<number> {
     framework,
     provider: model === null ? "none" : "configured",
     llmSkipped: model === null,
+    // The key-prompt outcome (never the key/provider-var value): provided /
+    // skipped / invalid / not-shown. Task 17 adds the rest of the events.
+    keyPrompt,
     componentCount: report.components?.written.length ?? 0,
     toolCount: report.tools?.toolCount ?? 0,
     durationMs: Date.now() - startedAt,

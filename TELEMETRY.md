@@ -9,7 +9,7 @@ Every event uses a random anonymous id plus the event properties listed here. Th
 | Event | Properties |
 | --- | --- |
 | `init_started` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework` |
-| `init_completed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `provider`, `llmSkipped`, `componentCount`, `toolCount`, `durationMs` |
+| `init_completed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `provider`, `llmSkipped`, `keyPrompt`, `componentCount`, `toolCount`, `durationMs` |
 | `init_failed` | `vendoVersion`, `osPlatform`, `nodeVersion`, `framework`, `failedStep` |
 | `agent_run` | `vendoVersion`, `osPlatform`, `nodeVersion` |
 | `error_class` | `vendoVersion`, `osPlatform`, `nodeVersion`, `errorClass` |
@@ -28,6 +28,7 @@ Example payload:
     "framework": "next",
     "provider": "configured",
     "llmSkipped": false,
+    "keyPrompt": "provided",
     "componentCount": 4,
     "toolCount": 7,
     "durationMs": 1200

@@ -15,7 +15,7 @@ import { CLI_VERSION } from "./version.js";
 const HELP = `vendo — Vendo one-click dev tool
 
 Usage:
-  vendo init [dir] [--skip-llm] [--force] [--local <vendo-monorepo>]
+  vendo init [dir] [--skip-llm] [--force] [--yes] [--local <vendo-monorepo>]
                                             Extract theme/tools/components into .vendo/ AND
                                             wire a Next.js App Router app (route handler,
                                             provider, .env.example, sandbox assets, prebuild sync)
@@ -28,6 +28,8 @@ Usage:
 Options:
   --skip-llm   Skip LLM-assisted steps (route scan, component discovery)
   --force      Overwrite existing .vendo/ files
+  --yes        Skip interactive prompts (e.g. the provider-key prompt); resolve
+               keys from env / .env.local only
   --local      Pack local @vendoai packages from a Vendo monorepo into ./vendor
 `;
 

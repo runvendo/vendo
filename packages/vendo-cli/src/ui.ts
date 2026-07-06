@@ -14,6 +14,16 @@
  */
 import pc from "picocolors";
 
+/**
+ * True when the process is attached to an interactive terminal we may prompt
+ * on: a real TTY and not a CI environment. This module owns ALL environment
+ * detection — commands consult this (never `process.stdout` directly) to decide
+ * whether to open an interactive prompt at all.
+ */
+export function isInteractive(): boolean {
+  return !!process.stdout.isTTY && !process.env.CI;
+}
+
 export type StepMark = "ok" | "warn" | "fail";
 
 export interface UiOptions {

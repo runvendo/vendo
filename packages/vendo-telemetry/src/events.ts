@@ -15,6 +15,7 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     "framework",
     "provider",
     "llmSkipped",
+    "keyPrompt",
     "componentCount",
     "toolCount",
     "durationMs",
