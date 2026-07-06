@@ -78,15 +78,54 @@ describe("ApprovalCard", () => {
     expect(screen.getByText("Confirm transfer money")).toBeTruthy();
   });
 
-  it("critical cards are summary-only too — the ceremony register carries the weight", () => {
-    const long = "x".repeat(300);
+  it("CRITICAL cards keep their material fields, humanized (Yousef 2026-07-05 amendment; ENG-193 §4.5)", () => {
+    // The summary-only decision holds for ordinary cards; critical (money /
+    // irreversible) must still show the human WHAT they are approving —
+    // proper labels + readable values, never a dev-ish raw param dump.
     const { container } = render(
-      <ApprovalCard toolName="transfer_money" input={{ note: long }} tier="critical" onApprove={() => {}} onDecline={() => {}} />,
+      <ApprovalCard
+        toolName="transfer_money"
+        input={{ amount: 1200, recipient_name: "Alex Rivera", memo_note: "October rent", cc: [] }}
+        tier="critical"
+        onApprove={() => {}}
+        onDecline={() => {}}
+      />,
     );
-    expect(container.querySelector(".fl-approval-fields")).toBeNull();
-    expect(screen.queryByText(long)).toBeNull();
+    expect(container.querySelector(".fl-approval-fields")).toBeTruthy();
+    expect(screen.getByText("Amount")).toBeTruthy();
+    expect(screen.getByText("1200")).toBeTruthy();
+    expect(screen.getByText("Recipient name")).toBeTruthy();
+    expect(screen.getByText("Alex Rivera")).toBeTruthy();
+    expect(screen.getByText("Memo note")).toBeTruthy();
+    expect(screen.getByText("October rent")).toBeTruthy();
+    // No-information fields stay hidden — humanized, never a raw dump.
+    expect(screen.queryByText("Cc")).toBeNull();
+    // The ceremony register is unchanged on top of the fields.
     expect(screen.getByText("This can't be undone.")).toBeTruthy();
     expect(screen.getByText("Confirm transfer money")).toBeTruthy();
+  });
+
+  it("critical cards never truncate a material field, even past 160 chars (ENG-193 §4.5 restored)", () => {
+    const long = "x".repeat(300);
+    render(
+      <ApprovalCard toolName="transfer_money" input={{ note: long }} tier="critical" onApprove={() => {}} onDecline={() => {}} />,
+    );
+    expect(screen.getByText(long)).toBeTruthy();
+  });
+
+  it("ordinary act-tier cards stay summary-only even with the same consequential-looking input", () => {
+    const { container } = render(
+      <ApprovalCard
+        toolName="transfer_money"
+        input={{ amount: 1200, recipient_name: "Alex Rivera" }}
+        tier="act"
+        onApprove={() => {}}
+        onDecline={() => {}}
+      />,
+    );
+    expect(container.querySelector(".fl-approval-fields")).toBeNull();
+    expect(screen.queryByText("Amount")).toBeNull();
+    expect(screen.queryByText("Alex Rivera")).toBeNull();
   });
 
   it("shows the unverified tag ONLY for genuinely unknown sources, never for catalog-known Composio tools", () => {
