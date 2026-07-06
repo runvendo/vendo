@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { LanguageModel } from "ai";
 import { writeGenerated } from "../fsx.js";
+import { addDevDependency } from "../next-wiring.js";
 import { scanComponents } from "./scan.js";
 import { analyzeComponent } from "./analyze.js";
 import { writeComponent, entrySource, viteConfigSource, aliasesFromTsconfigPaths } from "./codegen.js";
@@ -80,6 +81,26 @@ export async function extractComponents(
       viteConfigSource(await hostAliases(targetDir)),
       opts,
     );
+    // The generated bundle build (vite.config.mts → entry.ts) imports
+    // @vendoai/stage/build + vite + the react plugin. Add them so a manual /
+    // deferred `vite build` in .vendo/components/ resolves. Best-effort:
+    // missing/unparsable package.json is left alone.
+    await addComponentBuildDeps(targetDir);
   }
   return { candidates: candidates.length, written, excluded, failed };
+}
+
+const COMPONENT_BUILD_DEPS = ["@vendoai/stage", "vite", "@vitejs/plugin-react"];
+
+async function addComponentBuildDeps(targetDir: string): Promise<void> {
+  const pkgPath = path.join(targetDir, "package.json");
+  let raw: string;
+  try {
+    raw = await fs.readFile(pkgPath, "utf8");
+  } catch {
+    return;
+  }
+  let out = raw;
+  for (const dep of COMPONENT_BUILD_DEPS) out = addDevDependency(out, dep, "latest") ?? out;
+  if (out !== raw) await fs.writeFile(pkgPath, out);
 }
