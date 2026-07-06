@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#fafafa",
+    "surface": "#ffffff",
+    "accent": "#000000",
+    "text": "#000000",
+    "mutedText": "#737373",
+    "radius": 8,
+    "fontFamily": "Geist Sans, ui-sans-serif, system-ui, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "postRevalidate",
+      "method": "POST",
+      "path": "/api/revalidate",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "postRevalidate",
+      "mutating": true,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}

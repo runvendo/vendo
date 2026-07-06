@@ -174,3 +174,26 @@ pnpm corpus run papermark --layer 1
 ```
 
 Logs: `corpus/.repos/.logs/papermark/init.first.log`, `structural.typecheck.stderr.log`, `structural.build.stderr.log`, and `init.second.log`.
+
+## Batch B Ground-Truth Labels
+
+Date: 2026-07-06
+Command: `pnpm corpus run <repo> --layer 2 --json`
+Mode: real `vendo init` with LLM enabled. API keys were sourced from `apps/demo-bank/.env.local`; key values were not printed or committed.
+
+Labels were derived from pinned source at the manifest SHA, not from generated `.vendo` output. Monorepos were labeled from the manifest `appDir`.
+
+| Repo | expected.json | Tools | Layer 2 | Baseline |
+| --- | --- | ---: | --- | --- |
+| cal-com | written | 114 | skipped before scoring: Yarn local package injection is unsupported | none |
+| dub | written | 215 | skipped before scoring: appDir `pnpm install --ignore-workspace` failed | none |
+| formbricks | written | 120 | skipped before scoring: frozen lockfile override mismatch during bootstrap | none |
+| inbox-zero | written | 194 | skipped before scoring: frozen lockfile override mismatch during bootstrap | none |
+| openstatus | written | 8 | skipped before scoring: frozen lockfile catalog mismatch during bootstrap | none |
+| vercel-commerce | written | 1 | pass, 1/10 (0.1) | written |
+| teable | written | 1 | skipped before scoring: appDir `pnpm install --ignore-workspace` failed | none |
+
+Notes:
+
+- `cal-com` was labeled from `apps/web` source anyway, including App Router API routes plus legacy Pages API bridges. Layer 2 was not scored because the harness fails closed on Yarn package injection.
+- `vercel-commerce` scored only the radius rubric point. Generated output used the default theme and generated no matching tools, while the source label expects `POST /api/revalidate`.
