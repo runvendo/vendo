@@ -1,0 +1,1634 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#fafafa",
+    "surface": "#ffffff",
+    "accent": "#2b7fff",
+    "text": "#171717",
+    "mutedText": "#737373",
+    "radius": 6,
+    "fontFamily": "Inter, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "getAdminTeams",
+      "method": "GET",
+      "path": "/api/admin/teams",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAdminUsers",
+      "method": "GET",
+      "path": "/api/admin/users",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAdminWebsites",
+      "method": "GET",
+      "path": "/api/admin/websites",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAuthLogin",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthLogout",
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthSso",
+      "method": "POST",
+      "path": "/api/auth/sso",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthVerify",
+      "method": "POST",
+      "path": "/api/auth/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postBatch",
+      "method": "POST",
+      "path": "/api/batch",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBoards",
+      "method": "GET",
+      "path": "/api/boards",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postBoards",
+      "method": "POST",
+      "path": "/api/boards",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBoardsBoardId",
+      "method": "GET",
+      "path": "/api/boards/{boardId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postBoardsBoardId",
+      "method": "POST",
+      "path": "/api/boards/{boardId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteBoardsBoardId",
+      "method": "DELETE",
+      "path": "/api/boards/{boardId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBoardsBoardIdShares",
+      "method": "GET",
+      "path": "/api/boards/{boardId}/shares",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postBoardsBoardIdShares",
+      "method": "POST",
+      "path": "/api/boards/{boardId}/shares",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getConfig",
+      "method": "GET",
+      "path": "/api/config",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getDashboard",
+      "method": "GET",
+      "path": "/api/dashboard",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postDashboard",
+      "method": "POST",
+      "path": "/api/dashboard",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getHeartbeat",
+      "method": "GET",
+      "path": "/api/heartbeat",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinks",
+      "method": "GET",
+      "path": "/api/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinks",
+      "method": "POST",
+      "path": "/api/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksLinkId",
+      "method": "GET",
+      "path": "/api/links/{linkId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksLinkId",
+      "method": "POST",
+      "path": "/api/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksLinkIdShares",
+      "method": "GET",
+      "path": "/api/links/{linkId}/shares",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksLinkIdShares",
+      "method": "POST",
+      "path": "/api/links/{linkId}/shares",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMe",
+      "method": "GET",
+      "path": "/api/me",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postMePassword",
+      "method": "POST",
+      "path": "/api/me/password",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMeTeams",
+      "method": "GET",
+      "path": "/api/me/teams",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getMeWebsites",
+      "method": "GET",
+      "path": "/api/me/websites",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getPixels",
+      "method": "GET",
+      "path": "/api/pixels",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postPixels",
+      "method": "POST",
+      "path": "/api/pixels",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPixelsPixelId",
+      "method": "GET",
+      "path": "/api/pixels/{pixelId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postPixelsPixelId",
+      "method": "POST",
+      "path": "/api/pixels/{pixelId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePixelsPixelId",
+      "method": "DELETE",
+      "path": "/api/pixels/{pixelId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPixelsPixelIdShares",
+      "method": "GET",
+      "path": "/api/pixels/{pixelId}/shares",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postPixelsPixelIdShares",
+      "method": "POST",
+      "path": "/api/pixels/{pixelId}/shares",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getRealtimeWebsiteId",
+      "method": "GET",
+      "path": "/api/realtime/{websiteId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postRecord",
+      "method": "POST",
+      "path": "/api/record",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getReports",
+      "method": "GET",
+      "path": "/api/reports",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postReports",
+      "method": "POST",
+      "path": "/api/reports",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getReportsReportId",
+      "method": "GET",
+      "path": "/api/reports/{reportId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postReportsReportId",
+      "method": "POST",
+      "path": "/api/reports/{reportId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteReportsReportId",
+      "method": "DELETE",
+      "path": "/api/reports/{reportId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsAttribution",
+      "method": "POST",
+      "path": "/api/reports/attribution",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsBreakdown",
+      "method": "POST",
+      "path": "/api/reports/breakdown",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsFunnel",
+      "method": "POST",
+      "path": "/api/reports/funnel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsGoal",
+      "method": "POST",
+      "path": "/api/reports/goal",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsHeatmap",
+      "method": "POST",
+      "path": "/api/reports/heatmap",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsJourney",
+      "method": "POST",
+      "path": "/api/reports/journey",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsPerformance",
+      "method": "POST",
+      "path": "/api/reports/performance",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsRetention",
+      "method": "POST",
+      "path": "/api/reports/retention",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsRevenue",
+      "method": "POST",
+      "path": "/api/reports/revenue",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postReportsUtm",
+      "method": "POST",
+      "path": "/api/reports/utm",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getScriptsTelemetry",
+      "method": "GET",
+      "path": "/api/scripts/telemetry",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postSend",
+      "method": "POST",
+      "path": "/api/send",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postShare",
+      "method": "POST",
+      "path": "/api/share",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getShareSlug",
+      "method": "GET",
+      "path": "/api/share/{slug}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getShareIdShareId",
+      "method": "GET",
+      "path": "/api/share/id/{shareId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postShareIdShareId",
+      "method": "POST",
+      "path": "/api/share/id/{shareId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteShareIdShareId",
+      "method": "DELETE",
+      "path": "/api/share/id/{shareId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeams",
+      "method": "GET",
+      "path": "/api/teams",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeams",
+      "method": "POST",
+      "path": "/api/teams",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamId",
+      "method": "POST",
+      "path": "/api/teams/{teamId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdBoards",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/boards",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdLinks",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdPixels",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/pixels",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTeamsTeamIdUsers",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/users",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdUsers",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/users",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdUsersUserId",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/users/{userId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsTeamIdUsersUserId",
+      "method": "POST",
+      "path": "/api/teams/{teamId}/users/{userId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTeamsTeamIdUsersUserId",
+      "method": "DELETE",
+      "path": "/api/teams/{teamId}/users/{userId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTeamsTeamIdWebsites",
+      "method": "GET",
+      "path": "/api/teams/{teamId}/websites",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTeamsJoin",
+      "method": "POST",
+      "path": "/api/teams/join",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postUsers",
+      "method": "POST",
+      "path": "/api/users",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUsersUserId",
+      "method": "GET",
+      "path": "/api/users/{userId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUsersUserId",
+      "method": "POST",
+      "path": "/api/users/{userId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteUsersUserId",
+      "method": "DELETE",
+      "path": "/api/users/{userId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUsersUserIdTeams",
+      "method": "GET",
+      "path": "/api/users/{userId}/teams",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getUsersUserIdWebsites",
+      "method": "GET",
+      "path": "/api/users/{userId}/websites",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsites",
+      "method": "GET",
+      "path": "/api/websites",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsites",
+      "method": "POST",
+      "path": "/api/websites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteId",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWebsitesWebsiteId",
+      "method": "DELETE",
+      "path": "/api/websites/{websiteId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdActive",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/active",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdDaterange",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/daterange",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventData",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivot",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotArraySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/array-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotDateSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/date-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotNumericSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/numeric-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotNumericStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/numeric-stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotPropertySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data-pivot/property-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataEventId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/{eventId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataEvents",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/events",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataFields",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/fields",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataProperties",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/properties",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataValues",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/event-data/values",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEvents",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/events",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventsSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/events/series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventsStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/events/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdExport",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/export",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdMetrics",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/metrics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdMetricsExpanded",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/metrics/expanded",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdPageviews",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/pageviews",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRecorder",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/recorder",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplays",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysReplayId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays/{replayId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysSaved",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays/saved",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysSavedReplayId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/replays/saved/{replayId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdReplaysSavedReplayId",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/replays/saved/{replayId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdReports",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/reports",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdReset",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/reset",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueChart",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/chart",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueMetrics",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/metrics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueSessions",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/sessions",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/revenue/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSegments",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/segments",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdSegments",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/segments",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSegmentsSegmentId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/segments/{segmentId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdSegmentsSegmentId",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/segments/{segmentId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWebsitesWebsiteIdSegmentsSegmentId",
+      "method": "DELETE",
+      "path": "/api/websites/{websiteId}/segments/{segmentId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataPivot",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data-pivot",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataArraySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/array-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataDateSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/date-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataNumericSeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/numeric-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataNumericStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/numeric-stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataProperties",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/properties",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataPropertySeries",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/property-series",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataValues",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/session-data/values",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessions",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionId",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdActivity",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}/activity",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdProperties",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}/properties",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdReplays",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/{sessionId}/replays",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsWeekly",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/sessions/weekly",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebsitesWebsiteIdShares",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/shares",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdShares",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/shares",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdStats",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/stats",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebsitesWebsiteIdTransfer",
+      "method": "POST",
+      "path": "/api/websites/{websiteId}/transfer",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebsitesWebsiteIdValues",
+      "method": "GET",
+      "path": "/api/websites/{websiteId}/values",
+      "readOrWrite": "read"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "getAdminTeams",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminUsers",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminWebsites",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthLogin",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthLogout",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSso",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postBatch",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getBoards",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postBoards",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getBoardsBoardId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postBoardsBoardId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteBoardsBoardId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getBoardsBoardIdShares",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postBoardsBoardIdShares",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getConfig",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getDashboard",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postDashboard",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getHeartbeat",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksLinkId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteLinksLinkId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getLinksLinkIdShares",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksLinkIdShares",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMe",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postMePassword",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMeTeams",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getMeWebsites",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getPixels",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postPixels",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPixelsPixelId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postPixelsPixelId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deletePixelsPixelId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getPixelsPixelIdShares",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postPixelsPixelIdShares",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getRealtimeWebsiteId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postRecord",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getReports",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postReports",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getReportsReportId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsReportId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteReportsReportId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postReportsAttribution",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsBreakdown",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsFunnel",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsGoal",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsHeatmap",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsJourney",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsPerformance",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsRetention",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsRevenue",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postReportsUtm",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getScriptsTelemetry",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postSend",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postShare",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getShareSlug",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getShareIdShareId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postShareIdShareId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteShareIdShareId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeams",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeams",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdBoards",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdPixels",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdUsers",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdUsers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTeamsTeamIdUsersUserId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsTeamIdUsersUserId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTeamsTeamIdUsersUserId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTeamsTeamIdWebsites",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTeamsJoin",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postUsers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUsersUserId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUsersUserId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteUsersUserId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getUsersUserIdTeams",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getUsersUserIdWebsites",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsites",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsites",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsitesWebsiteId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWebsitesWebsiteId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWebsitesWebsiteIdActive",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdDaterange",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventData",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivot",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotArraySeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotDateSeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotNumericSeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotNumericStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataPivotPropertySeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataEventId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataEvents",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataFields",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataProperties",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventDataValues",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEvents",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventsSeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdEventsStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdExport",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdMetrics",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdMetricsExpanded",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdPageviews",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdRecorder",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplays",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysReplayId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysSaved",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdReplaysSavedReplayId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsitesWebsiteIdReplaysSavedReplayId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdReports",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsitesWebsiteIdReset",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueChart",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueMetrics",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueSessions",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdRevenueStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSegments",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsitesWebsiteIdSegments",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSegmentsSegmentId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsitesWebsiteIdSegmentsSegmentId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWebsitesWebsiteIdSegmentsSegmentId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataPivot",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataArraySeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataDateSeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataNumericSeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataNumericStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataProperties",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataPropertySeries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionDataValues",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessions",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdActivity",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdProperties",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsSessionIdReplays",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdSessionsWeekly",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdShares",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsitesWebsiteIdShares",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWebsitesWebsiteIdStats",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebsitesWebsiteIdTransfer",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWebsitesWebsiteIdValues",
+      "mutating": false,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}

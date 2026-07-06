@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#ffffff",
+    "surface": "#ffffff",
+    "accent": "#18181b",
+    "text": "#09090b",
+    "mutedText": "#71717a",
+    "radius": 8,
+    "fontFamily": "Geist Sans, ui-sans-serif, system-ui, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "postEmailNewsletter",
+      "method": "POST",
+      "path": "/api/email/newsletter",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOg",
+      "method": "GET",
+      "path": "/api/og",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getRevalidate",
+      "method": "GET",
+      "path": "/api/revalidate",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postRevalidateTag",
+      "method": "POST",
+      "path": "/api/revalidate/{tag}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUploadthing",
+      "method": "GET",
+      "path": "/api/uploadthing",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUploadthing",
+      "method": "POST",
+      "path": "/api/uploadthing",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWebhooksStripe",
+      "method": "POST",
+      "path": "/api/webhooks/stripe",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "postEmailNewsletter",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getOg",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getRevalidate",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postRevalidateTag",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUploadthing",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUploadthing",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWebhooksStripe",
+      "mutating": true,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}
