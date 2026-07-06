@@ -8,6 +8,7 @@ import { createRunContext } from "./run-context.js";
 import type { ManifestEntry } from "./manifest.js";
 import type { InitStepResult, RunVendoInitStepOptions } from "./init-step.js";
 import type { StructuralLayerContext } from "./layers/structural.js";
+import type { BootHandle, BootRepoOptions } from "./boot.js";
 
 const tempRoots: string[] = [];
 const validSha = "0123456789abcdef0123456789abcdef01234567";
@@ -35,6 +36,20 @@ function manifestEntry(name: string): ManifestEntry {
       installCommand: "pnpm install --frozen-lockfile",
       envTemplate: {},
       buildCommand: "pnpm build",
+    },
+  };
+}
+
+function deepManifestEntry(name: string): ManifestEntry {
+  return {
+    ...manifestEntry(name),
+    tier: "deep",
+    bootstrap: {
+      ...manifestEntry(name).bootstrap,
+      devServer: {
+        command: "pnpm dev",
+        readinessUrl: "http://127.0.0.1:3000",
+      },
     },
   };
 }
@@ -332,5 +347,79 @@ describe("runCli run", () => {
     ]);
     expect(defaultRun.scorecard).toContain("clone exploded");
     expect(defaultRun.scorecard).toContain("\"repo\": \"repo-passes\"");
+  });
+});
+
+describe("runCli boot", () => {
+  it("runs clone, bootstrap, local injection, init, then boots until the shutdown waiter resolves", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = deepManifestEntry("repo-boot");
+    const events: string[] = [];
+    const stdout: string[] = [];
+    const bootOptions: BootRepoOptions[] = [];
+    const handle: BootHandle = {
+      repoDir: context.repoDir(repo.name),
+      readinessUrl: repo.bootstrap.devServer?.readinessUrl ?? "",
+      logPaths: { server: path.join(context.logsDir(repo.name), "boot.server.log") },
+      teardown: async () => { events.push("boot:teardown"); },
+    };
+
+    const exitCode = await runCli(["boot", "repo-boot"], {
+      stdout: (line) => { stdout.push(line); },
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        events.push(`clone:${entry.name}`);
+        await writeHostPackage(context.repoDir(entry.name));
+        return context.repoDir(entry.name);
+      },
+      bootstrapRepo: async (entry) => {
+        events.push(`bootstrap:${entry.name}`);
+        return {
+          repoDir: context.repoDir(entry.name),
+          envPath: path.join(context.repoDir(entry.name), ".env"),
+          logs: { stdout: "bootstrap.stdout.log", stderr: "bootstrap.stderr.log" },
+        };
+      },
+      createInjector: () => ({
+        initArgs: () => ["--local", "/workspace/vendo"],
+        async inject(entry) {
+          events.push(`inject:${entry.name}`);
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(context.repoDir(entry.name), "vendor"),
+            installCommand: "pnpm install",
+            initArgs: ["--local", "/workspace/vendo"],
+          };
+        },
+      }),
+      runInit: async (entry, options) => {
+        events.push(`init:${entry.name}:${options?.skipLlm}`);
+        return makeInitResult(context.repoDir(entry.name), "init.log", "init.diff");
+      },
+      bootRepo: async (entry, options) => {
+        events.push(`boot:${entry.name}`);
+        bootOptions.push(options ?? {});
+        return handle;
+      },
+      waitForBootShutdown: async () => { events.push("wait"); },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "clone:repo-boot",
+      "bootstrap:repo-boot",
+      "inject:repo-boot",
+      "init:repo-boot:false",
+      "boot:repo-boot",
+      "wait",
+      "boot:teardown",
+    ]);
+    expect(bootOptions[0]).toMatchObject({ context, env: undefined });
+    expect(stdout.join("\n")).toContain("Booted repo-boot at http://127.0.0.1:3000");
   });
 });

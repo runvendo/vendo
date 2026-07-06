@@ -8,6 +8,11 @@ import {
   type BootstrapResult,
 } from "./bootstrap.js";
 import {
+  bootRepo as defaultBootRepo,
+  type BootHandle,
+  type BootRepoOptions,
+} from "./boot.js";
+import {
   ensureRepoCheckout as defaultEnsureRepoCheckout,
   type CloneRepo,
   type EnsureRepoCheckoutOptions,
@@ -49,11 +54,13 @@ const usage = `Usage:
   pnpm corpus validate
   pnpm corpus list
   pnpm corpus run [repo...] --layer <1|2|3> [--json] [--strict] [--skip-llm]
+  pnpm corpus boot <repo> [--skip-llm] [--timeout-ms <ms>]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
   list      Print manifest repo names with tier and pinned SHA.
   run       Clone, bootstrap, inject local Vendo, run init, and execute selected layers.
+  boot      Clone, bootstrap, inject local Vendo, run init, boot one deep-tier app, and wait for Ctrl-C.
 `;
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -73,6 +80,8 @@ export interface CorpusCliDependencies {
   bootstrapRepo?: (repo: ManifestEntry, options?: BootstrapOptions) => Promise<BootstrapResult>;
   createInjector?: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit?: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
+  bootRepo?: (repo: ManifestEntry, options?: BootRepoOptions) => Promise<BootHandle>;
+  waitForBootShutdown?: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   commandRunner?: StructuralCommandRunner;
 }
@@ -89,6 +98,8 @@ interface ResolvedDeps {
   bootstrapRepo: (repo: ManifestEntry, options?: BootstrapOptions) => Promise<BootstrapResult>;
   createInjector: (options?: CreateLocalVendoInjectorOptions) => LocalVendoInjector;
   runInit: (repo: InitStepRepo, options?: RunVendoInitStepOptions) => Promise<InitStepResult>;
+  bootRepo: (repo: ManifestEntry, options?: BootRepoOptions) => Promise<BootHandle>;
+  waitForBootShutdown: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   commandRunner: StructuralCommandRunner;
 }
@@ -99,6 +110,12 @@ interface RunCommandOptions {
   json: boolean;
   strict: boolean;
   skipLlm: boolean;
+}
+
+interface BootCommandOptions {
+  repoName: string;
+  skipLlm: boolean;
+  timeoutMs?: number;
 }
 
 interface LoggedCommandRunner {
@@ -119,6 +136,8 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     bootstrapRepo: deps.bootstrapRepo ?? defaultBootstrapRepo,
     createInjector: deps.createInjector ?? createLocalVendoInjector,
     runInit: deps.runInit ?? runVendoInitStep,
+    bootRepo: deps.bootRepo ?? defaultBootRepo,
+    waitForBootShutdown: deps.waitForBootShutdown ?? waitForBootShutdownSignal,
     runStructuralLayer: deps.runStructuralLayer ?? defaultRunStructuralLayer,
     commandRunner: deps.commandRunner ?? runShellCommand,
   };
@@ -160,6 +179,45 @@ function parseRunArgs(args: readonly string[]): RunCommandOptions {
   }
 
   return { repoNames, layer, json, strict, skipLlm };
+}
+
+function parsePositiveInt(value: string | undefined, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive integer; got ${value ?? "nothing"}`);
+  }
+  return parsed;
+}
+
+function parseBootArgs(args: readonly string[]): BootCommandOptions {
+  const repoNames: string[] = [];
+  let skipLlm = false;
+  let timeoutMs: number | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg === "--skip-llm") {
+      skipLlm = true;
+    } else if (arg === "--timeout-ms") {
+      timeoutMs = parsePositiveInt(args[index + 1], "--timeout-ms");
+      index += 1;
+    } else if (arg.startsWith("--timeout-ms=")) {
+      timeoutMs = parsePositiveInt(arg.slice("--timeout-ms=".length), "--timeout-ms");
+    } else if (arg === "--help" || arg === "-h") {
+      throw new Error(usage);
+    } else if (arg.startsWith("-")) {
+      throw new Error(`Unknown boot option: ${arg}`);
+    } else {
+      repoNames.push(arg);
+    }
+  }
+
+  if (repoNames.length !== 1) {
+    throw new Error(`boot expects exactly one repo name; got ${repoNames.length}`);
+  }
+
+  return { repoName: repoNames[0] ?? "", skipLlm, timeoutMs };
 }
 
 function selectedRepos(manifest: CorpusManifest, names: readonly string[]): ManifestEntry[] {
@@ -461,6 +519,61 @@ async function runSweep(options: RunCommandOptions, deps: ResolvedDeps): Promise
   return scorecardExitCode(scorecard);
 }
 
+async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): Promise<number> {
+  const manifest = await deps.loadManifest();
+  const repo = selectedRepos(manifest, [options.repoName])[0];
+  if (!repo) throw new Error(`Unknown corpus repo "${options.repoName}"`);
+
+  const context = deps.createContext();
+  const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
+  await deps.ensureRepoCheckout(repo, { context });
+  await deps.bootstrapRepo(repo, { context, env: deps.env });
+
+  const injectResult = await injector.inject(repo);
+  const localVendoDir = localVendoDirFromInitArgs(injectResult.initArgs.length > 0 ? injectResult.initArgs : injector.initArgs());
+  const init = await deps.runInit(repo, {
+    context,
+    env: deps.env,
+    localVendoDir,
+    skipLlm: options.skipLlm ? true : false,
+    artifactPrefix: "boot.init",
+  });
+  if (init.exitCode !== 0) {
+    throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
+  }
+
+  const handle = await deps.bootRepo(repo, {
+    context,
+    env: deps.env,
+    readinessTimeoutMs: options.timeoutMs,
+  });
+
+  deps.stdout(`Booted ${repo.name} at ${handle.readinessUrl}`);
+  deps.stdout(`Server log: ${path.relative(context.corpusRoot, handle.logPaths.server)}`);
+  try {
+    await deps.waitForBootShutdown(handle, repo);
+  } finally {
+    await handle.teardown();
+  }
+
+  return 0;
+}
+
+function waitForBootShutdownSignal(): Promise<void> {
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      process.off("SIGINT", onSignal);
+      process.off("SIGTERM", onSignal);
+    };
+    const onSignal = () => {
+      cleanup();
+      resolve();
+    };
+    process.once("SIGINT", onSignal);
+    process.once("SIGTERM", onSignal);
+  });
+}
+
 export async function runCli(args = process.argv.slice(2), providedDeps: CorpusCliDependencies = {}): Promise<number> {
   const deps = resolveDeps(providedDeps);
   const command = args[0];
@@ -487,6 +600,10 @@ export async function runCli(args = process.argv.slice(2), providedDeps: CorpusC
 
     if (command === "run") {
       return await runSweep(parseRunArgs(args.slice(1)), deps);
+    }
+
+    if (command === "boot") {
+      return await runBootCommand(parseBootArgs(args.slice(1)), deps);
     }
 
     deps.stderr(`Unknown corpus command: ${command}`);
