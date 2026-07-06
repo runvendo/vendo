@@ -103,6 +103,24 @@ describe("integrations endpoints", () => {
     expect(await d.store.connectedToolkits()).toEqual([]);
   });
 
+  it("status poll reports 'active' only when the store write happened; a foreign active account is not connected (review)", async () => {
+    // Composio says the polled account is ACTIVE, but it is not THIS user's
+    // connection for THIS toolkit → the store was never written, so the
+    // client-facing status must NOT read as connected.
+    const d = deps({
+      client: stubClient({
+        connectionStatus: async () => "active" as const,
+        hasActiveConnection: async () => false,
+      }),
+    });
+    const res = await handleIntegrationsGet(
+      get("/api/vendo/integrations?status&id=gmail&account=foreign-acct"),
+      d,
+    );
+    expect(await res.json()).toEqual({ status: "pending" });
+    expect(await d.store.connectedToolkits()).toEqual([]);
+  });
+
   it("rejects an unknown toolkit id before spending the Composio key (review P1)", async () => {
     let authorizeCalls = 0;
     const d = deps({
