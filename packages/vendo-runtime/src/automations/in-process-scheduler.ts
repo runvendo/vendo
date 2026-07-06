@@ -21,6 +21,8 @@ export interface InProcessSchedulerConfig {
   /** Tick interval for start(); tests call tick() directly. */
   tickMs?: number;
   nowMs?: () => number;
+  /** Called when a firing handler rejects; defaults to console.error. */
+  onFireError?: (automationId: string, error: unknown) => void;
 }
 
 interface RegisteredSchedule {
@@ -81,8 +83,21 @@ export class InProcessScheduler implements Scheduler {
       const due = dueOccurrence(registered.trigger, windowStart, tickMs);
       if (due === undefined) continue;
       const firedAt = new Date(due).toISOString();
-      await this.handler({ automationId, principal: registered.scope, firedAt });
-      if (registered.trigger.kind === "at") this.schedules.delete(automationId); // one-shot
+      // One-shot occurrences are consumed whether or not delivery succeeds,
+      // same as the missed-fires rule: the occurrence, not the delivery, is
+      // what happens exactly once.
+      if (registered.trigger.kind === "at") this.schedules.delete(automationId);
+      try {
+        await this.handler({ automationId, principal: registered.scope, firedAt });
+      } catch (error) {
+        // A failing handler must not reject tick() (start()'s interval has no
+        // catch — an escape here is an unhandled rejection) nor starve the
+        // remaining due schedules in this window.
+        (this.config.onFireError ?? ((id, err) => console.error(`[vendo] scheduled firing failed for automation ${id}`, err)))(
+          automationId,
+          error,
+        );
+      }
     }
   }
 }

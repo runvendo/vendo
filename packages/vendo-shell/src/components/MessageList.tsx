@@ -7,7 +7,7 @@ import { ApprovalBatchCard } from "./ApprovalBatchCard";
 import { AutomationCard, isAutomationApproval } from "./AutomationCard";
 import { AutomationCreatedMorph, type AutomationCreatedNotice } from "./AutomationCreatedMorph";
 import { UINodeView } from "./UINodeView";
-import { Skeleton } from "./Skeleton";
+import { GlassSkeleton } from "./GlassSkeleton";
 import { ActivityPanel } from "./ActivityPanel";
 import { FadeProposalCard } from "./FadeProposalCard";
 import { TurnActions, type Feedback } from "./TurnActions";
@@ -228,11 +228,12 @@ export function MessageList({
                 </div>
               );
             case "skeleton":
-              // Shown only while render_view is in flight; never for text-only turns.
+              // Shown only while render_view is in flight; never for text-only
+              // turns. The glass panel (2026-07-05 recipe) carries its own
+              // pulse-dot status line + accent-tinted shimmer grid.
               return (
                 <FluidReveal key={slotKeys.get(item.key)} phase="skeleton">
-                  <div className="fl-generating"><span className="fl-pulse" />Building your view…</div>
-                  <Skeleton name={item.name} />
+                  <GlassSkeleton />
                 </FluidReveal>
               );
             case "approval":

@@ -4,6 +4,9 @@ import { relativeTimeLabel } from "../relative-time";
 
 export interface FlowGalleryProps {
   flows: Vendo[];
+  /** True while the host's first store list is still in flight — the grid
+   *  holds its space with glass shimmer cards. Real flows always win. */
+  loading?: boolean;
   onOpen: (flow: Vendo) => void;
   /** Library management (ENG-183). Omit any to hide that affordance. */
   onRename?: (flow: Vendo, name: string) => void;
@@ -13,12 +16,26 @@ export interface FlowGalleryProps {
 
 const byRecent = (a: Vendo, b: Vendo) => b.updatedAt - a.updatedAt;
 
+/** Skeleton cards while the library loads — matches the 2-col card grid. */
+const LOADING_CARDS = 4;
+
 /**
  * The saved-vendo library: pinned cards first, then recent. Each card opens
  * its view; rename is inline, pin/delete sit in a hover action row. Dumb by
  * design — the host owns the store round-trips.
  */
-export function FlowGallery({ flows, onOpen, onRename, onPin, onDelete }: FlowGalleryProps) {
+export function FlowGallery({ flows, loading = false, onOpen, onRename, onPin, onDelete }: FlowGalleryProps) {
+  if (flows.length === 0 && loading) {
+    return (
+      <div className="fl-library" aria-hidden="true">
+        <div className="fl-gallery">
+          {Array.from({ length: LOADING_CARDS }, (_, i) => (
+            <div key={i} className="fl-glass-shimmer fl-flowcard-skel" />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (flows.length === 0) return null;
   const pinned = flows.filter((f) => f.pinned === true).sort(byRecent);
   const recent = flows.filter((f) => f.pinned !== true).sort(byRecent);

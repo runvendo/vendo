@@ -86,6 +86,55 @@ export function refreshableViewsSection(modality: PromptModality): string {
   ].join("\n");
 }
 
+/** Host-name grounding (prompt-hardening wave 5, failure C: the model called
+ *  the host by an invented name in refusal prose). Parameterized like
+ *  `novelComponentsSection` — the platform owns the RULE, the host supplies
+ *  the name through the assembler's `hostName` slot. One register serves both
+ *  modalities: naming discipline doesn't differ between chat and voice. */
+export function hostIdentitySection(hostName: string): string {
+  return [
+    `HOST IDENTITY — the product you are embedded in is named "${hostName}".`,
+    `"${hostName}" is the ONLY product or company name you may use for it, verbatim —`,
+    "in prose, refusals, titles, labels, and rendered views. Never invent, guess,",
+    "abbreviate, or substitute another name for this product, even when declining",
+    "a request or speaking hypothetically.",
+  ].join("\n");
+}
+
+/** Data-fidelity floor (prompt-hardening wave 5): the baseline number/date
+ *  rendering rules that hold even when a tool declares NO format hints.
+ *  Per-tool `RESULT FIELD FORMATS` blocks (format-hints.ts) refine these —
+ *  this section tells the model to defer to them and, absent a hint, to
+ *  never invent a money divisor or timezone-shift a calendar date. */
+export function dataFidelitySection(modality: PromptModality): string {
+  if (modality === "chat") {
+    return [
+      "DATA FIDELITY — numbers and dates in tool results are facts; render them faithfully:",
+      "- Calendar dates (YYYY-MM-DD strings) are literal calendar dates: render the named",
+      "  day as-is and never timezone-convert it (a Date parse can shift it by a day).",
+      "- ISO timestamps: format in the user's LOCAL time; never read the calendar date",
+      "  straight off the UTC string — it can be one day off.",
+      "- Money: NEVER guess a divisor. When a field name merely suggests money (amount,",
+      "  total, balance), present the raw value unchanged — unless the field name says",
+      "  cents (e.g. amountCents) or the tool's RESULT FIELD FORMATS rules declare a",
+      "  format; declared cents divide by exactly 100, nothing else.",
+      "- A total or stat tile must be computed from the same values as the rows it",
+      "  summarizes — a summary that disagrees with its own table is always wrong.",
+      "- Pre-formatted summary strings you write into components (a donut centerValue,",
+      "  a stat subtitle) follow the same rule: values are converted once — a value",
+      "  already in dollars is never divided again.",
+    ].join("\n");
+  }
+  return [
+    "DATA FIDELITY: dates in YYYY-MM-DD are literal calendar days — speak and display",
+    "the named day, never timezone-shift it; ISO timestamps read in the user's local",
+    "time. Never guess a money divisor: present raw values unless the field name says",
+    "cents or the tool's RESULT FIELD FORMATS declare one — declared cents divide by",
+    "exactly 100. A spoken total must match the rows on screen; any pre-formatted",
+    "summary string written into a view is converted once, never divided again.",
+  ].join("\n");
+}
+
 /** The novel-codegen rules (source:'generated') — platform genui knowledge.
  *  `dispatchExample` lets a host show a real action name in the dispatch call. */
 export function novelComponentsSection(opts?: { dispatchExample?: string }): string {
@@ -147,12 +196,17 @@ export function consentSection(modality: PromptModality): string {
       "APPROVALS: reads run freely; anything that changes state pauses for the user's",
       "explicit approval first — never refuse such requests and never pre-assume consent;",
       "call the tool and let the approval card do the gating.",
+      "A DECLINE is final for that request: when the user declines an approval,",
+      "acknowledge it briefly, leave the action undone, and never re-propose or retry",
+      "the same action unless the user asks for it again.",
     ].join("\n");
   }
   return [
     "A spoken yes always refers to your MOST RECENT permission request. If an older request",
     "is still unanswered, treat it as declined and mention you dropped it — never apply a",
     "yes to it. Gated actions ask the user's permission like everything else.",
+    "A decline is final: acknowledge it in one short sentence, leave the action undone,",
+    "and never re-propose the same action unless the user asks for it again.",
   ].join("\n");
 }
 

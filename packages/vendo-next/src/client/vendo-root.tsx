@@ -124,19 +124,50 @@ export function VendoRoot({
   const hostToolDefs = useMemo(() => manifestToolsToHostTools(manifestTools), [manifestTools]);
   const [open, setOpen] = useState(false);
   const [capabilities, setCapabilities] = useState<VendoCapabilities | null>(null);
+  // True after a capabilities fetch has FAILED (network error or a non-2xx).
+  // Distinct from `capabilities === null` (not answered yet): the brief
+  // in-flight window renders optimistically so healthy installs never
+  // flicker, but a failure must not leave the UI pretending everything is on.
+  const [capsFailed, setCapsFailed] = useState(false);
 
   useEffect(() => {
+    // (Re)starting for this basePath: drop whatever a PREVIOUS endpoint
+    // answered. Without this, a basePath change whose new fetch fails would
+    // flip capsFailed while the stale `capabilities` object kept the chat
+    // surface and the toasts gate running on another endpoint's answer.
+    // No-op on first mount (already null/false).
+    setCapabilities(null);
+    setCapsFailed(false);
     let cancelled = false;
-    fetch(`${basePath}/capabilities`, { cache: "no-store" })
-      .then((r) => (r.ok ? (r.json() as Promise<VendoCapabilities>) : null))
-      .then((caps) => {
-        if (!cancelled && caps) setCapabilities(caps);
-      })
-      .catch(() => {
-        /* capabilities stay null → most conservative UI */
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let delay = 1_000;
+    const attempt = () => {
+      fetch(`${basePath}/capabilities`, { cache: "no-store" })
+        .then((r) =>
+          r.ok
+            ? (r.json() as Promise<VendoCapabilities>)
+            : Promise.reject(new Error(`capabilities request failed (${r.status})`)),
+        )
+        .then((caps) => {
+          if (cancelled) return;
+          setCapabilities(caps);
+          setCapsFailed(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Flip the UI to its conservative shape and retry with capped
+          // exponential backoff until the server actually answers — the
+          // zero-config "everything on" default is the SERVER's to declare,
+          // never the fallout of a failed fetch.
+          setCapsFailed(true);
+          timer = setTimeout(attempt, delay);
+          delay = Math.min(delay * 2, 30_000);
+        });
+    };
+    attempt();
     return () => {
       cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
     };
   }, [basePath]);
 
@@ -146,6 +177,22 @@ export function VendoRoot({
     // knows which thread to upsert into. Surfaces sharing a threadId share a
     // durable conversation, not just a client-side one.
     () => new DefaultChatTransport<VendoUIMessage>({ api: `${basePath}/chat`, body: { threadId } }),
+    [basePath, threadId],
+  );
+
+  // The read half of that durable thread: on mount, restore the persisted
+  // messages (GET /threads/:id) so a reload — including one right after a
+  // stream died mid-turn — brings back every settled message instead of an
+  // empty thread. VendoProvider only seeds a still-empty, idle chat.
+  const loadHistory = useMemo(
+    () => async (): Promise<VendoUIMessage[]> => {
+      const res = await fetch(`${basePath}/threads/${encodeURIComponent(threadId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return [];
+      const body = (await res.json()) as unknown;
+      return Array.isArray(body) ? (body as VendoUIMessage[]) : [];
+    },
     [basePath, threadId],
   );
 
@@ -224,8 +271,10 @@ export function VendoRoot({
   // Capability-additive contract: with no ANTHROPIC_API_KEY the server reports
   // chat:false, and asking would 401 inside the stream. Hide the assistant
   // surface entirely in that case rather than degrading into a runtime error.
-  // `null` (not yet fetched) renders optimistically so there is no flicker.
-  const chatEnabled = capabilities === null || capabilities.chat;
+  // `null` with no failure yet (first fetch in flight) renders optimistically
+  // so there is no flicker; a FAILED fetch renders conservatively until a
+  // backoff retry gets a real answer.
+  const chatEnabled = capabilities ? capabilities.chat : !capsFailed;
 
   return (
     <VendoProvider
@@ -233,6 +282,7 @@ export function VendoRoot({
       components={[]}
       threadId={threadId}
       hostTools={{ definitions: hostToolDefs }}
+      loadHistory={loadHistory}
     >
       <VendoThemeProvider brand={brand}>
         <VendoShellProvider
@@ -265,7 +315,11 @@ export function VendoRoot({
               Ask {productName}
             </button>
           )}
-          {toasts && (
+          {/* The deliveries poll waits for capabilities and never starts when
+              the server says automations are off. An old server that omits
+              the flag still polls, and a 404 from /deliveries then stops the
+              loop for good (see createServerNotifications). */}
+          {toasts && capabilities !== null && capabilities.automations !== false && (
             <VendoToasts placement={toastPlacement} namespace={`vendo:${threadId}`} />
           )}
         </VendoShellProvider>

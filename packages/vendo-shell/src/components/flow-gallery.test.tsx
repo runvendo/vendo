@@ -85,3 +85,23 @@ describe("VendoToast", () => {
     }
   });
 });
+
+describe("FlowGallery — loading state", () => {
+  it("holds the grid with glass shimmer cards while the library loads", () => {
+    const { container } = render(<FlowGallery flows={[]} loading onOpen={vi.fn()} />);
+    const cards = container.querySelectorAll(".fl-gallery .fl-flowcard-skel");
+    expect(cards.length).toBeGreaterThan(0);
+    expect(container.querySelector(".fl-library")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("real cards win over the skeleton once flows exist", () => {
+    const { container } = render(<FlowGallery flows={[flow("a", "Real view")]} loading onOpen={vi.fn()} />);
+    expect(container.querySelector(".fl-flowcard-skel")).toBeNull();
+    expect(screen.getByText("Real view")).toBeTruthy();
+  });
+
+  it("still renders nothing when settled and empty", () => {
+    const { container } = render(<FlowGallery flows={[]} onOpen={vi.fn()} />);
+    expect(container.querySelector(".fl-library")).toBeNull();
+  });
+});

@@ -12,6 +12,11 @@
  *   call never transits Vendo; only the tool result enters the loop).
  */
 
+import {
+  manifestToolFormatsSchema,
+  type FieldFormat,
+} from "./manifest/tool.js";
+
 /** Standard MCP-style annotation hints, mirrored by the policy layer. */
 export interface HostToolAnnotations {
   readOnlyHint: boolean;
@@ -49,17 +54,38 @@ export interface HostToolDefinition {
   inputSchema: Record<string, unknown>;
   annotations: HostToolAnnotations;
   http: HostHttpCall;
+  /** Optional result-field format hints (field name → format). Rendered into
+   *  the tool's prompt description by the runtime (`hostToolset`) so money and
+   *  date fields are formatted faithfully — see `prompt/format-hints.ts`. */
+  formats?: Record<string, FieldFormat>;
 }
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const;
 
 /**
- * Host-relative path guard, identical to the frozen manifest contract
- * (`httpBindingSchema` in `manifest/tool.ts`): a single leading `/`, no
- * `//authority`, no whitespace — a spec or manifest path can never point the
- * client executor at a foreign origin.
+ * Host-relative path guard: a single leading `/`, no `//authority`, no
+ * whitespace — a spec or manifest path can never point the client executor at
+ * a foreign origin.
+ *
+ * The regex alone is NOT enough: browsers normalize `\` to `/` while parsing
+ * URLs, so a path like `/\evil.com` (which the regex accepts — `\` is not
+ * whitespace) becomes protocol-relative `//evil.com`, and the credentialed
+ * fetch below would ship the user's cookies cross-origin. So we reject any
+ * backslash outright AND re-parse against a sentinel origin, confirming the
+ * result stays on it — fail closed on anything that normalizes off-origin.
  */
-const HOST_RELATIVE_PATH = /^\/(?!\/)\S*$/;
+const HOST_RELATIVE_PATH_RE = /^\/(?!\/)\S*$/;
+const SENTINEL_ORIGIN = "https://vendo.invalid";
+
+function isHostRelativePath(path: string): boolean {
+  if (typeof path !== "string" || path.includes("\\")) return false;
+  if (!HOST_RELATIVE_PATH_RE.test(path)) return false;
+  try {
+    return new URL(path, SENTINEL_ORIGIN).origin === SENTINEL_ORIGIN;
+  } catch {
+    return false;
+  }
+}
 
 /** Loose structural view of the OpenAPI bits the adapter reads. */
 interface OpenApiParameter {
@@ -80,6 +106,7 @@ interface OpenApiOperation {
     content?: Record<string, { schema?: Record<string, unknown> }>;
   };
   "x-vendo-dangerous"?: boolean;
+  "x-vendo-formats"?: Record<string, string>;
 }
 
 export interface OpenApiSpec {
@@ -127,7 +154,7 @@ function annotationsFor(method: string, op: OpenApiOperation): HostToolAnnotatio
 export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
   const defs: HostToolDefinition[] = [];
   for (const [path, rawItem] of Object.entries(spec.paths ?? {})) {
-    if (!HOST_RELATIVE_PATH.test(path)) {
+    if (!isHostRelativePath(path)) {
       throw new Error(
         `host tool path "${path}" must be host-relative (single leading "/", no authority, no whitespace)`,
       );
@@ -180,6 +207,22 @@ export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
         if (op.requestBody?.required === true) required.push("body");
       }
 
+      // Result-field format hints (mirrors the manifest's optional `formats`).
+      // Fail loudly on a value outside the closed vocabulary — a typo'd format
+      // silently dropping a money/date rule is exactly the bug class this
+      // annotation exists to kill.
+      let formats: Record<string, FieldFormat> | undefined;
+      const rawFormats = op["x-vendo-formats"];
+      if (rawFormats != null) {
+        const parsed = manifestToolFormatsSchema.safeParse(rawFormats);
+        if (!parsed.success) {
+          throw new Error(
+            `host tool "${name}": invalid x-vendo-formats — ${parsed.error.message}`,
+          );
+        }
+        formats = parsed.data;
+      }
+
       defs.push({
         name,
         description: op.summary ?? op.description ?? name,
@@ -191,6 +234,7 @@ export function openApiToHostTools(spec: OpenApiSpec): HostToolDefinition[] {
         },
         annotations: annotationsFor(method, op),
         http: { method, path, params, hasBody },
+        ...(formats ? { formats } : {}),
       });
     }
   }
@@ -227,7 +271,7 @@ export async function executeHostToolCall(
 
   // Same guard as the adapter and the frozen manifest contract — enforced at
   // execution too, because definitions can arrive from outside the adapter.
-  if (!HOST_RELATIVE_PATH.test(def.http.path)) {
+  if (!isHostRelativePath(def.http.path)) {
     throw new Error(
       `host tool "${def.name}": path "${def.http.path}" is not host-relative`,
     );

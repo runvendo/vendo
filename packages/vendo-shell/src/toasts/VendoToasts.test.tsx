@@ -137,4 +137,22 @@ describe("VendoToasts", () => {
     expect(screen.getByText("Approve")).toBeTruthy();
     expect(document.querySelectorAll(".fl-toasts-card")).toHaveLength(1);
   });
+
+  it("stops polling for good once the feed reports it is disabled", async () => {
+    let calls = 0;
+    const client: VendoNotifications = {
+      listSince: async () => {
+        calls += 1;
+        return "disabled";
+      },
+      resume: async () => "stale",
+    };
+    mount(client, { pollMs: 20 });
+    await waitFor(() => expect(calls).toBe(1));
+    // Several poll intervals later: still exactly one call — a host with
+    // automations disabled must not 404 the feed every 2 seconds forever.
+    await new Promise((r) => setTimeout(r, 120));
+    expect(calls).toBe(1);
+    expect(document.querySelector(".fl-toasts")).toBeNull();
+  });
 });

@@ -23,8 +23,10 @@ export interface AutomationNotice {
 export type ResumeOutcome = "resumed" | "stale";
 
 export interface VendoNotifications {
-  /** All notices with cursor > `since`, oldest first. */
-  listSince(since: number): Promise<AutomationNotice[]>;
+  /** All notices with cursor > `since`, oldest first. `"disabled"` means the
+   *  feed does not exist on this host (automations off) — the poller must
+   *  stop for good instead of retrying forever. */
+  listSince(since: number): Promise<AutomationNotice[] | "disabled">;
   /** Approve/deny the paused run behind an approval notice. Pass the notice's
    *  `stepId` so a run that has since paused on a DIFFERENT step answers
    *  `stale` instead of approving something the user never saw. `stale` also

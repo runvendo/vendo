@@ -19,6 +19,7 @@ import {
   buildBrandGuidance,
   type ComposioClient,
 } from "@vendoai/runtime";
+import { dataFidelitySection, hostIdentitySection } from "@vendoai/core";
 import type { EnvManifest, VendoAgent, RegisteredComponent } from "@vendoai/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@vendoai/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
@@ -41,7 +42,7 @@ function catalog(components: readonly RegisteredComponent[]): string {
   return componentPromptCatalog([...components]);
 }
 
-function buildInstructions(): string {
+export function buildInstructions(): string {
   return [
     "You are Vendo, the assistant embedded in Cadence — the practice-management",
     "platform Hartwell & Associates runs its accounting firm on (client onboarding,",
@@ -50,6 +51,10 @@ function buildInstructions(): string {
     "generate bespoke UI on demand via render_view. You are NOT limited to accounting,",
     "and you never refuse by claiming a domain limit (e.g. 'I only do practice",
     "management') — that is wrong.",
+    "",
+    // Platform host-name grounding (shared prompt core): "Cadence", verbatim,
+    // is the only name the model may ever use for the host.
+    hostIdentitySection("Cadence"),
     "",
     "WHEN TO RENDER UI vs. JUST TALK — this is important, get it right:",
     "- Call render_view ONLY when the user clearly wants something visual: they say",
@@ -106,6 +111,10 @@ function buildInstructions(): string {
     "tool output before storing it at the declared path — reshape at render time.",
     "Only the snake_case read tools (get_dashboard, get_clients, get_client_documents,",
     "get_deadlines, get_activity) are replayable in queries — never a camelCase API tool.",
+    "",
+    // Platform data-fidelity floor (shared prompt core): literal calendar
+    // dates, no guessed money divisors, totals match their rows.
+    dataFidelitySection("chat"),
     "",
     "BUILDING BLOCKS (source:'prewired') — place these inside the nodes tree:",
     "- Layout primitives (containers take `children`; gap/padding accept xs|sm|md|lg|xl or a px number):",

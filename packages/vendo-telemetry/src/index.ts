@@ -26,7 +26,9 @@ export interface InitTelemetryOptions {
 export function initTelemetry(opts: InitTelemetryOptions): Telemetry {
   const env = opts.env ?? process.env;
   const home = opts.home;
-  const config = loadConfig(home);
+  // Pass the same env used for consent so an env opt-out also suppresses the
+  // fresh-config write (no tracking id minted for an opted-out user).
+  const config = loadConfig(home, env);
   const afterNotice = maybeShowNotice(config, {
     log: opts.log ?? ((m) => console.error(m)),
     save: (c) => saveConfig(home ?? homedir(), c),

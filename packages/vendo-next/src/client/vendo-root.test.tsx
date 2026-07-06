@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as shell from "@vendoai/shell";
 import * as serverStore from "./server-store.js";
 import * as voiceModule from "./voice.js";
@@ -94,6 +94,37 @@ describe("VendoRoot", () => {
     expect(offMock.mock.calls.some(([u]) => String(u).includes("/deliveries"))).toBe(false);
   });
 
+  it("never starts the deliveries poll when capabilities report automations:false", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/capabilities")) {
+        return new Response(
+          JSON.stringify({
+            chat: true,
+            integrations: false,
+            voice: false,
+            storage: false,
+            automations: false,
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("{}", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <VendoRoot productName="Acme">
+        <div />
+      </VendoRoot>,
+    );
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/capabilities"))).toBe(true),
+    );
+    // Give any (wrong) poll a beat to fire.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/deliveries"))).toBe(false);
+  });
+
   it("hides the launcher when launcher='none'", () => {
     vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false }));
     render(
@@ -145,6 +176,112 @@ describe("VendoRoot", () => {
     await waitFor(() => expect(screen.getByTestId("app5")).toBeDefined());
     expect(serverStoreSpy).not.toHaveBeenCalled();
     serverStoreSpy.mockRestore();
+  });
+
+  it("retries a failed capabilities fetch with backoff until the server answers", async () => {
+    vi.useFakeTimers();
+    try {
+      let capabilityCalls = 0;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/capabilities")) {
+          capabilityCalls += 1;
+          if (capabilityCalls < 3) throw new TypeError("network down");
+          return new Response(
+            JSON.stringify({ chat: true, integrations: false, voice: false, storage: false }),
+            { status: 200 },
+          );
+        }
+        return new Response("{}", { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(
+        <VendoRoot productName="Acme" toasts={false}>
+          <div />
+        </VendoRoot>,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(capabilityCalls).toBe(1);
+      // First retry after ~1s of backoff, second after ~2s more.
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(capabilityCalls).toBe(2);
+      await vi.advanceTimersByTimeAsync(2_100);
+      expect(capabilityCalls).toBe(3);
+      // Once the server answered, no further polling.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(capabilityCalls).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops pretending everything is on once the capabilities fetch has failed", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes("/capabilities")) throw new TypeError("network down");
+        return new Response("{}", { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(
+        <VendoRoot productName="Acme" toasts={false}>
+          <div />
+        </VendoRoot>,
+      );
+      // Optimistic while the first fetch is IN FLIGHT (no flicker on healthy
+      // installs)…
+      expect(screen.queryByRole("button", { name: /ask acme/i })).not.toBeNull();
+      // …but a FAILED fetch must not leave the chat surface enabled forever.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.queryByRole("button", { name: /ask acme/i })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops trusting a previous endpoint's capabilities when basePath changes and the new fetch fails", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/a/capabilities")) {
+        return new Response(
+          JSON.stringify({ chat: true, integrations: false, voice: false, storage: false }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/api/b/capabilities")) throw new TypeError("network down");
+      return new Response("{}", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ui = (basePath: string) => (
+      <VendoRoot productName="Acme" basePath={basePath} toasts={false}>
+        <div />
+      </VendoRoot>
+    );
+    const { rerender } = render(ui("/api/a"));
+    // Endpoint A answered chat:true → the launcher is up.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /ask acme/i })).not.toBeNull());
+
+    // Point the SAME root at endpoint B, whose capabilities fetch fails: the
+    // UI must not keep running on A's answer — B never said chat is on.
+    rerender(ui("/api/b"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /ask acme/i })).toBeNull());
+  });
+
+  it("rehydrates the durable thread on mount (GET /threads/:threadId)", async () => {
+    const fetchMock = stubFetch({ chat: true, integrations: false, voice: false });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <VendoRoot productName="Acme" basePath="/api/vendo" threadId="my thread">
+        <div />
+      </VendoRoot>,
+    );
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([u]) => String(u).includes("/api/vendo/threads/my%20thread")),
+      ).toBe(true),
+    );
   });
 
   it("auto-wires packaged voice when capabilities report voice:true and no voice prop is passed", async () => {

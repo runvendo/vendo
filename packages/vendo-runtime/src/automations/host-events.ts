@@ -69,8 +69,15 @@ export async function fireHostEventAutomations(
   });
   const runs: AutomationRun[] = [];
   for (const automation of matches) {
-    const run = await deps.runner.fire(scope, automation.id, envelope);
-    if (run) runs.push(run);
+    try {
+      const run = await deps.runner.fire(scope, automation.id, envelope);
+      if (run) runs.push(run);
+    } catch (error) {
+      // Same isolation rule as InProcessScheduler.tick(): one automation's
+      // failure (e.g. a transient store error) must not starve the other
+      // matches of this event.
+      console.error(`[vendo] host-event firing failed for automation ${automation.id}`, error);
+    }
   }
   return { matched: matches.length, fired: runs.length, eventId, runs };
 }
@@ -85,6 +92,8 @@ export function createHostEventIngest(deps: {
   runner: AutomationRunner;
 }): HostEventIngest {
   return async (scope, eventType, event) => {
+    // Delegates to fireHostEventAutomations (main's refactor), which now
+    // carries the per-firing isolation.
     await fireHostEventAutomations(deps, scope, eventType, event);
   };
 }

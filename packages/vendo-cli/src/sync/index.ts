@@ -29,17 +29,20 @@ export async function runSync(options: SyncOptions): Promise<number> {
     ...(options.now ? { now: options.now } : {}),
   });
   mkdirSync(vendoDir, { recursive: true });
-  writeFileSync(
-    path.join(vendoDir, "remix-sources.json"),
-    `${JSON.stringify(capture.records, null, 2)}\n`,
-  );
   for (const line of capture.report) log(`  ${line}`);
 
+  // buildEnvironment may rewrite colliding local import specifiers in the
+  // captured records in place, so persist remix-sources.json AFTER it runs —
+  // the rewritten baselines are what the runtime loads.
   const env = await buildEnvironment(targetDir, capture.records, {
     ...(options.now ? { now: options.now } : {}),
   });
   for (const line of env.report) log(`  ${line}`);
 
+  writeFileSync(
+    path.join(vendoDir, "remix-sources.json"),
+    `${JSON.stringify(capture.records, null, 2)}\n`,
+  );
   log(`  wrote .vendo/remix-sources.json (${Object.keys(capture.records).length} captured)`);
   return 0;
 }

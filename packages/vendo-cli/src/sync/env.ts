@@ -8,6 +8,7 @@
  * reported and the anchor keeps whatever it can. The env NEVER fails the host
  * build for a classification gap.
  */
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -65,7 +66,12 @@ export async function buildEnvironment(
   const anchors: EnvManifest["anchors"] = {};
   const npmToVendor = new Map<string, string>(); // specifier → vendor entry file
   const shimsToVendor = new Set<string>(); // shimmed specifiers actually imported
-  const localToVendor = new Map<string, string>(); // specifier → resolved app file
+  // Local specifier resolution recorded PER ANCHOR: two anchors can import the
+  // same specifier string ("./cn") that resolves to DIFFERENT files. Keying the
+  // vendored bundle by the specifier (not the resolved file) would clobber one
+  // with the other, so we vendor per distinct resolved FILE and map each
+  // anchor's specifier at its own file's bundle below.
+  const localResolved: Array<{ anchorId: string; specifier: string; file: string }> = [];
   const aliases = readAliases(targetDir);
   // realpath both sides of the refusal comparison: esbuild hands plugins REAL
   // paths, and e.g. macOS tmpdirs are symlinks — a naive relative() would
@@ -113,7 +119,7 @@ export async function buildEnvironment(
         );
         if (resolved) {
           perImport[specifier] = toManifestStatus(cls); // real — verified by the bundle step
-          localToVendor.set(specifier, resolved);
+          localResolved.push({ anchorId, specifier, file: resolved });
         } else {
           perImport[specifier] = {
             kind: "absent",
@@ -228,18 +234,22 @@ export async function buildEnvironment(
   //     import map resolves separately (react family, vendored npm, shims).
   //     Refusal rules run on every file the bundle touches — one server-only
   //     file anywhere in the closure fails that specifier to absent.
-  const localVendored = new Map<string, string>();
-  if (localToVendor.size > 0) {
-    const markAbsent = (specifier: string, why: string) => {
-      for (const perImport of Object.values(anchors)) {
-        if (perImport[specifier]) {
-          perImport[specifier] = {
+  const fileToOut = new Map<string, string>(); // resolved file → bundle outName (built ok)
+  const distinctFiles = [...new Set(localResolved.map((r) => r.file))];
+  if (distinctFiles.length > 0) {
+    // Mark absent every (anchor, specifier) pair that resolved to `file`.
+    const markAbsentForFile = (file: string, why: string) => {
+      for (const r of localResolved) {
+        if (r.file !== file) continue;
+        const perImport = anchors[r.anchorId];
+        if (perImport?.[r.specifier]) {
+          perImport[r.specifier] = {
             kind: "absent",
             alternative: "app-local module not vendored — inline its logic from the source",
           };
         }
       }
-      report.push(`env: could not vendor local ${specifier} (${why}) — marked absent`);
+      report.push(`env: could not vendor local ${path.relative(targetDir, file)} (${why}) — marked absent`);
     };
     const externals = new Set([
       "react",
@@ -297,8 +307,11 @@ export async function buildEnvironment(
         });
       },
     };
-    for (const [specifier, file] of localToVendor) {
-      const outName = `local-${slug(specifier)}.js`;
+    for (const file of distinctFiles) {
+      // Name the bundle by the resolved file path (not the specifier) so two
+      // anchors sharing a specifier that resolves to different files get two
+      // distinct bundles instead of clobbering one.
+      const outName = `local-${slug(path.relative(targetDir, file))}.js`;
       try {
         const result = await build({
           entryPoints: [file],
@@ -311,10 +324,10 @@ export async function buildEnvironment(
         });
         const code = result.outputFiles[0]!.text;
         writeFileSync(path.join(vendorDir, outName), code);
-        localVendored.set(specifier, outName);
-        vendorSizes[specifier] = code.length;
+        fileToOut.set(file, outName);
+        for (const r of localResolved) if (r.file === file) vendorSizes[r.specifier] = code.length;
         vendorTotal += code.length;
-        report.push(`env: vendored local ${specifier} (${kb(code.length)})`);
+        report.push(`env: vendored local ${path.relative(targetDir, file)} (${kb(code.length)})`);
       } catch (err) {
         const msg =
           err && typeof err === "object" && "errors" in err
@@ -322,17 +335,54 @@ export async function buildEnvironment(
             : err instanceof Error
               ? err.message
               : String(err);
-        markAbsent(specifier, msg);
+        markAbsentForFile(file, msg);
       }
     }
   }
 
   // 3. Import map (blob-resolved at runtime by the stage; paths are relative).
+  //    The runtime import map is FLAT and applied globally. A local specifier
+  //    string that resolves to DIFFERENT files across anchors ("./cn" from two
+  //    components in different dirs) cannot be a single flat key, so give each
+  //    such anchor a UNIQUE specifier — rewriting its baseline source (which the
+  //    sandbox runs), its manifest key (which the model reads), and the flat
+  //    import entry together so all three agree and BOTH modules resolve.
+  //    Single-resolution specifiers (the common case) stay a plain flat entry.
+  //    NOTE: mutates `records` in place; the caller persists remix-sources.json
+  //    AFTER this so the rewritten baselines are what the runtime loads.
+  const specToFiles = new Map<string, Set<string>>();
+  for (const r of localResolved) {
+    let files = specToFiles.get(r.specifier);
+    if (!files) specToFiles.set(r.specifier, (files = new Set()));
+    files.add(r.file);
+  }
+  const localImports = new Map<string, string>(); // final specifier → ./vendor/<out>
+  for (const r of localResolved) {
+    const out = fileToOut.get(r.file);
+    if (!out) continue; // failed to bundle → already marked absent, no map row
+    let spec = r.specifier;
+    if ((specToFiles.get(r.specifier)?.size ?? 0) > 1) {
+      spec = uniqueLocalSpecifier(r.specifier, r.file, targetDir);
+      const record = records[r.anchorId];
+      if (record) {
+        record.source = rewriteImportSpecifier(record.source, r.specifier, spec);
+        if (record.prepared !== undefined) {
+          record.prepared = rewriteImportSpecifier(record.prepared, r.specifier, spec);
+        }
+      }
+      const perImport = anchors[r.anchorId];
+      if (perImport && r.specifier in perImport && !(spec in perImport)) {
+        perImport[spec] = perImport[r.specifier]!;
+        delete perImport[r.specifier];
+      }
+    }
+    localImports.set(spec, `./vendor/${out}`);
+  }
   const importMap = {
     imports: Object.fromEntries([
       ...[...npmToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
       ...[...shimToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
-      ...[...localVendored].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
+      ...localImports,
     ]),
   };
   writeFileSync(path.join(envDir, "import-map.json"), `${JSON.stringify(importMap, null, 2)}\n`);
@@ -388,6 +438,24 @@ export async function buildEnvironment(
 
 function slug(specifier: string): string {
   return specifier.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+}
+
+/** A unique, still-relative specifier for a colliding local import, keyed by the
+ *  RESOLVED file (so two anchors resolving to the same file dedup to the same
+ *  specifier, different files diverge). The manifest key, the anchor's baseline
+ *  source, and the flat import entry are all rewritten to this together. */
+function uniqueLocalSpecifier(specifier: string, file: string, targetDir: string): string {
+  const h = createHash("sha256").update(path.relative(targetDir, file)).digest("hex").slice(0, 8);
+  return `${specifier}__${h}`;
+}
+
+/** Rewrite an import specifier (static `from "x"` and dynamic `import("x")`) in
+ *  a captured source string. */
+function rewriteImportSpecifier(code: string, from: string, to: string): string {
+  const q = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return code
+    .replace(new RegExp(`(from\\s*['"])${q}(['"])`, "g"), `$1${to}$2`)
+    .replace(new RegExp(`(import\\s*\\(\\s*['"])${q}(['"])`, "g"), `$1${to}$2`);
 }
 function kb(n: number): string {
   return `${(n / 1024).toFixed(1)}KB`;

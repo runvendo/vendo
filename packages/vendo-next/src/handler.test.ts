@@ -90,7 +90,7 @@ describe("createVendoHandler", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { GET } = createVendoHandler({ vendoDir: emptyDir() });
     const res = await GET(req("/api/vendo/capabilities"));
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
   it("capabilities.mcp is true when mcpServers option is set", async () => {
@@ -238,7 +238,7 @@ describe("createVendoHandler", () => {
     const { GET, POST } = createVendoHandler({ vendoDir: emptyDir(), model });
 
     const caps = await GET(req("/api/vendo/capabilities"));
-    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await caps.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
 
     // The chatEnabled gate (503) fires before messages validation (400), so a
     // 400 on an empty messages array proves chat was NOT gated off.
@@ -270,7 +270,7 @@ describe("createVendoHandler", () => {
     vi.stubEnv("VENDO_MODEL", "");
     const fixed = await GET(req("/api/vendo/capabilities"));
     expect(fixed.status).toBe(200);
-    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await fixed.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
   it("resolves GET /capabilities after async assembly (async ripple smoke test)", async () => {
@@ -278,7 +278,7 @@ describe("createVendoHandler", () => {
     const { GET } = createVendoHandler({ vendoDir: emptyDir(), storage: false });
     const res = await GET(req("/api/vendo/capabilities"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false });
+    expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
   it("reports storage:true once durable storage actually assembles (not just from an env key)", async () => {
@@ -288,7 +288,7 @@ describe("createVendoHandler", () => {
     });
     const res = await GET(req("/api/vendo/capabilities"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: true });
+    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: true, automations: true });
   });
 
   it("warns once, no matter how many requests, when running without durable storage in production", async () => {
@@ -487,6 +487,68 @@ describe("createVendoHandler", () => {
     // No principal (resolver returns null) → 403, never a bare list.
     const anon = await GET(req("/api/vendo/vendos", { headers: { host: "localhost:3000" } }));
     expect(anon.status).toBe(403);
+  });
+
+  it("REGRESSION: a remote caller's boot failure gets the generic message, not the raw one", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-x");
+    vi.stubEnv("VENDO_MODEL", "grok/whatever");
+    const { GET } = createVendoHandler({ vendoDir: emptyDir() });
+    // Boot runs before any principal guard, so this is reachable remotely and
+    // unauthenticated — the adapter must serve the server package's sanitized
+    // body, never echo the assembly error.
+    const res = await GET(
+      new Request("http://prod.example.com/api/vendo/capabilities", {
+        headers: { host: "prod.example.com" },
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "vendo failed to start — see server logs",
+    );
+    error.mockRestore();
+  });
+
+  it("REGRESSION: a host tool execute() throw answers as JSON 500, not an escaped rejection (framework HTML 500)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { POST } = createVendoHandler({
+      vendoDir: emptyDir(),
+      storage: false,
+      tools: {
+        explode: tool({
+          description: "always throws",
+          inputSchema: z.object({}).passthrough(),
+          execute: async () => {
+            throw new Error("ECONNREFUSED 10.0.0.7:5432 at /srv/app/internal/db.ts:42");
+          },
+        }),
+      },
+    });
+    // Two-step /action: approve first (unannotated tool → approval gate),
+    // then execute with the token so the throwing execute() actually runs.
+    const gate = await POST(
+      req("/api/vendo/action", {
+        method: "POST",
+        body: JSON.stringify({ action: "explode", payload: {} }),
+      }),
+    );
+    const { approvalToken } = (await gate.json()) as { approvalToken: string };
+    const res = await POST(
+      req("/api/vendo/action", {
+        method: "POST",
+        body: JSON.stringify({ action: "explode", payload: {}, approvalToken }),
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(res.headers.get("content-type")).toMatch(/application\/json/);
+    expect(await res.json()).toEqual({ error: "internal error" });
+    // The path/host detail lands in the server log, not the response.
+    expect(
+      error.mock.calls.some((call) =>
+        call.some((arg) => arg instanceof Error && arg.message.includes("ECONNREFUSED")),
+      ),
+    ).toBe(true);
+    error.mockRestore();
   });
 
   it("guards every mutating endpoint against remote requests by default", async () => {

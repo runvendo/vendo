@@ -7,11 +7,29 @@
  * browser session. Writes have no in-process form: they go through the
  * client-executed host tools and their approval cards.
  */
-import { tool, type ToolSet } from "ai";
+import { tool, type Tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { getStore } from "@/server/store";
 import { listClientSummaries, listDeadlineEntries } from "@/server/clients";
 import { dashboardMetrics } from "@/server/documents";
+
+/**
+ * Stamp the MCP-style read-only annotations onto a tool object. The policy
+ * already allowlists these by NAME (policy.ts's ALWAYS_ALLOW), but the audit
+ * trail classifies executions from the DESCRIPTOR (`buildDescriptor` reads
+ * top-level `annotations`; `auditPolicy` derives `mutating` from
+ * `readOnlyHint`) — without this, every read run lands in the Trust diary
+ * as a mutating "action you approved".
+ */
+const readOnly = <T extends Tool>(t: T): T =>
+  Object.assign(t, {
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  });
 
 const getDashboard = tool({
   description:
@@ -77,11 +95,11 @@ const getActivity = tool({
 
 export function demoTools(): ToolSet {
   return {
-    get_dashboard: getDashboard,
-    get_clients: getClients,
-    get_client_documents: getClientDocuments,
-    get_deadlines: getDeadlines,
-    get_activity: getActivity,
+    get_dashboard: readOnly(getDashboard),
+    get_clients: readOnly(getClients),
+    get_client_documents: readOnly(getClientDocuments),
+    get_deadlines: readOnly(getDeadlines),
+    get_activity: readOnly(getActivity),
   };
 }
 

@@ -13,6 +13,7 @@
       "get": {
         "operationId": "getDashboard",
         "summary": "Firm-wide dashboard metrics: how many clients are missing documents, documents outstanding vs received, and the nearest filing deadline with its client.",
+        "x-vendo-formats": { "nearestDeadline": "iso-datetime", "filingDeadline": "iso-datetime" },
         "responses": {
           "200": {
             "description": "Dashboard metrics",
@@ -32,6 +33,7 @@
       "get": {
         "operationId": "listClients",
         "summary": "List the firm's clients with document progress, derived status and assigned staff. Filter to clients still missing documents or search by name.",
+        "x-vendo-formats": { "filingDeadline": "iso-datetime" },
         "parameters": [
           {
             "name": "filter",
@@ -67,6 +69,7 @@
       "get": {
         "operationId": "getClient",
         "summary": "Fetch one client with document progress, derived status and assigned staff.",
+        "x-vendo-formats": { "filingDeadline": "iso-datetime" },
         "parameters": [
           {
             "name": "id",
@@ -231,6 +234,7 @@
       "get": {
         "operationId": "listDeadlines",
         "summary": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline.",
+        "x-vendo-formats": { "filingDeadline": "iso-datetime" },
         "responses": {
           "200": {
             "description": "Deadline entries, soonest first",
