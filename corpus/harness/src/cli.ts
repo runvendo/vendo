@@ -54,6 +54,8 @@ Commands:
   run       Clone, bootstrap, inject local Vendo, run init, and execute selected layers.
 `;
 
+const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
+
 type Stdout = (line: string) => void;
 type Stderr = (line: string) => void;
 
@@ -106,7 +108,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     stderr: deps.stderr ?? ((line) => { console.error(line); }),
     now: deps.now ?? (() => new Date()),
     env: deps.env,
-    workspaceRoot: deps.workspaceRoot,
+    workspaceRoot: deps.workspaceRoot ?? defaultWorkspaceRoot,
     loadManifest: deps.loadManifest ?? defaultLoadManifest,
     createContext: deps.createContext ?? createRunContext,
     ensureRepoCheckout: deps.ensureRepoCheckout ?? defaultEnsureRepoCheckout,
@@ -272,6 +274,14 @@ function runShellCommand(command: string, options: { cwd: string; env?: NodeJS.P
   });
 }
 
+function commandLogLabel(command: string, index: number): string {
+  const orderedLabels = ["typecheck", "build"];
+  if (orderedLabels[index]) return orderedLabels[index];
+  if (/\b(?:typecheck|tsc)\b/.test(command)) return "typecheck";
+  if (/\bbuild\b/.test(command)) return "build";
+  return `command-${index + 1}`;
+}
+
 function createLoggedCommandRunner(logsDir: string): LoggedCommandRunner {
   const logPaths: string[] = [];
   let commandIndex = 0;
@@ -279,8 +289,7 @@ function createLoggedCommandRunner(logsDir: string): LoggedCommandRunner {
   return {
     logPaths,
     async runner(command, options) {
-      const labels = ["typecheck", "build"];
-      const label = labels[commandIndex] ?? `command-${commandIndex + 1}`;
+      const label = commandLogLabel(command, commandIndex);
       commandIndex += 1;
       const stdoutPath = path.join(logsDir, `structural.${label}.stdout.log`);
       const stderrPath = path.join(logsDir, `structural.${label}.stderr.log`);
@@ -316,9 +325,9 @@ async function runRepoThroughLayerOne(
       localVendoDir,
       skipLlm: options.skipLlm ? true : false,
     };
-    const firstInit = await deps.runInit(repo, initOptions);
+    const firstInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.first" });
     logPaths.push(...artifactPaths(firstInit.artifacts));
-    const secondInit = await deps.runInit(repo, initOptions);
+    const secondInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.second" });
     logPaths.push(...artifactPaths(secondInit.artifacts));
 
     const loggedCommands = createLoggedCommandRunner(context.logsDir(repo.name));
@@ -329,7 +338,7 @@ async function runRepoThroughLayerOne(
       secondInitExitCode: secondInit.exitCode,
       secondRunDiff: await readOptional(secondInit.artifacts.diff),
       secondRunDetail: await readOptional(secondInit.artifacts.log),
-      typecheckCommand: await detectTypecheckCommand(repoDir),
+      typecheckCommand: repo.bootstrap.typecheckCommand ?? await detectTypecheckCommand(repoDir),
       buildCommand: repo.bootstrap.buildCommand,
       commandRunner: loggedCommands.runner,
       env: deps.env,

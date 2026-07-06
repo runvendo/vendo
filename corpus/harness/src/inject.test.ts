@@ -184,7 +184,7 @@ describe("createLocalVendoInjector", () => {
     const result = await injector.inject({ name: "repo-lock" });
 
     expect(result.initArgs).toEqual(["--local", workspaceRoot]);
-    expect(installCalls).toEqual([`pnpm install @ ${repoDir}`]);
+    expect(installCalls).toEqual([`pnpm install --ignore-workspace @ ${repoDir}`]);
     await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-next-0.1.0.tgz");
   });
 

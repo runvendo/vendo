@@ -115,6 +115,10 @@ function localFileSpec(value: string): boolean {
   return /^file:vendor\/.+\.tgz$/.test(value);
 }
 
+function scopedInstallCommand(command: string): string {
+  return command === "pnpm install" ? "pnpm install --ignore-workspace" : command;
+}
+
 async function readOptional(file: string): Promise<string | null> {
   try {
     return await readFile(file, "utf8");
@@ -207,7 +211,7 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
 
       const summary = await installLocalVendoPackages(repoDir, workspaceRoot, { pack: cachedPack });
       if (runInstall) {
-        await runInstallCommand(summary.installCommand, repoDir);
+        await runInstallCommand(scopedInstallCommand(summary.installCommand), repoDir);
       }
       await assertLocalVendoResolution(repoDir, summary);
 
