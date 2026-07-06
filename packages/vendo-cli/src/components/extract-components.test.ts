@@ -236,6 +236,39 @@ describe("extractComponents catalog picker", () => {
     ]);
   });
 
+  it("disambiguates duplicate export names with the rel path and caps long hints", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "comp-dup-"));
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await mkdir(path.join(dir, "src/components/marketing"), { recursive: true });
+    // Two files exporting the SAME component name, plus a unique one.
+    await writeFile(path.join(dir, "src/components/ui/button.tsx"), "export const Button = () => null");
+    await writeFile(path.join(dir, "src/components/marketing/button.tsx"), "export const Button = () => null");
+    await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
+
+    const longReason = `Long reason: ${"detail ".repeat(30)}end.`; // way past the hint cap
+    const PROPOSE = JSON.stringify({
+      proposals: [
+        { file: "src/components/ui/badge.tsx", wrappable: true, reason: longReason },
+        { file: "src/components/ui/button.tsx", wrappable: true, reason: "Primary button." },
+        { file: "src/components/marketing/button.tsx", wrappable: true, reason: "Marketing CTA button." },
+      ],
+    });
+    const { interactor, calls } = fakeInteractor(() => []); // selection is irrelevant here
+    await extractComponents(dir, textModel([PROPOSE]), { force: false, interactive: true, interactor });
+
+    expect(calls).toHaveLength(1);
+    // scan order: ui/ files first (badge, button), then marketing/.
+    expect(calls[0]!.options.map((o) => o.label)).toEqual([
+      "Badge", // unique name stays bare
+      "Button (src/components/ui/button.tsx)",
+      "Button (src/components/marketing/button.tsx)",
+    ]);
+    const hints = calls[0]!.options.map((o) => o.hint!);
+    expect(hints[0]!.length).toBeLessThanOrEqual(72);
+    expect(hints[0]).toMatch(/…$/);
+    expect(hints[1]).toBe("Primary button."); // short hints untouched
+  });
+
   it("propose can exclude a candidate, keeping it out of the picker", async () => {
     const dir = await twoCandidateDir();
     const { interactor, calls } = fakeInteractor((o) => o.options.map((x) => x.value));

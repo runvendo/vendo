@@ -30,6 +30,13 @@ async function hostAliases(targetDir: string): Promise<Record<string, string>> {
   return {};
 }
 
+/** Picker hints render inline next to the checkbox — keep them one short line. */
+const MAX_HINT_CHARS = 72;
+
+function truncateHint(reason: string): string {
+  return reason.length > MAX_HINT_CHARS ? `${reason.slice(0, MAX_HINT_CHARS - 1).trimEnd()}…` : reason;
+}
+
 export interface ComponentsSummary {
   candidates: number;
   written: string[];
@@ -87,14 +94,24 @@ export async function extractComponents(
   if (candidates.length > 0 && opts.interactive && opts.interactor) {
     const proposal = await proposeComponents(candidates, model);
     excluded.push(...proposal.excluded);
+    // Labels are component names, never paths — except when two files export
+    // the same name, where bare names would render identical rows (and an
+    // ambiguous deselected report line): duplicates get the rel path appended,
+    // unique names stay bare.
+    const nameCounts = new Map<string, number>();
+    for (const w of proposal.wrappable) {
+      nameCounts.set(w.candidate.exportName, (nameCounts.get(w.candidate.exportName) ?? 0) + 1);
+    }
+    const labelFor = (c: ComponentCandidate) =>
+      (nameCounts.get(c.exportName) ?? 0) > 1 ? `${c.exportName} (${c.relFile})` : c.exportName;
     const selection = await opts.interactor.multiSelect({
       message: "Select components to wrap for the Vendo sandbox catalog",
       options: proposal.wrappable.map((w) => ({
-        // value is the relFile (unique, invisible); the label is the component
-        // name — the picker never shows file paths.
+        // value is the relFile (unique, invisible); the label is the component name.
         value: w.candidate.relFile,
-        label: w.candidate.exportName,
-        hint: w.reason,
+        label: labelFor(w.candidate),
+        // Reasons have no schema max and clack renders hints inline — cap them.
+        hint: truncateHint(w.reason),
       })),
       initialValues: proposal.wrappable.map((w) => w.candidate.relFile),
       // Empty selection is a legitimate answer (generate nothing) — distinct
@@ -109,7 +126,7 @@ export async function extractComponents(
       toGenerate = proposal.wrappable.filter((w) => picked.has(w.candidate.relFile)).map((w) => w.candidate);
       deselected = proposal.wrappable
         .filter((w) => !picked.has(w.candidate.relFile))
-        .map((w) => w.candidate.exportName);
+        .map((w) => labelFor(w.candidate));
     }
   }
 
