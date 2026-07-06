@@ -1,7 +1,8 @@
 /**
- * Minimal `next/navigation` shim. `useRouter().push/replace` route the host
- * app via vendo.navigate; the rest throw descriptive contained errors rather
- * than silently misbehaving.
+ * Minimal `next/navigation` shim. `useRouter().push/replace` (and `redirect`)
+ * route the host app via vendo.navigate; everything else that can't be honored
+ * in the sandbox is a safe no-op or returns Next's empty value rather than
+ * throwing into a React render/handler.
  */
 import { navigate } from "./dispatch.js";
 
@@ -9,11 +10,15 @@ export function useRouter() {
   return {
     push: (href: string) => navigate(href),
     replace: (href: string) => navigate(href),
+    // No history channel exists between the sandbox and the host router, so
+    // back/forward can't do anything real. They are safe no-ops rather than
+    // throwing, because these are wired to onClick handlers and an exception
+    // there would crash the component instead of just being inert.
     back: () => {
-      throw new Error("[vendo] router.back() is not available in a remixed component");
+      /* no-op: no host history bridge */
     },
     forward: () => {
-      throw new Error("[vendo] router.forward() is not available in a remixed component");
+      /* no-op: no host history bridge */
     },
     refresh: () => {
       /* no-op: the host owns refresh */

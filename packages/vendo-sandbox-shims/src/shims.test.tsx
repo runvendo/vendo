@@ -105,12 +105,15 @@ describe("Image shim", () => {
 });
 
 describe("useRouter shim", () => {
-  it("push routes the host app; back throws a contained error", () => {
+  it("push routes the host app; back/forward are safe no-ops (never throw into a handler)", () => {
     const calls = captureDispatch();
     const router = useRouter();
     router.push("/settings");
     expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/settings" } }]);
-    expect(() => router.back()).toThrow(/not available/);
+    expect(() => router.back()).not.toThrow();
+    expect(() => router.forward()).not.toThrow();
+    // no history channel exists, so back/forward must not emit a navigate
+    expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/settings" } }]);
   });
 });
 
