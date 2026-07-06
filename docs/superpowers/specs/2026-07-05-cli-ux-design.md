@@ -20,14 +20,25 @@ Date: 2026-07-05. Status: approved by Yousef (this session).
 
 ### Command surface
 
-Five commands: `init`, `sync`, `doctor` (new), `publish`, `telemetry`.
-No `wrap` or `remix` commands: init is the one command users remember and re-run.
-`--version` reads the real package version injected at build time. Unknown commands
-print short usage and exit 1. Help text rewritten around these five.
+Six commands: `init`, `add` (new), `sync`, `doctor` (new), `publish`, `telemetry`.
+The user story is three tiers:
 
-### init: the interactive wizard
+- `init`: the beginning. Run once to set up.
+- `add`: the catch-up. Run whenever the app has grown; offers only what is new.
+- `sync`: the automatic in-between. Keeps existing things working on every build;
+  never suggests new things.
 
-Run and re-run anytime; additive, never clobbers. Steps:
+`init` and `add` share one additive code path: re-running `init` on a wired app
+behaves exactly like `add` (never fails, never overwrites). `--version` reads the
+real package version injected at build time. Unknown commands print short usage
+and exit 1. Help text rewritten, grouped: "you run these" (init, add, doctor),
+"runs automatically in your build" (sync), "coming with the registry" (publish).
+
+### init and add: the interactive wizard
+
+`init` runs all steps; `add` runs the same pipeline in catch-up mode (steps 1
+through 4 against only-new candidates, wiring verified but not re-explained).
+Additive, never clobbers. Steps:
 
 1. **Key prompt.** If no provider key is set (env or `.env.local`), prompt to paste
    one. Provider auto-detected from key format (Anthropic / OpenAI / Google),
@@ -64,8 +75,9 @@ human-gated) with a hint printed instead.
 ### sync
 
 Mechanics unchanged (anchor capture + sandbox environment build, deterministic).
-Adds a hint when the deterministic scan sees unwrapped catalog candidates:
-"N new components found; run vendo init to add them". Output restyled.
+Silent maintenance only: it never suggests new things. It reports only when
+something it maintains is actually broken (an anchored file deleted, a capture
+refused, a bundle build failure). Output restyled.
 
 ### doctor (new)
 
@@ -97,8 +109,8 @@ repair round-trip, mirroring the existing syntax-check rescue.
 ### Riding along
 
 - CLI README: three-provider wording, current default model, new command list.
-- Docs site: vendo-init page gains "Added an API key later?" (answer: re-run init);
-  new remix-anchor section; doctor in troubleshooting; quickstart updated.
+- Docs site: vendo-init page gains "Added an API key later?" (answer: `vendo add`);
+  new `add` and remix-anchor sections; doctor in troubleshooting; quickstart updated.
 - Telemetry events for new surface: key-prompt outcome, picker counts,
   anchor counts, doctor runs.
 
