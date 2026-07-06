@@ -78,10 +78,24 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
         return Response.json({ status: "active" as const });
       }
       // The client-facing status must reflect what actually happened. A raw
-      // "active" we did NOT record (anti-spoof case: foreign/other-toolkit
-      // account) must not read as connected — downgrade it to "pending" so the
-      // client keeps polling instead of showing connected with no toolkit.
-      return Response.json({ status: status === "active" ? ("pending" as const) : status });
+      // "active" we did NOT record must not read as connected. It is USUALLY
+      // the anti-spoof case (a foreign/other-toolkit active account), but it
+      // can ALSO be a LEGITIMATE just-authorized account caught in an
+      // eventual-consistency race: hasActiveConnection() is a separate list
+      // query that can transiently return false (or have errored) moments
+      // after OAuth lands. Fast-failing here would wrongly kill a real
+      // connection — worse than letting a genuine spoof poll to the client's
+      // timeout. So we keep returning "pending" (retry is safe and the store
+      // write will happen on a later poll once the account shows up) and only
+      // warn server-side for diagnosability.
+      if (status === "active") {
+        console.warn(
+          `[vendo] integrations status: account is ACTIVE in Composio but not yet this user's stored connection for '${id}' — still pending (a foreign account, or an eventual-consistency race on a just-authorized one)`,
+        );
+        return Response.json({ status: "pending" as const });
+      }
+      // Other non-active states (e.g. "pending") pass through unchanged.
+      return Response.json({ status });
     } catch (err) {
       // A poll error is usually a transient Composio hiccup, not a terminal
       // failure. Log it server-side like the connect handler does, and report

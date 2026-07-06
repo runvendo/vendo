@@ -57,4 +57,17 @@ describe("mapleHostToolDefs", () => {
     expect(order.annotations.readOnlyHint).toBe(false);
     expect(order.http).toEqual({ method: "post", path: "/api/orders", params: [], hasBody: true });
   });
+
+  it("classifies the money transfer as destructive (critical tier) with a currency-formatted amount", () => {
+    const defs = openApiToHostTools(spec);
+    const transfer = defs.find((d) => d.name === "transferMoney")!;
+    // destructiveHint → dangerTier "critical" → the ceremony consent card.
+    expect(transfer.annotations.readOnlyHint).toBe(false);
+    expect(transfer.annotations.destructiveHint).toBe(true);
+    // Query params surface as top-level material fields on the card.
+    expect(transfer.http.method).toBe("post");
+    expect(transfer.http.path).toBe("/api/transfers");
+    expect(transfer.http.params.map((p) => p.name)).toEqual(["amount", "recipient_name", "memo"]);
+    expect(transfer.formats).toEqual({ amount: "cents" });
+  });
 });

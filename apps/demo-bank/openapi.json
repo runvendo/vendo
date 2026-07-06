@@ -181,6 +181,20 @@
         },
         "responses": { "200": { "description": "The appended transaction" } }
       }
+    },
+    "/api/transfers": {
+      "post": {
+        "operationId": "transferMoney",
+        "summary": "Send money to a person from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a transfer. There is no undo.",
+        "x-vendo-dangerous": true,
+        "x-vendo-formats": { "amount": "cents" },
+        "parameters": [
+          { "name": "amount", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 }, "description": "Amount to send in cents (positive whole number), e.g. 50000 = $500.00" },
+          { "name": "recipient_name", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Who the money goes to, e.g. Alex Rivera" },
+          { "name": "memo", "in": "query", "schema": { "type": "string" }, "description": "Optional note shown on the transfer, e.g. June rent" }
+        ],
+        "responses": { "200": { "description": "The appended transfer transaction" } }
+      }
     }
   }
 }

@@ -103,22 +103,32 @@ describe("integrations endpoints", () => {
     expect(await d.store.connectedToolkits()).toEqual([]);
   });
 
-  it("status poll reports 'active' only when the store write happened; a foreign active account is not connected (review)", async () => {
-    // Composio says the polled account is ACTIVE, but it is not THIS user's
-    // connection for THIS toolkit → the store was never written, so the
-    // client-facing status must NOT read as connected.
-    const d = deps({
-      client: stubClient({
-        connectionStatus: async () => "active" as const,
-        hasActiveConnection: async () => false,
-      }),
-    });
-    const res = await handleIntegrationsGet(
-      get("/api/vendo/integrations?status&id=gmail&account=foreign-acct"),
-      d,
-    );
-    expect(await res.json()).toEqual({ status: "pending" });
-    expect(await d.store.connectedToolkits()).toEqual([]);
+  it("status poll stays 'pending' (never terminal on a first mismatch) for an ACTIVE-but-unstored account, with a server-side warn", async () => {
+    // Composio says the polled account is ACTIVE, but it is not (yet) THIS
+    // user's stored connection for THIS toolkit → the store was never written.
+    // This is USUALLY the anti-spoof case, but it can also be a legitimate
+    // just-authorized account caught in a hasActiveConnection() eventual-
+    // consistency race. Fast-failing would wrongly kill a real connection, so
+    // the client-facing status must stay non-terminal "pending" (retry is
+    // safe). A server-side warn explains the mismatch for diagnosability.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const d = deps({
+        client: stubClient({
+          connectionStatus: async () => "active" as const,
+          hasActiveConnection: async () => false,
+        }),
+      });
+      const res = await handleIntegrationsGet(
+        get("/api/vendo/integrations?status&id=gmail&account=foreign-acct"),
+        d,
+      );
+      expect(await res.json()).toEqual({ status: "pending" });
+      expect(await d.store.connectedToolkits()).toEqual([]);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("status poll logs server-side and reports transient 'pending' when Composio throws (review)", async () => {
