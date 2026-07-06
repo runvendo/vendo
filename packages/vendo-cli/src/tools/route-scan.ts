@@ -151,15 +151,80 @@ function addMethodsFromList(verbs: Set<HttpMethod>, source: string): void {
   }
 }
 
+function statementEnd(source: string, start: number): number {
+  let depth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i]!;
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === "\"" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") depth += 1;
+    else if (ch === ")" || ch === "]" || ch === "}") depth = Math.max(0, depth - 1);
+    else if (ch === ";" && depth === 0) return i;
+    else if (ch === "\n" && depth === 0 && /^(?:export|import|const|let|var|function|class)\b/.test(source.slice(i + 1).trimStart())) {
+      return i;
+    }
+  }
+  return source.length;
+}
+
+function splitTopLevelDeclarators(source: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+  let start = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i]!;
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === "\"" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") depth += 1;
+    else if (ch === ")" || ch === "]" || ch === "}") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) {
+      parts.push(source.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(source.slice(start));
+  return parts;
+}
+
+function addMethodsFromExportedDeclarators(verbs: Set<HttpMethod>, source: string): void {
+  const pattern = /export\s+(?:const|let|var)\s+/g;
+  for (const match of source.matchAll(pattern)) {
+    const start = (match.index ?? 0) + match[0].length;
+    const declarationList = source.slice(start, statementEnd(source, start));
+    for (const declarator of splitTopLevelDeclarators(declarationList)) {
+      const name = declarator.trim().match(/^([A-Za-z_$][\w$]*)\b/)?.[1];
+      addMethod(verbs, name);
+    }
+  }
+}
+
 /** HTTP verbs a route file actually exports or handles — the deterministic ground truth. */
 export function exportedVerbs(source: string, kind: RouteSource["kind"] = "app"): Set<HttpMethod> {
   const verbs = new Set<HttpMethod>();
   for (const match of source.matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b/g)) {
     addMethod(verbs, match[1]);
   }
-  for (const match of source.matchAll(/export\s+(?:const|let|var)\s+(GET|POST|PUT|PATCH|DELETE)\b/g)) {
-    addMethod(verbs, match[1]);
-  }
+  addMethodsFromExportedDeclarators(verbs, source);
   for (const match of source.matchAll(/export\s+(?:const|let|var)\s*\{([^}]+)\}\s*=/g)) {
     addMethodsFromList(verbs, match[1] ?? "");
   }

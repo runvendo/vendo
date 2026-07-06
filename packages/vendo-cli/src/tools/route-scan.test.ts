@@ -63,6 +63,40 @@ describe("scanRoutes", () => {
     expect(warnings[0]).toMatch(/no route file matches/);
   });
 
+  it("detects multiple HTTP verb declarators in one exported const statement", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/api/coexport"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/api/coexport/route.ts"),
+      `const handler = () => Response.json({ ok: true });\nexport const GET = handler, POST = handler;\n`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path, tool.annotations.mutating])).toEqual([
+      ["getCoexport", "GET", "/api/coexport", true],
+      ["postCoexport", "POST", "/api/coexport", true],
+    ]);
+  });
+
+  it("ignores non-HTTP names in a multi-declarator exported const statement", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/api/mixed"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/api/mixed/route.ts"),
+      `const handler = () => Response.json({ ok: true });\nexport const GET = handler, options = handler, PATCH = handler;\n`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path, tool.annotations.mutating])).toEqual([
+      ["getMixed", "GET", "/api/mixed", true],
+      ["patchMixed", "PATCH", "/api/mixed", true],
+    ]);
+  });
+
   it("discovers App Router routes under route groups and strips the groups from the URL path", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     await mkdir(path.join(dir, "app/(internal)/api/widgets"), { recursive: true });
