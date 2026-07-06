@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { inspectVendoState, deepEqual } from "./state.js";
+import { DEFAULT_THEME_STUB } from "./next-wiring.js";
 
 /** Build a fixture app tree: { "src/app/page.tsx": "..." } */
 function app(files: Record<string, string>): string {
@@ -40,7 +41,7 @@ describe("inspectVendoState", () => {
   it("reports everything absent on an empty app dir", async () => {
     const dir = app({ "package.json": "{}" });
     const state = await inspectVendoState(dir);
-    expect(state.theme.exists).toBe(false);
+    expect(state.theme).toEqual({ exists: false, status: "missing" });
     expect(state.tools).toEqual({ exists: false, status: "missing" });
     expect(state.components).toEqual([]);
     expect(state.remixAnchors).toEqual([]);
@@ -50,8 +51,33 @@ describe("inspectVendoState", () => {
   it("detects theme.json alone", async () => {
     const dir = app({ ".vendo/theme.json": JSON.stringify({ version: 1 }) });
     const state = await inspectVendoState(dir);
-    expect(state.theme.exists).toBe(true);
+    expect(state.theme).toEqual({ exists: true, status: "real" });
     expect(state.tools.exists).toBe(false);
+  });
+
+  it("classifies the default-brand stub theme.json written by next-wiring step 0 as default-stub", async () => {
+    const dir = app({ ".vendo/theme.json": JSON.stringify(DEFAULT_THEME_STUB, null, 2) + "\n" });
+    const state = await inspectVendoState(dir);
+    expect(state.theme).toEqual({ exists: true, status: "default-stub" });
+  });
+
+  it("classifies the stub shape as default-stub regardless of key order", async () => {
+    const { accent, ...rest } = DEFAULT_THEME_STUB;
+    const dir = app({ ".vendo/theme.json": JSON.stringify({ ...rest, accent }) });
+    const state = await inspectVendoState(dir);
+    expect(state.theme.status).toBe("default-stub");
+  });
+
+  it("classifies a theme.json that differs from the stub as real", async () => {
+    const dir = app({ ".vendo/theme.json": JSON.stringify({ ...DEFAULT_THEME_STUB, accent: "#123456" }) });
+    const state = await inspectVendoState(dir);
+    expect(state.theme).toEqual({ exists: true, status: "real" });
+  });
+
+  it("classifies a malformed (unparseable) theme.json as real — additive consumers keep it", async () => {
+    const dir = app({ ".vendo/theme.json": "{ not json" });
+    const state = await inspectVendoState(dir);
+    expect(state.theme).toEqual({ exists: true, status: "real" });
   });
 
   it("classifies the exact fallback tools.json written by next-wiring step 0 as empty-fallback", async () => {

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runInit } from "./init.js";
+import { DEFAULT_THEME_STUB } from "./next-wiring.js";
 import { textModel, throwingModel } from "./test-helpers.js";
 
 const ROUTE_REPLY = JSON.stringify([{
@@ -261,9 +262,29 @@ describe("additive re-run (decision matrix)", () => {
     expect(second.err).not.toContain("LLM must not be called");
     expect(second.out).toContain("theme.json: kept");
     expect(second.out).toContain("tools.json: kept");
+    // The wrapped candidate must be filtered out BEFORE any model call — a
+    // filter regression would surface as a FAILED analysis line, not a kept one.
+    expect(second.out).toContain("already wrapped in .vendo/components/ — kept");
+    expect(second.out).not.toContain("FAILED");
     expect(await readFile(themePath, "utf8")).toBe(editedTheme);
     expect(await readFile(toolsPath, "utf8")).toBe(editedTools);
     expect(await readFile(implPath, "utf8")).toBe(implBefore);
+  });
+
+  it("re-extracts theme over the wiring-written default stub once CSS vars are available", async () => {
+    const dir = await wiredNextAppFixture();
+    // Simulate a first run whose extraction produced no theme.json, leaving
+    // only the default-brand stub next-wiring's step 0 writes.
+    await mkdir(path.join(dir, ".vendo"), { recursive: true });
+    const themePath = path.join(dir, ".vendo/theme.json");
+    await writeFile(themePath, JSON.stringify(DEFAULT_THEME_STUB, null, 2) + "\n");
+
+    const run = await runCaptured({ targetDir: dir, skipLlm: true, force: false });
+    expect(run.code).toBe(0);
+    expect(run.out).not.toContain("theme.json: kept");
+    expect(run.out).toContain("theme.json: written");
+    const theme = JSON.parse(await readFile(themePath, "utf8"));
+    expect(theme.background).toBe("#ffffff"); // from app/globals.css — the stub was replaced
   });
 
   it("plain re-run on a fully-initialized app exits 0 even without a key", async () => {
@@ -306,6 +327,8 @@ describe("additive re-run (decision matrix)", () => {
     expect(second.out).toContain(".vendo/theme.json");
     expect(second.out).toContain(".vendo/tools.json");
     expect(second.out).toContain(".vendo/components/Badge/");
+    expect(second.out).toContain(".vendo/components/entry.ts");
+    expect(second.out).toContain(".vendo/components/vite.config.mts");
     expect(second.out).toContain(".vendo/README.md");
     expect(second.out).toMatch(/overwrit/i);
     // The warning prints before any extraction output.

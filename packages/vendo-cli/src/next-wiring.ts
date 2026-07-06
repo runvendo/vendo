@@ -62,6 +62,25 @@ const NEXT_SERVER_EXTERNAL_PACKAGES = ["@electric-sql/pglite"] as const;
 const PGLITE_DEPENDENCY = "@electric-sql/pglite";
 const PGLITE_VERSION = "^0.2.0";
 
+/**
+ * Default-brand theme stub written by wiring step 0 when extraction produced
+ * no theme.json (the vendo-root wrapper imports it, so it must exist).
+ * Exported as the single source of truth for state inspection: a theme.json
+ * still deep-equal to this carries no developer content, so additive re-runs
+ * may re-extract over it (see state.ts / init.ts).
+ */
+export const DEFAULT_THEME_STUB = {
+  version: 1,
+  accent: "#0A7CFF",
+  background: "#FFFFFF",
+  surface: "#F5F7FA",
+  text: "#111418",
+  mutedText: "#5B6470",
+  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+  radius: 8,
+  mode: "light",
+};
+
 /** Locate the App Router directory (`app/` or `src/app/`) with a root layout. */
 export async function findAppDir(
   targetDir: string,
@@ -632,24 +651,7 @@ export async function wireNextApp(
   const themePath = path.join(targetDir, ".vendo/theme.json");
   if (!(await exists(themePath))) {
     await fs.mkdir(path.dirname(themePath), { recursive: true });
-    await fs.writeFile(
-      themePath,
-      JSON.stringify(
-        {
-          version: 1,
-          accent: "#0A7CFF",
-          background: "#FFFFFF",
-          surface: "#F5F7FA",
-          text: "#111418",
-          mutedText: "#5B6470",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-          radius: 8,
-          mode: "light",
-        },
-        null,
-        2,
-      ) + "\n",
-    );
+    await fs.writeFile(themePath, JSON.stringify(DEFAULT_THEME_STUB, null, 2) + "\n");
     summary.written.push(rel(themePath));
   }
   const toolsPath = path.join(targetDir, ".vendo/tools.json");

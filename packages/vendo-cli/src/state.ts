@@ -11,7 +11,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { walk } from "./fsx.js";
-import { findAppDir } from "./next-wiring.js";
+import { findAppDir, DEFAULT_THEME_STUB } from "./next-wiring.js";
 
 async function exists(p: string): Promise<boolean> {
   return fs.access(p).then(() => true, () => false);
@@ -45,6 +45,11 @@ const EMPTY_TOOLS_FALLBACK = { version: 1, tools: [], events: [] };
 
 export type ToolsStatus = "missing" | "empty-fallback" | "real";
 
+/** "default-stub" = still deep-equal to the wiring-written DEFAULT_THEME_STUB
+ *  (no developer content); anything else that exists — including malformed
+ *  JSON — is "real" and additive consumers keep it. */
+export type ThemeStatus = "missing" | "default-stub" | "real";
+
 export interface RemixAnchorSite {
   /** Path relative to targetDir, forward-slash separated. */
   file: string;
@@ -62,7 +67,7 @@ export interface WiringState {
 }
 
 export interface VendoState {
-  theme: { exists: boolean };
+  theme: { exists: boolean; status: ThemeStatus };
   tools: { exists: boolean; status: ToolsStatus };
   /** Component names with a wrapper dir under .vendo/components/ (descriptor.ts + impl.tsx present). */
   components: string[];
@@ -140,6 +145,11 @@ export async function inspectVendoState(targetDir: string): Promise<VendoState> 
   const toolsPath = path.join(targetDir, ".vendo/tools.json");
 
   const [themeExists, toolsExists] = await Promise.all([exists(themePath), exists(toolsPath)]);
+  let themeStatus: ThemeStatus = "missing";
+  if (themeExists) {
+    const parsed = await readJson(themePath);
+    themeStatus = deepEqual(parsed, DEFAULT_THEME_STUB) ? "default-stub" : "real";
+  }
   let toolsStatus: ToolsStatus = "missing";
   if (toolsExists) {
     const parsed = await readJson(toolsPath);
@@ -153,7 +163,7 @@ export async function inspectVendoState(targetDir: string): Promise<VendoState> 
   ]);
 
   return {
-    theme: { exists: themeExists },
+    theme: { exists: themeExists, status: themeStatus },
     tools: { exists: toolsExists, status: toolsStatus },
     components,
     remixAnchors,
