@@ -55,8 +55,11 @@ function controlTier(name: string, tool: unknown): "read" | "act" | "critical" {
   const annotations = (tool as { annotations?: ToolDescriptor["annotations"] }).annotations ?? {};
   if (annotations.destructiveHint) return "critical";
   if (annotations.readOnlyHint) return "read";
-  if (DESTRUCTIVE_NAME.test(name)) return "critical";
-  if (READ_NAME.test(name)) return "read";
+  // Control tool names are lower_snake_case (list_automations, get_runs) —
+  // the integration regexes are uppercase (TOOLKIT_ACTION), so match uppercased.
+  const upper = name.toUpperCase();
+  if (DESTRUCTIVE_NAME.test(upper)) return "critical";
+  if (READ_NAME.test(upper)) return "read";
   return "act";
 }
 
