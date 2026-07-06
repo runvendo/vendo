@@ -207,6 +207,17 @@ describe("next/navigation route channel (window.__vendoRouteData)", () => {
     expect(useSearchParams().toString()).toBe("");
     expect(useParams()).toEqual({});
   });
+
+  it("passes catch-all/array params through unchanged (segment shape preserved)", () => {
+    (globalThis as Record<string, unknown>)["__vendoRouteData"] = {
+      pathname: "/docs/a/b/c",
+      search: "",
+      params: { slug: ["a", "b", "c"], org: "acme" },
+    };
+    const params = useParams();
+    expect(Array.isArray(params.slug)).toBe(true);
+    expect(params).toEqual({ slug: ["a", "b", "c"], org: "acme" });
+  });
 });
 
 describe("useSWR shim", () => {

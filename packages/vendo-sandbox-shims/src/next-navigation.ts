@@ -13,7 +13,7 @@ import { navigate } from "./dispatch.js";
  *  the stage runtime parallel to `__vendoAnchorData`). `search` is a raw query
  *  string like "?q=1"; `params` is Next's dynamic-route params object. */
 interface RouteDataWindow {
-  __vendoRouteData?: { pathname?: string; search?: string; params?: Record<string, string> };
+  __vendoRouteData?: { pathname?: string; search?: string; params?: Record<string, string | string[]> };
 }
 
 /** Never crashes when the channel is absent (SSR / no host): returns {}. */

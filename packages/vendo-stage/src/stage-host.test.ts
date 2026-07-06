@@ -210,6 +210,36 @@ describe("connectStage", () => {
     peer.dispose();
   });
 
+  it("forwards a live anchorData re-patch through ui/update (same-structure refresh)", async () => {
+    // Regression: update() dropped anchorData, so the swr shim's live refresh on
+    // same-structure data (saved views / anchor re-patch) never reached the sandbox.
+    const { a, b } = makePair();
+    let updateParams: any;
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { return { ok: true }; }
+      if (method === "ui/update") { updateParams = params; return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage(
+      { listen: a, post: b },
+      { onAction: async () => ({ result: "ok" }) },
+    );
+
+    await controller.initialize({
+      theme: {},
+      state: {},
+      bundleSource: "",
+      tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
+    });
+
+    const anchorData = { "/api/deadlines": [{ id: "a" }, { id: "b" }] };
+    await controller.update({ anchorData });
+    expect(updateParams.anchorData).toEqual(anchorData);
+
+    controller.dispose();
+    peer.dispose();
+  });
+
   it("tools/call with CORRECT capability token reaches onAction as ActionRequest and returns ActionResult", async () => {
     const { a, b } = makePair();
     const onAction = vi.fn().mockResolvedValue({ result: "confirmed" });

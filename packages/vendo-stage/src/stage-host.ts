@@ -280,7 +280,9 @@ export function createStage(
 export interface StageRoute {
   pathname: string;
   search: string;
-  params?: Record<string, string>;
+  /** Next's dynamic-route params. Catch-all segments arrive as string[], so the
+   *  value type is `string | string[]` and passes through the shims unchanged. */
+  params?: Record<string, string | string[]>;
 }
 
 /** Payload for `controller.initialize()`. */
@@ -485,9 +487,10 @@ export function connectStage(
     },
 
     update(update) {
-      const payload: { theme?: Record<string, string>; state?: Record<string, unknown>; route?: StageRoute; replace?: { nodeId: string; node: UINode } } = {};
+      const payload: { theme?: Record<string, string>; state?: Record<string, unknown>; anchorData?: Record<string, unknown>; route?: StageRoute; replace?: { nodeId: string; node: UINode } } = {};
       if (update.theme) payload.theme = update.theme;
       if (update.state) payload.state = update.state;
+      if (update.anchorData) payload.anchorData = update.anchorData;
       if (update.route) payload.route = update.route;
       if (update.replace) {
         const { nodeId, node } = update.replace;

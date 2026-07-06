@@ -7,13 +7,32 @@
  * route (single-use approval tokens), and renders the shell's ApprovalCard
  * when the policy answers "approve".
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useSearchParams, useParams } from "next/navigation";
 import type { UINode, ActionRequest, ActionResult, RegisteredComponent } from "@vendoai/core";
 import { VendoStage } from "@vendoai/react";
+import type { StageRoute } from "@vendoai/stage";
 import { ApprovalCard } from "@vendoai/shell";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@vendoai/components";
 import type { BrandTokens } from "@vendoai/components/theme";
 import { NAVIGATE_ACTION, isSafeAppPath } from "./navigate.js";
+
+/** Read the host's REAL route from next/navigation and shape it for the sandbox
+ *  (`window.__vendoRouteData`). `useSearchParams` subscribes to query-only
+ *  navigation so the sandbox's `useSearchParams()` re-renders — but it forces a
+ *  Suspense boundary, so callers must render `<RoutedStage>` inside `<Suspense>`. */
+function useHostRoute(): StageRoute {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const params = useParams();
+  const search = searchParams.toString();
+  return {
+    pathname: pathname ?? "",
+    search: search ? `?${search}` : "",
+    // Pass Next's params through unchanged — catch-all segments stay string[].
+    params: params as Record<string, string | string[]>,
+  };
+}
 
 interface StageEnv {
   modules?: Record<string, string>;
@@ -206,16 +225,18 @@ export function SandboxStage({ node, brand, components, basePath, onNavigate }: 
 
   return (
     <div>
-      <VendoStage
-        node={node}
-        components={[...prewiredComponents, ...components]}
-        reactSource={sources.react}
-        bundleSource={sources.bundle}
-        {...(sources.env ? { env: sources.env } : {})}
-        onAction={onAction}
-        theme={brandToCssVars(brand)}
-        componentTheme={{ theme: mapBrandToTheme(brand), mode: brand.mode ?? "light" }}
-      />
+      {/* Suspense satisfies useSearchParams()'s boundary requirement; the light
+          placeholder only shows during static prerender — on the client the
+          route resolves synchronously and the stage mounts once (no double iframe). */}
+      <Suspense fallback={<div data-testid="stage-route-loading" aria-busy="true" />}>
+        <RoutedStage
+          node={node}
+          components={components}
+          sources={sources}
+          onAction={onAction}
+          brand={brand}
+        />
+      </Suspense>
       {[...pending.entries()].map(([requestId, entry]) => (
         <div key={requestId} style={{ marginTop: 10 }}>
           <ApprovalCard
@@ -227,5 +248,37 @@ export function SandboxStage({ node, brand, components, basePath, onNavigate }: 
         </div>
       ))}
     </div>
+  );
+}
+
+/** Renders the sandbox stage with the host's live route fed in. Isolated so the
+ *  `useSearchParams()` subscription lives under SandboxStage's Suspense boundary
+ *  (never at the top level, which would opt the whole page into CSR). */
+function RoutedStage({
+  node,
+  components,
+  sources,
+  onAction,
+  brand,
+}: {
+  node: UINode;
+  components: RegisteredComponent[];
+  sources: Sources;
+  onAction: (req: ActionRequest) => Promise<ActionResult>;
+  brand: BrandTokens;
+}): ReactNode {
+  const route = useHostRoute();
+  return (
+    <VendoStage
+      node={node}
+      components={[...prewiredComponents, ...components]}
+      reactSource={sources.react}
+      bundleSource={sources.bundle}
+      {...(sources.env ? { env: sources.env } : {})}
+      onAction={onAction}
+      theme={brandToCssVars(brand)}
+      componentTheme={{ theme: mapBrandToTheme(brand), mode: brand.mode ?? "light" }}
+      route={route}
+    />
   );
 }
