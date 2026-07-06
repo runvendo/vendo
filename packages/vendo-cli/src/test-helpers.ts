@@ -32,3 +32,24 @@ export function throwingModel(message: string): MockLanguageModelV3 {
     },
   });
 }
+
+/**
+ * A mock model that records the raw call options it was invoked with, so
+ * tests can inspect the prompt actually sent (e.g. assert some source text
+ * never reached the LLM). Replies with `reply` on every call.
+ */
+export function capturingModel(reply: string): { model: MockLanguageModelV3; calls: unknown[] } {
+  const calls: unknown[] = [];
+  const model = new MockLanguageModelV3({
+    doGenerate: async (options: unknown): Promise<LanguageModelV3GenerateResult> => {
+      calls.push(options);
+      return {
+        content: [{ type: "text", text: reply }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: ZERO_USAGE,
+        warnings: [],
+      };
+    },
+  });
+  return { model, calls };
+}

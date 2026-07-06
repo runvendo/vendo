@@ -1,31 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { MockLanguageModelV3 } from "ai/test";
-import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import { scanRoutes } from "./route-scan.js";
-import { textModel } from "../test-helpers.js";
-
-const ZERO_USAGE: LanguageModelV3GenerateResult["usage"] = {
-  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 0, text: 0, reasoning: 0 },
-};
-
-/** A mock model that records the raw call options it was invoked with (to inspect the prompt actually sent). */
-function capturingModel(reply: string): { model: MockLanguageModelV3; calls: unknown[] } {
-  const calls: unknown[] = [];
-  const doGenerate = vi.fn(async (options: unknown): Promise<LanguageModelV3GenerateResult> => {
-    calls.push(options);
-    return {
-      content: [{ type: "text", text: reply }],
-      finishReason: { unified: "stop", raw: undefined },
-      usage: ZERO_USAGE,
-      warnings: [],
-    };
-  });
-  return { model: new MockLanguageModelV3({ doGenerate }), calls };
-}
+import { capturingModel, textModel } from "../test-helpers.js";
 
 const ROUTE = `
 import { ok } from "@/server/http";
@@ -113,14 +91,22 @@ describe("scanRoutes", () => {
 
   it("also excludes the Vendo route when the app dir has no src/ prefix", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "app/api/transactions"), { recursive: true });
+    await writeFile(path.join(dir, "app/api/transactions/route.ts"), ROUTE);
     await mkdir(path.join(dir, "app/api/vendo/[...path]"), { recursive: true });
     await writeFile(
       path.join(dir, "app/api/vendo/[...path]/route.ts"),
       `export const { GET, POST } = createVendoHandler();\n`,
     );
-    const { tools, warnings } = await scanRoutes(dir, textModel(["[]"]));
-    expect(tools).toEqual([]);
+    const { model, calls } = capturingModel(LLM_REPLY);
+    const { tools, warnings } = await scanRoutes(dir, model);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({ name: "list_transactions" });
     expect(warnings).toEqual([]);
+    // The relPath here is `app/api/vendo/...` with no leading slash: only the
+    // `^` branch of the exclusion regex catches it. This pins the anchor.
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(calls[0])).not.toMatch(/createVendoHandler/);
   });
 
   it("does not exclude a legitimately named route like api/vendors", async () => {

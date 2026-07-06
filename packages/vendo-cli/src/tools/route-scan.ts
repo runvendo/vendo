@@ -62,6 +62,9 @@ export interface RouteScanResult {
  * `export const { GET, POST } = createVendoHandler()` destructuring). Anchored
  * on a trailing slash after "vendo" so a legitimate route like `api/vendors`
  * is never caught by this.
+ *
+ * The `api/vendo` segment is also encoded in state.ts (route path constants)
+ * and next-wiring.ts (path.join segments) — a rename must touch all three.
  */
 const VENDO_OWN_ROUTE = /(^|\/)app\/api\/vendo\//;
 
