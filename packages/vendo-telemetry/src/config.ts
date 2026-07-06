@@ -47,7 +47,12 @@ export function loadConfig(
   // ephemeral opted-out config — never persist a tracking id the user asked us
   // not to keep. Only a genuine opted-in first run gets written.
   if (envOptOut(env)) return { ...fresh, optedOut: true };
-  saveConfig(home, fresh);
+  try {
+    saveConfig(home, fresh);
+  } catch {
+    // Read-only home / ENOSPC etc.: degrade to an in-memory config rather than
+    // crashing callers like `vendo telemetry`. The id just won't persist.
+  }
   return fresh;
 }
 

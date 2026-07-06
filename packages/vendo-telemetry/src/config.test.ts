@@ -53,4 +53,13 @@ describe("config store", () => {
     expect(c.optedOut).toBe(false);
     expect(existsSync(configPath(home))).toBe(true);
   });
+
+  it("degrades to an in-memory config when the config dir can't be written (review)", () => {
+    // Make configDir un-creatable: a file where the .vendo parent must be a dir.
+    const badHome = join(home, "as-file");
+    writeFileSync(badHome, "x", "utf8"); // badHome/.vendo/... → ENOTDIR on mkdir
+    const c = loadConfig(badHome, {});
+    expect(c.anonymousId).toMatch(/[0-9a-f-]{36}/);
+    expect(existsSync(configPath(badHome))).toBe(false);
+  });
 });
