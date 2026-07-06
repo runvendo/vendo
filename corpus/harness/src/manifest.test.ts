@@ -44,7 +44,11 @@ describe("parseManifest", () => {
 
   it("loads the committed corpus manifest", async () => {
     const manifest = await loadManifest();
+    const names = manifest.map((repo) => repo.name);
 
-    expect(manifest.map((repo) => repo.name)).toEqual(["umami", "skateshop", "taxonomy", "invoify", "papermark"]);
+    // The three original deep-tier repos must always be present; the broad
+    // tier grows over time, so assert membership rather than an exact list.
+    expect(names).toEqual(expect.arrayContaining(["umami", "skateshop", "papermark"]));
+    expect(new Set(names).size).toBe(names.length);
   });
 });
