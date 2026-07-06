@@ -15,10 +15,21 @@ const entry = {
       DATABASE_URL: "${CORPUS_UMAMI_DATABASE_URL}",
     },
     seedCommand: "pnpm seed-data",
+    database: {
+      kind: "docker-postgres",
+      containerName: "vendo-corpus-umami-postgres",
+      image: "postgres:16-alpine",
+      hostPort: 55432,
+      database: "umami",
+      username: "corpus",
+      password: "corpus",
+      readinessTimeoutMs: 30_000,
+    },
     buildCommand: "pnpm build",
     devServer: {
       command: "pnpm dev",
       readinessUrl: "http://127.0.0.1:3000",
+      readinessTimeoutMs: 30_000,
     },
   },
   notes: "Verified as a Next.js app.",
@@ -42,6 +53,21 @@ describe("parseManifest", () => {
     expect(() => parseManifest([entry, { ...entry }])).toThrow(/duplicate.*umami/i);
   });
 
+  it("rejects invalid deep-tier docker database provisioning", () => {
+    const invalid = {
+      ...entry,
+      bootstrap: {
+        ...entry.bootstrap,
+        database: {
+          ...entry.bootstrap.database,
+          hostPort: 70000,
+        },
+      },
+    };
+
+    expect(() => parseManifest([invalid])).toThrow(/hostPort/i);
+  });
+
   it("loads the committed corpus manifest", async () => {
     const manifest = await loadManifest();
     const names = manifest.map((repo) => repo.name);
@@ -50,5 +76,9 @@ describe("parseManifest", () => {
     // tier grows over time, so assert membership rather than an exact list.
     expect(names).toEqual(expect.arrayContaining(["umami", "skateshop", "papermark"]));
     expect(new Set(names).size).toBe(names.length);
+    for (const repo of manifest.filter((entry) => ["umami", "skateshop", "papermark"].includes(entry.name))) {
+      expect(repo.bootstrap.database?.kind).toBe("docker-postgres");
+      expect(repo.bootstrap.devServer?.readinessTimeoutMs).toBeGreaterThan(0);
+    }
   });
 });

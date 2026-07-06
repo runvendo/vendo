@@ -8,18 +8,31 @@
     "bootstrap": {
       "installCommand": "pnpm install --frozen-lockfile --force --ignore-workspace",
       "envTemplate": {
-        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:5432/umami",
+        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:55432/umami",
         "HASH_SALT": "corpus-layer1-hash-salt"
       },
-      "seedCommand": "pnpm seed-data",
+      "seedCommand": "pnpm --ignore-workspace update-db && pnpm --ignore-workspace seed-data -- --clear",
+      "database": {
+        "kind": "docker-postgres",
+        "containerName": "vendo-corpus-umami-postgres",
+        "image": "postgres:16-alpine",
+        "hostPort": 55432,
+        "database": "umami",
+        "username": "corpus",
+        "password": "corpus",
+        "readinessTimeoutMs": 30000,
+        "readinessIntervalMs": 500
+      },
       "typecheckCommand": "pnpm --ignore-workspace build-db && pnpm --ignore-workspace exec tsc --noEmit",
       "buildCommand": "pnpm --ignore-workspace build",
       "devServer": {
         "command": "pnpm --ignore-workspace dev",
-        "readinessUrl": "http://127.0.0.1:3000"
+        "readinessUrl": "http://127.0.0.1:3000",
+        "readinessTimeoutMs": 120000,
+        "readinessIntervalMs": 1000
       }
     },
-    "notes": "Default branch master verified via GitHub API and git ls-remote; package.json declares next 16.2.6."
+    "notes": "Default branch master verified via GitHub API and git ls-remote; package.json declares next 16.2.6. Deep boot uses dockerized Postgres because the pinned app exposes Prisma-backed Postgres/MySQL paths, not SQLite/PGlite."
   },
   {
     "name": "skateshop",
@@ -31,7 +44,7 @@
       "installCommand": "pnpm install --frozen-lockfile --force --ignore-workspace",
       "envTemplate": {
         "NEXT_PUBLIC_APP_URL": "http://127.0.0.1:3000",
-        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:5432/skateshop",
+        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:55433/skateshop",
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_corpus_dummy",
         "CLERK_SECRET_KEY": "sk_test_corpus_dummy",
         "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/signin",
@@ -48,15 +61,28 @@
         "STRIPE_STD_MONTHLY_PRICE_ID": "price_corpus_std_monthly",
         "STRIPE_PRO_MONTHLY_PRICE_ID": "price_corpus_pro_monthly"
       },
-      "seedCommand": "pnpm db:seed",
+      "seedCommand": "pnpm --ignore-workspace db:push && pnpm --ignore-workspace db:seed",
+      "database": {
+        "kind": "docker-postgres",
+        "containerName": "vendo-corpus-skateshop-postgres",
+        "image": "postgres:16-alpine",
+        "hostPort": 55433,
+        "database": "skateshop",
+        "username": "corpus",
+        "password": "corpus",
+        "readinessTimeoutMs": 30000,
+        "readinessIntervalMs": 500
+      },
       "typecheckCommand": "pnpm --ignore-workspace typecheck",
       "buildCommand": "pnpm --ignore-workspace build",
       "devServer": {
         "command": "pnpm --ignore-workspace dev",
-        "readinessUrl": "http://127.0.0.1:3000"
+        "readinessUrl": "http://127.0.0.1:3000",
+        "readinessTimeoutMs": 120000,
+        "readinessIntervalMs": 1000
       }
     },
-    "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next 14.2.5."
+    "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next 14.2.5. Deep boot uses dockerized Postgres because the pinned Drizzle schema targets Postgres."
   },
   {
     "name": "taxonomy",
@@ -116,8 +142,8 @@
         "NEXT_PUBLIC_MARKETING_URL": "http://127.0.0.1:3000",
         "NEXT_PUBLIC_APP_BASE_HOST": "127.0.0.1",
         "NEXT_PUBLIC_WEBHOOK_BASE_HOST": "webhooks.localhost",
-        "POSTGRES_PRISMA_URL": "postgresql://corpus:corpus@127.0.0.1:5432/papermark?pgbouncer=true",
-        "POSTGRES_PRISMA_URL_NON_POOLING": "postgresql://corpus:corpus@127.0.0.1:5432/papermark",
+        "POSTGRES_PRISMA_URL": "postgresql://corpus:corpus@127.0.0.1:55434/papermark?pgbouncer=true",
+        "POSTGRES_PRISMA_URL_NON_POOLING": "postgresql://corpus:corpus@127.0.0.1:55434/papermark",
         "BLOB_READ_WRITE_TOKEN": "vercel_blob_rw_corpus_dummy",
         "GOOGLE_CLIENT_ID": "corpus-dummy.apps.googleusercontent.com",
         "GOOGLE_CLIENT_SECRET": "corpus_dummy",
@@ -134,14 +160,28 @@
         "NEXT_PRIVATE_DOCUMENT_PASSWORD_KEY": "corpus_document_password_key",
         "NEXT_PRIVATE_VERIFICATION_SECRET": "corpus_verification_secret"
       },
+      "seedCommand": "npm run dev:prisma",
+      "database": {
+        "kind": "docker-postgres",
+        "containerName": "vendo-corpus-papermark-postgres",
+        "image": "postgres:16-alpine",
+        "hostPort": 55434,
+        "database": "papermark",
+        "username": "corpus",
+        "password": "corpus",
+        "readinessTimeoutMs": 30000,
+        "readinessIntervalMs": 500
+      },
       "typecheckCommand": "npm run build",
       "buildCommand": "npm run build",
       "devServer": {
         "command": "npm run dev",
-        "readinessUrl": "http://127.0.0.1:3000"
+        "readinessUrl": "http://127.0.0.1:3000",
+        "readinessTimeoutMs": 120000,
+        "readinessIntervalMs": 1000
       }
     },
-    "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next ^14.2.35. GitHub license API returned NOASSERTION, so LICENSE was inspected and contains the GNU Affero GPL v3 text."
+    "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next ^14.2.35. GitHub license API returned NOASSERTION, so LICENSE was inspected and contains the GNU Affero GPL v3 text. Deep boot uses dockerized Postgres because the pinned Prisma schema targets Postgres; this repo has migrations but no committed seed script, so boot runs its Prisma preparation script."
   },
   {
     "name": "cal-com",

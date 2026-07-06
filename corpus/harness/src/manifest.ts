@@ -9,14 +9,33 @@ const devServerSchema = z
   .object({
     command: z.string().min(1),
     readinessUrl: z.string().url(),
+    readinessTimeoutMs: z.number().int().positive().optional(),
+    readinessIntervalMs: z.number().int().positive().optional(),
   })
   .strict();
+
+const databaseProvisioningSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("docker-postgres"),
+      containerName: z.string().min(1),
+      image: z.string().min(1),
+      hostPort: z.number().int().min(1024).max(65535),
+      database: z.string().min(1),
+      username: z.string().min(1),
+      password: z.string().min(1),
+      readinessTimeoutMs: z.number().int().positive().optional(),
+      readinessIntervalMs: z.number().int().positive().optional(),
+    })
+    .strict(),
+]);
 
 const bootstrapRecipeSchema = z
   .object({
     installCommand: z.string().min(1),
     envTemplate: z.record(z.string(), z.string()),
     seedCommand: z.string().min(1).optional(),
+    database: databaseProvisioningSchema.optional(),
     typecheckCommand: z.string().min(1).optional(),
     buildCommand: z.string().min(1),
     devServer: devServerSchema.optional(),
@@ -66,6 +85,7 @@ export const corpusManifestSchema = z
 
 export type ManifestEntry = z.infer<typeof manifestEntrySchema>;
 export type CorpusManifest = z.infer<typeof corpusManifestSchema>;
+export type DatabaseProvisioning = z.infer<typeof databaseProvisioningSchema>;
 
 export const defaultManifestPath = fileURLToPath(new URL("../../manifest.json", import.meta.url));
 
