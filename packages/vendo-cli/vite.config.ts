@@ -1,5 +1,7 @@
 import { defineConfig } from "vite";
-import { builtinModules } from "node:module";
+import { builtinModules, createRequire } from "node:module";
+
+const pkg = createRequire(import.meta.url)("./package.json") as { version: string };
 
 /**
  * Bundles the CLI for plain-Node execution. @vendoai/* workspace code is
@@ -19,6 +21,11 @@ import { builtinModules } from "node:module";
 const builtins = new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)]);
 
 export default defineConfig({
+  // Textually replaces __VENDO_CLI_VERSION__ (see src/version.ts) so the built
+  // CLI reports its real version without shipping/reading package.json.
+  define: {
+    __VENDO_CLI_VERSION__: JSON.stringify(pkg.version),
+  },
   build: {
     target: "node18",
     outDir: "dist",

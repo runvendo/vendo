@@ -10,6 +10,7 @@ import { runInit } from "./init.js";
 import { runPublish } from "./publish.js";
 import { runSync } from "./sync/index.js";
 import { runTelemetryCmd } from "./telemetry-cmd.js";
+import { CLI_VERSION } from "./version.js";
 
 const HELP = `vendo — Vendo one-click dev tool
 
@@ -30,19 +31,22 @@ Options:
   --local      Pack local @vendoai packages from a Vendo monorepo into ./vendor
 `;
 
-function parseInitArgs(args: string[]):
-  | { ok: true; targetDir: string; skipLlm: boolean; force: boolean; localVendoDir?: string }
+export function parseInitArgs(args: string[]):
+  | { ok: true; targetDir: string; skipLlm: boolean; force: boolean; yes: boolean; localVendoDir?: string }
   | { ok: false; error: string } {
   const positionals: string[] = [];
   let localVendoDir: string | undefined;
   let skipLlm = false;
   let force = false;
+  let yes = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--skip-llm") {
       skipLlm = true;
     } else if (arg === "--force") {
       force = true;
+    } else if (arg === "--yes") {
+      yes = true;
     } else if (arg === "--local") {
       const value = args[++i];
       if (!value || value.startsWith("--")) return { ok: false, error: "--local requires a path to the Vendo monorepo" };
@@ -54,7 +58,7 @@ function parseInitArgs(args: string[]):
       positionals.push(arg);
     }
   }
-  return { ok: true, targetDir: positionals[0] ?? process.cwd(), skipLlm, force, localVendoDir };
+  return { ok: true, targetDir: positionals[0] ?? process.cwd(), skipLlm, force, yes, localVendoDir };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -71,6 +75,7 @@ export async function main(argv: string[]): Promise<number> {
         targetDir: parsed.targetDir,
         skipLlm: parsed.skipLlm,
         force: parsed.force,
+        yes: parsed.yes,
         localVendoDir: parsed.localVendoDir,
       });
     }
@@ -81,7 +86,7 @@ export async function main(argv: string[]): Promise<number> {
     case "telemetry":
       return runTelemetryCmd(rest.find((a) => !a.startsWith("--")), { log: (m) => console.log(m) });
     case "--version":
-      console.log("0.1.0");
+      console.log(CLI_VERSION);
       return 0;
     default:
       console.log(HELP);

@@ -10,11 +10,14 @@ import { renderReport, type InitReport } from "./report.js";
 import { writeGenerated } from "./fsx.js";
 import { wireNextApp, renderWiring } from "./next-wiring.js";
 import { installLocalVendoPackages, type LocalVendoInstallSummary } from "./local-pack.js";
+import { CLI_VERSION } from "./version.js";
 
 export interface InitOptions {
   targetDir: string;
   skipLlm: boolean;
   force: boolean;
+  /** Accept defaults / skip confirmation prompts. Not yet wired to any prompt. */
+  yes?: boolean;
   /** Pack local Vendo workspace packages into the host app's vendor/ dir. */
   localVendoDir?: string;
   /** test seam — pass null to force LLM-off, a mock to avoid the network */
@@ -39,7 +42,7 @@ function noopTelemetry(): Telemetry {
 function initRunTelemetry(opts: InitOptions): Telemetry {
   try {
     return initTelemetry({
-      version: "0.1.0",
+      version: CLI_VERSION,
       runtime: false,
       home: opts.telemetry?.home,
       posthogKey: opts.telemetry?.posthogKey ?? process.env.VENDO_POSTHOG_KEY,
