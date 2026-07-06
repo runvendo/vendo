@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import type { UINode } from "./ui.js";
 import type { GeneratedPayload } from "./genui/index.js";
+import type { FieldFormat } from "./manifest/tool.js";
 
 export const SCHEMA_VERSION = 1 as const;
 
@@ -186,6 +187,12 @@ export interface ConsentTierPart {
   /** The judge/breaker's plain-language escalation reason (ENG-193 §4.2/§4.7).
    *  Absent for an ordinary (non-escalated) act-tier call. */
   reason?: string;
+  /** Per-field display-format hints (field name → format) carried from the
+   *  host tool's declared `formats`, so the approval card/receipt renders a
+   *  money/date field faithfully ($500.00, not 50000). Absent when the tool
+   *  declares none. The closed enum keeps this part inside the typed protocol
+   *  (the shell still guards the values defensively before rendering). */
+  formats?: Record<string, FieldFormat>;
 }
 
 export type VendoDataParts = {

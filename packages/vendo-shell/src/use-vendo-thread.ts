@@ -2,7 +2,25 @@ import { useMemo } from "react";
 import type { VendoUIMessage } from "@vendoai/core";
 import type { UINode } from "@vendoai/core";
 import { useVendoChat } from "@vendoai/react";
-import type { FieldFormats } from "./components/field-rows";
+import type { FieldFormat, FieldFormats } from "./components/field-rows";
+
+/** The closed format vocabulary (mirrors @vendoai/core's `FieldFormat`). A
+ *  data-consent part is typed protocol, but stream data can still be malformed
+ *  (an older/forged emitter), so the shell validates before rendering. */
+const KNOWN_FORMATS: ReadonlySet<string> = new Set<FieldFormat>(["cents", "iso-date", "iso-datetime", "percent"]);
+
+/** Defensively normalize a data-consent part's `formats`: keep only string→
+ *  known-format entries, drop everything else. Returns `undefined` when the
+ *  input isn't a plain object or has no usable entries — never handing an
+ *  unvalidated value to `approvalRows`. */
+function normalizeFormats(raw: unknown): FieldFormats | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, FieldFormat> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && KNOWN_FORMATS.has(v)) out[k] = v as FieldFormat;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 export type ThreadItem =
   | { kind: "text"; key: string; messageId: string; role: "user" | "assistant"; text: string }
@@ -108,14 +126,15 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
     for (const rawPart of message.parts) {
       const part = rawPart as {
         type: string;
-        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; formats?: FieldFormats; envelope?: string; uiNodeId?: string };
+        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; formats?: unknown; envelope?: string; uiNodeId?: string };
       };
       if (part.type === "data-consent" && part.data?.toolCallId) {
+        const formats = normalizeFormats(part.data.formats);
         tierByToolCallId.set(part.data.toolCallId, {
           tier: part.data.tier as "act" | "critical",
           unverified: Boolean(part.data.unverified),
           ...(part.data.reason ? { reason: part.data.reason } : {}),
-          ...(part.data.formats ? { formats: part.data.formats } : {}),
+          ...(formats ? { formats } : {}),
         });
       }
       if (part.type === "data-remix-envelope" && part.data?.uiNodeId && part.data.envelope) {

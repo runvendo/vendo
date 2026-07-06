@@ -72,7 +72,7 @@ function truncate(text: string, maxChars: number | null): string {
  *  JSON like `{"body":"Hi Marisol…`). Nested values beyond depth 1 fall back
  *  to JSON; truncation applies per line so a long field can't hide its
  *  siblings. The rows render with `white-space: pre-line`. */
-export function fieldValue(value: unknown, maxChars: number | null, depth = 0): string {
+export function fieldValue(value: unknown, maxChars: number | null, depth = 0, formats?: FieldFormats): string {
   if (typeof value === "string") return truncate(value, maxChars);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (depth === 0 && value && typeof value === "object") {
@@ -81,7 +81,13 @@ export function fieldValue(value: unknown, maxChars: number | null, depth = 0): 
     }
     return Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => !isEmpty(v))
-      .map(([k, v]) => `${fieldLabel(k)}: ${fieldValue(v, maxChars, 1)}`)
+      .map(([k, v]) => {
+        // Match a format hint by LEAF field name so a hint keyed `amount`
+        // formats an `amount` leaf whether it's top-level or nested under
+        // `body` (host OpenAPI tools put request fields under `body`).
+        const formatted = formats?.[k] !== undefined ? applyFormat(v, formats[k]!) : undefined;
+        return `${fieldLabel(k)}: ${formatted ?? fieldValue(v, maxChars, 1)}`;
+      })
       .join("\n");
   }
   return truncate(JSON.stringify(value), maxChars);
@@ -114,8 +120,16 @@ export function approvalRows(
   const rows = capped.map(([k, v]) => {
     // Honor a declared format hint (cents/date/percent) so a money/date input
     // reads like the results do; fall back to plain humanization otherwise.
+    // A field's declared format describes THAT field's units for this tool;
+    // approval INPUTS are formatted on the same-name assumption (the contract
+    // documents `formats` as result-field styling — see @vendoai/core's
+    // host-api.ts). This holds for well-designed tools with consistent
+    // input/result units (a transfer whose `amount` is cents in and out); a
+    // pathological dollars-in/cents-out tool is out of scope for v1.
     const formatted = formats?.[k] !== undefined ? applyFormat(v, formats[k]!) : undefined;
-    return { label: fieldLabel(k), value: formatted ?? fieldValue(v, maxChars) };
+    // `formats` also threads into fieldValue so a hint reaches a leaf nested
+    // under `body` (body-shaped host inputs), not just top-level keys.
+    return { label: fieldLabel(k), value: formatted ?? fieldValue(v, maxChars, 0, formats) };
   });
   return { rows, more: maxChars === null ? 0 : Math.max(0, entries.length - MAX_ROWS) };
 }

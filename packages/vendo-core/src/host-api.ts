@@ -54,9 +54,15 @@ export interface HostToolDefinition {
   inputSchema: Record<string, unknown>;
   annotations: HostToolAnnotations;
   http: HostHttpCall;
-  /** Optional result-field format hints (field name → format). Rendered into
-   *  the tool's prompt description by the runtime (`hostToolset`) so money and
-   *  date fields are formatted faithfully — see `prompt/format-hints.ts`. */
+  /** Optional field-format hints (field name → format). Rendered into the
+   *  tool's prompt description by the runtime (`hostToolset`) so money and date
+   *  RESULT fields are formatted faithfully — see `prompt/format-hints.ts`.
+   *  Contract extension (ENG-193 follow-up): the same hints ALSO style an
+   *  approval card's INPUT fields of the SAME name (a `{ amount: "cents" }`
+   *  hint renders an `amount` input as $500.00, not 50000). This assumes a
+   *  field's units are consistent between input and result — true for
+   *  well-designed tools; a dollars-in/cents-out tool would misformat, which
+   *  v1 accepts rather than adding a separate input-formats surface. */
   formats?: Record<string, FieldFormat>;
 }
 

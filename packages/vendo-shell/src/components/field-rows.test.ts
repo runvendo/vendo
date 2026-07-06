@@ -65,6 +65,13 @@ describe("approvalRows", () => {
     ]);
   });
 
+  it("applies a leaf-name format hint to a value nested under `body` (host body-shaped input)", () => {
+    // Host OpenAPI tools put fields under `body` (e.g. `{ body: { amount } }`);
+    // a `{ amount: "cents" }` hint must reach that leaf, not only top-level keys.
+    const { rows } = approvalRows({ body: { amount: 50000, memo: "June rent" } }, null, { amount: "cents" });
+    expect(rows).toEqual([{ label: "Body", value: "Amount: $500.00\nMemo: June rent" }]);
+  });
+
   it("leaves an un-hinted number untouched — never guesses a divisor", () => {
     const { rows } = approvalRows({ amount: 50000 }, null);
     expect(rows).toEqual([{ label: "Amount", value: "50000" }]);

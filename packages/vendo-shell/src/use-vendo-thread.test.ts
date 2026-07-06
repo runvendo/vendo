@@ -249,6 +249,28 @@ describe("toThreadItems — consent tier correlation", () => {
     expect(tool).toMatchObject({ tier: "critical", formats: { amount: "cents" } });
   });
 
+  it("drops a malformed formats value (non-object) from the data-consent part — never trusts it blindly", () => {
+    const items = toThreadItems([
+      msg("mbad", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-1", state: "approval-requested", input: { amount: 50000 }, approval: { id: "ap-1" } },
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "critical", unverified: false, formats: "garbage" } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect((approval as { formats?: unknown }).formats).toBeUndefined();
+  });
+
+  it("drops unknown format values but keeps known ones from the data-consent part", () => {
+    const items = toThreadItems([
+      msg("mmix", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-1", state: "approval-requested", input: {}, approval: { id: "ap-1" } },
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "critical", unverified: false, formats: { amount: "cents", bad: "wizardry" } } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect((approval as { formats?: unknown }).formats).toEqual({ amount: "cents" });
+  });
+
   it("an approval with no matching data-consent part gets no tier (defensive — never crashes)", () => {
     const items = toThreadItems([
       msg("m2", "assistant", [{ type: "tool-x", toolCallId: "call-2", state: "approval-requested", input: {}, approval: { id: "ap-2" } }]),
