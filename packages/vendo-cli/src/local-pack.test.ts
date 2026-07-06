@@ -198,7 +198,8 @@ describe("installLocalVendoPackages", () => {
     expect(pkg.pnpm.overrides["@vendoai/cli"]).toBe(`file:vendor/${cliTarball}`);
     expect(pkg.pnpm.overrides["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
     expect(pkg.pnpm.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
-  });
+    // Three real `pnpm pack` subprocesses; the vitest default 5s trips on loaded CI runners.
+  }, 30_000);
 
   it("preflights fluidkit before creating target vendor artifacts", async () => {
     const repoDir = await createPackableLocalRepo(false);
