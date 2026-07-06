@@ -21,7 +21,8 @@
 </p>
 
 ```bash
-npx vendoai init .
+npm install vendoai
+npx vendo init .
 ```
 
 <br>
@@ -77,13 +78,14 @@ outside your permission policy.
 
 ## Get started
 
-1. Install into your Next.js app:
+1. Install the package, then run the codemod in your Next.js app:
 
    ```bash
-   npx vendoai init .
+   npm install vendoai
+   npx vendo init .
    ```
 
-   The command extracts your theme, derives agent tools from your OpenAPI
+   The codemod extracts your theme, derives agent tools from your OpenAPI
    spec, and wires the routes.
 
 2. Add one provider key to `.env.local`: `ANTHROPIC_API_KEY`,

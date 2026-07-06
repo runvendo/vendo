@@ -6,5 +6,7 @@
       <stop offset="1" stop-color="#4338CA"/>
     </linearGradient>
   </defs>
-  <path d="M10 11 L16 22 L22 11" fill="none" stroke="url(#vf-body)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19.6 5.2 C23.9 6.1 27.2 9.5 27.5 14.1 C27.8 18.1 25.7 20.5 26.3 23.6 C26.8 26 24.5 27.9 22 27 C19.6 26.1 18.4 27.3 15.4 27.6 C10.5 28.1 5.6 24.9 5 19.7 C4.4 14.5 7.4 10.8 11.4 8.4 C14.1 6.7 16.6 4.6 19.6 5.2 Z" fill="url(#vf-body)"/>
+  <path d="M11.1 10.8 C9.6 12.6 8.7 14.7 9 16.8 C9.15 17.9 10.4 18 10.9 17.1 C11.65 15.6 11.35 13.5 12.4 11.85 C13 10.8 11.85 9.9 11.1 10.8 Z" fill="#FFFFFF" opacity="0.9"/>
+  <circle cx="13.5" cy="8.9" r="0.95" fill="#FFFFFF" opacity="0.8"/>
 </svg>
