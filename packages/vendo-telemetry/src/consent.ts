@@ -21,6 +21,11 @@ export function resolveConsent({ env, optedOut, runtime }: ConsentInputs): Conse
   if (env.CI !== undefined && env.CI !== "" && env.CI !== "0" && env.CI !== "false")
     return { allowed: false, reason: "ci" };
   if (optedOut) return { allowed: false, reason: "config-opt-out" };
-  if (runtime && env.NODE_ENV === "production") return { allowed: false, reason: "production" };
+  // Runtime (dev-server) collection is allowed ONLY when NODE_ENV explicitly
+  // names a dev environment. An unset/unknown NODE_ENV is treated as production
+  // (fail closed) so a prod deploy that forgot to set it is never collected
+  // from. Build-side callers (runtime:false) are unaffected.
+  if (runtime && env.NODE_ENV !== "development" && env.NODE_ENV !== "test")
+    return { allowed: false, reason: "production" };
   return { allowed: true, reason: "allowed" };
 }
