@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
-    "@clack/prompts": "^1.7.0",
+    "@clack/prompts": "1.6.0",
     "@scarf/scarf": "^1.4.0",
     "@tailwindcss/browser": "^4.1.0",
     "@tailwindcss/cli": "^4.1.0",

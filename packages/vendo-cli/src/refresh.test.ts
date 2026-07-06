@@ -89,21 +89,32 @@ describe("vendo refresh (catch-up mode)", () => {
   it("gap-fills only-new candidates and keeps existing artifacts byte-for-byte", async () => {
     const dir = await nextAppFixture();
 
-    // First run with no key: theme extracted (real), tools left as the empty
-    // fallback, no components. This also wires the app.
+    // First run with no key: theme extracted (real), deterministic route
+    // tools written, no components. This also wires the app.
     const first = await capture(() =>
       runInit({ targetDir: dir, skipLlm: false, force: false, model: null }),
     );
     expect(first.result).toBe(0);
-    const fallback = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
-    expect(fallback).toEqual({ version: 1, tools: [], events: [] });
+    const deterministicTools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
+    expect(deterministicTools).toMatchObject({
+      version: 1,
+      events: [],
+      tools: [{
+        name: "getThings",
+        description: "GET /api/things",
+        inputSchema: { type: "object", properties: {} },
+        annotations: { mutating: false, dangerous: false },
+        binding: { type: "http", method: "GET", path: "/api/things" },
+      }],
+    });
 
     // Hand-edit the extracted theme to prove refresh preserves it.
     const themePath = path.join(dir, ".vendo/theme.json");
     const editedTheme = (await readFile(themePath, "utf8")).replace(/#ffffff/i, "#123456");
     await writeFile(themePath, editedTheme);
 
-    // Refresh with a key: fills the only-new tool + component, keeps the theme.
+    // Refresh with a key: keeps existing deterministic tools as real content,
+    // fills the only-new component, and keeps the theme.
     const refreshed = await capture(() =>
       runRefresh({
         targetDir: dir,
@@ -114,10 +125,11 @@ describe("vendo refresh (catch-up mode)", () => {
     );
     expect(refreshed.result).toBe(0);
     expect(refreshed.out).toContain("theme.json: kept");
+    expect(refreshed.out).toContain("tools.json: kept");
     expect(refreshed.out).not.toContain("Next steps:");
     expect(await readFile(themePath, "utf8")).toBe(editedTheme);
     const tools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
-    expect(tools.tools[0].name).toBe("list_things");
+    expect(tools).toEqual(deterministicTools);
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
   });
 

@@ -16,7 +16,7 @@ export async function GET(req: Request) {
 `;
 
 const LLM_REPLY = JSON.stringify([{
-  name: "list_transactions",
+  name: "getTransactions",
   description: "List recent transactions with an optional limit.",
   method: "get",
   path: "/api/transactions",
@@ -24,7 +24,7 @@ const LLM_REPLY = JSON.stringify([{
 }]);
 
 describe("scanRoutes", () => {
-  it("finds route.ts files and converts LLM output to fail-closed tool entries", async () => {
+  it("finds route.ts files, uses deterministic names, and keeps GET read-only", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
     await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE);
@@ -32,14 +32,14 @@ describe("scanRoutes", () => {
     expect(tools).toHaveLength(1);
     expect(warnings).toEqual([]);
     expect(tools[0]).toMatchObject({
-      name: "list_transactions",
+      name: "getTransactions",
+      description: "List recent transactions with an optional limit.",
       binding: { type: "http", method: "GET", path: "/api/transactions" },
-      // route-scan tools NEVER auto-allow: the surface is LLM-read code
-      annotations: { mutating: true, dangerous: false },
+      annotations: { mutating: false, dangerous: false },
     });
   });
 
-  it("drops entries whose method is not actually exported by the handler", async () => {
+  it("keeps deterministic inventory when the LLM invents a method", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
     await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE); // exports GET only
@@ -47,11 +47,11 @@ describe("scanRoutes", () => {
       { name: "delete_transactions", description: "x", method: "delete", path: "/api/transactions", inputSchema: {} },
     ]);
     const { tools, warnings } = await scanRoutes(dir, textModel([lied]));
-    expect(tools).toEqual([]);
+    expect(tools.map((tool) => tool.name)).toEqual(["getTransactions"]);
     expect(warnings[0]).toMatch(/does not export DELETE/);
   });
 
-  it("drops entries whose path matches no route file", async () => {
+  it("keeps deterministic inventory when the LLM invents a path", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
     await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE);
@@ -59,7 +59,7 @@ describe("scanRoutes", () => {
       { name: "list_admin", description: "x", method: "get", path: "/api/admin", inputSchema: {} },
     ]);
     const { tools, warnings } = await scanRoutes(dir, textModel([invented]));
-    expect(tools).toEqual([]);
+    expect(tools.map((tool) => tool.name)).toEqual(["getTransactions"]);
     expect(warnings[0]).toMatch(/no route file matches/);
   });
 
@@ -81,7 +81,7 @@ describe("scanRoutes", () => {
     const { model, calls } = capturingModel(LLM_REPLY);
     const { tools, warnings } = await scanRoutes(dir, model);
     expect(tools).toHaveLength(1);
-    expect(tools[0]).toMatchObject({ name: "list_transactions" });
+    expect(tools[0]).toMatchObject({ name: "getTransactions" });
     // No mention of the vendo route at all — it must never reach the LLM prompt or warnings.
     expect(warnings).toEqual([]);
     expect(warnings.join("\n")).not.toMatch(/vendo/i);
@@ -101,7 +101,7 @@ describe("scanRoutes", () => {
     const { model, calls } = capturingModel(LLM_REPLY);
     const { tools, warnings } = await scanRoutes(dir, model);
     expect(tools).toHaveLength(1);
-    expect(tools[0]).toMatchObject({ name: "list_transactions" });
+    expect(tools[0]).toMatchObject({ name: "getTransactions" });
     expect(warnings).toEqual([]);
     // The relPath here is `app/api/vendo/...` with no leading slash: only the
     // `^` branch of the exclusion regex catches it. This pins the anchor.
@@ -114,7 +114,7 @@ describe("scanRoutes", () => {
     await mkdir(path.join(dir, "src/app/api/vendors"), { recursive: true });
     await writeFile(path.join(dir, "src/app/api/vendors/route.ts"), ROUTE);
     const vendorsReply = JSON.stringify([{
-      name: "list_vendors",
+      name: "getVendors",
       description: "List vendors.",
       method: "get",
       path: "/api/vendors",
@@ -122,7 +122,46 @@ describe("scanRoutes", () => {
     }]);
     const { tools, warnings } = await scanRoutes(dir, textModel([vendorsReply]));
     expect(tools).toHaveLength(1);
-    expect(tools[0]).toMatchObject({ name: "list_vendors" });
+    expect(tools[0]).toMatchObject({ name: "getVendors" });
     expect(warnings).toEqual([]);
+  });
+
+  it("falls back to deterministic tools when LLM JSON fails validation", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
+    await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE);
+    const { tools, warnings } = await scanRoutes(dir, textModel(["```json\n[", "not json"]));
+    expect(tools.map((tool) => tool.name)).toEqual(["getTransactions"]);
+    expect(warnings.join("\n")).toMatch(/LLM route enrichment failed/);
+  });
+
+  it("discovers pages/api handlers and normalizes catch-all params", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "pages/api/auth"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/auth/[...nextauth].ts"),
+      `import NextAuth from "next-auth";\nexport default NextAuth({});\n`,
+    );
+    const { tools, warnings } = await scanRoutes(dir, null);
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path, tool.annotations.mutating])).toEqual([
+      ["getAuthNextauth", "GET", "/api/auth/{nextauth}", false],
+      ["postAuthNextauth", "POST", "/api/auth/{nextauth}", true],
+    ]);
+  });
+
+  it("detects destructured app route handler exports", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "src/app/api/uploadthing"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/api/uploadthing/route.ts"),
+      `export const { GET, POST } = createRouteHandler({ router });\n`,
+    );
+    const { tools, warnings } = await scanRoutes(dir, null);
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.annotations.mutating])).toEqual([
+      ["getUploadthing", "GET", false],
+      ["postUploadthing", "POST", true],
+    ]);
   });
 });
