@@ -20,7 +20,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { walk } from "../fsx.js";
 import { generateJson } from "../llm.js";
-import { refusalReason } from "../sync/capture.js";
+import { refusalReason, resolveSourceRoot } from "../sync/capture.js";
 import { inspectVendoState } from "../state.js";
 
 export interface RemixCandidate {
@@ -66,11 +66,14 @@ function componentNameOf(source: string): string | undefined {
   return source.match(NAMED_EXPORT_RE)?.[1] ?? source.match(DEFAULT_FN_RE)?.[1];
 }
 
-/** Collect plausible widget source files under the app tree (fsx.walk already
- *  skips node_modules/.vendo/.next/dist/… and dotdirs). */
-async function scanSourceFiles(targetDir: string, max: number): Promise<SourceFile[]> {
+/** Collect plausible widget source files under the app SOURCE root — the same
+ *  root sync/capture evaluates its threat model against, so discovery can
+ *  never propose a file capture would refuse as outside-root. fsx.walk already
+ *  skips node_modules/.vendo/.next/dist/… and dotdirs. relFile stays
+ *  targetDir-relative (state.ts anchors and picker output use that base). */
+async function scanSourceFiles(targetDir: string, sourceRoot: string, max: number): Promise<SourceFile[]> {
   const files = await walk(
-    targetDir,
+    sourceRoot,
     (rel) => {
       const p = rel.replace(/\\/g, "/");
       return /\.(tsx|jsx)$/.test(p) && !/\.(test|spec|stories)\.(tsx|jsx)$/.test(p);
@@ -171,7 +174,10 @@ export async function discoverRemixCandidates(
   model: LanguageModel,
   opts: { maxCandidates?: number } = {},
 ): Promise<RemixDiscovery> {
-  const files = await scanSourceFiles(targetDir, opts.maxCandidates ?? DEFAULT_MAX_CANDIDATES);
+  // Resolve the source root EXACTLY the way sync/capture does — a mismatch
+  // would let discovery offer anchors that capture later refuses to sync.
+  const sourceRoot = resolveSourceRoot(targetDir);
+  const files = await scanSourceFiles(targetDir, sourceRoot, opts.maxCandidates ?? DEFAULT_MAX_CANDIDATES);
   if (files.length === 0) return { candidates: [], excluded: [] };
 
   const { proposals } = await generateJson({
@@ -200,8 +206,9 @@ export async function discoverRemixCandidates(
     }
     if (producedFiles.has(relFile)) continue; // duplicate proposal — first wins
     // 1+2+3. Server-only directive, server/ or api/ path segment, or outside the
-    // app source root — the discovery-time subset of sync/capture's refusal.
-    const refusal = refusalReason(src.file, src.source, targetDir);
+    // app source root — the discovery-time subset of sync/capture's refusal,
+    // evaluated against the SAME source root capture uses.
+    const refusal = refusalReason(src.file, src.source, sourceRoot);
     if (refusal) {
       excluded.push({ file: relFile, reason: refusal });
       continue;

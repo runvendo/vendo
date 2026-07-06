@@ -74,6 +74,24 @@ describe("discoverRemixCandidates", () => {
     expect(candidates.map((c) => c.suggestedLabel)).toEqual(["My Widget", "Beta", "Gamma Panel"]);
   });
 
+  it("scopes the scan to capture's source root: in a src/-layout app, files outside src/ are never proposed", async () => {
+    const dir = app({
+      "src/components/DeadlineList.tsx": "export function DeadlineList() { return <ul/>; }",
+      // Widget-shaped but OUTSIDE the src/ source root — capture would refuse
+      // it at sync, so discovery must never offer it.
+      "scripts/Widget.tsx": "export function Widget() { return <div/>; }",
+    });
+    const model = proposalModel([
+      { file: "src/components/DeadlineList.tsx", id: "deadline-list", label: "Deadline list", reason: "r" },
+      { file: "scripts/Widget.tsx", id: "widget", label: "Widget", reason: "r" },
+    ]);
+
+    const { candidates, excluded } = await discoverRemixCandidates(dir, model);
+
+    expect(candidates.map((c) => c.file)).toEqual(["src/components/DeadlineList.tsx"]);
+    expect(excluded).toContainEqual({ file: "scripts/Widget.tsx", reason: "not a scanned app source file" });
+  });
+
   it("makes no LLM call and returns empty when no source files are scanned", async () => {
     const dir = app({ "package.json": "{}", "README.md": "# hi" });
     const { model, count } = countingModel(["{}"]);
