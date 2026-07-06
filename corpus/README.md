@@ -11,8 +11,27 @@ gitignored; do not commit foreign repo code or generated run artifacts.
 - `pnpm corpus list` prints the pinned repos in the manifest.
 - `pnpm --filter @vendoai/corpus-harness test` runs the harness unit tests.
 
-The Task 1 harness only validates and lists the manifest. Clone, bootstrap,
-injection, init, and verification layers land in later tasks.
+The harness currently validates/lists the manifest and has unit-tested helpers
+for clone, bootstrap, and local package injection. Init and verification layers
+land in later tasks.
+
+## Local Vendo injection
+
+The Vendo CLI's existing local/dev mode is:
+
+```sh
+vendo init [dir] --local <vendo-monorepo>
+```
+
+`--local=<vendo-monorepo>` is equivalent. That mode calls the CLI's
+`installLocalVendoPackages()` path, packing local `@vendoai/*` workspace
+packages and rewriting the host app to `file:vendor/*.tgz` dependencies and
+overrides. The corpus harness reuses that local-pack mechanism and caches the
+packed tarballs once per sweep before copying them into each repo.
+
+Known local-pack hazard: paths containing spaces are rejected up front by the
+harness. Keep both the Vendo workspace path and `corpus/.repos/<name>/` paths
+space-free.
 
 ## Manifest
 
