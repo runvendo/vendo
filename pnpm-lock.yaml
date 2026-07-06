@@ -79,7 +79,7 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
-      vendo:
+      vendoai:
         specifier: workspace:*
         version: link:../../packages/vendo
       zod:
@@ -206,7 +206,7 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
-      vendo:
+      vendoai:
         specifier: workspace:*
         version: link:../../packages/vendo
       zod:
@@ -341,7 +341,7 @@ importers:
       react-dom:
         specifier: ^18.3.0
         version: 18.3.1(react@18.3.1)
-      vendo:
+      vendoai:
         specifier: workspace:*
         version: link:../../packages/vendo
     devDependencies:

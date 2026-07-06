@@ -6,7 +6,7 @@ description: "Install Vendo in a Next.js App Router app with one command and one
 In the root of your Next.js App Router app:
 
 ```bash
-npx vendo init
+npx vendoai init
 ```
 
 That is the install. The codemod adds Vendo beside your existing code, the handler reads `.vendo/` from disk at runtime, and nothing it cannot edit with certainty gets touched. The steps below walk the same flow from a fresh app.
@@ -18,7 +18,7 @@ That is the install. The codemod adds Vendo beside your existing code, the handl
     ```bash
     npx create-next-app@latest my-app
     cd my-app
-    npm install vendo
+    npm install vendoai
     npx vendo init .
     ```
 
@@ -39,7 +39,7 @@ That is the install. The codemod adds Vendo beside your existing code, the handl
     The generated route is:
 
     ```ts
-    import { createVendoHandler } from "vendo/server";
+    import { createVendoHandler } from "vendoai/server";
 
     export const runtime = "nodejs";
     export const dynamic = "force-dynamic";

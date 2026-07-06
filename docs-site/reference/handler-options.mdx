@@ -4,12 +4,12 @@ description: "Every option accepted by createVendoHandler and createVendoFetchHa
 ---
 
 `createVendoHandler(options)` and `createVendoFetchHandler(options)`, both
-from `vendo/server`, accept the same `VendoHandlerOptions` object. The options
+from `vendoai/server`, accept the same `VendoHandlerOptions` object. The options
 object is validated at boot. Unknown keys or wrong shapes throw a readable
 error instead of being ignored.
 
 ```ts
-import { createVendoHandler } from "vendo/server";
+import { createVendoHandler } from "vendoai/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

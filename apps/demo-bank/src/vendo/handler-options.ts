@@ -10,7 +10,7 @@
  * etc., so (unlike a pure zero-config install) it must wire this explicitly.
  */
 import { anthropic } from "@ai-sdk/anthropic";
-import type { VendoHandlerOptions, ConnectionsStore } from "vendo/server";
+import type { VendoHandlerOptions, ConnectionsStore } from "vendoai/server";
 import type { VendoPrincipal, RegisteredTool, ToolDescriptor } from "@vendoai/runtime";
 import { buildInstructions } from "@/vendo/agent";
 import { demoPolicy } from "@/vendo/policy";

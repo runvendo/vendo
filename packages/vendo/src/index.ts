@@ -1,8 +1,10 @@
 /**
- * Root of the public `vendo` package.
+ * Root of the public `vendoai` package (interim name; bare `vendo` is
+ * pending an npm name-dispute — npm's typosquat checker blocks it as "too
+ * similar to send").
  *
  * This entry is types-only by design: it exists so `import type { ... } from
- * "vendo"` works without pulling in either the Node-only server runtime or
+ * "vendoai"` works without pulling in either the Node-only server runtime or
  * the browser-only React runtime. Runtime code lives in ./server (Node) and
  * ./react (browser) — importing it here would let one side's code leak into
  * the other side's bundle (e.g. a Node-only dependency ending up in a

@@ -35,7 +35,7 @@ is live in your product. Full walkthrough: [docs/quickstart.md](docs/quickstart.
 
 | Package | What it is |
 |---|---|
-| `vendo` | The public install — `vendo/server` (`createVendoHandler`) + `vendo/react` (`<VendoRoot>`) |
+| `vendoai` | The public install (interim name; bare `vendo` pending an npm name-dispute) — `vendoai/server` (`createVendoHandler`) + `vendoai/react` (`<VendoRoot>`) |
 | `@vendoai/cli` | `vendo init` — one-command install into a Next.js app |
 | `@vendoai/core` | Manifest schemas, GenUI format, the five platform seams |
 | `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |

@@ -1,9 +1,9 @@
 # examples/node — Vendo without Next.js
 
-Vendo's handler core is fetch-native (`vendo/server`), so any Node server can host it.
+Vendo's handler core is fetch-native (`vendoai/server`), so any Node server can host it.
 This example runs it on plain `node:http` (`server.mjs`, ~30 lines of logic) with a Vite React
 client reusing the exact `VendoRoot` surface `vendo init` wires into Next.js apps —
-`vendo/react` is plain React and imports nothing from Next.js.
+`vendoai/react` is plain React and imports nothing from Next.js.
 
 ## Run
 
@@ -37,7 +37,7 @@ once the packages publish Node-loadable ESM.
 
 ```js
 import express from "express";
-import { createVendoFetchHandler, toNodeHandler } from "vendo/server";
+import { createVendoFetchHandler, toNodeHandler } from "vendoai/server";
 
 const app = express();
 app.all("/api/vendo/*", toNodeHandler(createVendoFetchHandler())); // Express 5: "/api/vendo/{*path}"
@@ -52,7 +52,7 @@ directly — no bridge:
 
 ```ts
 import { Hono } from "hono";
-import { createVendoFetchHandler } from "vendo/server";
+import { createVendoFetchHandler } from "vendoai/server";
 
 const vendo = createVendoFetchHandler();
 const app = new Hono();

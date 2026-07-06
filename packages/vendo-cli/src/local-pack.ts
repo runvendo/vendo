@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-export const LOCAL_DIRECT_DEPENDENCIES = ["vendo"] as const;
+export const LOCAL_DIRECT_DEPENDENCIES = ["vendoai"] as const;
 
 /** Installed as devDependencies: init wires `prebuild: "vendo sync"`, and
  *  pre-publish the `vendo` bin stub cannot npx @vendoai/cli from the registry —
@@ -88,9 +88,9 @@ async function discoverWorkspacePackages(repoDir: string): Promise<Map<string, W
     }
     if (typeof pkg["name"] !== "string") continue;
     const name = pkg["name"];
-    // The umbrella `vendo` package itself, plus every `@vendoai/*` internal —
-    // the closure walk below starts from `vendo` and `@vendoai/cli`.
-    if (name !== "vendo" && !name.startsWith("@vendoai/")) continue;
+    // The umbrella `vendoai` package itself, plus every `@vendoai/*` internal —
+    // the closure walk below starts from `vendoai` and `@vendoai/cli`.
+    if (name !== "vendoai" && !name.startsWith("@vendoai/")) continue;
     if (typeof pkg["version"] !== "string") continue;
     packages.set(name, {
       name,

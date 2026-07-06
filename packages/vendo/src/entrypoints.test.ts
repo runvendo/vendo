@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-describe("vendo/server", () => {
+describe("vendoai/server", () => {
   it("exposes the route-handler surface", async () => {
     const mod = await import("../dist/server.js");
     expect(mod).toHaveProperty("createVendoHandler");
@@ -9,7 +9,7 @@ describe("vendo/server", () => {
   });
 });
 
-describe("vendo/react", () => {
+describe("vendoai/react", () => {
   it("exposes the batteries-included client, the provider/hooks, and shell surfaces", async () => {
     const mod = await import("../dist/react.js");
     expect(mod).toHaveProperty("VendoRoot");

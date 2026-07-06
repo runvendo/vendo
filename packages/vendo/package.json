@@ -1,7 +1,7 @@
 {
-  "name": "vendo",
+  "name": "vendoai",
   "version": "0.1.0",
-  "description": "Vendo: an embedded agent your users talk to, acting through your own API and rendering brand-native generated UI. One package: `vendo/server` for the route, `vendo/react` for the UI.",
+  "description": "Vendo: an embedded agent your users talk to, acting through your own API and rendering brand-native generated UI. One package: `vendoai/server` for the route, `vendoai/react` for the UI. (Interim name — bare `vendo` is pending an npm name-dispute; npm's typosquat checker blocks it as \"too similar to send\".)",
   "keywords": ["ai", "agent", "generative-ui", "react", "nextjs", "devtool"],
   "license": "Apache-2.0",
   "repository": {

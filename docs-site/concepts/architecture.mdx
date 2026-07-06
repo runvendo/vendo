@@ -20,7 +20,7 @@ The server process owns the agent loop and the security decisions. In a Next.js
 App Router app, `vendo init` wires a catch-all route like this:
 
 ```ts
-import { createVendoHandler } from "vendo/server";
+import { createVendoHandler } from "vendoai/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export const { GET, POST } = createVendoHandler();
 ```
 
 By default that route is mounted at `/api/vendo/*`. The same core handler is
-available as `createVendoFetchHandler()` from `vendo/server` for other Node
+available as `createVendoFetchHandler()` from `vendoai/server` for other Node
 servers.
 
 The server process:

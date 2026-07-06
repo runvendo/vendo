@@ -30,13 +30,13 @@ On a Next.js App Router app, the codemod also writes or edits:
 | File | Purpose |
 | --- | --- |
 | `app/api/vendo/[...path]/route.ts` or `src/app/api/vendo/[...path]/route.ts` | Catch-all route exporting `GET` and `POST` from `createVendoHandler()`. |
-| `app/vendo-root.tsx` or `src/app/vendo-root.tsx` | Client wrapper using `VendoRoot` from `vendo/react`, imported `.vendo/theme.json`, and imported `.vendo/tools.json`. |
+| `app/vendo-root.tsx` or `src/app/vendo-root.tsx` | Client wrapper using `VendoRoot` from `vendoai/react`, imported `.vendo/theme.json`, and imported `.vendo/tools.json`. |
 | `app/layout.*` or `src/app/layout.*` | Wraps the single root `{children}` expression in `<AppVendoRoot>`. |
 | `instrumentation.ts` or `src/instrumentation.ts` | Calls `startVendoScheduler()` in the Node.js runtime. |
 | `.env.example` | Provider keys, integration keys, model override, storage, scheduler, and webhook comments. |
 | `public/vendo/react-runtime.js` | React runtime shim for the sandbox. |
 | `public/vendo/components-sandbox.js` | Prewired component bundle for the sandbox. |
-| `package.json` | Adds `vendo` and a `prebuild` script that runs `vendo sync`. |
+| `package.json` | Adds `vendoai` and a `prebuild` script that runs `vendo sync`. |
 
 By default the `prebuild` sync runs via npx, which needs registry access at
 build time. For hermetic or offline builds, add `@vendoai/cli` as a
@@ -45,7 +45,7 @@ devDependency — the `vendo` bin picks it up automatically.
 The generated route has this shape:
 
 ```ts
-import { createVendoHandler } from "vendo/server";
+import { createVendoHandler } from "vendoai/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

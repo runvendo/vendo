@@ -15,7 +15,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.VENDO_DRILL === "1") {
     const [{ startVendoScheduler }, { vendoOptions }] = await Promise.all([
-      import("vendo/server"),
+      import("vendoai/server"),
       import("@/vendo/handler-options"),
     ]);
     startVendoScheduler(vendoOptions);

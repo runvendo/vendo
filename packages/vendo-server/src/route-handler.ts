@@ -3,9 +3,9 @@
  * file-router catch-alls. Next.js App Router is the canonical example:
  *
  *   // app/api/vendo/[...path]/route.ts
- *   // ("vendo/server" is the public `vendo` umbrella subpath that
+ *   // ("vendoai/server" is the public `vendoai` umbrella subpath that
  *   // re-exports this package)
- *   import { createVendoHandler } from "vendo/server";
+ *   import { createVendoHandler } from "vendoai/server";
  *   export const runtime = "nodejs";
  *   export const dynamic = "force-dynamic";
  *   export const { GET, POST } = createVendoHandler();

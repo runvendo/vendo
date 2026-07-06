@@ -29,7 +29,7 @@ import {
   createSourceResolver,
   enrichAnchorSources,
   resolveRemixSealer,
-} from "vendo/server";
+} from "vendoai/server";
 import { DEMO_PRINCIPAL } from "./principal";
 import { cadenceHostToolDefs } from "./host-tools";
 import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";

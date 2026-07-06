@@ -109,7 +109,7 @@ be gated by your app. Pass a `principal` resolver to `createVendoHandler()` and
 return `null` for unauthorized requests.
 
 ```ts
-import { createVendoHandler } from "vendo/server";
+import { createVendoHandler } from "vendoai/server";
 
 export const { GET, POST } = createVendoHandler({
   principal: async (req) => {

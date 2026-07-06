@@ -2,7 +2,7 @@
  * `createVendoFetchHandler()` — the framework-agnostic Web Fetch API core
  * behind `createVendoHandler` (the `{ GET, POST }` route pair) and
  * `toNodeHandler` (Express/`node:http`). The whole thing is surfaced
- * publicly via `vendo/server`. Point any router at it — a Next.js
+ * publicly via `vendoai/server`. Point any router at it — a Next.js
  * catch-all, an Express/Hono bridge, a raw `Bun.serve` — and it serves
  * everything Vendo needs from one place.
  *

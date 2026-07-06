@@ -1,10 +1,10 @@
 /**
- * `vendo/react` — the public React surface: the batteries-included
+ * `vendoai/react` — the public React surface: the batteries-included
  * `VendoRoot` client (`@vendoai/client`), the lower-level provider/hooks
  * (`@vendoai/react`), and the embedded shell surfaces (`@vendoai/shell`).
  *
  * Browser-only: do not import this from Node server code — use
- * `vendo/server` there instead.
+ * `vendoai/server` there instead.
  *
  * Collision note: `@vendoai/shell` and `@vendoai/client` both declare a
  * `RunQuery` type (shell's is the seam contract in `seams/query.ts`;

@@ -5,8 +5,8 @@
  * package holds the request handlers (chat/action/integrations), capability
  * detection, `.vendo/` loading, the embedded automations world, the default
  * policy, and the agent/instructions builder. This is the internal
- * `@vendoai/server` package, surfaced publicly via the `vendo` umbrella's
- * `vendo/server` subpath; it has no framework deps.
+ * `@vendoai/server` package, surfaced publicly via the `vendoai` umbrella's
+ * `vendoai/server` subpath; it has no framework deps.
  *
  * Server-only: reads `.vendo/` from disk and holds API keys. Never import
  * this from a client component.

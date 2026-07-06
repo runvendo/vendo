@@ -67,7 +67,7 @@ writes or edits:
 | `instrumentation.ts` or `src/instrumentation.ts` | Starts `startVendoScheduler()` only when `process.env.NEXT_RUNTIME === "nodejs"`. If an existing `register()` cannot be merged safely, an `instrumentation.vendo-example.*` file is written instead. |
 | `.env.example` | Adds provider, integration, storage, scheduler, and webhook variables if they are not already documented. |
 | `public/vendo/react-runtime.js` and `public/vendo/components-sandbox.js` | Copies the sandbox runtime assets from the CLI bundle. |
-| `package.json` | Adds `vendo` to dependencies and adds `vendo sync` to `prebuild` when possible. |
+| `package.json` | Adds `vendoai` to dependencies and adds `vendo sync` to `prebuild` when possible. |
 
 By default the `prebuild` sync runs via npx, which needs registry access at
 build time. For hermetic or offline builds, add `@vendoai/cli` as a

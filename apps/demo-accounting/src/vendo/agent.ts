@@ -22,7 +22,7 @@ import {
 import type { EnvManifest, VendoAgent, RegisteredComponent } from "@vendoai/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@vendoai/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
-import { resolveRemixSealer } from "vendo/server";
+import { resolveRemixSealer } from "vendoai/server";
 import { demoPolicy } from "./policy";
 import { cadenceBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
