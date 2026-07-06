@@ -29,7 +29,9 @@ export const donutSchema = z.object({
 
 export const donutDescriptor = prewired(
   "Donut",
-  "A donut/ring chart with a legend and an optional centered total, drawn in a " +
+  "A donut/ring chart with a legend and an optional centered total (centerValue " +
+  "must be formatted from the same converted values as the slices — never re-divide " +
+  "an already-converted total), drawn in a " +
     "brand-accent ramp (or per-slice hex colors). Use for part-of-whole breakdowns " +
     "like spending by category. Prefer a registered host donut when one exists.",
   donutSchema,

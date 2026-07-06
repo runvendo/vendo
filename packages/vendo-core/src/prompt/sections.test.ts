@@ -144,3 +144,13 @@ describe("integrations completeness (live check feedback)", () => {
     expect(s).toMatch(/complete\s+connectable list on screen/);
   });
 });
+
+describe("data fidelity — summary strings", () => {
+  it("covers pre-formatted summary strings (donut centerValue class) in both modalities", () => {
+    for (const modality of ["chat", "voice"] as const) {
+      const s = dataFidelitySection(modality);
+      expect(s).toMatch(/summary string|pre-formatted/i);
+      expect(s).toMatch(/convert(ed)? once|never .*(divide|convert).* again/i);
+    }
+  });
+});

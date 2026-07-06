@@ -120,6 +120,9 @@ export function dataFidelitySection(modality: PromptModality): string {
       "  format; declared cents divide by exactly 100, nothing else.",
       "- A total or stat tile must be computed from the same values as the rows it",
       "  summarizes — a summary that disagrees with its own table is always wrong.",
+      "- Pre-formatted summary strings you write into components (a donut centerValue,",
+      "  a stat subtitle) follow the same rule: values are converted once — a value",
+      "  already in dollars is never divided again.",
     ].join("\n");
   }
   return [
@@ -127,7 +130,8 @@ export function dataFidelitySection(modality: PromptModality): string {
     "the named day, never timezone-shift it; ISO timestamps read in the user's local",
     "time. Never guess a money divisor: present raw values unless the field name says",
     "cents or the tool's RESULT FIELD FORMATS declare one — declared cents divide by",
-    "exactly 100. A spoken total must match the rows on screen.",
+    "exactly 100. A spoken total must match the rows on screen; any pre-formatted",
+    "summary string written into a view is converted once, never divided again.",
   ].join("\n");
 }
 

@@ -132,6 +132,8 @@ describe("default prompt migration diff", () => {
     /^before storing it at the declared path — reshape at render time\.$/,
     // novel-components converged (gains React.createElement + REPLACES lines)
     /keyboard\/mouse handlers, and useState — so games and interactive widgets live here\.$/,
+    // Donut catalog line gained the centerValue convert-once guidance
+    /^- Donut: A donut\/ring chart with a legend and an optional centered total, drawn in a/,
     // connect section converged to the shared wording (re-wrapped lines)
     /^CONNECTING TOOLS — external tools \(Gmail, Slack, etc\.\) are only available once$/,
     /^the user has CONNECTED them\. If a request needs a tool that is not yet connected$/,

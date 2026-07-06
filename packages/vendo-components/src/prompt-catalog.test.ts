@@ -35,3 +35,12 @@ describe("componentPromptCatalog", () => {
     for (const line of lines) expect(line).toMatch(/^- [A-Z][A-Za-z0-9]*: .+/);
   });
 });
+
+describe("Donut centerValue guidance", () => {
+  it("tells the model centerValue reuses the slices' converted values (never re-divide)", () => {
+    const lines = componentPromptCatalog(prewiredComponents).split("\n");
+    const entry = lines.find((l) => l.includes("Donut"));
+    expect(entry).toBeDefined();
+    expect(entry!).toMatch(/same .*converted values|never re-divide/i);
+  });
+});
