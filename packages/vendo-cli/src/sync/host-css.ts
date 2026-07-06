@@ -23,9 +23,6 @@ const imageSet = () => /(?:-webkit-)?image-set\([^)]*\)/gi;
 // Any external URL literal that survived the structured passes (belt and
 // suspenders): http(s) and protocol-relative refs anywhere in the text.
 const externalRef = () => /(?:https?:|\/\/)[^\s'")]+/gi;
-// Kept `url(data:...)` payloads — masked out before the external-ref pass so a
-// `//` inside a base64 payload is never mistaken for a protocol-relative URL.
-const dataUrl = () => /url\(\s*(['"]?)data:[^)]*\1\s*\)/gi;
 // CSS comments — stripped FIRST so `u/**/rl(...)`-style hiding can't survive.
 const cssComment = () => /\/\*[\s\S]*?\*\//g;
 // CSS hex escapes (`\75` = u, `\5c` = \) — decoded before matching so an
@@ -37,6 +34,48 @@ function decodeEscapes(css: string): string {
     const code = parseInt(hex, 16);
     return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
   });
+}
+
+/**
+ * Replace every kept `url(data:...)` token with an opaque placeholder so NO
+ * later pass (fetchable-url, external-ref) can corrupt a payload containing
+ * `)` (quoted SVG) or `//` (base64). A small quote/escape-aware scanner — a
+ * regex stopping at the first `)` truncates quoted data URLs. Returns the
+ * masked string plus the ordered original tokens for restoration.
+ */
+function maskDataUrls(css: string): { masked: string; tokens: string[] } {
+  const tokens: string[] = [];
+  const lower = css.toLowerCase();
+  let out = "";
+  let i = 0;
+  while (i < css.length) {
+    const start = lower.indexOf("url(", i);
+    if (start === -1) {
+      out += css.slice(i);
+      break;
+    }
+    out += css.slice(i, start);
+    // Scan to the matching ')', honoring a quoted argument whose payload may
+    // itself contain ')'.
+    let j = start + 4;
+    while (j < css.length && /\s/.test(css[j]!)) j++;
+    const quote = css[j] === '"' || css[j] === "'" ? css[j]! : "";
+    let k = j + (quote ? 1 : 0);
+    if (quote) {
+      while (k < css.length && css[k] !== quote) k += css[k] === "\\" ? 2 : 1;
+      k++; // past the closing quote
+    }
+    while (k < css.length && css[k] !== ")") k++;
+    if (k >= css.length) {
+      out += css.slice(start); // unterminated url( — leave verbatim
+      break;
+    }
+    const token = css.slice(start, k + 1);
+    const isData = css.slice(j + (quote ? 1 : 0)).replace(/^\s+/, "").toLowerCase().startsWith("data:");
+    out += isData ? `__vendo-data-${tokens.push(token) - 1}__` : token;
+    i = k + 1;
+  }
+  return { masked: out, tokens };
 }
 
 export interface SanitizeResult {
@@ -57,6 +96,10 @@ export function sanitizeCss(css: string): SanitizeResult {
   const dropped: string[] = [];
   // Normalize first: strip comments, decode escapes.
   let out = decodeEscapes(css.replace(cssComment(), ""));
+  // Mask kept data: URLs up front so NO pass below can corrupt a payload
+  // containing `)` (quoted SVG) or `//` (base64); restore verbatim at the end.
+  const { masked, tokens } = maskDataUrls(out);
+  out = masked;
   out = out.replace(atImport(), (match) => {
     dropped.push(match.trim());
     return "/* vendo: import rule dropped */";
@@ -69,30 +112,26 @@ export function sanitizeCss(css: string): SanitizeResult {
     dropped.push(match.trim());
     return "none";
   });
-  // Mask kept data: URLs so the catch-all below cannot corrupt a `//` inside a
-  // base64 payload; restore them verbatim afterward.
-  const dataUrls: string[] = [];
-  out = out.replace(dataUrl(), (m) => `__vendo-data-${dataUrls.push(m) - 1}__`);
   // Final catch-all: neutralize any external URL literal still present (e.g. a
   // bare string in a property we don't structurally understand).
   out = out.replace(externalRef(), (match) => {
     dropped.push(match.trim());
     return "";
   });
-  out = out.replace(/__vendo-data-(\d+)__/g, (_m, i) => dataUrls[Number(i)]!);
+  out = out.replace(/__vendo-data-(\d+)__/g, (_m, i) => tokens[Number(i)]!);
   return { css: out, dropped };
 }
 
 /** True when `css`, after the same normalization, still has any fetchable URL. */
 export function hasFetchableUrl(css: string): boolean {
-  const normalized = decodeEscapes(css.replace(cssComment(), ""));
-  // Exclude kept data: URLs from the external-ref check — a `//` in a base64
-  // payload is not a fetchable reference.
-  const withoutData = normalized.replace(dataUrl(), "");
+  // Same normalization + data:-URL masking as sanitizeCss, so the guard cannot
+  // be fooled by a form the sanitizer normalized away, nor false-positive on a
+  // `//` inside a kept data: payload.
+  const normalized = maskDataUrls(decodeEscapes(css.replace(cssComment(), ""))).masked;
   return (
     fetchableUrl().test(normalized) ||
     atImport().test(normalized) ||
     imageSet().test(normalized) ||
-    externalRef().test(withoutData)
+    externalRef().test(normalized)
   );
 }

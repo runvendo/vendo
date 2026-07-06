@@ -75,4 +75,14 @@ describe("sanitizeCss", () => {
     expect(dropped).toHaveLength(0);
     expect(hasFetchableUrl(css)).toBe(false);
   });
+
+  it("keeps a QUOTED data: URL whose payload contains ) and // intact", () => {
+    const input = `.a { background: url("data:image/svg+xml,<svg><text>f(x)//g</text></svg>"); }`;
+    const { css, dropped } = sanitizeCss(input);
+    // The quoted payload holds a ')' — a mask that stops at the first ')' would
+    // leave the tail exposed to the external-ref pass and eat the '//'.
+    expect(css).toContain("<text>f(x)//g</text>");
+    expect(dropped).toHaveLength(0);
+    expect(hasFetchableUrl(css)).toBe(false);
+  });
 });
