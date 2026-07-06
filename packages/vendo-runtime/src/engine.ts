@@ -667,6 +667,35 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
   let mcpCache: Promise<Ingested> | null = null;
 
   /**
+   * The model-visible text for an explicit decline. The shell answers an
+   * approval card with `{ approved: false }` and NO reason, and the ai SDK
+   * converts a reason-less `output-denied` part into the bare error
+   * "Tool execution denied." — which reads as retryable, so the model
+   * re-pitches the very action the user just refused. Stamping the reason
+   * here (serialization layer only — the approval state machine is untouched)
+   * makes the decline an unambiguous user decision with the behavioral rule
+   * attached.
+   */
+  function declineReason(toolName: string): string {
+    return (
+      `The user DECLINED the "${toolName}" action on the approval card. ` +
+      "This is the user's explicit decision, not an error: acknowledge the " +
+      "refusal briefly, leave the action undone, and do not re-propose or " +
+      "retry it unless the user asks for it again."
+    );
+  }
+
+  /** Static tool parts are "tool-<name>"; dynamic (MCP) parts are
+   *  "dynamic-tool" with the name in `toolName`. */
+  function partToolName(rawPart: unknown, type: string): string {
+    if (type === "dynamic-tool") {
+      const name = (rawPart as { toolName?: unknown }).toolName;
+      return typeof name === "string" && name.length > 0 ? name : "requested";
+    }
+    return type.slice("tool-".length);
+  }
+
+  /**
    * Normalize client-supplied history so a stale turn can't wedge the thread.
    * A tool part stuck at `approval-requested` with no response (the user typed
    * past the approval card) converts to a tool_use with NO tool_result — the
@@ -674,6 +703,10 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
    * as declined: `output-denied` emits a valid approval-response + denied
    * tool-result pair. (Parts stuck at input-* from an aborted stream are
    * handled by `ignoreIncompleteToolCalls` at conversion time.)
+   *
+   * Explicitly DECLINED parts (`output-denied`, `approved: false`) that carry
+   * no reason get `declineReason` stamped so the model sees the user's
+   * decision instead of a bare tool error; an existing reason always wins.
    */
   function normalizeHistory(messages: VendoUIMessage[]): VendoUIMessage[] {
     return messages.map((message) => {
@@ -703,6 +736,31 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
               ...part.approval,
               approved: false,
               reason: "Not approved — the user moved on without answering.",
+            },
+          } as typeof rawPart;
+        }
+        // An explicit decline with no reason: make the user's decision visible
+        // to the model (see declineReason above). A part that already carries
+        // a reason — including the stranded-approval text stamped by the
+        // branch above on an earlier turn — is left alone.
+        // Two shapes carry an explicit decline: `output-denied` (already
+        // settled) and `approval-responded` with approved:false — the LIVE
+        // path, where the react layer auto-resubmits right after the card is
+        // answered and the SDK's resume synthesizes the execution-denied
+        // result from THIS part's approval.reason.
+        if (
+          (part.type.startsWith("tool-") || part.type === "dynamic-tool") &&
+          (part.state === "output-denied" || part.state === "approval-responded") &&
+          part.approval != null &&
+          part.approval.approved === false &&
+          (part.approval.reason == null || part.approval.reason.trim() === "")
+        ) {
+          changed = true;
+          return {
+            ...rawPart,
+            approval: {
+              ...part.approval,
+              reason: declineReason(partToolName(rawPart, part.type)),
             },
           } as typeof rawPart;
         }

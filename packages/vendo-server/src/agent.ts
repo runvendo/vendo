@@ -116,6 +116,9 @@ export function buildInstructions(input: BuildInstructionsInput): string {
 
   return buildChatInstructions({
     identity,
+    // Grounds the ONLY name the model may call the host — failure C was the
+    // agent inventing a product name in refusal prose.
+    hostName: input.productName,
     brandGuidance: buildBrandGuidance({ tokens: brandToCssVars(input.brand) }),
     catalogs: catalogParts.join("\n"),
     ...(capabilities ? { capabilities } : {}),

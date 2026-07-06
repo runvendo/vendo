@@ -179,3 +179,24 @@ describe("heterogeneous rows (PR #43 review P1)", () => {
     expect(payload.queries).toBeUndefined();
   });
 });
+
+describe("voice host tools carry result-field format hints", () => {
+  it("appends RESULT FIELD FORMATS to annotated tools' voice descriptions", () => {
+    const { hostVoiceTools } = __voiceTesting;
+    const byName = (name: string) => {
+      const tool = hostVoiceTools.find((t) => t.name === name);
+      if (!tool) throw new Error(`missing voice tool ${name}`);
+      return tool;
+    };
+    // Money-bearing reads: the cents rule must reach the voice model too.
+    for (const name of ["listTransactions", "listAccounts", "getBudgets"]) {
+      const description = byName(name).description;
+      expect(description, name).toContain("RESULT FIELD FORMATS");
+      expect(description, name).toMatch(/divide by (exactly )?100/i);
+    }
+    expect(byName("listTransactions").description).toContain('"amount"');
+    expect(byName("listAccounts").description).toContain('"balance"');
+    // A tool without formats keeps its plain description.
+    expect(byName("listPayees").description).not.toContain("RESULT FIELD FORMATS");
+  });
+});
