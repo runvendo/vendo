@@ -2,52 +2,58 @@ import { promises as fs } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { manifestThemeSchema, toolsManifestSchema } from "./tools/manifest.js";
+import { createUi, type Ui } from "./ui.js";
 
 /**
- * `vendo publish` — STUB. The cloud manifest registry is ENG-198 (track A);
- * this validates the JSON artifacts against the frozen schemas and computes the
- * content hash a real publish would key tools.json by. Component descriptors
- * are TS source — they are validated by the host compiler/bundle build, and a
- * real publish serializes them (zod → JSON Schema) at assembly time.
- * Embedded mode reads .vendo/ from disk and never needs publish.
+ * `vendo publish` — a VALIDATION STUB. The cloud manifest registry is ENG-198
+ * (track A); until it ships this command only validates the JSON artifacts
+ * against the frozen schemas and computes the content hash a real publish
+ * would key tools.json by. Component descriptors are TS source — the host
+ * compiler / bundle build check them, and a real publish serializes them
+ * (zod → JSON Schema) at assembly time. Embedded mode reads .vendo/ from disk
+ * and never needs publish.
  */
-export async function runPublish(opts: { targetDir: string }): Promise<number> {
+export async function runPublish(opts: { targetDir: string; ui?: Ui }): Promise<number> {
+  const ui = opts.ui ?? createUi();
   const vendoDir = path.join(path.resolve(opts.targetDir), ".vendo");
   const toolsPath = path.join(vendoDir, "tools.json");
+
+  ui.header("vendo publish");
+
   let tools: unknown;
   try {
     tools = JSON.parse(await fs.readFile(toolsPath, "utf8"));
     toolsManifestSchema.parse(tools);
   } catch (err) {
-    console.error(
-      `cannot publish: ${toolsPath} missing or invalid — ${err instanceof Error ? err.message : String(err)}`,
+    ui.error(
+      "cannot publish: .vendo/tools.json is missing or invalid",
+      err instanceof Error ? err.message : String(err),
     );
     return 1;
   }
+  const hash = createHash("sha256").update(JSON.stringify(tools)).digest("hex");
+  ui.step("ok", "tools.json valid", `sha256:${hash}`);
 
   const themePath = path.join(vendoDir, "theme.json");
-  let themeLine = "theme.json: not present";
   try {
-    const theme = JSON.parse(await fs.readFile(themePath, "utf8"));
-    manifestThemeSchema.parse(theme);
-    themeLine = "theme.json: valid";
+    manifestThemeSchema.parse(JSON.parse(await fs.readFile(themePath, "utf8")));
+    ui.step("ok", "theme.json valid");
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`cannot publish: ${themePath} invalid — ${err instanceof Error ? err.message : String(err)}`);
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      ui.step("ok", "theme.json", "not present");
+    } else {
+      ui.error("cannot publish: .vendo/theme.json is invalid", err instanceof Error ? err.message : String(err));
       return 1;
     }
   }
 
-  const hash = createHash("sha256").update(JSON.stringify(tools)).digest("hex");
-  console.log(
-    [
-      `tools.json: valid — sha256:${hash}`,
-      themeLine,
-      "components/: not validated here (TS source; the compiler and bundle build check it, publish assembly will serialize it)",
-      "publish is a stub: the cloud registry lands with ENG-198.",
-      "When it ships, this command uploads the assembled manifest (tenant + version + hash) and sessions bind to it.",
-      "Embedded hosts read .vendo/ from disk; publish stays a no-op there.",
-    ].join("\n"),
+  ui.note(
+    "  components/ not validated here — they are TS source; the compiler and bundle build check them, and publish assembly serializes them.",
+  );
+  ui.note(
+    "publish is a validation stub: it checks your .vendo/ artifacts against the frozen schemas. " +
+      "The cloud registry lands with ENG-198 — when it ships this command uploads the assembled manifest " +
+      "(tenant + version + hash) and sessions bind to it. Embedded hosts read .vendo/ from disk, so publish stays a no-op there.",
   );
   return 0;
 }
