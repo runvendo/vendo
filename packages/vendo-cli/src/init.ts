@@ -6,6 +6,7 @@ import { detectTarget } from "./detect.js";
 import { extractTheme } from "./theme/extract-theme.js";
 import { extractTools } from "./tools/extract-tools.js";
 import { extractComponents } from "./components/extract-components.js";
+import { runRemixStep, renderRemixStep, REMIX_HINT, type RemixStepResult } from "./remix/step.js";
 import type { ResolveModelDeps } from "@vendoai/server/model";
 import { resolveCliModel } from "./llm.js";
 import {
@@ -335,6 +336,9 @@ export async function runInit(opts: InitOptions): Promise<number> {
       : undefined,
   };
   let failedStep: InitFailedStep = "theme";
+  // The remix step's outcome (null when it didn't run) — a seam Task 17 reads
+  // for wrapped/skipped telemetry counts on the completed event.
+  let remixResult: RemixStepResult | null = null;
   try {
     failedStep = "theme";
     if (state.theme.status === "real" && !opts.force) {
@@ -399,6 +403,14 @@ export async function runInit(opts: InitOptions): Promise<number> {
         };
       }
     }
+    // The SECOND interactive picker: propose widget-shaped components a user
+    // might want to customize and wrap the picks in a <VendoRemix> anchor IN
+    // THE HOST SOURCE. Runs only with a model AND an interactive, non-`--yes`
+    // run (source edits stay human-gated); no model → no discovery. The step
+    // never throws — an ambiguous splice or IO error is reported, not fatal.
+    if (model && interactive) {
+      remixResult = await runRemixStep(targetDir, model, opts.interactor ?? createInteractor());
+    }
     // The README is generated documentation, kept when present (it tells the
     // developer the directory is theirs to edit).
     await writeGenerated(path.join(targetDir, ".vendo/README.md"), readmeSource(report), {
@@ -411,6 +423,10 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return 1;
   }
   console.log(renderReport(report));
+  // The remix step either ran (print its anchors/TODOs/summary) or was gated
+  // off (print the hint: how to get remixable widgets, source edits stay
+  // human-gated). No discovery/prompt/source edit happens on the gated path.
+  console.log(remixResult ? renderRemixStep(remixResult) : REMIX_HINT);
 
   // The install codemod (Next.js App Router): route handler, provider wrap,
   // .env.example, sandbox assets, dependency. Fail-open by design — anything
