@@ -24,6 +24,10 @@ That is the install. The codemod adds Vendo beside your existing code, the handl
     ```
 
     `vendo init` prompts for a provider key, offers the component and remix pickers, writes reviewable files, and skips anything it cannot edit with certainty. Review the diff before you continue. `init` is safe to re-run: it fills gaps and never overwrites. Once installed, use `vendo refresh` to catch up as your app grows.
+
+    <Frame caption="vendo init: theme extracted from your CSS, tools derived from the OpenAPI spec, components wrapped, routes wired.">
+      <img src="/images/init.gif" alt="vendo init running the codemod against a Next.js app" />
+    </Frame>
   </Step>
 
   <Step title="Check what was added">
@@ -83,6 +87,10 @@ That is the install. The codemod adds Vendo beside your existing code, the handl
     ```
 
     Vendo streams the response and renders the generated view in the sandbox.
+
+    <Frame caption="The agent composes a live view from the host's own components and API, right beside chat.">
+      <img src="/images/hero.gif" alt="Vendo rendering a generated dashboard from a chat prompt" />
+    </Frame>
   </Step>
 </Steps>
 
