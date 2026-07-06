@@ -50,8 +50,17 @@ export const manifestFieldFormatSchema = z.enum([
 export type FieldFormat = z.infer<typeof manifestFieldFormatSchema>;
 
 /** Field name → format. Keys are RESULT field names (any depth — hints are
- *  prose for the model, so JSON-pointer precision buys nothing). */
-export const manifestToolFormatsSchema = z.record(manifestFieldFormatSchema);
+ *  prose for the model, so JSON-pointer precision buys nothing).
+ *
+ *  Keys are constrained to the same identifier charset as tool names: they
+ *  are interpolated into the prompt by `prompt/format-hints.ts`, so a
+ *  free-form key (quotes, newlines) would be a prompt-injection surface.
+ *  The renderer ALSO escapes defensively — but the manifest contract fails
+ *  closed here, at validation time. */
+export const manifestToolFormatsSchema = z.record(
+  z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/),
+  manifestFieldFormatSchema,
+);
 
 /**
  * How a tool call physically reaches the host API. `http` is the only binding

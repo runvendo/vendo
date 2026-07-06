@@ -35,6 +35,16 @@ const FORMAT_RULES: Record<FieldFormat, string> = {
     "as-is; never multiply or divide it.",
 };
 
+/** Defensive label rendering: the manifest schema already restricts format-map
+ *  keys to a safe identifier charset, but this renderer must hold on its own —
+ *  a future schema loosening (or a code-built definition) must never let a key
+ *  containing quotes/newlines break out of its bullet and inject instructions.
+ *  JSON.stringify escapes quotes and all control characters into a single-line
+ *  quoted string. */
+function fieldLabel(field: string): string {
+  return JSON.stringify(field);
+}
+
 /** Render a formats map into the tool-description block. Empty map → "". */
 export function renderFormatHints(
   formats: Readonly<Record<string, FieldFormat>>,
@@ -43,6 +53,6 @@ export function renderFormatHints(
   if (entries.length === 0) return "";
   return [
     "RESULT FIELD FORMATS — non-negotiable rendering rules for this tool's result fields:",
-    ...entries.map(([field, format]) => `- "${field}": ${FORMAT_RULES[format]}`),
+    ...entries.map(([field, format]) => `- ${fieldLabel(field)}: ${FORMAT_RULES[format]}`),
   ].join("\n");
 }
