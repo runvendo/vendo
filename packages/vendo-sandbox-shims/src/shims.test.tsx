@@ -297,6 +297,56 @@ describe("swr extra exports", () => {
     expect(screen.getByText("swr-child")).toBeTruthy();
   });
 
+  it("useSWR reads fallback data from an enclosing SWRConfig provider", () => {
+    function Probe() {
+      const { data } = useSWR("/api/x");
+      return <span>{JSON.stringify(data)}</span>;
+    }
+    render(
+      <SWRConfig value={{ fallback: { "/api/x": [7] } }}>
+        <Probe />
+      </SWRConfig>,
+    );
+    expect(screen.getByText("[7]")).toBeTruthy();
+  });
+
+  it("useSWRConfig returns the provider's shared cache and mutate", () => {
+    const sharedCache = new Map<string, unknown>();
+    let captured: ReturnType<typeof useSWRConfig> | undefined;
+    function Probe() {
+      captured = useSWRConfig();
+      return null;
+    }
+    render(
+      <SWRConfig value={{ provider: () => sharedCache }}>
+        <Probe />
+      </SWRConfig>,
+    );
+    expect(captured?.cache).toBe(sharedCache);
+    expect(typeof captured?.mutate).toBe("function");
+  });
+
+  it("nested SWRConfig merges fallback over the parent provider", () => {
+    function Probe({ k }: { k: string }) {
+      const { data } = useSWR(k);
+      return (
+        <span>
+          {k}:{JSON.stringify(data)}
+        </span>
+      );
+    }
+    render(
+      <SWRConfig value={{ fallback: { "/a": 1, "/b": 2 } }}>
+        <SWRConfig value={{ fallback: { "/b": 99 } }}>
+          <Probe k="/a" />
+          <Probe k="/b" />
+        </SWRConfig>
+      </SWRConfig>,
+    );
+    expect(screen.getByText("/a:1")).toBeTruthy();
+    expect(screen.getByText("/b:99")).toBeTruthy();
+  });
+
   it("preload is a safe no-op returning a resolved promise (fetcher never runs)", async () => {
     const fetcher = vi.fn();
     await expect(preload("/api/x", fetcher)).resolves.toBeUndefined();

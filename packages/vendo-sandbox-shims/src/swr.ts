@@ -5,7 +5,7 @@
  * INVOKED — network egress stays jailed. `mutate` is a no-op unless a declared
  * query backs the key (not in v1). Default export mirrors `swr`.
  */
-import { createElement, Fragment, type ReactElement, type ReactNode } from "react";
+import { createContext, createElement, useContext, type ReactElement, type ReactNode } from "react";
 
 interface AnchorDataWindow {
   __vendoAnchorData?: Record<string, unknown>;
@@ -46,12 +46,20 @@ function resolveKey(key: unknown): { skip: true } | { skip: false; key: string |
 export default function useSWR<T = unknown>(key: unknown, _fetcher?: unknown): SWRResponse<T> {
   // _fetcher is intentionally ignored — calling it would breach the egress jail.
   const resolved = resolveKey(key);
+  const config = useConfig();
   if (resolved.skip) {
     // Not fetching: no spinner. Without this a null/conditional key spun forever.
     return { data: undefined, error: undefined, isLoading: false, isValidating: false, mutate: async () => undefined };
   }
   const store = (globalThis as unknown as AnchorDataWindow).__vendoAnchorData ?? {};
-  const data = resolved.key !== undefined ? (store[resolved.key] as T | undefined) : undefined;
+  // Precedence: live anchor data > provider per-key fallback > provider
+  // fallbackData default. Fallback keeps a component out of a permanent spinner
+  // when the host hasn't injected that key yet.
+  let data = resolved.key !== undefined ? (store[resolved.key] as T | undefined) : undefined;
+  if (data === undefined && resolved.key !== undefined && resolved.key in config.fallback) {
+    data = config.fallback[resolved.key] as T | undefined;
+  }
+  if (data === undefined) data = config.fallbackData as T | undefined;
   return {
     data,
     error: undefined,
@@ -113,15 +121,62 @@ export interface SWRConfiguration {
   cache: Map<string, unknown>;
 }
 
-/** `useSWRConfig()` — a config object with a working `mutate` and sane defaults. */
-export function useSWRConfig(): SWRConfiguration {
-  return { mutate, cache: new Map() };
+/** The provider config threaded through `SWRConfig`. `fallback`/`fallbackData`
+ *  seed `useSWR` and `cache`/`mutate` are shared so `useSWRConfig` sees them. */
+export interface SWRProviderValue extends SWRConfiguration {
+  fallback: Record<string, unknown>;
+  fallbackData: unknown;
 }
 
-/** `SWRConfig` — a passthrough provider. There is no live config in the sandbox,
- *  so it simply renders its children. */
-export function SWRConfig({ children }: { value?: unknown; children?: ReactNode }): ReactElement {
-  return createElement(Fragment, null, children);
+const DEFAULT_CONFIG: SWRProviderValue = {
+  fallback: {},
+  fallbackData: undefined,
+  cache: new Map(),
+  mutate,
+};
+
+const SWRConfigContext = createContext<SWRProviderValue>(DEFAULT_CONFIG);
+
+/** Read the active `SWRConfig`. Tolerates being called outside a React render —
+ *  the shim's hooks are also invoked directly (e.g. in tests / non-render code)
+ *  — by returning the defaults rather than throwing. */
+function useConfig(): SWRProviderValue {
+  try {
+    return useContext(SWRConfigContext);
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
+
+export interface SWRConfigValue {
+  fallback?: Record<string, unknown>;
+  fallbackData?: unknown;
+  provider?: () => Map<string, unknown>;
+}
+
+/** `useSWRConfig()` — the active provider config (shared `cache` + `mutate`), so
+ *  callers no longer get a throwaway fresh Map each call. */
+export function useSWRConfig(): SWRConfiguration {
+  return useConfig();
+}
+
+/** `SWRConfig` — provides its `value` (merged over any parent) through context
+ *  so `useSWR`/`useSWRConfig` see the fallback data, shared cache, and mutate. */
+export function SWRConfig({
+  value,
+  children,
+}: {
+  value?: SWRConfigValue;
+  children?: ReactNode;
+}): ReactElement {
+  const parent = useConfig();
+  const merged: SWRProviderValue = {
+    fallback: { ...parent.fallback, ...(value?.fallback ?? {}) },
+    fallbackData: value?.fallbackData !== undefined ? value.fallbackData : parent.fallbackData,
+    cache: typeof value?.provider === "function" ? value.provider() : parent.cache,
+    mutate,
+  };
+  return createElement(SWRConfigContext.Provider, { value: merged }, children);
 }
 
 /** `preload(key, fetcher)` — a safe no-op returning a resolved promise. The
