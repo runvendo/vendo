@@ -29,6 +29,7 @@ export interface RunVendoInitStepOptions {
   env?: NodeJS.ProcessEnv;
   force?: boolean;
   gitBin?: string;
+  artifactPrefix?: string;
   localVendoDir?: string;
   skipLlm?: boolean;
 }
@@ -51,11 +52,11 @@ function defaultCliInvocation(): { command: string; args: string[] } {
   };
 }
 
-function initLogPaths(logsDir: string): InitStepArtifacts {
+function initLogPaths(logsDir: string, prefix = "init"): InitStepArtifacts {
   return {
-    log: path.join(logsDir, "init.log"),
-    diff: path.join(logsDir, "init.diff"),
-    tokenCost: path.join(logsDir, "init.token-cost.log"),
+    log: path.join(logsDir, `${prefix}.log`),
+    diff: path.join(logsDir, `${prefix}.diff`),
+    tokenCost: path.join(logsDir, `${prefix}.token-cost.log`),
   };
 }
 
@@ -145,7 +146,7 @@ export async function runVendoInitStep(
   const context = options.context ?? createRunContext();
   const repoDir = context.repoDir(repo.name);
   const logsDir = context.logsDir(repo.name);
-  const artifacts = initLogPaths(logsDir);
+  const artifacts = initLogPaths(logsDir, options.artifactPrefix);
   const invocation = defaultCliInvocation();
   const cliCommand = options.cliCommand ?? invocation.command;
   const cliArgs = [...(options.cliArgs ?? invocation.args), ...initArgs(repoDir, options)];

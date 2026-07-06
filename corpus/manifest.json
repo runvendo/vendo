@@ -6,15 +6,16 @@
     "license": "MIT",
     "tier": "deep",
     "bootstrap": {
-      "installCommand": "pnpm install --frozen-lockfile",
+      "installCommand": "pnpm install --frozen-lockfile --force --ignore-workspace",
       "envTemplate": {
-        "DATABASE_URL": "${CORPUS_UMAMI_DATABASE_URL}",
-        "HASH_SALT": "${CORPUS_UMAMI_HASH_SALT}"
+        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:5432/umami",
+        "HASH_SALT": "corpus-layer1-hash-salt"
       },
       "seedCommand": "pnpm seed-data",
-      "buildCommand": "pnpm build",
+      "typecheckCommand": "pnpm --ignore-workspace exec tsc --noEmit",
+      "buildCommand": "pnpm --ignore-workspace build",
       "devServer": {
-        "command": "pnpm dev",
+        "command": "pnpm --ignore-workspace dev",
         "readinessUrl": "http://127.0.0.1:3000"
       }
     },
@@ -27,30 +28,31 @@
     "license": "MIT",
     "tier": "deep",
     "bootstrap": {
-      "installCommand": "pnpm install --frozen-lockfile",
+      "installCommand": "pnpm install --frozen-lockfile --force --ignore-workspace",
       "envTemplate": {
         "NEXT_PUBLIC_APP_URL": "http://127.0.0.1:3000",
-        "DATABASE_URL": "${CORPUS_SKATESHOP_DATABASE_URL}",
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "${CORPUS_SKATESHOP_NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}",
-        "CLERK_SECRET_KEY": "${CORPUS_SKATESHOP_CLERK_SECRET_KEY}",
+        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:5432/skateshop",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_corpus_dummy",
+        "CLERK_SECRET_KEY": "sk_test_corpus_dummy",
         "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/signin",
         "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup",
-        "RESEND_API_KEY": "${CORPUS_SKATESHOP_RESEND_API_KEY}",
+        "RESEND_API_KEY": "re_corpus_dummy",
         "EMAIL_FROM_ADDRESS": "onboarding@resend.dev",
-        "UPLOADTHING_SECRET": "${CORPUS_SKATESHOP_UPLOADTHING_SECRET}",
-        "UPLOADTHING_APP_ID": "${CORPUS_SKATESHOP_UPLOADTHING_APP_ID}",
-        "UPSTASH_REDIS_REST_URL": "${CORPUS_SKATESHOP_UPSTASH_REDIS_REST_URL}",
-        "UPSTASH_REDIS_REST_TOKEN": "${CORPUS_SKATESHOP_UPSTASH_REDIS_REST_TOKEN}",
-        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "${CORPUS_SKATESHOP_NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}",
-        "STRIPE_API_KEY": "${CORPUS_SKATESHOP_STRIPE_API_KEY}",
-        "STRIPE_WEBHOOK_SECRET": "${CORPUS_SKATESHOP_STRIPE_WEBHOOK_SECRET}",
-        "STRIPE_STD_MONTHLY_PRICE_ID": "${CORPUS_SKATESHOP_STRIPE_STD_MONTHLY_PRICE_ID}",
-        "STRIPE_PRO_MONTHLY_PRICE_ID": "${CORPUS_SKATESHOP_STRIPE_PRO_MONTHLY_PRICE_ID}"
+        "UPLOADTHING_SECRET": "sk_live_corpus_dummy",
+        "UPLOADTHING_APP_ID": "corpus_dummy",
+        "UPSTASH_REDIS_REST_URL": "http://127.0.0.1:8079",
+        "UPSTASH_REDIS_REST_TOKEN": "corpus_dummy",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_corpus_dummy",
+        "STRIPE_API_KEY": "sk_test_corpus_dummy",
+        "STRIPE_WEBHOOK_SECRET": "whsec_corpus_dummy",
+        "STRIPE_STD_MONTHLY_PRICE_ID": "price_corpus_std_monthly",
+        "STRIPE_PRO_MONTHLY_PRICE_ID": "price_corpus_pro_monthly"
       },
       "seedCommand": "pnpm db:seed",
-      "buildCommand": "pnpm build",
+      "typecheckCommand": "pnpm --ignore-workspace typecheck",
+      "buildCommand": "pnpm --ignore-workspace build",
       "devServer": {
-        "command": "pnpm dev",
+        "command": "pnpm --ignore-workspace dev",
         "readinessUrl": "http://127.0.0.1:3000"
       }
     },
@@ -63,24 +65,25 @@
     "license": "MIT",
     "tier": "broad",
     "bootstrap": {
-      "installCommand": "pnpm install --frozen-lockfile",
+      "installCommand": "pnpm install --frozen-lockfile --force --ignore-workspace",
       "envTemplate": {
         "NEXT_PUBLIC_APP_URL": "http://127.0.0.1:3000",
         "NEXTAUTH_URL": "http://127.0.0.1:3000",
-        "NEXTAUTH_SECRET": "${CORPUS_TAXONOMY_NEXTAUTH_SECRET}",
-        "GITHUB_CLIENT_ID": "${CORPUS_TAXONOMY_GITHUB_CLIENT_ID}",
-        "GITHUB_CLIENT_SECRET": "${CORPUS_TAXONOMY_GITHUB_CLIENT_SECRET}",
-        "GITHUB_ACCESS_TOKEN": "${CORPUS_TAXONOMY_GITHUB_ACCESS_TOKEN}",
-        "DATABASE_URL": "${CORPUS_TAXONOMY_DATABASE_URL}",
-        "SMTP_FROM": "${CORPUS_TAXONOMY_SMTP_FROM}",
-        "POSTMARK_API_TOKEN": "${CORPUS_TAXONOMY_POSTMARK_API_TOKEN}",
-        "POSTMARK_SIGN_IN_TEMPLATE": "${CORPUS_TAXONOMY_POSTMARK_SIGN_IN_TEMPLATE}",
-        "POSTMARK_ACTIVATION_TEMPLATE": "${CORPUS_TAXONOMY_POSTMARK_ACTIVATION_TEMPLATE}",
-        "STRIPE_API_KEY": "${CORPUS_TAXONOMY_STRIPE_API_KEY}",
-        "STRIPE_WEBHOOK_SECRET": "${CORPUS_TAXONOMY_STRIPE_WEBHOOK_SECRET}",
-        "STRIPE_PRO_MONTHLY_PLAN_ID": "${CORPUS_TAXONOMY_STRIPE_PRO_MONTHLY_PLAN_ID}"
+        "NEXTAUTH_SECRET": "corpus-layer1-nextauth-secret",
+        "GITHUB_CLIENT_ID": "corpus_dummy",
+        "GITHUB_CLIENT_SECRET": "corpus_dummy",
+        "GITHUB_ACCESS_TOKEN": "ghp_corpus_dummy",
+        "DATABASE_URL": "postgresql://corpus:corpus@127.0.0.1:5432/taxonomy",
+        "SMTP_FROM": "corpus@example.test",
+        "POSTMARK_API_TOKEN": "corpus_dummy",
+        "POSTMARK_SIGN_IN_TEMPLATE": "corpus-sign-in",
+        "POSTMARK_ACTIVATION_TEMPLATE": "corpus-activation",
+        "STRIPE_API_KEY": "sk_test_corpus_dummy",
+        "STRIPE_WEBHOOK_SECRET": "whsec_corpus_dummy",
+        "STRIPE_PRO_MONTHLY_PLAN_ID": "price_corpus_pro_monthly"
       },
-      "buildCommand": "pnpm build"
+      "typecheckCommand": "pnpm --ignore-workspace exec tsc --noEmit",
+      "buildCommand": "pnpm --ignore-workspace build"
     },
     "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next 13.3.2-canary.13."
   },
@@ -93,6 +96,7 @@
     "bootstrap": {
       "installCommand": "npm ci",
       "envTemplate": {},
+      "typecheckCommand": "npm exec tsc -- --noEmit",
       "buildCommand": "npm run build"
     },
     "notes": "Default branch master verified via GitHub API and git ls-remote; package.json declares next 15.3.8."
@@ -106,29 +110,30 @@
     "bootstrap": {
       "installCommand": "npm ci",
       "envTemplate": {
-        "NEXTAUTH_SECRET": "${CORPUS_PAPERMARK_NEXTAUTH_SECRET}",
+        "NEXTAUTH_SECRET": "corpus-layer1-nextauth-secret",
         "NEXTAUTH_URL": "http://127.0.0.1:3000",
         "NEXT_PUBLIC_BASE_URL": "http://127.0.0.1:3000",
         "NEXT_PUBLIC_MARKETING_URL": "http://127.0.0.1:3000",
         "NEXT_PUBLIC_APP_BASE_HOST": "127.0.0.1",
-        "POSTGRES_PRISMA_URL": "${CORPUS_PAPERMARK_POSTGRES_PRISMA_URL}",
-        "POSTGRES_PRISMA_URL_NON_POOLING": "${CORPUS_PAPERMARK_POSTGRES_PRISMA_URL_NON_POOLING}",
-        "BLOB_READ_WRITE_TOKEN": "${CORPUS_PAPERMARK_BLOB_READ_WRITE_TOKEN}",
-        "GOOGLE_CLIENT_ID": "${CORPUS_PAPERMARK_GOOGLE_CLIENT_ID}",
-        "GOOGLE_CLIENT_SECRET": "${CORPUS_PAPERMARK_GOOGLE_CLIENT_SECRET}",
-        "RESEND_API_KEY": "${CORPUS_PAPERMARK_RESEND_API_KEY}",
-        "TINYBIRD_TOKEN": "${CORPUS_PAPERMARK_TINYBIRD_TOKEN}",
-        "QSTASH_TOKEN": "${CORPUS_PAPERMARK_QSTASH_TOKEN}",
-        "QSTASH_CURRENT_SIGNING_KEY": "${CORPUS_PAPERMARK_QSTASH_CURRENT_SIGNING_KEY}",
-        "QSTASH_NEXT_SIGNING_KEY": "${CORPUS_PAPERMARK_QSTASH_NEXT_SIGNING_KEY}",
-        "HANKO_API_KEY": "${CORPUS_PAPERMARK_HANKO_API_KEY}",
-        "NEXT_PUBLIC_HANKO_TENANT_ID": "${CORPUS_PAPERMARK_NEXT_PUBLIC_HANKO_TENANT_ID}",
-        "TRIGGER_SECRET_KEY": "${CORPUS_PAPERMARK_TRIGGER_SECRET_KEY}",
+        "POSTGRES_PRISMA_URL": "postgresql://corpus:corpus@127.0.0.1:5432/papermark?pgbouncer=true",
+        "POSTGRES_PRISMA_URL_NON_POOLING": "postgresql://corpus:corpus@127.0.0.1:5432/papermark",
+        "BLOB_READ_WRITE_TOKEN": "vercel_blob_rw_corpus_dummy",
+        "GOOGLE_CLIENT_ID": "corpus-dummy.apps.googleusercontent.com",
+        "GOOGLE_CLIENT_SECRET": "corpus_dummy",
+        "RESEND_API_KEY": "re_corpus_dummy",
+        "TINYBIRD_TOKEN": "corpus_dummy",
+        "QSTASH_TOKEN": "corpus_dummy",
+        "QSTASH_CURRENT_SIGNING_KEY": "corpus_current_signing_key",
+        "QSTASH_NEXT_SIGNING_KEY": "corpus_next_signing_key",
+        "HANKO_API_KEY": "corpus_dummy",
+        "NEXT_PUBLIC_HANKO_TENANT_ID": "corpus_dummy",
+        "TRIGGER_SECRET_KEY": "tr_dev_corpus_dummy",
         "TRIGGER_API_URL": "https://api.trigger.dev",
         "NEXT_PUBLIC_UPLOAD_TRANSPORT": "vercel",
-        "NEXT_PRIVATE_DOCUMENT_PASSWORD_KEY": "${CORPUS_PAPERMARK_NEXT_PRIVATE_DOCUMENT_PASSWORD_KEY}",
-        "NEXT_PRIVATE_VERIFICATION_SECRET": "${CORPUS_PAPERMARK_NEXT_PRIVATE_VERIFICATION_SECRET}"
+        "NEXT_PRIVATE_DOCUMENT_PASSWORD_KEY": "corpus_document_password_key",
+        "NEXT_PRIVATE_VERIFICATION_SECRET": "corpus_verification_secret"
       },
+      "typecheckCommand": "npm exec tsc -- --noEmit",
       "buildCommand": "npm run build",
       "devServer": {
         "command": "npm run dev",

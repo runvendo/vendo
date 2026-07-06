@@ -17,6 +17,7 @@ const bootstrapRecipeSchema = z
     installCommand: z.string().min(1),
     envTemplate: z.record(z.string(), z.string()),
     seedCommand: z.string().min(1).optional(),
+    typecheckCommand: z.string().min(1).optional(),
     buildCommand: z.string().min(1),
     devServer: devServerSchema.optional(),
   })

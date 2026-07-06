@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli, type CorpusCliDependencies } from "./cli.js";
 import { createRunContext } from "./run-context.js";
@@ -10,6 +11,7 @@ import type { StructuralLayerContext } from "./layers/structural.js";
 
 const tempRoots: string[] = [];
 const validSha = "0123456789abcdef0123456789abcdef01234567";
+const workspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 
 afterEach(async () => {
   await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
@@ -77,6 +79,7 @@ describe("runCli run", () => {
     const initOptions: RunVendoInitStepOptions[] = [];
     const structuralContexts: StructuralLayerContext[] = [];
     const stdout: string[] = [];
+    const injectorOptions: unknown[] = [];
 
     const deps: CorpusCliDependencies = {
       now: () => new Date("2026-07-05T12:00:00.000Z"),
@@ -101,20 +104,23 @@ describe("runCli run", () => {
           },
         };
       },
-      createInjector: () => ({
-        initArgs: () => ["--local", "/workspace/vendo"],
-        async inject(entry) {
-          events.push(`inject:${entry.name}`);
-          return {
-            repoDir: context.repoDir(entry.name),
-            packageManager: "pnpm",
-            packages: ["@vendoai/core", "@vendoai/next", "@vendoai/shell"],
-            vendorDir: path.join(context.repoDir(entry.name), "vendor"),
-            installCommand: "pnpm install",
-            initArgs: ["--local", "/workspace/vendo"],
-          };
-        },
-      }),
+      createInjector: (options) => {
+        injectorOptions.push(options);
+        return {
+          initArgs: () => ["--local", "/workspace/vendo"],
+          async inject(entry) {
+            events.push(`inject:${entry.name}`);
+            return {
+              repoDir: context.repoDir(entry.name),
+              packageManager: "pnpm",
+              packages: ["@vendoai/core", "@vendoai/next", "@vendoai/shell"],
+              vendorDir: path.join(context.repoDir(entry.name), "vendor"),
+              installCommand: "pnpm install",
+              initArgs: ["--local", "/workspace/vendo"],
+            };
+          },
+        };
+      },
       runInit: async (entry, options) => {
         initOptions.push(options ?? {});
         const ordinal = initOptions.length;
@@ -153,6 +159,8 @@ describe("runCli run", () => {
     expect(initOptions).toHaveLength(2);
     expect(initOptions.every((options) => options.skipLlm === false)).toBe(true);
     expect(initOptions.every((options) => options.localVendoDir === "/workspace/vendo")).toBe(true);
+    expect(initOptions.map((options) => options.artifactPrefix)).toEqual(["init.first", "init.second"]);
+    expect(injectorOptions).toEqual([{ context, workspaceRoot }]);
     expect(structuralContexts[0]).toMatchObject({
       repoDir: context.repoDir("repo-one"),
       initExitCode: 0,
