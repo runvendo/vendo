@@ -30,6 +30,11 @@ import {
   type RunVendoInitStepOptions,
 } from "./init-step.js";
 import {
+  runE2eLayer as defaultRunE2eLayer,
+  type E2eLayerContext,
+  type E2eLayerRunResult,
+} from "./layers/e2e.js";
+import {
   runScoredLayer as defaultRunScoredLayer,
   type ScoredLayerContext,
   type ScoredLayerRunResult,
@@ -89,6 +94,7 @@ export interface CorpusCliDependencies {
   waitForBootShutdown?: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer?: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
+  runE2eLayer?: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
   commandRunner?: StructuralCommandRunner;
 }
 
@@ -108,6 +114,7 @@ interface ResolvedDeps {
   waitForBootShutdown: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
+  runE2eLayer: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
   commandRunner: StructuralCommandRunner;
 }
 
@@ -147,6 +154,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     waitForBootShutdown: deps.waitForBootShutdown ?? waitForBootShutdownSignal,
     runStructuralLayer: deps.runStructuralLayer ?? defaultRunStructuralLayer,
     runScoredLayer: deps.runScoredLayer ?? defaultRunScoredLayer,
+    runE2eLayer: deps.runE2eLayer ?? defaultRunE2eLayer,
     commandRunner: deps.commandRunner ?? runShellCommand,
   };
 }
@@ -255,6 +263,11 @@ async function readOptional(file: string | undefined): Promise<string | undefine
 
 function artifactPaths(artifacts: InitStepArtifacts): string[] {
   return [artifacts.log, artifacts.diff, artifacts.tokenCost].filter((value): value is string => Boolean(value));
+}
+
+function bootHandleLogPaths(handle: BootHandle): string[] {
+  return [handle.logPaths.server, handle.logPaths.seed, handle.logPaths.database]
+    .filter((value): value is string => Boolean(value));
 }
 
 function localVendoDirFromInitArgs(args: readonly string[]): string | undefined {
@@ -509,15 +522,54 @@ async function runRepoThroughLayerOne(
       }
     }
 
-    for (const layer of requestedLayers(options.layer).filter((value) => value > 2)) {
-      layers.push({
-        layer,
-        name: layerName(layer),
-        status: "fail",
-        detail: `Layer ${layer} is not implemented yet in the corpus harness.`,
-        logPaths,
-        hardFailure: true,
-      });
+    if (requestedLayers(options.layer).includes(3)) {
+      if (repo.tier !== "deep") {
+        layers.push({
+          layer: 3,
+          name: layerName(3),
+          status: "skip",
+          detail: "Layer 3 is deep-tier only.",
+          logPaths,
+          hardFailure: false,
+        });
+      } else {
+        let handle: BootHandle | undefined;
+        let layer: ScorecardLayerInput | undefined;
+        const layerLogPaths = [...logPaths];
+        try {
+          handle = await deps.bootRepo(repo, {
+            context,
+            env: deps.env,
+          });
+          layerLogPaths.push(...bootHandleLogPaths(handle));
+          const e2e = await deps.runE2eLayer({
+            repoName: repo.name,
+            repoDir,
+            readinessUrl: handle.readinessUrl,
+            expectationsRoot: path.join(context.corpusRoot, "expectations"),
+            logsDir: context.logsDir(repo.name),
+            now: deps.now,
+          });
+          layer = {
+            ...e2e.layer,
+            logPaths: [...layerLogPaths, ...(e2e.layer.logPaths ?? [])],
+          };
+        } catch (error) {
+          layer = failureLayer(3, "e2e", "e2e layer", error, layerLogPaths);
+        } finally {
+          if (handle) {
+            try {
+              await handle.teardown();
+            } catch (error) {
+              layer = failureLayer(3, "e2e", "e2e teardown", error, layerLogPaths);
+            }
+          }
+        }
+        if (!layer) {
+          layer = failureLayer(3, "e2e", "e2e layer", "Layer 3 did not produce a result.", layerLogPaths);
+        }
+        layers.push(layer);
+      }
     }
 
     return { repo: repo.name, layers };

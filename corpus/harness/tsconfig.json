@@ -5,5 +5,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src/**/*", "vitest.config.ts"]
+  "include": ["src/**/*", "vitest.config.ts", "playwright.config.ts"]
 }

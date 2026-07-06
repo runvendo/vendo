@@ -7,6 +7,7 @@ import { runCli, type CorpusCliDependencies } from "./cli.js";
 import { createRunContext } from "./run-context.js";
 import type { ManifestEntry } from "./manifest.js";
 import type { InitStepResult, RunVendoInitStepOptions } from "./init-step.js";
+import type { E2eLayerContext, E2eLayerRunResult } from "./layers/e2e.js";
 import type { ScoredLayerContext, ScoredLayerRunResult } from "./layers/scored.js";
 import type { StructuralLayerContext } from "./layers/structural.js";
 import type { BootHandle, BootRepoOptions } from "./boot.js";
@@ -372,6 +373,140 @@ describe("runCli run", () => {
     expect(stdout.join("\n")).toContain("baseline.json");
     expect(stdout.join("\n")).toContain("\"value\": 1");
     expect(stdout.join("\n")).toContain("| repo-one | Layer 2 scored | PASS | 10/10 |");
+  });
+
+  it("runs Layer 3 by booting a deep repo and passing the booted app to the e2e harness", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = deepManifestEntry("repo-e2e");
+    const events: string[] = [];
+    const e2eContexts: E2eLayerContext[] = [];
+    const stdout: string[] = [];
+    const handle: BootHandle = {
+      repoDir: context.repoDir(repo.name),
+      readinessUrl: "http://127.0.0.1:3333",
+      logPaths: {
+        server: path.join(context.logsDir(repo.name), "boot.server.log"),
+        seed: path.join(context.logsDir(repo.name), "boot.seed.log"),
+        database: path.join(context.logsDir(repo.name), "boot.database.log"),
+      },
+      teardown: async () => { events.push("teardown:repo-e2e"); },
+    };
+    const deps: CorpusCliDependencies = {
+      now: () => new Date("2026-07-06T12:00:00.000Z"),
+      stdout: (line) => { stdout.push(line); },
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        events.push(`clone:${entry.name}`);
+        await writeHostPackage(context.repoDir(entry.name));
+        return context.repoDir(entry.name);
+      },
+      bootstrapRepo: async (entry) => {
+        events.push(`bootstrap:${entry.name}`);
+        return {
+          repoDir: context.repoDir(entry.name),
+          envPath: path.join(context.repoDir(entry.name), ".env"),
+          logs: {
+            stdout: path.join(context.logsDir(entry.name), "bootstrap.stdout.log"),
+            stderr: path.join(context.logsDir(entry.name), "bootstrap.stderr.log"),
+          },
+        };
+      },
+      createInjector: () => ({
+        initArgs: () => ["--local", "/workspace/vendo"],
+        async inject(entry) {
+          events.push(`inject:${entry.name}`);
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(context.repoDir(entry.name), "vendor"),
+            installCommand: "pnpm install",
+            initArgs: ["--local", "/workspace/vendo"],
+          };
+        },
+      }),
+      commandRunner: async (command) => {
+        events.push(`baseline:${command}`);
+        return { code: 0, signal: null, stdout: "ok", stderr: "" };
+      },
+      runInit: async (entry) => {
+        events.push(`init:${entry.name}`);
+        const logsDir = context.logsDir(entry.name);
+        await mkdir(logsDir, { recursive: true });
+        const log = path.join(logsDir, `${events.filter((event) => event === `init:${entry.name}`).length}.log`);
+        const diff = path.join(logsDir, `${events.filter((event) => event === `init:${entry.name}`).length}.diff`);
+        await writeFile(log, "ok");
+        await writeFile(diff, "");
+        return makeInitResult(context.repoDir(entry.name), log, diff);
+      },
+      runStructuralLayer: async () => {
+        events.push("layer1:repo-e2e");
+        return [{ id: "init.exit", pass: true, detail: "ok" }];
+      },
+      runScoredLayer: async () => {
+        events.push("layer2:repo-e2e");
+        return {
+          layer: {
+            layer: 2,
+            name: "scored",
+            status: "pass",
+            score: { passed: 10, total: 10, value: 1 },
+            checks: [],
+            hardFailure: false,
+          },
+        };
+      },
+      bootRepo: async () => {
+        events.push("boot:repo-e2e");
+        return handle;
+      },
+      runE2eLayer: async (layerContext): Promise<E2eLayerRunResult> => {
+        events.push("layer3:repo-e2e");
+        e2eContexts.push(layerContext);
+        return {
+          layer: {
+            layer: 3,
+            name: "e2e",
+            status: "pass",
+            score: { passed: 5, total: 5, value: 1 },
+            checks: [{ id: "conversation.one", pass: true, detail: "pass@2" }],
+            logPaths: [path.join(context.logsDir(repo.name), "e2e.conversations.json")],
+            hardFailure: false,
+          },
+        };
+      },
+    };
+
+    const exitCode = await runCli(["run", "repo-e2e", "--layer", "3"], deps);
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "clone:repo-e2e",
+      "bootstrap:repo-e2e",
+      "inject:repo-e2e",
+      "baseline:pnpm typecheck",
+      "baseline:pnpm build",
+      "init:repo-e2e",
+      "init:repo-e2e",
+      "layer1:repo-e2e",
+      "layer2:repo-e2e",
+      "boot:repo-e2e",
+      "layer3:repo-e2e",
+      "teardown:repo-e2e",
+    ]);
+    expect(e2eContexts[0]).toMatchObject({
+      repoName: "repo-e2e",
+      repoDir: context.repoDir("repo-e2e"),
+      readinessUrl: "http://127.0.0.1:3333",
+      expectationsRoot: path.join(context.corpusRoot, "expectations"),
+      logsDir: context.logsDir("repo-e2e"),
+    });
+    expect(stdout.join("\n")).toContain("| repo-e2e | Layer 3 e2e | PASS | 5/5 |");
+    expect(stdout.join("\n")).toContain("boot.server.log");
+    expect(stdout.join("\n")).toContain("e2e.conversations.json");
   });
 
   it("continues after a repo failure and makes only --strict return nonzero", async () => {
