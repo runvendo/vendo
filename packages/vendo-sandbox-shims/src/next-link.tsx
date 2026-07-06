@@ -47,6 +47,20 @@ function hrefString(href: LinkProps["href"]): string {
   return `${pathname}${search}${hash}`;
 }
 
+/** Only same-app local paths should be hijacked into an in-host navigate; the
+ *  host router rejects everything else, which would make those links dead.
+ *  Falls through to the browser for: hash-only anchors, any scheme
+ *  (https:/http:/mailto:/tel:/…), protocol-relative `//host` externals, and
+ *  `download` links. Relative and `/absolute` app paths are intercepted. */
+function isLocalAppPath(url: string, download: unknown): boolean {
+  if (download != null && download !== false) return false; // let the browser download
+  if (!url) return false;
+  if (url.startsWith("#")) return false; // in-page anchor
+  if (url.startsWith("//")) return false; // protocol-relative → external origin
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return false; // has a URL scheme → external
+  return true;
+}
+
 export default function Link({ href, children, onClick, prefetch: _p, replace: _r, scroll: _s, ...rest }: LinkProps): import("react").ReactElement {
   const url = hrefString(href);
   return createElement(
@@ -64,6 +78,9 @@ export default function Link({ href, children, onClick, prefetch: _p, replace: _
         if (event.button !== 0) return;
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         if (rest.target && rest.target !== "_self") return;
+        // Only hijack local app paths; external/mailto/tel/hash/download links
+        // must reach the browser (the host router would reject them → dead link).
+        if (!isLocalAppPath(url, rest.download)) return;
         event.preventDefault();
         // Fire-and-forget: navigate() returns the raw bridge Promise, which
         // rejects on a blocked navigation. Catch here so a denied click logs

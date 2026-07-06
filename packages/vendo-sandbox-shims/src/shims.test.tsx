@@ -93,6 +93,41 @@ describe("Link shim", () => {
     fireEvent.click(screen.getByText("x"));
     expect(calls).toEqual([]);
   });
+
+  it.each([
+    ["https://example.com/x"],
+    ["http://example.com/x"],
+    ["mailto:a@b.com"],
+    ["tel:+15551234"],
+    ["//cdn.example.com/x"],
+    ["#section"],
+  ])("lets non-local href %s fall through to the browser (no navigate, no preventDefault)", (href) => {
+    const calls = captureDispatch();
+    render(<Link href={href}>l</Link>);
+    const notCanceled = fireEvent.click(screen.getByText("l"));
+    expect(calls).toEqual([]);
+    expect(notCanceled).toBe(true); // preventDefault NOT called
+  });
+
+  it("lets a download link fall through to the browser", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href="/file.pdf" download>
+        d
+      </Link>,
+    );
+    const notCanceled = fireEvent.click(screen.getByText("d"));
+    expect(calls).toEqual([]);
+    expect(notCanceled).toBe(true);
+  });
+
+  it("still intercepts a plain local app path", () => {
+    const calls = captureDispatch();
+    render(<Link href="/clients/x">c</Link>);
+    const notCanceled = fireEvent.click(screen.getByText("c"));
+    expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/clients/x" } }]);
+    expect(notCanceled).toBe(false); // preventDefault called
+  });
 });
 
 describe("Image shim", () => {
