@@ -4,7 +4,7 @@
  * the framework import specifiers onto these in the sandbox import map.
  */
 export { NAVIGATE_ACTION, navigate, dispatch } from "./dispatch.js";
-export { default as Link, type LinkProps } from "./next-link.js";
+export { default as Link, useLinkStatus, type LinkProps, type UrlObject } from "./next-link.js";
 export { default as Image, type ImageProps } from "./next-image.js";
 export {
   useRouter,

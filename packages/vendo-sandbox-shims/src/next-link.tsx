@@ -95,3 +95,10 @@ export default function Link({ href, children, onClick, prefetch: _p, replace: _
     children,
   );
 }
+
+/** Next 16's `next/link` also exports `useLinkStatus`; a component importing it
+ *  would fail module instantiation without this. In-sandbox navigation is
+ *  synchronous (no prefetch/pending transition), so it's always not-pending. */
+export function useLinkStatus(): { pending: boolean } {
+  return { pending: false };
+}

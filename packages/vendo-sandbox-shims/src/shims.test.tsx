@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import Link from "./next-link";
+import Link, { useLinkStatus } from "./next-link";
 import Image from "./next-image";
 import {
   useRouter,
@@ -127,6 +127,10 @@ describe("Link shim", () => {
     const notCanceled = fireEvent.click(screen.getByText("c"));
     expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/clients/x" } }]);
     expect(notCanceled).toBe(false); // preventDefault called
+  });
+
+  it("exports useLinkStatus (Next 16) returning { pending: false }", () => {
+    expect(useLinkStatus()).toEqual({ pending: false });
   });
 });
 
