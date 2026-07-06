@@ -103,13 +103,14 @@ describe("integrations endpoints", () => {
     expect(await d.store.connectedToolkits()).toEqual([]);
   });
 
-  it("status poll fails fast (terminal) for a foreign/unrecognized ACTIVE account (anti-spoof)", async () => {
-    // Composio says the polled account is ACTIVE, but it is not THIS user's
-    // connection for THIS toolkit → the store was never written. This is a
-    // PERMANENT condition (the account will never legitimately register), so
-    // the client-facing status must be terminal "failed" (fail fast) rather
-    // than "pending" (which would poll to a 120s timeout). A server-side warn
-    // explains why.
+  it("status poll stays 'pending' (never terminal on a first mismatch) for an ACTIVE-but-unstored account, with a server-side warn", async () => {
+    // Composio says the polled account is ACTIVE, but it is not (yet) THIS
+    // user's stored connection for THIS toolkit → the store was never written.
+    // This is USUALLY the anti-spoof case, but it can also be a legitimate
+    // just-authorized account caught in a hasActiveConnection() eventual-
+    // consistency race. Fast-failing would wrongly kill a real connection, so
+    // the client-facing status must stay non-terminal "pending" (retry is
+    // safe). A server-side warn explains the mismatch for diagnosability.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const d = deps({
@@ -122,7 +123,7 @@ describe("integrations endpoints", () => {
         get("/api/vendo/integrations?status&id=gmail&account=foreign-acct"),
         d,
       );
-      expect(await res.json()).toEqual({ status: "failed" });
+      expect(await res.json()).toEqual({ status: "pending" });
       expect(await d.store.connectedToolkits()).toEqual([]);
       expect(warnSpy).toHaveBeenCalled();
     } finally {

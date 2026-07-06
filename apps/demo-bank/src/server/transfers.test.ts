@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest"
-import { transferMoney } from "./transfers"
+import { transferMoney, TransferError } from "./transfers"
 import { listTransactions } from "./transactions"
 import { getStore, __reseed } from "./store"
 
@@ -23,5 +23,24 @@ describe("transferMoney", () => {
     expect(checking.balance).toBe(before - 50000)
     // It is now the most-recent transaction via the existing read path.
     expect(listTransactions({ limit: 1 }).data[0].id).toBe(txn.id)
+  })
+
+  it("rejects poison amounts without touching the balance", () => {
+    const checking = getStore().accounts.find((a) => a.kind === "checking")!
+    const before = checking.balance
+    for (const amount of [-500, 0, Number.NaN, Number.POSITIVE_INFINITY, 12.5]) {
+      expect(() => transferMoney({ amount, recipientName: "Mallory" })).toThrow(TransferError)
+    }
+    // No debit and no appended row from any rejected call.
+    expect(checking.balance).toBe(before)
+  })
+
+  it("rejects an overdraft (amount greater than the checking balance)", () => {
+    const checking = getStore().accounts.find((a) => a.kind === "checking")!
+    const before = checking.balance
+    expect(() => transferMoney({ amount: before + 1, recipientName: "Mallory" })).toThrow(
+      TransferError,
+    )
+    expect(checking.balance).toBe(before)
   })
 })

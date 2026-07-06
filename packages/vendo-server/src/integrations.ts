@@ -78,19 +78,23 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
         return Response.json({ status: "active" as const });
       }
       // The client-facing status must reflect what actually happened. A raw
-      // "active" we did NOT record is the anti-spoof case: Composio reports the
-      // polled account ACTIVE, but it isn't THIS user's connection for THIS
-      // toolkit. That's a PERMANENT condition (the account will never
-      // legitimately register here), so returning "pending" would only poll to
-      // a 120s timeout. Fail fast with terminal "failed" and warn server-side.
+      // "active" we did NOT record must not read as connected. It is USUALLY
+      // the anti-spoof case (a foreign/other-toolkit active account), but it
+      // can ALSO be a LEGITIMATE just-authorized account caught in an
+      // eventual-consistency race: hasActiveConnection() is a separate list
+      // query that can transiently return false (or have errored) moments
+      // after OAuth lands. Fast-failing here would wrongly kill a real
+      // connection — worse than letting a genuine spoof poll to the client's
+      // timeout. So we keep returning "pending" (retry is safe and the store
+      // write will happen on a later poll once the account shows up) and only
+      // warn server-side for diagnosability.
       if (status === "active") {
         console.warn(
-          `[vendo] integrations status: account is ACTIVE in Composio but is not this user's connection for '${id}' (foreign/unrecognized active account); failing fast instead of polling to timeout`,
+          `[vendo] integrations status: account is ACTIVE in Composio but not yet this user's stored connection for '${id}' — still pending (a foreign account, or an eventual-consistency race on a just-authorized one)`,
         );
-        return Response.json({ status: "failed" as const });
+        return Response.json({ status: "pending" as const });
       }
-      // Genuinely-transient states (e.g. "pending") pass through so the client
-      // keeps polling.
+      // Other non-active states (e.g. "pending") pass through unchanged.
       return Response.json({ status });
     } catch (err) {
       // A poll error is usually a transient Composio hiccup, not a terminal

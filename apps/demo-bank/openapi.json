@@ -189,7 +189,7 @@
         "x-vendo-dangerous": true,
         "x-vendo-formats": { "amount": "cents" },
         "parameters": [
-          { "name": "amount", "in": "query", "required": true, "schema": { "type": "number" }, "description": "Amount to send in cents, e.g. 50000 = $500.00" },
+          { "name": "amount", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 }, "description": "Amount to send in cents (positive whole number), e.g. 50000 = $500.00" },
           { "name": "recipient_name", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Who the money goes to, e.g. Alex Rivera" },
           { "name": "memo", "in": "query", "schema": { "type": "string" }, "description": "Optional note shown on the transfer, e.g. June rent" }
         ],
