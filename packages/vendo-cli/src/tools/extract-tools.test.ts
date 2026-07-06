@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, copyFile } from "node:fs/promises";
+import { mkdtemp, readFile, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +21,28 @@ describe("extractTools", () => {
     expect(summary.source).toBe("openapi");
   });
 
-  it("reports skipped when no spec and no model", async () => {
+  it("extracts deterministic route tools when no spec and no model", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tools-"));
+    await mkdir(path.join(dir, "app/api/invoices/[id]"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/api/invoices/[id]/route.ts"),
+      `export async function GET() {}\nexport async function DELETE() {}\n`,
+    );
+    const summary = await extractTools(dir, { openapiPath: null }, null, { force: false });
+    const manifest = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
+    expect(summary.source).toBe("route-scan");
+    expect(summary.toolCount).toBe(2);
+    expect(summary.errors).toContain("LLM unavailable; route descriptions and input schemas use deterministic placeholders");
+    expect(manifest.tools.map((tool: { name: string; annotations: { mutating: boolean; dangerous: boolean } }) => [
+      tool.name,
+      tool.annotations,
+    ])).toEqual([
+      ["getInvoicesId", { mutating: true, dangerous: false }],
+      ["deleteInvoicesId", { mutating: true, dangerous: true, idempotent: true }],
+    ]);
+  });
+
+  it("reports skipped when no spec, no route, and no model", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tools-"));
     const summary = await extractTools(dir, { openapiPath: null }, null, { force: false });
     expect(summary.source).toBe("none");

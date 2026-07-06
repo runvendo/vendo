@@ -33,7 +33,7 @@ describe("extractTheme", () => {
     const info = await detectTarget(dir);
     const summary = await extractTheme(dir, info, { force: false });
     const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
-    expect(written.background).toBe("#FBFBFA");
+    expect(written.background).toBe("#fbfbfa");
     expect(written.version).toBe(1);
     expect(summary.written).toBe(true);
     expect(summary.defaulted).toContain("accent");
@@ -65,6 +65,163 @@ describe("extractTheme", () => {
     expect(written.fontFamily).toContain("Inter");
   });
 
+  it("follows explicit package CSS imports and lets later local CSS override them", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-imports-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^4.0.0" } }));
+    await mkdir(path.join(dir, "node_modules/@acme/theme"), { recursive: true });
+    await writeFile(path.join(dir, "node_modules/@acme/theme/package.json"), JSON.stringify({ name: "@acme/theme" }));
+    await writeFile(
+      path.join(dir, "node_modules/@acme/theme/styles.css"),
+      `:root {
+        --gray-50: oklch(0.985 0 0);
+        --gray-500: oklch(0.556 0 0);
+        --gray-900: oklch(0.205 0 0);
+        --primary: var(--gray-900);
+        --surface-base: #fff;
+        --surface-raised: var(--gray-50);
+        --text-primary: var(--gray-900);
+        --text-muted: var(--gray-500);
+        --radius-default: 0.375rem;
+      }`,
+    );
+    await mkdir(path.join(dir, "src/app"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/layout.tsx"),
+      `import { Inter } from "next/font/google";
+import "@acme/theme/styles.css";
+import "./globals.css";
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+export default function RootLayout({ children }) { return <html className={inter.variable}><body>{children}</body></html>; }
+`,
+    );
+    await writeFile(path.join(dir, "src/app/globals.css"), `:root { --primary: oklch(62.3% 0.214 259.815); --font-family: var(--font-inter), sans-serif; }`);
+
+    const info = await detectTarget(dir);
+    const summary = await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written).toMatchObject({
+      background: "#fafafa",
+      surface: "#ffffff",
+      accent: "#2b7fff",
+      text: "#171717",
+      mutedText: "#737373",
+      radius: "6px",
+      fontFamily: "Inter, sans-serif",
+    });
+    expect(summary.defaulted).toEqual([]);
+  });
+
+  it("loads Tailwind TypeScript configs and resolves font vars through next/font", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-tw-ts-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^3.4.0" } }));
+    await writeFile(
+      path.join(dir, "tailwind.config.ts"),
+      `const fontFamily = { sans: ["ui-sans-serif", "system-ui", "sans-serif"] };
+export default {
+  theme: { extend: {
+    colors: {
+      background: "hsl(var(--background))",
+      foreground: "hsl(var(--foreground))",
+      primary: { DEFAULT: "hsl(var(--primary))" },
+      muted: { foreground: "hsl(var(--muted-foreground))" },
+      card: { DEFAULT: "hsl(var(--card))" },
+    },
+    borderRadius: { lg: "var(--radius)" },
+    fontFamily: { sans: ["var(--font-sans)", ...fontFamily.sans] },
+  } },
+};`,
+    );
+    await mkdir(path.join(dir, "app"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/layout.tsx"),
+      `import { Inter as FontSans } from "next/font/google";
+const fontSans = FontSans({ subsets: ["latin"], variable: "--font-sans" });
+export default function RootLayout({ children }) { return <html className={fontSans.variable}><body>{children}</body></html>; }
+`,
+    );
+    await writeFile(
+      path.join(dir, "app/globals.css"),
+      `:root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 47.4% 11.2%;
+        --card: 0 0% 100%;
+        --primary: 222.2 47.4% 11.2%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --radius: 0.5rem;
+      }`,
+    );
+
+    const info = await detectTarget(dir);
+    const summary = await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written).toMatchObject({
+      accent: "#0f172a",
+      text: "#0f172a",
+      mutedText: "#64748b",
+      radius: "8px",
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+    });
+    expect(summary.defaulted).toEqual([]);
+  });
+
+  it("collects Geist package font vars referenced by Tailwind configs", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-geist-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^3.4.0" } }));
+    await writeFile(
+      path.join(dir, "tailwind.config.ts"),
+      `const fontFamily = { sans: ["ui-sans-serif", "system-ui", "sans-serif"] };
+export default {
+  theme: { extend: { fontFamily: { sans: ["var(--font-geist-sans)", ...fontFamily.sans] } } },
+};`,
+    );
+    await mkdir(path.join(dir, "src/app"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/app/layout.tsx"),
+      `import { GeistSans } from "geist/font/sans";
+export default function RootLayout({ children }) { return <body className={GeistSans.variable}>{children}</body>; }
+`,
+    );
+    await writeFile(path.join(dir, "src/app/globals.css"), `:root { --background: 0 0% 100%; }`);
+
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif");
+  });
+
+  it("recovers Next layout className font and Tailwind page background", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-next-layout-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^3.4.0" } }));
+    await writeFile(path.join(dir, "tailwind.config.js"), `module.exports = { theme: { extend: {} } };`);
+    await mkdir(path.join(dir, "app/[locale]"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/[locale]/layout.tsx"),
+      `import { Outfit } from "next/font/google";
+const outfit = Outfit({ subsets: ["latin"] });
+export default function LocaleLayout({ children }) {
+  return <body className={\`\${outfit.className} bg-slate-100 dark:bg-slate-800\`}>{children}</body>;
+}
+`,
+    );
+    await writeFile(
+      path.join(dir, "app/globals.css"),
+      `:root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --primary: 222.2 47.4% 11.2%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --radius: 0.5rem;
+      }`,
+    );
+
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written.background).toBe("#f1f5f9");
+    expect(written.fontFamily).toBe("Outfit, sans-serif");
+  });
+
   it("extracts Cadence (demo-accounting) tokens: surface background, scale accent, next/font family", async () => {
     const dir = await stageFixtureApp("cadence");
     const info = await detectTarget(dir);
@@ -90,10 +247,10 @@ describe("extractTheme", () => {
     const info = await detectTarget(dir);
     const summary = await extractTheme(dir, info, { force: false });
     const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
-    expect(written.background).toBe("#FBFBFA");
-    expect(written.surface).toBe("#FFFFFF");
+    expect(written.background).toBe("#fbfbfa");
+    expect(written.surface).toBe("#ffffff");
     expect(written.text).toBe("#111111");
-    expect(written.mutedText).toBe("#908C85");
+    expect(written.mutedText).toBe("#908c85");
     expect(written.radius).toBe("14px");
     expect(written.fontFamily).toContain("Inter");
     // No accent-ish token in Maple — stays defaulted and flagged.

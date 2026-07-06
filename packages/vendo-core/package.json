@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Vendo core contracts: manifest schemas, the generative UI protocol, and the platform seams.",
   "keywords": ["ai", "agent", "generative-ui", "schemas", "contracts"],
   "license": "Apache-2.0",
@@ -23,11 +23,18 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./testing": {
       "types": "./dist/stub-agent.d.ts",
+      "import": "./dist/stub-agent.js",
       "default": "./dist/stub-agent.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "testing": ["dist/stub-agent.d.ts"]
     }
   },
   "files": ["dist"],

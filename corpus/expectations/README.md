@@ -25,11 +25,11 @@ output, because that would bake current extractor behavior into the truth set.
     "fontFamily": "Inter, sans-serif"
   },
   "tools": [
-    { "name": "listInvoices", "method": "GET", "path": "/api/invoices", "readOrWrite": "read" },
+    { "name": "listInvoices", "method": "GET", "path": "/api/invoices", "readOrWrite": "write" },
     { "name": "createInvoice", "method": "POST", "path": "/api/invoices", "readOrWrite": "write" }
   ],
   "annotations": [
-    { "name": "listInvoices", "mutating": false, "dangerous": false },
+    { "name": "listInvoices", "mutating": true, "dangerous": false },
     { "name": "createInvoice", "mutating": true, "dangerous": false }
   ],
   "components": [
@@ -80,6 +80,10 @@ Derive the expected inventory from the app's source-owned API surface:
 - `readOrWrite` is `read` for read-only operations, normally `GET`.
 - `readOrWrite` is `write` for operations that create, update, delete, trigger,
   send, cancel, revoke, or otherwise change host state.
+- Route-scan-derived tools are always labeled `write` even for `GET`, because
+  route code can hide side effects behind read-shaped methods and Vendo must not
+  auto-allow inferred route handlers. OpenAPI-derived tools may use `read` for
+  spec-declared read-only operations.
 
 Use deterministic lower-camel names so labels are not tied to one LLM run:
 prefix the lowercase HTTP method, drop the leading `api` path segment, and
@@ -98,6 +102,8 @@ Every expected tool needs a safety annotation:
 - State-changing tools: `{ "mutating": true, "dangerous": false }`.
 - Destructive or high-risk writes, such as delete, cancel, revoke, purge, reset,
   transfer, send, or close: `{ "mutating": true, "dangerous": true }`.
+- Route-scan-derived tools are expected to set `mutating: true` regardless of
+  HTTP method. LLM-assisted route descriptions never grant auto-allow.
 - Add `idempotent: true` only when repeating the same call with the same input is
   safe by app semantics.
 

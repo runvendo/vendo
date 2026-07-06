@@ -14,7 +14,7 @@
       "name": "getAuthNextauth",
       "method": "GET",
       "path": "/api/auth/{nextauth}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthNextauth",
@@ -26,13 +26,13 @@
       "name": "getOg",
       "method": "GET",
       "path": "/api/og",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getPosts",
       "method": "GET",
       "path": "/api/posts",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postPosts",
@@ -62,7 +62,7 @@
       "name": "getUsersStripe",
       "method": "GET",
       "path": "/api/users/stripe",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebhooksStripe",
@@ -74,7 +74,7 @@
   "annotations": [
     {
       "name": "getAuthNextauth",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -84,12 +84,12 @@
     },
     {
       "name": "getOg",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getPosts",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -114,7 +114,7 @@
     },
     {
       "name": "getUsersStripe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {

@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/shell",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Vendo embedded surfaces: brand-native chat thread, overlays, slots, and toasts.",
   "keywords": [
     "ai",
@@ -30,6 +30,7 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./styles.css": "./dist/styles.css"

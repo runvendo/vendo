@@ -20,13 +20,13 @@
       "name": "getOg",
       "method": "GET",
       "path": "/api/og",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getRevalidate",
       "method": "GET",
       "path": "/api/revalidate",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postRevalidateTag",
@@ -38,7 +38,7 @@
       "name": "getUploadthing",
       "method": "GET",
       "path": "/api/uploadthing",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUploadthing",
@@ -61,12 +61,12 @@
     },
     {
       "name": "getOg",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getRevalidate",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -76,7 +76,7 @@
     },
     {
       "name": "getUploadthing",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {

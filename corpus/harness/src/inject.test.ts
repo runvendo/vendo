@@ -159,6 +159,10 @@ function readPackageJson(repoDir: string): Promise<{
   return readFile(path.join(repoDir, "package.json"), "utf8").then((source) => JSON.parse(source));
 }
 
+function readAnyPackageJson(repoDir: string): Promise<Record<string, unknown>> {
+  return readFile(path.join(repoDir, "package.json"), "utf8").then((source) => JSON.parse(source) as Record<string, unknown>);
+}
+
 describe("localVendoInitArgs", () => {
   it("passes the CLI local mode through to later init invocation", async () => {
     const workspaceRoot = await createWorkspace();
@@ -377,8 +381,8 @@ describe("createLocalVendoInjector", () => {
     await expect(injector.inject({ name: "repo-space" })).rejects.toThrow(/local-pack known issue.*spaces/i);
   });
 
-  it("fails early for Yarn monorepos instead of falling back to pnpm injection", async () => {
-    const workspaceRoot = await makeTempRoot("vendo-corpus-workspace-");
+  it("injects Yarn Berry appDir repos from the checkout root without clobbering .yarnrc.yml", async () => {
+    const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repoDir = context.repoDir("cal-com");
@@ -389,22 +393,88 @@ describe("createLocalVendoInjector", () => {
       packageManager: "yarn@4.10.3",
       workspaces: ["apps/*"],
     });
-    await writeFile(path.join(repoDir, "yarn.lock"), "# yarn lockfile\n");
+    await writeFile(path.join(repoDir, "yarn.lock"), "__metadata:\n  version: 8\n");
+    await writeFile(path.join(repoDir, ".yarnrc.yml"), "nodeLinker: node-modules\n");
     await writeJson(path.join(appRoot, "package.json"), {
       name: "@calcom/web",
+      dependencies: {
+        next: "16.2.3",
+      },
     });
+    const pack: PackWorkspacePackage = async (pkg, opts) => {
+      await mkdir(opts.vendorDir, { recursive: true });
+      await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+    };
+    const installCalls: string[] = [];
     const injector = createLocalVendoInjector({
       context,
       workspaceRoot,
-      runInstall: false,
-      async buildWorkspace() {
-        throw new Error("build should not run");
+      pack,
+      async buildWorkspace() {},
+      async runInstallCommand(command, cwd) {
+        installCalls.push(`${command} @ ${cwd}`);
+        await writeFile(path.join(cwd, "yarn.lock"), [
+          '"@vendoai/server@file:apps/web/vendor/vendoai-server-0.1.0.tgz":',
+          '  resolution: "@vendoai/server@file:apps/web/vendor/vendoai-server-0.1.0.tgz"',
+          '"vendoai@file:apps/web/vendor/vendoai-0.1.0.tgz":',
+          '  resolution: "vendoai@file:apps/web/vendor/vendoai-0.1.0.tgz"',
+          "",
+        ].join("\n"));
       },
     });
 
-    await expect(injector.inject({ name: "cal-com", appDir: "apps/web" })).rejects.toThrow(
-      /Corpus repo cal-com uses Yarn.*supports only pnpm and npm.*Yarn injection support/i,
-    );
-    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.not.toContain("vendoai");
+    const result = await injector.inject({ name: "cal-com", appDir: "apps/web" });
+
+    expect(result.packageManager).toBe("yarn-berry");
+    expect(result.installCommand).toBe("YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install");
+    expect(installCalls).toEqual([`YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install @ ${repoDir}`]);
+    await expect(readFile(path.join(repoDir, ".yarnrc.yml"), "utf8")).resolves.toBe("nodeLinker: node-modules\n");
+    const pkg = await readAnyPackageJson(appRoot) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+      resolutions: Record<string, string>;
+      pnpm?: unknown;
+      overrides?: unknown;
+    };
+    expect(pkg.dependencies["vendoai"]).toBe("file:vendor/vendoai-0.1.0.tgz");
+    expect(pkg.dependencies["next"]).toBe("16.2.3");
+    expect(pkg.devDependencies["@vendoai/cli"]).toBe("file:vendor/vendoai-cli-0.1.0.tgz");
+    expect(pkg.resolutions["@vendoai/server"]).toBe("file:vendor/vendoai-server-0.1.0.tgz");
+    expect(pkg.resolutions["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
+    expect(pkg.pnpm).toBeUndefined();
+    expect(pkg.overrides).toBeUndefined();
+  });
+
+  it("rejects Yarn lockfiles that still resolve Vendo packages from the registry", async () => {
+    const workspaceRoot = await createWorkspace();
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repoDir = context.repoDir("repo-yarn-registry-lock");
+    await writeJson(path.join(repoDir, "package.json"), {
+      name: "repo-yarn-registry-lock",
+      private: true,
+      packageManager: "yarn@1.22.22",
+    });
+    await writeFile(path.join(repoDir, "yarn.lock"), "# yarn lockfile v1\n");
+    const pack: PackWorkspacePackage = async (pkg, opts) => {
+      await mkdir(opts.vendorDir, { recursive: true });
+      await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+    };
+    const injector = createLocalVendoInjector({
+      context,
+      workspaceRoot,
+      pack,
+      async buildWorkspace() {},
+      async runInstallCommand(_command, cwd) {
+        await writeFile(path.join(cwd, "yarn.lock"), [
+          '"@vendoai/server@^0.1.0":',
+          '  version "0.1.0"',
+          '  resolved "https://registry.yarnpkg.com/@vendoai/server/-/server-0.1.0.tgz"',
+          "",
+        ].join("\n"));
+      },
+    });
+
+    await expect(injector.inject({ name: "repo-yarn-registry-lock" })).rejects.toThrow(/yarn\.lock.*registry.*Vendo/i);
   });
 });

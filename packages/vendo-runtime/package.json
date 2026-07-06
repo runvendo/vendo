@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/runtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Vendo embedded agent runtime: host tools, automations, and MCP client.",
   "keywords": ["ai", "agent", "generative-ui", "automations", "mcp"],
   "license": "Apache-2.0",

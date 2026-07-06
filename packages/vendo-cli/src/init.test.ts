@@ -41,7 +41,12 @@ describe("runInit e2e (mock model)", () => {
     const theme = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
     expect(theme.background).toBe("#ffffff");
     const tools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
-    expect(tools.tools[0].name).toBe("list_things");
+    expect(tools.tools[0]).toMatchObject({
+      name: "getThings",
+      description: "List things.",
+      binding: { type: "http", method: "GET", path: "/api/things" },
+      annotations: { mutating: true, dangerous: false },
+    });
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
     const readme = await readFile(path.join(dir, ".vendo/README.md"), "utf8");
     expect(readme).toContain("## Events");
@@ -151,11 +156,19 @@ describe("runInit e2e (mock model)", () => {
         model: throwingModel("temperature is deprecated for this model"),
       });
       expect(code).toBe(0);
-      expect(err.mock.calls.flat().join("\n")).toContain("LLM-assisted route scan failed");
-      expect(err.mock.calls.flat().join("\n")).toContain("temperature is deprecated");
+      expect(err.mock.calls.flat().join("\n")).not.toContain("LLM-assisted route scan failed");
       const out = log.mock.calls.flat().join("\n");
+      expect(out).toContain("warning: LLM route enrichment failed");
+      expect(out).toContain("temperature is deprecated");
+      expect(out).toContain("deterministic route inventory was used");
       expect(out).toContain("next wiring:");
-      expect(out).toContain("LLM steps skipped");
+      const tools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
+      expect(tools.tools[0]).toMatchObject({
+        name: "getThings",
+        description: "GET /api/things",
+        binding: { type: "http", method: "GET", path: "/api/things" },
+        annotations: { mutating: true, dangerous: false },
+      });
       const route = await readFile(path.join(dir, "app/api/vendo/[...path]/route.ts"), "utf8");
       expect(route).toContain("createVendoHandler()");
       const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf8")) as {
@@ -253,23 +266,35 @@ async function runCaptured(
 }
 
 describe("additive re-run (decision matrix)", () => {
-  it("no-key run coaches + leaves fallback tools; keyed re-run fills tools/components without touching theme", async () => {
+  it("no-key run coaches + writes deterministic tools; keyed re-run fills components without touching theme/tools", async () => {
     const dir = await wiredNextAppFixture();
 
-    // Run 1: no provider key (model: null). Must exit 0 and end with coaching.
+    // Run 1: no provider key (model: null). Must exit 0, end with coaching,
+    // and still produce deterministic route tools with placeholder metadata.
     const first = await runCaptured({ targetDir: dir, skipLlm: false, force: false, model: null });
     expect(first.code).toBe(0);
     expect(first.out).toContain("only fills gaps");
     expect(first.out).toContain("re-run");
-    const fallback = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
-    expect(fallback).toEqual({ version: 1, tools: [], events: [] });
+    const deterministicTools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
+    expect(deterministicTools).toMatchObject({
+      version: 1,
+      events: [],
+      tools: [{
+        name: "getThings",
+        description: "GET /api/things",
+        inputSchema: { type: "object", properties: {} },
+        annotations: { mutating: true, dangerous: false },
+        binding: { type: "http", method: "GET", path: "/api/things" },
+      }],
+    });
 
     // Hand-edit the extracted theme to prove the re-run preserves it.
     const themePath = path.join(dir, ".vendo/theme.json");
     const editedTheme = (await readFile(themePath, "utf8")).replace(/#ffffff/i, "#123456");
     await writeFile(themePath, editedTheme);
 
-    // Run 2: keyed (mock model). Fills tools + components, keeps theme, exit 0.
+    // Run 2: keyed (mock model). The deterministic tools are real content now,
+    // so additive init keeps them byte-for-byte and fills only missing wrappers.
     const second = await runCaptured({
       targetDir: dir,
       skipLlm: false,
@@ -278,9 +303,10 @@ describe("additive re-run (decision matrix)", () => {
     });
     expect(second.code).toBe(0);
     expect(second.out).toContain("theme.json: kept");
+    expect(second.out).toContain("tools.json: kept");
     expect(await readFile(themePath, "utf8")).toBe(editedTheme);
     const tools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
-    expect(tools.tools[0].name).toBe("list_things");
+    expect(tools).toEqual(deterministicTools);
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
   });
 
@@ -298,7 +324,7 @@ describe("additive re-run (decision matrix)", () => {
     const toolsPath = path.join(dir, ".vendo/tools.json");
     const implPath = path.join(dir, ".vendo/components/Badge/impl.tsx");
     const editedTheme = (await readFile(themePath, "utf8")).replace(/#ffffff/i, "#123456");
-    const editedTools = (await readFile(toolsPath, "utf8")).replace("list_things", "list_widgets");
+    const editedTools = (await readFile(toolsPath, "utf8")).replace("getThings", "getWidgets");
     await writeFile(themePath, editedTheme);
     await writeFile(toolsPath, editedTools);
     const implBefore = await readFile(implPath, "utf8");

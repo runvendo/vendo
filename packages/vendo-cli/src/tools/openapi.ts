@@ -33,21 +33,22 @@ export async function convertOpenApi(specPath: string): Promise<ManifestTool[]> 
 }
 
 function toolName(op: JsonObj, method: string, route: string): string {
-  const opId = op["operationId"];
-  if (typeof opId === "string" && opId.length > 0) return snake(opId);
-  const segs = route
-    .split("/")
-    .filter(Boolean)
-    .map((s) => (s.startsWith("{") ? `by_${s.slice(1, -1)}` : s));
-  return snake([method, ...segs].join("_"));
-}
+  const operationId = op["operationId"];
+  if (typeof operationId === "string" && operationId.trim().length > 0) return operationId.trim();
 
-function snake(s: string): string {
-  return s
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
+  const parts = [
+    method.toLowerCase(),
+    ...route
+      .split("/")
+      .filter(Boolean)
+      .filter((segment, index) => !(index === 0 && segment === "api"))
+      .flatMap((segment) => {
+        const unbraced = segment.startsWith("{") && segment.endsWith("}") ? segment.slice(1, -1) : segment;
+        return unbraced.match(/[A-Za-z0-9]+/g) ?? [];
+      })
+      .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`),
+  ];
+  return parts.join("");
 }
 
 /** Resolve local #/... $refs (cycle-guarded); leave external refs untouched. */

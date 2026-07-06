@@ -25,11 +25,11 @@ type ColorSlot = "accent" | "background" | "surface" | "text" | "mutedText";
  * "--color-ink-soft".
  */
 const COLOR_SLOTS: Array<{ slot: ColorSlot; fragments: string[] }> = [
-  { slot: "accent", fragments: ["accent", "primary", "brand", "cta"] },
-  { slot: "background", fragments: ["background", "-bg", "bg"] },
-  { slot: "surface", fragments: ["surface", "card", "panel"] },
-  { slot: "mutedText", fragments: ["fg-muted", "text-muted", "muted", "secondary-text"] },
-  { slot: "text", fragments: ["-ink", "text", "-fg", "foreground"] },
+  { slot: "accent", fragments: ["primary", "brand", "cta", "accent"] },
+  { slot: "background", fragments: ["background", "surface-raised", "-bg", "bg"] },
+  { slot: "surface", fragments: ["surface-base", "surface", "card", "panel"] },
+  { slot: "mutedText", fragments: ["muted-foreground", "fg-muted", "text-muted", "muted-text", "secondary-text", "muted"] },
+  { slot: "text", fragments: ["text-primary", "foreground", "-ink", "text", "-fg"] },
 ];
 
 /** Tailwind-style scale steps. */
@@ -40,8 +40,7 @@ const NON_ACCENT_FAMILY = /(gray|grey|neutral|slate|stone|zinc|status|success|wa
 /** Spread between the widest RGB channels — near zero for neutral ramps whose
  * family name isn't on the keyword list (sand, ash, ivory, ...). */
 function hexChroma(hex: string): number {
-  let h = hex.slice(1);
-  if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+  let h = normalizeHex(hex)?.slice(1) ?? hex.slice(1);
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
   return Math.max(r, g, b) - Math.min(r, g, b);
 }
@@ -59,7 +58,7 @@ function pickScaleAccent(vars: CssVarDecl[]): CssVarDecl | undefined {
     const m = v.name.match(/^(--[\w-]+?)-(\d{2,3})$/);
     if (!m || !m[1] || !m[2]) continue;
     const step = Number(m[2]);
-    if (!SCALE_STEPS.has(step) || !HEX.test(v.value)) continue;
+    if (!SCALE_STEPS.has(step) || !normalizeColor(v.value)) continue;
     const steps = families.get(m[1]) ?? new Map<number, CssVarDecl>();
     steps.set(step, v);
     families.set(m[1], steps);
@@ -71,7 +70,165 @@ function pickScaleAccent(vars: CssVarDecl[]): CssVarDecl | undefined {
   const steps = candidates[0]![1];
   const mid = [...steps.keys()].sort((a, b) => Math.abs(a - 500) - Math.abs(b - 500) || a - b)[0]!;
   const hit = steps.get(mid);
-  return hit && hexChroma(hit.value) >= 32 ? hit : undefined;
+  const color = hit ? normalizeColor(hit.value) : null;
+  return hit && color && hexChroma(color) >= 32 ? hit : undefined;
+}
+
+function normalizeHex(value: string): string | null {
+  const trimmed = value.trim();
+  if (!HEX.test(trimmed)) return null;
+  let h = trimmed.slice(1);
+  if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join("");
+  if (h.length === 8) {
+    const alpha = parseInt(h.slice(6, 8), 16);
+    if (alpha !== 255) return null;
+    h = h.slice(0, 6);
+  }
+  return `#${h.slice(0, 6).toLowerCase()}`;
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function byteToHex(value: number): string {
+  return Math.round(clamp01(value) * 255).toString(16).padStart(2, "0");
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${byteToHex(r)}${byteToHex(g)}${byteToHex(b)}`;
+}
+
+function parseAlpha(value: string | undefined): number {
+  if (!value) return 1;
+  const trimmed = value.trim();
+  if (trimmed.endsWith("%")) return Number(trimmed.slice(0, -1)) / 100;
+  return Number(trimmed);
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number): string {
+  const h = (((hue % 360) + 360) % 360) / 360;
+  const s = clamp01(saturation / 100);
+  const l = clamp01(lightness / 100);
+  if (s === 0) return rgbToHex(l, l, l);
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (offset: number) => {
+    let t = h + offset;
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return rgbToHex(channel(1 / 3), channel(0), channel(-1 / 3));
+}
+
+function parseHsl(value: string): string | null {
+  const trimmed = value.trim();
+  const body = trimmed.startsWith("hsl(") && trimmed.endsWith(")") ? trimmed.slice(4, -1).trim() : trimmed;
+  const slashParts = body.split("/");
+  if (slashParts.length > 2) return null;
+  const alpha = parseAlpha(slashParts[1]);
+  if (!Number.isFinite(alpha) || alpha < 0.999) return null;
+  const parts = slashParts[0]!.includes(",")
+    ? slashParts[0]!.split(",").map((part) => part.trim())
+    : slashParts[0]!.trim().split(/\s+/);
+  if (parts.length !== 3 || !parts[1]?.endsWith("%") || !parts[2]?.endsWith("%")) return null;
+  const hue = Number(parts[0]);
+  const saturation = Number(parts[1].slice(0, -1));
+  const lightness = Number(parts[2].slice(0, -1));
+  if (![hue, saturation, lightness].every(Number.isFinite)) return null;
+  return hslToHex(hue, saturation, lightness);
+}
+
+function linearToSrgb(value: number): number {
+  const v = clamp01(value);
+  return v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+}
+
+function parseOklch(value: string): string | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^oklch\(\s*([+-]?(?:\d+|\d*\.\d+)%?)\s+([+-]?(?:\d+|\d*\.\d+))\s+([+-]?(?:\d+|\d*\.\d+)(?:deg)?)\s*(?:\/\s*([^)]+))?\)$/i);
+  if (!match) return null;
+  const alpha = parseAlpha(match[4]);
+  if (!Number.isFinite(alpha) || alpha < 0.999) return null;
+  const lRaw = match[1]!;
+  const lightness = lRaw.endsWith("%") ? Number(lRaw.slice(0, -1)) / 100 : Number(lRaw);
+  const chroma = Number(match[2]);
+  const hue = Number(match[3]!.replace(/deg$/i, ""));
+  if (![lightness, chroma, hue].every(Number.isFinite)) return null;
+
+  const a = chroma * Math.cos((hue * Math.PI) / 180);
+  const b = chroma * Math.sin((hue * Math.PI) / 180);
+  const lPrime = lightness + 0.3963377774 * a + 0.2158037573 * b;
+  const mPrime = lightness - 0.1055613458 * a - 0.0638541728 * b;
+  const sPrime = lightness - 0.0894841775 * a - 1.291485548 * b;
+  const l = lPrime ** 3;
+  const m = mPrime ** 3;
+  const s = sPrime ** 3;
+  return rgbToHex(
+    linearToSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+    linearToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+    linearToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s),
+  );
+}
+
+function normalizeColor(value: string): string | null {
+  return normalizeHex(value) ?? parseHsl(value) ?? parseOklch(value);
+}
+
+function normalizeColorVar(value: string, all: CssVarDecl[]): string | null {
+  const resolved = resolveCssVarRefs(value, all, 6);
+  return resolved ? normalizeColor(resolved) : null;
+}
+
+function normalizeRadius(value: string, all: CssVarDecl[]): string | null {
+  const resolved = resolveCssVarRefs(value, all, 6)?.trim();
+  if (!resolved) return null;
+  const px = resolved.match(/^((?:\d+|\d*\.\d+))px$/);
+  if (px) return `${Number(px[1])}px`;
+  const rem = resolved.match(/^((?:\d+|\d*\.\d+))rem$/);
+  if (rem) return `${Number(rem[1]) * 16}px`;
+  return null;
+}
+
+const EMOJI_FONT_FALLBACKS = new Set([
+  "apple color emoji",
+  "segoe ui emoji",
+  "segoe ui symbol",
+  "noto color emoji",
+]);
+
+const REDUNDANT_SYSTEM_FONT_FALLBACKS = new Set([
+  "-apple-system",
+  "blinkmacsystemfont",
+  "segoe ui",
+  "roboto",
+  "helvetica neue",
+  "arial",
+  "noto sans",
+]);
+
+function normalizeFontStack(value: string): string {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part, index) => {
+      const normalized = part.replace(/^["']|["']$/g, "").toLowerCase();
+      if (EMOJI_FONT_FALLBACKS.has(normalized)) return false;
+      return index === 0 || !REDUNDANT_SYSTEM_FONT_FALLBACKS.has(normalized);
+    })
+    .join(", ");
+}
+
+function matchStrength(name: string, fragment: string): number {
+  const bare = fragment.replace(/^-/, "");
+  if (name === `--${bare}` || name === `--color-${bare}`) return 4;
+  if (fragment.startsWith("-") && name.endsWith(fragment)) return 3;
+  if (name.endsWith(`-${bare}`)) return 2;
+  return name.includes(fragment) ? 1 : 0;
 }
 
 function pick(
@@ -80,13 +237,16 @@ function pick(
   accept: (value: string) => boolean,
 ): CssVarDecl | undefined {
   for (const frag of fragments) {
-    const bare = frag.replace(/^-/, "");
-    const exact = vars.find(
-      (v) => (v.name.endsWith(frag) || v.name === `--${bare}` || v.name === `--color-${bare}`) && accept(v.value),
-    );
-    if (exact) return exact;
-    const loose = vars.find((v) => v.name.includes(frag) && accept(v.value));
-    if (loose) return loose;
+    let best: { value: CssVarDecl; strength: number; index: number } | null = null;
+    for (let index = 0; index < vars.length; index += 1) {
+      const v = vars[index]!;
+      const strength = matchStrength(v.name, frag);
+      if (strength === 0 || !accept(v.value)) continue;
+      if (!best || strength > best.strength || (strength === best.strength && index > best.index)) {
+        best = { value: v, strength, index };
+      }
+    }
+    if (best) return best.value;
   }
   return undefined;
 }
@@ -132,27 +292,26 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
     const base = v.name.slice(0, -"-bg".length);
     return names.has(base) || names.has(`${base}-fg`);
   };
-  const isHex = (val: string) => HEX.test(val);
 
   for (const { slot, fragments } of COLOR_SLOTS) {
     const candidates = light.filter((v) => !used.has(v) && !isCompanionTint(v));
-    let hit = pick(candidates, fragments, isHex);
+    let hit = pick(candidates, fragments, (value) => normalizeColorVar(value, all) !== null);
     if (!hit && slot === "accent") hit = pickScaleAccent(candidates);
     if (!hit && slot === "background") {
       // Token sets with no bg token (Cadence) use their surface color as the
       // page background — but only promote it when the surface slot keeps a
       // candidate of its own, else we'd trade one wrong slot for two.
-      const surface = pick(candidates, ["surface"], isHex);
-      if (surface && pick(candidates.filter((v) => v !== surface), ["surface", "card", "panel"], isHex)) {
+      const surface = pick(candidates, ["surface"], (value) => normalizeColorVar(value, all) !== null);
+      if (surface && pick(candidates.filter((v) => v !== surface), ["surface", "card", "panel"], (value) => normalizeColorVar(value, all) !== null)) {
         hit = surface;
       }
     }
-    if (hit) { used.add(hit); matched[slot] = hit.name; draft[slot] = hit.value; }
+    if (hit) { used.add(hit); matched[slot] = hit.name; draft[slot] = normalizeColorVar(hit.value, all)!; }
     else { defaulted.push(slot); draft[slot] = defaultBrand[slot]; }
   }
 
-  const radius = pick(light, ["radius"], (val) => /^\d+(\.\d+)?px$/.test(val));
-  if (radius) { used.add(radius); matched["radius"] = radius.name; draft["radius"] = radius.value; }
+  const radius = pick(light, ["radius-default", "radius-card", "radius"], (val) => normalizeRadius(val, all) !== null);
+  if (radius) { used.add(radius); matched["radius"] = radius.name; draft["radius"] = normalizeRadius(radius.value, all)!; }
   else { defaulted.push("radius"); draft["radius"] = defaultBrand.radius; }
 
   const font = pick(
@@ -163,7 +322,7 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
   if (font) {
     used.add(font);
     matched["fontFamily"] = font.name;
-    draft["fontFamily"] = resolveCssVarRefs(font.value, all)!;
+    draft["fontFamily"] = normalizeFontStack(resolveCssVarRefs(font.value, all)!);
   } else {
     defaulted.push("fontFamily");
     draft["fontFamily"] = defaultBrand.fontFamily;
