@@ -22,6 +22,16 @@ Latest scorecard: `2026-07-06T08:10:47.953Z`
 
 ## Cross-Repo CLI Findings
 
+### HARNESS-001: cal-com is blocked on Yarn local package injection support
+
+The harness now detects Yarn repos before local Vendo package injection and fails early instead of falling back to pnpm-compatible package rewrites. `cal-com` remains blocked until the injector can rewrite Yarn workspaces and refresh `yarn.lock` safely.
+
+Repro:
+
+```sh
+pnpm corpus run cal-com --layer 1
+```
+
 ### CLI-001: Generated `prebuild` calls cannot find the intended Vendo CLI
 
 `vendo init` injects `prebuild: "vendo sync"` into host apps, but the sweep clones do not get a guaranteed local `vendo` binary on `PATH`. During builds, the shell resolved an unrelated global Python `vendo` command and failed with `ModuleNotFoundError: No module named 'vendo_swarm'`.

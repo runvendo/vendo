@@ -270,6 +270,30 @@ describe("runStructuralLayer", () => {
     ]);
   });
 
+  it("skips host typecheck when no command is configured or auto-detected", async () => {
+    const repoDir = await makeTempRepo();
+    const calls: string[] = [];
+    const runner: StructuralCommandRunner = async (command, options) => {
+      calls.push(`${command} @ ${options.cwd}`);
+      return { code: 0, stdout: "ok", stderr: "" };
+    };
+
+    const results = byId(await runStructuralLayer({
+      ...passingContext(repoDir, runner),
+      typecheckCommand: undefined,
+    }));
+
+    expect(results["host.typecheck"]).toMatchObject({
+      pass: true,
+      status: "skipped-not-configured",
+    });
+    expect(results["host.typecheck"]?.detail).toContain("no manifest typecheckCommand");
+    expect(results["host.build"]).toMatchObject({ pass: true });
+    expect(calls).toEqual([
+      `pnpm build @ ${repoDir}`,
+    ]);
+  });
+
   it("fails host commands only when a passing baseline regresses after init", async () => {
     const repoDir = await makeTempRepo();
     const calls: string[] = [];

@@ -40,6 +40,15 @@ describe("parseManifest", () => {
     expect(parseManifest([entry])).toEqual([entry]);
   });
 
+  it("accepts optional relative app directories", () => {
+    expect(parseManifest([{ ...entry, appDir: "apps/web" }])[0]?.appDir).toBe("apps/web");
+  });
+
+  it("rejects app directories that can escape the checkout", () => {
+    expect(() => parseManifest([{ ...entry, appDir: "../apps/web" }])).toThrow(/appDir/i);
+    expect(() => parseManifest([{ ...entry, appDir: "/apps/web" }])).toThrow(/appDir/i);
+  });
+
   it("rejects entries missing a pinned SHA", () => {
     const { pinnedSha: _pinnedSha, ...missingSha } = entry;
     expect(() => parseManifest([missingSha])).toThrow(/pinnedSha/i);

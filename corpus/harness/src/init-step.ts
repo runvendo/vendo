@@ -2,10 +2,12 @@ import { spawn } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveAppRoot } from "./app-root.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
 export interface InitStepRepo {
   name: string;
+  appDir?: string;
 }
 
 export interface InitStepArtifacts {
@@ -32,6 +34,7 @@ export interface RunVendoInitStepOptions {
   artifactPrefix?: string;
   localVendoDir?: string;
   skipLlm?: boolean;
+  diffBase?: "head" | "pre-run";
 }
 
 interface CommandResult {
@@ -122,15 +125,36 @@ function extractTokenCostLines(log: string): string[] {
     .filter((line) => /\b(tokens?|cost)\b/i.test(line));
 }
 
-async function captureGitDiff(repoDir: string, logsDir: string, gitBin: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const indexFile = path.join(logsDir, "init.diff.index");
+async function captureGitTree(repoDir: string, logsDir: string, gitBin: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const indexFile = path.join(logsDir, "init.snapshot.index");
   const gitEnv = { ...env, GIT_INDEX_FILE: indexFile };
 
   try {
     await rm(indexFile, { force: true });
     await checkedCommand(gitBin, ["read-tree", "HEAD"], repoDir, gitEnv);
     await checkedCommand(gitBin, ["add", "-A", "--", "."], repoDir, gitEnv);
-    const diff = await checkedCommand(gitBin, ["diff", "--cached", "--no-ext-diff", "--binary", "HEAD", "--"], repoDir, gitEnv);
+    const tree = await checkedCommand(gitBin, ["write-tree"], repoDir, gitEnv);
+    return tree.stdout.trim();
+  } finally {
+    await rm(indexFile, { force: true });
+  }
+}
+
+async function captureGitDiff(
+  repoDir: string,
+  logsDir: string,
+  gitBin: string,
+  env: NodeJS.ProcessEnv,
+  baseTree = "HEAD",
+): Promise<string> {
+  const indexFile = path.join(logsDir, "init.diff.index");
+  const gitEnv = { ...env, GIT_INDEX_FILE: indexFile };
+
+  try {
+    await rm(indexFile, { force: true });
+    await checkedCommand(gitBin, ["read-tree", baseTree], repoDir, gitEnv);
+    await checkedCommand(gitBin, ["add", "-A", "--", "."], repoDir, gitEnv);
+    const diff = await checkedCommand(gitBin, ["diff", "--cached", "--no-ext-diff", "--binary", baseTree, "--"], repoDir, gitEnv);
     return diff.stdout;
   } catch (error) {
     return `Unable to capture git diff: ${error instanceof Error ? error.message : String(error)}\n`;
@@ -144,7 +168,8 @@ export async function runVendoInitStep(
   options: RunVendoInitStepOptions = {},
 ): Promise<InitStepResult> {
   const context = options.context ?? createRunContext();
-  const repoDir = context.repoDir(repo.name);
+  const checkoutDir = context.repoDir(repo.name);
+  const repoDir = resolveAppRoot(repo, checkoutDir);
   const logsDir = context.logsDir(repo.name);
   const artifacts = initLogPaths(logsDir, options.artifactPrefix);
   const invocation = defaultCliInvocation();
@@ -158,6 +183,9 @@ export async function runVendoInitStep(
   };
 
   await mkdir(logsDir, { recursive: true });
+  const diffBaseTree = options.diffBase === "pre-run"
+    ? await captureGitTree(repoDir, logsDir, options.gitBin ?? "git", env)
+    : undefined;
   const startedAt = Date.now();
   const result = await runCommand(cliCommand, cliArgs, defaultWorkspaceRoot, env);
   const durationMs = Date.now() - startedAt;
@@ -171,7 +199,7 @@ export async function runVendoInitStep(
     delete artifacts.tokenCost;
   }
 
-  const diff = await captureGitDiff(repoDir, logsDir, options.gitBin ?? "git", env);
+  const diff = await captureGitDiff(repoDir, logsDir, options.gitBin ?? "git", env, diffBaseTree);
   await writeFile(artifacts.diff, diff);
 
   return {

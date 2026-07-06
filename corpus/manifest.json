@@ -187,6 +187,7 @@
     "name": "cal-com",
     "gitUrl": "https://github.com/calcom/cal.diy.git",
     "pinnedSha": "188aaa18573f733a60065a5317449de38c0312d9",
+    "appDir": "apps/web",
     "license": "MIT",
     "tier": "broad",
     "bootstrap": {
@@ -213,6 +214,7 @@
     "name": "dub",
     "gitUrl": "https://github.com/dubinc/dub.git",
     "pinnedSha": "ea29e2977f2db6f9685bfa96c147624aa7d5411e",
+    "appDir": "apps/web",
     "license": "AGPL-3.0-only",
     "tier": "broad",
     "bootstrap": {
@@ -249,6 +251,7 @@
     "name": "formbricks",
     "gitUrl": "https://github.com/formbricks/formbricks.git",
     "pinnedSha": "39da93a22c76aa048b12e4ea79e1d064cda17c1f",
+    "appDir": "apps/web",
     "license": "AGPL-3.0-only",
     "tier": "broad",
     "bootstrap": {
@@ -287,6 +290,7 @@
     "name": "inbox-zero",
     "gitUrl": "https://github.com/elie222/inbox-zero.git",
     "pinnedSha": "b73bdecca0b302f920d39bcf7acaf95895a2e7fa",
+    "appDir": "apps/web",
     "license": "AGPL-3.0-only-with-additional-terms",
     "tier": "broad",
     "bootstrap": {
@@ -323,6 +327,7 @@
     "name": "openstatus",
     "gitUrl": "https://github.com/openstatusHQ/openstatus.git",
     "pinnedSha": "f7dc9efe973f9621dbd21966653b1fd788a07bde",
+    "appDir": "apps/dashboard",
     "license": "AGPL-3.0-only",
     "tier": "broad",
     "bootstrap": {
@@ -390,6 +395,7 @@
     "name": "teable",
     "gitUrl": "https://github.com/teableio/teable.git",
     "pinnedSha": "105e0f945dd9e4181ba6f80e44056c176a9800aa",
+    "appDir": "apps/nextjs-app",
     "license": "AGPL-3.0-only",
     "tier": "broad",
     "bootstrap": {

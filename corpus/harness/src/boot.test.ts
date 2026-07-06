@@ -116,6 +116,41 @@ describe("bootRepo", () => {
     await expect(readFile(path.join(repoDir, ".corpus", "logs", "boot.server.log"), "utf8")).rejects.toThrow();
   });
 
+  it("runs seed and dev server commands from appDir when configured", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = { ...repoEntry("monorepo-app"), appDir: "apps/web" };
+    const repoDir = context.repoDir(repo.name);
+    const appRoot = path.join(repoDir, repo.appDir);
+    await mkdir(appRoot, { recursive: true });
+    const events: string[] = [];
+    const server = fakeProcess(2233);
+
+    const boot = await bootRepo(repo, {
+      context,
+      provisionDatabase: async () => ({ teardown: async () => {} }),
+      runCommand: async (command, options) => {
+        events.push(`seed:${command}:${options.cwd}`);
+        return { code: 0, signal: null, stdout: "", stderr: "" };
+      },
+      spawnProcess: (command, options) => {
+        events.push(`server:${command}:${options.cwd}`);
+        return server;
+      },
+      checkReadiness: async () => true,
+      killProcessTree: async () => {},
+      sleep: async () => {},
+    });
+
+    await boot.teardown();
+
+    expect(boot.repoDir).toBe(appRoot);
+    expect(events).toEqual([
+      `seed:pnpm seed-data:${appRoot}`,
+      `server:pnpm dev:${appRoot}`,
+    ]);
+  });
+
   it("kills the server process tree and provisioned DB when readiness fails, and reports recent logs", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });

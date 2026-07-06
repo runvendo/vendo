@@ -7,6 +7,7 @@ import {
   type BootstrapOptions,
   type BootstrapResult,
 } from "./bootstrap.js";
+import { resolveAppRoot } from "./app-root.js";
 import {
   bootRepo as defaultBootRepo,
   type BootHandle,
@@ -454,17 +455,18 @@ async function runRepoThroughLayerOne(
   const logPaths: string[] = [];
 
   try {
-    const repoDir = await deps.ensureRepoCheckout(repo, { context });
+    const checkoutDir = await deps.ensureRepoCheckout(repo, { context });
+    const appRoot = resolveAppRoot(repo, checkoutDir);
     const bootstrap = await deps.bootstrapRepo(repo, { context, env: deps.env });
     logPaths.push(bootstrap.logs.stdout, bootstrap.logs.stderr);
 
     const injectResult = await injector.inject(repo);
     const localVendoDir = localVendoDirFromInitArgs(injectResult.initArgs.length > 0 ? injectResult.initArgs : injector.initArgs());
-    const typecheckCommand = repo.bootstrap.typecheckCommand ?? await detectTypecheckCommand(repoDir);
+    const typecheckCommand = repo.bootstrap.typecheckCommand ?? await detectTypecheckCommand(appRoot);
     const buildCommand = repo.bootstrap.buildCommand;
     const baselineCommands = createLoggedCommandRunner(context.logsDir(repo.name), "baseline", deps.commandRunner);
     const baseline = await captureHostBaseline(
-      repoDir,
+      appRoot,
       typecheckCommand,
       buildCommand,
       deps.env,
@@ -480,12 +482,12 @@ async function runRepoThroughLayerOne(
     };
     const firstInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.first" });
     logPaths.push(...artifactPaths(firstInit.artifacts));
-    const secondInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.second" });
+    const secondInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.second", diffBase: "pre-run" });
     logPaths.push(...artifactPaths(secondInit.artifacts));
 
     const loggedCommands = createLoggedCommandRunner(context.logsDir(repo.name), "structural", deps.commandRunner);
     const checks = await deps.runStructuralLayer({
-      repoDir,
+      repoDir: appRoot,
       initExitCode: firstInit.exitCode,
       initDetail: await readOptional(firstInit.artifacts.log),
       secondInitExitCode: secondInit.exitCode,
@@ -511,7 +513,7 @@ async function runRepoThroughLayerOne(
       try {
         const scored = await deps.runScoredLayer({
           repoName: repo.name,
-          repoDir,
+          repoDir: appRoot,
           expectationsRoot: path.join(context.corpusRoot, "expectations"),
           now: deps.now,
         });
@@ -544,7 +546,7 @@ async function runRepoThroughLayerOne(
           layerLogPaths.push(...bootHandleLogPaths(handle));
           const e2e = await deps.runE2eLayer({
             repoName: repo.name,
-            repoDir,
+            repoDir: appRoot,
             readinessUrl: handle.readinessUrl,
             expectationsRoot: path.join(context.corpusRoot, "expectations"),
             logsDir: context.logsDir(repo.name),

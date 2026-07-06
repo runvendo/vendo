@@ -298,6 +298,41 @@ describe("createLocalVendoInjector", () => {
     await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-0.1.0.tgz");
   });
 
+  it("targets appDir package.json when injecting into monorepo apps", async () => {
+    const workspaceRoot = await createWorkspace();
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repoDir = context.repoDir("repo-app");
+    const appRoot = path.join(repoDir, "apps/web");
+    await writeJson(path.join(repoDir, "package.json"), {
+      name: "repo-app",
+      private: true,
+      packageManager: "pnpm@9.12.0",
+    });
+    await writeJson(path.join(appRoot, "package.json"), {
+      name: "web",
+      packageManager: "pnpm@9.12.0",
+    });
+    const pack: PackWorkspacePackage = async (pkg, opts) => {
+      await mkdir(opts.vendorDir, { recursive: true });
+      await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+    };
+    const injector = createLocalVendoInjector({
+      context,
+      workspaceRoot,
+      runInstall: false,
+      pack,
+      async buildWorkspace() {},
+    });
+
+    const result = await injector.inject({ name: "repo-app", appDir: "apps/web" });
+
+    expect(result.repoDir).toBe(appRoot);
+    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"vendoai": "file:vendor/vendoai-0.1.0.tgz"');
+    await expect(readFile(path.join(appRoot, "vendor", "vendoai-0.1.0.tgz"), "utf8")).resolves.toBe("packed vendoai");
+    await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.not.toContain("vendoai");
+  });
+
   it("rejects lockfiles that still point Vendo packages at the registry", async () => {
     const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();
@@ -340,5 +375,36 @@ describe("createLocalVendoInjector", () => {
     });
 
     await expect(injector.inject({ name: "repo-space" })).rejects.toThrow(/local-pack known issue.*spaces/i);
+  });
+
+  it("fails early for Yarn monorepos instead of falling back to pnpm injection", async () => {
+    const workspaceRoot = await makeTempRoot("vendo-corpus-workspace-");
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repoDir = context.repoDir("cal-com");
+    const appRoot = path.join(repoDir, "apps/web");
+    await writeJson(path.join(repoDir, "package.json"), {
+      name: "cal-com",
+      private: true,
+      packageManager: "yarn@4.10.3",
+      workspaces: ["apps/*"],
+    });
+    await writeFile(path.join(repoDir, "yarn.lock"), "# yarn lockfile\n");
+    await writeJson(path.join(appRoot, "package.json"), {
+      name: "@calcom/web",
+    });
+    const injector = createLocalVendoInjector({
+      context,
+      workspaceRoot,
+      runInstall: false,
+      async buildWorkspace() {
+        throw new Error("build should not run");
+      },
+    });
+
+    await expect(injector.inject({ name: "cal-com", appDir: "apps/web" })).rejects.toThrow(
+      /Corpus repo cal-com uses Yarn.*supports only pnpm and npm.*Yarn injection support/i,
+    );
+    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.not.toContain("vendoai");
   });
 });

@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { resolveAppRoot } from "./app-root.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
-export type BootstrapRepo = Pick<ManifestEntry, "name" | "bootstrap">;
+export type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "bootstrap">;
 
 export interface BootstrapOptions {
   context?: CorpusRunContext;
@@ -92,6 +93,7 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
   const context = options.context ?? createRunContext();
   const env = { ...process.env, ...options.env };
   const repoDir = context.repoDir(repo.name);
+  const appRoot = resolveAppRoot(repo, repoDir);
   const logsDir = context.logsDir(repo.name);
   const logs = logPaths(logsDir);
 
@@ -100,7 +102,7 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
     throw new Error(`Missing bootstrap environment variables for ${repo.name}: ${resolved.missing.join(", ")}`);
   }
 
-  const envPath = path.join(repoDir, ".env");
+  const envPath = path.join(appRoot, ".env");
   await writeFile(envPath, formatEnv(resolved.values));
 
   await mkdir(logsDir, { recursive: true });

@@ -159,6 +159,7 @@ describe("runScoredLayer", () => {
 
     expect(result.layer.status).toBe("fail");
     expect(result.layer.hardFailure).toBe(true);
+    expect(result.baselineUpdate).toBeUndefined();
     expect(checks["annotations.write-safety"]).toMatchObject({ pass: false });
     expect(checks["annotations.write-safety"]?.detail).toContain("createInvoice");
   });

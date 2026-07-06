@@ -7,10 +7,11 @@ import {
   type LocalVendoInstallSummary,
   type WorkspacePackage,
 } from "../../../packages/vendo-cli/src/local-pack.js";
+import { resolveAppRoot } from "./app-root.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
-export type InjectRepo = Pick<ManifestEntry, "name">;
+export type InjectRepo = Pick<ManifestEntry, "name" | "appDir">;
 export type PackWorkspacePackage = LocalPackRunner;
 
 export interface InjectCommandResult {
@@ -137,6 +138,33 @@ async function readOptional(file: string): Promise<string | null> {
   }
 }
 
+async function pathExists(file: string): Promise<boolean> {
+  return access(file).then(() => true, () => false);
+}
+
+async function readPackageManager(dir: string): Promise<string | undefined> {
+  const source = await readOptional(path.join(dir, "package.json"));
+  if (!source) return undefined;
+  try {
+    const pkg = JSON.parse(source) as unknown;
+    return isRecord(pkg) && typeof pkg["packageManager"] === "string" ? pkg["packageManager"] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function assertSupportedPackageManager(repo: InjectRepo, checkoutDir: string, targetDir: string): Promise<void> {
+  const dirs = [...new Set([checkoutDir, targetDir])];
+  for (const dir of dirs) {
+    const packageManager = await readPackageManager(dir);
+    if (packageManager?.startsWith("yarn@") || await pathExists(path.join(dir, "yarn.lock"))) {
+      throw new Error(
+        `Corpus repo ${repo.name} uses Yarn, but local Vendo package injection currently supports only pnpm and npm. This repo is blocked until Yarn injection support is implemented.`,
+      );
+    }
+  }
+}
+
 async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoInstallSummary): Promise<void> {
   const pkg = JSON.parse(await readFile(path.join(repoDir, "package.json"), "utf8")) as Record<string, unknown>;
   const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
@@ -214,10 +242,12 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
       return localVendoInitArgs(workspaceRoot);
     },
     async inject(repo: InjectRepo): Promise<LocalVendoInjectResult> {
-      const repoDir = context.repoDir(repo.name);
+      const checkoutDir = context.repoDir(repo.name);
+      const repoDir = resolveAppRoot(repo, checkoutDir);
       assertPathHasNoSpaces("workspace", workspaceRoot);
       assertPathHasNoSpaces("corpus repo", repoDir);
       await mkdir(context.reposDir, { recursive: true });
+      await assertSupportedPackageManager(repo, checkoutDir, repoDir);
 
       const summary = await installLocalVendoPackages(repoDir, workspaceRoot, { pack: cachedPack });
       if (runInstall) {

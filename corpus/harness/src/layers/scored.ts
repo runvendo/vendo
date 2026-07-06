@@ -375,7 +375,7 @@ export async function runScoredLayer(ctx: ScoredLayerContext): Promise<ScoredLay
   const writeSafetyFailed = checks.some((check) => check.id === "annotations.write-safety" && !check.pass);
   const hardFailure = writeSafetyFailed || baselineResult.regression;
   const now = ctx.now?.() ?? new Date();
-  const baselineUpdate = baselineResult.improved
+  const baselineUpdate = baselineResult.improved && !hardFailure
     ? {
         path: repoBaselinePath(ctx.expectationsRoot, ctx.repoName),
         source: baselineSource(scored.score, now),

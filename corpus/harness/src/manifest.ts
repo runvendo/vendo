@@ -4,6 +4,7 @@ import { z } from "zod";
 
 const gitShaPattern = /^[0-9a-f]{40}$/;
 const repoNamePattern = /^[a-z0-9][a-z0-9-]*$/;
+const appDirSegmentPattern = /^[A-Za-z0-9._-]+$/;
 
 const devServerSchema = z
   .object({
@@ -47,6 +48,15 @@ export const manifestEntrySchema = z
     name: z.string().regex(repoNamePattern),
     gitUrl: z.string().url(),
     pinnedSha: z.string().regex(gitShaPattern, "pinnedSha must be a 40-character Git SHA"),
+    appDir: z
+      .string()
+      .min(1)
+      .refine((value) => !value.startsWith("/") && !value.includes("\\"), "appDir must be a relative POSIX path")
+      .refine(
+        (value) => value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && appDirSegmentPattern.test(segment)),
+        "appDir must contain only relative path segments",
+      )
+      .optional(),
     license: z.string().min(1),
     tier: z.enum(["broad", "deep"]),
     bootstrap: bootstrapRecipeSchema,

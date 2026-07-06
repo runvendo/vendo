@@ -212,6 +212,100 @@ describe("runCli run", () => {
     await expect(readFile(path.join(context.repoDir("repo-one"), "run", "scorecard.json"), "utf8")).resolves.toContain("\"repo\": \"repo-one\"");
   });
 
+  it("uses appDir as the app root for baseline commands, init idempotency, and layer contexts", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = { ...manifestEntry("repo-app"), appDir: "apps/web" };
+    const appRoot = path.join(context.repoDir(repo.name), repo.appDir);
+    const initOptions: RunVendoInitStepOptions[] = [];
+    const structuralContexts: StructuralLayerContext[] = [];
+    const scoredContexts: ScoredLayerContext[] = [];
+    const events: string[] = [];
+
+    const exitCode = await runCli(["run", "repo-app", "--layer", "2"], {
+      stdout: () => {},
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        events.push(`clone:${entry.name}`);
+        await writeHostPackage(appRoot);
+        return context.repoDir(entry.name);
+      },
+      bootstrapRepo: async (entry) => {
+        events.push(`bootstrap:${entry.name}`);
+        return {
+          repoDir: context.repoDir(entry.name),
+          envPath: path.join(appRoot, ".env"),
+          logs: {
+            stdout: path.join(context.logsDir(entry.name), "bootstrap.stdout.log"),
+            stderr: path.join(context.logsDir(entry.name), "bootstrap.stderr.log"),
+          },
+        };
+      },
+      createInjector: () => ({
+        initArgs: () => ["--local", "/workspace/vendo"],
+        async inject(entry) {
+          events.push(`inject:${entry.name}:${entry.appDir}`);
+          return {
+            repoDir: appRoot,
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(appRoot, "vendor"),
+            installCommand: "pnpm install",
+            initArgs: ["--local", "/workspace/vendo"],
+          };
+        },
+      }),
+      commandRunner: async (command, commandOptions) => {
+        events.push(`baseline:${command}:${commandOptions.cwd}`);
+        return { code: 0, signal: null, stdout: "ok", stderr: "" };
+      },
+      runInit: async (entry, options) => {
+        events.push(`init:${entry.name}:${entry.appDir}:${options?.diffBase ?? "head"}`);
+        initOptions.push(options ?? {});
+        const logsDir = context.logsDir(entry.name);
+        await mkdir(logsDir, { recursive: true });
+        const log = path.join(logsDir, `${initOptions.length}.log`);
+        const diff = path.join(logsDir, `${initOptions.length}.diff`);
+        await writeFile(log, "ok");
+        await writeFile(diff, "");
+        return makeInitResult(appRoot, log, diff);
+      },
+      runStructuralLayer: async (layerContext) => {
+        structuralContexts.push(layerContext);
+        return [{ id: "init.exit", pass: true, detail: "ok" }];
+      },
+      runScoredLayer: async (layerContext) => {
+        scoredContexts.push(layerContext);
+        return {
+          layer: {
+            layer: 2,
+            name: "scored",
+            status: "pass",
+            checks: [],
+            hardFailure: false,
+          },
+        };
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "clone:repo-app",
+      "bootstrap:repo-app",
+      "inject:repo-app:apps/web",
+      `baseline:pnpm typecheck:${appRoot}`,
+      `baseline:pnpm build:${appRoot}`,
+      "init:repo-app:apps/web:head",
+      "init:repo-app:apps/web:pre-run",
+    ]);
+    expect(initOptions.map((options) => options.artifactPrefix)).toEqual(["init.first", "init.second"]);
+    expect(initOptions.map((options) => options.diffBase)).toEqual([undefined, "pre-run"]);
+    expect(structuralContexts[0]?.repoDir).toBe(appRoot);
+    expect(scoredContexts[0]?.repoDir).toBe(appRoot);
+  });
+
   it("uses --skip-llm only when requested and can print JSON to stdout", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });

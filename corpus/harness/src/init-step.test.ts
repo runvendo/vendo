@@ -49,10 +49,11 @@ async function makeTempRoot(): Promise<string> {
   return root;
 }
 
-async function copyFixtureRepo(context: ReturnType<typeof createRunContext>): Promise<string> {
+async function copyFixtureRepo(context: ReturnType<typeof createRunContext>, appDir?: string): Promise<string> {
   const repoDir = context.repoDir("fixture-next-app");
-  await mkdir(path.dirname(repoDir), { recursive: true });
-  await cp(fixtureDir, repoDir, { recursive: true });
+  const appRoot = appDir ? path.join(repoDir, appDir) : repoDir;
+  await mkdir(path.dirname(appRoot), { recursive: true });
+  await cp(fixtureDir, appRoot, { recursive: true });
   await runGit(["init"], repoDir);
   await runGit(["checkout", "-b", "main"], repoDir);
   await runGit(["config", "user.email", "corpus@example.com"], repoDir);
@@ -80,6 +81,9 @@ async function writeFakeVendoCli(root: string): Promise<string> {
 
     mkdirSync(path.join(targetDir, ".vendo"), { recursive: true });
     writeFileSync(path.join(targetDir, ".vendo", "theme.json"), JSON.stringify({ version: 1, accent: "#0a7cff" }, null, 2) + "\\n");
+    if (process.env.EXTRA_FILE) {
+      writeFileSync(path.join(targetDir, process.env.EXTRA_FILE), "extra file\\n");
+    }
 
     const pkgPath = path.join(targetDir, "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
@@ -131,6 +135,40 @@ describe("runVendoInitStep", () => {
     expect(diff).toContain("diff --git a/.vendo/theme.json b/.vendo/theme.json");
     expect(diff).toContain('+    "@vendoai/next": "latest"');
     await expect(readFile(path.join(repoDir, ".corpus/logs/init.log"), "utf8")).rejects.toThrow();
+  });
+
+  it("runs init in appDir and can diff a second run against the post-first-init snapshot", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = { name: "fixture-next-app", appDir: "apps/web" };
+    const checkoutDir = await copyFixtureRepo(context, repo.appDir);
+    const appRoot = path.join(checkoutDir, repo.appDir);
+    const fakeCli = await writeFakeVendoCli(corpusRoot);
+
+    await runVendoInitStep(repo, {
+      context,
+      cliCommand: process.execPath,
+      cliArgs: [fakeCli],
+      artifactPrefix: "init.first",
+    });
+
+    const result = await runVendoInitStep(repo, {
+      context,
+      cliCommand: process.execPath,
+      cliArgs: [fakeCli],
+      artifactPrefix: "init.second",
+      diffBase: "pre-run",
+      env: { EXTRA_FILE: "second-only.txt" },
+    });
+
+    expect(result.repoDir).toBe(appRoot);
+    const log = await readFile(result.artifacts.log, "utf8");
+    expect(log).toContain(`"init","${appRoot}","--skip-llm"`);
+
+    const diff = await readFile(result.artifacts.diff, "utf8");
+    expect(diff).toContain("diff --git a/apps/web/second-only.txt b/apps/web/second-only.txt");
+    expect(diff).not.toContain("apps/web/.vendo/theme.json");
+    expect(diff).not.toContain("apps/web/package.json");
   });
 
   it("returns a nonzero init exit code while still writing log and diff artifacts", async () => {

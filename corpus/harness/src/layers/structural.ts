@@ -21,7 +21,7 @@ export type StructuralCheckId =
 export interface StructuralCheckResult {
   id: StructuralCheckId;
   pass: boolean;
-  status?: "skipped-baseline-broken";
+  status?: "skipped-baseline-broken" | "skipped-not-configured";
   detail: string;
 }
 
@@ -310,6 +310,14 @@ async function checkCommand(
   ctx: StructuralLayerContext,
 ): Promise<StructuralCheckResult> {
   if (!command) {
+    if (id === "host.typecheck") {
+      return {
+        id,
+        pass: true,
+        status: "skipped-not-configured",
+        detail: "typecheck skipped-not-configured; no manifest typecheckCommand was provided and no package.json typecheck script was auto-detected",
+      };
+    }
     return { id, pass: false, detail: `no ${label} command was provided` };
   }
   const baseline = id === "host.typecheck" ? ctx.baseline?.typecheck : ctx.baseline?.build;

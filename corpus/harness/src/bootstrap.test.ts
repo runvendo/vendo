@@ -6,7 +6,7 @@ import { bootstrapRepo } from "./bootstrap.js";
 import { createRunContext } from "./run-context.js";
 import type { ManifestEntry } from "./manifest.js";
 
-type BootstrapRepo = Pick<ManifestEntry, "name" | "bootstrap">;
+type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "bootstrap">;
 
 const tempRoots: string[] = [];
 
@@ -92,6 +92,30 @@ describe("bootstrapRepo", () => {
       "STATIC_FLAG=enabled",
       "",
     ].join("\n"));
+  });
+
+  it("writes .env in appDir while running install from the checkout root", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    repo.appDir = "apps/web";
+    repo.bootstrap.envTemplate = {
+      NEXT_PUBLIC_BASE_URL: "http://127.0.0.1:3000",
+    };
+    const appRoot = path.join(repoDir, repo.appDir);
+    await mkdir(appRoot, { recursive: true });
+    await writeInstallScript(repoDir, `
+      import { writeFileSync } from "node:fs";
+      writeFileSync("installed-cwd.txt", process.cwd());
+    `);
+
+    const result = await bootstrapRepo(repo, {
+      context: createRunContext({ corpusRoot }),
+    });
+
+    expect(result.envPath).toBe(path.join(appRoot, ".env"));
+    const installedCwd = await readFile(path.join(repoDir, "installed-cwd.txt"), "utf8");
+    expect(await realpath(installedCwd)).toBe(await realpath(repoDir));
+    await expect(readFile(path.join(appRoot, ".env"), "utf8")).resolves.toBe("NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3000\n");
+    await expect(readFile(path.join(repoDir, ".env"), "utf8")).rejects.toThrow();
   });
 
   it("fails before install and lists all missing placeholder variables", async () => {

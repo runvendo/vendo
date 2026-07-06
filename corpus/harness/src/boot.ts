@@ -3,6 +3,7 @@ import { createWriteStream } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { resolveAppRoot } from "./app-root.js";
 import type { DatabaseProvisioning, ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
@@ -47,7 +48,7 @@ export interface DatabaseProvisionContext {
   sleep: (ms: number) => Promise<void>;
 }
 
-export type BootRepo = Pick<ManifestEntry, "name" | "bootstrap">;
+export type BootRepo = Pick<ManifestEntry, "name" | "appDir" | "bootstrap">;
 export type BootProcessSpawner = (command: string, options: { cwd: string; env: NodeJS.ProcessEnv }) => BootProcess;
 export type BootCommandRunner = (command: string, options: { cwd: string; env: NodeJS.ProcessEnv }) => Promise<BootCommandResult>;
 export type ReadinessChecker = (url: string) => Promise<boolean>;
@@ -372,6 +373,7 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
 
   const context = options.context ?? createRunContext();
   const repoDir = context.repoDir(repo.name);
+  const appRoot = resolveAppRoot(repo, repoDir);
   const logsDir = context.logsDir(repo.name);
   const env = { ...process.env, ...options.env };
   const sleepFn = options.sleep ?? sleep;
@@ -445,10 +447,10 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
     }
 
     if (repo.bootstrap.seedCommand && logPaths.seed) {
-      await runSeedCommand(repo.bootstrap.seedCommand, repoDir, env, logPaths.seed, runner);
+      await runSeedCommand(repo.bootstrap.seedCommand, appRoot, env, logPaths.seed, runner);
     }
 
-    serverProcess = spawnProcess(devServer.command, { cwd: repoDir, env });
+    serverProcess = spawnProcess(devServer.command, { cwd: appRoot, env });
     serverProcess.once?.("exit", (code, signal) => {
       serverExit = `Dev server exited before readiness with ${code === null ? `signal ${String(signal)}` : `exit code ${String(code)}`}`;
     });
@@ -467,7 +469,7 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
     );
 
     return {
-      repoDir,
+      repoDir: appRoot,
       readinessUrl: devServer.readinessUrl,
       logPaths,
       teardown,
