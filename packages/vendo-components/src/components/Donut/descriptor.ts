@@ -8,10 +8,15 @@ export const donutSchema = z.object({
     .array(
       z.object({
         label: z.string(),
+        /** The final DISPLAY amount for this slice — already converted from any
+         *  cents (e.g. 2850.00 for $2,850.00), NEVER raw cents (285000). Used
+         *  for the ring proportions and to derive the centered total. */
         value: z.number().positive(),
         /** Optional literal hex; omitted slices get a brand-accent ramp. */
         color: hex.optional(),
-        /** Optional formatted value for the legend, e.g. "$2,850". */
+        /** The formatted value shown in the legend AND summed for the center
+         *  total, e.g. "$2,850.00". Provide it on money donuts so the center
+         *  is derived from what the legend shows. */
         display: z.string().optional(),
       }),
     )
@@ -29,10 +34,13 @@ export const donutSchema = z.object({
 
 export const donutDescriptor = prewired(
   "Donut",
-  "A donut/ring chart with a legend and an optional centered total (centerValue " +
-  "must be formatted from the same converted values as the slices — never re-divide " +
-  "an already-converted total), drawn in a " +
-    "brand-accent ramp (or per-slice hex colors). Use for part-of-whole breakdowns " +
-    "like spending by category. Prefer a registered host donut when one exists.",
+  "A donut/ring chart with a legend and an optional centered total. Each slice's " +
+  "`value` is the final DISPLAY amount (already converted — never raw cents, e.g. " +
+  "2850.00 not 285000); give every money slice a formatted `display` (\"$2,850.00\"). " +
+  "The centered total is derived from the slices' displays — omit `centerValue` for a " +
+  "sum (pass it only for a non-sum metric like \"62%\"), and never re-divide an " +
+  "already-converted total. Drawn in a brand-accent ramp (or per-slice hex colors). " +
+  "Use for part-of-whole breakdowns like spending by category. Prefer a registered " +
+  "host donut when one exists.",
   donutSchema,
 );
