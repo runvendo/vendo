@@ -22,7 +22,8 @@
 npx @vendoai/cli init .
 ```
 
-<p align="center"><sub>One command inside your Next.js app. Bring your own Anthropic, OpenAI, or Google key. No account, no hosted dependency.</sub></p>
+<p align="center"><sub>One command inside your Next.js app. No account, no hosted dependency.</sub><br>
+<sub>Works with Anthropic, OpenAI, or Google models · any MCP server · your existing OpenAPI spec</sub></p>
 
 <br>
 
@@ -48,6 +49,17 @@ Every capture below is a real agent run in a demo host app, not a mockup.
     </td>
   </tr>
 </table>
+
+## Why Vendo
+
+Every customer wants your product to be a little different. A rearranged
+dashboard, a missing report, a workflow they repeat by hand every morning.
+Today those wishes die in a feature-request queue. Vendo turns them into
+things customers do themselves, safely, inside your product.
+
+It is not a chatbot bolted onto your app. The agent works through the same
+API and components you already ship, renders in your brand, and never steps
+outside your permission policy.
 
 ## What it does
 
@@ -75,6 +87,11 @@ Every capture below is a real agent run in a demo host app, not a mockup.
    `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`.
 
 3. Start your dev server. The Vendo surface is live in your product.
+
+<p align="center">
+  <img src="assets/init.gif" alt="vendo init running against a real Next.js app: theme extracted, tools derived from the OpenAPI spec, components wrapped, routes wired" width="100%">
+</p>
+<p align="center"><sub>A real <code>vendo init</code> run: theme extracted from your CSS, 17 agent tools derived from the app's OpenAPI spec, 11 components wrapped for generated UI, routes wired.</sub></p>
 
 Full walkthrough: [docs/quickstart.md](docs/quickstart.md).
 
@@ -107,6 +124,37 @@ through your permission policy. Deeper docs: [docs/](docs/).
 | `@vendoai/telemetry` | Anonymous, opt-out build/dev telemetry |
 
 </details>
+
+## FAQ
+
+<details>
+<summary><b>Is customer data safe?</b></summary>
+<br>Generated UI runs in a sandboxed iframe with no network egress. The agent acts through your API as the signed-in user, so your existing authorization applies. Nothing leaves your infrastructure except calls to the model provider key you configure.
+</details>
+
+<details>
+<summary><b>Do I need a Vendo account?</b></summary>
+<br>No. Vendo is open source and self-hosted. You bring a provider API key. No signup, no hosted dependency, and no telemetry on end users.
+</details>
+
+<details>
+<summary><b>What does it cost?</b></summary>
+<br>The code is Apache-2.0 and free. You pay your model provider for the tokens your customers use.
+</details>
+
+<details>
+<summary><b>Which frameworks are supported?</b></summary>
+<br>Next.js App Router today via <code>@vendoai/next</code>. The agent server is a plain fetch handler underneath, so other frameworks can wire it manually.
+</details>
+
+<details>
+<summary><b>How does it match my brand?</b></summary>
+<br><code>vendo init</code> extracts design tokens from your app, and generated UI composes your own wrapped components plus a themeable catalog.
+</details>
+
+<br>
+
+<p align="center"><sub>If you think products should shape themselves to their users, <a href="https://github.com/runvendo/vendo">star the repo</a> and follow along.</sub></p>
 
 ---
 
