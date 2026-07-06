@@ -21,11 +21,12 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
  * `mutating`/`dangerous` are REQUIRED by the frozen schema and drive downstream
  * auto-allow, so nothing inferred may relax them:
  *
- * - GET tools are read-only only when their deterministic name is read-shaped.
- *   Deterministic route scanning names every GET as `get...`; LLM output never
- *   gets to rename a route or relax a write.
- * - POST/PUT/PATCH/DELETE tools are always mutating. DELETE plus destructive
- *   action names are dangerous, so write routes never become auto-allowed.
+ * - Route-scan tools are always mutating. Route code can hide side effects
+ *   behind GETs, and LLM enrichment must never grant auto-allow.
+ * - OpenAPI GET tools are read-only only when their spec operation name is
+ *   read-shaped. POST/PUT/PATCH/DELETE tools are always mutating.
+ * - DELETE plus destructive action names are dangerous, so write routes never
+ *   become auto-allowed.
  */
 const DESTRUCTIVE_WORDS = new Set([
   "delete", "remove", "destroy", "cancel", "close", "reset", "revoke", "purge", "wipe", "archive",
@@ -52,8 +53,12 @@ export function annotationsFor(
   source: "openapi" | "route-scan",
 ): ManifestToolAnnotations {
   const m = method.toUpperCase();
-  void source;
   const dangerous = m === "DELETE" || hasWord(name, DESTRUCTIVE_WORDS);
+  if (source === "route-scan") {
+    const annotations: ManifestToolAnnotations = { mutating: true, dangerous };
+    if (m === "PUT" || m === "DELETE") annotations.idempotent = true;
+    return annotations;
+  }
   if (m === "GET" && hasWord(name, READ_WORDS) && !dangerous) {
     return { mutating: false, dangerous: false };
   }

@@ -103,7 +103,7 @@ describe("vendo refresh (catch-up mode)", () => {
         name: "getThings",
         description: "GET /api/things",
         inputSchema: { type: "object", properties: {} },
-        annotations: { mutating: false, dangerous: false },
+        annotations: { mutating: true, dangerous: false },
         binding: { type: "http", method: "GET", path: "/api/things" },
       }],
     });

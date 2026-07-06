@@ -45,7 +45,7 @@ describe("runInit e2e (mock model)", () => {
       name: "getThings",
       description: "List things.",
       binding: { type: "http", method: "GET", path: "/api/things" },
-      annotations: { mutating: false, dangerous: false },
+      annotations: { mutating: true, dangerous: false },
     });
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
     const readme = await readFile(path.join(dir, ".vendo/README.md"), "utf8");
@@ -167,7 +167,7 @@ describe("runInit e2e (mock model)", () => {
         name: "getThings",
         description: "GET /api/things",
         binding: { type: "http", method: "GET", path: "/api/things" },
-        annotations: { mutating: false, dangerous: false },
+        annotations: { mutating: true, dangerous: false },
       });
       const route = await readFile(path.join(dir, "app/api/vendo/[...path]/route.ts"), "utf8");
       expect(route).toContain("createVendoHandler()");
@@ -283,7 +283,7 @@ describe("additive re-run (decision matrix)", () => {
         name: "getThings",
         description: "GET /api/things",
         inputSchema: { type: "object", properties: {} },
-        annotations: { mutating: false, dangerous: false },
+        annotations: { mutating: true, dangerous: false },
         binding: { type: "http", method: "GET", path: "/api/things" },
       }],
     });

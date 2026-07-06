@@ -143,7 +143,7 @@ describe("init key prompt (interactive)", () => {
       name: "getThings",
       description: "List things.",
       binding: { type: "http", method: "GET", path: "/api/things" },
-      annotations: { mutating: false, dangerous: false },
+      annotations: { mutating: true, dangerous: false },
     });
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
     expect(out).not.toContain("only fills gaps"); // coaching suppressed when a key works

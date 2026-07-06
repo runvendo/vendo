@@ -10,17 +10,17 @@ describe("convertOpenApi", () => {
     const tools = await convertOpenApi(fixture);
     const names = tools.map((t) => t.name);
     expect(names).toEqual(
-      expect.arrayContaining(["getTransactions", "getTransactionsId", "postPayments", "deletePayeesId"]),
+      expect.arrayContaining(["listTransactions", "getTransactionsId", "createPayment", "deletePayee"]),
     );
 
-    const list = tools.find((t) => t.name === "getTransactions")!;
+    const list = tools.find((t) => t.name === "listTransactions")!;
     expect(list.annotations).toEqual({ mutating: false, dangerous: false });
     expect((list.inputSchema as { properties: Record<string, unknown> }).properties).toHaveProperty("limit");
 
-    const del = tools.find((t) => t.name === "deletePayeesId")!;
+    const del = tools.find((t) => t.name === "deletePayee")!;
     expect(del.annotations).toEqual({ mutating: true, dangerous: true, idempotent: true });
 
-    const create = tools.find((t) => t.name === "postPayments")!;
+    const create = tools.find((t) => t.name === "createPayment")!;
     // $ref resolved into the body property
     const body = (create.inputSchema as { properties: { body: { properties: Record<string, unknown> } } }).properties.body;
     expect(body.properties).toHaveProperty("amount");

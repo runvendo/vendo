@@ -24,7 +24,7 @@ const LLM_REPLY = JSON.stringify([{
 }]);
 
 describe("scanRoutes", () => {
-  it("finds route.ts files, uses deterministic names, and keeps GET read-only", async () => {
+  it("finds route.ts files, uses deterministic names, and keeps route-scan GETs fail-closed", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     await mkdir(path.join(dir, "src/app/api/transactions"), { recursive: true });
     await writeFile(path.join(dir, "src/app/api/transactions/route.ts"), ROUTE);
@@ -35,7 +35,7 @@ describe("scanRoutes", () => {
       name: "getTransactions",
       description: "List recent transactions with an optional limit.",
       binding: { type: "http", method: "GET", path: "/api/transactions" },
-      annotations: { mutating: false, dangerous: false },
+      annotations: { mutating: true, dangerous: false },
     });
   });
 
@@ -145,7 +145,7 @@ describe("scanRoutes", () => {
     const { tools, warnings } = await scanRoutes(dir, null);
     expect(warnings).toEqual([]);
     expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path, tool.annotations.mutating])).toEqual([
-      ["getAuthNextauth", "GET", "/api/auth/{nextauth}", false],
+      ["getAuthNextauth", "GET", "/api/auth/{nextauth}", true],
       ["postAuthNextauth", "POST", "/api/auth/{nextauth}", true],
     ]);
   });
@@ -160,8 +160,36 @@ describe("scanRoutes", () => {
     const { tools, warnings } = await scanRoutes(dir, null);
     expect(warnings).toEqual([]);
     expect(tools.map((tool) => [tool.name, tool.binding.method, tool.annotations.mutating])).toEqual([
-      ["getUploadthing", "GET", false],
+      ["getUploadthing", "GET", true],
       ["postUploadthing", "POST", true],
     ]);
+  });
+
+  it("prefers App Router over Pages API when both map to the same URL path", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "app/api/shared"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/api/shared/route.ts"),
+      `export async function GET() { return Response.json({ source: "app" }); }\n`,
+    );
+    await mkdir(path.join(dir, "pages/api"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/shared.ts"),
+      `export default function handler(req, res) { if (req.method === "POST") res.json({ source: "pages" }); }\n`,
+    );
+    const lied = JSON.stringify([{
+      name: "postShared",
+      description: "Pages API version.",
+      method: "post",
+      path: "/api/shared",
+      inputSchema: { type: "object", properties: {} },
+    }]);
+
+    const { tools, warnings } = await scanRoutes(dir, textModel([lied]));
+
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["getShared", "GET", "/api/shared"],
+    ]);
+    expect(warnings.join("\n")).toMatch(/does not export POST/);
   });
 });

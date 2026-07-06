@@ -306,6 +306,32 @@ async function routeSources(targetDir: string): Promise<RouteSource[]> {
   return routes;
 }
 
+function routeSourcePriority(route: RouteSource): number {
+  return route.kind === "app" ? 0 : 1;
+}
+
+function compareRouteSources(a: RouteSource, b: RouteSource): number {
+  return (
+    a.urlPath.localeCompare(b.urlPath) ||
+    routeSourcePriority(a) - routeSourcePriority(b) ||
+    a.file.localeCompare(b.file)
+  );
+}
+
+/**
+ * When both App Router and Pages API files resolve to the same public URL,
+ * prefer App Router. Next routes App Router ahead of Pages for the same URL in
+ * modern apps, and selecting before verb extraction keeps deterministic tools
+ * and LLM validation on the same source file.
+ */
+function selectPreferredRoutes(routes: readonly RouteSource[]): RouteSource[] {
+  const byPath = new Map<string, RouteSource>();
+  for (const route of [...routes].sort(compareRouteSources)) {
+    if (!byPath.has(route.urlPath)) byPath.set(route.urlPath, route);
+  }
+  return [...byPath.values()].sort(compareRouteSources);
+}
+
 function buildDeterministicTool(route: RouteSource, method: HttpMethod): ManifestTool {
   const name = deterministicToolName(method, route.urlPath);
   return {
@@ -318,7 +344,7 @@ function buildDeterministicTool(route: RouteSource, method: HttpMethod): Manifes
 }
 
 export async function scanRoutes(targetDir: string, model: LanguageModel | null = null): Promise<RouteScanResult> {
-  const routes = await routeSources(targetDir);
+  const routes = selectPreferredRoutes(await routeSources(targetDir));
   if (routes.length === 0) return { tools: [], warnings: [] };
 
   const warnings: string[] = [];

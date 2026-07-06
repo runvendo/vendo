@@ -29,9 +29,8 @@ describe("toolsManifestSchema (canonical, re-exported from @vendoai/core)", () =
 });
 
 describe("annotationsFor (fail closed)", () => {
-  it("auto-allows only read-named GETs", () => {
+  it("auto-allows only read-named OpenAPI GETs", () => {
     expect(annotationsFor("get", "list_things", "openapi")).toEqual({ mutating: false, dangerous: false });
-    expect(annotationsFor("get", "getProfile", "route-scan")).toEqual({ mutating: false, dangerous: false });
     // side-effect-shaped GETs fail closed (demo-bank's poll GET fires Slack,
     // its integrations GET calls connect())
     expect(annotationsFor("get", "poll_vendo", "openapi")).toEqual({ mutating: true, dangerous: false });
@@ -46,5 +45,11 @@ describe("annotationsFor (fail closed)", () => {
     expect(annotationsFor("put", "update_profile", "openapi")).toEqual({ mutating: true, dangerous: false, idempotent: true });
     expect(annotationsFor("post", "postLinksIdTransfer", "route-scan")).toEqual({ mutating: true, dangerous: true });
     expect(annotationsFor("post", "postInvoiceSend", "route-scan")).toEqual({ mutating: true, dangerous: true });
+  });
+
+  it("marks every route-scan tool mutating, including read-shaped GETs", () => {
+    expect(annotationsFor("get", "getProfile", "route-scan")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("get", "listInvoices", "route-scan")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("get", "resetPreview", "route-scan")).toEqual({ mutating: true, dangerous: true });
   });
 });

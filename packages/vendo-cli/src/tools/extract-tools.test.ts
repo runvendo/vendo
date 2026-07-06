@@ -37,7 +37,7 @@ describe("extractTools", () => {
       tool.name,
       tool.annotations,
     ])).toEqual([
-      ["getInvoicesId", { mutating: false, dangerous: false }],
+      ["getInvoicesId", { mutating: true, dangerous: false }],
       ["deleteInvoicesId", { mutating: true, dangerous: true, idempotent: true }],
     ]);
   });

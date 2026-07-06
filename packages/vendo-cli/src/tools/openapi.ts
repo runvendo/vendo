@@ -32,7 +32,10 @@ export async function convertOpenApi(specPath: string): Promise<ManifestTool[]> 
   return tools;
 }
 
-function toolName(_op: JsonObj, method: string, route: string): string {
+function toolName(op: JsonObj, method: string, route: string): string {
+  const operationId = op["operationId"];
+  if (typeof operationId === "string" && operationId.trim().length > 0) return operationId.trim();
+
   const parts = [
     method.toLowerCase(),
     ...route
