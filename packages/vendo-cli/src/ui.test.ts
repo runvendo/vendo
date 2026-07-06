@@ -54,6 +54,14 @@ describe("createUi — plain mode (non-tty, no color)", () => {
     expect(lines).toEqual([]);
   });
 
+  it("renders a raw note line through the sink, multi-line passed as-is", () => {
+    const { lines, sink } = capture();
+    const ui = createUi({ sink, tty: false, colors: false });
+    ui.note("plain single line");
+    ui.note("first line\n  second line");
+    expect(lines).toEqual(["plain single line\n", "first line\n  second line\n"]);
+  });
+
   it("renders an error line plus one fix line", () => {
     const { lines, sink } = capture();
     const ui = createUi({ sink, tty: false, colors: false });
@@ -90,6 +98,20 @@ describe("createUi — spinner degrade path (non-interactive)", () => {
     t += 500;
     spin.stop("warn", "thinking done", "partial");
     expect(lines).toEqual(["… thinking\n", "! thinking done (partial, 0.5s)\n"]);
+  });
+
+  it("stop() is idempotent — a second call writes nothing", () => {
+    let t = 0;
+    const now = () => t;
+    const { lines, sink } = capture();
+    const ui = createUi({ sink, tty: false, colors: false, now });
+
+    const spin = ui.spinner("working");
+    t += 100;
+    spin.stop("ok", "done");
+    const after = [...lines];
+    spin.stop("fail", "done again");
+    expect(lines).toEqual(after);
   });
 
   it("degrades even when tty is forced true, if colors are unavailable (NO_COLOR)", () => {
@@ -171,5 +193,16 @@ describe("createUi — interactive mode (tty + colors)", () => {
     expect(last).toContain("scanned routes");
     expect(last).toContain("0.4s");
     expect(last.endsWith("\n")).toBe(true);
+  });
+
+  it("interactive stop() is idempotent — a second call writes nothing", () => {
+    const { lines, sink } = capture();
+    const ui = createUi({ sink, tty: true, colors: true });
+
+    const spin = ui.spinner("working");
+    spin.stop("ok", "done");
+    const after = [...lines];
+    spin.stop("fail", "done again");
+    expect(lines).toEqual(after);
   });
 });

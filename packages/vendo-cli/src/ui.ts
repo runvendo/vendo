@@ -39,11 +39,21 @@ export interface Ui {
   step(mark: StepMark, label: string, detail?: string): void;
   /** An indented warning line hanging under the preceding step. */
   warn(text: string): void;
+  /** A raw line through the sink: no mark, no indent, no styling; multi-line text passed as-is. */
+  note(text: string): void;
   /** A `Next steps:` block with one indented bullet per item. No-op if empty. */
   nextSteps(items: string[]): void;
   /** One error line plus one actionable fix line. */
   error(message: string, fix: string): void;
-  /** Starts a spinner for a long-running step; call `.stop(...)` when done. */
+  /**
+   * Starts a spinner for a long-running step.
+   *
+   * Caller contract: call `.stop(...)` in a try/finally so a throwing step
+   * cannot leave the spinner drawing over subsequent output, and keep at
+   * most one spinner active at a time (two live spinners fight over the same
+   * line). `stop()` is idempotent, and the interval is unref'd so a leaked
+   * spinner cannot keep the process alive.
+   */
   spinner(label: string): SpinnerHandle;
 }
 
@@ -113,6 +123,10 @@ export function createUi(options: UiOptions = {}): Ui {
     write(`  ${c.warn("!")} ${text}`);
   }
 
+  function note(text: string): void {
+    write(text);
+  }
+
   function nextSteps(items: string[]): void {
     if (items.length === 0) return;
     write(c.bold("Next steps:"));
@@ -126,11 +140,14 @@ export function createUi(options: UiOptions = {}): Ui {
 
   function spinner(label: string): SpinnerHandle {
     const start = now();
+    let stopped = false;
 
     if (!interactive) {
       write(`… ${label}`);
       return {
         stop(mark, resultLabel, detail) {
+          if (stopped) return;
+          stopped = true;
           const elapsed = formatElapsed(now() - start);
           write(stepLine(mark, resultLabel, joinDetail(detail, elapsed)));
         },
@@ -146,9 +163,14 @@ export function createUi(options: UiOptions = {}): Ui {
     };
     render();
     const timer = setInterval(render, SPINNER_INTERVAL_MS);
+    // Never let a leaked spinner (caller threw before stop()) keep the
+    // process alive on its own.
+    timer.unref?.();
 
     return {
       stop(mark, resultLabel, detail) {
+        if (stopped) return;
+        stopped = true;
         clearInterval(timer);
         sink(CLEAR_LINE);
         const elapsed = formatElapsed(now() - start);
@@ -157,5 +179,5 @@ export function createUi(options: UiOptions = {}): Ui {
     };
   }
 
-  return { header, step, warn, nextSteps, error, spinner };
+  return { header, step, warn, note, nextSteps, error, spinner };
 }
