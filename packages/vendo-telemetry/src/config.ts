@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { envOptOut } from "./consent.js";
 
 export interface TelemetryConfig {
   anonymousId: string;
@@ -17,7 +18,10 @@ export function configPath(home = homedir()): string {
   return join(configDir(home), "telemetry.json");
 }
 
-export function loadConfig(home = homedir()): TelemetryConfig {
+export function loadConfig(
+  home = homedir(),
+  env: Record<string, string | undefined> = process.env,
+): TelemetryConfig {
   const path = configPath(home);
   if (existsSync(path)) {
     try {
@@ -39,6 +43,10 @@ export function loadConfig(home = homedir()): TelemetryConfig {
     }
   }
   const fresh: TelemetryConfig = { anonymousId: randomUUID(), optedOut: false, noticeShown: false };
+  // No usable config on disk. If an env opt-out is in effect, return an
+  // ephemeral opted-out config — never persist a tracking id the user asked us
+  // not to keep. Only a genuine opted-in first run gets written.
+  if (envOptOut(env)) return { ...fresh, optedOut: true };
   saveConfig(home, fresh);
   return fresh;
 }

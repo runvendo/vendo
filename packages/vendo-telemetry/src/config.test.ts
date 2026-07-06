@@ -41,4 +41,16 @@ describe("config store", () => {
     const c = loadConfig(home);
     expect(c.optedOut).toBe(true);
   });
+
+  it("does not mint or persist a tracking id when an env opt-out is set (review)", () => {
+    const c = loadConfig(home, { DO_NOT_TRACK: "1" });
+    expect(c.optedOut).toBe(true);
+    expect(existsSync(configPath(home))).toBe(false);
+  });
+
+  it("still writes a normal opted-in config on first run without env opt-out (review)", () => {
+    const c = loadConfig(home, {});
+    expect(c.optedOut).toBe(false);
+    expect(existsSync(configPath(home))).toBe(true);
+  });
 });
