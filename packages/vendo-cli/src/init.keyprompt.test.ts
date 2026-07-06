@@ -139,7 +139,12 @@ describe("init key prompt (interactive)", () => {
     const envLocal = await readFile(path.join(dir, ".env.local"), "utf8");
     expect(envLocal).toContain("OPENAI_API_KEY=sk-openai-testkey");
     const tools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
-    expect(tools.tools[0].name).toBe("list_things");
+    expect(tools.tools[0]).toMatchObject({
+      name: "getThings",
+      description: "List things.",
+      binding: { type: "http", method: "GET", path: "/api/things" },
+      annotations: { mutating: false, dangerous: false },
+    });
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
     expect(out).not.toContain("only fills gaps"); // coaching suppressed when a key works
   });

@@ -490,8 +490,8 @@ importers:
         specifier: 3.0.12
         version: 3.0.12(zod@3.25.76)
       '@clack/prompts':
-        specifier: ^1.6.0
-        version: 1.7.0
+        specifier: 1.6.0
+        version: 1.6.0
       '@scarf/scarf':
         specifier: ^1.4.0
         version: 1.4.0
@@ -612,14 +612,14 @@ importers:
   packages/vendo-components:
     dependencies:
       '@openuidev/react-headless':
-        specifier: ^0.8.2
+        specifier: 0.8.2
         version: 0.8.2(react@18.3.1)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1))
       '@openuidev/react-lang':
-        specifier: ^0.2.6
-        version: 0.2.8(react@18.3.1)(zod@3.25.76)
+        specifier: 0.2.6
+        version: 0.2.6(react@18.3.1)(zod@3.25.76)
       '@openuidev/react-ui':
-        specifier: ^0.11.9
-        version: 0.11.9(@openuidev/react-headless@0.8.2(react@18.3.1)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1)))(@openuidev/react-lang@0.2.8(react@18.3.1)(zod@3.25.76))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(zod@3.25.76)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1))
+        specifier: 0.11.9
+        version: 0.11.9(@openuidev/react-headless@0.8.2(react@18.3.1)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1)))(@openuidev/react-lang@0.2.6(react@18.3.1)(zod@3.25.76))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(zod@3.25.76)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1))
       '@vendoai/core':
         specifier: workspace:*
         version: link:../vendo-core
@@ -1231,12 +1231,12 @@ packages:
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
 
-  '@clack/core@1.4.3':
-    resolution: {integrity: sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ==}
+  '@clack/core@1.4.2':
+    resolution: {integrity: sha512-0Ty/1Gfm+Kb07sXcuESjyKfwEhSy4Ns1AgeEisHb/bDY5fWme0tTeTkU14T1Gmcs17YIjB/teiDe4uaCghbYqQ==}
     engines: {node: '>= 20.12.0'}
 
-  '@clack/prompts@1.7.0':
-    resolution: {integrity: sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A==}
+  '@clack/prompts@1.6.0':
+    resolution: {integrity: sha512-EYlRokl8szrP9Z25qT5aepMdBjzBvHF9ZEhzIiUBc9guz/T31EqRgvD0QSgZcpE93xiwrr+OkB4nz0BZyF6fSA==}
     engines: {node: '>= 20.12.0'}
 
   '@composio/client@0.1.0-alpha.54':
@@ -2569,6 +2569,16 @@ packages:
     peerDependencies:
       react: ^18.3.1 || ^19.0.0
       zustand: ^4.5.5
+
+  '@openuidev/react-lang@0.2.6':
+    resolution: {integrity: sha512-5lfnMUiUyTQli0fPFwQtUhxV0B5T/PJntgZzUb0IXiJSyWm+FNpYOIozJxim0xxmqmuYwmk1geLTNcjzYIS6mA==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.0.0'
+      react: ^18.3.1 || ^19.0.0
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
 
   '@openuidev/react-lang@0.2.8':
     resolution: {integrity: sha512-SsbZes76oIviuZH3RW/VL+pZZjx6cOGjhkaeiSwuEnV24jWBgT9qswL4bDaQXpFG2e6sZKWjH/f0fRyqWQzhDA==}
@@ -7068,14 +7078,14 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@clack/core@1.4.3':
+  '@clack/core@1.4.2':
     dependencies:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@clack/prompts@1.7.0':
+  '@clack/prompts@1.6.0':
     dependencies:
-      '@clack/core': 1.4.3
+      '@clack/core': 1.4.2
       fast-string-width: 3.0.2
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
@@ -7915,7 +7925,7 @@ snapshots:
       react: 19.2.4
       zustand: 4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@19.2.4)
 
-  '@openuidev/react-lang@0.2.8(react@18.3.1)(zod@3.25.76)':
+  '@openuidev/react-lang@0.2.6(react@18.3.1)(zod@3.25.76)':
     dependencies:
       '@openuidev/lang-core': 0.2.7(zod@3.25.76)
       react: 18.3.1
@@ -7927,11 +7937,11 @@ snapshots:
       react: 19.2.4
       zod: 3.25.76
 
-  '@openuidev/react-ui@0.11.9(@openuidev/react-headless@0.8.2(react@18.3.1)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1)))(@openuidev/react-lang@0.2.8(react@18.3.1)(zod@3.25.76))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(zod@3.25.76)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1))':
+  '@openuidev/react-ui@0.11.9(@openuidev/react-headless@0.8.2(react@18.3.1)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1)))(@openuidev/react-lang@0.2.6(react@18.3.1)(zod@3.25.76))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(zod@3.25.76)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1))':
     dependencies:
       '@floating-ui/react-dom': 2.1.8(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@openuidev/react-headless': 0.8.2(react@18.3.1)(zustand@4.5.7(@types/react@19.2.17)(immer@11.1.8)(react@18.3.1))
-      '@openuidev/react-lang': 0.2.8(react@18.3.1)(zod@3.25.76)
+      '@openuidev/react-lang': 0.2.6(react@18.3.1)(zod@3.25.76)
       '@radix-ui/react-accordion': 1.2.14(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@radix-ui/react-aspect-ratio': 1.1.10(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@radix-ui/react-checkbox': 1.3.5(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

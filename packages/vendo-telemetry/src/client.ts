@@ -51,6 +51,12 @@ function filterToAllowlist(event: EventName, props: Record<string, unknown>): Re
   return out;
 }
 
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  if (typeof timer === "object" && timer !== null && "unref" in timer) {
+    (timer as { unref?: () => void }).unref?.();
+  }
+}
+
 export function createTelemetry(deps: TelemetryDeps): Telemetry {
   const doFetch = deps.fetchImpl ?? fetch;
   return {
@@ -73,17 +79,27 @@ export function createTelemetry(deps: TelemetryDeps): Telemetry {
         });
 
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-        try {
-          await doFetch(POSTHOG_ENDPOINT, {
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            controller.abort();
+            finish();
+          }, TIMEOUT_MS);
+          unrefTimer(timer);
+
+          void doFetch(POSTHOG_ENDPOINT, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body,
             signal: controller.signal,
-          });
-        } finally {
-          clearTimeout(timer);
-        }
+          }).then(finish, finish);
+        });
       } catch {
         // Telemetry must never break a build or dev server. Intentional silent failure.
       }

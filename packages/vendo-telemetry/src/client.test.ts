@@ -74,4 +74,20 @@ describe("createTelemetry.track", () => {
     const t = createTelemetry(deps);
     await expect(t.track("agent_run", {})).resolves.toBeUndefined();
   });
+
+  it("returns after the telemetry timeout when fetch never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makeDeps({ fetchImpl: vi.fn(() => new Promise(() => {})) });
+      const t = createTelemetry(deps);
+      const tracked = t.track("init_started", { framework: "next" });
+
+      await vi.advanceTimersByTimeAsync(1500);
+
+      await expect(tracked).resolves.toBeUndefined();
+      expect(deps.fetchImpl).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

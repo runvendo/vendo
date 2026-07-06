@@ -21,17 +21,30 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
  * `mutating`/`dangerous` are REQUIRED by the frozen schema and drive downstream
  * auto-allow, so nothing inferred may relax them:
  *
- * - openapi: GET is read-only ONLY when the name is read-shaped; a GET named
- *   like a side effect (connect/poll/dispatch/…) or ambiguously is marked
- *   mutating — HTTP method alone is not evidence (demo-bank's integrations GET
- *   calls connect(), its poll GET fires Slack).
- * - route-scan: EVERY tool is mutating. The surface is LLM-read code; an
- *   LLM judgment must never grant auto-allow. The developer relaxes read-only
- *   tools by hand in the editable tools.json (the init report says so).
+ * - GET tools are read-only only when their deterministic name is read-shaped.
+ *   Deterministic route scanning names every GET as `get...`; LLM output never
+ *   gets to rename a route or relax a write.
+ * - POST/PUT/PATCH/DELETE tools are always mutating. DELETE plus destructive
+ *   action names are dangerous, so write routes never become auto-allowed.
  */
-const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
-/** GET names that are safe to auto-allow from a spec. Anything else fails closed. */
-const READ_NAME = /(^|_)(get|list|fetch|search|find|read|show|query|describe|count)(_|$)/;
+const DESTRUCTIVE_WORDS = new Set([
+  "delete", "remove", "destroy", "cancel", "close", "reset", "revoke", "purge", "wipe", "archive",
+  "unpause", "transfer", "send", "invite",
+]);
+const READ_WORDS = new Set(["get", "list", "fetch", "search", "find", "read", "show", "query", "describe", "count"]);
+/** GET names that are safe to auto-allow. Anything else fails closed. */
+function words(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean);
+}
+
+function hasWord(name: string, allowed: ReadonlySet<string>): boolean {
+  return words(name).some((word) => allowed.has(word));
+}
 
 export function annotationsFor(
   method: string,
@@ -39,8 +52,9 @@ export function annotationsFor(
   source: "openapi" | "route-scan",
 ): ManifestToolAnnotations {
   const m = method.toUpperCase();
-  const dangerous = m === "DELETE" || DESTRUCTIVE_NAME.test(name);
-  if (m === "GET" && source === "openapi" && READ_NAME.test(name) && !dangerous) {
+  void source;
+  const dangerous = m === "DELETE" || hasWord(name, DESTRUCTIVE_WORDS);
+  if (m === "GET" && hasWord(name, READ_WORDS) && !dangerous) {
     return { mutating: false, dangerous: false };
   }
   const annotations: ManifestToolAnnotations = { mutating: true, dangerous };
