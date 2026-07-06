@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { themeToStyle } from "../theme";
 import { useShell } from "../context";
 import { useFocusTrap } from "../use-focus-trap";
+import { useMobileTakeover } from "../use-mobile-takeover";
 
 export interface OverlayPanelProps {
   open: boolean;
@@ -27,6 +28,9 @@ export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPane
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   useFocusTrap(open, panelRef);
+  // Below 768px the panel presents as a full-screen takeover (Intercom
+  // pattern) — same dialog, same focus trap, just the full-bleed face.
+  const takeover = useMobileTakeover();
 
   if (!open || !mounted) return null;
 
@@ -38,7 +42,7 @@ export function OverlayPanel({ open, onClose, ariaLabel, children }: OverlayPane
     <div className="vendo-root fl-overlay-portal" style={{ ...themeToStyle(theme), ...cssVars }}>
       <div className="fl-overlay-scrim" onClick={onClose} />
       <div
-        className="fl-overlay-panel"
+        className={takeover ? "fl-overlay-panel fl-takeover" : "fl-overlay-panel"}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}

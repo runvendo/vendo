@@ -75,10 +75,19 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
         // a toolkit for webhook routing (findByConnectedAccount). Subsumes
         // connect(id)'s effect (marks the toolkit connected too).
         await deps.store.setConnectedAccount(id, account);
+        return Response.json({ status: "active" as const });
       }
-      return Response.json({ status });
-    } catch {
-      return Response.json({ status: "failed" as const });
+      // The client-facing status must reflect what actually happened. A raw
+      // "active" we did NOT record (anti-spoof case: foreign/other-toolkit
+      // account) must not read as connected — downgrade it to "pending" so the
+      // client keeps polling instead of showing connected with no toolkit.
+      return Response.json({ status: status === "active" ? ("pending" as const) : status });
+    } catch (err) {
+      // A poll error is usually a transient Composio hiccup, not a terminal
+      // failure. Log it server-side like the connect handler does, and report
+      // "pending" so the client keeps polling rather than latching "failed".
+      console.error("[vendo] integrations status poll failed:", err);
+      return Response.json({ status: "pending" as const });
     }
   }
   return Response.json({ enabled: true, integrations: await deps.store.list() });

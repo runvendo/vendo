@@ -47,6 +47,9 @@ export function manifestToolsToHostTools(tools: ManifestTool[]): HostToolDefinit
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
+      // Optional result-field format hints ride through untouched; the
+      // runtime's hostToolset renders them into the tool description.
+      ...(t.formats ? { formats: t.formats } : {}),
       annotations: {
         readOnlyHint: !t.annotations.mutating,
         destructiveHint: t.annotations.dangerous,

@@ -154,21 +154,32 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
         // carry their name in `toolName` instead of the part type. Same
         // approval/chip treatment as static tool parts; RENDER_TOOLS never
         // ingest as dynamic, so no skeleton branch is needed here.
+        // toolCallId MUST ride along (MCP consent gap, 2026-07-05): without
+        // it the shell's approve()/decline() silently skipped the consent
+        // POST, so MCP approvals bypassed the audit/grant channel host tools
+        // use. The sibling data-consent tier pairs by the same id.
         const toolName = String(part.toolName ?? "unknown");
+        const toolCallId = part.toolCallId as string | undefined;
+        const tierInfo = toolCallId ? tierByToolCallId.get(toolCallId) : undefined;
         if (part.state === "approval-requested") {
           const approval = part.approval as { id: string };
-          items.push({ kind: "approval", key, messageId, approvalId: approval.id, toolName, input: part.input });
+          items.push({
+            kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.reason ? { reason: tierInfo.reason } : {}),
+          });
         } else {
           items.push({
             kind: "tool",
             key,
             messageId,
             toolName,
-            toolCallId: part.toolCallId as string | undefined,
+            toolCallId,
             state: String(part.state ?? ""),
             input: part.input,
             output: part.output,
             errorText: part.errorText as string | undefined,
+            tier: tierInfo?.tier, unverified: tierInfo?.unverified,
           });
         }
       } else if (part.type.startsWith("tool-")) {

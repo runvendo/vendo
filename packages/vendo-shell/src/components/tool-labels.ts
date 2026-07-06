@@ -163,3 +163,17 @@ export function toolAction(toolName: string): ToolAction {
 export function friendlyLabel(toolName: string): string {
   return toolAction(toolName).active;
 }
+
+/**
+ * True when the tool's toolkit prefix is in the known connect catalog
+ * (Composio's TOOLKIT_ACTION naming) — i.e. its SOURCE is classified even
+ * though stock Composio tools ship no annotation hints. The consent card uses
+ * this to suppress the "Unverified tool" badge for catalog-known tools
+ * (Yousef, 2026-07-05) while unknown MCP/unclassified names keep it. Display
+ * classification only — the policy engine's own unverified mechanics
+ * (batching exemptions, fade/grant refusals) are untouched.
+ */
+export function isCatalogTool(toolName: string): boolean {
+  const prefix = toolName.split("_")[0]?.toUpperCase() ?? "";
+  return prefix in TOOLKITS;
+}

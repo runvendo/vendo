@@ -70,6 +70,14 @@ export function VendoToasts({
   const inFlight = useRef(false);
   useEffect(() => {
     let disposed = false;
+    // The feed answered "disabled" (automations off on this host): stop the
+    // loop for good — polling a route that will 404 every interval forever
+    // is exactly the bug this guards against.
+    const stop = () => {
+      disposed = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
     const poll = async () => {
       // Serialize: an overlapping poll could double-read the same cursor and
       // toast notices the first pass already handled (or baselined).
@@ -86,6 +94,10 @@ export function VendoToasts({
       try {
         const notices = await notifications.listSince(cursor ?? 0);
         if (disposed) return;
+        if (notices === "disabled") {
+          stop();
+          return;
+        }
         const initial = firstBatch.current;
         firstBatch.current = false;
         if (notices.length === 0) {
@@ -126,11 +138,7 @@ export function VendoToasts({
       if (document.visibilityState === "visible") void poll();
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      disposed = true;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    return stop;
   }, [notifications, queue, pollMs, namespace]);
 
   // Auto-dismiss: each visible non-persistent toast gets one countdown.

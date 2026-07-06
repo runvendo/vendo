@@ -5,6 +5,7 @@ import { VendoShellProvider } from "../context";
 import type { VendoStore } from "../seams/store";
 import type { VendoIntegrations } from "../seams/integrations";
 import { themeToStyle, type VendoTheme } from "../theme";
+import { useMobileTakeover } from "../use-mobile-takeover";
 import { VendoThread } from "../VendoThread";
 
 export interface VendoPageProps {
@@ -29,6 +30,9 @@ export function VendoPage(props: VendoPageProps) {
   const { agent, components, store, integrations, impls, theme, cssVars, greeting, suggestions } = props;
   const [tabs, setTabs] = useState<Tab[]>(() => [newTab()]);
   const [activeId, setActiveId] = useState<string>(() => tabs[0]!.id);
+  // Below 768px the page presents full-screen over the host layout (the
+  // Intercom takeover) — the host's mobile layout is covered, not our problem.
+  const takeover = useMobileTakeover();
 
   const addTab = () => {
     const tab = newTab();
@@ -37,7 +41,10 @@ export function VendoPage(props: VendoPageProps) {
   };
 
   return (
-    <div className="vendo-root fl-page" style={{ ...themeToStyle(theme), ...cssVars }}>
+    <div
+      className={takeover ? "vendo-root fl-page fl-takeover" : "vendo-root fl-page"}
+      style={{ ...themeToStyle(theme), ...cssVars }}
+    >
       <div className="fl-tabbar" role="tablist">
         {tabs.map((tab) => (
           <button

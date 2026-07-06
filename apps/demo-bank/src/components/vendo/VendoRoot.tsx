@@ -44,6 +44,21 @@ export function VendoRoot({
     [],
   );
 
+  // Restore the durable thread on mount (createVendoHandler persists it under
+  // this Chat's own id): a reload — including one right after a stream died
+  // mid-turn — brings back every settled message instead of an empty thread.
+  const loadHistory = useMemo(
+    () => async (): Promise<VendoUIMessage[]> => {
+      const res = await fetch(`/api/vendo/threads/${encodeURIComponent(threadId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return [];
+      const body = (await res.json()) as unknown;
+      return Array.isArray(body) ? (body as VendoUIMessage[]) : [];
+    },
+    [threadId],
+  );
+
   // Live Composio connection status (gmail/slack) for the integrations rail.
   const integrations = useMemo(() => createComposioIntegrations(), []);
 
@@ -58,6 +73,7 @@ export function VendoRoot({
       // existing session (ENG-202, topology B) — the same definitions the
       // server registered, so gated calls run only after the approval card.
       hostTools={{ definitions: mapleHostToolDefs }}
+      loadHistory={loadHistory}
     >
       {/* Maple's single brand feeds the host shell. brandToCssVars supplies the
           --vendo-* colors, applied INLINE on every .vendo-root by the shell

@@ -211,6 +211,49 @@
   background-size: 400% 100%; animation: fl-shimmer 1.5s ease infinite; border-radius: 6px; }
 @keyframes fl-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
+/* ---------- glass skeleton (2026-07-05 recipe): a view taking shape ---------- */
+/* The glass ground: translucent fill + hairline white border + inset highlight,
+   frosted for real in shell chrome (inside the sandbox iframe backdrop-filter
+   can't see the host page — the translucent fill IS the fallback there). Both
+   grounds flip with the host scheme; tint and radius come from the existing
+   theme tokens — no new theme keys. */
+.fl-glass { border-radius: var(--vendo-radius); padding: 15px 16px;
+  background: light-dark(rgba(255,255,255,.42), rgba(22,24,30,.55));
+  border: 1px solid light-dark(rgba(255,255,255,.65), rgba(255,255,255,.14));
+  box-shadow: 0 4px 24px light-dark(rgba(23,23,26,.06), rgba(0,0,0,.35)),
+    inset 0 1px 0 light-dark(rgba(255,255,255,.8), rgba(255,255,255,.08));
+  -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); }
+.fl-glass-skeleton { align-self: flex-start; width: 100%; }
+.fl-glass-line { display: flex; align-items: center; gap: 9px;
+  font: 500 13.5px/1.4 var(--vendo-font); color: var(--vendo-fg); }
+.fl-glass-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vendo-accent);
+  flex-shrink: 0; animation: fl-glass-pulse 1.6s ease-in-out infinite; }
+@keyframes fl-glass-pulse { 50% { transform: scale(1.25); opacity: 1; } }
+/* Shimmer blocks: the HOST ACCENT at .10→.22→.10 (light) / .16→.32→.16 (dark),
+   sweeping 1.8s — the recipe's exact tint ramp via color-mix instead of a
+   precomputed rgb triplet. */
+.fl-glass-shimmer { border-radius: 10px;
+  background: linear-gradient(100deg,
+    light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 30%,
+    light-dark(color-mix(in srgb, var(--vendo-accent) 22%, transparent), color-mix(in srgb, var(--vendo-accent) 32%, transparent)) 50%,
+    light-dark(color-mix(in srgb, var(--vendo-accent) 10%, transparent), color-mix(in srgb, var(--vendo-accent) 16%, transparent)) 70%);
+  background-size: 200% 100%; animation: fl-glass-shimmer 1.8s linear infinite; }
+@keyframes fl-glass-shimmer { from { background-position: 120% 0; } to { background-position: -80% 0; } }
+/* The approved grid: a view forming — 3 stat tiles, a wide chart, two rows. */
+.fl-glass-grid { display: grid; gap: 8px; margin-top: 12px; grid-template-columns: repeat(3, 1fr); }
+.fl-glass-tile { height: 44px; }
+.fl-glass-chart { grid-column: span 3; height: 96px; }
+.fl-glass-row { grid-column: span 3; height: 18px; }
+.fl-glass-row.is-short { width: 72%; }
+/* Repaint veil: the shimmer OVER a stale view (saved-vendo refresh, remix pin
+   edits) instead of a flash — pointer-transparent, content stays readable. */
+.fl-glass-veil { position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  border-radius: var(--vendo-radius); }
+/* Library skeleton cards + integrations tray placeholder rows. */
+.fl-flowcard-skel { height: 74px; border: 1px solid var(--vendo-border);
+  border-radius: var(--vendo-radius); }
+.fl-picker-loading .fl-glass-shimmer { height: 46px; border-radius: 11px; }
+
 /* ---------- tool chip (kept quiet; most are hidden in the thread) ---------- */
 .fl-tool { align-self: flex-start; display: flex; align-items: center; gap: 8px;
   font: 500 12px/1 var(--vendo-font); color: var(--vendo-fg-muted);
@@ -730,9 +773,36 @@
   .fl-typing span, .fl-generating .fl-pulse, .fl-skeleton-bar,
   .fl-tool-spin, .fl-tool-spinner, .fl-act-pulse, .fl-act-spin,
   .fl-auto-created-live::after { animation: none; }
+  /* Glass skeleton: the sweep and pulse freeze; the blocks stay tinted. */
+  .fl-glass-shimmer, .fl-glass-dot { animation: none; }
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
 }
+
+/* ---------- full-screen mobile takeover (<768px, Intercom pattern) ---------- */
+/* The `fl-takeover` class is stamped by useMobileTakeover (matchMedia) on the
+   surface containers — the overlay panel (the Cmd+K overlay AND the slot's
+   design overlay share OverlayPanel) and the page element. Full bleed, its own
+   stacking context, internal scrolling (only .fl-msglist scrolls), the
+   composer pinned at the bottom inside the safe area, the close X reachable
+   under the notch. Host layout below the breakpoint is covered, not fixed. */
+.fl-overlay-panel.fl-takeover { left: 0; top: 0; transform: none;
+  width: 100%; height: 100%; max-width: none; max-height: none;
+  border: 0; border-radius: 0; isolation: isolate;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  /* The centered "squeeze" keyframes carry translate(-50%,-50%) — full bleed
+     fades in instead of flying in from mid-screen. */
+  animation: fl-takeover-fade .18s ease both; }
+@keyframes fl-takeover-fade { from { opacity: 0; } to { opacity: 1; } }
+.fl-overlay-panel.fl-takeover .fl-overlay-close {
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px)); }
+.fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
+  background: var(--vendo-bg);
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
@@ -757,7 +827,8 @@
 .fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane[hidden] { display: none; }
-.fl-saved-pane { flex: 1; min-height: 0; overflow: auto; padding: 22px 2px; }
+/* position: relative anchors the glass refresh veil over a reopened view. */
+.fl-saved-pane { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 22px 2px; }
 .fl-slot-empty { border: 1.5px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
   padding: 24px; cursor: pointer; background: var(--vendo-glass-strong); color: var(--vendo-fg-muted);

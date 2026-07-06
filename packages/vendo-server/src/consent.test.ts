@@ -57,6 +57,26 @@ describe("handleConsentRoute", () => {
     expect(await deps.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
   });
 
+  it("an MCP dynamic-tool approval writes the same consent audit row a host-tool approval does", async () => {
+    // The route's descriptor resolver can't statically enumerate MCP tools
+    // (resolveDescriptor returns undefined) — grant minting stays
+    // conservative, but the consent/audit trail must be identical.
+    const deps = makeDeps();
+    const threadId = await deps.threadIndex.resolve(scope, "chat-mcp");
+    await deps.threads.appendMessages(scope, threadId, [
+      { id: "m1", role: "assistant", parts: [
+        { type: "dynamic-tool", toolName: "everything_echo", toolCallId: "call-mcp",
+          state: "approval-requested", input: { message: "hi" }, approval: { id: "ap-1" } },
+      ] } as never,
+    ]);
+    const res = await handleConsentRoute(req({
+      id: "chat-mcp", toolCallId: "call-mcp", toolName: "everything_echo",
+      response: { id: "call-mcp", decision: "yes" },
+    }), deps);
+    expect(res.status).toBe(200);
+    expect(await deps.audit.query(scope, { kinds: ["consent"] })).toHaveLength(1);
+  });
+
   it("404s when no pending approval part exists for the toolCallId", async () => {
     const deps = makeDeps();
     const res = await handleConsentRoute(req({

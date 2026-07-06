@@ -17,7 +17,9 @@ export function devTelemetry(opts: DevTelemetryOptions = {}): Telemetry {
     home: opts.home,
     posthogKey: opts.posthogKey ?? env.VENDO_POSTHOG_KEY,
     fetchImpl: opts.fetchImpl,
-    log: () => {},
+    // No log override: let initTelemetry emit the one-time disclosure to a real
+    // sink (console.error). A no-op sink here marked the notice "shown" while
+    // showing nothing, so collection proceeded without ever disclosing it.
   });
 }
 

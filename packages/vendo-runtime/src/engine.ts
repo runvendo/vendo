@@ -667,6 +667,35 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
   let mcpCache: Promise<Ingested> | null = null;
 
   /**
+   * The model-visible text for an explicit decline. The shell answers an
+   * approval card with `{ approved: false }` and NO reason, and the ai SDK
+   * converts a reason-less `output-denied` part into the bare error
+   * "Tool execution denied." — which reads as retryable, so the model
+   * re-pitches the very action the user just refused. Stamping the reason
+   * here (serialization layer only — the approval state machine is untouched)
+   * makes the decline an unambiguous user decision with the behavioral rule
+   * attached.
+   */
+  function declineReason(toolName: string): string {
+    return (
+      `The user DECLINED the "${toolName}" action on the approval card. ` +
+      "This is the user's explicit decision, not an error: acknowledge the " +
+      "refusal briefly, leave the action undone, and do not re-propose or " +
+      "retry it unless the user asks for it again."
+    );
+  }
+
+  /** Static tool parts are "tool-<name>"; dynamic (MCP) parts are
+   *  "dynamic-tool" with the name in `toolName`. */
+  function partToolName(rawPart: unknown, type: string): string {
+    if (type === "dynamic-tool") {
+      const name = (rawPart as { toolName?: unknown }).toolName;
+      return typeof name === "string" && name.length > 0 ? name : "requested";
+    }
+    return type.slice("tool-".length);
+  }
+
+  /**
    * Normalize client-supplied history so a stale turn can't wedge the thread.
    * A tool part stuck at `approval-requested` with no response (the user typed
    * past the approval card) converts to a tool_use with NO tool_result — the
@@ -674,6 +703,10 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
    * as declined: `output-denied` emits a valid approval-response + denied
    * tool-result pair. (Parts stuck at input-* from an aborted stream are
    * handled by `ignoreIncompleteToolCalls` at conversion time.)
+   *
+   * Explicitly DECLINED parts (`output-denied`, `approved: false`) that carry
+   * no reason get `declineReason` stamped so the model sees the user's
+   * decision instead of a bare tool error; an existing reason always wins.
    */
   function normalizeHistory(messages: VendoUIMessage[]): VendoUIMessage[] {
     return messages.map((message) => {
@@ -703,6 +736,31 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
               ...part.approval,
               approved: false,
               reason: "Not approved — the user moved on without answering.",
+            },
+          } as typeof rawPart;
+        }
+        // An explicit decline with no reason: make the user's decision visible
+        // to the model (see declineReason above). A part that already carries
+        // a reason — including the stranded-approval text stamped by the
+        // branch above on an earlier turn — is left alone.
+        // Two shapes carry an explicit decline: `output-denied` (already
+        // settled) and `approval-responded` with approved:false — the LIVE
+        // path, where the react layer auto-resubmits right after the card is
+        // answered and the SDK's resume synthesizes the execution-denied
+        // result from THIS part's approval.reason.
+        if (
+          (part.type.startsWith("tool-") || part.type === "dynamic-tool") &&
+          (part.state === "output-denied" || part.state === "approval-responded") &&
+          part.approval != null &&
+          part.approval.approved === false &&
+          (part.approval.reason == null || part.approval.reason.trim() === "")
+        ) {
+          changed = true;
+          return {
+            ...rawPart,
+            approval: {
+              ...part.approval,
+              reason: declineReason(partToolName(rawPart, part.type)),
             },
           } as typeof rawPart;
         }
@@ -744,6 +802,21 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
     // tool runs, and the stream can't finish before `execute` has started.
     let settledPrincipal: VendoPrincipal = { userId: "" };
 
+    // Route run/step failures (bad prompt, provider/Composio errors) into the
+    // stream as an error part instead of an unhandled rejection — one crashed
+    // run must never take the host process down with it. Serialization
+    // boundary: the raw message (provider 401s carrying key prefixes,
+    // Composio/network detail) must not reach the client stream — sanitized
+    // HERE, not at throw sites, so error classification (telemetry's
+    // errorClassName, policy retry paths) still sees the original error.
+    // Wired into BOTH `createUIMessageStream` (execute/merge failures) and
+    // `toUIMessageStream` below (streamText failures, whose own onError
+    // defaults to the raw getErrorMessage).
+    const streamError = (error: unknown): string => {
+      console.error(`[vendo] run ${runId} failed:`, error);
+      return "something went wrong running this step — check the server logs";
+    };
+
     return createUIMessageStream<VendoUIMessage>({
       // Verified against ai@6.0.28's handleUIMessageStreamFinish: without this,
       // `originalMessages` defaults to `[]` and onFinish's `messages` would be
@@ -752,13 +825,7 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
       // ([...originalMessages, state.message]) — what a Store-backed
       // persistence hook (Task 4/5) actually needs to write.
       originalMessages: input.messages,
-      // Route execute failures (bad prompt, provider/Composio errors) into the
-      // stream as an error part instead of an unhandled rejection — one crashed
-      // run must never take the host process down with it.
-      onError: (error) => {
-        console.error(`[vendo] run ${runId} failed:`, error);
-        return error instanceof Error ? error.message : "The agent run failed.";
-      },
+      onError: streamError,
       // ENG-193 §6.2: persistence for the consent endpoint's "load the
       // thread's messages" step. A throwing/rejecting hook is caught here,
       // never surfaced to the model or the client stream. Only registered when
@@ -1032,6 +1099,11 @@ export function createVendoAgent(config: VendoAgentConfig): VendoAgent {
         writer.merge(
           result.toUIMessageStream({
             originalMessages: input.messages,
+            // Without this, toUIMessageStream's own default (getErrorMessage)
+            // serializes the RAW streamText failure into the error chunk —
+            // the outer createUIMessageStream onError never sees it because
+            // the merged stream doesn't reject, it carries an error chunk.
+            onError: streamError,
             messageMetadata: ({ part }) =>
               part.type === "start"
                 ? { runId, threadId, schemaVersion: SCHEMA_VERSION }

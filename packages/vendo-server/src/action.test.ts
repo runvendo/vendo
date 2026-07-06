@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tool } from "ai";
+import { jsonSchema, tool } from "ai";
 import { z } from "zod";
 import {
   buildDescriptor,
@@ -111,6 +111,99 @@ describe("handleAction", () => {
     expect(second.status).toBe(404);
 
     expect((await handleAction(actionReq({}), d)).status).toBe(400);
+  });
+
+  it("400s a payload that fails the tool's input schema instead of executing it", async () => {
+    const executed: unknown[] = [];
+    const strictTool = tool({
+      description: "write things",
+      inputSchema: z.object({ amount: z.number() }),
+      execute: async (input: unknown) => {
+        executed.push(input);
+        return { wrote: input };
+      },
+    });
+    const policy: ApprovalPolicy = { evaluate: () => "allow" };
+    const res = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: "not-a-number" } }),
+      deps({ policy, getTools: () => ({ create_thing: strictTool }) }),
+    );
+    expect(res.status).toBe(400);
+    expect(executed).toHaveLength(0);
+    // Generic message only — no validator internals cross to the caller.
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('invalid payload for action "create_thing"');
+  });
+
+  describe("JSON-schema tools (AI SDK jsonSchema(), no runtime validator)", () => {
+    // asSchema(jsonSchema(...)).validate is undefined — validation must NOT
+    // fail open. Minimum bar: required + type + additionalProperties.
+    const jsonTool = (executed: unknown[]) => ({
+      ...tool({
+        description: "write things",
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: { amount: { type: "number" } },
+          required: ["amount"],
+          additionalProperties: false,
+        }),
+      }),
+      execute: async (input: unknown) => {
+        executed.push(input);
+        return { wrote: input };
+      },
+    });
+
+    it("400s a wrong-typed field without executing", async () => {
+      const executed: unknown[] = [];
+      const res = await handleAction(
+        actionReq({ action: "create_thing", payload: { amount: "nope" } }),
+        deps({ policy: { evaluate: () => "allow" }, getTools: () => ({ create_thing: jsonTool(executed) }) }),
+      );
+      expect(res.status).toBe(400);
+      expect(executed).toHaveLength(0);
+      expect(((await res.json()) as { error: string }).error).toBe('invalid payload for action "create_thing"');
+    });
+
+    it("400s a missing required field without executing", async () => {
+      const executed: unknown[] = [];
+      const res = await handleAction(
+        actionReq({ action: "create_thing", payload: {} }),
+        deps({ policy: { evaluate: () => "allow" }, getTools: () => ({ create_thing: jsonTool(executed) }) }),
+      );
+      expect(res.status).toBe(400);
+      expect(executed).toHaveLength(0);
+    });
+
+    it("400s an unexpected additional property without executing", async () => {
+      const executed: unknown[] = [];
+      const res = await handleAction(
+        actionReq({ action: "create_thing", payload: { amount: 5, evil: true } }),
+        deps({ policy: { evaluate: () => "allow" }, getTools: () => ({ create_thing: jsonTool(executed) }) }),
+      );
+      expect(res.status).toBe(400);
+      expect(executed).toHaveLength(0);
+    });
+
+    it("executes a valid payload", async () => {
+      const executed: unknown[] = [];
+      const res = await handleAction(
+        actionReq({ action: "create_thing", payload: { amount: 5 } }),
+        deps({ policy: { evaluate: () => "allow" }, getTools: () => ({ create_thing: jsonTool(executed) }) }),
+      );
+      expect(res.status).toBe(200);
+      expect(executed).toEqual([{ amount: 5 }]);
+    });
+  });
+
+  it("still executes a schema-valid payload", async () => {
+    const policy: ApprovalPolicy = { evaluate: () => "allow" };
+    const res = await handleAction(
+      actionReq({ action: "create_thing", payload: { amount: 5 } }),
+      deps({ policy }),
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { result: unknown }).result).toEqual({ wrote: { amount: 5 } });
   });
 
   it("blocks remote requests", async () => {

@@ -41,6 +41,28 @@ describe("toThreadItems", () => {
     });
   });
 
+  it("a DYNAMIC approval carries its toolCallId + sibling data-consent tier — the consent POST must not be dropped (MCP gap)", () => {
+    // Without toolCallId the shell's approve() silently skipped the consent
+    // POST for MCP tools, bypassing the audit/grant channel host tools use.
+    const items = toThreadItems([
+      msg("m2d", "assistant", [
+        {
+          type: "dynamic-tool",
+          toolName: "everything_echo",
+          toolCallId: "call-mcp-1",
+          state: "approval-requested",
+          approval: { id: "a9" },
+          input: { message: "hi" },
+        },
+        { type: "data-consent", data: { toolCallId: "call-mcp-1", tier: "act", unverified: true } },
+      ]),
+    ]);
+    expect(items[0]).toEqual({
+      kind: "approval", key: "m2d:0", messageId: "m2d", approvalId: "a9", toolCallId: "call-mcp-1",
+      toolName: "everything_echo", input: { message: "hi" }, tier: "act", unverified: true,
+    });
+  });
+
   it("emits a tool item for a dynamic tool part in other states", () => {
     const items = toThreadItems([
       msg("m3d", "assistant", [

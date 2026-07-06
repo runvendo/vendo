@@ -13,7 +13,7 @@
  * `pages/api/`, or outside the app source root are refused.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import type { RemixSourceRecord } from "@vendoai/core";
@@ -102,7 +102,16 @@ export function resolveModuleFile(
 
 /** Threat-model refusal — evaluated on the RESOLVED path + content. */
 export function refusalReason(file: string, content: string, sourceRoot: string): string | undefined {
-  const rel = path.relative(sourceRoot, file);
+  // Realpath both sides before the path checks: a symlink under src/ pointing
+  // at out-of-root or server/ code would otherwise pass on its unresolved path.
+  const real = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
+  const rel = path.relative(real(sourceRoot), real(file));
   if (rel.startsWith("..")) return "outside the app source root";
   const segments = rel.split(path.sep);
   if (segments.includes("server")) return "under a server/ directory";

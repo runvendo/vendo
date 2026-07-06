@@ -53,6 +53,22 @@ describe("createTelemetry.track", () => {
     expect(body.properties.framework).toBe("next");
   });
 
+  it("caps oversized string values on an allowed key (review)", async () => {
+    const deps = makeDeps();
+    const t = createTelemetry(deps);
+    await t.track("init_started", { framework: "a".repeat(5000) });
+    const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+    expect(body.properties.framework.length).toBeLessThanOrEqual(512);
+  });
+
+  it("drops object/array values even on an allowed key (review)", async () => {
+    const deps = makeDeps();
+    const t = createTelemetry(deps);
+    await t.track("init_started", { framework: { nested: "secret" } } as never);
+    const body = JSON.parse((deps.fetchImpl.mock.calls[0][1] as { body: string }).body);
+    expect(body.properties.framework).toBeUndefined();
+  });
+
   it("never throws when fetch rejects", async () => {
     const deps = makeDeps({ fetchImpl: vi.fn().mockRejectedValue(new Error("network")) });
     const t = createTelemetry(deps);

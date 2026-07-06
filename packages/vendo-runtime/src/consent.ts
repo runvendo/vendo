@@ -125,10 +125,27 @@ export type HandleConsentResult =
  *  or not. That's the exact fact this file's evidence check below relies on. */
 interface ApprovalPart {
   type: string;
+  /** Dynamic (MCP) parts carry the tool name here — the part type is just
+   *  "dynamic-tool", not "tool-<name>". */
+  toolName?: string;
   toolCallId?: string;
   state?: string;
   input?: unknown;
   approval?: { id: string; approved?: boolean; reason?: string };
+}
+
+/** Static host/server tool parts ("tool-<name>") AND ai-SDK dynamic-tool
+ *  parts (MCP servers) — the consent channel treats both identically. This
+ *  was the remaining tool-*-only path from the MCP work (2026-07-05): a
+ *  dynamic part could never anchor a consent POST, so MCP approvals silently
+ *  skipped the audit/grant trail host tools get. */
+function isToolPart(part: ApprovalPart): boolean {
+  return part.type.startsWith("tool-") || part.type === "dynamic-tool";
+}
+
+/** The pending part's own tool name, wherever the shape keeps it. */
+function partToolName(part: ApprovalPart): string {
+  return part.type === "dynamic-tool" ? String(part.toolName ?? "") : part.type.slice("tool-".length);
 }
 
 /**
@@ -164,7 +181,7 @@ function findApprovalPart(
   for (const message of messages) {
     for (const rawPart of message.parts) {
       const part = rawPart as ApprovalPart;
-      if (part.type.startsWith("tool-") && part.toolCallId === toolCallId && hasApprovalEvidence(part)) {
+      if (isToolPart(part) && part.toolCallId === toolCallId && hasApprovalEvidence(part)) {
         return part;
       }
     }
@@ -245,11 +262,11 @@ export async function handleConsent(
       error: `the user declined toolCallId "${req.toolCallId}" — an affirmative consent cannot be recorded over a decline`,
     });
   }
-  const partToolName = part.type.slice("tool-".length);
-  if (partToolName !== req.toolName) {
+  const pendingToolName = partToolName(part);
+  if (pendingToolName !== req.toolName) {
     return audited({
       ok: false, status: 400,
-      error: `toolName "${req.toolName}" does not match the pending part's tool "${partToolName}"`,
+      error: `toolName "${req.toolName}" does not match the pending part's tool "${pendingToolName}"`,
     });
   }
 

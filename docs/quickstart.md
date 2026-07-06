@@ -87,8 +87,10 @@ VENDO_MODEL=claude-sonnet-4-6     # bare id: applied to whichever provider key i
 `VENDO_MODEL` alone names a model, not a credential: without a real
 provider key (or a code-injected `model`), chat stays off. OpenAI and Google
 are optional peers (`@ai-sdk/openai`, `@ai-sdk/google`): resolving to one
-without its package installed fails fast with an actionable `npm i` hint, not
-a silent fallback.
+without its package installed degrades like the keyless state — every route
+stays healthy, `/capabilities` reports `chat: false`, and the server log and
+the chat 503 both carry an actionable `npm i` hint. A misconfigured
+`VENDO_MODEL` (unknown provider) still fails loudly.
 
 ## MCP servers
 

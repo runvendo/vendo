@@ -91,6 +91,60 @@ function isLocalRequest(req: Request): boolean {
   return LOCAL_HOSTS.has(hostname.toLowerCase());
 }
 
+/**
+ * True only for a development-mode request from a local host — the one
+ * situation where a deliberately-constructed boot error message may be echoed
+ * to the caller (see fetch-handler.ts's bootError). Same Host-header localness
+ * `resolvePrincipal` keys on; NODE_ENV=production disables it entirely because
+ * that header is client-controlled.
+ */
+export function isLocalDevRequest(
+  req: Request,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env["NODE_ENV"] !== "production" && isLocalRequest(req);
+}
+
+/**
+ * CSRF gate for browser-credentialed mutating routes. A host `principal`
+ * resolver may authenticate via ambient cookies, so a cross-site page could
+ * otherwise fire authenticated mutations (POST bodies `req.json()` accepts are
+ * "simple requests" that skip the CORS preflight). Two carve-outs keep
+ * legitimate callers working:
+ *   - an `authorization` header is a custom-header credential a cross-site
+ *     page cannot attach without a CORS preflight this handler never grants —
+ *     inherently CSRF-safe, no origin check needed;
+ *   - a request with NO browser provenance headers (curl, server-to-server)
+ *     carries no third-party-triggered ambient credentials.
+ * When `Origin` is present it is authoritative: require exact host equality
+ * (host+port) REGARDLESS of `sec-fetch-site` — a sibling subdomain like
+ * `evil.example.com` → `app.example.com` reads `sec-fetch-site: same-site` yet
+ * is a different origin, so trusting same-site would let it through. Only when
+ * `Origin` is absent do we fall back to `sec-fetch-site`, accepting ONLY
+ * `same-origin` (`same-site`/`cross-site`/`none` reject — without an Origin we
+ * cannot verify the exact host).
+ *
+ * Same-origin fetches from the host page (the sandbox action dispatch and the
+ * demo apps all POST from the host origin) carry a matching Origin and pass.
+ */
+export function isCrossSiteRequest(req: Request): boolean {
+  if (req.headers.get("authorization")) return false;
+  const origin = req.headers.get("origin");
+  if (origin !== null) {
+    let originHost: string;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      return true; // includes "Origin: null" (sandboxed iframe) — fail closed
+    }
+    const host = req.headers.get("host") ?? new URL(req.url).host;
+    return originHost !== host;
+  }
+  const site = req.headers.get("sec-fetch-site");
+  if (site === null) return false; // no browser provenance at all → non-browser caller
+  return site !== "same-origin";
+}
+
 export type GuardResult =
   | { ok: true; principal: VendoPrincipal }
   | { ok: false; response: Response };

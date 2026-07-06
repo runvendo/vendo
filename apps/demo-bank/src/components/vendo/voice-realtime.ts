@@ -22,6 +22,7 @@ import {
   buildVoiceInstructions,
   capabilitySummary,
   executeHostToolCall,
+  renderFormatHints,
   type ToolSummaryInput,
   type UINode,
 } from "@vendoai/core";
@@ -302,9 +303,13 @@ const hostVoiceTools: VoiceToolDef[] = mapleHostToolDefs.map((def) => {
   const run = (input: unknown) =>
     executeHostToolCall(def, (input ?? {}) as Record<string, unknown>);
   if (tier === "read") replayRegistry.register(def.name, run);
+  // Declared result-field formats travel with the voice tool too — parity
+  // with the chat path's hostToolset (a voice model reads cents/date rules
+  // in the same place it reads what the tool does).
+  const hints = def.formats ? renderFormatHints(def.formats) : "";
   return {
     name: def.name,
-    description: def.description,
+    description: hints ? `${def.description}\n${hints}` : def.description,
     parameters: def.inputSchema,
     tier,
     execute: async (input) => {
@@ -343,6 +348,7 @@ function voiceToolSummary(tools: VoiceToolDef[]): ToolSummaryInput[] {
  *  capability summary reflects the LIVE tool list. */
 function buildInstructions(tools: VoiceToolDef[]): string {
   return buildVoiceInstructions({
+    hostName: "Maple",
     persona: [
       "You are Maple's voice assistant — Maple is the user's bank. Warm, brisk, plain-spoken.",
       "You can read the user's real accounts, transactions, cards, insights and payees through",
@@ -468,4 +474,4 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
 };
 
 /** Internal seams exported for unit tests only. */
-export const __voiceTesting = { tableView, recordResult, resolvePointer };
+export const __voiceTesting = { tableView, recordResult, resolvePointer, hostVoiceTools };

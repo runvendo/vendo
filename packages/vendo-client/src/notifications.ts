@@ -15,6 +15,10 @@ export function createServerNotifications(basePath: string): VendoNotifications 
   return {
     async listSince(since) {
       const res = await fetch(`${basePath}/deliveries?since=${since}`, { cache: "no-store" });
+      // 404 = the handler has no automations world ("automations are
+      // disabled") — tell the poller to stop for good instead of retrying
+      // a route that will 404 on every interval forever.
+      if (res.status === 404) return "disabled";
       if (!res.ok) throw new Error(`[vendo] deliveries request failed (${res.status})`);
       const body = (await res.json()) as DeliveriesBody;
       const notices: AutomationNotice[] = [];

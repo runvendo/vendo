@@ -91,11 +91,13 @@ import { buildInstructions, createAgentCache } from "./agent.js";
 import { createSourceResolver } from "./remix-enrich.js";
 import { resolveRemixSealer } from "./seal.js";
 import { createAutomationsWorld, type VendoAutomationsWorld } from "./world.js";
-import { resolveModel } from "./model.js";
+import { anthropic } from "@ai-sdk/anthropic";
+import { DEFAULT_MODEL_ID } from "./model-choice.js";
+import { ModelPeerMissingError, resolveModel } from "./model.js";
 import { defaultVendoPolicy } from "./default-policy.js";
 import { composeProductionPolicy, EMBEDDED_TENANT } from "./policy-stack.js";
 import { createThreadIndex } from "./threads.js";
-import { resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard.js";
+import { isCrossSiteRequest, isLocalDevRequest, resolvePrincipal, threadScope, tickServiceAuth, DEFAULT_PRINCIPAL, WORLD_SCOPE } from "./guard.js";
 import { resolveStorage } from "./storage.js";
 import { parseHandlerOptions, type VendoHandlerOptions } from "./options.js";
 import { devTelemetry, errorClassName } from "./telemetry-dev.js";
@@ -147,6 +149,28 @@ export function routeTail(req: Request): string {
     if (FIRST_SEGMENTS.has(segments[i]!)) return segments.slice(i).join("/");
   }
   return segments[segments.length - 1] ?? "";
+}
+
+/**
+ * Route tails (from `routeTail`) whose POST is a browser-credentialed mutation
+ * and must clear the central CSRF gate. Excludes `chat` (policy-gated),
+ * `tick` (bearer service auth), and `webhooks/composio` (signature auth).
+ * Prefix families ("vendos/<id>/delete") are matched separately.
+ */
+const CSRF_PROTECTED_POST_TAILS = new Set([
+  "integrations",
+  "action",
+  "consent",
+  "fade-proposal",
+  "resume",
+  "parked-actions/resolve",
+  "grants/revoke",
+  "rules/revoke",
+  "vendos",
+]);
+
+function isCsrfProtectedPost(tail: string): boolean {
+  return CSRF_PROTECTED_POST_TAILS.has(tail) || tail.startsWith("vendos/");
 }
 
 export type VendoFetchHandler = (req: Request) => Promise<Response>;
@@ -215,12 +239,31 @@ async function assembleVendoState(options: VendoHandlerOptions) {
     // runs in an env-aware context). A server whose var is missing is dropped
     // with a warning. The capability flag reads the RESOLVED list.
     const mcpServers = options.mcpServers ?? resolveMcpServers(loaded.mcpServers ?? []);
+    const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
+    // A configured provider whose optional peer isn't installed (OPENAI_API_KEY
+    // set, @ai-sdk/openai missing) must degrade like the no-key ladder state —
+    // chat gated off, every other route healthy — not fail assembly and 500
+    // the whole handler. The call-time-failing Anthropic default is the same
+    // placeholder resolveModel() uses for the keyless state; chat stays gated
+    // by capabilities.chat below, and the install hint reaches the developer
+    // through the server log and the chat 503.
+    let model: NonNullable<VendoHandlerOptions["model"]>;
+    let modelUnavailable: string | undefined;
+    try {
+      model = options.model ?? (await resolveModel());
+    } catch (err) {
+      // Only the documented ladder state degrades; a misconfigured
+      // VENDO_MODEL keeps failing assembly loudly.
+      if (!(err instanceof ModelPeerMissingError)) throw err;
+      modelUnavailable = err.message;
+      console.error(`[vendo] model unavailable: ${modelUnavailable}`);
+      model = anthropic(DEFAULT_MODEL_ID.anthropic);
+    }
     const capabilities = {
       ...detectCapabilities(undefined, { hasInjectedModel: options.model !== undefined }),
       mcp: mcpServers.length > 0,
     };
-    const hostTools = options.hostTools ?? manifestToolsToHostTools(loaded.manifest.tools);
-    const model = options.model ?? (await resolveModel());
+    if (modelUnavailable) capabilities.chat = false;
     const grants = options.store?.grants ?? createInMemoryGrantStore();
     const rules = options.store?.rules ?? createInMemoryCompiledRuleStore();
     const audit = options.store?.audit ?? new InMemoryAuditLog();
@@ -555,6 +598,9 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       // The shared durable handle (null = in-memory). Reused by later tasks
       // to wire the decision/thread/vendo/connections stores durably too.
       storage,
+      // Set when a configured provider's optional peer failed to load; chat
+      // is gated off and its 503 carries this actionable hint.
+      modelUnavailable,
     };
 }
 
@@ -781,10 +827,24 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
     }
   }
 
-  /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection. */
-  function bootError(err: unknown): Response {
+  /** A boot (assembly) failure surfaces as a 500, not an unhandled rejection.
+   *  This path runs BEFORE any principal guard, so a raw message (which can
+   *  carry file paths, DATABASE_URL contents, provider auth detail) must never
+   *  reach a caller: full detail goes to the server log, the response is
+   *  generic. Exception: our own deliberately-constructed developer-actionable
+   *  messages — recognized by their static "[vendo]"/"Vendo:" prefixes — pass
+   *  through to a LOCAL request in development only. When in doubt, generic. */
+  function bootError(req: Request, err: unknown): Response {
+    console.error("[vendo] handler assembly failed:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    const deliberate = message.startsWith("[vendo]") || message.startsWith("Vendo:");
     return Response.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      {
+        error:
+          deliberate && isLocalDevRequest(req)
+            ? message
+            : "vendo failed to start — see server logs",
+      },
       { status: 500 },
     );
   }
@@ -817,11 +877,28 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
 
   async function GET(req: Request, s: VendoState): Promise<Response> {
     switch (routeTail(req)) {
-      case "capabilities":
-        // `storage` depends on the ASSEMBLED state (whether a durable handle
-        // was actually built), not an env key — detectCapabilities() alone
-        // can't know it, so it's merged in here.
-        return Response.json({ ...s.capabilities, storage: s.storage !== null });
+      case "capabilities": {
+        // Config disclosure (which providers/keys/integrations are live) must
+        // sit behind the principal guard WHENEVER the host configured one —
+        // otherwise any unauthenticated caller reads it. A zero-config install
+        // (no `principal` resolver) keeps it open: the client fetches
+        // capabilities pre-auth to decide its UI, and that mode has no auth to
+        // pass anyway.
+        if (options.principal) {
+          const guard = await resolvePrincipal(req, options);
+          if (!guard.ok) return guard.response;
+        }
+        // `storage`/`automations` depend on the ASSEMBLED state (whether a
+        // durable handle / an automations world was actually built), not an
+        // env key — detectCapabilities() alone can't know them, so they're
+        // merged in here. `automations: false` is what stops the client's
+        // deliveries poll from 404ing forever.
+        return Response.json({
+          ...s.capabilities,
+          storage: s.storage !== null,
+          automations: s.world !== null,
+        });
+      }
       case "integrations":
         return handleIntegrationsGet(req, {
           store: s.connections,
@@ -860,6 +937,15 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
+        // Same single-tenant fail-closed rule as /deliveries: the routes read/
+        // resolve under the WORLD's fixed scope, so any other subject a custom
+        // multi-user resolver produces must not see the world's parked drafts.
+        if (guard.principal.userId !== s.worldScope.subject) {
+          return Response.json(
+            { error: "parked actions are single-tenant; front your own world for multi-user installs" },
+            { status: 403 },
+          );
+        }
         return listParkedActionsRoute(req, { world: s.world, principal: guard.principal });
       }
       case "grants": {
@@ -910,6 +996,15 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
   }
 
   async function POST(req: Request, s: VendoState): Promise<Response> {
+    // Centralized CSRF gate: every browser-credentialed mutating route rejects
+    // cross-site provenance (isCrossSiteRequest keeps the carve-outs — custom
+    // auth header, header-less non-browser callers). EXCLUDED: `chat` (its
+    // host-tool effects are policy-gated, not direct mutations), `tick` (bearer
+    // service auth), and `webhooks/composio` (signature-authenticated, no
+    // ambient-cookie surface).
+    if (isCsrfProtectedPost(routeTail(req)) && isCrossSiteRequest(req)) {
+      return Response.json({ error: "cross-site request rejected" }, { status: 403 });
+    }
     switch (routeTail(req)) {
       case "chat":
         return handleChat(req, {
@@ -923,6 +1018,7 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           // folds in an injected model (via hasInjectedModel above) alongside
           // any configured provider key.
           chatEnabled: s.capabilities.chat,
+          ...(s.modelUnavailable ? { chatDisabledReason: s.modelUnavailable } : {}),
           threadIndex: s.threadIndex,
         });
       case "action":
@@ -1112,6 +1208,14 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         if (!s.world) return Response.json({ error: "automations are disabled" }, { status: 404 });
         const guard = await resolvePrincipal(req, options);
         if (!guard.ok) return guard.response;
+        // Same single-tenant fail-closed rule as /deliveries and /resume (see
+        // the GET "parked-actions" case above).
+        if (guard.principal.userId !== s.worldScope.subject) {
+          return Response.json(
+            { error: "parked actions are single-tenant; front your own world for multi-user installs" },
+            { status: 403 },
+          );
+        }
         return resolveParkedActionRoute(req, { world: s.world, principal: guard.principal });
       }
       // POST /api/vendo/grants/revoke AND POST /api/vendo/rules/revoke
@@ -1145,15 +1249,25 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
       s = await state();
     } catch (err) {
       trackErrorClass(err);
-      return bootError(err);
+      return bootError(req, err);
     }
-    switch (req.method) {
-      case "GET":
-        return GET(req, s);
-      case "POST":
-        return POST(req, s);
-      default:
-        return Response.json({ error: "not found" }, { status: 404 });
+    // Route-level error boundary: a throw inside any route handler must
+    // answer as JSON, never escape to the framework (whose HTML 500 the
+    // sandbox would parse as JSON into a raw SyntaxError). Same hygiene as
+    // bootError: detail to the server log, generic body to the caller.
+    try {
+      switch (req.method) {
+        case "GET":
+          return await GET(req, s);
+        case "POST":
+          return await POST(req, s);
+        default:
+          return Response.json({ error: "not found" }, { status: 404 });
+      }
+    } catch (err) {
+      console.error(`[vendo] ${req.method} ${routeTail(req)} failed:`, err);
+      trackErrorClass(err);
+      return Response.json({ error: "internal error" }, { status: 500 });
     }
   };
 }

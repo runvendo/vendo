@@ -7,6 +7,8 @@ export interface LandingProps {
   greeting?: string;
   suggestions?: string[];
   flows?: Vendo[];
+  /** True while the host's first store list is in flight (glass skeleton cards). */
+  flowsLoading?: boolean;
   /** Hero composer slot: on the new-tab page the input sits up top (ENG-183
    *  gate, placement A), with the saved-vendo library beneath it. */
   composer?: ReactNode;
@@ -21,6 +23,7 @@ export function Landing({
   greeting = "What can I help you build?",
   suggestions = [],
   flows = [],
+  flowsLoading = false,
   composer,
   onSuggestion,
   onOpenFlow,
@@ -35,6 +38,7 @@ export function Landing({
       <SuggestionChips suggestions={suggestions} onSelect={onSuggestion} />
       <FlowGallery
         flows={flows}
+        loading={flowsLoading}
         onOpen={onOpenFlow}
         onRename={onRenameFlow}
         onPin={onPinFlow}

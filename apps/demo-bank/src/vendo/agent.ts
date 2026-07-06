@@ -125,6 +125,7 @@ export function buildInstructions(opts?: { toolSummary?: ToolSummaryInput[] }): 
 
   return buildChatInstructions({
     identity,
+    hostName: "Maple",
     brandGuidance,
     catalogs,
     capabilities,

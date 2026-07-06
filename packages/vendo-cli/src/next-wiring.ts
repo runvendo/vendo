@@ -186,6 +186,33 @@ export async function register() {
 }
 `;
 
+const NEXT_CONFIG_SOURCE = `/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Vendo boots its automation scheduler from instrumentation.ts. Next 13/14
+  // load that file only when this flag is set; Next 15+ ignore it (default on).
+  experimental: { instrumentationHook: true },
+};
+
+export default nextConfig;
+`;
+
+/** The Next major version from package.json (dependencies or devDependencies),
+ *  or undefined when absent/unparsable. Used to gate the instrumentationHook
+ *  step — Next 15+ enables it by default and needs no config edit. */
+export function nextMajorVersion(pkgJson: string): number | undefined {
+  try {
+    const pkg = JSON.parse(pkgJson) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const v = pkg.dependencies?.["next"] ?? pkg.devDependencies?.["next"];
+    const m = typeof v === "string" ? v.match(/(\d+)/) : null;
+    return m ? Number(m[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Merge the scheduler-boot `register()` into an existing `instrumentation.ts`
  * non-destructively. Returns the merged source, the input unchanged when
@@ -320,6 +347,24 @@ export function addDependency(pkgJson: string, name: string, version: string): s
   const deps = (pkg["dependencies"] ?? {}) as Record<string, string>;
   if (deps[name]) return pkgJson; // already present — leave the file alone
   pkg["dependencies"] = Object.fromEntries(
+    Object.entries({ ...deps, [name]: version }).sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return JSON.stringify(pkg, null, 2) + "\n";
+}
+
+/** Merge a package into package.json `devDependencies` (same format contract as
+ *  addDependency). Build-time tooling (`@vendoai/cli` for `vendo sync`, the
+ *  component-bundle build deps) belongs in devDependencies, not runtime deps. */
+export function addDevDependency(pkgJson: string, name: string, version: string): string | null {
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(pkgJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const deps = (pkg["devDependencies"] ?? {}) as Record<string, string>;
+  if (deps[name]) return pkgJson; // already present — leave the file alone
+  pkg["devDependencies"] = Object.fromEntries(
     Object.entries({ ...deps, [name]: version }).sort(([a], [b]) => a.localeCompare(b)),
   );
   return JSON.stringify(pkg, null, 2) + "\n";
@@ -744,6 +789,42 @@ export async function wireNextApp(
     }
   }
 
+  // 4b. experimental.instrumentationHook — Next 13/14 load instrumentation.ts
+  // ONLY with this flag; 15+ ignore it (default on). Version-gated so we never
+  // touch a config that doesn't need it. Undetermined version → treat as
+  // needing it (the flag is harmless on 15+). Following the codemod's fail-safe
+  // convention, an EXISTING config is never AST-edited — we skip + print a
+  // manual step; only an absent config is written for us.
+  const nextMajor = pkgRaw ? nextMajorVersion(pkgRaw) : undefined;
+  if (nextMajor === undefined || nextMajor < 15) {
+    const configNames = ["next.config.js", "next.config.mjs", "next.config.ts", "next.config.cjs"];
+    let configFile: string | undefined;
+    for (const name of configNames) {
+      if (await exists(path.join(targetDir, name))) {
+        configFile = path.join(targetDir, name);
+        break;
+      }
+    }
+    if (!configFile) {
+      const dest = path.join(targetDir, "next.config.mjs");
+      await fs.writeFile(dest, NEXT_CONFIG_SOURCE);
+      summary.written.push(rel(dest));
+    } else {
+      const configSrc = (await readIf(configFile)) ?? "";
+      if (maskLiterals(configSrc).includes("instrumentationHook")) {
+        summary.skipped.push({ step: "next.config", reason: `${rel(configFile)} already sets instrumentationHook` });
+      } else {
+        summary.skipped.push({
+          step: "next.config",
+          reason: `${rel(configFile)} exists — left untouched (Next <15 needs experimental.instrumentationHook)`,
+        });
+        summary.manual.push(
+          `add experimental: { instrumentationHook: true } to ${rel(configFile)} (required on Next 13/14 so instrumentation.ts loads)`,
+        );
+      }
+    }
+  }
+
   // 5. .env.example — create, or append each Vendo block once. Independent
   // sentinels (ANTHROPIC_API_KEY / DATABASE_URL) so a project wired by an
   // older codemod version gains the newer capability-additive block on re-run.
@@ -842,8 +923,12 @@ export async function wireNextApp(
       summary.manual.push('add "vendoai" to package.json dependencies and install');
       summary.manual.push('add "@electric-sql/pglite" to package.json dependencies and install');
       summary.manual.push('add "vendo sync" to your package.json "prebuild" script');
+      summary.manual.push('add "@vendoai/cli" to package.json devDependencies (the prebuild `vendo sync` runner)');
     } else {
-      const withPglite = addDependency(withDep, PGLITE_DEPENDENCY, PGLITE_VERSION) ?? withDep;
+      // @vendoai/cli is a devDependency: `prebuild: vendo sync` needs it to
+      // resolve at build time. PGlite is a runtime dependency for the store.
+      const withCli = addDevDependency(withDep, "@vendoai/cli", "latest") ?? withDep;
+      const withPglite = addDependency(withCli, PGLITE_DEPENDENCY, PGLITE_VERSION) ?? withCli;
       const withSync = addPrebuildSync(withPglite) ?? withPglite;
       if (withSync !== pkgRaw) {
         await fs.writeFile(path.join(targetDir, "package.json"), withSync);

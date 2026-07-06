@@ -38,6 +38,18 @@ describe("cadenceHostToolDefs", () => {
     expect(byName("setDocumentStatus").annotations.readOnlyHint).toBe(false);
   });
 
+  it("declares deadline fields as iso-datetime so rendered dates never shift a day", () => {
+    // filingDeadline serializes via toISOString() (UTC): 5pm local crosses
+    // midnight UTC, so a model reading the string's date part shows +1 day.
+    expect(byName("listDeadlines").formats).toMatchObject({ filingDeadline: "iso-datetime" });
+    expect(byName("getDashboard").formats).toMatchObject({
+      nearestDeadline: "iso-datetime",
+      filingDeadline: "iso-datetime",
+    });
+    expect(byName("listClients").formats).toMatchObject({ filingDeadline: "iso-datetime" });
+    expect(byName("getClient").formats).toMatchObject({ filingDeadline: "iso-datetime" });
+  });
+
   it("carries the HTTP binding the client executor needs", () => {
     const send = byName("sendClientMessage");
     expect(send.http).toMatchObject({ method: "post", path: "/api/clients/{id}/messages", hasBody: true });
