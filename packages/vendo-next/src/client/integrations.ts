@@ -51,10 +51,11 @@ export function createServerIntegrations(basePath: string): VendoIntegrations {
         body: JSON.stringify({ id, action: "disconnect" }),
         cache: "no-store",
       });
-      if (res.ok) {
-        const json = (await res.json()) as { integrations?: Integration[] };
-        if (json.integrations) cache = json.integrations;
-      }
+      // Mirror connect(): surface a server reject instead of silently claiming
+      // success. Leave the cache untouched so the row keeps its real state.
+      if (!res.ok) throw new Error(`disconnect failed: ${res.status}`);
+      const json = (await res.json()) as { integrations?: Integration[] };
+      if (json.integrations) cache = json.integrations;
       return { ...find(id), connected: false };
     },
   };
