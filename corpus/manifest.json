@@ -1,0 +1,140 @@
+[
+  {
+    "name": "umami",
+    "gitUrl": "https://github.com/umami-software/umami.git",
+    "pinnedSha": "af1b6c6efcadd65136a9ec3db6b8ec20962a8a69",
+    "license": "MIT",
+    "tier": "deep",
+    "bootstrap": {
+      "installCommand": "pnpm install --frozen-lockfile",
+      "envTemplate": {
+        "DATABASE_URL": "${CORPUS_UMAMI_DATABASE_URL}",
+        "HASH_SALT": "${CORPUS_UMAMI_HASH_SALT}"
+      },
+      "seedCommand": "pnpm seed-data",
+      "buildCommand": "pnpm build",
+      "devServer": {
+        "command": "pnpm dev",
+        "readinessUrl": "http://127.0.0.1:3000"
+      }
+    },
+    "notes": "Default branch master verified via GitHub API and git ls-remote; package.json declares next 16.2.6."
+  },
+  {
+    "name": "skateshop",
+    "gitUrl": "https://github.com/sadmann7/skateshop.git",
+    "pinnedSha": "e954d54379a7a6f798d3f49ffc6664449220adfc",
+    "license": "MIT",
+    "tier": "deep",
+    "bootstrap": {
+      "installCommand": "pnpm install --frozen-lockfile",
+      "envTemplate": {
+        "NEXT_PUBLIC_APP_URL": "http://127.0.0.1:3000",
+        "DATABASE_URL": "${CORPUS_SKATESHOP_DATABASE_URL}",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "${CORPUS_SKATESHOP_NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}",
+        "CLERK_SECRET_KEY": "${CORPUS_SKATESHOP_CLERK_SECRET_KEY}",
+        "NEXT_PUBLIC_CLERK_SIGN_IN_URL": "/signin",
+        "NEXT_PUBLIC_CLERK_SIGN_UP_URL": "/signup",
+        "RESEND_API_KEY": "${CORPUS_SKATESHOP_RESEND_API_KEY}",
+        "EMAIL_FROM_ADDRESS": "onboarding@resend.dev",
+        "UPLOADTHING_SECRET": "${CORPUS_SKATESHOP_UPLOADTHING_SECRET}",
+        "UPLOADTHING_APP_ID": "${CORPUS_SKATESHOP_UPLOADTHING_APP_ID}",
+        "UPSTASH_REDIS_REST_URL": "${CORPUS_SKATESHOP_UPSTASH_REDIS_REST_URL}",
+        "UPSTASH_REDIS_REST_TOKEN": "${CORPUS_SKATESHOP_UPSTASH_REDIS_REST_TOKEN}",
+        "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "${CORPUS_SKATESHOP_NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}",
+        "STRIPE_API_KEY": "${CORPUS_SKATESHOP_STRIPE_API_KEY}",
+        "STRIPE_WEBHOOK_SECRET": "${CORPUS_SKATESHOP_STRIPE_WEBHOOK_SECRET}",
+        "STRIPE_STD_MONTHLY_PRICE_ID": "${CORPUS_SKATESHOP_STRIPE_STD_MONTHLY_PRICE_ID}",
+        "STRIPE_PRO_MONTHLY_PRICE_ID": "${CORPUS_SKATESHOP_STRIPE_PRO_MONTHLY_PRICE_ID}"
+      },
+      "seedCommand": "pnpm db:seed",
+      "buildCommand": "pnpm build",
+      "devServer": {
+        "command": "pnpm dev",
+        "readinessUrl": "http://127.0.0.1:3000"
+      }
+    },
+    "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next 14.2.5."
+  },
+  {
+    "name": "taxonomy",
+    "gitUrl": "https://github.com/shadcn-ui/taxonomy.git",
+    "pinnedSha": "298a8857c7128a0d121e7f699dfd729f23b3966d",
+    "license": "MIT",
+    "tier": "broad",
+    "bootstrap": {
+      "installCommand": "pnpm install --frozen-lockfile",
+      "envTemplate": {
+        "NEXT_PUBLIC_APP_URL": "http://127.0.0.1:3000",
+        "NEXTAUTH_URL": "http://127.0.0.1:3000",
+        "NEXTAUTH_SECRET": "${CORPUS_TAXONOMY_NEXTAUTH_SECRET}",
+        "GITHUB_CLIENT_ID": "${CORPUS_TAXONOMY_GITHUB_CLIENT_ID}",
+        "GITHUB_CLIENT_SECRET": "${CORPUS_TAXONOMY_GITHUB_CLIENT_SECRET}",
+        "GITHUB_ACCESS_TOKEN": "${CORPUS_TAXONOMY_GITHUB_ACCESS_TOKEN}",
+        "DATABASE_URL": "${CORPUS_TAXONOMY_DATABASE_URL}",
+        "SMTP_FROM": "${CORPUS_TAXONOMY_SMTP_FROM}",
+        "POSTMARK_API_TOKEN": "${CORPUS_TAXONOMY_POSTMARK_API_TOKEN}",
+        "POSTMARK_SIGN_IN_TEMPLATE": "${CORPUS_TAXONOMY_POSTMARK_SIGN_IN_TEMPLATE}",
+        "POSTMARK_ACTIVATION_TEMPLATE": "${CORPUS_TAXONOMY_POSTMARK_ACTIVATION_TEMPLATE}",
+        "STRIPE_API_KEY": "${CORPUS_TAXONOMY_STRIPE_API_KEY}",
+        "STRIPE_WEBHOOK_SECRET": "${CORPUS_TAXONOMY_STRIPE_WEBHOOK_SECRET}",
+        "STRIPE_PRO_MONTHLY_PLAN_ID": "${CORPUS_TAXONOMY_STRIPE_PRO_MONTHLY_PLAN_ID}"
+      },
+      "buildCommand": "pnpm build"
+    },
+    "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next 13.3.2-canary.13."
+  },
+  {
+    "name": "invoify",
+    "gitUrl": "https://github.com/al1abb/invoify.git",
+    "pinnedSha": "93b21a22e902de0ce25c43933d5ef2d50f30c7e3",
+    "license": "MIT",
+    "tier": "broad",
+    "bootstrap": {
+      "installCommand": "npm ci",
+      "envTemplate": {},
+      "buildCommand": "npm run build"
+    },
+    "notes": "Default branch master verified via GitHub API and git ls-remote; package.json declares next 15.3.8."
+  },
+  {
+    "name": "papermark",
+    "gitUrl": "https://github.com/papermark/papermark.git",
+    "pinnedSha": "749f69efee1e43adad4919c4b916d18e574dfadf",
+    "license": "AGPL-3.0-only",
+    "tier": "deep",
+    "bootstrap": {
+      "installCommand": "npm ci",
+      "envTemplate": {
+        "NEXTAUTH_SECRET": "${CORPUS_PAPERMARK_NEXTAUTH_SECRET}",
+        "NEXTAUTH_URL": "http://127.0.0.1:3000",
+        "NEXT_PUBLIC_BASE_URL": "http://127.0.0.1:3000",
+        "NEXT_PUBLIC_MARKETING_URL": "http://127.0.0.1:3000",
+        "NEXT_PUBLIC_APP_BASE_HOST": "127.0.0.1",
+        "POSTGRES_PRISMA_URL": "${CORPUS_PAPERMARK_POSTGRES_PRISMA_URL}",
+        "POSTGRES_PRISMA_URL_NON_POOLING": "${CORPUS_PAPERMARK_POSTGRES_PRISMA_URL_NON_POOLING}",
+        "BLOB_READ_WRITE_TOKEN": "${CORPUS_PAPERMARK_BLOB_READ_WRITE_TOKEN}",
+        "GOOGLE_CLIENT_ID": "${CORPUS_PAPERMARK_GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${CORPUS_PAPERMARK_GOOGLE_CLIENT_SECRET}",
+        "RESEND_API_KEY": "${CORPUS_PAPERMARK_RESEND_API_KEY}",
+        "TINYBIRD_TOKEN": "${CORPUS_PAPERMARK_TINYBIRD_TOKEN}",
+        "QSTASH_TOKEN": "${CORPUS_PAPERMARK_QSTASH_TOKEN}",
+        "QSTASH_CURRENT_SIGNING_KEY": "${CORPUS_PAPERMARK_QSTASH_CURRENT_SIGNING_KEY}",
+        "QSTASH_NEXT_SIGNING_KEY": "${CORPUS_PAPERMARK_QSTASH_NEXT_SIGNING_KEY}",
+        "HANKO_API_KEY": "${CORPUS_PAPERMARK_HANKO_API_KEY}",
+        "NEXT_PUBLIC_HANKO_TENANT_ID": "${CORPUS_PAPERMARK_NEXT_PUBLIC_HANKO_TENANT_ID}",
+        "TRIGGER_SECRET_KEY": "${CORPUS_PAPERMARK_TRIGGER_SECRET_KEY}",
+        "TRIGGER_API_URL": "https://api.trigger.dev",
+        "NEXT_PUBLIC_UPLOAD_TRANSPORT": "vercel",
+        "NEXT_PRIVATE_DOCUMENT_PASSWORD_KEY": "${CORPUS_PAPERMARK_NEXT_PRIVATE_DOCUMENT_PASSWORD_KEY}",
+        "NEXT_PRIVATE_VERIFICATION_SECRET": "${CORPUS_PAPERMARK_NEXT_PRIVATE_VERIFICATION_SECRET}"
+      },
+      "buildCommand": "npm run build",
+      "devServer": {
+        "command": "npm run dev",
+        "readinessUrl": "http://127.0.0.1:3000"
+      }
+    },
+    "notes": "Default branch main verified via GitHub API and git ls-remote; package.json declares next ^14.2.35. GitHub license API returned NOASSERTION, so LICENSE was inspected and contains the GNU Affero GPL v3 text."
+  }
+]

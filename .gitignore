@@ -10,6 +10,7 @@ dist
 
 # misc
 .superpowers/
+corpus/.repos/
 
 # browser-verification artifacts
 .playwright-mcp/
