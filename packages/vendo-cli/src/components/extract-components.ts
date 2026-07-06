@@ -6,6 +6,7 @@ import { scanComponents, type ComponentCandidate } from "./scan.js";
 import { analyzeComponent, proposeComponents } from "./analyze.js";
 import { writeComponent, entrySource, viteConfigSource, aliasesFromTsconfigPaths } from "./codegen.js";
 import type { Interactor } from "../interact.js";
+import { disambiguatedLabels, truncateHint } from "../picker-util.js";
 
 /**
  * Best-effort read of the host tsconfig `paths`. Plain JSON.parse first —
@@ -28,13 +29,6 @@ async function hostAliases(targetDir: string): Promise<Record<string, string>> {
     }
   }
   return {};
-}
-
-/** Picker hints render inline next to the checkbox — keep them one short line. */
-const MAX_HINT_CHARS = 72;
-
-function truncateHint(reason: string): string {
-  return reason.length > MAX_HINT_CHARS ? `${reason.slice(0, MAX_HINT_CHARS - 1).trimEnd()}…` : reason;
 }
 
 export interface ComponentsSummary {
@@ -97,13 +91,12 @@ export async function extractComponents(
     // Labels are component names, never paths — except when two files export
     // the same name, where bare names would render identical rows (and an
     // ambiguous deselected report line): duplicates get the rel path appended,
-    // unique names stay bare.
-    const nameCounts = new Map<string, number>();
-    for (const w of proposal.wrappable) {
-      nameCounts.set(w.candidate.exportName, (nameCounts.get(w.candidate.exportName) ?? 0) + 1);
-    }
-    const labelFor = (c: ComponentCandidate) =>
-      (nameCounts.get(c.exportName) ?? 0) > 1 ? `${c.exportName} (${c.relFile})` : c.exportName;
+    // unique names stay bare (shared with the remix picker via picker-util).
+    const labelFor = disambiguatedLabels(
+      proposal.wrappable.map((w) => w.candidate),
+      (c) => c.exportName,
+      (c) => c.relFile,
+    );
     const selection = await opts.interactor.multiSelect({
       message: "Select components to wrap for the Vendo sandbox catalog",
       options: proposal.wrappable.map((w) => ({

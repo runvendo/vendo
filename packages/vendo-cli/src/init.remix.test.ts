@@ -149,7 +149,9 @@ describe("runInit remix picker", () => {
 
     expect(code).toBe(0);
     expect(calls()).toBe(0);
-    expect(out).toContain("stay human-gated");
+    // No-model skip → the hint blames the missing key, not interactivity.
+    expect(out).toContain("add a provider API key");
+    expect(out).not.toContain("run `vendo init` or `vendo refresh` in an interactive terminal");
     expect(await readFile(path.join(dir, "src/dashboard/DeadlineList.tsx"), "utf8")).toBe(before);
   });
 

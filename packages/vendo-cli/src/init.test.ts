@@ -15,6 +15,9 @@ const COMPONENT_REPLY = JSON.stringify({
   imports: ["Badge"], props: [{ name: "text", type: "string", optional: false, description: "Text." }],
   jsx: "<Badge>{p.text}</Badge>",
 });
+/** The remix discovery reply (proposes nothing) — makes the interactive run's
+ *  remix step deterministic so it never depends on a schema-mismatch swallow. */
+const REMIX_NONE = JSON.stringify({ proposals: [] });
 
 describe("runInit e2e (mock model)", () => {
   it("emits all three artifacts + README into .vendo only", async () => {
@@ -82,8 +85,9 @@ describe("runInit e2e (mock model)", () => {
       targetDir: dir,
       skipLlm: false,
       force: false,
-      // Interactive init: route scan → catalog proposal → analyze the pick.
-      model: textModel([ROUTE_REPLY, PROPOSE, COMPONENT_REPLY]),
+      // Interactive init: route scan → catalog proposal → analyze the pick →
+      // remix discovery (proposes nothing, so the remix picker never opens).
+      model: textModel([ROUTE_REPLY, PROPOSE, COMPONENT_REPLY, REMIX_NONE]),
       interactive: true,
       interactor: interactor as never,
     });
@@ -94,6 +98,8 @@ describe("runInit e2e (mock model)", () => {
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
     await expect(readFile(path.join(dir, ".vendo/components/Panel/impl.tsx"), "utf8")).rejects.toThrow();
     expect(out).toContain("deselected in picker (not wrapped): Panel");
+    // The remix step ran but found nothing to wrap — explicit, not a swallow.
+    expect(out).toContain("remix anchors: no widget-shaped components found to wrap.");
   });
 
   it("reports a clean error (not an unhandled rejection) when the model factory throws", async () => {

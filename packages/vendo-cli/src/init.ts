@@ -6,7 +6,7 @@ import { detectTarget } from "./detect.js";
 import { extractTheme } from "./theme/extract-theme.js";
 import { extractTools } from "./tools/extract-tools.js";
 import { extractComponents } from "./components/extract-components.js";
-import { runRemixStep, renderRemixStep, REMIX_HINT, type RemixStepResult } from "./remix/step.js";
+import { runRemixStep, renderRemixStep, remixHint, type RemixStepResult } from "./remix/step.js";
 import type { ResolveModelDeps } from "@vendoai/server/model";
 import { resolveCliModel } from "./llm.js";
 import {
@@ -424,9 +424,13 @@ export async function runInit(opts: InitOptions): Promise<number> {
   }
   console.log(renderReport(report));
   // The remix step either ran (print its anchors/TODOs/summary) or was gated
-  // off (print the hint: how to get remixable widgets, source edits stay
-  // human-gated). No discovery/prompt/source edit happens on the gated path.
-  console.log(remixResult ? renderRemixStep(remixResult) : REMIX_HINT);
+  // off (print a key-aware hint: no model → add a key; non-interactive/--yes →
+  // run interactively). No discovery/prompt/source edit happens on the gated path.
+  console.log(
+    remixResult
+      ? renderRemixStep(remixResult)
+      : remixHint(model === null ? "no-model" : "non-interactive"),
+  );
 
   // The install codemod (Next.js App Router): route handler, provider wrap,
   // .env.example, sandbox assets, dependency. Fail-open by design — anything

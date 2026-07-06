@@ -16,14 +16,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { LanguageModel } from "ai";
 import type { Interactor } from "../interact.js";
-import { discoverRemixCandidates, type RemixCandidate, type RemixDiscovery } from "./discover.js";
+import { disambiguatedLabels, truncateHint } from "../picker-util.js";
+import { discoverRemixCandidates, type RemixDiscovery } from "./discover.js";
 import { spliceRemixAnchor, remixContextTodo } from "./anchor.js";
-
-/** Picker hints render inline next to the checkbox — keep them one short line. */
-const MAX_HINT_CHARS = 72;
-function truncateHint(reason: string): string {
-  return reason.length > MAX_HINT_CHARS ? `${reason.slice(0, MAX_HINT_CHARS - 1).trimEnd()}…` : reason;
-}
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -63,14 +58,6 @@ export interface RemixStepResult {
   excluded: RemixDiscovery["excluded"];
 }
 
-/** Labels are component names; duplicates get the rel path appended so identical
- *  names never render identical rows (mirrors the catalog picker). */
-function labelForFactory(candidates: RemixCandidate[]): (c: RemixCandidate) => string {
-  const counts = new Map<string, number>();
-  for (const c of candidates) counts.set(c.componentName, (counts.get(c.componentName) ?? 0) + 1);
-  return (c) => ((counts.get(c.componentName) ?? 0) > 1 ? `${c.componentName} (${c.file})` : c.componentName);
-}
-
 /**
  * Discover, prompt, and splice. NEVER throws — discovery failure, an ambiguous
  * splice, or a per-file IO error all collapse into a `skipped` entry so init
@@ -96,7 +83,9 @@ export async function runRemixStep(
     return { ...base, excluded: discovery.excluded };
   }
 
-  const labelFor = labelForFactory(discovery.candidates);
+  // Labels are component names; duplicates get the file path appended so
+  // identical names never render identical rows (shared with the catalog picker).
+  const labelFor = disambiguatedLabels(discovery.candidates, (c) => c.componentName, (c) => c.file);
   const selection = await interactor.multiSelect({
     message: "Select widgets to make remixable — wraps each in a <VendoRemix> anchor in your source",
     options: discovery.candidates.map((c) => ({
@@ -183,12 +172,21 @@ export function renderRemixStep(r: RemixStepResult): string {
   return lines.join("\n");
 }
 
-/** Printed on any run that did NOT open the remix picker (`--yes`, non-TTY/CI,
- *  or no model). Source edits stay human-gated — point the developer at the
- *  interactive path and the by-hand escape hatch. */
-export const REMIX_HINT = [
-  "",
-  "Remix anchors (let your users customize a widget on the live site) are offered only in an",
-  "interactive run — they edit your source, so they stay human-gated. Run `vendo init` or",
-  "`vendo refresh` in a terminal to pick them, or wrap a widget by hand with <VendoRemix> (see the remix docs).",
-].join("\n");
+/** Why the remix picker was gated off, so the hint can be accurate:
+ *  `no-model` — no provider key/model (interactivity isn't the blocker, a key is);
+ *  `non-interactive` — `--yes` or non-TTY/CI (source edits stay human-gated). */
+export type RemixSkipReason = "no-model" | "non-interactive";
+
+/** Printed on any run that did NOT open the remix picker. Key-aware: a missing
+ *  key and a non-interactive run need different advice — don't tell someone to
+ *  "run interactively" when what they actually lack is a provider key. */
+export function remixHint(reason: RemixSkipReason): string {
+  const intro =
+    "Remix anchors let your users customize a widget on your live site (wrapped in a <VendoRemix> anchor in your source).";
+  const how =
+    reason === "no-model"
+      ? "They need an LLM to propose candidates — add a provider API key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) and re-run `vendo init`."
+      : "They edit your source, so they stay human-gated — run `vendo init` or `vendo refresh` in an interactive terminal (not `--yes`/CI) to pick them.";
+  const byHand = "Either way, you can wrap a widget by hand with <VendoRemix> (see the remix docs).";
+  return ["", intro, how, byHand].join("\n");
+}
