@@ -23,11 +23,18 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./build": {
       "types": "./dist/build/preset.d.ts",
+      "import": "./dist/build/preset.js",
       "default": "./dist/build/preset.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "build": ["dist/build/preset.d.ts"]
     }
   },
   "files": ["dist"],

@@ -23,11 +23,18 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./testing": {
       "types": "./dist/stub-agent.d.ts",
+      "import": "./dist/stub-agent.js",
       "default": "./dist/stub-agent.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "testing": ["dist/stub-agent.d.ts"]
     }
   },
   "files": ["dist"],

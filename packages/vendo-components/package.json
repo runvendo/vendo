@@ -23,19 +23,30 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./descriptors": {
       "types": "./dist/descriptors.d.ts",
+      "import": "./dist/descriptors.js",
       "default": "./dist/descriptors.js"
     },
     "./theme": {
       "types": "./dist/theme/brand.d.ts",
+      "import": "./dist/theme/brand.js",
       "default": "./dist/theme/brand.js"
     },
     "./sandbox": {
       "types": "./dist/sandbox-install.d.ts",
+      "import": "./dist/sandbox-install.js",
       "default": "./dist/sandbox-install.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "descriptors": ["dist/descriptors.d.ts"],
+      "theme": ["dist/theme/brand.d.ts"],
+      "sandbox": ["dist/sandbox-install.d.ts"]
     }
   },
   "files": ["dist"],

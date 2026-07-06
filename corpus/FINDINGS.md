@@ -4,7 +4,7 @@ Date: 2026-07-06
 Command: `pnpm corpus run --layer 1`
 Mode: real `vendo init` with LLM enabled. API keys were sourced from `apps/demo-bank/.env.local`; key values were not printed or committed.
 Scorecard artifacts: `corpus/.repos/.logs/scorecard.json` and `corpus/.repos/.logs/scorecard.md`
-Latest scorecard: `2026-07-06T16:53:16.265Z`
+Latest scorecard: `2026-07-06T17:17:37.889Z`
 
 ## Task 9 Manifest Substitution
 
@@ -19,13 +19,15 @@ Latest scorecard: `2026-07-06T16:53:16.265Z`
 | taxonomy | FAIL | 4/7 | `host.typecheck`, `host.build`, `init.idempotent` |
 | invoify | FAIL | 4/7 | `files.expected`, `host.build`, `init.idempotent` |
 | papermark | FAIL | 4/7 | `host.typecheck`, `host.build`, `init.idempotent` |
-| cal-com | FAIL | 4/7 | `host.typecheck`, `host.build`, `init.idempotent` |
+| cal-com | PASS | 7/7 | none |
 
 ## Cross-Repo CLI Findings
 
-### HARNESS-001: cal-com Yarn local package injection now completes
+### HARNESS-001: cal-com Yarn local package injection and init now pass
 
-The harness now supports Yarn local package injection for `cal-com`. The injector rewrites `apps/web/package.json` dependencies to `file:vendor/*.tgz`, adds Yarn `resolutions`, adds matching root workspace `resolutions` with `file:apps/web/vendor/*.tgz`, and refreshes `yarn.lock` with immutable installs disabled. Both `vendo init` runs completed and reported Yarn `resolutions` plus `YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install`.
+The harness now supports Yarn local package injection for `cal-com`. The injector rewrites `apps/web/package.json` dependencies to `file:vendor/*.tgz`, adds Yarn `resolutions`, adds matching root workspace `resolutions` with `file:apps/web/vendor/*.tgz`, and refreshes `yarn.lock` with immutable installs disabled. Both `vendo init` runs complete and report Yarn `resolutions` plus `YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install`.
+
+Follow-up verification on 2026-07-06: Cal.com's `apps/web/tsconfig.json` extends `@calcom/tsconfig/nextjs.json`, which extends `@calcom/tsconfig/base.json` and sets `moduleResolution: "node"`. Vendo's package metadata now exposes `vendoai/server` and `vendoai/react` to that Node10 resolver, and the harness ignores regenerated `vendor/*.tgz` bytes in the second-run idempotency diff. The fresh Layer 1 scorecard passes 7/7.
 
 Repro:
 
@@ -72,15 +74,15 @@ Logs: `corpus/.repos/.logs/<repo>/init.second.log` and `corpus/.repos/.logs/<rep
 
 ## cal-com
 
-Layer 1 result: FAIL, 4/7.
+Layer 1 result: PASS, 7/7.
 
-Passed checks: `init.exit`, `files.expected`, `config.schema`, `tools.fail-closed`.
+Passed checks: `init.exit`, `files.expected`, `config.schema`, `host.typecheck`, `host.build`, `init.idempotent`, `tools.fail-closed`.
 
 Findings:
 
 - Yarn local injection succeeded. `apps/web/package.json` uses `file:vendor/*.tgz`, the workspace root uses `resolutions` pointing at `file:apps/web/vendor/*.tgz`, and both init logs report `resolutions` with `YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install`.
-- CLI dependency compatibility: Cal.com's post-init TypeScript check and Next build cannot resolve `vendoai/server` and `vendoai/react` subpath types under its current TypeScript `moduleResolution`. The baseline typecheck/build both passed before init.
-- CLI-002-style idempotency still fails; the second init exits 0, but refreshed local tarballs produce binary diffs under `apps/web/vendor/`.
+- CLI dependency compatibility fixed: Cal.com's post-init TypeScript check and Next build now resolve `vendoai/server` and `vendoai/react` under its inherited `moduleResolution: "node"` config.
+- Harness idempotency fixed: the second init exits 0 and `init.second.diff` is empty after excluding regenerated `vendor/*.tgz` tarballs from the second-run diff.
 - CLI extraction robustness: route enrichment fell back to deterministic route inventory after fenced LLM JSON failed schema validation. Init still exited 0 and generated `81` tools.
 
 Repro:
@@ -90,7 +92,7 @@ pnpm corpus run cal-com --layer 1
 cd corpus/.repos/cal-com && corepack yarn turbo run type-check --filter=@calcom/web...
 ```
 
-Logs: `corpus/.repos/.logs/cal-com/init.first.log`, `structural.typecheck.stdout.log`, `structural.build.stdout.log`, and `init.second.diff`.
+Logs: `corpus/.repos/.logs/cal-com/init.first.log`, `init.second.diff`, `structural.typecheck.stdout.log`, and `structural.build.stdout.log`.
 
 ## umami
 

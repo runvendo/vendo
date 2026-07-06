@@ -38,6 +38,8 @@ const BROWSER_ONLY_ALLOWLIST = new Map([
   // so plain Node rejects them with ERR_UNKNOWN_FILE_EXTENSION (".css").
   // That is inherent to CSS-in-ESM, not an extensionless-specifier bug; every
   // relative JS specifier in these dists carries an explicit extension.
+  ["vendoai ./react", "browser-only React surface imports @vendoai/shell styles.css"],
+  ["@vendoai/client .", "browser-only client surface imports @vendoai/shell styles.css"],
   ["@vendoai/components .", "CSS side-effect import via @openuidev/react-ui"],
   ["@vendoai/components ./sandbox", "CSS side-effect import via @openuidev/react-ui"],
   ["@vendoai/next ./client", "CSS side-effect import via @openuidev/react-ui"],
