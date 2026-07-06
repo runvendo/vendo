@@ -36,6 +36,10 @@ export function renderReport(r: InitReport): string {
     lines.push(`components/: ${r.components.written.length}/${r.components.candidates} candidates wrapped`);
     for (const x of r.components.excluded) lines.push(`  excluded ${x.file}: ${x.reason}`);
     for (const f of r.components.failed) lines.push(`  FAILED ${f.file}: ${f.error}`);
+    if (r.components.deselected?.length) {
+      lines.push(`  deselected in picker (not wrapped): ${r.components.deselected.join(", ")}`);
+    }
+    if (r.components.pickerCancelled) lines.push("  component picker skipped — nothing generated");
   }
   if (r.llmSkipped) {
     const reason =

@@ -50,6 +50,52 @@ describe("runInit e2e (mock model)", () => {
     expect(readme).toContain("push at the source, relay webhooks, or poll upstream systems");
   });
 
+  it("interactive run shows the catalog picker and wraps only the picked component", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "init-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "15.0.0" } }));
+    await mkdir(path.join(dir, "src/app/api/things"), { recursive: true });
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(path.join(dir, "src/app/globals.css"), ":root { --color-bg: #ffffff; }");
+    await writeFile(path.join(dir, "src/app/api/things/route.ts"), "export async function GET() {}");
+    await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
+    await writeFile(path.join(dir, "src/components/ui/panel.tsx"), "export const Panel = () => null");
+
+    const PROPOSE = JSON.stringify({
+      proposals: [
+        { file: "src/components/ui/badge.tsx", wrappable: true, reason: "Status primitive." },
+        { file: "src/components/ui/panel.tsx", wrappable: true, reason: "Container primitive." },
+      ],
+    });
+    let shown: string[] = [];
+    const interactor = {
+      async maskedInput() {
+        return null;
+      },
+      async multiSelect(opts: { options: { value: string; label: string }[] }) {
+        shown = opts.options.map((o) => o.label);
+        return ["src/components/ui/badge.tsx"]; // pick Badge, drop Panel
+      },
+    };
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const code = await runInit({
+      targetDir: dir,
+      skipLlm: false,
+      force: false,
+      // Interactive init: route scan → catalog proposal → analyze the pick.
+      model: textModel([ROUTE_REPLY, PROPOSE, COMPONENT_REPLY]),
+      interactive: true,
+      interactor: interactor as never,
+    });
+    const out = log.mock.calls.flat().join("\n");
+    log.mockRestore();
+    expect(code).toBe(0);
+    expect(shown).toEqual(["Badge", "Panel"]); // picker labeled by component name
+    await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
+    await expect(readFile(path.join(dir, ".vendo/components/Panel/impl.tsx"), "utf8")).rejects.toThrow();
+    expect(out).toContain("deselected in picker (not wrapped): Panel");
+  });
+
   it("reports a clean error (not an unhandled rejection) when the model factory throws", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "init-"));
     await writeFile(path.join(dir, "package.json"), "{}");

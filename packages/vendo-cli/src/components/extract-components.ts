@@ -3,8 +3,9 @@ import path from "node:path";
 import type { LanguageModel } from "ai";
 import { writeGenerated } from "../fsx.js";
 import { scanComponents, type ComponentCandidate } from "./scan.js";
-import { analyzeComponent } from "./analyze.js";
+import { analyzeComponent, proposeComponents } from "./analyze.js";
 import { writeComponent, entrySource, viteConfigSource, aliasesFromTsconfigPaths } from "./codegen.js";
+import type { Interactor } from "../interact.js";
 
 /**
  * Best-effort read of the host tsconfig `paths`. Plain JSON.parse first —
@@ -34,12 +35,29 @@ export interface ComponentsSummary {
   written: string[];
   excluded: Array<{ file: string; reason: string }>;
   failed: Array<{ file: string; error: string }>;
+  /** Wrappable candidates offered in the picker but left unchecked (component names). */
+  deselected?: string[];
+  /** The picker was cancelled (Ctrl-C) — the step was skipped, nothing generated. */
+  pickerCancelled?: boolean;
+}
+
+export interface ExtractComponentsOptions {
+  force: boolean;
+  /**
+   * May this run show the interactive catalog picker? When false/omitted every
+   * (unwrapped) candidate is generated — the non-interactive default, and the
+   * pre-picker behavior. When true, a single batch proposal call annotates the
+   * candidates and the picker (via `interactor`) selects which ones generate.
+   */
+  interactive?: boolean;
+  /** The picker seam. Required to actually prompt (only consulted when `interactive`). */
+  interactor?: Interactor;
 }
 
 export async function extractComponents(
   targetDir: string,
   model: LanguageModel,
-  opts: { force: boolean },
+  opts: ExtractComponentsOptions,
   /** Wrapper names already present under .vendo/components/ — their candidates
    *  are skipped on additive re-runs (only unwrapped components are proposed). */
   existingComponents: string[] = [],
@@ -59,7 +77,43 @@ export async function extractComponents(
         .map((c) => ({ file: c.relFile, reason: "already wrapped in .vendo/components/ — kept" }));
   const failed: ComponentsSummary["failed"] = [];
 
-  for (const candidate of candidates) {
+  // PROPOSE + SELECT. Only interactive runs with candidates reach here: the
+  // already-wrapped filter above runs FIRST (users never see wrapped ones), a
+  // zero-candidate run spends no LLM budget, and non-interactive runs generate
+  // everything (preserving pre-picker behavior). Cancel (null) skips the step.
+  let toGenerate = candidates;
+  let deselected: string[] | undefined;
+  let pickerCancelled = false;
+  if (candidates.length > 0 && opts.interactive && opts.interactor) {
+    const proposal = await proposeComponents(candidates, model);
+    excluded.push(...proposal.excluded);
+    const selection = await opts.interactor.multiSelect({
+      message: "Select components to wrap for the Vendo sandbox catalog",
+      options: proposal.wrappable.map((w) => ({
+        // value is the relFile (unique, invisible); the label is the component
+        // name — the picker never shows file paths.
+        value: w.candidate.relFile,
+        label: w.candidate.exportName,
+        hint: w.reason,
+      })),
+      initialValues: proposal.wrappable.map((w) => w.candidate.relFile),
+      // Empty selection is a legitimate answer (generate nothing) — distinct
+      // from cancel (null), which skips the step.
+      required: false,
+    });
+    if (selection === null) {
+      pickerCancelled = true;
+      toGenerate = [];
+    } else {
+      const picked = new Set(selection);
+      toGenerate = proposal.wrappable.filter((w) => picked.has(w.candidate.relFile)).map((w) => w.candidate);
+      deselected = proposal.wrappable
+        .filter((w) => !picked.has(w.candidate.relFile))
+        .map((w) => w.candidate.exportName);
+    }
+  }
+
+  for (const candidate of toGenerate) {
     try {
       let analysis = await analyzeComponent(candidate, model);
       if (!analysis.include) {
@@ -101,5 +155,12 @@ export async function extractComponents(
       { ...opts, ifExists: "skip" },
     );
   }
-  return { candidates: all.length, written, excluded, failed };
+  return {
+    candidates: all.length,
+    written,
+    excluded,
+    failed,
+    ...(deselected && deselected.length > 0 ? { deselected } : {}),
+    ...(pickerCancelled ? { pickerCancelled: true } : {}),
+  };
 }

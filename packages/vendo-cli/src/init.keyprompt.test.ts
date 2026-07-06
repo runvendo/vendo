@@ -16,6 +16,11 @@ const COMPONENT_REPLY = JSON.stringify({
   imports: ["Badge"], props: [{ name: "text", type: "string", optional: false, description: "Text." }],
   jsx: "<Badge>{p.text}</Badge>",
 });
+// Interactive runs show the catalog picker: a batch proposal precedes the
+// per-component analyze call.
+const PROPOSE_REPLY = JSON.stringify({
+  proposals: [{ file: "components/ui/badge.tsx", wrappable: true, reason: "Status primitive." }],
+});
 
 /** Provider vars the key-prompt path reads — cleared so tests drive resolution
  *  themselves (the real process may carry a developer's keys). */
@@ -43,7 +48,9 @@ afterEach(() => {
 });
 
 /** A fake masked-input seam that replays `inputs` in order (last repeats) and
- *  counts invocations, so tests can assert it was (never) reached. */
+ *  counts invocations, so tests can assert it was (never) reached. The catalog
+ *  picker (multiSelect) defaults to accepting all offered candidates — these
+ *  tests exercise the key prompt, not picker selection. */
 function fakeInteractor(inputs: Array<string | null>): { interactor: Interactor; count: () => number } {
   let i = 0;
   let calls = 0;
@@ -54,8 +61,8 @@ function fakeInteractor(inputs: Array<string | null>): { interactor: Interactor;
         calls++;
         return inputs[Math.min(i++, inputs.length - 1)] ?? null;
       },
-      async multiSelect() {
-        return null;
+      async multiSelect(opts) {
+        return opts.options.map((o) => o.value);
       },
     },
   };
@@ -125,7 +132,7 @@ describe("init key prompt (interactive)", () => {
       // validateKey succeeds via an injected model (no network, any provider);
       // the post-save re-resolve returns the route/component mock via the importer.
       keyValidateDeps: { model: textModel(["ok"]) },
-      modelResolveDeps: { import: openaiImporter(textModel([ROUTE_REPLY, COMPONENT_REPLY])) },
+      modelResolveDeps: { import: openaiImporter(textModel([ROUTE_REPLY, PROPOSE_REPLY, COMPONENT_REPLY])) },
     });
     expect(code).toBe(0);
     expect(count()).toBe(1);

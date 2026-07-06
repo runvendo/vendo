@@ -267,6 +267,10 @@ async function promptForKey(
 export async function runInit(opts: InitOptions): Promise<number> {
   const startedAt = Date.now();
   const targetDir = path.resolve(opts.targetDir);
+  // May this run open interactive prompts (key paste, catalog picker)? A real
+  // TTY that isn't CI, unless `--yes` forces non-interactive. Tests set
+  // `opts.interactive` explicitly.
+  const interactive = (opts.interactive ?? isInteractive()) && !opts.yes;
   const info = await detectTarget(targetDir);
   const t = initRunTelemetry(opts);
   const framework = info.framework;
@@ -288,7 +292,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
       model = await resolveCliModel(targetDir, opts.modelResolveDeps);
       // No key found: when we can prompt (interactive, not --yes), offer to
       // paste one; otherwise fall through to deterministic mode + coaching.
-      if (model === null && (opts.interactive ?? isInteractive()) && !opts.yes) {
+      if (model === null && interactive) {
         const result = await promptForKey(targetDir, opts.interactor ?? createInteractor(), opts);
         model = result.model;
         keyPrompt = result.outcome;
@@ -370,8 +374,20 @@ export async function runInit(opts: InitOptions): Promise<number> {
       failedStep = "components";
       try {
         // Only unwrapped candidates are analyzed/proposed; existing wrapper
-        // dirs are untouched (unless --force regenerates everything).
-        report.components = await extractComponents(targetDir, model, opts, state.components);
+        // dirs are untouched (unless --force regenerates everything). The
+        // interactive catalog picker (a single batch proposal + checkbox
+        // select) runs only when this run may prompt; otherwise every
+        // candidate is generated.
+        report.components = await extractComponents(
+          targetDir,
+          model,
+          {
+            force: opts.force,
+            interactive,
+            interactor: interactive ? opts.interactor ?? createInteractor() : undefined,
+          },
+          state.components,
+        );
       } catch (err) {
         const message = errorMessage(err);
         console.error(`LLM-assisted component discovery failed; continuing without generated components: ${message}`);
