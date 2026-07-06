@@ -10,7 +10,7 @@ import {
   useSelectedLayoutSegment,
   useSelectedLayoutSegments,
 } from "./next-navigation";
-import useSWR from "./swr";
+import useSWR, { useSWRConfig, mutate, SWRConfig, preload } from "./swr";
 import { NAVIGATE_ACTION } from "./dispatch";
 
 afterEach(() => {
@@ -101,6 +101,35 @@ describe("useSWR shim", () => {
     const result = useSWR("/api/missing", fetcher);
     expect(result.data).toBeUndefined();
     expect(result.isLoading).toBe(true);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("swr extra exports", () => {
+  it("useSWRConfig returns a config object with a working mutate", async () => {
+    const config = useSWRConfig();
+    expect(typeof config.mutate).toBe("function");
+    await expect(config.mutate("/api/x")).resolves.toBeUndefined();
+  });
+
+  it("global mutate writes into the anchor-data cache and resolves", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = {};
+    await expect(mutate("/api/deadlines", [{ id: "z" }])).resolves.toEqual([{ id: "z" }]);
+    expect(useSWR("/api/deadlines").data).toEqual([{ id: "z" }]);
+  });
+
+  it("global mutate with no data is a safe resolved no-op", async () => {
+    await expect(mutate("/api/x")).resolves.toBeUndefined();
+  });
+
+  it("SWRConfig renders its children (passthrough provider)", () => {
+    render(<SWRConfig value={{}}>{<span>swr-child</span>}</SWRConfig>);
+    expect(screen.getByText("swr-child")).toBeTruthy();
+  });
+
+  it("preload is a safe no-op returning a resolved promise (fetcher never runs)", async () => {
+    const fetcher = vi.fn();
+    await expect(preload("/api/x", fetcher)).resolves.toBeUndefined();
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

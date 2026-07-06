@@ -16,4 +16,12 @@ export {
   useSelectedLayoutSegment,
   useSelectedLayoutSegments,
 } from "./next-navigation.js";
-export { default as useSWR, type SWRResponse } from "./swr.js";
+export {
+  default as useSWR,
+  useSWRConfig,
+  mutate,
+  SWRConfig,
+  preload,
+  type SWRResponse,
+  type SWRConfiguration,
+} from "./swr.js";
