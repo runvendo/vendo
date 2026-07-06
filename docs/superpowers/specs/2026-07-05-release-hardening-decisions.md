@@ -109,6 +109,27 @@ Maple is visually strong but trust-breaking in prose and numbers.
 - Capabilities-fetch failure leaves the chat UI optimistically enabled
   forever (vendo-next client treats null capabilities as enabled).
 
+## Shell-UI wave — built (your 4 approvals), one flag remaining
+
+Built on branch `yousefh409/shell-ui-wave` (5 commits): glass skeletons
+(theme-tinted, render_view placeholder + refresh veil + library/tray),
+<768px full-screen takeover, summary-only consent card, MCP approvals through
+the consent channel. Your amendment applied: **critical-tier cards keep their
+material fields, humanized** (amount/recipient with proper labels, no raw
+param dump); ordinary cards stay summary-only.
+
+**One flag left for you:** critical cards render numbers as-is ("Amount: 1200"),
+NOT as currency ("$500.00") — the card has no schema knowledge of which numbers
+are money/what currency, and there's a standing rule against doing money math on
+model-authored values. Wave 5 just built a per-field format-hints system (cents/
+etc.) — wiring that into the card would give real currency rendering. Want that
+as a follow-up, or is "Amount: 1200" fine for v1? (Not blocking the PR.)
+
+Two smaller notes: demo-accounting's `/assistant` hand-rolls its own page div so
+it doesn't get the mobile takeover (shell elements do — wiring it is a 1-liner if
+you want it); MCP "yes" writes the consent/audit row but mints no reusable grant
+(descriptor can't enumerate MCP tools server-side — repeats re-ask).
+
 ## New flags from wave 4 (client/state fixes)
 
 - **Cadence has no thread persistence at all** — its hand-rolled routes never
