@@ -19,7 +19,7 @@
 </p>
 
 ```bash
-npx @vendoai/cli init .
+npx vendoai init .
 ```
 
 <p align="center"><sub>One command inside your Next.js app. No account, no hosted dependency.</sub><br>
@@ -144,7 +144,7 @@ through your permission policy. Deeper docs: [docs/](docs/).
 
 <details>
 <summary><b>Which frameworks are supported?</b></summary>
-<br>Next.js App Router today via <code>@vendoai/next</code>. The agent server is a plain fetch handler underneath, so other frameworks can wire it manually.
+<br>Next.js App Router today via the <code>vendoai</code> package's ready-made route pair. The agent server is a plain fetch handler underneath (plus a Node adapter for Express/<code>node:http</code>), so other frameworks can wire it manually.
 </details>
 
 <details>
