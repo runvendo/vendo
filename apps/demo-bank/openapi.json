@@ -118,15 +118,15 @@
     "/api/insights/spending": {
       "get": {
         "operationId": "getSpendingInsights",
-        "summary": "Spending by category for the current period.",
-        "responses": { "200": { "description": "Spending breakdown" } }
+        "summary": "Spending by category for the current period. Amounts are integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute.",
+        "responses": { "200": { "description": "Spending breakdown: { data: [{ category, amount }] } — amount is integer cents" } }
       }
     },
     "/api/insights/cashflow": {
       "get": {
         "operationId": "getCashflowInsights",
-        "summary": "Cash inflow/outflow summary.",
-        "responses": { "200": { "description": "Cashflow" } }
+        "summary": "Cash inflow/outflow summary. Amounts are integer cents (e.g. 1284000 = $12,840.00): divide by 100 exactly once before displaying, including any totals you compute.",
+        "responses": { "200": { "description": "Cashflow: { data: [{ label, in, out }] } — in/out are integer cents" } }
       }
     },
     "/api/insights/budgets": {
