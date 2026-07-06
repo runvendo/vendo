@@ -48,16 +48,24 @@ function hrefString(href: LinkProps["href"]): string {
 }
 
 export default function Link({ href, children, onClick, prefetch: _p, replace: _r, scroll: _s, ...rest }: LinkProps): import("react").ReactElement {
-  const target = hrefString(href);
+  const url = hrefString(href);
   return createElement(
     "a",
     {
       ...rest,
-      href: target,
+      href: url,
       onClick: (event: MouseEvent<HTMLAnchorElement>) => {
-        event.preventDefault();
+        // Let the user's handler run first; it may cancel navigation.
         onClick?.(event);
-        navigate(target);
+        if (event.defaultPrevented) return;
+        // Let the browser handle open-in-new-tab / open-in-window and any
+        // non-primary (middle/right) button — only a plain primary click
+        // becomes an in-host navigate.
+        if (event.button !== 0) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (rest.target && rest.target !== "_self") return;
+        event.preventDefault();
+        navigate(url);
       },
     },
     children,

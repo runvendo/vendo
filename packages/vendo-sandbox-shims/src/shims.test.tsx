@@ -57,6 +57,42 @@ describe("Link shim", () => {
     fireEvent.click(screen.getByText("x"));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it("does nothing when the user's onClick calls preventDefault (user-cancel)", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href="/x" onClick={(e) => e.preventDefault()}>
+        x
+      </Link>,
+    );
+    fireEvent.click(screen.getByText("x"));
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores modified clicks (open-in-new-tab) and does not navigate", () => {
+    const calls = captureDispatch();
+    render(<Link href="/x">x</Link>);
+    fireEvent.click(screen.getByText("x"), { metaKey: true });
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores non-primary (middle/right) button clicks", () => {
+    const calls = captureDispatch();
+    render(<Link href="/x">x</Link>);
+    fireEvent.click(screen.getByText("x"), { button: 1 });
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores clicks on a link with target other than _self", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href="/x" target="_blank">
+        x
+      </Link>,
+    );
+    fireEvent.click(screen.getByText("x"));
+    expect(calls).toEqual([]);
+  });
 });
 
 describe("Image shim", () => {
