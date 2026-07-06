@@ -28,7 +28,8 @@ import { promises as fs, constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { resolveModelChoice, type ModelProvider } from "@vendoai/server/model";
-import { loadConfig, configPath } from "@vendoai/telemetry";
+import { loadConfig, configPath, initTelemetry, type Telemetry } from "@vendoai/telemetry";
+import { CLI_VERSION } from "./version.js";
 import { PROVIDER_ENV_VAR } from "./keys.js";
 import { cliEnvForDir, parseEnvFile } from "./llm.js";
 import { inspectVendoState } from "./state.js";
@@ -59,6 +60,41 @@ export interface DoctorOptions {
    * to exercise the stale/fresh branches deterministically.
    */
   bundledAssetsDir?: string;
+
+  // ---- test seam below this line -------------------------------------------
+  /**
+   * Telemetry wiring overrides; omit in production for the real env/key. Mirrors
+   * InitOptions' seam — tests inject a fetch spy + tmp home + hermetic env so
+   * the emitted `doctor_run` body can be asserted (and opt-out verified).
+   */
+  telemetry?: {
+    home?: string;
+    posthogKey?: string;
+    env?: Record<string, string | undefined>;
+    fetchImpl?: typeof fetch;
+  };
+}
+
+function noopTelemetry(): Telemetry {
+  return {
+    async track() {},
+  };
+}
+
+/** Build the doctor's telemetry client the same way init does; fail-closed. */
+function doctorRunTelemetry(opts: DoctorOptions): Telemetry {
+  try {
+    return initTelemetry({
+      version: CLI_VERSION,
+      runtime: false,
+      home: opts.telemetry?.home ?? opts.home,
+      posthogKey: opts.telemetry?.posthogKey ?? process.env.VENDO_POSTHOG_KEY,
+      env: opts.telemetry?.env ?? (opts.env as Record<string, string | undefined>) ?? process.env,
+      fetchImpl: opts.telemetry?.fetchImpl,
+    });
+  } catch {
+    return noopTelemetry();
+  }
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -97,11 +133,15 @@ export async function runDoctor(opts: DoctorOptions): Promise<number> {
   const ui = opts.ui ?? createUi();
   const assetsDir = opts.bundledAssetsDir ?? bundledAssetsDir();
 
-  let hardFailed = false;
+  let failCount = 0;
+  let warnCount = 0;
   const ok = (label: string, detail?: string): void => ui.step("ok", label, detail);
-  const warn = (label: string, fix?: string): void => ui.step("warn", label, fix ? `fix: ${fix}` : undefined);
+  const warn = (label: string, fix?: string): void => {
+    warnCount++;
+    ui.step("warn", label, fix ? `fix: ${fix}` : undefined);
+  };
   const fail = (label: string, fix: string): void => {
-    hardFailed = true;
+    failCount++;
     ui.error(label, fix);
   };
   const section = (title: string): void => ui.note(`\n${title}`);
@@ -233,7 +273,16 @@ export async function runDoctor(opts: DoctorOptions): Promise<number> {
   const telemetry = loadConfig(home);
   ok(`telemetry: ${telemetry.optedOut ? "disabled" : "enabled"}`, `anonymous; ${configPath(home)}`);
 
-  return hardFailed ? 1 : 0;
+  // One anonymous event with counts + a wired bool only — never any content
+  // (no labels, paths, keys, or messages). Respects the same opt-out plumbing
+  // as init (a disabled config sends nothing).
+  await doctorRunTelemetry(opts).track("doctor_run", {
+    failures: failCount,
+    warnings: warnCount,
+    wired: state.wired.wired,
+  });
+
+  return failCount > 0 ? 1 : 0;
 }
 
 async function readAppName(targetDir: string): Promise<string | null> {

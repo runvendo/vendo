@@ -523,9 +523,21 @@ export async function runInit(opts: InitOptions): Promise<number> {
     provider: model === null ? "none" : "configured",
     llmSkipped: model === null,
     // The key-prompt outcome (never the key/provider-var value): provided /
-    // skipped / invalid / not-shown. Task 17 adds the rest of the events.
+    // skipped / invalid / not-shown.
     keyPrompt,
+    // Which command drove the pipeline — `refresh` delegates to runInit, so
+    // both commands emit init_completed; this is how they're distinguished.
+    command: opts.mode ?? "init",
+    // Catalog picker: offered = candidates scanned, accepted = componentCount
+    // (written wrappers). Deterministic (no-model) runs never run the picker → 0.
+    componentsOffered: report.components?.candidates ?? 0,
     componentCount: report.components?.written.length ?? 0,
+    // Remix picker (splices <VendoRemix> anchors into host source): offered =
+    // candidateCount, and how many were wrapped vs skipped. Null when the step
+    // didn't run (no model / non-interactive / --yes) → 0s.
+    remixOffered: remixResult?.candidateCount ?? 0,
+    remixWrapped: remixResult?.wrapped.length ?? 0,
+    remixSkipped: remixResult?.skipped.length ?? 0,
     toolCount: report.tools?.toolCount ?? 0,
     durationMs: Date.now() - startedAt,
   });

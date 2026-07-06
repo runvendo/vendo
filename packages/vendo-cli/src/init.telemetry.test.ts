@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { runInit } from "./init.js";
 import type { Interactor } from "./interact.js";
 import { textModel } from "./test-helpers.js";
@@ -154,6 +155,116 @@ describe("init telemetry", () => {
         telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
       });
       expect(completedProps(fetchImpl).keyPrompt).toBe("skipped");
+    } finally {
+      log.mockRestore();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("emits command=init and zeroed picker/anchor counts on a deterministic run", async () => {
+    const home = mkdtempSync(join(tmpdir(), "vendo-init-tele-"));
+    const target = mkdtempSync(join(tmpdir(), "vendo-init-target-"));
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true });
+    try {
+      await runInit({
+        targetDir: target,
+        skipLlm: true,
+        force: true,
+        model: null,
+        telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
+      });
+      const props = completedProps(fetchImpl);
+      expect(props.command).toBe("init");
+      // No model → neither picker ran → every count is a hard 0.
+      expect(props.componentsOffered).toBe(0);
+      expect(props.componentCount).toBe(0);
+      expect(props.remixOffered).toBe(0);
+      expect(props.remixWrapped).toBe(0);
+      expect(props.remixSkipped).toBe(0);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("tags a refresh-mode run with command=refresh", async () => {
+    const home = mkdtempSync(join(tmpdir(), "vendo-init-tele-"));
+    const target = mkdtempSync(join(tmpdir(), "vendo-init-target-"));
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true });
+    try {
+      await runInit({
+        targetDir: target,
+        skipLlm: true,
+        force: true,
+        model: null,
+        mode: "refresh",
+        telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
+      });
+      expect(completedProps(fetchImpl).command).toBe("refresh");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("records remix picker counts (offered/wrapped) without leaking names or paths", async () => {
+    const home = mkdtempSync(join(tmpdir(), "vendo-init-tele-"));
+    const target = mkdtempSync(join(tmpdir(), "vendo-init-remix-"));
+    // A widget-only Next app: no components/ dir (catalog picker finds nothing)
+    // and no app/api routes, so the ONLY model call is remix discovery.
+    writeFileSync(join(target, "package.json"), JSON.stringify({ name: "host", dependencies: { next: "15.0.0" } }));
+    for (const rel of ["src/app/globals.css"]) {
+      mkdirSync(dirname(join(target, rel)), { recursive: true });
+      writeFileSync(join(target, rel), ":root { --color-bg: #fff; }");
+    }
+    for (const [rel, body] of Object.entries({
+      "src/dashboard/DeadlineList.tsx": "export function DeadlineList() { return <ul><li>x</li></ul>; }\n",
+      "src/dashboard/InvoiceCard.tsx": "export function InvoiceCard() { return <div>card</div>; }\n",
+    })) {
+      mkdirSync(dirname(join(target, rel)), { recursive: true });
+      writeFileSync(join(target, rel), body);
+    }
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true });
+    // Picker seam: offer both, wrap only DeadlineList.
+    const interactor: Interactor = {
+      async maskedInput() {
+        return null;
+      },
+      async multiSelect() {
+        return ["src/dashboard/DeadlineList.tsx"] as never;
+      },
+    };
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await runInit({
+        targetDir: target,
+        skipLlm: false,
+        force: false,
+        interactive: true,
+        interactor,
+        model: textModel([
+          JSON.stringify({
+            proposals: [
+              { file: "src/dashboard/DeadlineList.tsx", id: "deadline-list", label: "Deadline list", reason: "a list" },
+              { file: "src/dashboard/InvoiceCard.tsx", id: "invoice-card", label: "Invoice card", reason: "a card" },
+            ],
+          }),
+        ]),
+        telemetry: { home, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl },
+      });
+      const props = completedProps(fetchImpl);
+      expect(props.command).toBe("init");
+      expect(props.remixOffered).toBe(2);
+      expect(props.remixWrapped).toBe(1);
+      expect(props.remixSkipped).toBe(0);
+      // Content guard: no component name, id, label, or source path in ANY body.
+      const allBodies = fetchImpl.mock.calls.map((c) => (c[1] as { body: string }).body).join("\n");
+      for (const leak of ["DeadlineList", "InvoiceCard", "deadline-list", "Deadline list", "src/dashboard"]) {
+        expect(allBodies).not.toContain(leak);
+      }
+      // The anchor really was spliced (proves the counts reflect real work).
+      expect(readFileSync(join(target, "src/dashboard/DeadlineList.tsx"), "utf8")).toContain("<VendoRemix");
     } finally {
       log.mockRestore();
       rmSync(home, { recursive: true, force: true });
