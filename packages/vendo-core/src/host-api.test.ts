@@ -151,6 +151,38 @@ describe("openApiToHostTools", () => {
     expect(byName(defs, "createTransfer").annotations.destructiveHint).toBe(true);
   });
 
+  it("honours the x-vendo-formats extension (result-field format hints)", () => {
+    const withFormats = openApiToHostTools({
+      paths: {
+        "/api/deadlines": {
+          get: {
+            operationId: "listDeadlines",
+            summary: "All deadlines",
+            "x-vendo-formats": { filingDeadline: "iso-datetime", amount: "cents" },
+          },
+        },
+      },
+    });
+    expect(byName(withFormats, "listDeadlines").formats).toEqual({
+      filingDeadline: "iso-datetime",
+      amount: "cents",
+    });
+    // Undeclared → absent, not defaulted.
+    expect(byName(defs, "listAccounts").formats).toBeUndefined();
+  });
+
+  it("rejects an x-vendo-formats value outside the closed vocabulary", () => {
+    expect(() =>
+      openApiToHostTools({
+        paths: {
+          "/api/x": {
+            get: { operationId: "getX", "x-vendo-formats": { amount: "dollars" } },
+          },
+        },
+      }),
+    ).toThrow(/x-vendo-formats/);
+  });
+
   it("builds a flat input schema: params top-level, request body under `body`", () => {
     const order = byName(defs, "createOrder");
     expect(order.inputSchema).toEqual({
@@ -396,5 +428,40 @@ describe("host-relative path enforcement (frozen manifest contract)", () => {
     };
     await expect(executeHostToolCall(forged, {}, { fetchImpl })).rejects.toThrow(/host-relative/);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  // Browsers normalize "\" to "/" while parsing URLs, so a backslash path
+  // that passes a forward-slash-only check still becomes a protocol-relative
+  // cross-origin URL — and executeHostToolCall sends the user's cookies.
+  const BACKSLASH_VECTORS = [
+    "/\\evil.com",
+    "/\\\\evil.com",
+    "\\\\evil.com",
+    "https:/\\evil.com",
+  ];
+
+  it("rejects spec paths with backslash cross-origin bypasses", () => {
+    for (const badPath of BACKSLASH_VECTORS) {
+      const forgedSpec = {
+        openapi: "3.1.0",
+        info: { title: "t", version: "1" },
+        paths: { [badPath]: { get: { operationId: "bad" } } },
+      };
+      expect(() => openApiToHostTools(forgedSpec), badPath).toThrow(/host-relative/);
+    }
+  });
+
+  it("refuses to execute a definition whose path parses off-origin via backslashes", async () => {
+    for (const badPath of BACKSLASH_VECTORS) {
+      const fetchImpl = vi.fn();
+      const forged: HostToolDefinition = {
+        ...byName(openApiToHostTools(spec), "listAccounts"),
+        http: { method: "get", path: badPath, params: [], hasBody: false },
+      };
+      await expect(executeHostToolCall(forged, {}, { fetchImpl }), badPath).rejects.toThrow(
+        /host-relative/,
+      );
+      expect(fetchImpl, badPath).not.toHaveBeenCalled();
+    }
   });
 });

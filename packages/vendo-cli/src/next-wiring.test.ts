@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   addDependency,
+  addDevDependency,
   addPrebuildSync,
   mergeInstrumentation,
   mergeNextConfig,
@@ -157,14 +158,35 @@ export default function RootLayout({ children }) {
 describe("addDependency", () => {
   it("adds the dep sorted and leaves existing files alone on re-run", () => {
     const pkg = JSON.stringify({ name: "x", dependencies: { zod: "^3", next: "16.0.0" } }, null, 2);
-    const out = addDependency(pkg, "@vendoai/next", "latest")!;
+    const out = addDependency(pkg, "vendoai", "latest")!;
     const parsed = JSON.parse(out) as { dependencies: Record<string, string> };
-    expect(Object.keys(parsed.dependencies)).toEqual(["@vendoai/next", "next", "zod"]);
-    expect(addDependency(out, "@vendoai/next", "latest")).toBe(out);
+    expect(Object.keys(parsed.dependencies)).toEqual(["next", "vendoai", "zod"]);
+    expect(addDependency(out, "vendoai", "latest")).toBe(out);
   });
 
   it("returns null on unparsable package.json", () => {
-    expect(addDependency("{nope", "@vendoai/next", "latest")).toBeNull();
+    expect(addDependency("{nope", "vendoai", "latest")).toBeNull();
+  });
+});
+
+describe("addDevDependency", () => {
+  it("creates the devDependencies block, adds sorted, and is idempotent", () => {
+    const created = addDevDependency(JSON.stringify({ name: "x" }, null, 2), "@vendoai/cli", "latest")!;
+    expect(JSON.parse(created).devDependencies["@vendoai/cli"]).toBe("latest");
+
+    const out = addDevDependency(
+      JSON.stringify({ name: "x", devDependencies: { vitest: "^2" } }, null, 2),
+      "@vendoai/cli",
+      "latest",
+    )!;
+    expect(Object.keys(JSON.parse(out).devDependencies)).toEqual(["@vendoai/cli", "vitest"]);
+
+    // Re-run leaves it alone.
+    expect(addDevDependency(out, "@vendoai/cli", "latest")).toBe(out);
+  });
+
+  it("returns null on unparsable package.json", () => {
+    expect(addDevDependency("{nope", "@vendoai/cli", "latest")).toBeNull();
   });
 });
 
@@ -202,7 +224,7 @@ describe("mergeInstrumentation", () => {
     expect(out).not.toBeNull();
     expect(out).toContain('console.log("boom")'); // original content survives
     expect(out).toContain("export async function register()");
-    expect(out).toContain('await import("@vendoai/next")');
+    expect(out).toContain('await import("vendoai/server")');
     expect(out).toContain("startVendoScheduler()");
   });
 
@@ -212,8 +234,8 @@ describe("mergeInstrumentation", () => {
     expect(mergeInstrumentation(merged)).toBe(merged);
   });
 
-  it("is idempotent on a hand-wired file (already imports @vendoai/next)", () => {
-    const handWired = `export async function register() {\n  if (process.env.NEXT_RUNTIME === "nodejs") {\n    const { startVendoScheduler } = await import("@vendoai/next");\n    startVendoScheduler();\n  }\n}\n`;
+  it("is idempotent on a hand-wired file (already imports vendoai/server)", () => {
+    const handWired = `export async function register() {\n  if (process.env.NEXT_RUNTIME === "nodejs") {\n    const { startVendoScheduler } = await import("vendoai/server");\n    startVendoScheduler();\n  }\n}\n`;
     expect(mergeInstrumentation(handWired)).toBe(handWired);
   });
 
@@ -244,7 +266,8 @@ export default nextConfig;
     expect(out.kind).toBe("updated");
     if (out.kind !== "updated") throw new Error("expected next.config update");
     expect(out.source).toContain('"next-mdx-remote"');
-    expect(out.source).toContain('"@vendoai/next"');
+    expect(out.source).toContain('"vendoai"');
+    expect(out.source).toContain('"@vendoai/client"');
     expect(out.source).toContain('"@vendoai/stage"');
     expect(out.source).toContain('"sharp"');
     expect(out.source).toContain('"@electric-sql/pglite"');
@@ -302,11 +325,12 @@ describe("wireNextApp", () => {
     const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
     };
-    expect(pkg.dependencies["@vendoai/next"]).toBeDefined();
+    expect(pkg.dependencies["vendoai"]).toBeDefined();
     expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
     const nextConfig = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(nextConfig).toContain('transpilePackages: [');
-    expect(nextConfig).toContain('"@vendoai/next"');
+    expect(nextConfig).toContain('"vendoai"');
+    expect(nextConfig).toContain('"@vendoai/client"');
     expect(nextConfig).toContain('"@vendoai/stage"');
     expect(nextConfig).toContain('serverExternalPackages: [');
     expect(nextConfig).toContain('"@electric-sql/pglite"');
@@ -315,12 +339,23 @@ describe("wireNextApp", () => {
     const instrumentation = await fs.readFile(path.join(dir, "src/instrumentation.ts"), "utf8");
     expect(instrumentation).toContain("export async function register()");
     expect(instrumentation).toContain('process.env.NEXT_RUNTIME === "nodejs"');
-    expect(instrumentation).toContain('await import("@vendoai/next")');
+    expect(instrumentation).toContain('await import("vendoai/server")');
     expect(instrumentation).toContain("startVendoScheduler()");
     expect(summary.written).toContain("src/instrumentation.ts");
 
     // sandbox assets aren't bundled in the source tree — reported, not fatal
     expect(summary.skipped.some((s) => s.step === "sandbox-assets")).toBe(true);
+  });
+
+  it("adds @vendoai/cli to the app's devDependencies so `vendo sync` resolves at build time", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const info = await detectTarget(dir);
+    await wireNextApp(dir, info, { force: false });
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
+      devDependencies?: Record<string, string>;
+    };
+    // prebuild runs `vendo sync`, so the CLI must be installed alongside it.
+    expect(pkg.devDependencies?.["@vendoai/cli"]).toBeDefined();
   });
 
   it("writes instrumentation.ts at the project root for an app/ (non-src) layout", async () => {
@@ -342,7 +377,8 @@ describe("wireNextApp", () => {
     const config = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(summary.written).toContain("next.config.ts");
     expect(config).toContain('import type { NextConfig } from "next"');
-    expect(config).toContain('"@vendoai/next"');
+    expect(config).toContain('"vendoai"');
+    expect(config).toContain('"@vendoai/client"');
     expect(config).toContain('"@electric-sql/pglite"');
     expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
   });
@@ -365,6 +401,7 @@ export default nextConfig;
     const config = await fs.readFile(configPath, "utf8");
     expect(summary.edited).toContain("next.config.mjs");
     expect(config).toContain('"next-mdx-remote"');
+    expect(config).toContain('"@vendoai/client"');
     expect(config).toContain('"@vendoai/shell"');
     expect(config).toContain('"sharp"');
     expect(config).toContain('"@electric-sql/pglite"');
@@ -446,6 +483,58 @@ export default withAnalyzer({});
     expect(await fs.readFile(path.join(dir, "app/layout.tsx"), "utf8")).toBe(weird);
     expect(summary.skipped.some((s) => s.step === "layout")).toBe(true);
     expect(summary.manual.some((m) => m.includes("AppVendoRoot"))).toBe(true);
+  });
+
+  async function scaffoldWithNext(version: string): Promise<string> {
+    const dir = mkdtempSync(path.join(tmpdir(), "vendo-nextcfg-"));
+    const appDir = path.join(dir, "app");
+    await fs.mkdir(appDir, { recursive: true });
+    await fs.writeFile(path.join(appDir, "layout.tsx"), CREATE_NEXT_APP_LAYOUT);
+    await fs.writeFile(path.join(dir, "tsconfig.json"), "{}");
+    await fs.writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "app", dependencies: { next: version } }, null, 2),
+    );
+    return dir;
+  }
+
+  it("creates next.config.mjs with experimental.instrumentationHook on Next 14 (no config present)", async () => {
+    const dir = await scaffoldWithNext("14.2.3");
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    const cfg = await fs.readFile(path.join(dir, "next.config.mjs"), "utf8");
+    expect(cfg).toContain("instrumentationHook: true");
+    expect(summary.written).toContain("next.config.mjs");
+  });
+
+  it("does NOT touch next.config on Next 15+ (the flag is the default there)", async () => {
+    const dir = await scaffoldWithNext("15.0.0");
+    const info = await detectTarget(dir);
+    await wireNextApp(dir, info, { force: false });
+    expect(await exists(path.join(dir, "next.config.mjs"))).toBe(false);
+    expect(await exists(path.join(dir, "next.config.js"))).toBe(false);
+  });
+
+  it("skips + prints a manual step when a next.config already exists on Next 14 (no risky AST edit)", async () => {
+    const dir = await scaffoldWithNext("14.2.3");
+    await fs.writeFile(path.join(dir, "next.config.js"), "module.exports = { reactStrictMode: true };\n");
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    expect(await fs.readFile(path.join(dir, "next.config.js"), "utf8")).toContain("reactStrictMode: true");
+    expect(summary.manual.some((m) => m.includes("instrumentationHook"))).toBe(true);
+    expect(await exists(path.join(dir, "next.config.mjs"))).toBe(false);
+  });
+
+  it("reports already-wired when an existing config sets instrumentationHook", async () => {
+    const dir = await scaffoldWithNext("14.2.3");
+    await fs.writeFile(
+      path.join(dir, "next.config.mjs"),
+      "export default { experimental: { instrumentationHook: true } };\n",
+    );
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    expect(summary.skipped.some((s) => s.step === "next.config" && /already/.test(s.reason))).toBe(true);
+    expect(summary.manual.some((m) => m.includes("instrumentationHook"))).toBe(false);
   });
 
   it("returns null for non-Next targets and skips gracefully without an app dir", async () => {

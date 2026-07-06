@@ -214,3 +214,36 @@ describe("VendoRemix", () => {
     await waitFor(() => expect(screen.getByTestId("pinned-view")).toBeTruthy());
   });
 });
+
+describe("VendoRemix — repaint shimmer", () => {
+  it("veils the stale view while a remix-changed reload is in flight, then clears", async () => {
+    const node = pinnedNode(validPayload());
+    const pin = { anchorId: "w1", node, updatedAt: 1 };
+    let calls = 0;
+    let resolveSecond!: (p: typeof pin | null) => void;
+    const remixes: RemixClient = {
+      get: () => {
+        calls += 1;
+        if (calls === 1) return Promise.resolve(pin);
+        return new Promise((r) => { resolveSecond = r; });
+      },
+      pin: async (d) => ({ ...d, updatedAt: 2 }),
+      unpin: async () => {},
+    };
+    mount(
+      <VendoRemix id="w1" label="Widget">
+        <div>original</div>
+      </VendoRemix>,
+      { remixes },
+    );
+    await screen.findByTestId("pinned-view");
+    // Mount load is NOT a repaint — no veil on every page load.
+    expect(document.querySelector(".fl-glass-veil")).toBeNull();
+    act(() => {
+      window.dispatchEvent(new CustomEvent(REMIX_CHANGED_EVENT, { detail: { anchorId: "w1" } }));
+    });
+    await waitFor(() => expect(document.querySelector(".fl-glass-veil")).toBeTruthy());
+    await act(async () => { resolveSecond(pin); });
+    await waitFor(() => expect(document.querySelector(".fl-glass-veil")).toBeNull());
+  });
+});

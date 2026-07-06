@@ -33,6 +33,48 @@ export interface VoiceToolsDeps {
   /** Injectable for tests; defaults to a lazily-built real client. */
   client?: ComposioClient;
   maxTools?: number;
+  /**
+   * Server-executed CONTROL tools (automation authoring: create_automation,
+   * update_automation) exposed to the voice session so it reaches parity with
+   * chat — the same tools the chat loop registers server-side. Bridged, not
+   * browser-run, because authoring mutates the durable automation store.
+   * Listed regardless of `enabled` (that flag only gates Composio integrations).
+   */
+  controlTools?: ToolSet;
+}
+
+/**
+ * Tier for an authoring/control tool. These mutate the automation store, so
+ * they default to act-tier (voice-approvable). A DESTRUCTIVE control tool
+ * (create/update/delete_automation, stop_asking_about — flagged with a
+ * `destructiveHint` annotation) MUST be critical so the realtime driver
+ * refuses a spoken "yes" and requires an explicit tap, matching chat's
+ * dangerTier for the same tools (Codex security review).
+ */
+function controlTier(name: string, tool: unknown): "read" | "act" | "critical" {
+  const annotations = (tool as { annotations?: ToolDescriptor["annotations"] }).annotations ?? {};
+  if (annotations.destructiveHint) return "critical";
+  if (annotations.readOnlyHint) return "read";
+  // Control tool names are lower_snake_case (list_automations, get_runs) —
+  // the integration regexes are uppercase (TOOLKIT_ACTION), so match uppercased.
+  const upper = name.toUpperCase();
+  if (DESTRUCTIVE_NAME.test(upper)) return "critical";
+  if (READ_NAME.test(upper)) return "read";
+  return "act";
+}
+
+function controlToolList(deps: VoiceToolsDeps, maxTools: number): Array<{
+  name: string; description: string; parameters: Record<string, unknown>; tier: "read" | "act" | "critical";
+}> {
+  const control = deps.controlTools ?? {};
+  return Object.entries(control)
+    .slice(0, maxTools)
+    .map(([name, tool]) => ({
+      name,
+      description: String((tool as { description?: string }).description ?? name),
+      parameters: schemaOf(tool),
+      tier: controlTier(name, tool),
+    }));
 }
 
 let realClient: ComposioClient | undefined;
@@ -93,12 +135,14 @@ function schemaOf(tool: unknown): Record<string, unknown> {
 }
 
 export async function handleVoiceToolsGet(_req: Request, deps: VoiceToolsDeps): Promise<Response> {
-  if (!deps.enabled) return Response.json({ tools: [], truncated: false });
+  const maxTools = deps.maxTools ?? MAX_TOOLS;
+  // Control (authoring) tools are independent of the Composio flag.
+  const control = controlToolList(deps, maxTools);
+  if (!deps.enabled) return Response.json({ tools: control, truncated: false });
   try {
     const { toolset, descriptors } = await ingested(deps);
-    const maxTools = deps.maxTools ?? MAX_TOOLS;
     const byName = new Map(descriptors.map((d) => [d.name, d]));
-    const tools = Object.entries(toolset)
+    const integration = Object.entries(toolset)
       .slice(0, maxTools)
       .map(([name, tool]) => ({
         name,
@@ -106,21 +150,17 @@ export async function handleVoiceToolsGet(_req: Request, deps: VoiceToolsDeps): 
         parameters: schemaOf(tool),
         tier: tierOf(name, byName.get(name)?.annotations ?? {}),
       }));
-    return Response.json({ tools, truncated: Object.keys(toolset).length > maxTools });
+    return Response.json({
+      tools: [...control, ...integration],
+      truncated: Object.keys(toolset).length > maxTools,
+    });
   } catch (error) {
     console.error("[vendo voice] integration tool listing failed", error);
-    return Response.json({ tools: [], truncated: false });
+    return Response.json({ tools: control, truncated: false });
   }
 }
 
 export async function handleVoiceToolsPost(req: Request, deps: VoiceToolsDeps): Promise<Response> {
-  if (!deps.enabled) {
-    return Response.json(
-      { error: "integrations are disabled — set COMPOSIO_API_KEY to enable them" },
-      { status: 503 },
-    );
-  }
-
   const { tool, input } = (await req.json().catch(() => ({}))) as {
     tool?: unknown;
     input?: unknown;
@@ -129,10 +169,15 @@ export async function handleVoiceToolsPost(req: Request, deps: VoiceToolsDeps): 
     return Response.json({ error: "missing tool" }, { status: 400 });
   }
 
-  const { toolset } = await ingested(deps);
-  const entry = toolset[tool] as
+  // Control (authoring) tools first — they don't need Composio ingestion.
+  const control = deps.controlTools ?? {};
+  let entry = control[tool] as
     | { execute?: (input: unknown, opts: unknown) => Promise<unknown> }
     | undefined;
+  if (!entry?.execute && deps.enabled) {
+    const { toolset } = await ingested(deps);
+    entry = toolset[tool] as typeof entry;
+  }
   if (!entry?.execute) {
     return Response.json({ error: `unknown or non-executable tool ${tool}` }, { status: 404 });
   }

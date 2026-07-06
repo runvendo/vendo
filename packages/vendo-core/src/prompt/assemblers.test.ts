@@ -18,6 +18,7 @@ describe("buildChatInstructions", () => {
       "BRAND: be calm.",
       "HOW render_view WORKS",
       "REFRESHABLE VIEWS",
+      "DATA FIDELITY",
       "BUILDING BLOCKS",
       "You can do host things.",
       "CONNECTING TOOLS",
@@ -40,6 +41,17 @@ describe("buildChatInstructions", () => {
     const text = buildChatInstructions({ identity: "You are X." });
     expect(text).not.toContain("\n\n\n");
     expect(text).toContain("NON-NEGOTIABLES");
+  });
+
+  it("grounds the host name when provided: the rule + the name, right after identity", () => {
+    const text = buildChatInstructions({ identity: "You are Testo's assistant.", hostName: "Testo" });
+    expect(text).toContain("HOST IDENTITY");
+    expect(text).toContain('"Testo"');
+    expect(text).toMatch(/never invent/i);
+    // Right after the identity block, before the platform sections.
+    expect(text.indexOf("HOST IDENTITY")).toBeLessThan(text.indexOf("WHEN TO RENDER UI"));
+    // Absent hostName → no section (hosts opt in via the slot).
+    expect(buildChatInstructions({ identity: "You are X." })).not.toContain("HOST IDENTITY");
   });
 
   it("threads the tool summary into the capabilities section", () => {
@@ -68,6 +80,7 @@ describe("buildVoiceInstructions", () => {
       "HOW YOU SPEAK",
       "SHOW vs SAY",
       "REFRESHABLE VIEWS",
+      "DATA FIDELITY",
       "MOST RECENT permission request",
       "Amounts are in integer cents.",
       "NON-NEGOTIABLES",
@@ -83,6 +96,14 @@ describe("buildVoiceInstructions", () => {
   it("contains no host strings when host inputs are neutral", () => {
     const text = buildVoiceInstructions({ persona: "You are a voice assistant." });
     expect(text).not.toMatch(/maple|bank|cadence/i);
+  });
+
+  it("grounds the host name for voice too", () => {
+    const text = buildVoiceInstructions({ persona: "You are Testo's voice assistant.", hostName: "Testo" });
+    expect(text).toContain("HOST IDENTITY");
+    expect(text).toContain('"Testo"');
+    expect(text).toMatch(/never invent/i);
+    expect(text.indexOf("HOST IDENTITY")).toBeLessThan(text.indexOf("HOW YOU SPEAK"));
   });
 });
 

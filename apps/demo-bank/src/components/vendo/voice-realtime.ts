@@ -22,6 +22,8 @@ import {
   buildVoiceInstructions,
   capabilitySummary,
   executeHostToolCall,
+  renderFormatHints,
+  type FieldFormat,
   type ToolSummaryInput,
   type UINode,
 } from "@vendoai/core";
@@ -39,6 +41,15 @@ let viewSeq = 0;
  */
 const sessionResults = new Map<string, unknown>();
 const SESSION_RESULTS_MAX = 32;
+
+/** Declared result-field formats by tool name: a BOUND table shows the raw
+ *  cached result verbatim (the model's formatting is discarded by design),
+ *  so the format must be stamped onto the columns for the Table to apply. */
+const formatsByTool = new Map<string, Record<string, FieldFormat>>(
+  mapleHostToolDefs
+    .filter((def) => def.formats)
+    .map((def) => [def.name, def.formats as Record<string, FieldFormat>]),
+);
 
 /** Key-order-stable stringify: the model's `source.input` may order fields
  *  differently than the call it mirrors ({limit, category} vs {category,
@@ -132,8 +143,15 @@ function tableView(input: unknown): UINode | undefined {
   if (!columns?.length || !rows) return undefined;
 
   const matched = matchSource(source, columns);
+  // Bound rows are guaranteed RAW (verbatim cached result), so the source
+  // tool's declared formats apply deterministically. Snapshot rows are the
+  // model's own — its prompt-side format rules govern those.
+  const formats = matched ? formatsByTool.get(matched.tool) : undefined;
+  const boundColumns = formats
+    ? columns.map((c) => (formats[c.key] ? { ...c, format: formats[c.key] } : c))
+    : columns;
   const tableProps = matched
-    ? { columns, rows: { $path: `/source${matched.rowsPath}` } }
+    ? { columns: boundColumns, rows: { $path: `/source${matched.rowsPath}` } }
     : { columns, rows };
   return {
     id: `voice-table-${++viewSeq}`,
@@ -302,9 +320,13 @@ const hostVoiceTools: VoiceToolDef[] = mapleHostToolDefs.map((def) => {
   const run = (input: unknown) =>
     executeHostToolCall(def, (input ?? {}) as Record<string, unknown>);
   if (tier === "read") replayRegistry.register(def.name, run);
+  // Declared result-field formats travel with the voice tool too — parity
+  // with the chat path's hostToolset (a voice model reads cents/date rules
+  // in the same place it reads what the tool does).
+  const hints = def.formats ? renderFormatHints(def.formats) : "";
   return {
     name: def.name,
-    description: def.description,
+    description: hints ? `${def.description}\n${hints}` : def.description,
     parameters: def.inputSchema,
     tier,
     execute: async (input) => {
@@ -343,6 +365,7 @@ function voiceToolSummary(tools: VoiceToolDef[]): ToolSummaryInput[] {
  *  capability summary reflects the LIVE tool list. */
 function buildInstructions(tools: VoiceToolDef[]): string {
   return buildVoiceInstructions({
+    hostName: "Maple",
     persona: [
       "You are Maple's voice assistant — Maple is the user's bank. Warm, brisk, plain-spoken.",
       "You can read the user's real accounts, transactions, cards, insights and payees through",
@@ -468,4 +491,4 @@ export const mapleRealtimeVoiceDriver: VoiceDriver = {
 };
 
 /** Internal seams exported for unit tests only. */
-export const __voiceTesting = { tableView, recordResult, resolvePointer };
+export const __voiceTesting = { tableView, recordResult, resolvePointer, hostVoiceTools };

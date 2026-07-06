@@ -3,6 +3,7 @@ import type { UINode } from "@vendoai/core";
 import { useShell } from "../context";
 import { Skeleton } from "../components/Skeleton";
 import { toolAction } from "../components/tool-labels";
+import { AutomationCard, isAutomationApproval } from "../components/AutomationCard.js";
 import { VoiceBlob } from "./VoiceBlob";
 import type { VoiceFeedEntry, VoiceSnapshot } from "./voice-session";
 import type { VoiceBlobState } from "./VoiceBlob";
@@ -324,7 +325,16 @@ export function VoiceStage({ snapshot, onMute, onEnd, onApprove, onDecline, onCl
       {/* Consent: a slim bar docked at the edge — act tier listens for a spoken
           yes (and stays tappable); critical demands the named tap. A settled
           decision lingers as a receipt, then clears. */}
-      {pendingApproval && consentAction ? (
+      {pendingApproval && isAutomationApproval(pendingApproval.toolName) ? (
+        <div className="fl-voice-consent is-automation" role="group" aria-label="Automation approval">
+          <AutomationCard
+            toolName={pendingApproval.toolName}
+            input={pendingApproval.input}
+            onApprove={() => onApprove(pendingApproval.id, "tap")}
+            onDecline={() => onDecline(pendingApproval.id)}
+          />
+        </div>
+      ) : pendingApproval && consentAction ? (
         <div
           className={`fl-voice-consent ${pendingApproval.tier === "critical" ? "is-critical" : "is-listening"}`}
           role="group"

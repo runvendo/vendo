@@ -58,14 +58,18 @@ export async function runSync(options: SyncOptions): Promise<number> {
     ...(options.now ? { now: options.now } : {}),
   });
   mkdirSync(vendoDir, { recursive: true });
+
+  // buildEnvironment may rewrite colliding local import specifiers in the
+  // captured records in place, so persist remix-sources.json AFTER it runs —
+  // the rewritten baselines are what the runtime loads.
+  const env = await buildEnvironment(targetDir, capture.records, {
+    ...(options.now ? { now: options.now } : {}),
+  });
+
   writeFileSync(
     path.join(vendoDir, "remix-sources.json"),
     `${JSON.stringify(capture.records, null, 2)}\n`,
   );
-
-  const env = await buildEnvironment(targetDir, capture.records, {
-    ...(options.now ? { now: options.now } : {}),
-  });
 
   const broken = [...capture.report, ...env.report]
     .filter(isBreakage)

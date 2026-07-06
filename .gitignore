@@ -22,3 +22,9 @@ apps/gmail/vendo-sandbox/dist/
 # Verification screenshots referenced by PR/docs are tracked despite *.png above.
 !docs/superpowers/specs/assets/**/*.png
 !docs/verification/**/*.png
+
+# README media in assets/ is shipped, not a verification artifact.
+!assets/*.png
+
+# Vendo demo runtime state (PGlite) — created by pnpm demo, never committed.
+apps/*/.vendo/data/

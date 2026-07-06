@@ -66,6 +66,24 @@ describe("hostToolset", () => {
     expect(descriptor.executor).toBe("server");
   });
 
+  it("appends result-field format hints to the description when the definition declares them", () => {
+    const withFormats = hostToolset([
+      {
+        ...accountsDef,
+        name: "listTransactions",
+        description: "List transactions",
+        formats: { amount: "cents", timestamp: "iso-datetime" },
+      },
+    ]);
+    const description = withFormats["listTransactions"]!.description!;
+    expect(description).toContain("List transactions");
+    expect(description).toContain("RESULT FIELD FORMATS");
+    expect(description).toContain('"amount"');
+    expect(description).toMatch(/divide by (exactly )?100/i);
+    // No formats → description untouched.
+    expect(tools["listAccounts"]!.description).toBe("List all accounts");
+  });
+
   it("uses a stable marker field name", () => {
     expect(CLIENT_EXECUTOR_MARKER).toBe("vendoExecutor");
     expect(

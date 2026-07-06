@@ -1,4 +1,5 @@
 import { createPrewiredImpl } from "../../impl-helpers/create-impl.js";
+import { resolveCenterValue } from "./center-value.js";
 import { donutSchema } from "./descriptor.js";
 
 const MUTED = "var(--vendo-fg-muted, rgba(0,0,0,0.55))";
@@ -16,6 +17,10 @@ function arcPath(cx: number, cy: number, r: number, start: number, end: number):
 export const Donut = createPrewiredImpl(donutSchema, (p) => {
   const size = p.size ?? 180;
   const total = p.slices.reduce((s, x) => s + x.value, 0);
+  // The center money-total is derived from the legend values so it can never
+  // disagree with them (a model-authored centerValue can be independently
+  // wrong). Non-currency centers pass through unchanged. See center-value.ts.
+  const centerValue = resolveCenterValue(p.slices, p.centerValue);
   const stroke = size * 0.14;
   const r = size / 2 - stroke / 2;
   const gap = p.slices.length > 1 ? 0.008 : 0; // small breathing gap between arcs
@@ -61,7 +66,7 @@ export const Donut = createPrewiredImpl(donutSchema, (p) => {
             ),
           )}
         </svg>
-        {(p.centerLabel || p.centerValue) && (
+        {(p.centerLabel || centerValue) && (
           <div
             style={{
               position: "absolute", inset: 0, display: "flex", flexDirection: "column",
@@ -73,9 +78,9 @@ export const Donut = createPrewiredImpl(donutSchema, (p) => {
                 {p.centerLabel}
               </span>
             ) : null}
-            {p.centerValue ? (
+            {centerValue ? (
               <span style={{ fontSize: size / 9, fontWeight: 650, fontVariantNumeric: "tabular-nums", color: "var(--vendo-fg, inherit)" }}>
-                {p.centerValue}
+                {centerValue}
               </span>
             ) : null}
           </div>

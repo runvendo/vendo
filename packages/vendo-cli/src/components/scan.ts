@@ -14,10 +14,38 @@ export interface ComponentCandidate {
   source: string;
 }
 
-const EXPORT_RE = /export\s+(?:function|const)\s+([A-Z][A-Za-z0-9]*)/;
-const EXPORT_RE_ALL = /export\s+(?:function|const)\s+([A-Z][A-Za-z0-9]*)/g;
+// export function/const/class Foo — the declaration form.
+const EXPORT_DECL_RE = /export\s+(?:async\s+)?(?:function|const|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
+// export { A, B as C } — the clause/re-export form (shadcn declares
+// `const Button = React.forwardRef(...)` then `export { Button, buttonVariants }`).
+const EXPORT_CLAUSE_RE = /export\s*\{([^}]*)\}/g;
 const MAX_CANDIDATES = 25;
 const MAX_FILE_BYTES = 40_000;
+
+/** Every exported symbol that looks like a component (PascalCase), in source
+ *  order, deduped. Recognizes both `export function/const Name` and the
+ *  `export { Name, X as Y }` re-export shape; lowercase/util exports are skipped. */
+function exportedComponentNames(source: string): string[] {
+  const hits: Array<{ index: number; name: string }> = [];
+  for (const m of source.matchAll(EXPORT_DECL_RE)) hits.push({ index: m.index!, name: m[1]! });
+  for (const m of source.matchAll(EXPORT_CLAUSE_RE)) {
+    for (const part of m[1]!.split(",")) {
+      const seg = part.trim().replace(/^type\s+/, "");
+      if (!seg) continue;
+      const name = (seg.split(/\s+as\s+/).pop() ?? seg).trim(); // `A as B` exports B
+      hits.push({ index: m.index!, name });
+    }
+  }
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const { name } of hits.sort((a, b) => a.index - b.index)) {
+    if (/^[A-Z][A-Za-z0-9]*$/.test(name) && !seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+  }
+  return names;
+}
 
 export async function scanComponents(targetDir: string): Promise<ComponentCandidate[]> {
   const files = await walk(
@@ -40,13 +68,12 @@ export async function scanComponents(targetDir: string): Promise<ComponentCandid
     if (candidates.length >= MAX_CANDIDATES) break;
     const source = await fs.readFile(file, "utf8");
     if (source.length > MAX_FILE_BYTES) continue; // giant files are not reusable primitives
-    const m = source.match(EXPORT_RE);
-    if (!m || !m[1]) continue;
-    const exportNames = [...source.matchAll(EXPORT_RE_ALL)].map((x) => x[1]!);
+    const exportNames = exportedComponentNames(source);
+    if (exportNames.length === 0) continue;
     candidates.push({
       file,
       relFile: path.relative(targetDir, file).replace(/\\/g, "/"),
-      exportName: m[1],
+      exportName: exportNames[0]!,
       exportNames,
       source,
     });

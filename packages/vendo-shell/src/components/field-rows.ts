@@ -11,6 +11,48 @@ export interface FieldRow {
   value: string;
 }
 
+/** The manifest's closed field-format vocabulary (mirrors @vendoai/core's
+ *  `FieldFormat` — kept local so the shell's card formatter doesn't couple to
+ *  core's export surface; the values are frozen by the manifest schema). */
+export type FieldFormat = "cents" | "iso-date" | "iso-datetime" | "percent";
+
+/** Per-field format hints (`{ amount: "cents" }`) from the tool's manifest,
+ *  carried alongside the approval so a money/date input renders like the
+ *  results do — never guessing a divisor for an un-hinted number. */
+export type FieldFormats = Readonly<Record<string, FieldFormat>>;
+
+const currencyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+
+/** Apply a declared format to a raw input value. Returns a string when the
+ *  hint genuinely applies to this value's type, else `undefined` so the
+ *  caller falls back to plain humanization — the platform's "never guess"
+ *  rule: we only convert when the field was explicitly declared. */
+function applyFormat(value: unknown, format: FieldFormat): string | undefined {
+  switch (format) {
+    case "cents":
+      // Integer cents → currency (divide by exactly 100). Only on real numbers.
+      return typeof value === "number" && Number.isFinite(value) ? currencyFmt.format(value / 100) : undefined;
+    case "percent":
+      // Render as-is with a % sign — never rescaled (12.5 → "12.5%").
+      return typeof value === "number" && Number.isFinite(value) ? `${value}%` : undefined;
+    case "iso-date": {
+      // A calendar date — render the named day without a timezone shift.
+      if (typeof value !== "string") return undefined;
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+      if (!m) return undefined;
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    }
+    case "iso-datetime": {
+      if (typeof value !== "string") return undefined;
+      const t = Date.parse(value);
+      return Number.isNaN(t) ? undefined : new Date(t).toLocaleString("en-US");
+    }
+    default:
+      return undefined;
+  }
+}
+
 /** "recipient_email" -> "Recipient email". */
 export function fieldLabel(key: string): string {
   const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim().toLowerCase();
@@ -30,7 +72,7 @@ function truncate(text: string, maxChars: number | null): string {
  *  JSON like `{"body":"Hi Marisol…`). Nested values beyond depth 1 fall back
  *  to JSON; truncation applies per line so a long field can't hide its
  *  siblings. The rows render with `white-space: pre-line`. */
-export function fieldValue(value: unknown, maxChars: number | null, depth = 0): string {
+export function fieldValue(value: unknown, maxChars: number | null, depth = 0, formats?: FieldFormats): string {
   if (typeof value === "string") return truncate(value, maxChars);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (depth === 0 && value && typeof value === "object") {
@@ -39,7 +81,13 @@ export function fieldValue(value: unknown, maxChars: number | null, depth = 0): 
     }
     return Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => !isEmpty(v))
-      .map(([k, v]) => `${fieldLabel(k)}: ${fieldValue(v, maxChars, 1)}`)
+      .map(([k, v]) => {
+        // Match a format hint by LEAF field name so a hint keyed `amount`
+        // formats an `amount` leaf whether it's top-level or nested under
+        // `body` (host OpenAPI tools put request fields under `body`).
+        const formatted = formats?.[k] !== undefined ? applyFormat(v, formats[k]!) : undefined;
+        return `${fieldLabel(k)}: ${formatted ?? fieldValue(v, maxChars, 1)}`;
+      })
       .join("\n");
   }
   return truncate(JSON.stringify(value), maxChars);
@@ -59,12 +107,29 @@ export function isEmpty(value: unknown): boolean {
  *  behind a "+N more" row cap either (finding 2: a critical payload can carry
  *  more than MAX_ROWS fields and every one of them is material). Only an
  *  act-tier card (a finite `maxChars`) caps at MAX_ROWS. */
-export function approvalRows(input: unknown, maxChars: number | null): { rows: FieldRow[]; more: number } {
+export function approvalRows(
+  input: unknown,
+  maxChars: number | null,
+  formats?: FieldFormats,
+): { rows: FieldRow[]; more: number } {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return isEmpty(input) ? { rows: [], more: 0 } : { rows: [{ label: "Input", value: fieldValue(input, maxChars) }], more: 0 };
   }
   const entries = Object.entries(input as Record<string, unknown>).filter(([, v]) => !isEmpty(v));
   const capped = maxChars === null ? entries : entries.slice(0, MAX_ROWS);
-  const rows = capped.map(([k, v]) => ({ label: fieldLabel(k), value: fieldValue(v, maxChars) }));
+  const rows = capped.map(([k, v]) => {
+    // Honor a declared format hint (cents/date/percent) so a money/date input
+    // reads like the results do; fall back to plain humanization otherwise.
+    // A field's declared format describes THAT field's units for this tool;
+    // approval INPUTS are formatted on the same-name assumption (the contract
+    // documents `formats` as result-field styling — see @vendoai/core's
+    // host-api.ts). This holds for well-designed tools with consistent
+    // input/result units (a transfer whose `amount` is cents in and out); a
+    // pathological dollars-in/cents-out tool is out of scope for v1.
+    const formatted = formats?.[k] !== undefined ? applyFormat(v, formats[k]!) : undefined;
+    // `formats` also threads into fieldValue so a hint reaches a leaf nested
+    // under `body` (body-shaped host inputs), not just top-level keys.
+    return { label: fieldLabel(k), value: formatted ?? fieldValue(v, maxChars, 0, formats) };
+  });
   return { rows, more: maxChars === null ? 0 : Math.max(0, entries.length - MAX_ROWS) };
 }

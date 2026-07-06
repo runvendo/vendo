@@ -10,7 +10,8 @@ import { CADENCE_SCOPE, demoStore, resolveThreadRecordId } from "./store";
 describe("createDemoAgent onSettled wiring", () => {
   it("REGRESSION: persists the streamed turn (incl. an approval-requested part) before any consent POST arrives", async () => {
     // Guards the exact failing sequence ENG-193 review (2026-07-04) caught on
-    // packages/vendo-next: if only the client-SENT messages were persisted,
+    // the handler package (now packages/vendo-server): if only the
+    // client-SENT messages were persisted,
     // the streamed assistant turn — carrying the approval-requested part the
     // consent endpoint reads — is missing from the store. createDemoAgent's
     // onSettled hook (agent.ts) must be the thing that writes it.
@@ -154,5 +155,15 @@ describe("createDemoAgent onSettled wiring", () => {
     );
     expect(consentRes.status).toBe(200);
     expect(await demoStore.grants.findForTool(CADENCE_SCOPE, "SEND_TEST_EMAIL")).toHaveLength(1);
+  });
+});
+
+describe("buildInstructions data fidelity", () => {
+  it("carries the platform DATA FIDELITY rules (dates never shift, divisors never guessed)", async () => {
+    const { buildInstructions } = await import("./agent");
+    const text = buildInstructions();
+    expect(text).toContain("DATA FIDELITY");
+    expect(text).toMatch(/NEVER guess a divisor/i);
+    expect(text).toMatch(/never timezone/i);
   });
 });

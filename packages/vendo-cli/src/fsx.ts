@@ -36,8 +36,9 @@ export async function walk(
 /**
  * Write a generated artifact. Outputs are developer-editable, so an existing
  * file is never silently clobbered: `force` overwrites unconditionally,
- * otherwise `ifExists` picks the policy — "error" (the fail-closed default)
- * throws, "skip" leaves the file untouched. Returns whether it wrote.
+ * re-writing IDENTICAL bytes is a no-op success (resume support), and for
+ * DIFFERENT content `ifExists` picks the policy — "error" (the fail-closed
+ * default) throws, "skip" leaves the file untouched. Returns whether it wrote.
  */
 export async function writeGenerated(
   file: string,
@@ -45,8 +46,18 @@ export async function writeGenerated(
   opts: { force: boolean; ifExists?: "error" | "skip" },
 ): Promise<boolean> {
   if (!opts.force) {
-    const present = await fs.access(file).then(() => true, () => false);
-    if (present) {
+    let existing: string | null = null;
+    try {
+      existing = await fs.readFile(file, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    if (existing !== null) {
+      // Identical bytes: re-running init after a mid-run failure re-writes the
+      // same content — treat as a no-op success (resume support). Different
+      // content follows `ifExists`: "skip" leaves the file, "error" (default)
+      // throws so hand-edits are never silently clobbered.
+      if (existing === content) return false;
       if ((opts.ifExists ?? "error") === "skip") return false;
       throw new Error(`${file} already exists — outputs are developer-editable; re-run with --force to overwrite`);
     }

@@ -1,0 +1,363 @@
+"use client";
+
+/**
+ * `<VendoRoot>` — the one client component `vendo init` wires into the
+ * app's root layout. Composes the shipped Vendo surfaces against the routes
+ * `createVendoHandler()` serves:
+ *
+ *   VendoProvider (HTTP transport → /chat, browser host-tool executor)
+ *   └ VendoThemeProvider (brand from .vendo/theme.json)
+ *     └ VendoShellProvider (sandboxed renderNode, saved-view store,
+ *        reads-only query replay, capability-gated integrations)
+ *       └ children + VendoOverlay (Cmd/Ctrl+K) + a floating launcher pill
+ *
+ * Capability-additive: the integrations tray only appears when the server
+ * reports the Composio capability; voice stays behind its flag (ENG-185).
+ */
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { DefaultChatTransport } from "ai";
+import type { VendoUIMessage, ManifestTool, UINode } from "@vendoai/core";
+import type { StageRoute } from "@vendoai/stage";
+import { VendoProvider } from "@vendoai/react";
+import {
+  VendoOverlay,
+  VendoShellProvider,
+  VendoToasts,
+  createLocalIntegrations,
+  createWebRemixes,
+  createWebStorage,
+  type VendoIntegrations,
+  type VendoToastsProps,
+} from "@vendoai/shell";
+import { createServerVendoStore } from "./server-store.js";
+import { VendoThemeProvider } from "@vendoai/components";
+import { brandTokensSchema, defaultBrand, type BrandTokens } from "@vendoai/components/theme";
+import { brandToCssVars } from "@vendoai/components/descriptors";
+import { manifestToolsToHostTools } from "@vendoai/server/manifest-tools";
+import type { VendoCapabilities } from "@vendoai/server/capabilities";
+import { SandboxStage } from "./sandbox-stage.js";
+import { VendoConnectNode } from "./connect-node.js";
+import { createServerIntegrations } from "./integrations.js";
+import { createServerNotifications } from "./notifications.js";
+import { createRunQuery } from "./run-query.js";
+import { createVendoVoice } from "./voice.js";
+import type { VoiceDriver } from "@vendoai/shell";
+
+export interface VendoRootProps {
+  /** `.vendo/theme.json`, imported as JSON. Invalid/absent → default brand. */
+  theme?: unknown;
+  /** `.vendo/tools.json`, imported as JSON ({ tools: [...] } or the array). */
+  tools?: unknown;
+  /** What the assistant calls itself/the product. */
+  productName?: string;
+  /** Mount path of the catch-all route. Default "/api/vendo". */
+  basePath?: string;
+  /** Surfaces sharing a threadId share one conversation. */
+  threadId?: string;
+  greeting?: string;
+  suggestions?: string[];
+  /** "pill" (default) renders a floating launcher; "none" = Cmd/Ctrl+K only. */
+  launcher?: "pill" | "none";
+  /** Automation toasts (VendoToasts) mount by default; `false` opts out. */
+  toasts?: boolean;
+  /** Corner for the toast stack. Default "bottom-left" (the launcher pill
+   *  owns bottom-right). */
+  toastPlacement?: VendoToastsProps["placement"];
+  /** Realtime voice driver (ENG-185). Omit for zero-config voice when the
+   *  handler reports `voice:true`; pass `false` to opt out, or a custom
+   *  driver to override the packaged OpenAI Realtime wiring. */
+  voice?: VoiceDriver | false;
+  /** OPTIONAL live route supplier, threaded to the sandbox stage so generated
+   *  views' next/link + next/navigation shims resolve the host's REAL location.
+   *  This package stays framework-agnostic, so a Next host supplies it from its
+   *  OWN `next/navigation` (declare `next` >= 13.3.0 in the host — `useParams`
+   *  landed in 13.3), e.g.:
+   *    routeSource={() => {
+   *      const params = useParams();
+   *      return {
+   *        pathname: usePathname() ?? "",
+   *        search: useSearchParams()?.toString() ? `?${useSearchParams()!.toString()}` : "",
+   *        params: (params ?? {}) as Record<string, string | string[]>,
+   *      };
+   *    }}
+   *  (`useSearchParams()` can be null in hybrid/pages-dir apps — guard it.) It's
+   *  invoked inside the stage's Suspense boundary, so `useSearchParams` re-renders
+   *  the sandbox on query-only navigation without opting the page into CSR. Omit
+   *  it (any non-Next host) and the sandbox route shims resolve empty. */
+  routeSource?: () => StageRoute;
+  children: ReactNode;
+}
+
+function parseBrand(theme: unknown): BrandTokens {
+  if (theme === undefined || theme === null) return defaultBrand;
+  const parsed = brandTokensSchema.safeParse(theme);
+  if (!parsed.success) {
+    console.warn("[vendo] theme.json does not match the brand-token schema; using defaults");
+    return defaultBrand;
+  }
+  return parsed.data;
+}
+
+function parseManifestTools(tools: unknown): ManifestTool[] {
+  if (Array.isArray(tools)) return tools as ManifestTool[];
+  if (tools && typeof tools === "object" && Array.isArray((tools as { tools?: unknown }).tools)) {
+    return (tools as { tools: ManifestTool[] }).tools;
+  }
+  return [];
+}
+
+const LAUNCHER_STYLE: CSSProperties = {
+  position: "fixed",
+  right: 22,
+  bottom: 22,
+  zIndex: 2147483000,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "10px 16px",
+  borderRadius: 999,
+  border: "1px solid var(--vendo-border, rgba(0,0,0,.12))",
+  background: "var(--vendo-accent, #0A7CFF)",
+  color: "var(--vendo-accent-fg, #fff)",
+  font: "600 13px/1 var(--vendo-font, system-ui, sans-serif)",
+  boxShadow: "0 10px 30px rgba(0,0,0,.18)",
+  cursor: "pointer",
+};
+
+export function VendoRoot({
+  theme,
+  tools,
+  productName = "Assistant",
+  basePath = "/api/vendo",
+  threadId = "vendo",
+  greeting,
+  suggestions,
+  launcher = "pill",
+  toasts = true,
+  toastPlacement = "bottom-left",
+  voice,
+  routeSource,
+  children,
+}: VendoRootProps) {
+  const brand = useMemo(() => parseBrand(theme), [theme]);
+  // Held in a ref so the memoized renderNode below stays stable (a Next host
+  // typically passes a fresh inline `routeSource` each render); renderNode reads
+  // the latest supplier at call time without re-creating on its identity.
+  const routeSourceRef = useRef(routeSource);
+  routeSourceRef.current = routeSource;
+  const manifestTools = useMemo(() => parseManifestTools(tools), [tools]);
+  const hostToolDefs = useMemo(() => manifestToolsToHostTools(manifestTools), [manifestTools]);
+  const [open, setOpen] = useState(false);
+  const [capabilities, setCapabilities] = useState<VendoCapabilities | null>(null);
+  // True after a capabilities fetch has FAILED (network error or a non-2xx).
+  // Distinct from `capabilities === null` (not answered yet): the brief
+  // in-flight window renders optimistically so healthy installs never
+  // flicker, but a failure must not leave the UI pretending everything is on.
+  const [capsFailed, setCapsFailed] = useState(false);
+
+  useEffect(() => {
+    // (Re)starting for this basePath: drop whatever a PREVIOUS endpoint
+    // answered. Without this, a basePath change whose new fetch fails would
+    // flip capsFailed while the stale `capabilities` object kept the chat
+    // surface and the toasts gate running on another endpoint's answer.
+    // No-op on first mount (already null/false).
+    setCapabilities(null);
+    setCapsFailed(false);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let delay = 1_000;
+    const attempt = () => {
+      fetch(`${basePath}/capabilities`, { cache: "no-store" })
+        .then((r) =>
+          r.ok
+            ? (r.json() as Promise<VendoCapabilities>)
+            : Promise.reject(new Error(`capabilities request failed (${r.status})`)),
+        )
+        .then((caps) => {
+          if (cancelled) return;
+          setCapabilities(caps);
+          setCapsFailed(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Flip the UI to its conservative shape and retry with capped
+          // exponential backoff until the server actually answers — the
+          // zero-config "everything on" default is the SERVER's to declare,
+          // never the fallout of a failed fetch.
+          setCapsFailed(true);
+          timer = setTimeout(attempt, delay);
+          delay = Math.min(delay * 2, 30_000);
+        });
+    };
+    attempt();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [basePath]);
+
+  const transport = useMemo(
+    // Static `body` merges into every request the transport sends — this is
+    // how the server-side thread persistence (createVendoHandler's /chat)
+    // knows which thread to upsert into. Surfaces sharing a threadId share a
+    // durable conversation, not just a client-side one.
+    () => new DefaultChatTransport<VendoUIMessage>({ api: `${basePath}/chat`, body: { threadId } }),
+    [basePath, threadId],
+  );
+
+  // The read half of that durable thread: on mount, restore the persisted
+  // messages (GET /threads/:id) so a reload — including one right after a
+  // stream died mid-turn — brings back every settled message instead of an
+  // empty thread. VendoProvider only seeds a still-empty, idle chat.
+  const loadHistory = useMemo(
+    () => async (): Promise<VendoUIMessage[]> => {
+      const res = await fetch(`${basePath}/threads/${encodeURIComponent(threadId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return [];
+      const body = (await res.json()) as unknown;
+      return Array.isArray(body) ? (body as VendoUIMessage[]) : [];
+    },
+    [basePath, threadId],
+  );
+
+  // Saved vendos survive reloads. Server-backed (durable across devices,
+  // no localStorage quota) when the handler reports the `storage` capability;
+  // localStorage otherwise — including the optimistic `capabilities === null`
+  // window before the fetch above resolves, which is why `capabilities?.storage`
+  // (not `capabilities`) drives this: the store switches under the surfaces
+  // using it the moment capabilities land, never blocking on them. No
+  // localStorage→server migration in v1 (see docs/persistence-and-deploy.md).
+  // Only touches localStorage inside its own methods, so importing stays SSR-safe.
+  const store = useMemo(
+    () =>
+      capabilities?.storage
+        ? createServerVendoStore(basePath)
+        : createWebStorage({ namespace: `vendo:${threadId}` }),
+    [capabilities?.storage, basePath, threadId],
+  );
+
+  // Remix pins (VendoRemix) follow the same web-storage pattern; the
+  // notifications client polls the handler's deliveries feed (VendoToasts).
+  const remixes = useMemo(() => createWebRemixes({ namespace: `vendo:${threadId}` }), [threadId]);
+  const notifications = useMemo(() => createServerNotifications(basePath), [basePath]);
+
+  const integrations = useMemo<VendoIntegrations>(
+    () =>
+      capabilities?.integrations
+        ? createServerIntegrations(basePath)
+        : createLocalIntegrations([]),
+    [capabilities?.integrations, basePath],
+  );
+
+  const runQuery = useMemo(() => createRunQuery(basePath, manifestTools), [basePath, manifestTools]);
+  const effectiveVoice = useMemo<VoiceDriver | undefined>(() => {
+    if (voice === false) return undefined;
+    if (voice) return voice;
+    if (!capabilities?.voice) return undefined;
+    return createVendoVoice({
+      basePath,
+      productName,
+      hostTools: hostToolDefs,
+      integrations: capabilities.integrations,
+      automations: capabilities.automations !== false,
+    });
+  }, [voice, capabilities?.voice, capabilities?.integrations, capabilities?.automations, basePath, productName, hostToolDefs]);
+
+  useEffect(
+    () => () => {
+      (effectiveVoice as (VoiceDriver & { dispose?: () => void }) | undefined)?.dispose?.();
+    },
+    [effectiveVoice],
+  );
+
+  const renderNode = useMemo(() => {
+    const render = (node: UINode): ReactNode => {
+      // The one host-rendered, trusted exception: the Connect OAuth card.
+      if (node.kind === "component" && node.name === "Connect") {
+        const props = (node.props ?? {}) as Record<string, unknown>;
+        return (
+          <VendoConnectNode
+            toolkit={typeof props["toolkit"] === "string" ? props["toolkit"] : ""}
+            {...(typeof props["reason"] === "string" ? { reason: props["reason"] } : {})}
+            basePath={basePath}
+          />
+        );
+      }
+      // Everything else the agent produces renders untrusted in the sandbox.
+      if (node.kind === "generated") {
+        return (
+          <SandboxStage
+            node={node}
+            brand={brand}
+            components={[]}
+            basePath={basePath}
+            {...(routeSourceRef.current ? { routeSource: routeSourceRef.current } : {})}
+          />
+        );
+      }
+      // Unexpected: only "Connect" is host-rendered. Fail loud but contained.
+      return <div data-testid="unexpected-node">{node.name} (not renderable)</div>;
+    };
+    return render;
+  }, [basePath, brand]);
+
+  // Capability-additive contract: with no ANTHROPIC_API_KEY the server reports
+  // chat:false, and asking would 401 inside the stream. Hide the assistant
+  // surface entirely in that case rather than degrading into a runtime error.
+  // `null` with no failure yet (first fetch in flight) renders optimistically
+  // so there is no flicker; a FAILED fetch renders conservatively until a
+  // backoff retry gets a real answer.
+  const chatEnabled = capabilities ? capabilities.chat : !capsFailed;
+
+  return (
+    <VendoProvider
+      transport={transport}
+      components={[]}
+      threadId={threadId}
+      hostTools={{ definitions: hostToolDefs }}
+      loadHistory={loadHistory}
+    >
+      <VendoThemeProvider brand={brand}>
+        <VendoShellProvider
+          renderNode={renderNode}
+          integrations={integrations}
+          store={store}
+          remixes={remixes}
+          notifications={notifications}
+          runQuery={runQuery}
+          components={[]}
+          theme={{ scheme: brand.mode === "dark" ? "dark" : "light" }}
+          cssVars={brandToCssVars(brand)}
+          productName={productName}
+        >
+          {children}
+          {chatEnabled && (
+            <VendoOverlay
+              launcherLabel={`Ask ${productName}`}
+              open={open}
+              onOpenChange={setOpen}
+              {...(greeting !== undefined ? { greeting } : {})}
+              {...(suggestions !== undefined ? { suggestions } : {})}
+              {...(effectiveVoice ? { voice: effectiveVoice } : {})}
+            />
+          )}
+          {chatEnabled && launcher === "pill" && !open && (
+            /* Provisional default launcher (flagged for design review): built
+               from shell tokens only, replaceable via launcher="none". */
+            <button type="button" style={LAUNCHER_STYLE} onClick={() => setOpen(true)}>
+              Ask {productName}
+            </button>
+          )}
+          {/* The deliveries poll waits for capabilities and never starts when
+              the server says automations are off. An old server that omits
+              the flag still polls, and a 404 from /deliveries then stops the
+              loop for good (see createServerNotifications). */}
+          {toasts && capabilities !== null && capabilities.automations !== false && (
+            <VendoToasts placement={toastPlacement} namespace={`vendo:${threadId}`} />
+          )}
+        </VendoShellProvider>
+      </VendoThemeProvider>
+    </VendoProvider>
+  );
+}

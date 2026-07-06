@@ -29,6 +29,20 @@ describe("writeGenerated", () => {
     await expect(writeGenerated(path.join(dir, "out.json"), "2", { force: false })).rejects.toThrow(/--force/);
   });
 
+  it("resumes: an existing file with IDENTICAL content is a no-op success without force", async () => {
+    const dir = await scratch();
+    await writeGenerated(path.join(dir, "out.json"), "same", { force: false });
+    // A re-run after a mid-init failure re-writes the same bytes — should not
+    // throw, and reports it did not write (false) since the file was unchanged.
+    await expect(
+      writeGenerated(path.join(dir, "out.json"), "same", { force: false }),
+    ).resolves.toBe(false);
+    // But DIFFERENT content is still refused (hand-edit protection intact).
+    await expect(
+      writeGenerated(path.join(dir, "out.json"), "edited", { force: false }),
+    ).rejects.toThrow(/--force/);
+  });
+
   it("overwrites with force and creates parent dirs", async () => {
     const dir = await scratch();
     await writeGenerated(path.join(dir, "a/b/out.json"), "1", { force: false });

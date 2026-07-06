@@ -290,6 +290,46 @@ describe("handleComposioWebhook", () => {
     expect(await res.json()).toEqual({ ok: true, fired: 1 });
   });
 
+  it("one failing automation does not block other matches (per-fire isolation)", async () => {
+    const world = await makeWorld();
+    await world.store.create(WORLD_SCOPE, {
+      spec: composioSpec("GMAIL_NEW_GMAIL_MESSAGE"),
+      grants: [],
+    });
+    const { automation: second } = await world.store.create(WORLD_SCOPE, {
+      spec: composioSpec("GMAIL_NEW_GMAIL_MESSAGE"),
+      grants: [],
+    });
+    const connections = createConnectionsStore(CATALOG);
+    await connections.setConnectedAccount("gmail", "acct-123");
+    const realFire = world.runner.fire.bind(world.runner);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(world.runner, "fire")
+      .mockImplementationOnce(() => Promise.reject(new Error("store blip")))
+      .mockImplementation(realFire);
+
+    const body = JSON.stringify({
+      type: "trigger.fired",
+      timestamp: "2026-07-04T12:00:00.000Z",
+      data: { subject: "hello" },
+      metadata: {
+        id: "ti_iso",
+        trigger_slug: "GMAIL_NEW_GMAIL_MESSAGE",
+        connected_account_id: "acct-123",
+        toolkit_slug: "gmail",
+      },
+    });
+    const res = await handleComposioWebhook(
+      webhookRequest({ id: "msg_iso", body }),
+      { world, connections, env: { COMPOSIO_WEBHOOK_SECRET: SECRET }, nowMs: () => NOW_MS },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, fired: 1 }); // one succeeded, one failed
+    expect(await world.store.listRuns(WORLD_SCOPE, second.id)).toHaveLength(1);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
   it("redelivery (same webhook-id) is a 200 no-op — runner not re-invoked", async () => {
     const world = await makeWorld();
     const { automation } = await world.store.create(WORLD_SCOPE, {

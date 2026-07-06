@@ -26,11 +26,15 @@ export interface VendoCapabilities {
    *  the handler from the resolved `storage` option, not env — see
    *  fetch-handler.ts's GET "capabilities" case). */
   storage: boolean;
+  /** True when the automations world is live (set by the handler from the
+   *  resolved `automations` option, not env). `false` tells the client not
+   *  to start the deliveries poll — /deliveries would 404 forever. */
+  automations: boolean;
 }
 
 /** What `detectCapabilities` alone can answer from env keys — everything on
- *  the wire shape except `storage` (the handler merges that in). */
-export type EnvCapabilities = Omit<VendoCapabilities, "storage">;
+ *  the wire shape except `storage`/`automations` (the handler merges those). */
+export type EnvCapabilities = Omit<VendoCapabilities, "storage" | "automations">;
 
 export interface DetectCapabilitiesOptions {
   /** True when the host supplied its own `model` (e.g. via handler options). */

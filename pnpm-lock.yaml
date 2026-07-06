@@ -40,9 +40,6 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/vendo-core
-      '@vendoai/next':
-        specifier: workspace:*
-        version: link:../../packages/vendo-next
       '@vendoai/react':
         specifier: workspace:*
         version: link:../../packages/vendo-react
@@ -82,6 +79,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      vendoai:
+        specifier: workspace:*
+        version: link:../../packages/vendo
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -161,9 +161,6 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/vendo-core
-      '@vendoai/next':
-        specifier: workspace:*
-        version: link:../../packages/vendo-next
       '@vendoai/react':
         specifier: workspace:*
         version: link:../../packages/vendo-react
@@ -209,6 +206,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      vendoai:
+        specifier: workspace:*
+        version: link:../../packages/vendo
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -335,18 +335,15 @@ importers:
 
   examples/node:
     dependencies:
-      '@vendoai/next':
-        specifier: workspace:*
-        version: link:../../packages/vendo-next
-      '@vendoai/server':
-        specifier: workspace:*
-        version: link:../../packages/vendo-server
       react:
         specifier: ^18.3.0
         version: 18.3.1
       react-dom:
         specifier: ^18.3.0
         version: 18.3.1(react@18.3.1)
+      vendoai:
+        specifier: workspace:*
+        version: link:../../packages/vendo
     devDependencies:
       '@types/react':
         specifier: ^19.2.0
@@ -406,6 +403,55 @@ importers:
       vite:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@22.20.0)(lightningcss@1.32.0)(terser@5.48.0)
+
+  packages/vendo:
+    dependencies:
+      '@vendoai/client':
+        specifier: workspace:*
+        version: link:../vendo-client
+      '@vendoai/components':
+        specifier: workspace:*
+        version: link:../vendo-components
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../vendo-core
+      '@vendoai/react':
+        specifier: workspace:*
+        version: link:../vendo-react
+      '@vendoai/server':
+        specifier: workspace:*
+        version: link:../vendo-server
+      '@vendoai/shell':
+        specifier: workspace:*
+        version: link:../vendo-shell
+    devDependencies:
+      '@testing-library/react':
+        specifier: ^16.0.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.0
+        version: 19.2.3(@types/react@19.2.17)
+      jsdom:
+        specifier: ^25.0.0
+        version: 25.0.1
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
   packages/vendo-cli:
     dependencies:
@@ -476,6 +522,61 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
+  packages/vendo-client:
+    dependencies:
+      '@vendoai/components':
+        specifier: workspace:*
+        version: link:../vendo-components
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../vendo-core
+      '@vendoai/react':
+        specifier: workspace:*
+        version: link:../vendo-react
+      '@vendoai/server':
+        specifier: workspace:*
+        version: link:../vendo-server
+      '@vendoai/shell':
+        specifier: workspace:*
+        version: link:../vendo-shell
+      '@vendoai/stage':
+        specifier: workspace:*
+        version: link:../vendo-stage
+      ai:
+        specifier: 6.0.28
+        version: 6.0.28(zod@3.25.76)
+    devDependencies:
+      '@testing-library/react':
+        specifier: ^16.0.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.0
+        version: 19.2.3(@types/react@19.2.17)
+      jsdom:
+        specifier: ^25.0.0
+        version: 25.0.1
+      next:
+        specifier: 16.2.9
+        version: 16.2.9(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.0
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
   packages/vendo-components:
     dependencies:
@@ -568,67 +669,6 @@ importers:
       zod-to-json-schema:
         specifier: ^3.24.0
         version: 3.25.2(zod@3.25.76)
-
-  packages/vendo-next:
-    dependencies:
-      '@scarf/scarf':
-        specifier: ^1.4.0
-        version: 1.4.0
-      '@vendoai/components':
-        specifier: workspace:*
-        version: link:../vendo-components
-      '@vendoai/core':
-        specifier: workspace:*
-        version: link:../vendo-core
-      '@vendoai/react':
-        specifier: workspace:*
-        version: link:../vendo-react
-      '@vendoai/runtime':
-        specifier: workspace:*
-        version: link:../vendo-runtime
-      '@vendoai/server':
-        specifier: workspace:*
-        version: link:../vendo-server
-      '@vendoai/shell':
-        specifier: workspace:*
-        version: link:../vendo-shell
-      '@vendoai/store':
-        specifier: workspace:*
-        version: link:../vendo-store
-      ai:
-        specifier: 6.0.28
-        version: 6.0.28(zod@3.25.76)
-      zod:
-        specifier: ^3.24.0
-        version: 3.25.76
-    devDependencies:
-      '@testing-library/react':
-        specifier: ^16.0.0
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.20.0
-      '@types/react':
-        specifier: ^19.2.0
-        version: 19.2.17
-      '@types/react-dom':
-        specifier: ^19.2.0
-        version: 19.2.3(@types/react@19.2.17)
-      jsdom:
-        specifier: ^25.0.0
-        version: 25.0.1
-      react:
-        specifier: ^18.3.0
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.0
-        version: 18.3.1(react@18.3.1)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
   packages/vendo-react:
     dependencies:
@@ -11908,6 +11948,32 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
+  next@16.2.9(@opentelemetry/api@1.9.0)(@playwright/test@1.61.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+    dependencies:
+      '@next/env': 16.2.9
+      '@swc/helpers': 0.5.15
+      baseline-browser-mapping: 2.10.40
+      caniuse-lite: 1.0.30001799
+      postcss: 8.4.31
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      styled-jsx: 5.1.6(react@18.3.1)
+    optionalDependencies:
+      '@next/swc-darwin-arm64': 16.2.9
+      '@next/swc-darwin-x64': 16.2.9
+      '@next/swc-linux-arm64-gnu': 16.2.9
+      '@next/swc-linux-arm64-musl': 16.2.9
+      '@next/swc-linux-x64-gnu': 16.2.9
+      '@next/swc-linux-x64-musl': 16.2.9
+      '@next/swc-win32-arm64-msvc': 16.2.9
+      '@next/swc-win32-x64-msvc': 16.2.9
+      '@opentelemetry/api': 1.9.0
+      '@playwright/test': 1.61.1
+      sharp: 0.34.5
+    transitivePeerDependencies:
+      - '@babel/core'
+      - babel-plugin-macros
+
   node-addon-api@7.1.1: {}
 
   node-emoji@2.2.0:
@@ -12821,6 +12887,11 @@ snapshots:
     dependencies:
       client-only: 0.0.1
       react: 19.2.4
+
+  styled-jsx@5.1.6(react@18.3.1):
+    dependencies:
+      client-only: 0.0.1
+      react: 18.3.1
 
   sucrase@3.35.1:
     dependencies:

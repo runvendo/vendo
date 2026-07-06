@@ -4,12 +4,15 @@ description: "Vendo embeds an agent in your product that lets every customer aut
 ---
 
 ```bash
+npm install vendoai
 npx vendo init
 ```
 
-One command. It reads your app, extracts your theme, tools, and components, and wires the agent into your routes. Add one model key and it works.
+Install the package, then run the codemod. It reads your app, extracts your theme, tools, and components, and wires the agent into your routes. Add one model key and it works.
 
-{/* TODO: Add a hero screenshot or GIF showing Vendo chat beside a generated view. */}
+<Frame caption="A Maple customer asks where their money went; the agent composes a live spending view from the host's own components and API.">
+  <img src="/images/hero.gif" alt="Vendo composing a generated view beside chat in a demo bank app" />
+</Frame>
 
 Vendo gives your app a chat surface and a generated UI surface. The agent can talk with your customers, call tools through your own API as the signed-in user, and render generated charts, tables, forms, and workflows in a sandboxed stage.
 
@@ -22,11 +25,30 @@ With Vendo embedded, your customers can:
 - Connect external tools through the integrations surface when you provide a Composio key.
 - Create automations that use the same tools and approval policy as chat.
 
+## Start here
+
 <CardGroup cols={2}>
   <Card title="Quickstart: Next.js" icon="bolt" href="/quickstart">
-    Run `npx vendo init` in a Next.js App Router app, add one provider key, and open your first generated view.
+    Install `vendoai` and run `npx vendo init` in a Next.js App Router app, add one provider key, and open your first generated view.
   </Card>
   <Card title="Quickstart: any Node server" icon="server" href="/quickstart-node">
-    Mount the `@vendoai/server` fetch handler on `node:http`, Express, Hono, or another Node runtime.
+    Mount the `vendoai/server` fetch handler on `node:http`, Express, Hono, or another Node runtime.
+  </Card>
+</CardGroup>
+
+## Explore
+
+<CardGroup cols={2}>
+  <Card title="How it works" icon="diagram-project" href="/concepts/architecture">
+    The agent, the sandboxed stage, and how generated UI reaches your components.
+  </Card>
+  <Card title="Connect your app" icon="plug" href="/connect/vendo-init">
+    What `vendo init` extracts, and how to wire tools, host components, and theme.
+  </Card>
+  <Card title="Tools and safety" icon="shield-check" href="/concepts/tools-and-safety">
+    Every mutating action passes your permission policy: consent, approval tokens, judged rules.
+  </Card>
+  <Card title="Capabilities" icon="wand-magic-sparkles" href="/capabilities/integrations">
+    Integrations, MCP, automations, saved views, and voice.
   </Card>
 </CardGroup>

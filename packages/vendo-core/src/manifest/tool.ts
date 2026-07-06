@@ -34,6 +34,38 @@ export const manifestToolAnnotationsSchema = z
 export type ManifestToolAnnotations = z.infer<typeof manifestToolAnnotationsSchema>;
 
 /**
+ * Result-field format vocabulary (data-fidelity hardening): a manifest tool may
+ * declare how its RESULT fields are encoded so the prompt layer can render
+ * explicit formatting rules ("amount is integer cents: divide by 100") instead
+ * of letting the model guess a divisor or timezone-shift a date. Closed enum
+ * on purpose — every value maps to one vetted instruction in
+ * `prompt/format-hints.ts`; extending it means writing the instruction too.
+ */
+export const manifestFieldFormatSchema = z.enum([
+  "cents",
+  "iso-date",
+  "iso-datetime",
+  "percent",
+]);
+export type FieldFormat = z.infer<typeof manifestFieldFormatSchema>;
+
+/** Field name → format. Keys are RESULT field names (any depth — hints are
+ *  prose for the model, so JSON-pointer precision buys nothing). The same
+ *  hints also style an approval card's INPUT fields of the same name (ENG-193
+ *  follow-up: a money/date input renders like the result does), on the
+ *  assumption a field's units are consistent between input and result.
+ *
+ *  Keys are constrained to the same identifier charset as tool names: they
+ *  are interpolated into the prompt by `prompt/format-hints.ts`, so a
+ *  free-form key (quotes, newlines) would be a prompt-injection surface.
+ *  The renderer ALSO escapes defensively — but the manifest contract fails
+ *  closed here, at validation time. */
+export const manifestToolFormatsSchema = z.record(
+  z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/),
+  manifestFieldFormatSchema,
+);
+
+/**
  * How a tool call physically reaches the host API. `http` is the only binding
  * frozen now; the discriminated union is the extension point (trpc, graphql —
  * ENG-197 extractor targets). Path segments in `{braces}` are template
@@ -44,9 +76,12 @@ export const httpBindingSchema = z
     type: z.literal("http"),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
     /** Host-relative path template, e.g. `/api/invoices/{id}/cancel`. Must start
-     *  with a single `/` (no scheme, no `//authority`) and contain no whitespace —
-     *  a manifest path can never point a client executor at a foreign origin. */
-    path: z.string().regex(/^\/(?!\/)\S*$/),
+     *  with a single `/` (no scheme, no `//authority`), contain no whitespace,
+     *  and contain no backslash — browsers normalize `\`→`/`, so `/\evil.com`
+     *  would otherwise become a cross-origin URL. `[^\s\\]` keeps this a plain
+     *  regex `pattern` in the generated JSON Schema while rejecting exactly the
+     *  paths the runtime executor's `isHostRelativePath` guard rejects. */
+    path: z.string().regex(/^\/(?!\/)[^\s\\]*$/),
   })
   .strict();
 export const manifestToolBindingSchema = z.discriminatedUnion("type", [httpBindingSchema]);
@@ -67,6 +102,9 @@ export const manifestToolSchema = z
     inputSchema: jsonSchemaDocument,
     annotations: manifestToolAnnotationsSchema,
     binding: manifestToolBindingSchema,
+    /** OPTIONAL and additive (no default): result-field format hints. Old
+     *  manifests without it stay valid byte-for-byte. */
+    formats: manifestToolFormatsSchema.optional(),
   })
   .strict();
 export type ManifestTool = z.infer<typeof manifestToolSchema>;

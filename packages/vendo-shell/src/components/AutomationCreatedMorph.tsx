@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AutomationCard, automationCardModel } from "./AutomationCard";
 import { BrandIcon } from "./BrandIcon";
 import { loadFluidMotion, type FluidMotion } from "./fluid-motion";
+import { useShell } from "../context";
 
 const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
-export const AUTOMATION_CREATED_HOLD_MS = 2600;
+export const AUTOMATION_CREATED_HOLD_MS = 3400;
 const AUTOMATION_CREATED_REDUCED_HOLD_MS = 1600;
 const AUTOMATION_CREATED_TOAST_HEIGHT = 58;
 
@@ -37,6 +39,10 @@ function settleAll(animations: Array<unknown>): Promise<unknown[]> {
 
 export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorphProps) {
   const model = useMemo(() => automationCardModel(notice.toolName, notice.input), [notice.toolName, notice.input]);
+  // The layer portals to document.body — OUTSIDE the .vendo-root scope that
+  // defines every --vendo-* token, so it must carry the class and the host's
+  // inline brand vars itself or the pill renders unthemed (transparent).
+  const { cssVars } = useShell();
   const [face, setFace] = useState<"morph" | "toast">(notice.sourceRect ? "morph" : "toast");
   const layerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -76,9 +82,12 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
     const destination = () => {
       const availableWidth = Math.max(160, layer.clientWidth - 32);
       const width = Math.min(292, availableWidth);
+      // Land at the SCREEN's top-right (the layer is a body-portaled,
+      // viewport-spanning fixed element) — not wherever the card happened
+      // to sit inside the thread.
       return {
-        top: Math.max(18, (source?.top ?? 36) - 18),
-        left: Math.max(16, layer.clientWidth - width - 16),
+        top: 18,
+        left: Math.max(16, layer.clientWidth - width - 18),
         width,
         height: AUTOMATION_CREATED_TOAST_HEIGHT,
       };
@@ -158,7 +167,7 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
             height: [`${source.height}px`, `${dest.height}px`],
             borderRadius: ["12px", "14px"],
           },
-          { duration: 0.58, ease: EASE },
+          { duration: 0.85, ease: EASE },
         ),
         proposal
           ? toolkit.animate(
@@ -171,7 +180,7 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
           ? toolkit.animate(
               toast,
               { opacity: [0, 1], filter: ["blur(6px)", "blur(0px)"] },
-              { duration: 0.36, delay: 0.13, ease: EASE },
+              { duration: 0.4, delay: 0.3, ease: EASE },
             )
           : undefined,
       ].filter(Boolean);
@@ -199,8 +208,9 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
   const apps = model.access.slice(0, 3);
   const appNames = apps.map((app) => app.name).join(", ");
 
-  return (
-    <div className="fl-auto-created-layer" ref={layerRef}>
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="vendo-root fl-auto-created-layer" style={cssVars} ref={layerRef}>
       <div className={`fl-auto-created-panel fl-auto-created-panel--${face}`} ref={panelRef}>
         {face === "morph" ? (
           <div className="fl-auto-created-proposal" ref={proposalRef} aria-hidden="true">
@@ -239,6 +249,7 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

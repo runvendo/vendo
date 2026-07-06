@@ -1,15 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import Link from "./next-link";
+import Link, { useLinkStatus } from "./next-link";
 import Image from "./next-image";
-import { useRouter } from "./next-navigation";
-import useSWR from "./swr";
-import { NAVIGATE_ACTION } from "./dispatch";
+import {
+  useRouter,
+  useParams,
+  usePathname,
+  useSearchParams,
+  redirect,
+  notFound,
+  useSelectedLayoutSegment,
+  useSelectedLayoutSegments,
+} from "./next-navigation";
+import useSWR, { useSWRConfig, mutate, SWRConfig, preload } from "./swr";
+import { NAVIGATE_ACTION, dispatch, navigate } from "./dispatch";
 
 afterEach(() => {
   cleanup();
   delete (globalThis as Record<string, unknown>)["__vendoDispatch"];
   delete (globalThis as Record<string, unknown>)["__vendoAnchorData"];
+  delete (globalThis as Record<string, unknown>)["__vendoRouteData"];
 });
 
 function captureDispatch() {
@@ -30,12 +40,100 @@ describe("Link shim", () => {
     expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/clients/cl_rivera" } }]);
   });
 
+  it("builds the full URL from a UrlObject href (pathname + query + hash)", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href={{ pathname: "/search", query: { q: "acme", page: 2 }, hash: "results" }}>go</Link>,
+    );
+    const anchor = screen.getByText("go") as HTMLAnchorElement;
+    expect(anchor.getAttribute("href")).toBe("/search?q=acme&page=2#results");
+    fireEvent.click(anchor);
+    expect(calls).toEqual([
+      { action: NAVIGATE_ACTION, payload: { href: "/search?q=acme&page=2#results" } },
+    ]);
+  });
+
   it("still fires a user onClick before navigating", () => {
     captureDispatch();
     const onClick = vi.fn();
     render(<Link href="/x" onClick={onClick}>x</Link>);
     fireEvent.click(screen.getByText("x"));
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when the user's onClick calls preventDefault (user-cancel)", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href="/x" onClick={(e) => e.preventDefault()}>
+        x
+      </Link>,
+    );
+    fireEvent.click(screen.getByText("x"));
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores modified clicks (open-in-new-tab) and does not navigate", () => {
+    const calls = captureDispatch();
+    render(<Link href="/x">x</Link>);
+    fireEvent.click(screen.getByText("x"), { metaKey: true });
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores non-primary (middle/right) button clicks", () => {
+    const calls = captureDispatch();
+    render(<Link href="/x">x</Link>);
+    fireEvent.click(screen.getByText("x"), { button: 1 });
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores clicks on a link with target other than _self", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href="/x" target="_blank">
+        x
+      </Link>,
+    );
+    fireEvent.click(screen.getByText("x"));
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    ["https://example.com/x"],
+    ["http://example.com/x"],
+    ["mailto:a@b.com"],
+    ["tel:+15551234"],
+    ["//cdn.example.com/x"],
+    ["#section"],
+  ])("lets non-local href %s fall through to the browser (no navigate, no preventDefault)", (href) => {
+    const calls = captureDispatch();
+    render(<Link href={href}>l</Link>);
+    const notCanceled = fireEvent.click(screen.getByText("l"));
+    expect(calls).toEqual([]);
+    expect(notCanceled).toBe(true); // preventDefault NOT called
+  });
+
+  it("lets a download link fall through to the browser", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href="/file.pdf" download>
+        d
+      </Link>,
+    );
+    const notCanceled = fireEvent.click(screen.getByText("d"));
+    expect(calls).toEqual([]);
+    expect(notCanceled).toBe(true);
+  });
+
+  it("still intercepts a plain local app path", () => {
+    const calls = captureDispatch();
+    render(<Link href="/clients/x">c</Link>);
+    const notCanceled = fireEvent.click(screen.getByText("c"));
+    expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/clients/x" } }]);
+    expect(notCanceled).toBe(false); // preventDefault called
+  });
+
+  it("exports useLinkStatus (Next 16) returning { pending: false }", () => {
+    expect(useLinkStatus()).toEqual({ pending: false });
   });
 });
 
@@ -49,12 +147,76 @@ describe("Image shim", () => {
 });
 
 describe("useRouter shim", () => {
-  it("push routes the host app; back throws a contained error", () => {
+  it("push routes the host app; back/forward are safe no-ops (never throw into a handler)", () => {
     const calls = captureDispatch();
     const router = useRouter();
     router.push("/settings");
     expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/settings" } }]);
-    expect(() => router.back()).toThrow(/not available/);
+    expect(() => router.back()).not.toThrow();
+    expect(() => router.forward()).not.toThrow();
+    // no history channel exists, so back/forward must not emit a navigate
+    expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/settings" } }]);
+  });
+});
+
+describe("next/navigation extra exports", () => {
+  it("useParams returns an empty object when the route channel is absent", () => {
+    expect(useParams()).toEqual({});
+  });
+
+  it("redirect initiates navigation then THROWS to unwind the current render", () => {
+    const calls = captureDispatch();
+    expect(() => redirect("/login")).toThrow(/redirect/i);
+    // navigation was still kicked off before the throw
+    expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/login" } }]);
+  });
+
+  it("notFound THROWS to stop rendering the protected/invalid content", () => {
+    expect(() => notFound()).toThrow(/not.?found/i);
+  });
+
+  it("useSelectedLayoutSegment(s) return null / []", () => {
+    expect(useSelectedLayoutSegment()).toBeNull();
+    expect(useSelectedLayoutSegments()).toEqual([]);
+  });
+});
+
+describe("next/navigation route channel (window.__vendoRouteData)", () => {
+  it("usePathname/useSearchParams/useParams read the host's real route from the channel", () => {
+    (globalThis as Record<string, unknown>)["__vendoRouteData"] = {
+      pathname: "/clients/cl_rivera",
+      search: "?tab=invoices&page=2",
+      params: { id: "cl_rivera" },
+    };
+    expect(usePathname()).toBe("/clients/cl_rivera");
+    const sp = useSearchParams();
+    expect(sp.get("tab")).toBe("invoices");
+    expect(sp.get("page")).toBe("2");
+    expect(useParams()).toEqual({ id: "cl_rivera" });
+  });
+
+  it("falls back to empty values when the channel is absent (SSR / no host)", () => {
+    expect(usePathname()).toBe("");
+    expect(useSearchParams().toString()).toBe("");
+    expect(useParams()).toEqual({});
+  });
+
+  it("falls back per-field when the channel exists but a field is missing", () => {
+    (globalThis as Record<string, unknown>)["__vendoRouteData"] = { pathname: "/settings" };
+    expect(usePathname()).toBe("/settings");
+    expect(useSearchParams().toString()).toBe("");
+    expect(useParams()).toEqual({});
+  });
+
+  it("passes catch-all/array params through unchanged (segment shape preserved)", () => {
+    (globalThis as Record<string, unknown>)["__vendoRouteData"] = {
+      pathname: "/docs/a/b/c",
+      search: "",
+      params: { slug: ["a", "b", "c"], org: "acme" },
+    };
+    const params = useParams();
+    expect(Array.isArray(params.slug)).toBe(true);
+    expect(params).toEqual({ slug: ["a", "b", "c"], org: "acme" });
   });
 });
 
@@ -73,6 +235,167 @@ describe("useSWR shim", () => {
     const result = useSWR("/api/missing", fetcher);
     expect(result.data).toBeUndefined();
     expect(result.isLoading).toBe(true);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("a null key (conditional fetch) means skip — not a permanent spinner", () => {
+    const result = useSWR(null, vi.fn());
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
+
+  it("a false key (ready && '/api/x' idiom) means skip — not a permanent spinner", () => {
+    const result = useSWR(false, vi.fn());
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
+
+  it("a function key is called to derive the key and resolves its data", () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/live": [1, 2] };
+    const result = useSWR(() => "/api/live", vi.fn());
+    expect(result.data).toEqual([1, 2]);
+    expect(result.isLoading).toBe(false);
+  });
+
+  it("a function key that returns null is skipped (not loading)", () => {
+    const result = useSWR(() => null, vi.fn());
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
+
+  it("a function key that throws (dependency not ready) is skipped (not loading)", () => {
+    const result = useSWR(
+      () => {
+        throw new Error("dep not ready");
+      },
+      vi.fn(),
+    );
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
+});
+
+describe("dispatch bridge-promise handling", () => {
+  it("dispatch returns the bridge promise, resolving with its result on success", async () => {
+    (globalThis as Record<string, unknown>)["__vendoDispatch"] = () => Promise.resolve("ok");
+    await expect(dispatch("vendo.something")).resolves.toBe("ok");
+  });
+
+  it("propagates a bridge rejection to awaiters (does NOT swallow policy/capability failures)", async () => {
+    (globalThis as Record<string, unknown>)["__vendoDispatch"] = () =>
+      Promise.reject(Object.assign(new Error("policy deny"), { code: "policy" }));
+    await expect(dispatch("vendo.blocked")).rejects.toThrow(/policy deny/);
+    await expect(navigate("/blocked")).rejects.toThrow(/policy deny/);
+  });
+
+  it("a blocked navigation from a Link click is caught (no unhandled rejection, no dead crash)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    (globalThis as Record<string, unknown>)["__vendoDispatch"] = () =>
+      Promise.reject(Object.assign(new Error("policy deny"), { code: "policy" }));
+    render(<Link href="/blocked">go</Link>);
+    expect(() => fireEvent.click(screen.getByText("go"))).not.toThrow();
+    // flush the navigate() promise's rejection handler
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe("swr extra exports", () => {
+  it("useSWRConfig returns a config object with a working mutate", async () => {
+    const config = useSWRConfig();
+    expect(typeof config.mutate).toBe("function");
+    await expect(config.mutate("/api/x")).resolves.toBeUndefined();
+  });
+
+  it("global mutate writes into the anchor-data cache and resolves", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = {};
+    await expect(mutate("/api/deadlines", [{ id: "z" }])).resolves.toEqual([{ id: "z" }]);
+    expect(useSWR("/api/deadlines").data).toEqual([{ id: "z" }]);
+  });
+
+  it("global mutate with no data is a safe resolved no-op", async () => {
+    await expect(mutate("/api/x")).resolves.toBeUndefined();
+  });
+
+  it("global mutate with a key only (revalidate form) resolves the current cached value", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/x": [1] };
+    await expect(mutate("/api/x")).resolves.toEqual([1]);
+  });
+
+  it("global mutate with a predicate matches cache entries and resolves their values", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/a": 1, "/api/b": 2, "/other": 3 };
+    const res = (await mutate((key: string) => key.startsWith("/api/"))) as unknown[];
+    expect(res).toEqual(expect.arrayContaining([1, 2]));
+    expect(res).not.toContain(3);
+  });
+
+  it("global mutate with a predicate + data writes matching entries only", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/a": 1, "/api/b": 2 };
+    await mutate((key: string) => key === "/api/a", 99);
+    expect(useSWR("/api/a").data).toBe(99);
+    expect(useSWR("/api/b").data).toBe(2);
+  });
+
+  it("SWRConfig renders its children (passthrough provider)", () => {
+    render(<SWRConfig value={{}}>{<span>swr-child</span>}</SWRConfig>);
+    expect(screen.getByText("swr-child")).toBeTruthy();
+  });
+
+  it("useSWR reads fallback data from an enclosing SWRConfig provider", () => {
+    function Probe() {
+      const { data } = useSWR("/api/x");
+      return <span>{JSON.stringify(data)}</span>;
+    }
+    render(
+      <SWRConfig value={{ fallback: { "/api/x": [7] } }}>
+        <Probe />
+      </SWRConfig>,
+    );
+    expect(screen.getByText("[7]")).toBeTruthy();
+  });
+
+  it("useSWRConfig returns the provider's shared cache and mutate", () => {
+    const sharedCache = new Map<string, unknown>();
+    let captured: ReturnType<typeof useSWRConfig> | undefined;
+    function Probe() {
+      captured = useSWRConfig();
+      return null;
+    }
+    render(
+      <SWRConfig value={{ provider: () => sharedCache }}>
+        <Probe />
+      </SWRConfig>,
+    );
+    expect(captured?.cache).toBe(sharedCache);
+    expect(typeof captured?.mutate).toBe("function");
+  });
+
+  it("nested SWRConfig merges fallback over the parent provider", () => {
+    function Probe({ k }: { k: string }) {
+      const { data } = useSWR(k);
+      return (
+        <span>
+          {k}:{JSON.stringify(data)}
+        </span>
+      );
+    }
+    render(
+      <SWRConfig value={{ fallback: { "/a": 1, "/b": 2 } }}>
+        <SWRConfig value={{ fallback: { "/b": 99 } }}>
+          <Probe k="/a" />
+          <Probe k="/b" />
+        </SWRConfig>
+      </SWRConfig>,
+    );
+    expect(screen.getByText("/a:1")).toBeTruthy();
+    expect(screen.getByText("/b:99")).toBeTruthy();
+  });
+
+  it("preload is a safe no-op returning a resolved promise (fetcher never runs)", async () => {
+    const fetcher = vi.fn();
+    await expect(preload("/api/x", fetcher)).resolves.toBeUndefined();
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

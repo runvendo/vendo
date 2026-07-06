@@ -155,6 +155,29 @@ describe("useReopenVendo", () => {
     });
   });
 
+  it("reports refreshing while a live-refresh tick is in flight (the shimmer-over-stale seam)", async () => {
+    const store = createLocalStore();
+    const vendo = await store.save({
+      id: "f1", name: "Tx",
+      node: genNode({ tx: [0] }, [{ path: "/tx", tool: "get_transactions" }]),
+    });
+    let first = true;
+    let releaseTick!: (v: unknown) => void;
+    const gate = new Promise((r) => { releaseTick = r; });
+    const runQuery = vi.fn(async () => {
+      if (first) { first = false; return [1]; }
+      await gate;
+      return [2];
+    });
+    const { result } = renderHook(() => useReopenVendo(vendo), { wrapper: wrap(store, runQuery, 40) });
+    await waitFor(() => expect(result.current.status).toBe("live"));
+    // A tick starts and hangs — the consumer can shimmer over the stale view.
+    await waitFor(() => expect(result.current.refreshing).toBe(true), { timeout: 3000 });
+    releaseTick(null);
+    // The hung tick lands: the veil clears again between ticks.
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+  });
+
   it("pauses live refresh while the document is hidden", async () => {
     const store = createLocalStore();
     const vendo = await store.save({

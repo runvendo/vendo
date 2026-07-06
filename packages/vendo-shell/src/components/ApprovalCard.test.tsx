@@ -31,6 +31,21 @@ describe("ApprovalCard — escalation register", () => {
     expect(buttons[0]?.className).toMatch(/fl-btn-primary/);
   });
 
+  it("formats a cents-hinted material field as currency on a critical card ($500.00, not 50000)", () => {
+    render(
+      <ApprovalCard
+        toolName="transfer_money"
+        input={{ amount: 50000 }}
+        tier="critical"
+        formats={{ amount: "cents" }}
+        onApprove={vi.fn()}
+        onDecline={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("$500.00")).toBeTruthy();
+    expect(screen.queryByText("50000")).toBeNull();
+  });
+
   it("critical tier ignores a reason prop's button-priority flip — ceremony's own register wins", () => {
     render(<ApprovalCard toolName="transfer_money" input={{ amount: 100 }} tier="critical" reason="unusual" onApprove={vi.fn()} onDecline={vi.fn()} />);
     const buttons = screen.getAllByRole("button");

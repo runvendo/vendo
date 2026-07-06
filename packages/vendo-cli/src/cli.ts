@@ -49,7 +49,7 @@ Options:
   --force      Overwrite existing .vendo/ files (init/refresh; warns before overwriting)
   --yes        Non-interactive: no prompts; resolve keys from env / .env.local only;
                skip the component/remix pickers (source edits stay human-gated)
-  --local      Pack local @vendoai packages from a Vendo monorepo into ./vendor
+  --local      Pack local vendo + @vendoai packages from a Vendo monorepo into ./vendor
   --version    Print the CLI version
 `;
 
@@ -123,19 +123,19 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 // Only auto-run when invoked as a bin, not when imported by tests.
-// pathToFileURL, not string concat: a checkout path with spaces (or any
-// URL-special char) percent-encodes in import.meta.url, so a hand-built
-// `file://` string never matches. Node also resolves the main module through
-// symlinks (npm's .bin/vendo is one), so compare against the realpath's URL.
-const invokedAsBin = (() => {
-  const entry = process.argv[1];
-  if (!entry) return false;
+// Node resolves the main module through symlinks (npm's .bin/vendo is one) and
+// pathToFileURL percent-encodes special characters (a checkout path with
+// spaces), so compare against the realpath's file URL, not a hand-built
+// `file://` string. Exported so the entrypoint logic is unit-testable.
+export function isCliEntrypoint(metaUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) return false;
   try {
-    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+    return metaUrl === pathToFileURL(realpathSync(argv1)).href;
   } catch {
     return false;
   }
-})();
-if (invokedAsBin) {
+}
+
+if (isCliEntrypoint(import.meta.url, process.argv[1])) {
   main(process.argv.slice(2)).then((code) => process.exit(code));
 }

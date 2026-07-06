@@ -3,7 +3,7 @@
  * (same spirit as @vendoai/runtime's dependency-guard.test.ts).
  *
  * package.json exposes `./capabilities`, `./manifest-tools` and `./catalog`
- * as deep imports precisely so "use client" code (e.g. @vendoai/next/client)
+ * as deep imports precisely so "use client" code (e.g. @vendoai/client)
  * can use them WITHOUT pulling the barrel — which imports node:fs and
  * node:crypto — into a browser bundle. Turbopack tolerates that; webpack/CRA
  * may not. So these three modules must stay free of runtime imports: no

@@ -5,6 +5,10 @@ import { FluidThinking } from "./FluidThinking";
 
 export interface IntegrationsPickerProps {
   integrations: Integration[];
+  /** True while the FIRST list is still in flight — the grid holds its space
+   *  with glass shimmer placeholder rows instead of rendering empty. A
+   *  background refresh over an already-listed tray never blanks it. */
+  loading?: boolean;
   /** May return the connect flow's promise — the row shows a live connecting
    *  state until it settles and the refreshed list arrives. */
   onConnect: (id: string) => void | Promise<unknown>;
@@ -12,7 +16,10 @@ export interface IntegrationsPickerProps {
   onClose: () => void;
 }
 
-export function IntegrationsPicker({ integrations, onConnect, onDisconnect, onClose }: IntegrationsPickerProps) {
+/** Placeholder rows while the first list loads — mirrors the 2-col item grid. */
+const LOADING_ROWS = 4;
+
+export function IntegrationsPicker({ integrations, loading = false, onConnect, onDisconnect, onClose }: IntegrationsPickerProps) {
   const [query, setQuery] = useState("");
   // Rows with an OAuth flow in flight, and rows whose flip to connected was
   // OBSERVED here (those get the one-shot green celebration; rows that mount
@@ -127,6 +134,13 @@ export function IntegrationsPicker({ integrations, onConnect, onDisconnect, onCl
             strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
       </div>
+      {loading && integrations.length === 0 && (
+        <div className="fl-picker-grid fl-picker-loading" aria-hidden="true">
+          {Array.from({ length: LOADING_ROWS }, (_, i) => (
+            <div key={i} className="fl-glass-shimmer" />
+          ))}
+        </div>
+      )}
       {connected.length > 0 && (
         <>
           <div className="fl-picker-group">Connected</div>

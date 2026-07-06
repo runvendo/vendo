@@ -18,7 +18,9 @@ const WIDTH = 760;
 const NODE_WIDTH = 14;
 const NODE_PADDING = 18;
 const MIN_HEIGHT = 300;
-const MAX_HEIGHT = 520;
+const MAX_HEIGHT = 620;
+/** Two text lines (label + value) need this much vertical room per node. */
+const LABEL_BLOCK = 32;
 const DEFAULT_PALETTE = brandToChartPalette(defaultBrand);
 const MUTED = "var(--vendo-fg-muted, rgba(0,0,0,0.55))";
 const FG = "var(--vendo-fg, #111418)";
@@ -68,16 +70,62 @@ const linkPath = linkHorizontal<LayoutLink, [number, number]>()
   .source((link) => [asNode(link.source).x1 ?? 0, link.y0 ?? 0])
   .target((link) => [asNode(link.target).x0 ?? 0, link.y1 ?? 0]);
 
+/**
+ * Push label centers apart so stacked small nodes (a burn sankey's tail
+ * categories) never overlap: labels in one text column keep their node's
+ * order but get at least LABEL_BLOCK px of separation, clamped to the
+ * chart's vertical bounds.
+ */
+function resolveLabelYs(desired: number[], top: number, bottom: number): number[] {
+  const order = desired.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y);
+  const out = new Array<number>(desired.length);
+  let prev = top - LABEL_BLOCK;
+  for (const { y, i } of order) {
+    const placed = Math.max(y, prev + LABEL_BLOCK);
+    out[i] = placed;
+    prev = placed;
+  }
+  // If the run overflowed the bottom, shift the whole tail back up.
+  const overflow = prev - bottom;
+  if (overflow > 0) {
+    let ceiling = bottom;
+    for (let k = order.length - 1; k >= 0; k--) {
+      const idx = order[k]!.i;
+      out[idx] = Math.min(out[idx]!, ceiling);
+      ceiling = out[idx]! - LABEL_BLOCK;
+    }
+  }
+  return out;
+}
+
 function SankeyView(props: SankeyProps) {
   const { mode, theme } = useTheme();
   const palette = theme.defaultChartPalette?.length ? theme.defaultChartPalette : DEFAULT_PALETTE;
-  const height = clamp(220 + props.nodes.length * 24, MIN_HEIGHT, MAX_HEIGHT);
+  const height = clamp(200 + props.nodes.length * 34, MIN_HEIGHT, MAX_HEIGHT);
   const graph = useMemo(() => createLayout(props, height), [props, height]);
 
   const colorByNode = new Map<string, string>();
   graph.nodes.forEach((node, index) => {
     colorByNode.set(node.id, colorAt(palette, index));
   });
+
+  // Resolve label collisions per text column (same anchor + x position).
+  const labelYByNode = new Map<string, number>();
+  {
+    const columns = new Map<string, Array<{ id: string; mid: number }>>();
+    for (const node of graph.nodes) {
+      const x0 = node.x0 ?? 0;
+      const isRightSide = x0 > WIDTH / 2;
+      const key = `${isRightSide ? "r" : "l"}:${Math.round(x0)}`;
+      const list = columns.get(key) ?? [];
+      list.push({ id: node.id, mid: ((node.y0 ?? 0) + (node.y1 ?? 0)) / 2 });
+      columns.set(key, list);
+    }
+    for (const list of columns.values()) {
+      const ys = resolveLabelYs(list.map((n) => n.mid), 26, height - 18);
+      list.forEach((n, i) => labelYByNode.set(n.id, ys[i]!));
+    }
+  }
 
   const totalOut = graph.nodes
     .filter((node) => !node.targetLinks?.length)
@@ -138,7 +186,7 @@ function SankeyView(props: SankeyProps) {
             const x1 = node.x1 ?? x0 + NODE_WIDTH;
             const y0 = node.y0 ?? 0;
             const y1 = node.y1 ?? y0;
-            const midY = (y0 + y1) / 2;
+            const midY = labelYByNode.get(node.id) ?? (y0 + y1) / 2;
             const isRightSide = x0 > WIDTH / 2;
             const labelX = isRightSide ? x1 + 10 : x0 - 10;
             const anchor = isRightSide ? "start" : "end";

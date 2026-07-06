@@ -1,8 +1,8 @@
 /**
  * The Cadence demo's Store seam wiring (ENG-193 §6.1/§6.2) — the hand-rolled
- * parallel of what `createVendoHandler` assembles for `@vendoai/next` hosts
- * (packages/vendo-next/src/handler.ts); this app hasn't migrated to the
- * handler, so it wires the same in-memory primitives directly.
+ * parallel of what `createVendoHandler` assembles for `vendo/server` hosts
+ * (packages/vendo-server/src/route-handler.ts); this app hasn't migrated to
+ * the handler, so it wires the same in-memory primitives directly.
  *
  * `ThreadStore.create()` mints its own store-assigned id (a deliberate seam
  * rule); the client's stable chat id ("cadence-demo", see VendoRoot.tsx)

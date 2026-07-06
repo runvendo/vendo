@@ -3,13 +3,13 @@ title: "Handler options"
 description: "Every option accepted by createVendoHandler and createVendoFetchHandler"
 ---
 
-`createVendoHandler(options)` from `@vendoai/next` and
-`createVendoFetchHandler(options)` from `@vendoai/server` accept the same
-`VendoHandlerOptions` object. The options object is validated at boot. Unknown
-keys or wrong shapes throw a readable error instead of being ignored.
+`createVendoHandler(options)` and `createVendoFetchHandler(options)`, both
+from `vendoai/server`, accept the same `VendoHandlerOptions` object. The options
+object is validated at boot. Unknown keys or wrong shapes throw a readable
+error instead of being ignored.
 
 ```ts
-import { createVendoHandler } from "@vendoai/next";
+import { createVendoHandler } from "vendoai/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

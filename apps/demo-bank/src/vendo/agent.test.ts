@@ -51,6 +51,8 @@ describe("chat prompt migration diff", () => {
   // list re-wraps onto one line in the shared connectSection. Everything else
   // must survive verbatim.
   const INTENDED_REMOVALS = [
+    // Donut catalog line gained the centerValue convert-once guidance
+    /^- Donut: A donut\/ring chart with a legend and an optional centered total, drawn in a/,
     /^"gmail", reason: "read the receipt for that charge" \}\. Use the toolkit id \(gmail,$/,
     /^slack, notion, github, googlecalendar, linear, googledrive, discord, googlesheets,$/,
     /^stripe, jira, asana, hubspot, airtable\)\. You may briefly say you're requesting access\.$/,

@@ -151,6 +151,37 @@ describe("createVendoAgent", () => {
     expect(ui.data.payload).toEqual(payload);
   });
 
+  it("streams a GENERIC error part on a run failure — raw provider detail stays in the server log", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // A provider auth failure is the canonical leak: its message carries the
+    // key prefix. The stream's error part must never repeat it to the client.
+    const model = new MockLanguageModelV3({
+      doStream: async () => {
+        throw new Error('401 invalid x-api-key "sk-ant-api03-abc123" (request id req_xyz)');
+      },
+    });
+    const agent = createVendoAgent({ model, policy: allowPolicy });
+
+    const parts = await collect(
+      agent.run({ messages: userTurn, tools: {}, signal: new AbortController().signal }),
+    );
+    const errorPart = parts.find((p) => (p as { type: string }).type === "error") as
+      | { errorText: string }
+      | undefined;
+    expect(errorPart).toBeDefined();
+    expect(errorPart!.errorText).toBe(
+      "something went wrong running this step — check the server logs",
+    );
+    expect(errorPart!.errorText).not.toContain("sk-ant-api03");
+    // The original error (classification-intact) reached the server log.
+    expect(
+      error.mock.calls.some((call) =>
+        call.some((arg) => arg instanceof Error && arg.message.includes("sk-ant-api03-abc123")),
+      ),
+    ).toBe(true);
+    error.mockRestore();
+  });
+
   it("registers render_view and request_connect but not render_ui", async () => {
     // Capture the toolset the engine hands to streamText by reading the tools
     // the SDK forwards to the model's doStream (provider-format function tools,
@@ -386,6 +417,173 @@ describe("createVendoAgent", () => {
       expect(results.some((r) => r.type === "tool-result" && r.toolCallId === call.toolCallId)).toBe(true);
     }
     expect(calls.some((c) => c.toolCallId === "call-aborted")).toBe(false);
+  });
+
+  it("turns a declined approval into an explicit user decision, not a bare tool error", async () => {
+    // The shell declines with `{ approved: false }` and NO reason, so the ai
+    // SDK's conversion would hand the model "Tool execution denied." — an
+    // ambiguous, retryable-looking error the model answers by RE-PITCHING the
+    // action. The engine must stamp the decline as the user's decision with
+    // the never-re-propose instruction attached.
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "Understood."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createVendoAgent({ model, policy: allowPolicy });
+
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "send the chase email" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-send_email",
+            toolCallId: "call-declined",
+            state: "output-denied",
+            input: { to: "client@example.com" },
+            approval: { id: "appr-1", approved: false },
+          },
+        ],
+      },
+      { id: "m3", role: "user", parts: [{ type: "text", text: "ok what else" }] },
+    ] as unknown as VendoUIMessage[];
+
+    const parts = await collect(
+      agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
+    );
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+
+    const results = seenPrompt
+      .filter((m) => m.role === "tool")
+      .flatMap((m) => m.content as { type: string; toolCallId: string; output?: { type: string; value?: string } }[]);
+    const denied = results.find((r) => r.toolCallId === "call-declined");
+    expect(denied).toBeDefined();
+    const text = denied!.output?.value ?? "";
+    expect(text).toMatch(/user DECLINED/);
+    expect(text).toContain("send_email");
+    expect(text).toMatch(/not an error/i);
+    expect(text).toMatch(/re-propose/i);
+  });
+
+  it("stamps the LIVE decline path too: approval-responded (approved: false) on auto-resubmit", async () => {
+    // The real client decline never arrives as output-denied: the shell
+    // answers the card and the react layer auto-resubmits with the part still
+    // in state `approval-responded` + approved:false (vendo-react
+    // host-tools.ts). The SDK resume path then synthesizes an
+    // execution-denied tool result from approvalResponse.reason — which is
+    // undefined, so the model again sees the bare fallback. The same
+    // serialization-layer stamping must cover this shape.
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "Understood."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createVendoAgent({ model, policy: allowPolicy });
+
+    // Auto-resubmit shape: the assistant message with the responded approval
+    // is the LAST message — no new user text.
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "send the chase email" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-send_email",
+            toolCallId: "call-live-declined",
+            state: "approval-responded",
+            input: { to: "client@example.com" },
+            approval: { id: "appr-live", approved: false },
+          },
+        ],
+      },
+    ] as unknown as VendoUIMessage[];
+
+    const parts = await collect(
+      agent.run({ messages: history, tools: {}, signal: new AbortController().signal }),
+    );
+    expect(parts.map((p) => (p as { type: string }).type)).toContain("finish");
+
+    const results = seenPrompt
+      .filter((m) => m.role === "tool")
+      .flatMap(
+        (m) =>
+          m.content as {
+            type: string;
+            toolCallId: string;
+            output?: { type: string; value?: string; reason?: string };
+          }[],
+      );
+    const denied = results.find((r) => r.type === "tool-result" && r.toolCallId === "call-live-declined");
+    expect(denied).toBeDefined();
+    // The resume path emits `execution-denied` with the approval reason.
+    const text = denied!.output?.reason ?? denied!.output?.value ?? "";
+    expect(text).toMatch(/user DECLINED/);
+    expect(text).toContain("send_email");
+    expect(text).toMatch(/re-propose/i);
+  });
+
+  it("never overwrites a decline reason the part already carries", async () => {
+    let seenPrompt: { role: string; content: unknown }[] = [];
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        seenPrompt = prompt as typeof seenPrompt;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              ...textChunks("t-ok", "Ok."),
+              { type: "finish", usage: ZERO_USAGE, finishReason: { unified: "stop", raw: undefined } },
+            ] satisfies LanguageModelV3StreamPart[],
+          }),
+        };
+      },
+    });
+    const agent = createVendoAgent({ model, policy: allowPolicy });
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "do it" }] },
+      {
+        id: "m2",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-mutate_thing",
+            toolCallId: "call-reasoned",
+            state: "output-denied",
+            input: {},
+            approval: { id: "appr-2", approved: false, reason: "Wrong recipient." },
+          },
+        ],
+      },
+      { id: "m3", role: "user", parts: [{ type: "text", text: "hm" }] },
+    ] as unknown as VendoUIMessage[];
+
+    await collect(agent.run({ messages: history, tools: {}, signal: new AbortController().signal }));
+    const results = seenPrompt
+      .filter((m) => m.role === "tool")
+      .flatMap((m) => m.content as { toolCallId: string; output?: { value?: string } }[]);
+    expect(results.find((r) => r.toolCallId === "call-reasoned")?.output?.value).toBe(
+      "Wrong recipient.",
+    );
   });
 
   it("writes a data-consent part for a gated tool call", async () => {

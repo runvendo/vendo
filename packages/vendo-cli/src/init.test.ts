@@ -161,7 +161,7 @@ describe("runInit e2e (mock model)", () => {
       const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf8")) as {
         dependencies: Record<string, string>;
       };
-      expect(pkg.dependencies["@vendoai/next"]).toBe("latest");
+      expect(pkg.dependencies["vendoai"]).toBe("latest");
       expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
     } finally {
       log.mockRestore();

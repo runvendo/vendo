@@ -493,7 +493,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
       console.log(
         [
           "local packages:",
-          `  wrote  ${localInstall.packages.length} @vendoai tarballs + fluidkit into ${path.relative(targetDir, localInstall.vendorDir)}`,
+          `  wrote  ${localInstall.packages.length} local vendo tarballs + fluidkit into ${path.relative(targetDir, localInstall.vendorDir)}`,
           `  edited package.json with file:vendor/* dependencies and ${localInstall.packageManager === "pnpm" ? "pnpm.overrides" : "overrides"}`,
           `  next  run ${localInstall.installCommand}`,
         ].join("\n"),

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -89,6 +89,73 @@ describe("buildEnvironment local vendoring (fast-edits follow-up)", () => {
     expect(manifest.anchors["w"]?.["@/lib/data"]?.kind).toBe("absent");
     expect(report.join("\n")).toContain("could not vendor local");
     expect(existsSync(path.join(dir, ".vendo/env/vendor/local--lib-data.js"))).toBe(false);
+  });
+
+  it("gives each anchor a UNIQUE flat import when a shared specifier resolves to DIFFERENT files", async () => {
+    const dir = app({
+      "src/a/cn.ts": `export const cn = () => "from-a";`,
+      "src/b/cn.ts": `export const cn = () => "from-b";`,
+    });
+    const rec = (file: string): RemixSourceRecord => ({
+      file,
+      source: `import { cn } from "./cn"\nexport default function W(){ return cn() }`,
+      prepared: `import { cn } from "./cn"\nexport default function W(){ return cn() }`,
+      sourceHash: "h",
+      capturedAt: "2026-07-04T00:00:00.000Z",
+    });
+    const records = { a: rec("src/a/w.tsx"), b: rec("src/b/w.tsx") };
+    const { manifest } = await buildEnvironment(dir, records, { now: () => "2026-07-04T00:00:00.000Z" });
+
+    const map = JSON.parse(readFileSync(path.join(dir, ".vendo/env/import-map.json"), "utf8")) as {
+      imports: Record<string, string>;
+      scopes?: unknown;
+    };
+    // The runtime reads only flat `imports` (applied globally) — no scopes.
+    expect(map.scopes).toBeUndefined();
+
+    // The colliding "./cn" is rewritten to a UNIQUE specifier per anchor in the
+    // manifest, the baseline source/prepared, AND the flat import map — all
+    // three agree, so BOTH modules resolve end-to-end.
+    const aSpec = Object.keys(manifest.anchors["a"]!).find((s) => s.startsWith("./cn"))!;
+    const bSpec = Object.keys(manifest.anchors["b"]!).find((s) => s.startsWith("./cn"))!;
+    expect(aSpec).not.toBe(bSpec);
+    expect(manifest.anchors["a"]![aSpec]!.kind).toBe("real");
+    expect(manifest.anchors["b"]![bSpec]!.kind).toBe("real");
+    expect(records.a.source).toContain(`from "${aSpec}"`);
+    expect(records.a.prepared).toContain(`from "${aSpec}"`);
+    expect(records.b.source).toContain(`from "${bSpec}"`);
+
+    const aUrl = map.imports[aSpec]!;
+    const bUrl = map.imports[bSpec]!;
+    expect(aUrl).toBeDefined();
+    expect(bUrl).toBeDefined();
+    expect(aUrl).not.toBe(bUrl);
+    const read = (u: string) => readFileSync(path.join(dir, ".vendo/env", u.replace(/^\.\//, "")), "utf8");
+    expect(read(aUrl)).toContain("from-a");
+    expect(read(aUrl)).not.toContain("from-b");
+    expect(read(bUrl)).toContain("from-b");
+    expect(read(bUrl)).not.toContain("from-a");
+  });
+
+  it("dedups to one plain flat entry when two anchors resolve a shared specifier to the SAME file", async () => {
+    const dir = app({ "src/shared/cn.ts": `export const cn = () => "shared";` });
+    const rec = (file: string): RemixSourceRecord => ({
+      file,
+      source: `import { cn } from "@/shared/cn"\nexport default function W(){ return cn() }`,
+      sourceHash: "h",
+      capturedAt: "2026-07-04T00:00:00.000Z",
+    });
+    const records = { a: rec("src/a/w.tsx"), b: rec("src/b/w.tsx") };
+    const { manifest } = await buildEnvironment(dir, records, { now: () => "2026-07-04T00:00:00.000Z" });
+    const map = JSON.parse(readFileSync(path.join(dir, ".vendo/env/import-map.json"), "utf8")) as {
+      imports: Record<string, string>;
+    };
+    // Same specifier, same file → unchanged plain flat entry, source untouched.
+    expect(map.imports["@/shared/cn"]).toBeDefined();
+    expect(manifest.anchors["a"]?.["@/shared/cn"]?.kind).toBe("real");
+    expect(records.a.source).toContain(`from "@/shared/cn"`);
+    const localBundles = readdirSync(path.join(dir, ".vendo/env/vendor")).filter((f) => f.startsWith("local-"));
+    expect(localBundles).toHaveLength(1);
   });
 
   it("refuses a local module that imports @vendoai/shell or unprovided bare packages", async () => {

@@ -2,9 +2,10 @@
  * POST /api/vendo/consent — mounts `handleConsent` (ENG-193 §4.5) behind
  * this app's own hand-rolled route, the same way every other Vendo route
  * here is a thin adapter over a testable handler function (see
- * chat-handler.ts/action-handler.ts). The `@vendoai/next` production mount of
- * the SAME runtime logic lives in packages/vendo-next/src/consent.ts; this
- * app hasn't migrated to the handler ("Plan deviations" #1).
+ * chat-handler.ts/action-handler.ts). The `vendo/server` production mount of
+ * the SAME runtime logic lives in packages/vendo-server/src/consent.ts
+ * (`handleConsentRoute`); this app hasn't migrated to the handler ("Plan
+ * deviations" #1).
  *
  * `grant.tool` is already server-bound inside `handleConsent` itself (it 400s
  * when `response.grant.tool !== toolName`) — no need to re-check it here.
