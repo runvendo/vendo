@@ -15,7 +15,6 @@ process.
 npx create-next-app@latest my-app     # or your existing app
 cd my-app
 npm install vendo
-npm install -D @vendoai/cli
 npx vendo init .
 ```
 
