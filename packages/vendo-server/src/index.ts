@@ -1,10 +1,12 @@
 /**
  * Public API surface for `@vendoai/server` — the framework-agnostic handler
- * core behind `@vendoai/next`. This package holds the request handlers
- * (chat/action/integrations), capability detection, `.vendo/` loading,
- * the embedded automations world, the default policy, and the agent/
- * instructions builder. Framework adapters (like `@vendoai/next`) wire
- * these into their routing layer; this package has no framework deps.
+ * core behind `createVendoHandler` (the `{ GET, POST }` route pair for
+ * file-router catch-alls) and `toNodeHandler` (Express/`node:http`). This
+ * package holds the request handlers (chat/action/integrations), capability
+ * detection, `.vendo/` loading, the embedded automations world, the default
+ * policy, and the agent/instructions builder. This is the internal
+ * `@vendoai/server` package, surfaced publicly via the `vendo` umbrella's
+ * `vendo/server` subpath; it has no framework deps.
  *
  * Server-only: reads `.vendo/` from disk and holds API keys. Never import
  * this from a client component.
@@ -54,6 +56,7 @@ export {
   type VendoFetchHandler,
   type VendoState,
 } from "./fetch-handler.js";
+export { createVendoHandler, type VendoRouteHandlers } from "./route-handler.js";
 export { startVendoScheduler } from "./boot.js";
 export {
   createDrizzleVendoRegistry,

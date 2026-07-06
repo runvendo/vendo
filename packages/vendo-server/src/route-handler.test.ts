@@ -20,8 +20,9 @@ import {
   InMemoryThreadStore,
   type RegisteredTool,
 } from "@vendoai/runtime";
-import { createVendoHandler, resetVendoBootRegistry, routeTail } from "./handler.js";
-import { ensureVendoState, WORLD_SCOPE } from "@vendoai/server";
+import { createVendoHandler } from "./route-handler.js";
+import { ensureVendoState, resetVendoBootRegistry, routeTail } from "./fetch-handler.js";
+import { WORLD_SCOPE } from "./guard.js";
 
 // An unannotated write tool: the default policy's fail-safe gates it behind
 // approval (no readOnly/destructive hints, no Composio-shaped verb segments).
