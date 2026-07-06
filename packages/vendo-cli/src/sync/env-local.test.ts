@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -89,6 +89,66 @@ describe("buildEnvironment local vendoring (fast-edits follow-up)", () => {
     expect(manifest.anchors["w"]?.["@/lib/data"]?.kind).toBe("absent");
     expect(report.join("\n")).toContain("could not vendor local");
     expect(existsSync(path.join(dir, ".vendo/env/vendor/local--lib-data.js"))).toBe(false);
+  });
+
+  it("gives each anchor the correctly-resolved bundle when a shared specifier resolves to DIFFERENT files", async () => {
+    const dir = app({
+      "src/a/cn.ts": `export const cn = () => "from-a";`,
+      "src/b/cn.ts": `export const cn = () => "from-b";`,
+    });
+    const rec = (file: string): RemixSourceRecord => ({
+      file,
+      source: `import { cn } from "./cn"\nexport default function W(){ return cn() }`,
+      sourceHash: "h",
+      capturedAt: "2026-07-04T00:00:00.000Z",
+    });
+    const { manifest } = await buildEnvironment(
+      dir,
+      { a: rec("src/a/w.tsx"), b: rec("src/b/w.tsx") },
+      { now: () => "2026-07-04T00:00:00.000Z" },
+    );
+    expect(manifest.anchors["a"]?.["./cn"]?.kind).toBe("real");
+    expect(manifest.anchors["b"]?.["./cn"]?.kind).toBe("real");
+
+    const map = JSON.parse(readFileSync(path.join(dir, ".vendo/env/import-map.json"), "utf8")) as {
+      imports: Record<string, string>;
+      scopes?: Record<string, Record<string, string>>;
+    };
+    // Same specifier "./cn", two different files → per-anchor entries, not one
+    // shared (last-write-wins) bundle.
+    const aUrl = map.scopes?.["a"]?.["./cn"] ?? map.imports["./cn"];
+    const bUrl = map.scopes?.["b"]?.["./cn"] ?? map.imports["./cn"];
+    expect(aUrl).toBeDefined();
+    expect(bUrl).toBeDefined();
+    expect(aUrl).not.toBe(bUrl);
+    const read = (u: string) => readFileSync(path.join(dir, ".vendo/env", u.replace(/^\.\//, "")), "utf8");
+    expect(read(aUrl!)).toContain("from-a");
+    expect(read(aUrl!)).not.toContain("from-b");
+    expect(read(bUrl!)).toContain("from-b");
+    expect(read(bUrl!)).not.toContain("from-a");
+  });
+
+  it("dedups to one bundle when two anchors resolve a shared specifier to the SAME file", async () => {
+    const dir = app({ "src/shared/cn.ts": `export const cn = () => "shared";` });
+    const rec = (file: string): RemixSourceRecord => ({
+      file,
+      source: `import { cn } from "@/shared/cn"\nexport default function W(){ return cn() }`,
+      sourceHash: "h",
+      capturedAt: "2026-07-04T00:00:00.000Z",
+    });
+    await buildEnvironment(
+      dir,
+      { a: rec("src/a/w.tsx"), b: rec("src/b/w.tsx") },
+      { now: () => "2026-07-04T00:00:00.000Z" },
+    );
+    const map = JSON.parse(readFileSync(path.join(dir, ".vendo/env/import-map.json"), "utf8")) as {
+      imports: Record<string, string>;
+      scopes?: Record<string, Record<string, string>>;
+    };
+    expect(map.imports["@/shared/cn"]).toBeDefined(); // single flat entry, no scope needed
+    expect(map.scopes?.["a"]?.["@/shared/cn"]).toBeUndefined();
+    const localBundles = readdirSync(path.join(dir, ".vendo/env/vendor")).filter((f) => f.startsWith("local-"));
+    expect(localBundles).toHaveLength(1);
   });
 
   it("refuses a local module that imports @vendoai/shell or unprovided bare packages", async () => {

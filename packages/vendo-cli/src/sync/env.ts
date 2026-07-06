@@ -65,7 +65,12 @@ export async function buildEnvironment(
   const anchors: EnvManifest["anchors"] = {};
   const npmToVendor = new Map<string, string>(); // specifier → vendor entry file
   const shimsToVendor = new Set<string>(); // shimmed specifiers actually imported
-  const localToVendor = new Map<string, string>(); // specifier → resolved app file
+  // Local specifier resolution recorded PER ANCHOR: two anchors can import the
+  // same specifier string ("./cn") that resolves to DIFFERENT files. Keying the
+  // vendored bundle by the specifier (not the resolved file) would clobber one
+  // with the other, so we vendor per distinct resolved FILE and map each
+  // anchor's specifier at its own file's bundle below.
+  const localResolved: Array<{ anchorId: string; specifier: string; file: string }> = [];
   const aliases = readAliases(targetDir);
   // realpath both sides of the refusal comparison: esbuild hands plugins REAL
   // paths, and e.g. macOS tmpdirs are symlinks — a naive relative() would
@@ -113,7 +118,7 @@ export async function buildEnvironment(
         );
         if (resolved) {
           perImport[specifier] = toManifestStatus(cls); // real — verified by the bundle step
-          localToVendor.set(specifier, resolved);
+          localResolved.push({ anchorId, specifier, file: resolved });
         } else {
           perImport[specifier] = {
             kind: "absent",
@@ -228,18 +233,22 @@ export async function buildEnvironment(
   //     import map resolves separately (react family, vendored npm, shims).
   //     Refusal rules run on every file the bundle touches — one server-only
   //     file anywhere in the closure fails that specifier to absent.
-  const localVendored = new Map<string, string>();
-  if (localToVendor.size > 0) {
-    const markAbsent = (specifier: string, why: string) => {
-      for (const perImport of Object.values(anchors)) {
-        if (perImport[specifier]) {
-          perImport[specifier] = {
+  const fileToOut = new Map<string, string>(); // resolved file → bundle outName (built ok)
+  const distinctFiles = [...new Set(localResolved.map((r) => r.file))];
+  if (distinctFiles.length > 0) {
+    // Mark absent every (anchor, specifier) pair that resolved to `file`.
+    const markAbsentForFile = (file: string, why: string) => {
+      for (const r of localResolved) {
+        if (r.file !== file) continue;
+        const perImport = anchors[r.anchorId];
+        if (perImport?.[r.specifier]) {
+          perImport[r.specifier] = {
             kind: "absent",
             alternative: "app-local module not vendored — inline its logic from the source",
           };
         }
       }
-      report.push(`env: could not vendor local ${specifier} (${why}) — marked absent`);
+      report.push(`env: could not vendor local ${path.relative(targetDir, file)} (${why}) — marked absent`);
     };
     const externals = new Set([
       "react",
@@ -297,8 +306,11 @@ export async function buildEnvironment(
         });
       },
     };
-    for (const [specifier, file] of localToVendor) {
-      const outName = `local-${slug(specifier)}.js`;
+    for (const file of distinctFiles) {
+      // Name the bundle by the resolved file path (not the specifier) so two
+      // anchors sharing a specifier that resolves to different files get two
+      // distinct bundles instead of clobbering one.
+      const outName = `local-${slug(path.relative(targetDir, file))}.js`;
       try {
         const result = await build({
           entryPoints: [file],
@@ -311,10 +323,10 @@ export async function buildEnvironment(
         });
         const code = result.outputFiles[0]!.text;
         writeFileSync(path.join(vendorDir, outName), code);
-        localVendored.set(specifier, outName);
-        vendorSizes[specifier] = code.length;
+        fileToOut.set(file, outName);
+        for (const r of localResolved) if (r.file === file) vendorSizes[r.specifier] = code.length;
         vendorTotal += code.length;
-        report.push(`env: vendored local ${specifier} (${kb(code.length)})`);
+        report.push(`env: vendored local ${path.relative(targetDir, file)} (${kb(code.length)})`);
       } catch (err) {
         const msg =
           err && typeof err === "object" && "errors" in err
@@ -322,18 +334,41 @@ export async function buildEnvironment(
             : err instanceof Error
               ? err.message
               : String(err);
-        markAbsent(specifier, msg);
+        markAbsentForFile(file, msg);
       }
     }
   }
 
   // 3. Import map (blob-resolved at runtime by the stage; paths are relative).
+  //    A local specifier that resolves to exactly ONE bundle across all anchors
+  //    goes in the flat `imports`; a specifier resolving to DIFFERENT bundles
+  //    per anchor (shared specifier, different files) goes in per-anchor
+  //    `scopes` so each anchor imports the correct one.
+  const specToOuts = new Map<string, Set<string>>();
+  for (const r of localResolved) {
+    const out = fileToOut.get(r.file);
+    if (!out) continue;
+    let outs = specToOuts.get(r.specifier);
+    if (!outs) specToOuts.set(r.specifier, (outs = new Set()));
+    outs.add(out);
+  }
+  const flatLocal: Array<[string, string]> = [];
+  for (const [specifier, outs] of specToOuts) {
+    if (outs.size === 1) flatLocal.push([specifier, `./vendor/${[...outs][0]!}`]);
+  }
+  const scopes: Record<string, Record<string, string>> = {};
+  for (const r of localResolved) {
+    const out = fileToOut.get(r.file);
+    if (!out || (specToOuts.get(r.specifier)?.size ?? 0) <= 1) continue; // flat-covered
+    (scopes[r.anchorId] ??= {})[r.specifier] = `./vendor/${out}`;
+  }
   const importMap = {
     imports: Object.fromEntries([
       ...[...npmToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
       ...[...shimToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
-      ...[...localVendored].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
+      ...flatLocal,
     ]),
+    ...(Object.keys(scopes).length > 0 ? { scopes } : {}),
   };
   writeFileSync(path.join(envDir, "import-map.json"), `${JSON.stringify(importMap, null, 2)}\n`);
 
