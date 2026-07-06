@@ -1,8 +1,9 @@
 /**
  * Minimal `next/navigation` shim. `useRouter().push/replace` (and `redirect`)
- * route the host app via vendo.navigate; everything else that can't be honored
- * in the sandbox is a safe no-op or returns Next's empty value rather than
- * throwing into a React render/handler.
+ * route the host app via vendo.navigate. `redirect`/`notFound` throw to unwind
+ * the render (Next semantics, caught by the sandbox error boundary); the
+ * router history methods and the read hooks that have no route channel are safe
+ * no-ops / empty values so they never crash a render or event handler.
  */
 import { navigate } from "./dispatch.js";
 
@@ -44,19 +45,28 @@ export function useParams<T extends Record<string, string | string[]> = Record<s
   return {} as T;
 }
 
-/** `redirect(url)` in Next throws to unwind rendering; that is impossible here,
- *  so route through the same navigate bridge `useRouter().push` uses and return.
- *  A blocked redirect surfaces via the bridge (see dispatch), not an exception
- *  thrown into React render. */
-export function redirect(url: string): void {
-  navigate(url);
+/** Recognizable codes so a host/error-boundary can tell these apart from real
+ *  errors (mirrors Next's NEXT_REDIRECT / NEXT_NOT_FOUND digests). */
+export const REDIRECT_ERROR_CODE = "VENDO_REDIRECT";
+export const NOT_FOUND_ERROR_CODE = "VENDO_NOT_FOUND";
+
+/** `redirect(url)` in Next THROWS to unwind rendering so the protected content
+ *  below it never renders. We must do the same: kick off the navigation, then
+ *  throw. A no-op-return would let the guarded component render its protected
+ *  branch before/if navigation resolves. In the sandbox this throw hits the
+ *  error boundary — exactly the "stop rendering protected content" behavior. */
+export function redirect(url: string): never {
+  // Fire-and-forget (we throw immediately and cannot await); catch so a blocked
+  // navigation doesn't become an unhandled rejection.
+  void navigate(url).catch(() => {});
+  throw Object.assign(new Error(`[vendo] redirect(${url})`), { code: REDIRECT_ERROR_CODE });
 }
 
-/** `notFound()` in Next throws NEXT_NOT_FOUND to render the not-found segment.
- *  The sandbox has no not-found boundary, and throwing would crash the render,
- *  so treat it as a safe no-op — the component keeps rendering. */
-export function notFound(): void {
-  /* no-op: no not-found boundary in the sandbox */
+/** `notFound()` in Next THROWS NEXT_NOT_FOUND to stop rendering and show the
+ *  not-found segment. Throw likewise so the invalid content below never renders;
+ *  in the sandbox the error boundary catches it. */
+export function notFound(): never {
+  throw Object.assign(new Error("[vendo] notFound()"), { code: NOT_FOUND_ERROR_CODE });
 }
 
 /** No layout-segment routing in the sandbox — mirror Next's "no segment" values. */

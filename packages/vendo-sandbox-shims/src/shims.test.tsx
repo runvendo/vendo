@@ -122,14 +122,15 @@ describe("next/navigation extra exports", () => {
     expect(useParams()).toEqual({});
   });
 
-  it("redirect routes through the same navigate bridge (does not throw)", () => {
+  it("redirect initiates navigation then THROWS to unwind the current render", () => {
     const calls = captureDispatch();
-    expect(() => redirect("/login")).not.toThrow();
+    expect(() => redirect("/login")).toThrow(/redirect/i);
+    // navigation was still kicked off before the throw
     expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/login" } }]);
   });
 
-  it("notFound is a safe no-op (does not throw)", () => {
-    expect(() => notFound()).not.toThrow();
+  it("notFound THROWS to stop rendering the protected/invalid content", () => {
+    expect(() => notFound()).toThrow(/not.?found/i);
   });
 
   it("useSelectedLayoutSegment(s) return null / []", () => {
