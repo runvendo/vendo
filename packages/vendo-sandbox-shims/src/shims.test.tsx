@@ -5,6 +5,8 @@ import Image from "./next-image";
 import {
   useRouter,
   useParams,
+  usePathname,
+  useSearchParams,
   redirect,
   notFound,
   useSelectedLayoutSegment,
@@ -17,6 +19,7 @@ afterEach(() => {
   cleanup();
   delete (globalThis as Record<string, unknown>)["__vendoDispatch"];
   delete (globalThis as Record<string, unknown>)["__vendoAnchorData"];
+  delete (globalThis as Record<string, unknown>)["__vendoRouteData"];
 });
 
 function captureDispatch() {
@@ -157,7 +160,7 @@ describe("useRouter shim", () => {
 });
 
 describe("next/navigation extra exports", () => {
-  it("useParams returns an empty object (no route channel in the sandbox)", () => {
+  it("useParams returns an empty object when the route channel is absent", () => {
     expect(useParams()).toEqual({});
   });
 
@@ -175,6 +178,34 @@ describe("next/navigation extra exports", () => {
   it("useSelectedLayoutSegment(s) return null / []", () => {
     expect(useSelectedLayoutSegment()).toBeNull();
     expect(useSelectedLayoutSegments()).toEqual([]);
+  });
+});
+
+describe("next/navigation route channel (window.__vendoRouteData)", () => {
+  it("usePathname/useSearchParams/useParams read the host's real route from the channel", () => {
+    (globalThis as Record<string, unknown>)["__vendoRouteData"] = {
+      pathname: "/clients/cl_rivera",
+      search: "?tab=invoices&page=2",
+      params: { id: "cl_rivera" },
+    };
+    expect(usePathname()).toBe("/clients/cl_rivera");
+    const sp = useSearchParams();
+    expect(sp.get("tab")).toBe("invoices");
+    expect(sp.get("page")).toBe("2");
+    expect(useParams()).toEqual({ id: "cl_rivera" });
+  });
+
+  it("falls back to empty values when the channel is absent (SSR / no host)", () => {
+    expect(usePathname()).toBe("");
+    expect(useSearchParams().toString()).toBe("");
+    expect(useParams()).toEqual({});
+  });
+
+  it("falls back per-field when the channel exists but a field is missing", () => {
+    (globalThis as Record<string, unknown>)["__vendoRouteData"] = { pathname: "/settings" };
+    expect(usePathname()).toBe("/settings");
+    expect(useSearchParams().toString()).toBe("");
+    expect(useParams()).toEqual({});
   });
 });
 

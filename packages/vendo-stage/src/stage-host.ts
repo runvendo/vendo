@@ -272,6 +272,17 @@ export function createStage(
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** The host's real route, injected read-only as `window.__vendoRouteData` so the
+ *  next/navigation shims (usePathname/useSearchParams/useParams) resolve the
+ *  host's actual location instead of empty values. `search` is a raw query string
+ *  (e.g. "?q=1"); `params` is Next's dynamic-route params object. Read-only —
+ *  navigation writes go through the dispatch bridge, not this channel. */
+export interface StageRoute {
+  pathname: string;
+  search: string;
+  params?: Record<string, string>;
+}
+
 /** Payload for `controller.initialize()`. */
 export interface StageInitPayload {
   theme: Record<string, string>;
@@ -284,6 +295,9 @@ export interface StageInitPayload {
    *  `window.__vendoAnchorData` so the swr shim resolves keys from it
    *  (remix fast-edits — the shim shipped in PR #35 but nothing fed it). */
   anchorData?: Record<string, unknown>;
+  /** The host's real route, injected read-only as `window.__vendoRouteData` for
+   *  the next/navigation shims (parallel to `anchorData`). */
+  route?: StageRoute;
   /**
    * Opaque theme blob for the in-sandbox component library (OpenUI). Forwarded
    * unchanged into `ui/initialize`; the runtime hands it to the host bundle's
@@ -299,6 +313,8 @@ export interface StageUpdatePayload {
   state?: Record<string, unknown>;
   /** Refreshed anchor data (live context re-patch) for the swr shim. */
   anchorData?: Record<string, unknown>;
+  /** Refreshed route (live re-patch) for the next/navigation shims. */
+  route?: StageRoute;
   /**
    * Node patch. `nodeId` and `node` travel as one unit — you cannot pass one
    * without the other (the runtime rejects a partial patch).
@@ -469,9 +485,10 @@ export function connectStage(
     },
 
     update(update) {
-      const payload: { theme?: Record<string, string>; state?: Record<string, unknown>; replace?: { nodeId: string; node: UINode } } = {};
+      const payload: { theme?: Record<string, string>; state?: Record<string, unknown>; route?: StageRoute; replace?: { nodeId: string; node: UINode } } = {};
       if (update.theme) payload.theme = update.theme;
       if (update.state) payload.state = update.state;
+      if (update.route) payload.route = update.route;
       if (update.replace) {
         const { nodeId, node } = update.replace;
         // Mint fresh tokens for the replacement subtree, splice it into our tree

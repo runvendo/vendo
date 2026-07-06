@@ -178,6 +178,38 @@ describe("connectStage", () => {
     peer.dispose();
   });
 
+  it("carries the read-only route through ui/initialize and re-patches it on ui/update", async () => {
+    const { a, b } = makePair();
+    let initParams: any;
+    let updateParams: any;
+    const peer = makeRpc(b, a, async (method, params) => {
+      if (method === "ui/initialize") { initParams = params; return { ok: true }; }
+      if (method === "ui/update") { updateParams = params; return { ok: true }; }
+      return {};
+    });
+    const controller = connectStage(
+      { listen: a, post: b },
+      { onAction: async () => ({ result: "ok" }) },
+    );
+
+    const route = { pathname: "/clients/cl_rivera", search: "?tab=invoices", params: { id: "cl_rivera" } };
+    await controller.initialize({
+      theme: {},
+      state: {},
+      bundleSource: "",
+      route,
+      tree: { id: "root", kind: "component", source: "host", name: "Card", props: {} },
+    });
+    expect(initParams.route).toEqual(route);
+
+    const nextRoute = { pathname: "/settings", search: "" };
+    await controller.update({ route: nextRoute });
+    expect(updateParams.route).toEqual(nextRoute);
+
+    controller.dispose();
+    peer.dispose();
+  });
+
   it("tools/call with CORRECT capability token reaches onAction as ActionRequest and returns ActionResult", async () => {
     const { a, b } = makePair();
     const onAction = vi.fn().mockResolvedValue({ result: "confirmed" });

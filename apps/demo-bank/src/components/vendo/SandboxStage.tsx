@@ -7,6 +7,7 @@
  * prompt when the policy answers "approve".
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useParams } from "next/navigation";
 import type { UINode, ActionRequest, ActionResult } from "@vendoai/core";
 import { VendoStage } from "@vendoai/react";
 import { ApprovalCard } from "@vendoai/shell";
@@ -76,6 +77,20 @@ function StageApproval({ req, settle }: { req: ActionRequest; settle: (approved:
 }
 
 export function SandboxStage({ node }: { node: UINode }): ReactNode {
+  // Live route supplier: feed the host's REAL location into the sandbox so the
+  // next/navigation shims (usePathname/useSearchParams/useParams) resolve it
+  // instead of empty values. `search` comes from window.location rather than
+  // useSearchParams() to avoid forcing a Suspense boundary on the build.
+  const pathname = usePathname();
+  const rawParams = useParams();
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawParams)) params[k] = Array.isArray(v) ? v.join("/") : (v ?? "");
+  const route = {
+    pathname: pathname ?? "",
+    search: typeof window !== "undefined" ? window.location.search : "",
+    params,
+  };
+
   const [sources, setSources] = useState<Sources | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Pending approvals keyed by requestId: CONCURRENT gated dispatches each get
@@ -150,6 +165,7 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
         onAction={onAction}
         theme={theme}
         componentTheme={componentTheme}
+        route={route}
       />
       {[...pending.entries()].map(([requestId, entry]) => (
         <StageApproval
