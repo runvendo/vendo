@@ -117,7 +117,7 @@ through your permission policy. Deeper docs: [docs.vendo.run](https://docs.vendo
 | Package | What it is |
 |---|---|
 | `vendoai` | The public install (interim name; bare `vendo` pending an npm name-dispute): `vendoai/server` (`createVendoHandler`) + `vendoai/react` (`<VendoRoot>`) |
-| `@vendoai/cli` | `vendo init`, a one-command install into a Next.js app |
+| `@vendoai/cli` | `vendo init` installs Vendo into a Next.js app; `refresh` catches up, `doctor` checks the install |
 | `@vendoai/core` | Manifest schemas, GenUI format, the five platform seams |
 | `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |
 | `@vendoai/runtime` | Embedded runtime: tools, automations, MCP client |

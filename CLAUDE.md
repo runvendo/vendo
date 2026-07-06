@@ -17,7 +17,9 @@ generated UI in a sandboxed, brand-native surface.
 - `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
 - `pnpm demo` — run the demo-bank host app (env setup: `apps/demo-bank/README.md`)
 - `pnpm demo:accounting` — run the Cadence accounting demo
-- `npx @vendoai/cli init <dir>` — install Vendo into a Next.js app
+- `npx vendo init <dir>` — install Vendo into a Next.js app (interactive; safe to re-run).
+  `vendo refresh` catches up an existing install; `vendo doctor` checks it; `vendo sync`
+  runs in the build.
 
 ## Rules
 
