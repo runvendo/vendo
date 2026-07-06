@@ -24,17 +24,33 @@ export interface SWRResponse<T> {
   mutate: () => Promise<T | undefined>;
 }
 
-function resolveKey(key: unknown): string | undefined {
-  if (typeof key === "string") return key;
-  if (Array.isArray(key) && typeof key[0] === "string") return key[0];
-  return undefined;
+/** SWR conditional-fetching: a null/undefined key, or a function key that
+ *  throws/returns null (a dependency isn't ready), means "don't fetch". Returns
+ *  `{ skip: true }` for those; otherwise the cache key (or undefined if the key
+ *  shape carries no lookup string). */
+function resolveKey(key: unknown): { skip: true } | { skip: false; key: string | undefined } {
+  if (typeof key === "function") {
+    try {
+      key = (key as () => unknown)();
+    } catch {
+      return { skip: true }; // dependency not ready → don't fetch
+    }
+  }
+  if (key == null) return { skip: true }; // conditional-fetch idiom → don't fetch
+  if (typeof key === "string") return { skip: false, key };
+  if (Array.isArray(key) && typeof key[0] === "string") return { skip: false, key: key[0] };
+  return { skip: false, key: undefined };
 }
 
 export default function useSWR<T = unknown>(key: unknown, _fetcher?: unknown): SWRResponse<T> {
   // _fetcher is intentionally ignored — calling it would breach the egress jail.
-  const store = (globalThis as unknown as AnchorDataWindow).__vendoAnchorData ?? {};
   const resolved = resolveKey(key);
-  const data = resolved !== undefined ? (store[resolved] as T | undefined) : undefined;
+  if (resolved.skip) {
+    // Not fetching: no spinner. Without this a null/conditional key spun forever.
+    return { data: undefined, error: undefined, isLoading: false, isValidating: false, mutate: async () => undefined };
+  }
+  const store = (globalThis as unknown as AnchorDataWindow).__vendoAnchorData ?? {};
+  const data = resolved.key !== undefined ? (store[resolved.key] as T | undefined) : undefined;
   return {
     data,
     error: undefined,

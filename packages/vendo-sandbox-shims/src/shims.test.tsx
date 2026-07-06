@@ -103,6 +103,36 @@ describe("useSWR shim", () => {
     expect(result.isLoading).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
   });
+
+  it("a null key (conditional fetch) means skip — not a permanent spinner", () => {
+    const result = useSWR(null, vi.fn());
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
+
+  it("a function key is called to derive the key and resolves its data", () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/live": [1, 2] };
+    const result = useSWR(() => "/api/live", vi.fn());
+    expect(result.data).toEqual([1, 2]);
+    expect(result.isLoading).toBe(false);
+  });
+
+  it("a function key that returns null is skipped (not loading)", () => {
+    const result = useSWR(() => null, vi.fn());
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
+
+  it("a function key that throws (dependency not ready) is skipped (not loading)", () => {
+    const result = useSWR(
+      () => {
+        throw new Error("dep not ready");
+      },
+      vi.fn(),
+    );
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
 });
 
 describe("dispatch bridge-promise handling", () => {
