@@ -78,10 +78,20 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
         return Response.json({ status: "active" as const });
       }
       // The client-facing status must reflect what actually happened. A raw
-      // "active" we did NOT record (anti-spoof case: foreign/other-toolkit
-      // account) must not read as connected — downgrade it to "pending" so the
-      // client keeps polling instead of showing connected with no toolkit.
-      return Response.json({ status: status === "active" ? ("pending" as const) : status });
+      // "active" we did NOT record is the anti-spoof case: Composio reports the
+      // polled account ACTIVE, but it isn't THIS user's connection for THIS
+      // toolkit. That's a PERMANENT condition (the account will never
+      // legitimately register here), so returning "pending" would only poll to
+      // a 120s timeout. Fail fast with terminal "failed" and warn server-side.
+      if (status === "active") {
+        console.warn(
+          `[vendo] integrations status: account is ACTIVE in Composio but is not this user's connection for '${id}' (foreign/unrecognized active account); failing fast instead of polling to timeout`,
+        );
+        return Response.json({ status: "failed" as const });
+      }
+      // Genuinely-transient states (e.g. "pending") pass through so the client
+      // keeps polling.
+      return Response.json({ status });
     } catch (err) {
       // A poll error is usually a transient Composio hiccup, not a terminal
       // failure. Log it server-side like the connect handler does, and report

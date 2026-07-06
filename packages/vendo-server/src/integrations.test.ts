@@ -103,22 +103,31 @@ describe("integrations endpoints", () => {
     expect(await d.store.connectedToolkits()).toEqual([]);
   });
 
-  it("status poll reports 'active' only when the store write happened; a foreign active account is not connected (review)", async () => {
+  it("status poll fails fast (terminal) for a foreign/unrecognized ACTIVE account (anti-spoof)", async () => {
     // Composio says the polled account is ACTIVE, but it is not THIS user's
-    // connection for THIS toolkit → the store was never written, so the
-    // client-facing status must NOT read as connected.
-    const d = deps({
-      client: stubClient({
-        connectionStatus: async () => "active" as const,
-        hasActiveConnection: async () => false,
-      }),
-    });
-    const res = await handleIntegrationsGet(
-      get("/api/vendo/integrations?status&id=gmail&account=foreign-acct"),
-      d,
-    );
-    expect(await res.json()).toEqual({ status: "pending" });
-    expect(await d.store.connectedToolkits()).toEqual([]);
+    // connection for THIS toolkit → the store was never written. This is a
+    // PERMANENT condition (the account will never legitimately register), so
+    // the client-facing status must be terminal "failed" (fail fast) rather
+    // than "pending" (which would poll to a 120s timeout). A server-side warn
+    // explains why.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const d = deps({
+        client: stubClient({
+          connectionStatus: async () => "active" as const,
+          hasActiveConnection: async () => false,
+        }),
+      });
+      const res = await handleIntegrationsGet(
+        get("/api/vendo/integrations?status&id=gmail&account=foreign-acct"),
+        d,
+      );
+      expect(await res.json()).toEqual({ status: "failed" });
+      expect(await d.store.connectedToolkits()).toEqual([]);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("status poll logs server-side and reports transient 'pending' when Composio throws (review)", async () => {
