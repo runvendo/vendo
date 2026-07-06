@@ -330,7 +330,7 @@
 .fl-auto-details summary { color: var(--vendo-fg-muted); font-size: 11px; cursor: pointer; }
 .fl-auto-details pre { margin: 7px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap;
   font: 11px/1.35 var(--vendo-font-mono); color: var(--vendo-fg-muted); }
-.fl-auto-created-layer { position: absolute; inset: 0; z-index: 35; pointer-events: none; overflow: visible; }
+.fl-auto-created-layer { position: fixed; inset: 0; z-index: 2147483002; pointer-events: none; overflow: visible; }
 .fl-auto-created-panel { position: absolute; box-sizing: border-box; transform-origin: 100% 0%;
   will-change: top, left, width, height, opacity, transform; }
 .fl-auto-created-panel--morph .fl-auto-created-toast { position: absolute; inset: 0; opacity: 0; }

@@ -159,12 +159,13 @@ export function MessageList({
     const source = automationApprovalRefs.current.get(item.approvalId);
     const sourceRect = host && source
       ? (() => {
-          const hostRect = host.getBoundingClientRect();
           const card = source.querySelector<HTMLElement>(".fl-automation-approval") ?? source;
           const rect = card.getBoundingClientRect();
+          // Viewport coordinates: the morph layer is body-portaled and fixed,
+          // so the card's client rect is already in the layer's space.
           return {
-            top: rect.top - hostRect.top,
-            left: rect.left - hostRect.left,
+            top: rect.top,
+            left: rect.left,
             width: rect.width,
             height: rect.height,
           };
