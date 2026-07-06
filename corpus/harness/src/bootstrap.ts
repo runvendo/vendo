@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { resolveAppRoot } from "./app-root.js";
+import { normalizeBootstrapInstallCommand } from "./install-command.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
@@ -70,6 +71,10 @@ function logPaths(logsDir: string): BootstrapLogPaths {
   };
 }
 
+async function pathExists(file: string): Promise<boolean> {
+  return access(file).then(() => true, () => false);
+}
+
 function runInstallCommand(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, {
@@ -106,8 +111,15 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
   await writeFile(envPath, formatEnv(resolved.values));
 
   await mkdir(logsDir, { recursive: true });
-  const result = await runInstallCommand(repo.bootstrap.installCommand, repoDir, env);
-  await writeFile(logs.stdout, result.stdout);
+  const hasPnpmWorkspace = await pathExists(path.join(repoDir, "pnpm-workspace.yaml"));
+  const installCommand = normalizeBootstrapInstallCommand(repo.bootstrap.installCommand, {
+    dropIgnoreWorkspace: hasPnpmWorkspace,
+  });
+  const result = await runInstallCommand(installCommand.command, repoDir, env);
+  const normalizationNote = installCommand.changed
+    ? `Corpus harness normalized bootstrap install command from "${repo.bootstrap.installCommand}" to "${installCommand.command}" so lockfile updates are allowed.\n`
+    : "";
+  await writeFile(logs.stdout, `${normalizationNote}${result.stdout}`);
   await writeFile(logs.stderr, result.stderr);
 
   if (result.code !== 0) {

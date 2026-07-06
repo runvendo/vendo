@@ -8,10 +8,11 @@ import {
   type WorkspacePackage,
 } from "../../../packages/vendo-cli/src/local-pack.js";
 import { resolveAppRoot } from "./app-root.js";
+import { normalizePostInjectionInstallCommand } from "./install-command.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
-export type InjectRepo = Pick<ManifestEntry, "name" | "appDir">;
+export type InjectRepo = Pick<ManifestEntry, "name" | "appDir"> & Partial<Pick<ManifestEntry, "bootstrap">>;
 export type PackWorkspacePackage = LocalPackRunner;
 
 export interface InjectCommandResult {
@@ -37,6 +38,7 @@ export interface CreateLocalVendoInjectorOptions {
   buildWorkspace?: (workspaceRoot: string) => Promise<void>;
   pack?: PackWorkspacePackage;
   runInstallCommand?: (command: string, cwd: string) => Promise<void>;
+  log?: (message: string) => void;
 }
 
 function runCommand(command: string, args: readonly string[], cwd: string): Promise<InjectCommandResult> {
@@ -126,8 +128,8 @@ function lockfileMentionsVendoPackage(lockfile: string): boolean {
     || /\/vendoai\/[^/\s]+/i.test(lockfile);
 }
 
-function scopedInstallCommand(command: string): string {
-  return command === "pnpm install" ? "pnpm install --ignore-workspace" : command;
+function lockfileHasLocalVendoResolution(lockfile: string): boolean {
+  return /file:(?:[^'"\s]+\/)?vendor\/vendoai-[^'"\s]+\.tgz/i.test(lockfile);
 }
 
 async function readOptional(file: string): Promise<string | null> {
@@ -140,6 +142,21 @@ async function readOptional(file: string): Promise<string | null> {
 
 async function pathExists(file: string): Promise<boolean> {
   return access(file).then(() => true, () => false);
+}
+
+async function findPnpmWorkspaceRoot(checkoutDir: string, targetDir: string): Promise<string | undefined> {
+  const stop = path.resolve(checkoutDir);
+  let current = path.resolve(targetDir);
+
+  while (current === stop || current.startsWith(`${stop}${path.sep}`)) {
+    if (await pathExists(path.join(current, "pnpm-workspace.yaml"))) return current;
+    if (current === stop) break;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return undefined;
 }
 
 async function readPackageManager(dir: string): Promise<string | undefined> {
@@ -165,7 +182,20 @@ async function assertSupportedPackageManager(repo: InjectRepo, checkoutDir: stri
   }
 }
 
-async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoInstallSummary): Promise<void> {
+function installCommandSource(repo: InjectRepo, summary: LocalVendoInstallSummary): string {
+  const recipe = repo.bootstrap?.installCommand;
+  if (recipe) {
+    if (summary.packageManager === "pnpm" && /\bpnpm\s+install\b/.test(recipe)) return recipe;
+    if (summary.packageManager === "npm" && /\bnpm\s+(?:ci|install)\b/.test(recipe)) return recipe;
+  }
+  return summary.installCommand;
+}
+
+async function assertLocalVendoResolution(
+  repoDir: string,
+  summary: LocalVendoInstallSummary,
+  lockfileDir = repoDir,
+): Promise<void> {
   const pkg = JSON.parse(await readFile(path.join(repoDir, "package.json"), "utf8")) as Record<string, unknown>;
   const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
   for (const section of dependencySections) {
@@ -192,14 +222,18 @@ async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoIn
     }
   }
 
-  for (const fileName of ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json"]) {
-    const lockfile = await readOptional(path.join(repoDir, fileName));
-    if (!lockfile) continue;
-    if (/registry\.npmjs\.org\/(?:@|%40)vendoai/i.test(lockfile) || /registry\.npmjs\.org\/vendoai(?:\/|-)/i.test(lockfile)) {
-      throw new Error(`${fileName} still references registry.npmjs.org for Vendo packages`);
-    }
-    if (lockfileMentionsVendoPackage(lockfile) && !lockfile.includes("file:vendor/vendoai-")) {
-      throw new Error(`${fileName} mentions Vendo packages without file:vendor/*.tgz resolution`);
+  const lockfileDirs = [...new Set([repoDir, lockfileDir].map((dir) => path.resolve(dir)))];
+  for (const dir of lockfileDirs) {
+    for (const fileName of ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json"]) {
+      const lockfile = await readOptional(path.join(dir, fileName));
+      if (!lockfile) continue;
+      const label = path.relative(process.cwd(), path.join(dir, fileName)) || fileName;
+      if (/registry\.npmjs\.org\/(?:@|%40)vendoai/i.test(lockfile) || /registry\.npmjs\.org\/vendoai(?:\/|-)/i.test(lockfile)) {
+        throw new Error(`${label} still references registry.npmjs.org for Vendo packages`);
+      }
+      if (lockfileMentionsVendoPackage(lockfile) && !lockfileHasLocalVendoResolution(lockfile)) {
+        throw new Error(`${label} mentions Vendo packages without file:vendor/*.tgz resolution`);
+      }
     }
   }
 }
@@ -216,6 +250,7 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
   const sourcePack = options.pack ?? defaultPackWorkspacePackage;
   const runInstall = options.runInstall ?? true;
   const runInstallCommand = options.runInstallCommand ?? checkedShellCommand;
+  const log = options.log ?? ((message: string) => { console.error(message); });
   let buildPromise: Promise<void> | null = null;
   const packed = new Map<string, Promise<void>>();
 
@@ -250,10 +285,28 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
       await assertSupportedPackageManager(repo, checkoutDir, repoDir);
 
       const summary = await installLocalVendoPackages(repoDir, workspaceRoot, { pack: cachedPack });
+      const pnpmWorkspaceRoot = summary.packageManager === "pnpm"
+        ? await findPnpmWorkspaceRoot(checkoutDir, repoDir)
+        : undefined;
+      const installDir = pnpmWorkspaceRoot ?? repoDir;
       if (runInstall) {
-        await runInstallCommand(scopedInstallCommand(summary.installCommand), repoDir);
+        const sourceCommand = installCommandSource(repo, summary);
+        const installCommand = normalizePostInjectionInstallCommand(sourceCommand, {
+          dropIgnoreWorkspace: Boolean(pnpmWorkspaceRoot && pnpmWorkspaceRoot !== repoDir),
+          pnpmConfig: [
+            "--config.minimumReleaseAge=0",
+            "--config.dangerouslyAllowAllBuilds=true",
+          ],
+        });
+        if (installCommand.changed) {
+          log(`Corpus harness normalized post-injection install command for ${repo.name} from "${sourceCommand}" to non-frozen "${installCommand.command}" so file:vendor lockfile updates are allowed.`);
+        }
+        if (installDir !== repoDir) {
+          log(`Corpus harness running post-injection install for ${repo.name} from pnpm workspace root ${installDir} instead of appDir ${repoDir} so workspace: and catalog: dependencies resolve.`);
+        }
+        await runInstallCommand(installCommand.command, installDir);
       }
-      await assertLocalVendoResolution(repoDir, summary);
+      await assertLocalVendoResolution(repoDir, summary, installDir);
 
       return {
         ...summary,

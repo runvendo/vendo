@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,6 +47,12 @@ async function makeRepo(name = "fixture-app"): Promise<{
 
 async function writeInstallScript(repoDir: string, body: string): Promise<void> {
   await writeFile(path.join(repoDir, "install.mjs"), body);
+}
+
+async function writeNodeBin(file: string, body: string): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `#!/usr/bin/env node\n${body}`);
+  await chmod(file, 0o755);
 }
 
 describe("bootstrapRepo", () => {
@@ -152,5 +158,72 @@ describe("bootstrapRepo", () => {
     await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8")).resolves.toContain("before failure");
     await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stderr.log"), "utf8")).resolves.toContain("failure detail");
     await expect(readFile(path.join(repoDir, ".corpus", "logs", "bootstrap.stderr.log"), "utf8")).rejects.toThrow();
+  });
+
+  it("degrades frozen pnpm install recipes and records the normalized command in logs", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const binDir = path.join(corpusRoot, "bin");
+    repo.bootstrap.installCommand = "pnpm install --frozen-lockfile --force --ignore-workspace";
+    await writeNodeBin(path.join(binDir, "pnpm"), `
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(${JSON.stringify(path.join(repoDir, "pnpm-argv.txt"))}, process.argv.slice(2).join(" "));
+      console.log("fake pnpm install");
+    `);
+
+    await bootstrapRepo(repo, {
+      context,
+      env: {
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    await expect(readFile(path.join(repoDir, "pnpm-argv.txt"), "utf8")).resolves.toBe("install --no-frozen-lockfile --force --ignore-workspace");
+    await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8")).resolves.toMatch(/normalized.*--no-frozen-lockfile/i);
+  });
+
+  it("drops --ignore-workspace for pnpm workspace bootstrap installs", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const binDir = path.join(corpusRoot, "bin");
+    repo.bootstrap.installCommand = "pnpm install --frozen-lockfile --force --ignore-workspace";
+    await writeFile(path.join(repoDir, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    await writeNodeBin(path.join(binDir, "pnpm"), `
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(${JSON.stringify(path.join(repoDir, "pnpm-workspace-argv.txt"))}, process.argv.slice(2).join(" "));
+      console.log("fake pnpm workspace install");
+    `);
+
+    await bootstrapRepo(repo, {
+      context,
+      env: {
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    await expect(readFile(path.join(repoDir, "pnpm-workspace-argv.txt"), "utf8")).resolves.toBe("install --no-frozen-lockfile --force");
+    await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8")).resolves.toMatch(/normalized.*--no-frozen-lockfile --force/i);
+  });
+
+  it("degrades npm ci bootstrap recipes to npm install", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    const binDir = path.join(corpusRoot, "bin");
+    repo.bootstrap.installCommand = "npm ci";
+    await writeNodeBin(path.join(binDir, "npm"), `
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(${JSON.stringify(path.join(repoDir, "npm-argv.txt"))}, process.argv.slice(2).join(" "));
+      console.log("fake npm install");
+    `);
+
+    await bootstrapRepo(repo, {
+      context,
+      env: {
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    await expect(readFile(path.join(repoDir, "npm-argv.txt"), "utf8")).resolves.toBe("install");
+    await expect(readFile(path.join(context.logsDir(repo.name), "bootstrap.stdout.log"), "utf8")).resolves.toMatch(/normalized.*npm install/i);
   });
 });
