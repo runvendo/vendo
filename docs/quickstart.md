@@ -14,8 +14,7 @@ process.
 ```bash
 npx create-next-app@latest my-app     # or your existing app
 cd my-app
-npm install @vendoai/next
-npm install -D @vendoai/cli
+npm install vendoai
 npx vendo init .
 ```
 
@@ -36,7 +35,10 @@ npx vendo init .
   below) plus the storage and scheduler env vars (see
   [Persistence](#persistence));
 - copies the sandbox runtime assets into `public/vendo/`;
-- adds `@vendoai/next` to your dependencies.
+- adds `vendoai` to your dependencies and a `prebuild` script that runs
+  `vendo sync`. By default the sync runs via npx, which needs registry access
+  at build time; add `@vendoai/cli` as a devDependency for hermetic or
+  offline builds — the `vendo` bin picks it up automatically.
 
 It never breaks existing code: any step it can't perform with certainty (an
 unusual layout, an unparsable package.json) is skipped and printed as an exact
@@ -164,7 +166,7 @@ the automation authoring agent can compile `host_event` triggers from chat.
 Produce event instances at the source whenever you can:
 
 ```ts
-import { ingestVendoEvent } from "@vendoai/next";
+import { ingestVendoEvent } from "vendoai/server";
 
 await ingestVendoEvent("transaction.created", txn, {
   eventId: txn.id,
@@ -174,7 +176,7 @@ await ingestVendoEvent("transaction.created", txn, {
 Relay third-party webhooks into your declared event names:
 
 ```ts
-import { ingestVendoEvent } from "@vendoai/next";
+import { ingestVendoEvent } from "vendoai/server";
 
 const body = await req.json();
 await ingestVendoEvent("transaction.created", body.data, {
@@ -228,17 +230,16 @@ before they reach the model.
 
 ## Not using Next.js?
 
-Next.js is the first adapter, not a requirement. `@vendoai/next` is a thin
-wrapper around `@vendoai/server`, the framework-agnostic handler core: a
-plain `(Request) => Promise<Response>` function you can mount anywhere.
-
-```bash
-npm install @vendoai/server
-```
+Next.js is the first adapter, not a requirement. The core is framework-agnostic:
+`createVendoHandler()` (above) is just a `{ GET, POST }` pair of plain
+`(Request) => Promise<Response>` functions — that's why a Next.js App Router
+catch-all can export it directly. Everywhere else, `vendoai/server` exposes the
+same core as `createVendoFetchHandler()`, a single fetch handler you mount on
+any runtime. No extra install — it's the same `vendoai` dependency.
 
 ```js
 import { createServer } from "node:http";
-import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+import { createVendoFetchHandler, toNodeHandler } from "vendoai/server";
 
 createServer(toNodeHandler(createVendoFetchHandler())).listen(3000);
 ```
@@ -256,6 +257,8 @@ Fetch-native runtimes skip the bridge entirely: Hono mounts the handler
 directly.
 
 ```js
+import { createVendoFetchHandler } from "vendoai/server";
+
 const vendo = createVendoFetchHandler();
 app.all("/api/vendo/*", (c) => vendo(c.req.raw));
 ```

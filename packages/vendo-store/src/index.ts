@@ -1,4 +1,4 @@
-// Re-exported so consumers (e.g. @vendoai/next's vendos.ts) build queries
+// Re-exported so consumers (e.g. vendo/server's vendos.ts) build queries
 // against the SAME drizzle-orm instance this package resolved — a consumer
 // declaring its own `drizzle-orm` dependency can land on a different
 // peer-hashed copy in pnpm's node_modules, which breaks structurally (the

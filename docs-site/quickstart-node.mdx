@@ -3,15 +3,15 @@ title: "Quickstart: any Node server"
 description: "Mount the framework-agnostic handler on Node, Express, or Hono"
 ---
 
-`@vendoai/server` exposes the framework-agnostic handler behind the Next.js adapter. It returns a fetch handler, `(Request) => Promise<Response>`, plus `toNodeHandler()` for Node's `IncomingMessage` and `ServerResponse` shape.
+`vendoai/server` exposes the framework-agnostic handler core. It returns a fetch handler, `(Request) => Promise<Response>`, plus `toNodeHandler()` for Node's `IncomingMessage` and `ServerResponse` shape.
 
-Install the server package:
+Install the same single package as everywhere else:
 
 ```bash
-npm install @vendoai/server
+npm install vendoai
 ```
 
-If your frontend reuses Vendo's React root outside Next.js, also install `@vendoai/next` and import `VendoRoot` from `@vendoai/next/client`.
+If your frontend reuses Vendo's React root outside Next.js, import `VendoRoot` from `vendoai/react` — it is plain React and imports nothing from Next.js.
 
 ## node:http
 
@@ -22,7 +22,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+import { createVendoFetchHandler, toNodeHandler } from "vendoai/server";
 
 const publicDir = path.resolve("public");
 const vendo = toNodeHandler(createVendoFetchHandler());
@@ -66,7 +66,7 @@ The Next.js codemod copies these automatically. On a custom Node server, copy th
 
 ```ts
 import express from "express";
-import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+import { createVendoFetchHandler, toNodeHandler } from "vendoai/server";
 
 const app = express();
 
@@ -84,7 +84,7 @@ Fetch-native runtimes can call the handler directly:
 
 ```ts
 import { Hono } from "hono";
-import { createVendoFetchHandler } from "@vendoai/server";
+import { createVendoFetchHandler } from "vendoai/server";
 
 const vendo = createVendoFetchHandler();
 const app = new Hono();

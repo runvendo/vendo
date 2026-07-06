@@ -5,7 +5,7 @@
  *
  *   export async function register() {
  *     if (process.env.NEXT_RUNTIME === "nodejs") {
- *       const { startVendoScheduler } = await import("@vendoai/next");
+ *       const { startVendoScheduler } = await import("vendoai/server");
  *       startVendoScheduler();
  *     }
  *   }

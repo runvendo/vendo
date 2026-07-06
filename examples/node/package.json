@@ -12,10 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@vendoai/next": "workspace:*",
-    "@vendoai/server": "workspace:*",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "vendoai": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",

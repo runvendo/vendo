@@ -483,7 +483,7 @@ export interface VendoAgentConfig {
    * `policy`'s OWN `onExecuted` (see `auditClientExecutedTools` below) — the
    * SAME composed policy every other tool's execution already flows through
    * — rather than appending to a separately-wired log here. A host's
-   * `policy` must itself compose an `auditPolicy` (both `@vendoai/next` and
+   * `policy` must itself compose an `auditPolicy` (both `vendo/server` and
    * the demo hosts already do) for this trail to appear; passing `audit`
    * here no longer does anything on its own.
    */

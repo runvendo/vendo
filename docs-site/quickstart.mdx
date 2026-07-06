@@ -6,20 +6,19 @@ description: "Install Vendo in a Next.js App Router app with one command and one
 In the root of your Next.js App Router app:
 
 ```bash
-npx vendo init
+npx vendoai init
 ```
 
 That is the install. The codemod adds Vendo beside your existing code, the handler reads `.vendo/` from disk at runtime, and nothing it cannot edit with certainty gets touched. The steps below walk the same flow from a fresh app.
 
 <Steps>
-  <Step title="Install the adapter and CLI">
+  <Step title="Install Vendo">
     In a new app or an existing App Router app:
 
     ```bash
     npx create-next-app@latest my-app
     cd my-app
-    npm install @vendoai/next
-    npm install -D @vendoai/cli
+    npm install vendoai
     npx vendo init .
     ```
 
@@ -35,12 +34,12 @@ That is the install. The codemod adds Vendo beside your existing code, the handl
     - `instrumentation.ts` or `src/instrumentation.ts` to start the scheduler in the Node.js runtime.
     - `.env.example` with provider, integration, storage, scheduler, and webhook variables.
     - `public/vendo/react-runtime.js` and `public/vendo/components-sandbox.js`.
-    - A `prebuild` script that runs `vendo sync`.
+    - A `prebuild` script that runs `vendo sync`. By default the sync runs via npx, which needs registry access at build time; add `@vendoai/cli` as a devDependency for hermetic or offline builds — the `vendo` bin picks it up automatically.
 
     The generated route is:
 
     ```ts
-    import { createVendoHandler } from "@vendoai/next";
+    import { createVendoHandler } from "vendoai/server";
 
     export const runtime = "nodejs";
     export const dynamic = "force-dynamic";

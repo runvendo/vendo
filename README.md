@@ -45,7 +45,7 @@ Every capture below is a real agent run in a demo host app, not a mockup.
 1. Install into your Next.js app:
 
    ```bash
-   npx @vendoai/cli init .
+   npx vendoai init .
    ```
 
 2. Add one provider key to `.env.local`: `ANTHROPIC_API_KEY`,
@@ -72,12 +72,12 @@ through your permission policy. Deeper docs: [docs/](docs/).
 
 | Package | What it is |
 |---|---|
+| `vendoai` | The public install (interim name; bare `vendo` pending an npm name-dispute) — `vendoai/server` (`createVendoHandler`) + `vendoai/react` (`<VendoRoot>`) |
 | `@vendoai/cli` | `vendo init`, a one-command install into a Next.js app |
 | `@vendoai/core` | Manifest schemas, GenUI format, the five platform seams |
 | `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |
 | `@vendoai/runtime` | Embedded runtime: tools, automations, MCP client |
 | `@vendoai/react` | React provider + `useVendoChat` |
-| `@vendoai/next` | `createVendoHandler` route handler + `<VendoRoot>` for Next.js |
 | `@vendoai/shell` | The embedded surfaces: tabbed page, overlay, slot |
 | `@vendoai/components` | Brand-themeable component catalog |
 | `@vendoai/stage` | Sandboxed stage runtime and bridge for generated UI |

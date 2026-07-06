@@ -17,7 +17,7 @@
  * layer, `namePolicy` (the ENG-193 item-2 plan's "Plan deviations" #4 — the
  * scope ruling's bare `annotationPolicy()` snippet is illustrative; wrapping
  * the host's actual base layer is the intent, matching what
- * `packages/vendo-next/src/policy-stack.ts` does for the production path).
+ * `packages/vendo-server/src/policy-stack.ts` does for the production path).
  * `contextKey: threadId` lets a fade/session grant (later items) match within
  * one conversation; the standing grants item 2 mints ignore it.
  *
@@ -110,7 +110,7 @@ export const demoPolicy: ApprovalPolicy = composePolicy(
     breakerState,
   ),
   // ENG-193 item 6: a matching always-ask rule beats any grant/judge/breaker
-  // allow — a sibling, mirrors packages/vendo-next/src/policy-stack.ts.
+  // allow — a sibling, mirrors packages/vendo-server/src/policy-stack.ts.
   compiledRulesPolicy(demoStore.rules, { principalScope: () => CADENCE_SCOPE }),
   // LAST on purpose — auditPolicy's evaluate must observe the escalation
   // reason the chain stamped, so a DECLINED escalation still gets its

@@ -20,7 +20,6 @@
     "@composio/vercel": "0.4.0",
     "@vendoai/components": "workspace:*",
     "@vendoai/core": "workspace:*",
-    "@vendoai/next": "workspace:*",
     "@vendoai/react": "workspace:*",
     "@vendoai/runtime": "workspace:*",
     "@vendoai/shell": "workspace:*",
@@ -41,6 +40,7 @@
     "recharts": "^3.8.1",
     "swr": "^2.4.2",
     "tailwind-merge": "^3.6.0",
+    "vendoai": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

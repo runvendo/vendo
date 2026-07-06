@@ -1,12 +1,12 @@
 /**
  * DrizzleConnectionsStore — durable implementation of the STRUCTURAL shape of
- * @vendoai/next's `ConnectionsStore` (packages/vendo-next/src/connections.ts):
+ * `vendo/server`'s `ConnectionsStore` (packages/vendo-server/src/connections.ts):
  * which toolkits are connected, i.e. what the agent ingests. Duck-typed
- * locally (not imported) to avoid a next -> store -> next dependency cycle.
+ * locally (not imported) to avoid a server -> store -> server dependency cycle.
  * Both the upstream interface and this durable port are fully async — every
  * operation here is a DB round-trip, and the upstream in-memory store matches
  * that shape (even though it never actually awaits) so the two are drop-in
- * compatible: `@vendoai/next`'s handler wires this in whenever durable
+ * compatible: `vendo/server`'s handler wires this in whenever durable
  * storage is configured, the in-memory one otherwise.
  *
  * Two additions beyond the upstream shape (webhook + integrations flow):
@@ -22,7 +22,7 @@ import type { Principal } from "@vendoai/core";
 import type { VendoDb } from "./db.js";
 import { connections } from "./schema.js";
 
-/** Structural stand-in for @vendoai/next's `IntegrationCatalogEntry`. */
+/** Structural stand-in for `vendo/server`'s `IntegrationCatalogEntry`. */
 export interface IntegrationCatalogEntry {
   id: string;
   name: string;

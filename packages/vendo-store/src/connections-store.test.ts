@@ -1,8 +1,8 @@
 /**
  * DrizzleConnectionsStore contract tests — a durable implementation of the
- * structural shape of @vendoai/next's `ConnectionsStore`
- * (packages/vendo-next/src/connections.ts), duck-typed locally in
- * @vendoai/store to avoid a next -> store -> next dependency cycle, plus the
+ * structural shape of `vendo/server`'s `ConnectionsStore`
+ * (packages/vendo-server/src/connections.ts), duck-typed locally in
+ * @vendoai/store to avoid a server -> store -> server dependency cycle, plus the
  * two additions the webhook + integrations flow need: `setConnectedAccount`
  * and `findByConnectedAccount`.
  */
