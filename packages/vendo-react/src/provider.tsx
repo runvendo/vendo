@@ -82,14 +82,17 @@ export function VendoProvider({
     if (agent) return createLocalTransport(agent);
     throw new Error("VendoProvider requires either `agent` or `transport`");
   }, [agent, transport]);
-  // Keyed on a stable serialization of the tool NAMES, not on any object
-  // identity: callers pass `hostTools={{ definitions }}` inline (and often
-  // rebuild the definitions array itself each render), so identities change
-  // on every parent render. A new Set here would rebuild the Chat below and
-  // wipe the SDK's message/approval state — the entire conversation — on a
-  // plain re-render.
+  // Keyed on a stable serialization of the tool NAMES — sorted and deduped,
+  // never on object/array identity or ordering: callers pass
+  // `hostTools={{ definitions }}` inline (and often rebuild the definitions
+  // array each render, sometimes from unordered sources), so identities and
+  // iteration order change on plain re-renders. A new Set here would rebuild
+  // the Chat below and wipe the SDK's message/approval state — the entire
+  // conversation.
   const definitions = hostTools?.definitions;
-  const hostToolNamesKey = JSON.stringify((definitions ?? []).map((def) => def.name));
+  const hostToolNamesKey = JSON.stringify(
+    [...new Set((definitions ?? []).map((def) => def.name))].sort(),
+  );
   const hostToolNames = useMemo(
     () => new Set(JSON.parse(hostToolNamesKey) as string[]),
     [hostToolNamesKey],

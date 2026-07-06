@@ -124,6 +124,53 @@ describe("chat identity stability", () => {
     expect(new Set(seen).size).toBe(1);
   });
 
+  it("keeps the same Chat when the same tool set is rebuilt in a different order", () => {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useVendoContext().chat);
+      return null;
+    }
+    const ui = (definitions: HostToolDefinition[]) => (
+      <VendoProvider transport={transport} components={[]} hostTools={{ definitions }} key="stable">
+        <Probe />
+      </VendoProvider>
+    );
+    // Same tool SET, different array order — a host assembling definitions
+    // from an unordered source (object keys, a Map, a fetch) must not mint a
+    // new Chat (wiping the conversation) just because iteration order moved.
+    const { rerender } = render(ui([listAccountsDef, createOrderDef]));
+    rerender(ui([createOrderDef, listAccountsDef]));
+
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen).size).toBe(1);
+  });
+
+  it("mints a NEW Chat when the tool set genuinely changes", () => {
+    const transport: ChatTransport<VendoUIMessage> = {
+      sendMessages: async () => chunkStream(textTurn),
+      reconnectToStream: async () => null,
+    };
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useVendoContext().chat);
+      return null;
+    }
+    const ui = (definitions: HostToolDefinition[]) => (
+      <VendoProvider transport={transport} components={[]} hostTools={{ definitions }} key="stable">
+        <Probe />
+      </VendoProvider>
+    );
+    const { rerender } = render(ui([listAccountsDef, createOrderDef]));
+    rerender(ui([listAccountsDef]));
+
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen).size).toBe(2);
+  });
+
   it("keeps the same Chat when the definitions ARRAY identity changes but its content does not", () => {
     const transport: ChatTransport<VendoUIMessage> = {
       sendMessages: async () => chunkStream(textTurn),
