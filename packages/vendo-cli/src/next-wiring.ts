@@ -873,12 +873,21 @@ export async function wireNextApp(
   return summary;
 }
 
-export function renderWiring(w: WiringSummary | null): string {
+/**
+ * Render a wiring summary for the console. `omitSkips` (catch-up mode) drops the
+ * idempotent "skip … already exists / already wired" lines, keeping only actual
+ * changes (written/edited) and manual TODOs — the caller only reaches this with
+ * omitSkips when at least one of those is present, so the line list is never
+ * empty. Default (first-run init) keeps skips so its output is unchanged.
+ */
+export function renderWiring(w: WiringSummary | null, opts?: { omitSkips?: boolean }): string {
   if (!w) return "";
   const lines: string[] = [];
   for (const f of w.written) lines.push(`  wrote  ${f}`);
   for (const f of w.edited) lines.push(`  edited ${f}`);
-  for (const s of w.skipped) lines.push(`  skip   ${s.step}: ${s.reason}`);
+  if (!opts?.omitSkips) {
+    for (const s of w.skipped) lines.push(`  skip   ${s.step}: ${s.reason}`);
+  }
   if (w.manual.length > 0) {
     lines.push("  TODO (manual):");
     for (const m of w.manual) lines.push(`   - ${m}`);

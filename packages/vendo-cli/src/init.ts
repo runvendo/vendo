@@ -341,6 +341,12 @@ export async function runInit(opts: InitOptions): Promise<number> {
   // difference is presentational: first-run onboarding text is noise for an app
   // already set up, so the "Next steps:" block is suppressed and idempotent
   // wiring is verified silently rather than re-explained.
+  //
+  // NOTE: `state.wired.wired` is read from PRE-wiring state (before wireNextApp
+  // below actually installs the route/root). This is deliberate — it must stay
+  // computed here so a genuine first run (unwired at this point) still onboards.
+  // Do not move this after wireNextApp: that would flip every first run to
+  // catch-up and silently suppress the onboarding block.
   const catchUp = opts.mode === "refresh" || state.wired.wired;
 
   const report: InitReport = {
@@ -470,7 +476,9 @@ export async function runInit(opts: InitOptions): Promise<number> {
       const changed = wiring !== null
         && (wiring.written.length > 0 || wiring.edited.length > 0 || wiring.manual.length > 0);
       if (changed) {
-        const rendered = renderWiring(wiring);
+        // Drop the idempotent "already exists" skips; show only the genuine
+        // repair/TODO lines. `changed` guarantees at least one such line.
+        const rendered = renderWiring(wiring, { omitSkips: true });
         if (rendered) console.log(rendered);
       } else if (wiring !== null) {
         console.log("wiring: verified");

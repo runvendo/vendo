@@ -65,6 +65,25 @@ describe("vendo refresh (catch-up mode)", () => {
     );
     expect(refreshed.result).toBe(0);
     expect(refreshed.out).not.toContain("Next steps:");
+    // A genuine manual follow-up (the sandbox-asset copy this fixture always
+    // yields) is still surfaced, but the idempotent "already exists" skips are
+    // dropped — wiring is verified, not re-explained.
+    expect(refreshed.out).toContain("TODO (manual):");
+    // No wiring skip lines (format: "  skip   <step>: <reason>"). Matches the
+    // renderer output specifically, not the report's "kept (already exists…)".
+    expect(refreshed.out).not.toMatch(/^ {2}skip {3}/m);
+  });
+
+  it("suppresses onboarding via the mode disjunct on a FRESH (unwired) app", async () => {
+    // No prior init here, so `state.wired.wired` is false — only `mode:
+    // "refresh"` can drive catch-up. Isolates the mode disjunct so it can't
+    // silently break (removing it would let this run print the onboarding block).
+    const dir = await nextAppFixture();
+    const refreshed = await capture(() =>
+      runRefresh({ targetDir: dir, skipLlm: true, force: false }),
+    );
+    expect(refreshed.result).toBe(0);
+    expect(refreshed.out).not.toContain("Next steps:");
   });
 
   it("gap-fills only-new candidates and keeps existing artifacts byte-for-byte", async () => {
