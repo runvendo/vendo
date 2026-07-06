@@ -26,14 +26,20 @@
  */
 import { promises as fs, constants as fsConstants } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { hasProviderKey, resolveModelChoice, type ModelProvider } from "@vendoai/server/model";
+import { resolveModelChoice, type ModelProvider } from "@vendoai/server/model";
 import { loadConfig, configPath } from "@vendoai/telemetry";
 import { PROVIDER_ENV_VAR } from "./keys.js";
 import { cliEnvForDir, parseEnvFile } from "./llm.js";
 import { inspectVendoState } from "./state.js";
-import { findAppDir, wrapLayoutChildren, mergeNextConfig, VENDO_TRANSPILE_PACKAGES } from "./next-wiring.js";
+import {
+  findAppDir,
+  wrapLayoutChildren,
+  mergeNextConfig,
+  VENDO_TRANSPILE_PACKAGES,
+  bundledAssetsDir,
+  SANDBOX_ASSETS,
+} from "./next-wiring.js";
 import { createUi, type Ui } from "./ui.js";
 
 export interface DoctorOptions {
@@ -46,10 +52,11 @@ export interface DoctorOptions {
   env?: NodeJS.ProcessEnv;
   /**
    * Directory holding the CLI's bundled sandbox assets, used to judge whether
-   * the app's installed `public/vendo/*.js` are stale. Defaults to the build's
-   * `./assets/` next to this module — which only exists in the bundled dist, so
-   * unbuilt/test runs degrade to "freshness unverified" rather than guessing.
-   * Tests inject a dir to exercise the stale/fresh branches deterministically.
+   * the app's installed `public/vendo/*.js` are stale. Defaults to
+   * next-wiring's {@link bundledAssetsDir} — the same `./assets/` dir init
+   * copies FROM — which only exists in the bundled dist, so unbuilt/test runs
+   * degrade to "freshness unverified" rather than guessing. Tests inject a dir
+   * to exercise the stale/fresh branches deterministically.
    */
   bundledAssetsDir?: string;
 }
@@ -70,7 +77,12 @@ function present(v: string | undefined): boolean {
   return typeof v === "string" && v.trim().length > 0;
 }
 
-/** First provider whose env var is set, in Anthropic > OpenAI > Google order. */
+/**
+ * First provider whose env var is set, in Anthropic > OpenAI > Google order.
+ * Local because we need the provider NAME (for display), which model-choice's
+ * private `detectProvider` doesn't expose. Mirrors that module's precedence —
+ * keep the order here in sync if model-choice.ts's PROVIDER_KEYS is reordered.
+ */
 function detectProviderFromEnv(env: Record<string, string | undefined>): ModelProvider | null {
   for (const provider of ["anthropic", "openai", "google"] as const) {
     if (present(env[PROVIDER_ENV_VAR[provider]])) return provider;
@@ -78,23 +90,12 @@ function detectProviderFromEnv(env: Record<string, string | undefined>): ModelPr
   return null;
 }
 
-/** Default location of the CLI's bundled sandbox assets (bundled dist only). */
-function defaultBundledAssetsDir(): string {
-  return fileURLToPath(new URL("./assets/", import.meta.url));
-}
-
-/** bundled file name in the CLI's assets dir -> installed name under public/vendo/. */
-const SANDBOX_ASSETS: ReadonlyArray<readonly [bundled: string, installed: string]> = [
-  ["vendo-react-runtime.js", "react-runtime.js"],
-  ["vendo-components-sandbox.js", "components-sandbox.js"],
-];
-
 export async function runDoctor(opts: DoctorOptions): Promise<number> {
   const { targetDir } = opts;
   const env = opts.env ?? process.env;
   const home = opts.home ?? homedir();
   const ui = opts.ui ?? createUi();
-  const bundledAssetsDir = opts.bundledAssetsDir ?? defaultBundledAssetsDir();
+  const assetsDir = opts.bundledAssetsDir ?? bundledAssetsDir();
 
   let hardFailed = false;
   const ok = (label: string, detail?: string): void => ui.step("ok", label, detail);
@@ -127,9 +128,10 @@ export async function runDoctor(opts: DoctorOptions): Promise<number> {
   }
 
   // ── Model override ──────────────────────────────────────────────────────────
-  // Unknown-provider override = HARD FAILURE when a key is set (resolveModel
-  // would throw on the first request); a WARNING when no key is set (chat is
-  // already off, so the broken override has no live effect yet).
+  // Unknown-provider override = HARD FAILURE when a key is set: Vendo would
+  // throw the moment it resolves the model (CLI extraction or server chat); a
+  // WARNING when no key is set, since model resolution never happens then, so
+  // the broken override has no live effect yet.
   section("Model");
   const override = envView["VENDO_CLI_MODEL"]?.trim() || envView["VENDO_MODEL"]?.trim();
   if (!override) {
@@ -187,7 +189,7 @@ export async function runDoctor(opts: DoctorOptions): Promise<number> {
 
   // Sandbox assets: chat works without them (only generated UI degrades), so
   // any asset problem is a WARNING, never a hard failure.
-  await checkSandboxAssets(targetDir, bundledAssetsDir, { ok, warn });
+  await checkSandboxAssets(targetDir, assetsDir, { ok, warn });
 
   // Dependencies: the wiring adds @vendoai/next + @electric-sql/pglite as
   // direct deps; an uninstalled one breaks the server → HARD FAILURE.
@@ -214,8 +216,8 @@ export async function runDoctor(opts: DoctorOptions): Promise<number> {
 
   // ── Storage ─────────────────────────────────────────────────────────────────
   // DATABASE_URL → Postgres (ok); otherwise embedded PGlite. A not-yet-created
-  // or unwritable data dir is a WARNING (created on first run / fixable), never
-  // a hard failure.
+  // data dir with a writable parent is expected fresh-install state → ok; an
+  // unwritable dir/parent is a WARNING (fixable), never a hard failure.
   section("Storage");
   await checkStorage(targetDir, env as Record<string, string | undefined>, { ok, warn });
 
@@ -295,7 +297,7 @@ async function checkNextConfig(targetDir: string, r: Pick<Reporters, "ok" | "war
 
 async function checkSandboxAssets(
   targetDir: string,
-  bundledAssetsDir: string,
+  assetsDir: string,
   r: Pick<Reporters, "ok" | "warn">,
 ): Promise<void> {
   const publicDir = path.join(targetDir, "public/vendo");
@@ -306,7 +308,7 @@ async function checkSandboxAssets(
       r.warn(`sandbox asset public/vendo/${installed} missing`, "run `vendo init --force` to install the sandbox assets");
       continue;
     }
-    const bundledBytes = await readFileBytes(path.join(bundledAssetsDir, bundled));
+    const bundledBytes = await readFileBytes(path.join(assetsDir, bundled));
     if (bundledBytes === null) {
       // No reference to compare against (CLI running unbuilt / assets not
       // bundled) — degrade honestly rather than inventing a staleness verdict.
@@ -370,10 +372,11 @@ async function checkStorage(
     else r.warn(`storage: PGlite data dir not writable (${dataDirRel})`, "fix its permissions, or set VENDO_DATA_DIR / DATABASE_URL");
     return;
   }
-  // Not yet created — fine as long as the parent can create it on first run.
+  // Not yet created — expected on a fresh install; fine as long as the parent
+  // can create it on first run (so it's an ok, not a warning).
   const parent = path.dirname(dataDir);
   if (await isWritable(parent)) {
-    r.warn(`storage: embedded PGlite — data dir not created yet (${dataDirRel})`, "created automatically on first run; no action needed");
+    r.ok(`storage: embedded PGlite (${dataDirRel})`, "created on first run");
   } else {
     r.warn(`storage: PGlite data dir parent not writable (${dataDirRel})`, "fix permissions on its parent, or set VENDO_DATA_DIR / DATABASE_URL");
   }

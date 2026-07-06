@@ -611,9 +611,20 @@ function minimalNextConfigSource(tsConfig: boolean): string {
 }
 
 /** Sandbox assets bundled with the CLI at build time (see scripts/bundle-assets.mjs). */
-function bundledAssetsDir(): string {
+export function bundledAssetsDir(): string {
   return fileURLToPath(new URL("./assets/", import.meta.url));
 }
+
+/**
+ * The sandbox runtime assets, as `[bundled-name, installed-name]` pairs:
+ * copied from {@link bundledAssetsDir} into a host app's `public/vendo/` by
+ * `wireNextApp` (step 7) and read back by `vendo doctor` to judge staleness —
+ * a SINGLE source of truth so a filename change can't drift the two apart.
+ */
+export const SANDBOX_ASSETS: ReadonlyArray<readonly [bundled: string, installed: string]> = [
+  ["vendo-react-runtime.js", "react-runtime.js"],
+  ["vendo-components-sandbox.js", "components-sandbox.js"],
+] as const;
 
 const MANUAL_LAYOUT = (layoutFile: string) =>
   `wrap your root layout's {children} manually in ${layoutFile}:\n` +
@@ -815,11 +826,7 @@ export async function wireNextApp(
   // 7. Sandbox assets into public/vendo/.
   const assetsDir = bundledAssetsDir();
   const publicDir = path.join(targetDir, "public/vendo");
-  const assets: Array<[string, string]> = [
-    ["vendo-react-runtime.js", "react-runtime.js"],
-    ["vendo-components-sandbox.js", "components-sandbox.js"],
-  ];
-  for (const [from, to] of assets) {
+  for (const [from, to] of SANDBOX_ASSETS) {
     const src = path.join(assetsDir, from);
     const dest = path.join(publicDir, to);
     if (!(await exists(src))) {

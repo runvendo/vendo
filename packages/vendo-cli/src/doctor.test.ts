@@ -93,6 +93,20 @@ describe("runDoctor — healthy fixture", () => {
     expect(out).toContain("freshness not verified");
   });
 
+  it("treats a not-yet-created PGlite data dir as ok (fresh install), not a warning", async () => {
+    const dir = healthyApp();
+    rmSync(join(dir, ".vendo/data"), { recursive: true, force: true }); // dir absent; parent .vendo writable
+    const { ui, text } = captureUi();
+    const home = tmp("vendo-doctor-home-");
+    const code = await runDoctor({ targetDir: dir, ui, home, env: { ANTHROPIC_API_KEY: "sk-ant-xxx" } });
+    const out = text();
+    expect(code).toBe(0);
+    expect(out).toContain("storage: embedded PGlite");
+    expect(out).toContain("created on first run");
+    // ok line, not a yellow warn with a fix.
+    expect(out).not.toContain("data dir not created yet");
+  });
+
   it("reports Postgres storage when DATABASE_URL is set", async () => {
     const dir = healthyApp();
     const { ui, text } = captureUi();
