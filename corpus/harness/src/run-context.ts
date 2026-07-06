@@ -7,6 +7,7 @@ export interface CorpusRunContext {
   corpusRoot: string;
   reposDir: string;
   repoDir(name: string): string;
+  logsDir(name: string): string;
 }
 
 export interface CreateRunContextOptions {
@@ -27,6 +28,12 @@ export function createRunContext(options: CreateRunContextOptions = {}): CorpusR
         throw new Error(`Invalid corpus repo name "${name}"`);
       }
       return path.join(reposDir, name);
+    },
+    logsDir(name: string): string {
+      if (!repoNamePattern.test(name)) {
+        throw new Error(`Invalid corpus repo name "${name}"`);
+      }
+      return path.join(reposDir, ".logs", name);
     },
   };
 }

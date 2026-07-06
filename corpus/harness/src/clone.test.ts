@@ -96,6 +96,7 @@ describe("createRunContext", () => {
     expect(context.corpusRoot).toBe(corpusRoot);
     expect(context.reposDir).toBe(path.join(corpusRoot, ".repos"));
     expect(context.repoDir("fixture-app")).toBe(path.join(corpusRoot, ".repos", "fixture-app"));
+    expect(context.logsDir("fixture-app")).toBe(path.join(corpusRoot, ".repos", ".logs", "fixture-app"));
   });
 });
 
