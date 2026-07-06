@@ -67,6 +67,11 @@ export interface VendoRootProps {
    *  handler reports `voice:true`; pass `false` to opt out, or a custom
    *  driver to override the packaged OpenAI Realtime wiring. */
   voice?: VoiceDriver | false;
+  /** Host steering appended to the PACKAGED voice assistant's system prompt —
+   *  the voice-side counterpart of createVendoHandler's `instructionsExtra`.
+   *  Pass the same guidance to both so chat and voice compose views and
+   *  automations identically. Ignored when a custom `voice` driver is given. */
+  voiceInstructions?: string[];
   /** OPTIONAL live route supplier, threaded to the sandbox stage so generated
    *  views' next/link + next/navigation shims resolve the host's REAL location.
    *  This package stays framework-agnostic, so a Next host supplies it from its
@@ -136,6 +141,7 @@ export function VendoRoot({
   toasts = true,
   toastPlacement = "bottom-left",
   voice,
+  voiceInstructions,
   routeSource,
   children,
 }: VendoRootProps) {
@@ -261,8 +267,9 @@ export function VendoRoot({
       hostTools: hostToolDefs,
       integrations: capabilities.integrations,
       automations: capabilities.automations !== false,
+      ...(voiceInstructions ? { instructionsExtra: voiceInstructions } : {}),
     });
-  }, [voice, capabilities?.voice, capabilities?.integrations, capabilities?.automations, basePath, productName, hostToolDefs]);
+  }, [voice, voiceInstructions, capabilities?.voice, capabilities?.integrations, capabilities?.automations, basePath, productName, hostToolDefs]);
 
   useEffect(
     () => () => {
