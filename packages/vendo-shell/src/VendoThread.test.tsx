@@ -107,7 +107,7 @@ describe("VendoThread scoped remix pinning", () => {
     },
   };
 
-  it("pins the latest scoped view through remixes, preserving the paired envelope", async () => {
+  it("applies the scoped view through the message's Apply button (one affordance, envelope preserved)", async () => {
     const remixes = createLocalRemixes();
     let shell: ShellContextValue | undefined;
     chatRef.current = {
@@ -116,7 +116,7 @@ describe("VendoThread scoped remix pinning", () => {
           kind: "ui",
           key: "m1:0",
           messageId: "m1",
-          node,
+          node: { ...node, remixAnchorId: "deadline-list" },
           envelope: "sealed-authored-state",
         },
       ],
@@ -138,7 +138,10 @@ describe("VendoThread scoped remix pinning", () => {
     act(() => {
       shell!.scope.open({ anchorId: "deadline-list", label: "Deadlines" });
     });
-    fireEvent.click(await screen.findByRole("button", { name: /pin to card/i }));
+    // Scoped chat shows exactly ONE pin affordance: the per-message Apply.
+    // The footer pin bar is reserved for slot hosts with an explicit onPin.
+    expect(screen.queryByRole("button", { name: /pin to card/i })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: /apply to page/i }));
 
     await waitFor(async () => {
       const pin = await remixes.get("deadline-list");

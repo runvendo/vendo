@@ -491,7 +491,10 @@ export function VendoThread({
             )}
           </div>
         )}
-      {pinSink && (
+      {/* One pin affordance per surface: scoped chat already offers the
+          per-message "Apply to page" button, so the footer bar renders only
+          for slot hosts that pass an explicit onPin (their sole pin path). */}
+      {onPin && (
         <div className="fl-pinbar">
           <button
             type="button"

@@ -894,7 +894,9 @@
 .fl-pin-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
   padding: 8px 13px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
   background: var(--vendo-accent); color: var(--vendo-accent-fg); transition: opacity .14s; }
-.fl-pin-btn:disabled { cursor: default; opacity: .4; }
+.fl-pin-btn:not(:disabled):hover { opacity: .88; }
+.fl-pin-btn:disabled { cursor: default; background: var(--vendo-surface);
+  color: var(--vendo-fg-muted); border-color: var(--vendo-border); }
 .fl-pinbar-hint { font-size: 11.5px; color: var(--vendo-fg-muted); }
 
 /* ---------- error ---------- */
