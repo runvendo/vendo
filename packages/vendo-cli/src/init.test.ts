@@ -355,6 +355,25 @@ describe("additive re-run (decision matrix)", () => {
     expect(second.out).toContain("tools.json: kept");
   });
 
+  it("prints the first-run onboarding block on a fresh (unwired) app", async () => {
+    const dir = await wiredNextAppFixture();
+    const run = await runCaptured({ targetDir: dir, skipLlm: true, force: false });
+    expect(run.code).toBe(0);
+    expect(run.out).toContain("Next steps:");
+  });
+
+  it("init on an already-wired app behaves as refresh: suppresses the onboarding block", async () => {
+    const dir = await wiredNextAppFixture();
+    const first = await runCaptured({ targetDir: dir, skipLlm: true, force: false });
+    expect(first.code).toBe(0);
+    expect(first.out).toContain("Next steps:"); // first run: not yet wired
+
+    // Second plain `init` — the app is now wired, so it must catch up like refresh.
+    const second = await runCaptured({ targetDir: dir, skipLlm: true, force: false });
+    expect(second.code).toBe(0);
+    expect(second.out).not.toContain("Next steps:");
+  });
+
   it("--force regenerates all artifacts and prints a warning listing the overwrites first", async () => {
     const dir = await wiredNextAppFixture();
     const first = await runCaptured({

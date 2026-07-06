@@ -36,6 +36,16 @@ export interface InitOptions {
   yes?: boolean;
   /** Pack local Vendo workspace packages into the host app's vendor/ dir. */
   localVendoDir?: string;
+  /**
+   * Which command drives this pipeline. `"refresh"` — and, implicitly, a plain
+   * `init` re-run on an already-wired app — runs in *catch-up* mode: the same
+   * additive extraction (gap-fill theme/tools, propose only genuinely-new
+   * components/remix candidates), but the first-run onboarding text (the
+   * "Next steps:" block and the idempotent wiring re-explanation) is suppressed
+   * as noise. Defaults to `"init"`. `vendo refresh` sets it to `"refresh"`;
+   * this realizes "re-running init on a wired app behaves exactly like refresh".
+   */
+  mode?: "init" | "refresh";
 
   // ---- test seams below this line ------------------------------------------
   // Everything above maps 1:1 to a CLI flag/argument; everything below exists
@@ -325,6 +335,14 @@ export async function runInit(opts: InitOptions): Promise<number> {
     if (warning) console.log(warning);
   }
 
+  // Catch-up mode: an explicit `vendo refresh`, OR a plain `init` re-run on an
+  // already-wired app (re-running init on a wired app behaves exactly like
+  // refresh). The additive extraction below is identical either way — the only
+  // difference is presentational: first-run onboarding text is noise for an app
+  // already set up, so the "Next steps:" block is suppressed and idempotent
+  // wiring is verified silently rather than re-explained.
+  const catchUp = opts.mode === "refresh" || state.wired.wired;
+
   const report: InitReport = {
     info,
     theme: null,
@@ -439,10 +457,28 @@ export async function runInit(opts: InitOptions): Promise<number> {
   let localInstall: LocalVendoInstallSummary | null = null;
   try {
     failedStep = "wiring";
+    // wireNextApp is idempotent — on a catch-up run it verifies/repairs the
+    // existing wiring. It's the mechanism that keeps wiring intact, so it always
+    // runs; only how we report it changes.
     const wiring = await wireNextApp(targetDir, info, { force: opts.force });
-    const rendered = renderWiring(wiring);
-    if (rendered) console.log(rendered);
     wiringInstalled = wiring !== null;
+    if (catchUp) {
+      // Catch-up: don't re-explain wiring. Surface only genuine follow-ups
+      // (manual TODOs) or actual repairs (files written/edited); the "already
+      // exists / already wired" skips a re-run produces are noise here. Clean
+      // wiring gets a single verified line instead of the full skip dump.
+      const changed = wiring !== null
+        && (wiring.written.length > 0 || wiring.edited.length > 0 || wiring.manual.length > 0);
+      if (changed) {
+        const rendered = renderWiring(wiring);
+        if (rendered) console.log(rendered);
+      } else if (wiring !== null) {
+        console.log("wiring: verified");
+      }
+    } else {
+      const rendered = renderWiring(wiring);
+      if (rendered) console.log(rendered);
+    }
     if (opts.localVendoDir) {
       localInstall = await installLocalVendoPackages(targetDir, opts.localVendoDir);
       console.log(
@@ -459,7 +495,10 @@ export async function runInit(opts: InitOptions): Promise<number> {
     await t.track("init_failed", { framework, failedStep });
     return 1;
   }
-  if (wiringInstalled) {
+  // First-run onboarding only. Suppressed in catch-up mode (refresh, or an init
+  // re-run on an already-wired app): the app is already set up, so "install
+  // deps / cp .env.example / npm run dev" is noise.
+  if (wiringInstalled && !catchUp) {
     console.log(
       [
         "",
