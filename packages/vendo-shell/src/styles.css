@@ -323,6 +323,7 @@
 .fl-auto-access-title { color: var(--vendo-fg); font-size: 12.5px; font-weight: 650; line-height: 1.2; }
 .fl-auto-access-sub { margin-top: 2px; color: var(--vendo-fg-muted); font-size: 11.5px; line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-auto-access-badge[data-auto] { background: var(--vendo-accent); color: var(--vendo-accent-fg); border-color: var(--vendo-accent); }
 .fl-auto-access-badge { justify-self: end; max-width: 112px; padding: 4px 7px; border-radius: 999px;
   background: var(--vendo-accent-soft); color: var(--vendo-fg); font-size: 10.5px; font-weight: 650;
   line-height: 1.15; text-align: center; overflow-wrap: normal; }
@@ -330,13 +331,14 @@
 .fl-auto-details summary { color: var(--vendo-fg-muted); font-size: 11px; cursor: pointer; }
 .fl-auto-details pre { margin: 7px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap;
   font: 11px/1.35 var(--vendo-font-mono); color: var(--vendo-fg-muted); }
-.fl-auto-created-layer { position: fixed; inset: 0; z-index: 2147483002; pointer-events: none; overflow: visible; }
+.fl-auto-created-layer { position: fixed; inset: 0; z-index: 2147483002; pointer-events: none; overflow: visible; background: none; }
 .fl-auto-created-panel { position: absolute; box-sizing: border-box; transform-origin: 100% 0%;
   will-change: top, left, width, height, opacity, transform; }
 .fl-auto-created-panel--morph .fl-auto-created-toast { position: absolute; inset: 0; opacity: 0; }
 .fl-auto-created-proposal { width: 100%; }
 .fl-auto-created-proposal .fl-approval { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; }
 .fl-auto-created-toast { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 58px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.20);
   box-sizing: border-box; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--vendo-border) 72%, var(--vendo-accent) 28%);
   border-radius: 14px; color: var(--vendo-fg);
   background:

@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { AutomationCard, automationCardModel } from "./AutomationCard";
 import { BrandIcon } from "./BrandIcon";
 import { loadFluidMotion, type FluidMotion } from "./fluid-motion";
+import { useShell } from "../context";
 
 const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
-export const AUTOMATION_CREATED_HOLD_MS = 2600;
+export const AUTOMATION_CREATED_HOLD_MS = 3400;
 const AUTOMATION_CREATED_REDUCED_HOLD_MS = 1600;
 const AUTOMATION_CREATED_TOAST_HEIGHT = 58;
 
@@ -38,6 +39,10 @@ function settleAll(animations: Array<unknown>): Promise<unknown[]> {
 
 export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorphProps) {
   const model = useMemo(() => automationCardModel(notice.toolName, notice.input), [notice.toolName, notice.input]);
+  // The layer portals to document.body — OUTSIDE the .vendo-root scope that
+  // defines every --vendo-* token, so it must carry the class and the host's
+  // inline brand vars itself or the pill renders unthemed (transparent).
+  const { cssVars } = useShell();
   const [face, setFace] = useState<"morph" | "toast">(notice.sourceRect ? "morph" : "toast");
   const layerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -162,7 +167,7 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
             height: [`${source.height}px`, `${dest.height}px`],
             borderRadius: ["12px", "14px"],
           },
-          { duration: 0.58, ease: EASE },
+          { duration: 0.85, ease: EASE },
         ),
         proposal
           ? toolkit.animate(
@@ -175,7 +180,7 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
           ? toolkit.animate(
               toast,
               { opacity: [0, 1], filter: ["blur(6px)", "blur(0px)"] },
-              { duration: 0.36, delay: 0.13, ease: EASE },
+              { duration: 0.4, delay: 0.3, ease: EASE },
             )
           : undefined,
       ].filter(Boolean);
@@ -205,7 +210,7 @@ export function AutomationCreatedMorph({ notice, onDone }: AutomationCreatedMorp
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fl-auto-created-layer" ref={layerRef}>
+    <div className="vendo-root fl-auto-created-layer" style={cssVars} ref={layerRef}>
       <div className={`fl-auto-created-panel fl-auto-created-panel--${face}`} ref={panelRef}>
         {face === "morph" ? (
           <div className="fl-auto-created-proposal" ref={proposalRef} aria-hidden="true">

@@ -295,7 +295,7 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
 
       {access.length > 0 ? (
         <div className="fl-auto-access">
-          <div className="fl-auto-access-label">Apps this can use</div>
+          <div className="fl-auto-access-label">Permissions</div>
           {access.map((app) => (
             <div className="fl-auto-access-row" key={app.key}>
               <span className="fl-auto-access-logo" aria-hidden="true">
@@ -305,8 +305,8 @@ export function AutomationCard({ toolName, input, onApprove, onDecline }: Automa
                 <div className="fl-auto-access-title">{app.name}</div>
                 <div className="fl-auto-access-sub">{formatList(app.actions)}</div>
               </div>
-              <span className="fl-auto-access-badge">
-                {app.canRunAutomatically ? "Can run automatically" : "Will ask first"}
+              <span className="fl-auto-access-badge" data-auto={app.canRunAutomatically || undefined}>
+                {app.canRunAutomatically ? "Runs on its own" : "Asks you each time"}
               </span>
             </div>
           ))}

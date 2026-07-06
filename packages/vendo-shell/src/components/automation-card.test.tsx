@@ -57,7 +57,7 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/can run automatically/i)).toBeTruthy();
+    expect(screen.getByText(/runs on its own/i)).toBeTruthy();
   });
 
   it("shows the un-granted state truthfully", () => {
@@ -69,7 +69,7 @@ describe("AutomationCard (proposal state)", () => {
         onDecline={vi.fn()}
       />,
     );
-    expect(screen.getByText(/will ask first/i)).toBeTruthy();
+    expect(screen.getByText(/asks you each time/i)).toBeTruthy();
   });
 
   it("renders a hybrid spec's agent step with its goal and app permission", () => {
