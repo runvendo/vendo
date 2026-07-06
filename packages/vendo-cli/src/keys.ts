@@ -16,7 +16,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, type LanguageModel } from "ai";
+import { APICallError, RetryError, generateText, type LanguageModel } from "ai";
 import { resolveModelChoice, type ModelProvider } from "@vendoai/server/model";
 
 export type { ModelProvider };
@@ -58,9 +58,17 @@ export function detectProvider(key: string): ModelProvider | null {
 }
 
 export type KeyValidation =
+  /** The one-token call succeeded — the key works. */
   | { status: "valid" }
+  /** The provider rejected the credential itself (HTTP 401/403) — the user
+   *  should paste a different key. */
   | { status: "invalid"; reason: string }
-  | { status: "unavailable"; reason: string };
+  /** The optional provider package isn't installed — the fix is
+   *  `npm i @ai-sdk/...`, not a different key. */
+  | { status: "unavailable"; reason: string }
+  /** The call failed for reasons that say nothing about the key: timeout,
+   *  offline, 429/5xx, DNS. Retry later; do NOT tell the user the key is bad. */
+  | { status: "unreachable"; reason: string };
 
 export interface ValidateKeyDeps {
   /** Injectable dynamic importer for the optional OpenAI/Google peers. Defaults to real `import()`. */
@@ -68,6 +76,9 @@ export interface ValidateKeyDeps {
   /** Injectable model override — tests supply this to skip real provider
    *  construction (and the network) entirely, for any provider. */
   model?: LanguageModel;
+  /** Abort the validation call after this many ms (default 10s), failing into
+   *  `"unreachable"`. Tests shrink it to keep the timeout path fast. */
+  timeoutMs?: number;
 }
 
 /** Resolves this provider's default model id without duplicating the
@@ -105,11 +116,40 @@ async function buildModel(
   return { model: factory(modelId) };
 }
 
+/** Human name per provider, for user-facing "could not reach ..." reasons. */
+const PROVIDER_LABEL: Record<ModelProvider, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Google",
+};
+
+const DEFAULT_VALIDATE_TIMEOUT_MS = 10_000;
+
+/**
+ * Splits a failed validation call into "the key is bad" (the provider itself
+ * rejected the credential: 401/403) vs "the call never meaningfully reached a
+ * verdict" (timeout, offline, DNS, 429, 5xx → `"unreachable"`). Only an
+ * `APICallError` carries a status code; `generateText`'s retry loop wraps the
+ * final error in a `RetryError`, so unwrap that first.
+ */
+function classifyFailure(provider: ModelProvider, err: unknown): KeyValidation {
+  const inner = RetryError.isInstance(err) ? err.lastError : err;
+  if (APICallError.isInstance(inner) && (inner.statusCode === 401 || inner.statusCode === 403)) {
+    return { status: "invalid", reason: inner.message };
+  }
+  const detail = inner instanceof Error ? inner.message : String(inner);
+  return {
+    status: "unreachable",
+    reason: `could not reach ${PROVIDER_LABEL[provider]} (${detail}); check your connection and retry`,
+  };
+}
+
 /**
  * Validates a candidate key with a real one-token generate call — the only
  * way to actually know a pasted key works. Fully injectable via `deps.model`
- * (bypasses provider construction and the network for every provider) or
- * `deps.import` (to simulate a missing optional peer).
+ * (bypasses provider construction and the network for every provider),
+ * `deps.import` (to simulate a missing optional peer), and `deps.timeoutMs`
+ * (the abort timeout on the call, default 10s).
  */
 export async function validateKey(
   provider: ModelProvider,
@@ -127,10 +167,18 @@ export async function validateKey(
   }
 
   try {
-    await generateText({ model, prompt: "Reply with one word.", maxOutputTokens: 1 });
+    await generateText({
+      model,
+      prompt: "Reply with one word.",
+      maxOutputTokens: 1,
+      // Fail fast: no backoff-retries on 429/5xx — a validation ping's
+      // "unreachable" outcome already tells the user to retry.
+      maxRetries: 0,
+      timeout: deps.timeoutMs ?? DEFAULT_VALIDATE_TIMEOUT_MS,
+    });
     return { status: "valid" };
   } catch (err) {
-    return { status: "invalid", reason: err instanceof Error ? err.message : String(err) };
+    return classifyFailure(provider, err);
   }
 }
 
@@ -144,8 +192,11 @@ export interface AppendKeyResult {
 /**
  * Appends `PROVIDER_KEY=...` to `.env.local` under a `# added by vendo init`
  * comment, preserving existing content byte-for-byte, and creates the file if
- * absent. Never logs the key — that's the caller's call to make (and it
- * shouldn't).
+ * absent (owner-only 0600, since it holds a credential; an existing file
+ * keeps whatever permissions the user gave it — we only append). Append-only:
+ * checking whether the var is already set (and deciding what a duplicate
+ * means — dotenv's last-wins applies) is the caller's responsibility. Never
+ * logs the key — that's the caller's call to make (and it shouldn't).
  */
 export async function appendProviderKey(
   targetDir: string,
@@ -165,6 +216,7 @@ export async function appendProviderKey(
   // boundary reads the same whether or not the file previously ended cleanly.
   const normalized = base.length > 0 && !base.endsWith("\n") ? `${base}\n` : base;
   const block = `\n# added by vendo init\n${PROVIDER_ENV_VAR[provider]}=${key}\n`;
-  await fs.writeFile(file, `${normalized}${block}`);
+  // mode applies on CREATION only — an existing .env.local keeps its perms.
+  await fs.writeFile(file, `${normalized}${block}`, { mode: 0o600 });
   return { file, created };
 }

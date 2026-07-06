@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { APICallError } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import {
   appendProviderKey,
   detectProvider,
@@ -13,6 +15,23 @@ import { textModel, throwingModel } from "./test-helpers.js";
 
 async function scratch(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), "vendo-cli-keys-"));
+}
+
+/** A mock model whose generate call fails with a real provider-shaped
+ *  `APICallError` carrying the given HTTP status — what the AI SDK actually
+ *  throws for 401/403/429/5xx responses. */
+function apiErrorModel(statusCode: number, message: string): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doGenerate: async () => {
+      throw new APICallError({
+        message,
+        url: "https://api.example.test/v1/messages",
+        requestBodyValues: {},
+        statusCode,
+        isRetryable: statusCode === 429 || statusCode >= 500,
+      });
+    },
+  });
 }
 
 describe("detectProvider", () => {
@@ -58,11 +77,51 @@ describe("validateKey", () => {
     expect(result).toEqual({ status: "valid" });
   });
 
-  it("returns invalid with a reason when the call fails (e.g. 401)", async () => {
-    const model = throwingModel("401 Unauthorized");
+  it("returns invalid when the provider rejects the credential (401)", async () => {
+    const model = apiErrorModel(401, "invalid x-api-key");
     const result = await validateKey("anthropic", "sk-ant-bad", { model });
     expect(result.status).toBe("invalid");
-    expect(result.status === "invalid" && result.reason).toMatch(/401/);
+    expect(result.status === "invalid" && result.reason).toMatch(/invalid x-api-key/);
+  });
+
+  it("returns invalid on 403 (credential rejected, not a connectivity problem)", async () => {
+    const model = apiErrorModel(403, "forbidden");
+    const result = await validateKey("openai", "sk-revoked", { model });
+    expect(result.status).toBe("invalid");
+  });
+
+  it("returns unreachable (NOT invalid) on 429 — rate limiting says nothing about the key", async () => {
+    const model = apiErrorModel(429, "rate limit exceeded");
+    const result = await validateKey("anthropic", "sk-ant-x", { model });
+    expect(result.status).toBe("unreachable");
+    expect(result.status === "unreachable" && result.reason).toMatch(/could not reach Anthropic.*retry/);
+  });
+
+  it("returns unreachable on a 500 server error", async () => {
+    const model = apiErrorModel(500, "internal server error");
+    const result = await validateKey("google", "AIzaX", { model });
+    expect(result.status).toBe("unreachable");
+    expect(result.status === "unreachable" && result.reason).toContain("Google");
+  });
+
+  it("returns unreachable on a plain network error (offline/DNS — no HTTP status at all)", async () => {
+    const model = throwingModel("fetch failed");
+    const result = await validateKey("openai", "sk-x", { model });
+    expect(result.status).toBe("unreachable");
+    expect(result.status === "unreachable" && result.reason).toMatch(/could not reach OpenAI.*check your connection and retry/);
+  });
+
+  it("aborts a hanging call after timeoutMs and reports unreachable", async () => {
+    const hanging = new MockLanguageModelV3({
+      doGenerate: (opts) =>
+        new Promise((_, reject) => {
+          // A well-behaved provider transport rejects when the signal fires;
+          // never resolves otherwise.
+          opts.abortSignal?.addEventListener("abort", () => reject(opts.abortSignal?.reason ?? new Error("aborted")));
+        }),
+    });
+    const result = await validateKey("anthropic", "sk-ant-x", { model: hanging, timeoutMs: 25 });
+    expect(result.status).toBe("unreachable");
   });
 
   it("returns unavailable (not invalid) when the optional provider package can't be imported", async () => {
@@ -132,6 +191,23 @@ describe("appendProviderKey", () => {
     await appendProviderKey(dir, "google", "AIzaX");
     const content = await readFile(file, "utf8");
     expect(content).toBe("EXISTING=1\n\n# added by vendo init\nGOOGLE_GENERATIVE_AI_API_KEY=AIzaX\n");
+  });
+
+  it("creates .env.local owner-only (0600) since it holds a credential", async () => {
+    const dir = await scratch();
+    const result = await appendProviderKey(dir, "anthropic", "sk-ant-abc");
+    expect(result.created).toBe(true);
+    const { mode } = await stat(result.file);
+    expect(mode & 0o777).toBe(0o600);
+  });
+
+  it("leaves an existing .env.local's permissions untouched (append-only, it's the user's file)", async () => {
+    const dir = await scratch();
+    const file = path.join(dir, ".env.local");
+    await writeFile(file, "EXISTING=1\n", { mode: 0o644 });
+    await appendProviderKey(dir, "openai", "sk-x");
+    const { mode } = await stat(file);
+    expect(mode & 0o777).toBe(0o644);
   });
 
   it("never logs or echoes the raw key value while appending", async () => {

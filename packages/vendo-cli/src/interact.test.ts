@@ -60,6 +60,25 @@ describe("createInteractor (real @clack/prompts seam)", () => {
     );
   });
 
+  it("multiSelect forwards required:false so an empty selection is a legal submit (not a cancel)", async () => {
+    vi.mocked(multiselect).mockResolvedValueOnce([]);
+    const interactor = createInteractor();
+    const result = await interactor.multiSelect({
+      message: "Pick components",
+      options: [{ value: "a", label: "Alpha" }],
+      required: false,
+    });
+    expect(result).toEqual([]);
+    expect(multiselect).toHaveBeenCalledWith(expect.objectContaining({ required: false }));
+  });
+
+  it("multiSelect leaves required undefined when omitted (clack's own default applies)", async () => {
+    vi.mocked(multiselect).mockResolvedValueOnce(["a"]);
+    const interactor = createInteractor();
+    await interactor.multiSelect({ message: "x", options: [{ value: "a", label: "A" }] });
+    expect(vi.mocked(multiselect).mock.calls.at(-1)?.[0]).toMatchObject({ required: undefined });
+  });
+
   it("multiSelect returns null on cancel", async () => {
     vi.mocked(multiselect).mockResolvedValueOnce(CANCEL);
     const interactor = createInteractor();

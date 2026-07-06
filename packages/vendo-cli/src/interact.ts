@@ -32,6 +32,13 @@ export interface MultiSelectOptions<Value extends MultiSelectValue> {
   options: MultiSelectItem<Value>[];
   /** Values pre-checked when the prompt opens. */
   initialValues?: Value[];
+  /**
+   * Whether at least one option must be checked to submit (forwarded to
+   * clack; its default — required — applies when omitted). Pass `false` when
+   * "chose nothing" is a legal answer, so it stays distinct from cancel
+   * (Ctrl-C → `null`).
+   */
+  required?: boolean;
 }
 
 export interface Interactor {
@@ -54,7 +61,12 @@ export function createInteractor(): Interactor {
       // though `Value extends MultiSelectValue` guarantees the shape below
       // matches at every concrete instantiation.
       const options = opts.options.map((o) => ({ value: o.value, label: o.label, hint: o.hint })) as Option<Value>[];
-      const result = await multiselect({ message: opts.message, options, initialValues: opts.initialValues });
+      const result = await multiselect({
+        message: opts.message,
+        options,
+        initialValues: opts.initialValues,
+        required: opts.required,
+      });
       return isCancel(result) ? null : result;
     },
   };
