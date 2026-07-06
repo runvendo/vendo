@@ -163,6 +163,12 @@ describe("useSWR shim", () => {
     expect(result.isLoading).toBe(false);
   });
 
+  it("a false key (ready && '/api/x' idiom) means skip — not a permanent spinner", () => {
+    const result = useSWR(false, vi.fn());
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(false);
+  });
+
   it("a function key is called to derive the key and resolves its data", () => {
     (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/live": [1, 2] };
     const result = useSWR(() => "/api/live", vi.fn());

@@ -24,10 +24,10 @@ export interface SWRResponse<T> {
   mutate: () => Promise<T | undefined>;
 }
 
-/** SWR conditional-fetching: a null/undefined key, or a function key that
- *  throws/returns null (a dependency isn't ready), means "don't fetch". Returns
- *  `{ skip: true }` for those; otherwise the cache key (or undefined if the key
- *  shape carries no lookup string). */
+/** SWR conditional-fetching: a null/undefined/false key, or a function key that
+ *  throws/returns a falsy key (a dependency isn't ready), means "don't fetch".
+ *  Returns `{ skip: true }` for those; otherwise the cache key (or undefined if
+ *  the key shape carries no lookup string). */
 function resolveKey(key: unknown): { skip: true } | { skip: false; key: string | undefined } {
   if (typeof key === "function") {
     try {
@@ -36,7 +36,8 @@ function resolveKey(key: unknown): { skip: true } | { skip: false; key: string |
       return { skip: true }; // dependency not ready → don't fetch
     }
   }
-  if (key == null) return { skip: true }; // conditional-fetch idiom → don't fetch
+  // null/undefined/false are all "disabled key" idioms: useSWR(ready && "/x").
+  if (key == null || key === false) return { skip: true };
   if (typeof key === "string") return { skip: false, key };
   if (Array.isArray(key) && typeof key[0] === "string") return { skip: false, key: key[0] };
   return { skip: false, key: undefined };
