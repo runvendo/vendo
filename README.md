@@ -22,7 +22,7 @@
 
 ```bash
 npm install vendoai
-npx vendo init .
+npx vendo init
 ```
 
 <br>
@@ -82,7 +82,7 @@ outside your permission policy.
 
    ```bash
    npm install vendoai
-   npx vendo init .
+   npx vendo init
    ```
 
    The codemod extracts your theme, derives agent tools from your OpenAPI

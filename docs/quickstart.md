@@ -15,7 +15,7 @@ process.
 npx create-next-app@latest my-app     # or your existing app
 cd my-app
 npm install vendoai
-npx vendo init .
+npx vendo init
 ```
 
 `vendo init` is a codemod, not a scaffold. On a Next.js App Router app it:
@@ -321,7 +321,7 @@ scheduler and Composio webhook setup you'll want on a real deployment.
 ## Troubleshooting
 
 - **"Sandbox unavailable / react shim missing"** — `public/vendo/` is
-  missing its two assets; re-run `npx vendo init .` to restore them (init
+  missing its two assets; re-run `npx vendo init` to restore them (init
   copies any missing sandbox asset even without `--force`; add `--force` only
   if the files exist but are stale). `vendo sync` does NOT copy these — it
   only captures wrapped-component source, so it won't fix this.

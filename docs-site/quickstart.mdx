@@ -7,7 +7,7 @@ In the root of your Next.js App Router app:
 
 ```bash
 npm install vendoai
-npx vendo init .
+npx vendo init
 ```
 
 Install the package, then run the codemod. It adds Vendo beside your existing code, the handler reads `.vendo/` from disk at runtime, and nothing it cannot edit with certainty gets touched. The steps below walk the same flow from a fresh app.
@@ -20,7 +20,7 @@ Install the package, then run the codemod. It adds Vendo beside your existing co
     npx create-next-app@latest my-app
     cd my-app
     npm install vendoai
-    npx vendo init .
+    npx vendo init
     ```
 
     `vendo init` writes reviewable files and skips anything it cannot edit with certainty. Review the diff before you continue.
