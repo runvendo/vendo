@@ -54,8 +54,22 @@ export interface RouteScanResult {
   warnings: string[];
 }
 
+/**
+ * Vendo's own generated catch-all handler (`app/api/vendo/[...path]/route.ts`,
+ * or `src/app/api/vendo/...`) must never enter the scan: the LLM would
+ * otherwise propose a tool for Vendo's own endpoint, which the export checker
+ * then drops with a confusing "exports: none" line (it doesn't recognize the
+ * `export const { GET, POST } = createVendoHandler()` destructuring). Anchored
+ * on a trailing slash after "vendo" so a legitimate route like `api/vendors`
+ * is never caught by this.
+ */
+const VENDO_OWN_ROUTE = /(^|\/)app\/api\/vendo\//;
+
 export async function scanRoutes(targetDir: string, model: LanguageModel): Promise<RouteScanResult> {
-  const files = await walk(targetDir, (p) => /(^|\/)app\/api\/.*route\.tsx?$/.test(p.replace(/\\/g, "/")), 200);
+  const files = await walk(targetDir, (p) => {
+    const norm = p.replace(/\\/g, "/");
+    return /(^|\/)app\/api\/.*route\.tsx?$/.test(norm) && !VENDO_OWN_ROUTE.test(norm);
+  }, 200);
   if (files.length === 0) return { tools: [], warnings: [] };
   const routes = await Promise.all(
     files.map(async (f) => ({ urlPath: urlPathFor(f, targetDir), source: await fs.readFile(f, "utf8") })),
