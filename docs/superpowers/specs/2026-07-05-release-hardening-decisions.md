@@ -142,17 +142,24 @@ on new intent). Two items needed follow-up and were chased down:
   (model re-divided the centerValue). FIXED DETERMINISTICALLY: the Donut now
   derives its center money-total from the sum of the legend values
   (`resolveCenterValue`), so it structurally can't disagree; non-currency
-  centers pass through. Shipped in PR #65. Re-verifying in browser.
-- **Cadence chart palette warnings / non-green bars** — under investigation.
-  Ruled out: build staleness (forced rebuild = no change; bridge already in
-  both served bundles) and app-wiring divergence (Cadence and Maple use
-  byte-identical VendoThemeProvider + SandboxStage). Maple's rendered chart
-  is a Donut, which uses `--vendo-accent` and bypasses OpenUI palettes, so
-  its clean console doesn't actually exercise the palette path — the
-  Maple-clean/Cadence-dirty split may be an observation asymmetry. A targeted
-  console measurement on both apps is running to settle whether the warnings
-  are universal+benign or a real Cadence-only defect. Cosmetic either way
-  (charts render); not blocking the OSS PRs.
+  centers pass through. Shipped in PR #65. NOTE: the first re-check ran on a
+  turbo-CACHED bundle that lacked the fix (still showed $40.18); a clean
+  rebuild deploys it and a fresh browser check is confirming. The fix relies
+  on slices carrying currency `display` strings — if the check shows the
+  model omits them, a value-based fallback gets added.
+- **Chart brand palettes don't apply (both apps) — RESOLVED to a scoped
+  follow-up, needs your call.** Root-caused in OpenUI internals: the
+  `*ChartPalette` keys are valid Theme *type* keys but aren't in OpenUI
+  0.12.1's runtime `defaultLightTheme`, so its ThemeProvider IGNORES them
+  (the warning is literal) and charts read a zustand store, not the React
+  ThemeContext our bridge re-provides. So brand chart palettes NEVER reached
+  charts in these demos — before or after wave 4. Cadence bars render
+  fallback brown, not brand green. Wave 4's change still earns its keep: it
+  removed the invalid keys and silenced 10 false-positive console warnings
+  (no palette applied either way → no regression). **Real brand-chart theming
+  = a follow-up:** find OpenUI's actual palette path or bump OpenUI. Cosmetic
+  on demo test-beds; not blocking. **Want it as a follow-up wave, or accept
+  OpenUI-default chart colors for launch?**
 
 - **Critical consent card:** couldn't be exercised live — NEITHER demo exposes
   a critical-tier (irreversible/money) tool, so demo-bank's agent refuses
