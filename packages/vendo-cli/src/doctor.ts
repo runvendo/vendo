@@ -270,7 +270,11 @@ export async function runDoctor(opts: DoctorOptions): Promise<number> {
   // ── Telemetry ────────────────────────────────────────────────────────────────
   // Purely informational — never affects the exit code.
   section("Telemetry");
-  const telemetry = loadConfig(home);
+  // Read through the doctor's env view (tests inject it) rather than the raw
+  // process.env, so the reported status reflects the same env everything else
+  // in doctor uses — a CI runner's ambient DO_NOT_TRACK/CI opt-out doesn't leak
+  // into a test that injects a clean env.
+  const telemetry = loadConfig(home, env as Record<string, string | undefined>);
   ok(`telemetry: ${telemetry.optedOut ? "disabled" : "enabled"}`, `anonymous; ${configPath(home)}`);
 
   // One anonymous event with counts + a wired bool only — never any content
