@@ -37,6 +37,19 @@ describe("Link shim", () => {
     expect(calls).toEqual([{ action: NAVIGATE_ACTION, payload: { href: "/clients/cl_rivera" } }]);
   });
 
+  it("builds the full URL from a UrlObject href (pathname + query + hash)", () => {
+    const calls = captureDispatch();
+    render(
+      <Link href={{ pathname: "/search", query: { q: "acme", page: 2 }, hash: "results" }}>go</Link>,
+    );
+    const anchor = screen.getByText("go") as HTMLAnchorElement;
+    expect(anchor.getAttribute("href")).toBe("/search?q=acme&page=2#results");
+    fireEvent.click(anchor);
+    expect(calls).toEqual([
+      { action: NAVIGATE_ACTION, payload: { href: "/search?q=acme&page=2#results" } },
+    ]);
+  });
+
   it("still fires a user onClick before navigating", () => {
     captureDispatch();
     const onClick = vi.fn();
