@@ -63,6 +63,25 @@ const NEXT_SERVER_EXTERNAL_PACKAGES = ["@electric-sql/pglite"] as const;
 const PGLITE_DEPENDENCY = "@electric-sql/pglite";
 const PGLITE_VERSION = "^0.2.0";
 
+/**
+ * Default-brand theme stub written by wiring step 0 when extraction produced
+ * no theme.json (the vendo-root wrapper imports it, so it must exist).
+ * Exported as the single source of truth for state inspection: a theme.json
+ * still deep-equal to this carries no developer content, so additive re-runs
+ * may re-extract over it (see state.ts / init.ts).
+ */
+export const DEFAULT_THEME_STUB = {
+  version: 1,
+  accent: "#0A7CFF",
+  background: "#FFFFFF",
+  surface: "#F5F7FA",
+  text: "#111418",
+  mutedText: "#5B6470",
+  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+  radius: 8,
+  mode: "light",
+};
+
 /** Locate the App Router directory (`app/` or `src/app/`) with a root layout. */
 export async function findAppDir(
   targetDir: string,
@@ -248,7 +267,7 @@ export function mergeInstrumentation(source: string): string | null {
  * or a comment (`// rename AppVendoRoot`) can never be matched or mistaken
  * for existing wiring — then splice edits back into the ORIGINAL by offset.
  */
-function maskLiterals(source: string): string {
+export function maskLiterals(source: string): string {
   const out = source.split("");
   let i = 0;
   const n = source.length;
@@ -285,6 +304,29 @@ function maskLiterals(source: string): string {
   return out.join("");
 }
 
+/**
+ * Insert `importStmt` at an ALWAYS-VALID position: immediately after a leading
+ * "use client"/"use server" directive if present, else at the very top.
+ * (Anchoring after "the last import" is unsafe — a Prettier-wrapped multi-line
+ *  import would land the new line INSIDE the brace block.)
+ *
+ * A directive must remain the FIRST statement, but Next allows comments above
+ * it — so skip leading comments/whitespace (found on the masked copy, which has
+ * comment CONTENT blanked but delimiters/offsets intact) before checking, then
+ * detect the directive on the ORIGINAL at that offset (the mask also blanks the
+ * "use client" string interior). Shared by wrapLayoutChildren and the remix
+ * anchor splice so both call sites agree byte-for-byte.
+ */
+export function insertImportAfterDirectives(source: string, importStmt: string): string {
+  const headerLen = maskLiterals(source).match(/^\s*/)?.[0].length ?? 0;
+  const directive = source.slice(headerLen).match(/^(['"]use [a-z ]+['"];?[^\n]*\n)/);
+  if (directive) {
+    const end = headerLen + directive[0].length;
+    return source.slice(0, end) + importStmt + source.slice(end);
+  }
+  return importStmt + source;
+}
+
 export function wrapLayoutChildren(source: string, componentName = "AppVendoRoot"): string | null {
   const masked = maskLiterals(source);
   // Idempotence: already wired (by us or by hand). Checked against the masked
@@ -313,26 +355,8 @@ export function wrapLayoutChildren(source: string, componentName = "AppVendoRoot
     `</${componentName}>` +
     source.slice(start + match[0].length);
 
-  // Insert the import at an ALWAYS-VALID position: immediately after a leading
-  // "use client"/"use server" directive if present, else at the very top.
-  // (Anchoring after "the last import" is unsafe — a Prettier-wrapped
-  //  multi-line import would land the new line INSIDE the brace block.)
-  //
-  // A directive must remain the FIRST statement, but Next allows comments above
-  // it — so skip leading comments/whitespace (found on the masked copy, which
-  // has comment CONTENT blanked but delimiters/offsets intact) before checking.
   const importStmt = `import { ${componentName} } from "./vendo-root";\n`;
-  // maskLiterals blanks comment bodies AND their delimiters to spaces, so the
-  // leading `\s*` on the masked copy skips whitespace and header comments in
-  // one go. Detect the directive on the ORIGINAL at that offset, though — the
-  // mask also blanks the "use client" string interior.
-  const headerLen = maskLiterals(wrapped).match(/^\s*/)?.[0].length ?? 0;
-  const directive = wrapped.slice(headerLen).match(/^(['"]use [a-z ]+['"];?[^\n]*\n)/);
-  if (directive) {
-    const end = headerLen + directive[0].length;
-    return wrapped.slice(0, end) + importStmt + wrapped.slice(end);
-  }
-  return importStmt + wrapped;
+  return insertImportAfterDirectives(wrapped, importStmt);
 }
 
 /** Merge `vendoai` into package.json dependencies (format-preserving-ish:
@@ -633,9 +657,20 @@ function minimalNextConfigSource(tsConfig: boolean): string {
 }
 
 /** Sandbox assets bundled with the CLI at build time (see scripts/bundle-assets.mjs). */
-function bundledAssetsDir(): string {
+export function bundledAssetsDir(): string {
   return fileURLToPath(new URL("./assets/", import.meta.url));
 }
+
+/**
+ * The sandbox runtime assets, as `[bundled-name, installed-name]` pairs:
+ * copied from {@link bundledAssetsDir} into a host app's `public/vendo/` by
+ * `wireNextApp` (step 7) and read back by `vendo doctor` to judge staleness —
+ * a SINGLE source of truth so a filename change can't drift the two apart.
+ */
+export const SANDBOX_ASSETS: ReadonlyArray<readonly [bundled: string, installed: string]> = [
+  ["vendo-react-runtime.js", "react-runtime.js"],
+  ["vendo-components-sandbox.js", "components-sandbox.js"],
+] as const;
 
 const MANUAL_LAYOUT = (layoutFile: string) =>
   `wrap your root layout's {children} manually in ${layoutFile}:\n` +
@@ -678,24 +713,7 @@ export async function wireNextApp(
   const themePath = path.join(targetDir, ".vendo/theme.json");
   if (!(await exists(themePath))) {
     await fs.mkdir(path.dirname(themePath), { recursive: true });
-    await fs.writeFile(
-      themePath,
-      JSON.stringify(
-        {
-          version: 1,
-          accent: "#0A7CFF",
-          background: "#FFFFFF",
-          surface: "#F5F7FA",
-          text: "#111418",
-          mutedText: "#5B6470",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-          radius: 8,
-          mode: "light",
-        },
-        null,
-        2,
-      ) + "\n",
-    );
+    await fs.writeFile(themePath, JSON.stringify(DEFAULT_THEME_STUB, null, 2) + "\n");
     summary.written.push(rel(themePath));
   }
   const toolsPath = path.join(targetDir, ".vendo/tools.json");
@@ -890,11 +908,7 @@ export async function wireNextApp(
   // 7. Sandbox assets into public/vendo/.
   const assetsDir = bundledAssetsDir();
   const publicDir = path.join(targetDir, "public/vendo");
-  const assets: Array<[string, string]> = [
-    ["vendo-react-runtime.js", "react-runtime.js"],
-    ["vendo-components-sandbox.js", "components-sandbox.js"],
-  ];
-  for (const [from, to] of assets) {
+  for (const [from, to] of SANDBOX_ASSETS) {
     const src = path.join(assetsDir, from);
     const dest = path.join(publicDir, to);
     if (!(await exists(src))) {
@@ -945,12 +959,21 @@ export async function wireNextApp(
   return summary;
 }
 
-export function renderWiring(w: WiringSummary | null): string {
+/**
+ * Render a wiring summary for the console. `omitSkips` (catch-up mode) drops the
+ * idempotent "skip … already exists / already wired" lines, keeping only actual
+ * changes (written/edited) and manual TODOs — the caller only reaches this with
+ * omitSkips when at least one of those is present, so the line list is never
+ * empty. Default (first-run init) keeps skips so its output is unchanged.
+ */
+export function renderWiring(w: WiringSummary | null, opts?: { omitSkips?: boolean }): string {
   if (!w) return "";
   const lines: string[] = [];
   for (const f of w.written) lines.push(`  wrote  ${f}`);
   for (const f of w.edited) lines.push(`  edited ${f}`);
-  for (const s of w.skipped) lines.push(`  skip   ${s.step}: ${s.reason}`);
+  if (!opts?.omitSkips) {
+    for (const s of w.skipped) lines.push(`  skip   ${s.step}: ${s.reason}`);
+  }
   if (w.manual.length > 0) {
     lines.push("  TODO (manual):");
     for (const m of w.manual) lines.push(`   - ${m}`);

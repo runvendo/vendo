@@ -1,0 +1,51 @@
+---
+title: "Refresh and remix"
+description: "Catch up an existing install and let end users customize widgets"
+---
+
+`vendo init` runs once to set up your app. As your app grows, or after you add a provider key, `vendo refresh` catches the install up. Both commands run the same interactive pickers.
+
+## `vendo refresh`
+
+```bash
+npx vendo refresh .
+```
+
+`refresh` is the catch-up command. It re-runs extraction against only what is new: your theme is kept, tools are gap-filled, only unwrapped components are proposed, and only unanchored widgets are offered. It verifies the Next.js wiring silently and never overwrites. Running `vendo init` on an already-wired app does the same thing.
+
+Use it whenever:
+
+- You added a provider key after the first `init` (the LLM-assisted steps that were skipped now run).
+- Your API surface grew and you want the new routes as tools.
+- You added components or widgets you want Vendo to know about.
+
+## The two pickers
+
+With a provider key present and an interactive terminal, `init` and `refresh` open two pickers. Both are pre-checked with the candidates the LLM proposed; deselect anything you do not want.
+
+### Components
+
+The first picker lists host components discovered by LLM analysis. Each pick is wrapped as a descriptor + sandbox-wrapper pair under `.vendo/components/`, so generated UI can compose your real components. This is the same output described in [Host components](/connect/host-components).
+
+### Remix
+
+The second picker lists widget-shaped client components your end users might want to customize. Each pick is wrapped in a `<VendoRemix id label>` anchor **in your source file** so that widget becomes remixable on your live site.
+
+```tsx
+import { VendoRemix } from "@vendoai/shell";
+
+<VendoRemix id="savings-summary" label="Savings summary">
+  <SavingsSummary accounts={accounts} />
+</VendoRemix>
+```
+
+Because this step edits your source, it is human-gated:
+
+- It runs only in an interactive `vendo init` / `vendo refresh`. Under `--yes`, in CI, or in any non-TTY run, it is skipped and prints a by-hand hint instead.
+- A splice that hits any ambiguity is reported as skipped with manual instructions; it never crashes the run and never writes a file that fails a syntax check.
+
+After wrapping, `vendo sync` captures a baseline for each anchor on your next build. An anchor without a `context` prop falls back to a DOM-snapshot baseline, which works. Add a `context` prop when you want to feed the remix agent richer grounding — each wrapped anchor prints a TODO pointing you here.
+
+## No provider key yet?
+
+The pickers need an LLM to propose candidates. Without a provider key, `init`/`refresh` run the deterministic steps (theme tokens, OpenAPI tools, Next.js wiring) and print what they skipped. Add a key to `.env.local` and re-run to get the assisted steps. See [The vendo init codemod](/connect/vendo-init) for the full re-run story.

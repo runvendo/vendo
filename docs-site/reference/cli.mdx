@@ -1,24 +1,36 @@
 ---
 title: "CLI"
-description: "Reference for the vendo init codemod"
+description: "Reference for the vendo commands"
 ---
 
-This page covers the public `vendo init` command.
-
 ```bash
-npx vendo init [dir] [--skip-llm] [--force]
+npx vendo <command> [dir] [options]
 ```
 
 `[dir]` defaults to the current working directory.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `init [dir]` | Set up Vendo in a Next.js app (run once). Extracts theme, tools, and components into `.vendo/` and wires the app. Interactive: prompts for a provider key and opens the component and remix pickers. Safe to re-run; on an already-wired app it behaves like `refresh`. |
+| `refresh [dir]` | Catch up an existing install. Same additive pipeline as `init`, offering only what is new — kept theme, gap-filled tools, unwrapped components, unanchored widgets. See [Refresh and remix](/connect/refresh-and-remix). |
+| `doctor [dir]` | Read-only health check: keys, model override, wiring, `.vendo/` state, storage, scheduler, telemetry. Never writes. Hard failures exit non-zero; warnings exit zero. |
+| `sync [dir]` | Capture wrapped-component source and rebuild the sandbox bundle. `init` wires this into your `prebuild` script; you rarely run it by hand. |
+| `publish [dir]` | Validate `.vendo/tools.json` and print the sha256 a real publish would key on. Registry publish is a stub until ENG-198; embedded hosts read `.vendo/` from disk and never need it. |
+| `telemetry <status\|enable\|disable>` | View or change anonymous usage telemetry. |
 
 ## Flags
 
 | Flag | Behavior |
 | --- | --- |
-| `--skip-llm` | Skips LLM-assisted route scanning and component discovery. Deterministic theme extraction, OpenAPI extraction, `.vendo/README.md`, and Next.js wiring still run. |
-| `--force` | Allows generated `.vendo/` artifacts to be overwritten. It also allows existing sandbox asset files in `public/vendo/` to be replaced. Existing route and wrapper files are still skipped rather than rewritten. |
+| `--skip-llm` | Skips LLM-assisted steps (route scanning, component and remix discovery). Deterministic theme extraction, OpenAPI extraction, `.vendo/README.md`, and Next.js wiring still run. |
+| `--force` | Allows generated `.vendo/` artifacts to be overwritten, and existing sandbox asset files in `public/vendo/` to be replaced (warns first). Existing route and wrapper files are still skipped rather than rewritten. Applies to `init` and `refresh`. |
+| `--yes` | Non-interactive: no prompts. Resolves keys from env / `.env.local` only and skips the component and remix pickers (source edits stay human-gated). |
+| `--local <dir>` | Packs local `@vendoai` packages from a Vendo monorepo into `./vendor` (development use). |
+| `--version` | Prints the CLI version. |
 
-## What It Does
+## What `init` Does
 
 `vendo init` runs these phases:
 
@@ -33,13 +45,18 @@ npx vendo init [dir] [--skip-llm] [--force]
 
 ## LLM Resolution
 
-The CLI uses the same provider precedence as the runtime:
+The CLI uses the same provider precedence as the runtime, and each provider has
+a default model:
 
-1. `ANTHROPIC_API_KEY`
-2. `OPENAI_API_KEY`
-3. `GOOGLE_GENERATIVE_AI_API_KEY`
+1. `ANTHROPIC_API_KEY` — `claude-sonnet-5`
+2. `OPENAI_API_KEY` — `gpt-5.5`
+3. `GOOGLE_GENERATIVE_AI_API_KEY` — `gemini-3.5-flash`
 
-`VENDO_CLI_MODEL` overrides `VENDO_MODEL` for `vendo init` only. Both accept
+`@ai-sdk/anthropic` is a regular dependency; `@ai-sdk/openai` and
+`@ai-sdk/google` are optional peers, so resolving to one without its package
+installed fails fast with an actionable `npm i` hint.
+
+`VENDO_CLI_MODEL` overrides `VENDO_MODEL` for the CLI only. Both accept
 `provider/model` or a bare model id. A model id without a provider key is not a
 credential, so assisted steps are skipped unless one provider key is present.
 

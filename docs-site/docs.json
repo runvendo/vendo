@@ -37,7 +37,7 @@
       },
       {
         "group": "Connect your app",
-        "pages": ["connect/vendo-init", "connect/api-tools", "connect/host-components", "connect/theming", "connect/instructions"]
+        "pages": ["connect/vendo-init", "connect/refresh-and-remix", "connect/api-tools", "connect/host-components", "connect/theming", "connect/instructions"]
       },
       {
         "group": "Capabilities",

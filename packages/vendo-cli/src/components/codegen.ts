@@ -1,5 +1,6 @@
 import path from "node:path";
 import { transform } from "sucrase";
+import { z } from "zod";
 import { writeGenerated } from "../fsx.js";
 import type { ComponentAnalysis } from "./analyze.js";
 import type { ComponentCandidate } from "./scan.js";
@@ -194,6 +195,68 @@ export function assertParses(fileLabel: string, source: string): void {
   }
 }
 
+/** A value that a healthy schema for this prop must accept, built from its spec. */
+function exampleValue(p: ComponentAnalysis["props"][number]): unknown {
+  switch (p.type) {
+    case "string": return "example";
+    case "number": return 0;
+    case "boolean": return false;
+    case "string[]": return ["example"];
+    case "number[]": return [0];
+    // A well-formed enum has values; enumValues[0] is a member. An empty enum
+    // has none, so the fallback deliberately fails the (degenerate) schema.
+    case "enum": return p.enumValues?.[0] ?? "example";
+    // Exhaustiveness guard: a 7th prop type added to propSpecSchema without
+    // teaching this switch (and zodSource) must fail compile + loud at runtime,
+    // not silently return undefined and spuriously fail validation.
+    default:
+      throw new Error(`unhandled prop type ${JSON.stringify(p.type satisfies never)}`);
+  }
+}
+
+/** An example props object synthesized from the prop specs (every field set). */
+export function exampleProps(props: ComponentAnalysis["props"]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of props) out[p.name] = exampleValue(p);
+  return out;
+}
+
+/**
+ * Deterministic schema-validation rescue (mirrors assertParses): a generated
+ * descriptor can be syntax-valid yet degenerate — e.g. an enum prop with no
+ * values compiles to `z.enum([])`, which rejects EVERY input, so every agent
+ * render of the component fails at runtime. We catch that before writing by
+ * evaluating the generated schema and confirming it accepts an example built
+ * from its own prop specs.
+ *
+ * Hermetic: only the generated schema expression runs (with zod injected).
+ * Every value interpolated into it is a JSON string literal except prop names,
+ * which are the sole bare identifiers — so they are re-checked against the
+ * identifier regex here (they are already validated upstream by propSpecSchema)
+ * before evaluation. Nothing else, and no filesystem/network, is reachable.
+ */
+export function assertSchemaValid(analysis: ComponentAnalysis): void {
+  const badName = analysis.props.find((p) => !IDENTIFIER.test(p.name));
+  if (badName) throw new Error(`prop name ${JSON.stringify(badName.name)} is not a valid identifier`);
+  let schema: z.ZodTypeAny;
+  try {
+    schema = new Function("z", `return (${zodSource(analysis.props)});`)(z) as z.ZodTypeAny;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`generated schema does not evaluate: ${msg}`);
+  }
+  const result = schema.safeParse(exampleProps(analysis.props));
+  if (result.success) return;
+  // The empty-enum case is by far the most common degeneracy; name the offending
+  // props explicitly so the repair round-trip gets an actionable hint.
+  const emptyEnums = analysis.props.filter((p) => p.type === "enum" && (p.enumValues ?? []).length === 0);
+  const hint = emptyEnums.length
+    ? ` — empty enum for ${emptyEnums.map((p) => JSON.stringify(p.name)).join(", ")} (z.enum([]) rejects every value; give it enum values or a different type)`
+    : "";
+  const detail = result.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
+  throw new Error(`generated schema is degenerate: it rejects its own example props${hint}: ${detail}`);
+}
+
 export async function writeComponent(
   targetDir: string,
   analysis: ComponentAnalysis,
@@ -210,6 +273,9 @@ export async function writeComponent(
   const impl = implSource(analysis, candidate);
   assertParses(`${name}/descriptor.ts`, descriptor);
   assertParses(`${name}/impl.tsx`, impl);
+  // Syntax-valid is not enough: a degenerate schema (e.g. empty z.enum([]))
+  // would fail every render at runtime. Validate before writing.
+  assertSchemaValid(analysis);
   const base = path.join(targetDir, ".vendo/components", name);
   await writeGenerated(path.join(base, "descriptor.ts"), descriptor, opts);
   await writeGenerated(path.join(base, "impl.tsx"), impl, opts);

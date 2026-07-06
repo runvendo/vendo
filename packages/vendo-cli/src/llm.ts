@@ -5,6 +5,8 @@
  * can drive unit tests — same precedent as vendo-runtime's natural-language
  * policy judge.
  */
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { generateText, type LanguageModel } from "ai";
 // Imported via the lean `/model` subpath, NOT the bare `@vendoai/server`
 // package — the barrel pulls in `@vendoai/runtime` (jsonata, croner, ...)
@@ -46,6 +48,86 @@ export async function cliModel(
   const resolvedEnv = cliOverride ? { ...env, VENDO_MODEL: cliOverride } : env;
   if (!hasProviderKey(resolvedEnv)) return null;
   return resolveModel(resolvedEnv, deps);
+}
+
+/**
+ * The env vars `cliModel` consults — the three provider keys plus the two model
+ * overrides. Only these are lifted out of `.env.local`; nothing else in that
+ * file is read into the model-resolution env view.
+ */
+const CLI_ENV_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "VENDO_CLI_MODEL",
+  "VENDO_MODEL",
+] as const;
+
+/**
+ * Minimal `.env` parser (no `dotenv` dependency exists in the workspace, and a
+ * full one is overkill here). Handles the dotenv basics: `KEY=value` lines,
+ * with `#` comments and blank lines ignored, an optional `export ` prefix
+ * dropped, and one layer of surrounding single/double quotes stripped. No
+ * interpolation or multiline values — those never appear in a provider key.
+ */
+export function parseEnvFile(content: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const body = line.startsWith("export ") ? line.slice("export ".length).trimStart() : line;
+    const eq = body.indexOf("=");
+    if (eq === -1) continue;
+    const key = body.slice(0, eq).trim();
+    if (!key) continue;
+    let value = body.slice(eq + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * The env `cliModel` should see for a run rooted at `targetDir`: the
+ * Vendo-relevant vars from `<targetDir>/.env.local`, overlaid by real
+ * `process.env` (real env wins — the dotenv / Next.js convention). Restricted
+ * to {@link CLI_ENV_KEYS} so nothing else in `.env.local` leaks into model
+ * resolution. Absent/unreadable `.env.local` → just the `base` values.
+ */
+export async function cliEnvForDir(
+  targetDir: string,
+  base: Record<string, string | undefined> = process.env,
+): Promise<Record<string, string | undefined>> {
+  let fromFile: Record<string, string> = {};
+  try {
+    fromFile = parseEnvFile(await fs.readFile(path.join(targetDir, ".env.local"), "utf8"));
+  } catch {
+    // No .env.local (or unreadable) — fall back to base env alone.
+  }
+  const merged: Record<string, string | undefined> = {};
+  for (const key of CLI_ENV_KEYS) {
+    merged[key] = base[key] ?? fromFile[key];
+  }
+  return merged;
+}
+
+/**
+ * Like {@link cliModel}, but reads `<targetDir>/.env.local` in addition to real
+ * `process.env` first. This is how `vendo init` picks up a key a developer
+ * added to `.env.local` by hand (or that its own key-prompt step just wrote)
+ * without requiring it to also be exported into the shell.
+ */
+export async function resolveCliModel(
+  targetDir: string,
+  deps?: ResolveModelDeps,
+  base: Record<string, string | undefined> = process.env,
+): Promise<LanguageModel | null> {
+  return cliModel(await cliEnvForDir(targetDir, base), deps);
 }
 
 function stripFences(text: string): string {

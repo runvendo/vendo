@@ -10,7 +10,7 @@ npm install vendoai
 npx vendo init
 ```
 
-Install the package, then run the codemod. It adds Vendo beside your existing code, the handler reads `.vendo/` from disk at runtime, and nothing it cannot edit with certainty gets touched. The steps below walk the same flow from a fresh app.
+That is the install. The codemod adds Vendo beside your existing code, the handler reads `.vendo/` from disk at runtime, and nothing it cannot edit with certainty gets touched. `init` is interactive: it prompts for a provider key, then offers a picker of components to wrap and widgets to make remixable. The steps below walk the same flow from a fresh app.
 
 <Steps>
   <Step title="Install Vendo">
@@ -23,7 +23,7 @@ Install the package, then run the codemod. It adds Vendo beside your existing co
     npx vendo init
     ```
 
-    `vendo init` writes reviewable files and skips anything it cannot edit with certainty. Review the diff before you continue.
+    `vendo init` prompts for a provider key, offers the component and remix pickers, writes reviewable files, and skips anything it cannot edit with certainty. Review the diff before you continue. `init` is safe to re-run: it fills gaps and never overwrites. Once installed, use `vendo refresh` to catch up as your app grows.
 
     <Frame caption="vendo init: theme extracted from your CSS, tools derived from the OpenAPI spec, components wrapped, routes wired.">
       <img src="/images/init.gif" alt="vendo init running the codemod against a Next.js app" />
@@ -54,7 +54,7 @@ Install the package, then run the codemod. It adds Vendo beside your existing co
   </Step>
 
   <Step title="Add one provider key">
-    Copy the generated example env file and set one model provider key:
+    If you pasted a key at the `init` prompt, it is already saved to `.env.local` and you can skip this step. Otherwise, copy the generated example env file and set one model provider key by hand:
 
     ```bash
     cp .env.example .env.local
@@ -66,7 +66,11 @@ Install the package, then run the codemod. It adds Vendo beside your existing co
     # or GOOGLE_GENERATIVE_AI_API_KEY=...
     ```
 
-    One of those keys enables chat and generated UI. Additional keys add capabilities, but they are not required for the first view.
+    One of those keys enables chat and generated UI. Vendo picks a provider from whichever key is set (precedence Anthropic, then OpenAI, then Google) and uses its default model — `claude-sonnet-5`, `gpt-5.5`, or `gemini-3.5-flash`. Additional keys add capabilities, but they are not required for the first view.
+
+    <Note>
+      Added the key after running `init`? Run `vendo refresh` to run the LLM-assisted steps (tools, components, remix) that were skipped without a key.
+    </Note>
   </Step>
 
   <Step title="Run the app">

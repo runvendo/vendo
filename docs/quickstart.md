@@ -44,7 +44,17 @@ It never breaks existing code: any step it can't perform with certainty (an
 unusual layout, an unparsable package.json) is skipped and printed as an exact
 manual instruction instead. Review the whole install in one `git diff`.
 
+`init` is interactive: it prompts for a provider key (saved to `.env.local`),
+then offers a picker of **components** to wrap for generated UI and a picker of
+**widgets** to make remixable in your source. It's safe to re-run — it fills
+gaps and never overwrites. Once installed, `vendo refresh` catches the install
+up as your app grows (or after you add a key). `vendo doctor` runs a read-only
+health check on the whole install.
+
 ## One key = working product
+
+If you pasted a key at the `init` prompt, it's already in `.env.local` — just
+run the app. Otherwise set one by hand:
 
 ```bash
 cp .env.example .env.local
@@ -81,7 +91,7 @@ respectively). Override with `VENDO_MODEL`, either form:
 
 ```bash
 VENDO_MODEL=openai/gpt-5.5-mini   # provider/model: picks the provider outright
-VENDO_MODEL=claude-sonnet-4-6     # bare id: applied to whichever provider key is set
+VENDO_MODEL=claude-sonnet-5       # bare id: applied to whichever provider key is set
 ```
 
 `VENDO_MODEL` alone names a model, not a credential: without a real

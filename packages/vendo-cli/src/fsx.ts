@@ -33,12 +33,18 @@ export async function walk(
   return results.sort();
 }
 
-/** Write a generated artifact; refuse to clobber developer-edited output unless forced. */
+/**
+ * Write a generated artifact. Outputs are developer-editable, so an existing
+ * file is never silently clobbered: `force` overwrites unconditionally,
+ * re-writing IDENTICAL bytes is a no-op success (resume support), and for
+ * DIFFERENT content `ifExists` picks the policy — "error" (the fail-closed
+ * default) throws, "skip" leaves the file untouched. Returns whether it wrote.
+ */
 export async function writeGenerated(
   file: string,
   content: string,
-  opts: { force: boolean },
-): Promise<void> {
+  opts: { force: boolean; ifExists?: "error" | "skip" },
+): Promise<boolean> {
   if (!opts.force) {
     let existing: string | null = null;
     try {
@@ -46,14 +52,17 @@ export async function writeGenerated(
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }
-    // Resume support: re-running `vendo init` after a mid-run failure re-writes
-    // identical bytes — treat that as a no-op success. DIFFERENT content is
-    // still refused so hand-edits are never silently clobbered.
     if (existing !== null) {
-      if (existing === content) return;
+      // Identical bytes: re-running init after a mid-run failure re-writes the
+      // same content — treat as a no-op success (resume support). Different
+      // content follows `ifExists`: "skip" leaves the file, "error" (default)
+      // throws so hand-edits are never silently clobbered.
+      if (existing === content) return false;
+      if ((opts.ifExists ?? "error") === "skip") return false;
       throw new Error(`${file} already exists — outputs are developer-editable; re-run with --force to overwrite`);
     }
   }
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content);
+  return true;
 }

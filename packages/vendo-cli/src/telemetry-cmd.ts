@@ -1,5 +1,6 @@
 import { loadConfig, saveConfig, configPath } from "@vendoai/telemetry";
 import { homedir } from "node:os";
+import { createUi } from "./ui.js";
 
 export interface TelemetryCmdIO {
   home?: string;
@@ -9,25 +10,30 @@ export interface TelemetryCmdIO {
 export function runTelemetryCmd(sub: string | undefined, io: TelemetryCmdIO): number {
   const home = io.home ?? homedir();
   const config = loadConfig(home);
+  // Route through the shared renderer, but keep io.log as the sink so tests
+  // stay hermetic and the caller owns the transport. The Ui appends a newline
+  // per line; strip it because io.log (console.log in production) adds its own.
+  const ui = createUi({ sink: (chunk) => io.log(chunk.replace(/\n$/, "")) });
   switch (sub) {
     case "status":
-      io.log(
-        `Vendo telemetry: ${config.optedOut ? "disabled" : "enabled"}\n` +
-          `anonymous id: ${config.anonymousId}\n` +
-          `config: ${configPath(home)}\n` +
-          `details: TELEMETRY.md`,
-      );
+      ui.header("vendo telemetry");
+      // "ok" for both states — a user opt-out is a valid choice, not a problem.
+      ui.step("ok", `telemetry ${config.optedOut ? "disabled" : "enabled"}`);
+      ui.note(`  anonymous id: ${config.anonymousId}`);
+      ui.note(`  config: ${configPath(home)}`);
+      ui.note("  details: TELEMETRY.md");
       return 0;
     case "disable":
       saveConfig(home, { ...config, optedOut: true });
-      io.log("Vendo telemetry disabled.");
+      ui.step("ok", "telemetry disabled");
       return 0;
     case "enable":
       saveConfig(home, { ...config, optedOut: false });
-      io.log("Vendo telemetry enabled. It is anonymous (see TELEMETRY.md).");
+      ui.step("ok", "telemetry enabled");
+      ui.note("  it is anonymous — see TELEMETRY.md");
       return 0;
     default:
-      io.log("Usage: vendo telemetry <status|enable|disable>");
+      ui.note("Usage: vendo telemetry <status|enable|disable>");
       return 1;
   }
 }
