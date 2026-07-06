@@ -23,6 +23,9 @@ const imageSet = () => /(?:-webkit-)?image-set\([^)]*\)/gi;
 // Any external URL literal that survived the structured passes (belt and
 // suspenders): http(s) and protocol-relative refs anywhere in the text.
 const externalRef = () => /(?:https?:|\/\/)[^\s'")]+/gi;
+// Kept `url(data:...)` payloads — masked out before the external-ref pass so a
+// `//` inside a base64 payload is never mistaken for a protocol-relative URL.
+const dataUrl = () => /url\(\s*(['"]?)data:[^)]*\1\s*\)/gi;
 // CSS comments — stripped FIRST so `u/**/rl(...)`-style hiding can't survive.
 const cssComment = () => /\/\*[\s\S]*?\*\//g;
 // CSS hex escapes (`\75` = u, `\5c` = \) — decoded before matching so an
@@ -66,22 +69,30 @@ export function sanitizeCss(css: string): SanitizeResult {
     dropped.push(match.trim());
     return "none";
   });
+  // Mask kept data: URLs so the catch-all below cannot corrupt a `//` inside a
+  // base64 payload; restore them verbatim afterward.
+  const dataUrls: string[] = [];
+  out = out.replace(dataUrl(), (m) => `__vendo-data-${dataUrls.push(m) - 1}__`);
   // Final catch-all: neutralize any external URL literal still present (e.g. a
   // bare string in a property we don't structurally understand).
   out = out.replace(externalRef(), (match) => {
     dropped.push(match.trim());
     return "";
   });
+  out = out.replace(/__vendo-data-(\d+)__/g, (_m, i) => dataUrls[Number(i)]!);
   return { css: out, dropped };
 }
 
 /** True when `css`, after the same normalization, still has any fetchable URL. */
 export function hasFetchableUrl(css: string): boolean {
   const normalized = decodeEscapes(css.replace(cssComment(), ""));
+  // Exclude kept data: URLs from the external-ref check — a `//` in a base64
+  // payload is not a fetchable reference.
+  const withoutData = normalized.replace(dataUrl(), "");
   return (
     fetchableUrl().test(normalized) ||
     atImport().test(normalized) ||
     imageSet().test(normalized) ||
-    externalRef().test(normalized)
+    externalRef().test(withoutData)
   );
 }
