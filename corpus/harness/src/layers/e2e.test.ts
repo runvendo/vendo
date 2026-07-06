@@ -1,19 +1,44 @@
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   evaluateAssertion,
   parseConversationSuite,
+  runE2eLayer,
   scorePassAtK,
   type ConversationAssertion,
+  type E2eFrameLocator,
   type E2eLocator,
   type E2eObservableSignals,
   type E2ePage,
 } from "./e2e.js";
 
 class FakeLocator implements E2eLocator {
-  constructor(private readonly countValue: number, private readonly text = "") {}
+  constructor(
+    private readonly countValue: number | (() => number),
+    private readonly text = "",
+    private readonly handlers: {
+      click?: () => void;
+      fill?: (value: string) => void;
+      press?: (key: string) => void;
+    } = {},
+  ) {}
 
   async count(): Promise<number> {
-    return this.countValue;
+    return typeof this.countValue === "function" ? this.countValue() : this.countValue;
+  }
+
+  async click(): Promise<void> {
+    this.handlers.click?.();
+  }
+
+  async fill(value: string): Promise<void> {
+    this.handlers.fill?.(value);
+  }
+
+  async press(key: string): Promise<void> {
+    this.handlers.press?.(key);
   }
 
   async textContent(): Promise<string> {
@@ -26,7 +51,11 @@ class FakeLocator implements E2eLocator {
 }
 
 class FakePage implements E2ePage {
-  constructor(private readonly counts: Record<string, number>, private readonly bodyText = "") {}
+  constructor(
+    private readonly counts: Record<string, number>,
+    private readonly bodyText = "",
+    private readonly frameCounts: Record<string, number> = {},
+  ) {}
 
   async goto(): Promise<void> {}
 
@@ -47,6 +76,14 @@ class FakePage implements E2ePage {
 
   getByTestId(testId: string): E2eLocator {
     return new FakeLocator(this.counts[`testid:${testId}`] ?? 0);
+  }
+
+  frameLocator(): E2eFrameLocator {
+    return {
+      locator: (selector: string) => new FakeLocator(this.frameCounts[selector] ?? 0),
+      getByRole: (role: string) => new FakeLocator(this.frameCounts[`role:${role}`] ?? 0),
+      getByTestId: (testId: string) => new FakeLocator(this.frameCounts[`testid:${testId}`] ?? 0),
+    };
   }
 }
 
@@ -119,9 +156,20 @@ describe("evaluateAssertion", () => {
       .resolves.toMatchObject({ pass: true });
   });
 
+  it("matches generated view roles inside the Vendo stage iframe", async () => {
+    const page = new FakePage({}, "", { "role:table": 1 });
+
+    await expect(evaluateAssertion({ kind: "view-rendered", role: "table" }, signals({}), page))
+      .resolves.toMatchObject({ pass: true });
+  });
+
   it("evaluates approval cards and no-error-toast from fake page/signal objects", async () => {
     const approvalPage = new FakePage({ "Approval request": 1 });
-    const errorPage = new FakePage({ '[role="alert"]': 1 });
+    const genericAlertPage = new FakePage({ '[role="alert"]': 1 });
+    const shellErrorPage = new FakePage({ ".fl-error": 1 });
+    const explicitDataErrorPage = new FakePage({ '[data-error="true"]': 1 });
+    const benignDataErrorPage = new FakePage({ "[data-error]": 1 });
+    const stageErrorPage = new FakePage({}, "", { "[data-error]:visible, [data-error-boundary]:visible": 1 });
     const statusToastPage = new FakePage({ ".fl-toast": 1 }, "Saved successfully");
     const approvalAssertion: ConversationAssertion = { kind: "approval-card-shown" };
 
@@ -129,9 +177,17 @@ describe("evaluateAssertion", () => {
       .resolves.toMatchObject({ pass: true });
     await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), approvalPage))
       .resolves.toMatchObject({ pass: true });
+    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), benignDataErrorPage))
+      .resolves.toMatchObject({ pass: true });
+    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), genericAlertPage))
+      .resolves.toMatchObject({ pass: true });
     await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), statusToastPage))
       .resolves.toMatchObject({ pass: true });
-    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), errorPage))
+    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), shellErrorPage))
+      .resolves.toMatchObject({ pass: false });
+    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), explicitDataErrorPage))
+      .resolves.toMatchObject({ pass: false });
+    await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({}), stageErrorPage))
       .resolves.toMatchObject({ pass: false });
     await expect(evaluateAssertion({ kind: "no-error-toast" }, signals({ errorToasts: [{ text: "failed" }] })))
       .resolves.toMatchObject({ pass: false });
@@ -173,5 +229,157 @@ describe("scorePassAtK", () => {
 
     expect(result.passed).toBe(false);
     expect(result.score.value).toBe(0.5);
+  });
+});
+
+describe("runE2eLayer", () => {
+  it("retries opening the Vendo surface when the launcher is present before hydration", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const expectationsRoot = path.join(root, "expectations");
+    const logsDir = path.join(root, "logs");
+    const repoDir = path.join(root, "repo");
+    await mkdir(path.join(expectationsRoot, "fixture"), { recursive: true });
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ version: 1, tools: [], events: [] }));
+    await writeFile(
+      path.join(expectationsRoot, "fixture", "conversations.json"),
+      JSON.stringify({
+        version: 1,
+        k: 1,
+        threshold: 1,
+        timeoutMs: 2_000,
+        conversations: [
+          {
+            id: "hydrating-launcher",
+            prompts: ["show me a view"],
+            assertions: [{ kind: "no-error-toast" }],
+          },
+        ],
+      }),
+    );
+
+    let launcherClicks = 0;
+    let promptSent = false;
+    const page: E2ePage = {
+      async goto() {},
+      locator(selector: string) {
+        if (selector === "body" || selector.includes("[role='dialog']")) return new FakeLocator(1, "dialog ready");
+        return new FakeLocator(0);
+      },
+      getByRole(role: string) {
+        if (role === "dialog") return new FakeLocator(() => launcherClicks >= 2 ? 1 : 0);
+        if (role === "button") {
+          return new FakeLocator(1, "", {
+            click: () => {
+              launcherClicks += 1;
+            },
+          });
+        }
+        return new FakeLocator(0);
+      },
+      getByLabel() {
+        return new FakeLocator(1, "", {
+          fill: () => {},
+          press: () => {
+            promptSent = true;
+          },
+        });
+      },
+    };
+
+    const result = await runE2eLayer({
+      repoName: "fixture",
+      repoDir,
+      readinessUrl: "http://127.0.0.1:3000",
+      expectationsRoot,
+      logsDir,
+      pageFactory: async () => ({ page }),
+      now: () => new Date("2026-07-06T00:00:00.000Z"),
+    });
+
+    expect(result.layer.status).toBe("pass");
+    expect(launcherClicks).toBeGreaterThan(1);
+    expect(promptSent).toBe(true);
+  });
+
+  it("restores the per-attempt Vendo thread URL after Umami login redirects", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const expectationsRoot = path.join(root, "expectations");
+    const logsDir = path.join(root, "logs");
+    const repoDir = path.join(root, "repo");
+    await mkdir(path.join(expectationsRoot, "umami"), { recursive: true });
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ version: 1, tools: [], events: [] }));
+    await writeFile(
+      path.join(expectationsRoot, "umami", "conversations.json"),
+      JSON.stringify({
+        version: 1,
+        k: 1,
+        threshold: 1,
+        timeoutMs: 2_000,
+        conversations: [
+          {
+            id: "umami-login",
+            prompts: ["show me a view"],
+            assertions: [{ kind: "no-error-toast" }],
+          },
+        ],
+      }),
+    );
+
+    const gotoUrls: string[] = [];
+    let usernameVisible = true;
+    let promptSent = false;
+    const page: E2ePage = {
+      async goto(url: string) {
+        gotoUrls.push(url);
+      },
+      locator(selector: string) {
+        if (selector.includes("input-username") || selector.includes('input[name="username"]')) {
+          return new FakeLocator(() => usernameVisible ? 1 : 0);
+        }
+        if (selector.includes("input-password") || selector.includes('input[name="password"]')) {
+          return new FakeLocator(() => usernameVisible ? 1 : 0);
+        }
+        if (selector === "body" || selector.includes("[role='dialog']")) return new FakeLocator(1, "dialog ready");
+        return new FakeLocator(0);
+      },
+      getByRole(role: string) {
+        if (role === "dialog") return new FakeLocator(1);
+        if (role === "button") {
+          return new FakeLocator(1, "", {
+            click: () => {
+              usernameVisible = false;
+            },
+          });
+        }
+        return new FakeLocator(0);
+      },
+      getByLabel() {
+        return new FakeLocator(1, "", {
+          fill: () => {},
+          press: () => {
+            promptSent = true;
+          },
+        });
+      },
+    };
+
+    const result = await runE2eLayer({
+      repoName: "umami",
+      repoDir,
+      readinessUrl: "http://localhost:3000",
+      expectationsRoot,
+      logsDir,
+      pageFactory: async () => ({ page }),
+      now: () => new Date("2026-07-06T00:00:00.000Z"),
+    });
+
+    expect(result.layer.status).toBe("pass");
+    expect(gotoUrls).toEqual([
+      "http://localhost:3000/?vendoThread=corpus-umami-login-1",
+      "http://localhost:3000/?vendoThread=corpus-umami-login-1",
+    ]);
+    expect(promptSent).toBe(true);
   });
 });

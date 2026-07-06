@@ -1,0 +1,2382 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#ffffff",
+    "surface": "#fafafa",
+    "accent": "#171717",
+    "text": "#404040",
+    "mutedText": "#a3a3a3",
+    "radius": 8,
+    "fontFamily": "Inter, system-ui, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "getActivityLogs",
+      "method": "GET",
+      "path": "/api/activity-logs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAiCompletion",
+      "method": "POST",
+      "path": "/api/ai/completion",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAiSupportChat",
+      "method": "POST",
+      "path": "/api/ai/support-chat",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAiSupportChatUpload",
+      "method": "POST",
+      "path": "/api/ai/support-chat/upload",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAiSyncEmbeddings",
+      "method": "POST",
+      "path": "/api/ai/sync-embeddings",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAnalytics",
+      "method": "GET",
+      "path": "/api/analytics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAnalyticsEventType",
+      "method": "GET",
+      "path": "/api/analytics/{eventType}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAnalyticsEventTypeEndpoint",
+      "method": "GET",
+      "path": "/api/analytics/{eventType}/{endpoint}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAnalyticsDashboard",
+      "method": "GET",
+      "path": "/api/analytics/dashboard",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAnalyticsExport",
+      "method": "GET",
+      "path": "/api/analytics/export",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthResetPassword",
+      "method": "POST",
+      "path": "/api/auth/reset-password",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCallbackBitly",
+      "method": "GET",
+      "path": "/api/callback/bitly",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCallbackPlainPartner",
+      "method": "POST",
+      "path": "/api/callback/plain/partner",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCallbackPlainWorkspace",
+      "method": "POST",
+      "path": "/api/callback/plain/workspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCallbackStripe",
+      "method": "POST",
+      "path": "/api/callback/stripe",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getDashboards",
+      "method": "GET",
+      "path": "/api/dashboards",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postDashboards",
+      "method": "POST",
+      "path": "/api/dashboards",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchDashboardsId",
+      "method": "PATCH",
+      "path": "/api/dashboards/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteDashboardsId",
+      "method": "DELETE",
+      "path": "/api/dashboards/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getDocsGuidesGuide",
+      "method": "GET",
+      "path": "/api/docs/guides/{guide}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getDomains",
+      "method": "GET",
+      "path": "/api/domains",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postDomains",
+      "method": "POST",
+      "path": "/api/domains",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getDomainsDomain",
+      "method": "GET",
+      "path": "/api/domains/{domain}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchDomainsDomain",
+      "method": "PATCH",
+      "path": "/api/domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteDomainsDomain",
+      "method": "DELETE",
+      "path": "/api/domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postDomainsDomainPrimary",
+      "method": "POST",
+      "path": "/api/domains/{domain}/primary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postDomainsDomainTransfer",
+      "method": "POST",
+      "path": "/api/domains/{domain}/transfer",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getDomainsDomainValidate",
+      "method": "GET",
+      "path": "/api/domains/{domain}/validate",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getDomainsDomainVerify",
+      "method": "GET",
+      "path": "/api/domains/{domain}/verify",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postDomainsClientRegister",
+      "method": "POST",
+      "path": "/api/domains/client/register",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postDomainsClientSaved",
+      "method": "POST",
+      "path": "/api/domains/client/saved",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getDomainsCount",
+      "method": "GET",
+      "path": "/api/domains/count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getDomainsDefault",
+      "method": "GET",
+      "path": "/api/domains/default",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchDomainsDefault",
+      "method": "PATCH",
+      "path": "/api/domains/default",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getDomainsSearchAvailability",
+      "method": "GET",
+      "path": "/api/domains/search-availability",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postDubWebhook",
+      "method": "POST",
+      "path": "/api/dub/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFolders",
+      "method": "GET",
+      "path": "/api/folders",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postFolders",
+      "method": "POST",
+      "path": "/api/folders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFoldersFolderId",
+      "method": "GET",
+      "path": "/api/folders/{folderId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchFoldersFolderId",
+      "method": "PATCH",
+      "path": "/api/folders/{folderId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteFoldersFolderId",
+      "method": "DELETE",
+      "path": "/api/folders/{folderId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFoldersFolderIdDashboard",
+      "method": "GET",
+      "path": "/api/folders/{folderId}/dashboard",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getFoldersFolderIdUsers",
+      "method": "GET",
+      "path": "/api/folders/{folderId}/users",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getFoldersAccessRequests",
+      "method": "GET",
+      "path": "/api/folders/access-requests",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getFoldersCount",
+      "method": "GET",
+      "path": "/api/folders/count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getFoldersPermissions",
+      "method": "GET",
+      "path": "/api/folders/permissions",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getIntegrations",
+      "method": "GET",
+      "path": "/api/integrations",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteIntegrationsUninstall",
+      "method": "DELETE",
+      "path": "/api/integrations/uninstall",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinks",
+      "method": "GET",
+      "path": "/api/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinks",
+      "method": "POST",
+      "path": "/api/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksLinkId",
+      "method": "GET",
+      "path": "/api/links/{linkId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putLinksLinkId",
+      "method": "PUT",
+      "path": "/api/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksLinkIdDashboard",
+      "method": "GET",
+      "path": "/api/links/{linkId}/dashboard",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksLinkIdTransfer",
+      "method": "POST",
+      "path": "/api/links/{linkId}/transfer",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postLinksBulk",
+      "method": "POST",
+      "path": "/api/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchLinksBulk",
+      "method": "PATCH",
+      "path": "/api/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteLinksBulk",
+      "method": "DELETE",
+      "path": "/api/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLinksCount",
+      "method": "GET",
+      "path": "/api/links/count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksExists",
+      "method": "GET",
+      "path": "/api/links/exists",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksExport",
+      "method": "GET",
+      "path": "/api/links/export",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksIframeable",
+      "method": "GET",
+      "path": "/api/links/iframeable",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksInfo",
+      "method": "GET",
+      "path": "/api/links/info",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksMetatags",
+      "method": "GET",
+      "path": "/api/links/metatags",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLinksRandom",
+      "method": "GET",
+      "path": "/api/links/random",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postLinksSync",
+      "method": "POST",
+      "path": "/api/links/sync",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putLinksUpsert",
+      "method": "PUT",
+      "path": "/api/links/upsert",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getLogs",
+      "method": "GET",
+      "path": "/api/logs",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLogsLogId",
+      "method": "GET",
+      "path": "/api/logs/{logId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getLogsCount",
+      "method": "GET",
+      "path": "/api/logs/count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getMe",
+      "method": "GET",
+      "path": "/api/me",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getMiscCheckFavicon",
+      "method": "GET",
+      "path": "/api/misc/check-favicon",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getMiscCheckWorkspaceSlug",
+      "method": "GET",
+      "path": "/api/misc/check-workspace-slug",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getOauthApps",
+      "method": "GET",
+      "path": "/api/oauth/apps",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postOauthApps",
+      "method": "POST",
+      "path": "/api/oauth/apps",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOauthAppsAppId",
+      "method": "GET",
+      "path": "/api/oauth/apps/{appId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchOauthAppsAppId",
+      "method": "PATCH",
+      "path": "/api/oauth/apps/{appId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteOauthAppsAppId",
+      "method": "DELETE",
+      "path": "/api/oauth/apps/{appId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postOauthAuthorize",
+      "method": "POST",
+      "path": "/api/oauth/authorize",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postOauthToken",
+      "method": "POST",
+      "path": "/api/oauth/token",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getOauthUserinfo",
+      "method": "GET",
+      "path": "/api/oauth/userinfo",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getOgAnalytics",
+      "method": "GET",
+      "path": "/api/og/analytics",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getOgAvatarSeed",
+      "method": "GET",
+      "path": "/api/og/avatar/{[...seed]}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getOgPartnerEarnings",
+      "method": "GET",
+      "path": "/api/og/partner-earnings",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getOgPartnerRewind",
+      "method": "GET",
+      "path": "/api/og/partner-rewind",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getOgProgram",
+      "method": "GET",
+      "path": "/api/og/program",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postPostbacksCallback",
+      "method": "POST",
+      "path": "/api/postbacks/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjects",
+      "method": "GET",
+      "path": "/api/projects",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postProjects",
+      "method": "POST",
+      "path": "/api/projects",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjectsSlug",
+      "method": "GET",
+      "path": "/api/projects/{slug}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putProjectsSlug",
+      "method": "PUT",
+      "path": "/api/projects/{slug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchProjectsSlug",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteProjectsSlug",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjectsSlugDomains",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postProjectsSlugDomains",
+      "method": "POST",
+      "path": "/api/projects/{slug}/domains",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjectsSlugDomainsDomain",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains/{domain}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchProjectsSlugDomainsDomain",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteProjectsSlugDomainsDomain",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjectsSlugDomainsDomainVerify",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains/{domain}/verify",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getProjectsSlugDomainsDefault",
+      "method": "GET",
+      "path": "/api/projects/{slug}/domains/default",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchProjectsSlugDomainsDefault",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/domains/default",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjectsSlugLinks",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postProjectsSlugLinks",
+      "method": "POST",
+      "path": "/api/projects/{slug}/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjectsSlugLinksLinkId",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putProjectsSlugLinksLinkId",
+      "method": "PUT",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchProjectsSlugLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteProjectsSlugLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postProjectsSlugLinksBulk",
+      "method": "POST",
+      "path": "/api/projects/{slug}/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchProjectsSlugLinksBulk",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteProjectsSlugLinksBulk",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/links/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProjectsSlugLinksCount",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getProjectsSlugLinksInfo",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/info",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getProjectsSlugLinksRandom",
+      "method": "GET",
+      "path": "/api/projects/{slug}/links/random",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getProjectsSlugTags",
+      "method": "GET",
+      "path": "/api/projects/{slug}/tags",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postProjectsSlugTags",
+      "method": "POST",
+      "path": "/api/projects/{slug}/tags",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putProjectsSlugTagsId",
+      "method": "PUT",
+      "path": "/api/projects/{slug}/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchProjectsSlugTagsId",
+      "method": "PATCH",
+      "path": "/api/projects/{slug}/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteProjectsSlugTagsId",
+      "method": "DELETE",
+      "path": "/api/projects/{slug}/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProviders",
+      "method": "GET",
+      "path": "/api/providers",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getQr",
+      "method": "GET",
+      "path": "/api/qr",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postResendWebhook",
+      "method": "POST",
+      "path": "/api/resend/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postResumesUploadUrl",
+      "method": "POST",
+      "path": "/api/resumes/upload-url",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getSlackCallback",
+      "method": "GET",
+      "path": "/api/slack/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postSlackSlashCommands",
+      "method": "POST",
+      "path": "/api/slack/slash-commands",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getSupportedCountries",
+      "method": "GET",
+      "path": "/api/supported-countries",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTags",
+      "method": "GET",
+      "path": "/api/tags",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTags",
+      "method": "POST",
+      "path": "/api/tags",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putTagsId",
+      "method": "PUT",
+      "path": "/api/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchTagsId",
+      "method": "PATCH",
+      "path": "/api/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTagsId",
+      "method": "DELETE",
+      "path": "/api/tags/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTagsCount",
+      "method": "GET",
+      "path": "/api/tags/count",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getTokens",
+      "method": "GET",
+      "path": "/api/tokens",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTokens",
+      "method": "POST",
+      "path": "/api/tokens",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTokensId",
+      "method": "GET",
+      "path": "/api/tokens/{id}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchTokensId",
+      "method": "PATCH",
+      "path": "/api/tokens/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteTokensId",
+      "method": "DELETE",
+      "path": "/api/tokens/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTokensEmbedReferrals",
+      "method": "POST",
+      "path": "/api/tokens/embed/referrals",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postUnsplashDownload",
+      "method": "POST",
+      "path": "/api/unsplash/download",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUnsplashSearch",
+      "method": "GET",
+      "path": "/api/unsplash/search",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getUser",
+      "method": "GET",
+      "path": "/api/user",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putUser",
+      "method": "PUT",
+      "path": "/api/user",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchUser",
+      "method": "PATCH",
+      "path": "/api/user",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteUser",
+      "method": "DELETE",
+      "path": "/api/user",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUserNotificationPreferences",
+      "method": "GET",
+      "path": "/api/user/notification-preferences",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUserNotificationPreferences",
+      "method": "POST",
+      "path": "/api/user/notification-preferences",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchUserPassword",
+      "method": "PATCH",
+      "path": "/api/user/password",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUserReferralsToken",
+      "method": "GET",
+      "path": "/api/user/referrals-token",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUserSetPassword",
+      "method": "POST",
+      "path": "/api/user/set-password",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUserTokens",
+      "method": "GET",
+      "path": "/api/user/tokens",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "deleteUserTokens",
+      "method": "DELETE",
+      "path": "/api/user/tokens",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getUtm",
+      "method": "GET",
+      "path": "/api/utm",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postUtm",
+      "method": "POST",
+      "path": "/api/utm",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchUtmId",
+      "method": "PATCH",
+      "path": "/api/utm/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteUtmId",
+      "method": "DELETE",
+      "path": "/api/utm/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postVeriffWebhook",
+      "method": "POST",
+      "path": "/api/veriff/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebhooks",
+      "method": "GET",
+      "path": "/api/webhooks",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebhooks",
+      "method": "POST",
+      "path": "/api/webhooks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebhooksWebhookId",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchWebhooksWebhookId",
+      "method": "PATCH",
+      "path": "/api/webhooks/{webhookId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWebhooksWebhookId",
+      "method": "DELETE",
+      "path": "/api/webhooks/{webhookId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWebhooksWebhookIdEvents",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}/events",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebhooksWebhookIdFolders",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}/folders",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWebhooksWebhookIdLinks",
+      "method": "GET",
+      "path": "/api/webhooks/{webhookId}/links",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWebhooksCallback",
+      "method": "POST",
+      "path": "/api/webhooks/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspaces",
+      "method": "GET",
+      "path": "/api/workspaces",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspaces",
+      "method": "POST",
+      "path": "/api/workspaces",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlug",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "putWorkspacesIdOrSlug",
+      "method": "PUT",
+      "path": "/api/workspaces/{idOrSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlug",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlug",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingActivatePaidPlan",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/activate-paid-plan",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingCancel",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/cancel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingInvoices",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/invoices",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingInvoicesInvoiceId",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/invoices/{invoiceId}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingManage",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/manage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugBillingPaymentMethods",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/billing/payment-methods",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingUpgrade",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/billing/upgrade",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingUsage",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/billing/usage",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportImportIdDownload",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/{importId}/download",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportBitly",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/bitly",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportBitly",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/bitly",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportCsv",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/csv",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportRebrandly",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/rebrandly",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportRebrandly",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/rebrandly",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putWorkspacesIdOrSlugImportRebrandly",
+      "method": "PUT",
+      "path": "/api/workspaces/{idOrSlug}/import/rebrandly",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportShort",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/import/short",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportShort",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/import/short",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putWorkspacesIdOrSlugImportShort",
+      "method": "PUT",
+      "path": "/api/workspaces/{idOrSlug}/import/short",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugInvites",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvites",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugInvites",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugInvites",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesAccept",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites/accept",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesDecline",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites/decline",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesReset",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/invites/reset",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugNotificationPreferences",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/notification-preferences",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugSaml",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/saml",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSaml",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/saml",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugSaml",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/saml",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugScim",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/scim",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugScim",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/scim",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugScim",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/scim",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSitemapsImport",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/sitemaps/import",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugStatsEndpoint",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/stats/{endpoint}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSupportSlackInvite",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/support/slack-invite",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkspacesIdOrSlugUploadUrl",
+      "method": "POST",
+      "path": "/api/workspaces/{idOrSlug}/upload-url",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getWorkspacesIdOrSlugUsers",
+      "method": "GET",
+      "path": "/api/workspaces/{idOrSlug}/users",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugUsers",
+      "method": "PATCH",
+      "path": "/api/workspaces/{idOrSlug}/users",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugUsers",
+      "method": "DELETE",
+      "path": "/api/workspaces/{idOrSlug}/users",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "getActivityLogs",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAiCompletion",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAiSupportChat",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAiSupportChatUpload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAiSyncEmbeddings",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAnalytics",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAnalyticsEventType",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAnalyticsEventTypeEndpoint",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAnalyticsDashboard",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAnalyticsExport",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getAuthNextauth",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthNextauth",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthResetPassword",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getCallbackBitly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCallbackPlainPartner",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCallbackPlainWorkspace",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCallbackStripe",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getDashboards",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postDashboards",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchDashboardsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteDashboardsId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getDocsGuidesGuide",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getDomains",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postDomains",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getDomainsDomain",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchDomainsDomain",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteDomainsDomain",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postDomainsDomainPrimary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postDomainsDomainTransfer",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getDomainsDomainValidate",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getDomainsDomainVerify",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postDomainsClientRegister",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postDomainsClientSaved",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getDomainsCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getDomainsDefault",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchDomainsDefault",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getDomainsSearchAvailability",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postDubWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getFolders",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postFolders",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getFoldersFolderId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchFoldersFolderId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteFoldersFolderId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getFoldersFolderIdDashboard",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getFoldersFolderIdUsers",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getFoldersAccessRequests",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getFoldersCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getFoldersPermissions",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getIntegrations",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteIntegrationsUninstall",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksLinkId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putLinksLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchLinksLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteLinksLinkId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getLinksLinkIdDashboard",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksLinkIdTransfer",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postLinksBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchLinksBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteLinksBulk",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getLinksCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksExists",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksExport",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksIframeable",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksInfo",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksMetatags",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLinksRandom",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postLinksSync",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putLinksUpsert",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getLogs",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLogsLogId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getLogsCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getMe",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getMiscCheckFavicon",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getMiscCheckWorkspaceSlug",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getOauthApps",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postOauthApps",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getOauthAppsAppId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchOauthAppsAppId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteOauthAppsAppId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postOauthAuthorize",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postOauthToken",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getOauthUserinfo",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getOgAnalytics",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getOgAvatarSeed",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getOgPartnerEarnings",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getOgPartnerRewind",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getOgProgram",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postPostbacksCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProjects",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postProjects",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlug",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putProjectsSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchProjectsSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteProjectsSlug",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getProjectsSlugDomains",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postProjectsSlugDomains",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlugDomainsDomain",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchProjectsSlugDomainsDomain",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteProjectsSlugDomainsDomain",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getProjectsSlugDomainsDomainVerify",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlugDomainsDefault",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchProjectsSlugDomainsDefault",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlugLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postProjectsSlugLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlugLinksLinkId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putProjectsSlugLinksLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchProjectsSlugLinksLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteProjectsSlugLinksLinkId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postProjectsSlugLinksBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchProjectsSlugLinksBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteProjectsSlugLinksBulk",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getProjectsSlugLinksCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlugLinksInfo",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlugLinksRandom",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getProjectsSlugTags",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postProjectsSlugTags",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putProjectsSlugTagsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchProjectsSlugTagsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteProjectsSlugTagsId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getProviders",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getQr",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postResendWebhook",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postResumesUploadUrl",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getSlackCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postSlackSlashCommands",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getSupportedCountries",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTags",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTags",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putTagsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchTagsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTagsId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getTagsCount",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getTokens",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTokens",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTokensId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchTokensId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteTokensId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postTokensEmbedReferrals",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postUnsplashDownload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUnsplashSearch",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getUser",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putUser",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchUser",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteUser",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getUserNotificationPreferences",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUserNotificationPreferences",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchUserPassword",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUserReferralsToken",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUserSetPassword",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getUserTokens",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "deleteUserTokens",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getUtm",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postUtm",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchUtmId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteUtmId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postVeriffWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWebhooks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebhooks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWebhooksWebhookId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchWebhooksWebhookId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWebhooksWebhookId",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWebhooksWebhookIdEvents",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebhooksWebhookIdFolders",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWebhooksWebhookIdLinks",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWebhooksCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspaces",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspaces",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlug",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "putWorkspacesIdOrSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchWorkspacesIdOrSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlug",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingActivatePaidPlan",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingCancel",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingInvoices",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingInvoicesInvoiceId",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingManage",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingPaymentMethods",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingPaymentMethods",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugBillingPaymentMethods",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugBillingPaymentMethods",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postWorkspacesIdOrSlugBillingUpgrade",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugBillingUsage",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportImportIdDownload",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportBitly",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportBitly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportCsv",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportRebrandly",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportRebrandly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putWorkspacesIdOrSlugImportRebrandly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugImportShort",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugImportShort",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putWorkspacesIdOrSlugImportShort",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugInvites",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvites",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugInvites",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugInvites",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesAccept",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesDecline",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugInvitesReset",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWorkspacesIdOrSlugNotificationPreferences",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugSaml",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSaml",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugSaml",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getWorkspacesIdOrSlugScim",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugScim",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugScim",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSitemapsImport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugStatsEndpoint",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugSupportSlackInvite",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkspacesIdOrSlugUploadUrl",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getWorkspacesIdOrSlugUsers",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "patchWorkspacesIdOrSlugUsers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteWorkspacesIdOrSlugUsers",
+      "mutating": true,
+      "dangerous": true
+    }
+  ],
+  "components": []
+}

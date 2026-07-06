@@ -201,3 +201,45 @@ pnpm corpus run papermark --layer 1
 ```
 
 Logs: `corpus/.repos/.logs/papermark/init.first.log`, `structural.typecheck.stderr.log`, `structural.build.stderr.log`, and `init.second.log`.
+
+## Batch B Ground-Truth Labels
+
+Date: 2026-07-06
+Command: `pnpm corpus run <repo> --layer 2 --json`
+Mode: real `vendo init` with LLM enabled. API keys were sourced from `apps/demo-bank/.env.local`; key values were not printed or committed.
+
+Labels were derived from pinned source at the manifest SHA, not from generated `.vendo` output. Monorepos were labeled from the manifest `appDir`.
+
+| Repo | expected.json | Tools | Layer 2 | Baseline |
+| --- | --- | ---: | --- | --- |
+| cal-com | written | 114 | skipped before scoring: Yarn local package injection is unsupported | none |
+| dub | written | 215 | skipped before scoring: appDir `pnpm install --ignore-workspace` failed | none |
+| formbricks | written | 120 | skipped before scoring: frozen lockfile override mismatch during bootstrap | none |
+| inbox-zero | written | 194 | skipped before scoring: frozen lockfile override mismatch during bootstrap | none |
+| openstatus | written | 8 | skipped before scoring: frozen lockfile catalog mismatch during bootstrap | none |
+| vercel-commerce | written | 1 | pass, 1/10 (0.1) | written |
+| teable | written | 1 | skipped before scoring: appDir `pnpm install --ignore-workspace` failed | none |
+
+Notes:
+
+- `cal-com` was labeled from `apps/web` source anyway, including App Router API routes plus legacy Pages API bridges. Layer 2 was not scored because the harness fails closed on Yarn package injection.
+- `vercel-commerce` scored only the radius rubric point. Generated output used the default theme and generated no matching tools, while the source label expects `POST /api/revalidate`.
+
+### Batch B Follow-Up Layer 2 Bootstrap Fixes
+
+Date: 2026-07-06
+Command: `pnpm corpus run dub formbricks inbox-zero openstatus teable vercel-commerce --layer 2 --json`, after harness bootstrap/injection install normalization.
+Mode: real `vendo init` with env sourced from `apps/demo-bank/.env.local`; key values were not printed or committed.
+
+| Repo | Layer 2 | Baseline |
+| --- | --- | --- |
+| dub | pass, 3/10 (0.3) | written |
+| formbricks | pass, 3/10 (0.3) | written |
+| inbox-zero | pass, 3/10 (0.3) | written |
+| openstatus | pass, 1/10 (0.1) | written |
+| teable | scorer failed: `.vendo/tools.json` was not generated because the app has only route-group App Router roots (`app/(...)`) and no `app/layout.*` or `src/app/layout.*` root layout for auto-wiring | none |
+
+Notes:
+
+- The harness now degrades frozen pnpm/npm install recipes before mutable installs and runs pnpm appDir injection installs from the repo workspace root so `workspace:` and `catalog:` protocols resolve.
+- Post-injection pnpm installs use local-install policy overrides for `minimumReleaseAge` and dependency build approval so local tarballs can be installed in supply-chain-hardened repos without editing their manifests.

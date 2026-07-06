@@ -89,6 +89,16 @@ const NEXT_CONFIG_FILES = ["next.config.ts", "next.config.mjs", "next.config.js"
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 
+export function corpusHostCommandEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ...env,
+    PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0",
+    PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true",
+    YARN_ENABLE_IMMUTABLE_INSTALLS: "false",
+  };
+}
+
 async function exists(file: string): Promise<boolean> {
   return access(file).then(() => true, () => false);
 }
@@ -97,7 +107,7 @@ function runShellCommand(command: string, options: StructuralCommandOptions): Pr
   return new Promise((resolve, reject) => {
     const child = spawn(command, {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      env: corpusHostCommandEnv(options.env),
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
     });

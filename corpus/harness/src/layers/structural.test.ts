@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -291,6 +291,59 @@ describe("runStructuralLayer", () => {
     expect(results["host.build"]).toMatchObject({ pass: true });
     expect(calls).toEqual([
       `pnpm build @ ${repoDir}`,
+    ]);
+  });
+
+  it("passes local-package policy overrides to default host command execution", async () => {
+    const repoDir = await makeTempRepo();
+    await writeFile(
+      path.join(repoDir, "env-check.mjs"),
+      [
+        "import { appendFileSync } from \"node:fs\";",
+        "appendFileSync(\"env-check.jsonl\", JSON.stringify({",
+        "  step: process.argv[2],",
+        "  minimumReleaseAge: process.env.PNPM_CONFIG_MINIMUM_RELEASE_AGE,",
+        "  allowBuilds: process.env.PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS,",
+        "  yarnImmutable: process.env.YARN_ENABLE_IMMUTABLE_INSTALLS,",
+        "}) + \"\\n\");",
+        "",
+      ].join("\n"),
+    );
+    const node = JSON.stringify(process.execPath);
+
+    const results = byId(await runStructuralLayer({
+      repoDir,
+      initExitCode: 0,
+      secondInitExitCode: 0,
+      secondRunDiff: "",
+      typecheckCommand: `${node} env-check.mjs typecheck`,
+      buildCommand: `${node} env-check.mjs build`,
+      env: {
+        PNPM_CONFIG_MINIMUM_RELEASE_AGE: "1440",
+        PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "false",
+        YARN_ENABLE_IMMUTABLE_INSTALLS: "true",
+      },
+    }));
+
+    expect(results["host.typecheck"]).toMatchObject({ pass: true });
+    expect(results["host.build"]).toMatchObject({ pass: true });
+    const entries = (await readFile(path.join(repoDir, "env-check.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, string>);
+    expect(entries).toEqual([
+      {
+        step: "typecheck",
+        minimumReleaseAge: "0",
+        allowBuilds: "true",
+        yarnImmutable: "false",
+      },
+      {
+        step: "build",
+        minimumReleaseAge: "0",
+        allowBuilds: "true",
+        yarnImmutable: "false",
+      },
     ]);
   });
 

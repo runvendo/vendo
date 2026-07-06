@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, mkdir, readFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   installLocalVendoPackages,
@@ -8,10 +8,11 @@ import {
   type WorkspacePackage,
 } from "../../../packages/vendo-cli/src/local-pack.js";
 import { resolveAppRoot } from "./app-root.js";
+import { normalizePostInjectionInstallCommand } from "./install-command.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
-export type InjectRepo = Pick<ManifestEntry, "name" | "appDir">;
+export type InjectRepo = Pick<ManifestEntry, "name" | "appDir"> & Partial<Pick<ManifestEntry, "bootstrap">>;
 export type PackWorkspacePackage = LocalPackRunner;
 
 export interface InjectCommandResult {
@@ -37,6 +38,7 @@ export interface CreateLocalVendoInjectorOptions {
   buildWorkspace?: (workspaceRoot: string) => Promise<void>;
   pack?: PackWorkspacePackage;
   runInstallCommand?: (command: string, cwd: string) => Promise<void>;
+  log?: (message: string) => void;
 }
 
 function runCommand(command: string, args: readonly string[], cwd: string): Promise<InjectCommandResult> {
@@ -70,7 +72,8 @@ function runShellCommand(command: string, cwd: string): Promise<InjectCommandRes
 async function checkedShellCommand(command: string, cwd: string): Promise<void> {
   const result = await runShellCommand(command, cwd);
   if (result.code !== 0) {
-    throw new Error(`${command} failed in ${cwd} with exit code ${result.code ?? "unknown"}:\n${result.stderr || result.stdout}`);
+    const output = [result.stderr, result.stdout].filter(Boolean).join("\n");
+    throw new Error(`${command} failed in ${cwd} with exit code ${result.code ?? "unknown"}:\n${output}`);
   }
 }
 
@@ -116,6 +119,14 @@ function localFileSpec(value: string): boolean {
   return /^file:vendor\/.+\.tgz$/.test(value);
 }
 
+function packageTarballPrefix(name: string): string {
+  return name.startsWith("@") ? name.slice(1).replace("/", "-") : name;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function isVendoPackageName(name: string): boolean {
   return name === "vendoai" || name.startsWith("@vendoai/");
 }
@@ -124,10 +135,6 @@ function lockfileMentionsVendoPackage(lockfile: string): boolean {
   return lockfile.includes("@vendoai/")
     || /(^|\n)\s*['"]?vendoai['"]?:/m.test(lockfile)
     || /\/vendoai\/[^/\s]+/i.test(lockfile);
-}
-
-function scopedInstallCommand(command: string): string {
-  return command === "pnpm install" ? "pnpm install --ignore-workspace" : command;
 }
 
 async function readOptional(file: string): Promise<string | null> {
@@ -140,6 +147,21 @@ async function readOptional(file: string): Promise<string | null> {
 
 async function pathExists(file: string): Promise<boolean> {
   return access(file).then(() => true, () => false);
+}
+
+async function findPnpmWorkspaceRoot(checkoutDir: string, targetDir: string): Promise<string | undefined> {
+  const stop = path.resolve(checkoutDir);
+  let current = path.resolve(targetDir);
+
+  while (current === stop || current.startsWith(`${stop}${path.sep}`)) {
+    if (await pathExists(path.join(current, "pnpm-workspace.yaml"))) return current;
+    if (current === stop) break;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return undefined;
 }
 
 function localVendoTarballLockfileSpec(lockfile: string): boolean {
@@ -158,6 +180,112 @@ function localPackageResolutionField(summary: LocalVendoInstallSummary): string 
   if (summary.packageManager === "pnpm") return "pnpm.overrides";
   if (summary.packageManager === "npm") return "overrides";
   return "resolutions";
+}
+
+function installCommandSource(repo: InjectRepo, summary: LocalVendoInstallSummary): string {
+  const recipe = repo.bootstrap?.installCommand;
+  if (recipe) {
+    if (summary.packageManager === "pnpm" && /\bpnpm\s+install\b/.test(recipe)) return recipe;
+    if (summary.packageManager === "npm" && /\bnpm\s+(?:ci|install)\b/.test(recipe)) return recipe;
+    if ((summary.packageManager === "yarn-classic" || summary.packageManager === "yarn-berry") && /\byarn\s+install\b/.test(recipe)) return recipe;
+  }
+  return summary.installCommand;
+}
+
+async function tarballFileForPackage(vendorDir: string, name: string): Promise<string> {
+  const entries = await readdir(vendorDir);
+  const prefix = name === "fluidkit" ? "fluidkit" : packageTarballPrefix(name);
+  const tarballPattern = new RegExp(`^${escapeRegExp(prefix)}-\\d.*\\.tgz$`);
+  const matches = entries.filter((entry) => tarballPattern.test(entry)).sort();
+  if (matches.length !== 1) {
+    throw new Error(`expected exactly one local tarball for ${name} in ${vendorDir}, found ${matches.length}`);
+  }
+  return matches[0]!;
+}
+
+function tarballOverrideVersions(name: string, fileName: string): string[] {
+  const prefix = name === "fluidkit" ? "fluidkit" : packageTarballPrefix(name);
+  const suffix = fileName.slice(prefix.length + 1, -".tgz".length);
+  const version = suffix.match(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/)?.[0];
+  if (!version) return [];
+
+  const versions = new Set<string>([version]);
+  const stableVersion = version.match(/^\d+\.\d+\.\d+/)?.[0];
+  if (stableVersion) versions.add(stableVersion);
+  return [...versions];
+}
+
+function fileSpecRelativeTo(baseDir: string, vendorDir: string, fileName: string): string {
+  return `file:${path.relative(baseDir, path.join(vendorDir, fileName)).split(path.sep).join("/")}`;
+}
+
+function mergePnpmWorkspaceYamlOverrides(source: string, overrides: Record<string, string>): string {
+  const additions = Object.entries(overrides)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, spec]) => `  ${JSON.stringify(name)}: ${JSON.stringify(spec)}`);
+  const lines = source.trimEnd().split(/\r?\n/);
+  const overridesIndex = lines.findIndex((line) => /^overrides:\s*(?:#.*)?$/.test(line));
+  if (overridesIndex < 0) {
+    return `${source.trimEnd()}\n\noverrides:\n${additions.join("\n")}\n`;
+  }
+
+  let insertIndex = overridesIndex + 1;
+  while (
+    insertIndex < lines.length
+    && (lines[insertIndex]!.trim() === "" || lines[insertIndex]!.startsWith(" ") || lines[insertIndex]!.startsWith("#"))
+  ) {
+    insertIndex += 1;
+  }
+
+  return [
+    ...lines.slice(0, insertIndex),
+    ...additions,
+    ...lines.slice(insertIndex),
+  ].join("\n") + "\n";
+}
+
+async function localPnpmOverrideMap(summary: LocalVendoInstallSummary): Promise<Record<string, string>> {
+  const overrides: Record<string, string> = {};
+  for (const name of [...summary.packages, "fluidkit"]) {
+    const fileName = await tarballFileForPackage(summary.vendorDir, name);
+    const spec = fileSpecRelativeTo(summary.installDir ?? summary.vendorDir, summary.vendorDir, fileName);
+    overrides[name] = spec;
+    for (const version of tarballOverrideVersions(name, fileName)) {
+      overrides[`${name}@${version}`] = spec;
+    }
+  }
+  return overrides;
+}
+
+async function writeRootPackageJsonPnpmOverrides(
+  installDir: string,
+  overrides: Record<string, string>,
+): Promise<void> {
+  const packageJsonPath = path.join(installDir, "package.json");
+  const pkg = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<string, unknown>;
+  const pnpm = isRecord(pkg["pnpm"]) ? { ...pkg["pnpm"] } : {};
+  pnpm["overrides"] = {
+    ...stringRecord(pnpm["overrides"]),
+    ...overrides,
+  };
+  pkg["pnpm"] = pnpm;
+  await writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
+async function writePnpmWorkspaceRootOverrides(
+  repoDir: string,
+  summary: LocalVendoInstallSummary,
+): Promise<void> {
+  if (summary.packageManager !== "pnpm" || !summary.installDir || path.resolve(summary.installDir) === path.resolve(repoDir)) {
+    return;
+  }
+  const overrides = await localPnpmOverrideMap(summary);
+  await writeRootPackageJsonPnpmOverrides(summary.installDir, overrides);
+
+  const workspaceYaml = path.join(summary.installDir, "pnpm-workspace.yaml");
+  const source = await readOptional(workspaceYaml);
+  if (!source) return;
+  await writeFile(workspaceYaml, mergePnpmWorkspaceYamlOverrides(source, overrides));
 }
 
 async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoInstallSummary): Promise<void> {
@@ -190,7 +318,7 @@ async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoIn
     }
   }
 
-  const lockfileDirs = [...new Set([repoDir, summary.installDir ?? repoDir])];
+  const lockfileDirs = [...new Set([repoDir, summary.installDir ?? repoDir].map((dir) => path.resolve(dir)))];
   for (const lockfileDir of lockfileDirs) {
     for (const fileName of ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock"]) {
       const lockfile = await readOptional(path.join(lockfileDir, fileName));
@@ -218,6 +346,7 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
   const sourcePack = options.pack ?? defaultPackWorkspacePackage;
   const runInstall = options.runInstall ?? true;
   const runInstallCommand = options.runInstallCommand ?? checkedShellCommand;
+  const log = options.log ?? ((message: string) => { console.error(message); });
   let buildPromise: Promise<void> | null = null;
   const packed = new Map<string, Promise<void>>();
 
@@ -251,13 +380,36 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
       await mkdir(context.reposDir, { recursive: true });
 
       const summary = await installLocalVendoPackages(repoDir, workspaceRoot, { pack: cachedPack, packageManagerRoot: checkoutDir });
+      const pnpmWorkspaceRoot = summary.packageManager === "pnpm"
+        ? await findPnpmWorkspaceRoot(checkoutDir, repoDir)
+        : undefined;
+      const installDir = pnpmWorkspaceRoot ?? summary.installDir ?? repoDir;
+      const installSummary = installDir === summary.installDir ? summary : { ...summary, installDir };
+      await writePnpmWorkspaceRootOverrides(repoDir, installSummary);
       if (runInstall) {
-        await runInstallCommand(scopedInstallCommand(summary.installCommand), summary.installDir ?? repoDir);
+        const sourceCommand = installCommandSource(repo, installSummary);
+        const installCommand = normalizePostInjectionInstallCommand(sourceCommand, {
+          dropIgnoreWorkspace: installSummary.packageManager === "pnpm" && installDir !== repoDir,
+          disableYarnImmutableInstalls: installSummary.packageManager === "yarn-berry",
+          pnpmConfig: installSummary.packageManager === "pnpm"
+            ? [
+                "--config.minimumReleaseAge=0",
+                "--config.dangerouslyAllowAllBuilds=true",
+              ]
+            : [],
+        });
+        if (installCommand.changed) {
+          log(`Corpus harness normalized post-injection install command for ${repo.name} from "${sourceCommand}" to non-frozen "${installCommand.command}" so file:vendor lockfile updates are allowed.`);
+        }
+        if (installDir !== repoDir) {
+          log(`Corpus harness running post-injection install for ${repo.name} from workspace root/package-manager root ${installDir} instead of appDir ${repoDir} so workspace:, catalog:, and root lockfile dependencies resolve.`);
+        }
+        await runInstallCommand(installCommand.command, installDir);
       }
-      await assertLocalVendoResolution(repoDir, summary);
+      await assertLocalVendoResolution(repoDir, installSummary);
 
       return {
-        ...summary,
+        ...installSummary,
         repoDir,
         initArgs: localVendoInitArgs(workspaceRoot),
       };

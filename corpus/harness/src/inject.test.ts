@@ -266,7 +266,7 @@ describe("createLocalVendoInjector", () => {
     expect(pkg.pnpm.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
   });
 
-  it("runs the host install command and accepts lockfiles that point Vendo packages at local tarballs", async () => {
+  it("runs a non-frozen host install command and accepts lockfiles that point Vendo packages at local tarballs", async () => {
     const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();
     const repoDir = await createTargetRepo(corpusRoot, "repo-lock");
@@ -275,10 +275,14 @@ describe("createLocalVendoInjector", () => {
       await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
     };
     const installCalls: string[] = [];
+    const notes: string[] = [];
     const injector = createLocalVendoInjector({
       context: createRunContext({ corpusRoot }),
       workspaceRoot,
       pack,
+      log(message: string) {
+        notes.push(message);
+      },
       async buildWorkspace() {},
       async runInstallCommand(command, cwd) {
         installCalls.push(`${command} @ ${cwd}`);
@@ -298,7 +302,10 @@ describe("createLocalVendoInjector", () => {
     const result = await injector.inject({ name: "repo-lock" });
 
     expect(result.initArgs).toEqual(["--local", workspaceRoot]);
-    expect(installCalls).toEqual([`pnpm install --ignore-workspace @ ${repoDir}`]);
+    expect(installCalls).toEqual([
+      `pnpm --config.minimumReleaseAge=0 --config.dangerouslyAllowAllBuilds=true install --no-frozen-lockfile @ ${repoDir}`,
+    ]);
+    expect(notes.join("\n")).toMatch(/post-injection install.*non-frozen/i);
     await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-0.1.0.tgz");
   });
 
@@ -335,6 +342,110 @@ describe("createLocalVendoInjector", () => {
     await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"vendoai": "file:vendor/vendoai-0.1.0.tgz"');
     await expect(readFile(path.join(appRoot, "vendor", "vendoai-0.1.0.tgz"), "utf8")).resolves.toBe("packed vendoai");
     await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.not.toContain("vendoai");
+  });
+
+  it("runs pnpm appDir injection installs from the workspace root so workspace and catalog protocols resolve", async () => {
+    const workspaceRoot = await createWorkspace();
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repoDir = context.repoDir("repo-workspace-app");
+    const appRoot = path.join(repoDir, "apps/web");
+    await writeJson(path.join(repoDir, "package.json"), {
+      name: "repo-workspace-app",
+      private: true,
+      packageManager: "pnpm@11.2.1",
+      devDependencies: {
+        turbo: "catalog:",
+      },
+    });
+    await writeFile(path.join(repoDir, "pnpm-workspace.yaml"), [
+      "packages:",
+      "  - apps/*",
+      "  - packages/*",
+      "catalog:",
+      "  turbo: 2.9.14",
+      "",
+    ].join("\n"));
+    await writeJson(path.join(appRoot, "package.json"), {
+      name: "web",
+      private: true,
+      dependencies: {
+        "@repo/ui": "workspace:*",
+        next: "catalog:",
+      },
+      packageManager: "pnpm@11.2.1",
+    });
+    await writeJson(path.join(repoDir, "packages/ui/package.json"), {
+      name: "@repo/ui",
+      version: "1.0.0",
+    });
+    const installCalls: string[] = [];
+    const notes: string[] = [];
+    const pack: PackWorkspacePackage = async (pkg, opts) => {
+      await mkdir(opts.vendorDir, { recursive: true });
+      await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+    };
+    const injector = createLocalVendoInjector({
+      context,
+      workspaceRoot,
+      pack,
+      log(message: string) {
+        notes.push(message);
+      },
+      async buildWorkspace() {},
+      async runInstallCommand(command, cwd) {
+        installCalls.push(`${command} @ ${cwd}`);
+        await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
+          "importers:",
+          "  apps/web:",
+          "    dependencies:",
+          "      vendoai:",
+          "        specifier: file:vendor/vendoai-0.1.0.tgz",
+          "        version: file:apps/web/vendor/vendoai-0.1.0.tgz",
+          "      '@vendoai/server':",
+          "        specifier: file:vendor/vendoai-server-0.1.0.tgz",
+          "        version: file:apps/web/vendor/vendoai-server-0.1.0.tgz",
+          "",
+        ].join("\n"));
+      },
+    });
+
+    const result = await injector.inject({
+      name: "repo-workspace-app",
+      appDir: "apps/web",
+      bootstrap: {
+        installCommand: "corepack pnpm install --frozen-lockfile --force --ignore-workspace",
+        envTemplate: {},
+        buildCommand: "corepack pnpm --ignore-workspace --filter web build",
+      },
+    });
+
+    expect(result.repoDir).toBe(appRoot);
+    expect(installCalls).toEqual([
+      `corepack pnpm --config.minimumReleaseAge=0 --config.dangerouslyAllowAllBuilds=true install --no-frozen-lockfile --force @ ${repoDir}`,
+    ]);
+    expect(notes.join("\n")).toMatch(/workspace root/i);
+    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"@repo/ui": "workspace:*"');
+    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"vendoai": "file:vendor/vendoai-0.1.0.tgz"');
+    const rootPkg = await readAnyPackageJson(repoDir) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      pnpm: { overrides: Record<string, string> };
+    };
+    expect(rootPkg.dependencies?.["vendoai"]).toBeUndefined();
+    expect(rootPkg.devDependencies?.["@vendoai/cli"]).toBeUndefined();
+    const workspaceYaml = await readFile(path.join(repoDir, "pnpm-workspace.yaml"), "utf8");
+    expect(workspaceYaml).toContain('"@vendoai/server": "file:apps/web/vendor/vendoai-server-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"@vendoai/server@0.1.0": "file:apps/web/vendor/vendoai-server-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"vendoai": "file:apps/web/vendor/vendoai-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"vendoai@0.1.0": "file:apps/web/vendor/vendoai-0.1.0.tgz"');
+    expect(workspaceYaml).toContain('"fluidkit": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
+    expect(workspaceYaml).toContain('"fluidkit@0.5.0-test": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
+    expect(workspaceYaml).toContain('"fluidkit@0.5.0": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
+    expect(rootPkg.pnpm.overrides["@vendoai/server"]).toBe("file:apps/web/vendor/vendoai-server-0.1.0.tgz");
+    expect(rootPkg.pnpm.overrides["@vendoai/server@0.1.0"]).toBe("file:apps/web/vendor/vendoai-server-0.1.0.tgz");
+    expect(rootPkg.pnpm.overrides["vendoai"]).toBe("file:apps/web/vendor/vendoai-0.1.0.tgz");
+    expect(rootPkg.pnpm.overrides["vendoai@0.1.0"]).toBe("file:apps/web/vendor/vendoai-0.1.0.tgz");
   });
 
   it("rejects lockfiles that still point Vendo packages at the registry", async () => {
@@ -406,10 +517,14 @@ describe("createLocalVendoInjector", () => {
       await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
     };
     const installCalls: string[] = [];
+    const notes: string[] = [];
     const injector = createLocalVendoInjector({
       context,
       workspaceRoot,
       pack,
+      log(message: string) {
+        notes.push(message);
+      },
       async buildWorkspace() {},
       async runInstallCommand(command, cwd) {
         installCalls.push(`${command} @ ${cwd}`);
@@ -423,11 +538,21 @@ describe("createLocalVendoInjector", () => {
       },
     });
 
-    const result = await injector.inject({ name: "cal-com", appDir: "apps/web" });
+    const result = await injector.inject({
+      name: "cal-com",
+      appDir: "apps/web",
+      bootstrap: {
+        installCommand: "corepack yarn install --immutable --check-cache",
+        envTemplate: {},
+        buildCommand: "corepack yarn build",
+      },
+    });
 
     expect(result.packageManager).toBe("yarn-berry");
     expect(result.installCommand).toBe("YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install");
-    expect(installCalls).toEqual([`YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install @ ${repoDir}`]);
+    expect(installCalls).toEqual([`YARN_ENABLE_IMMUTABLE_INSTALLS=false corepack yarn install @ ${repoDir}`]);
+    expect(notes.join("\n")).toMatch(/post-injection install.*non-frozen/i);
+    expect(notes.join("\n")).toMatch(/package-manager root/i);
     await expect(readFile(path.join(repoDir, ".yarnrc.yml"), "utf8")).resolves.toBe("nodeLinker: node-modules\n");
     const pkg = await readAnyPackageJson(appRoot) as {
       dependencies: Record<string, string>;

@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "theme": {
+    "background": "#ffffff",
+    "surface": "#ffffff",
+    "accent": "#171717",
+    "text": "#0a0a0a",
+    "mutedText": "#737373",
+    "radius": 10,
+    "fontFamily": "Geist, sans-serif"
+  },
+  "tools": [
+    {
+      "name": "getAuthNextauth",
+      "method": "GET",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postAuthNextauth",
+      "method": "POST",
+      "path": "/api/auth/{nextauth}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postChat",
+      "method": "POST",
+      "path": "/api/chat",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postOnboardingChecks",
+      "method": "POST",
+      "path": "/api/onboarding/checks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTrpcEdgeTrpc",
+      "method": "GET",
+      "path": "/api/trpc/edge/{trpc}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTrpcEdgeTrpc",
+      "method": "POST",
+      "path": "/api/trpc/edge/{trpc}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getTrpcLambdaTrpc",
+      "method": "GET",
+      "path": "/api/trpc/lambda/{trpc}",
+      "readOrWrite": "read"
+    },
+    {
+      "name": "postTrpcLambdaTrpc",
+      "method": "POST",
+      "path": "/api/trpc/lambda/{trpc}",
+      "readOrWrite": "write"
+    }
+  ],
+  "annotations": [
+    {
+      "name": "getAuthNextauth",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthNextauth",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postChat",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postOnboardingChecks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTrpcEdgeTrpc",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTrpcEdgeTrpc",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getTrpcLambdaTrpc",
+      "mutating": false,
+      "dangerous": false
+    },
+    {
+      "name": "postTrpcLambdaTrpc",
+      "mutating": true,
+      "dangerous": false
+    }
+  ],
+  "components": []
+}
