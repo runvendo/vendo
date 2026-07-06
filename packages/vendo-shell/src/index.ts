@@ -70,3 +70,4 @@ export * from "./elements/VendoOverlay";
 export * from "./elements/VendoSlot";
 export * from "./elements/VendoPage";
 export * from "./use-focus-trap";
+export * from "./use-mobile-takeover";

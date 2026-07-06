@@ -778,6 +778,31 @@
   .fl-picker-item.is-just-connected, .fl-picker-item.is-just-connected .fl-picker-on { animation: none; }
   .fl-msglist-wrap, .fl-jump, .fl-md--streaming > * { animation: none; opacity: 1; }
 }
+
+/* ---------- full-screen mobile takeover (<768px, Intercom pattern) ---------- */
+/* The `fl-takeover` class is stamped by useMobileTakeover (matchMedia) on the
+   surface containers — the overlay panel (the Cmd+K overlay AND the slot's
+   design overlay share OverlayPanel) and the page element. Full bleed, its own
+   stacking context, internal scrolling (only .fl-msglist scrolls), the
+   composer pinned at the bottom inside the safe area, the close X reachable
+   under the notch. Host layout below the breakpoint is covered, not fixed. */
+.fl-overlay-panel.fl-takeover { left: 0; top: 0; transform: none;
+  width: 100%; height: 100%; max-width: none; max-height: none;
+  border: 0; border-radius: 0; isolation: isolate;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  /* The centered "squeeze" keyframes carry translate(-50%,-50%) — full bleed
+     fades in instead of flying in from mid-screen. */
+  animation: fl-takeover-fade .18s ease both; }
+@keyframes fl-takeover-fade { from { opacity: 0; } to { opacity: 1; } }
+.fl-overlay-panel.fl-takeover .fl-overlay-close {
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px)); }
+.fl-page.fl-takeover { position: fixed; inset: 0; z-index: 2147483001; isolation: isolate;
+  background: var(--vendo-bg);
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
   border-radius: 999px; padding: 10px 15px; font-size: 13px; font-weight: 600; color: var(--vendo-fg);
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
