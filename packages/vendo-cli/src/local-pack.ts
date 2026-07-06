@@ -4,6 +4,13 @@ import path from "node:path";
 
 export const LOCAL_DIRECT_DEPENDENCIES = ["vendo"] as const;
 
+/** Installed as devDependencies: init wires `prebuild: "vendo sync"`, and
+ *  pre-publish the `vendo` bin stub cannot npx @vendoai/cli from the registry —
+ *  a locally-packed CLI is what makes `npm run build` work offline. All of the
+ *  CLI's own @vendoai/* deps are devDependencies (vite-bundled into its dist),
+ *  so packing it adds nothing else to the runtime closure. */
+export const LOCAL_DEV_DEPENDENCIES = ["@vendoai/cli"] as const;
+
 type PackageJson = Record<string, unknown>;
 
 export interface LocalTarball {
@@ -81,8 +88,8 @@ async function discoverWorkspacePackages(repoDir: string): Promise<Map<string, W
     }
     if (typeof pkg["name"] !== "string") continue;
     const name = pkg["name"];
-    // The umbrella `vendo` package itself, plus every `@vendoai/*` internal it
-    // (transitively) depends on — the closure walk below starts from `vendo`.
+    // The umbrella `vendo` package itself, plus every `@vendoai/*` internal —
+    // the closure walk below starts from `vendo` and `@vendoai/cli`.
     if (name !== "vendo" && !name.startsWith("@vendoai/")) continue;
     if (typeof pkg["version"] !== "string") continue;
     packages.set(name, {
@@ -109,7 +116,7 @@ async function discoverLocalPackageClosure(repoDir: string): Promise<WorkspacePa
       if (depName.startsWith("@vendoai/")) visit(depName);
     }
   };
-  for (const name of LOCAL_DIRECT_DEPENDENCIES) visit(name);
+  for (const name of [...LOCAL_DIRECT_DEPENDENCIES, ...LOCAL_DEV_DEPENDENCIES]) visit(name);
   return ordered.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -189,7 +196,7 @@ export function rewritePackageJsonForLocalVendo(
     };
   }
   const byName = new Map(tarballs.map((tarball) => [tarball.name, tarball]));
-  for (const name of [...LOCAL_DIRECT_DEPENDENCIES, "fluidkit"]) {
+  for (const name of [...LOCAL_DIRECT_DEPENDENCIES, ...LOCAL_DEV_DEPENDENCIES, "fluidkit"]) {
     if (!byName.has(name)) {
       return {
         kind: "skipped",
@@ -204,6 +211,12 @@ export function rewritePackageJsonForLocalVendo(
     deps[name] = fileSpec(byName.get(name)!.fileName);
   }
   pkg["dependencies"] = sortedRecord(deps);
+
+  const devDeps = stringRecord(pkg["devDependencies"]);
+  for (const name of LOCAL_DEV_DEPENDENCIES) {
+    devDeps[name] = fileSpec(byName.get(name)!.fileName);
+  }
+  pkg["devDependencies"] = sortedRecord(devDeps);
 
   const localOverrides = sortedRecord(
     Object.fromEntries(tarballs.map((tarball) => [tarball.name, fileSpec(tarball.fileName)])),
@@ -244,13 +257,14 @@ export function rewritePackageJsonForLocalVendo(
 
 function localPackageManualInstructions(tarballs: readonly LocalTarball[], packageManager: "pnpm" | "npm"): string {
   const byName = new Map(tarballs.map((tarball) => [tarball.name, tarball.fileName]));
-  const direct = LOCAL_DIRECT_DEPENDENCIES
-    .map((name) => `${JSON.stringify(name)}: ${JSON.stringify(byName.has(name) ? fileSpec(byName.get(name)!) : "file:vendor/<tarball>")}`)
-    .join(", ");
+  const spec = (name: string) =>
+    `${JSON.stringify(name)}: ${JSON.stringify(byName.has(name) ? fileSpec(byName.get(name)!) : "file:vendor/<tarball>")}`;
+  const direct = LOCAL_DIRECT_DEPENDENCIES.map(spec).join(", ");
+  const dev = LOCAL_DEV_DEPENDENCIES.map(spec).join(", ");
   const overrides = tarballs
     .map((tarball) => `${JSON.stringify(tarball.name)}: ${JSON.stringify(fileSpec(tarball.fileName))}`)
     .join(", ");
-  return `manually add package.json dependencies { ${direct} } and ${packageManager === "pnpm" ? "pnpm.overrides" : "overrides"} { ${overrides} }`;
+  return `manually add package.json dependencies { ${direct} }, devDependencies { ${dev} }, and ${packageManager === "pnpm" ? "pnpm.overrides" : "overrides"} { ${overrides} }`;
 }
 
 async function pathExists(p: string): Promise<boolean> {

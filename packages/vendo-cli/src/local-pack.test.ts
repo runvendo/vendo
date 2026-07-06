@@ -7,11 +7,13 @@ import { installLocalVendoPackages, rewritePackageJsonForLocalVendo, type LocalT
 const TEST_PACKAGE_VERSION = "0.1.0";
 const vendoTarball = (name: string) => `${name.replace("@", "").replace("/", "-")}-${TEST_PACKAGE_VERSION}.tgz`;
 const vendoPkgTarball = vendoTarball("vendo");
+const cliTarball = vendoTarball("@vendoai/cli");
 const shellTarball = vendoTarball("@vendoai/shell");
 const coreTarball = vendoTarball("@vendoai/core");
 
 const LOCAL_TARBALLS: LocalTarball[] = [
   { name: "vendo", fileName: vendoPkgTarball },
+  { name: "@vendoai/cli", fileName: cliTarball },
   { name: "@vendoai/components", fileName: vendoTarball("@vendoai/components") },
   { name: "@vendoai/core", fileName: coreTarball },
   { name: "@vendoai/react", fileName: vendoTarball("@vendoai/react") },
@@ -40,6 +42,7 @@ describe("rewritePackageJsonForLocalVendo", () => {
     if (out.kind !== "updated") throw new Error("expected local package rewrite");
     const pkg = JSON.parse(out.source) as {
       dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
       pnpm: { overrides: Record<string, string> };
     };
     expect(pkg.dependencies["vendo"]).toBe(`file:vendor/${vendoPkgTarball}`);
@@ -47,6 +50,9 @@ describe("rewritePackageJsonForLocalVendo", () => {
     // pinned to the local tarball via pnpm.overrides instead.
     expect(pkg.dependencies["@vendoai/shell"]).toBeUndefined();
     expect(pkg.dependencies["next"]).toBe("16.0.0");
+    // the CLI is a devDependency (build-time `vendo sync`), never a runtime dep.
+    expect(pkg.devDependencies["@vendoai/cli"]).toBe(`file:vendor/${cliTarball}`);
+    expect(pkg.dependencies["@vendoai/cli"]).toBeUndefined();
     for (const tarball of LOCAL_TARBALLS) {
       expect(pkg.pnpm.overrides[tarball.name]).toBe(`file:vendor/${tarball.fileName}`);
     }
@@ -67,10 +73,12 @@ describe("rewritePackageJsonForLocalVendo", () => {
     if (out.kind !== "updated") throw new Error("expected local package rewrite");
     const pkg = JSON.parse(out.source) as {
       dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
       overrides: Record<string, unknown>;
       pnpm?: unknown;
     };
     expect(pkg.dependencies["vendo"]).toBe(`file:vendor/${vendoPkgTarball}`);
+    expect(pkg.devDependencies["@vendoai/cli"]).toBe(`file:vendor/${cliTarball}`);
     expect(pkg.overrides["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
     expect(pkg.overrides["@vendoai/core"]).toBe(`file:vendor/${coreTarball}`);
     expect(pkg.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-656857b.tgz");
@@ -97,6 +105,7 @@ describe("rewritePackageJsonForLocalVendo", () => {
     if (unsupported.kind !== "skipped") throw new Error("expected local package rewrite skip");
     expect(unsupported.reason).toContain("overrides is not an object");
     expect(unsupported.manual).toContain(`"vendo": "file:vendor/${vendoPkgTarball}"`);
+    expect(unsupported.manual).toContain(`devDependencies { "@vendoai/cli": "file:vendor/${cliTarball}" }`);
   });
 });
 
@@ -134,6 +143,18 @@ async function createPackableLocalRepo(withFluidkit = true): Promise<string> {
   });
   await writeFile(path.join(shellDir, "index.js"), "export {};\n");
 
+  // `@vendoai/cli` is the devDependency closure root (LOCAL_DEV_DEPENDENCIES) —
+  // packed so the wired `prebuild: "vendo sync"` works before the CLI publishes.
+  const cliDir = path.join(repoDir, "packages", "vendo-cli");
+  await writeJson(path.join(cliDir, "package.json"), {
+    name: "@vendoai/cli",
+    version: TEST_PACKAGE_VERSION,
+    type: "module",
+    main: "index.js",
+    files: ["index.js"],
+  });
+  await writeFile(path.join(cliDir, "index.js"), "export {};\n");
+
   if (withFluidkit) {
     await mkdir(path.join(repoDir, "vendor"), { recursive: true });
     await writeFile(path.join(repoDir, "vendor/fluidkit-0.5.0-test.tgz"), "not a real tarball");
@@ -160,16 +181,21 @@ describe("installLocalVendoPackages", () => {
 
     const vendorFiles = await readdir(path.join(targetDir, "vendor"));
     expect(vendorFiles).toContain(vendoPkgTarball);
+    expect(vendorFiles).toContain(cliTarball);
     expect(vendorFiles).toContain(shellTarball);
     expect(vendorFiles).toContain("fluidkit-0.5.0-test.tgz");
 
     const pkg = JSON.parse(await readFile(path.join(targetDir, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
       pnpm: { overrides: Record<string, string> };
     };
     expect(pkg.dependencies["vendo"]).toBe(`file:vendor/${vendoPkgTarball}`);
     expect(pkg.dependencies["@vendoai/shell"]).toBeUndefined();
+    expect(pkg.dependencies["@vendoai/cli"]).toBeUndefined();
+    expect(pkg.devDependencies["@vendoai/cli"]).toBe(`file:vendor/${cliTarball}`);
     expect(pkg.pnpm.overrides["vendo"]).toBe(`file:vendor/${vendoPkgTarball}`);
+    expect(pkg.pnpm.overrides["@vendoai/cli"]).toBe(`file:vendor/${cliTarball}`);
     expect(pkg.pnpm.overrides["@vendoai/shell"]).toBe(`file:vendor/${shellTarball}`);
     expect(pkg.pnpm.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
   });
