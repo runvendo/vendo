@@ -40,11 +40,18 @@ export async function writeGenerated(
   opts: { force: boolean },
 ): Promise<void> {
   if (!opts.force) {
+    let existing: string | null = null;
     try {
-      await fs.access(file);
-      throw new Error(`${file} already exists — outputs are developer-editable; re-run with --force to overwrite`);
+      existing = await fs.readFile(file, "utf8");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    // Resume support: re-running `vendo init` after a mid-run failure re-writes
+    // identical bytes — treat that as a no-op success. DIFFERENT content is
+    // still refused so hand-edits are never silently clobbered.
+    if (existing !== null) {
+      if (existing === content) return;
+      throw new Error(`${file} already exists — outputs are developer-editable; re-run with --force to overwrite`);
     }
   }
   await fs.mkdir(path.dirname(file), { recursive: true });

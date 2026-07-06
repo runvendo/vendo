@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -169,6 +169,24 @@ export default function Page() {
     expect(records["b"]).toBeUndefined();
     expect(report.join("\n")).toContain("server/ directory");
     expect(report.join("\n")).toContain('"use server" directive');
+  });
+
+  it("realpaths before the refusal check so a symlink can't smuggle server-only code out", () => {
+    const dir = app({
+      "src/server/secret.tsx": `export function Secret() { return null }`,
+      "src/app/page.tsx": `import { VendoRemix } from "@vendoai/shell"
+import { Secret } from "../widget"
+export default function Page() {
+  return <VendoRemix id="w"><Secret /></VendoRemix>
+}
+`,
+    });
+    // src/widget.tsx is a symlink to the server-only file. Its unresolved path
+    // ("widget.tsx") passes the guard; only the realpath is under server/.
+    symlinkSync(path.join(dir, "src/server/secret.tsx"), path.join(dir, "src/widget.tsx"));
+    const { records, report } = captureRemixSources(dir, { now: NOW });
+    expect(records["w"]).toBeUndefined();
+    expect(report.join("\n")).toContain("server/ directory");
   });
 
   it("caps oversized sources with a visible marker", () => {

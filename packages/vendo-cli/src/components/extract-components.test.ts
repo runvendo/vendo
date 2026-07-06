@@ -39,6 +39,21 @@ describe("extractComponents", () => {
     expect(viteConfig).toContain('"@": path.resolve(here, "../../src")');
   });
 
+  it("adds the component-bundle build deps to devDependencies when components are written", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "comp-"));
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "app" }, null, 2));
+    await writeFile(path.join(dir, "src/components/ui/badge.tsx"), "export const Badge = () => null");
+    await extractComponents(dir, textModel([INCLUDE]), { force: false });
+    const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf8")) as {
+      devDependencies?: Record<string, string>;
+    };
+    // .vendo/components build imports @vendoai/stage/build + vite + the react plugin.
+    expect(pkg.devDependencies?.["@vendoai/stage"]).toBeDefined();
+    expect(pkg.devDependencies?.["vite"]).toBeDefined();
+    expect(pkg.devDependencies?.["@vitejs/plugin-react"]).toBeDefined();
+  });
+
   it("repairs a broken wrapper once by feeding the codegen error back", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "comp-"));
     await mkdir(path.join(dir, "src/components/ui"), { recursive: true });

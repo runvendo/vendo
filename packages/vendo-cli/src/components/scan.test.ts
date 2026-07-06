@@ -19,6 +19,32 @@ describe("scanComponents", () => {
     expect(candidates[0]!.relFile).toMatch(/^src\/components\/ui\//);
   });
 
+  it("recognizes shadcn `export { Button }` re-exports and `export { X as Y }`, skipping lowercase utils", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "scan-"));
+    await mkdir(path.join(dir, "src/components/ui"), { recursive: true });
+    await writeFile(
+      path.join(dir, "src/components/ui/button.tsx"),
+      `import * as React from "react"
+const Button = React.forwardRef((props, ref) => null)
+const buttonVariants = () => ""
+export { Button, buttonVariants }`,
+    );
+    await writeFile(
+      path.join(dir, "src/components/ui/alert.tsx"),
+      `const AlertImpl = () => null
+export { AlertImpl as Alert }`,
+    );
+    const candidates = await scanComponents(dir);
+    const byFile = Object.fromEntries(candidates.map((c) => [c.relFile, c]));
+    const button = byFile["src/components/ui/button.tsx"]!;
+    expect(button).toBeDefined();
+    expect(button.exportName).toBe("Button");
+    expect(button.exportNames).toContain("Button");
+    expect(button.exportNames).not.toContain("buttonVariants"); // lowercase util skipped
+    const alert = byFile["src/components/ui/alert.tsx"]!;
+    expect(alert.exportName).toBe("Alert"); // the `X as Y` exported name
+  });
+
   it("scans components/ui before other component dirs so the cap keeps primitives", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "scan-"));
     await mkdir(path.join(dir, "src/components/aaa"), { recursive: true });

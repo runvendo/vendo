@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   addDependency,
+  addDevDependency,
   addPrebuildSync,
   mergeInstrumentation,
   productNameFrom,
@@ -167,6 +168,27 @@ describe("addDependency", () => {
   });
 });
 
+describe("addDevDependency", () => {
+  it("creates the devDependencies block, adds sorted, and is idempotent", () => {
+    const created = addDevDependency(JSON.stringify({ name: "x" }, null, 2), "@vendoai/cli", "latest")!;
+    expect(JSON.parse(created).devDependencies["@vendoai/cli"]).toBe("latest");
+
+    const out = addDevDependency(
+      JSON.stringify({ name: "x", devDependencies: { vitest: "^2" } }, null, 2),
+      "@vendoai/cli",
+      "latest",
+    )!;
+    expect(Object.keys(JSON.parse(out).devDependencies)).toEqual(["@vendoai/cli", "vitest"]);
+
+    // Re-run leaves it alone.
+    expect(addDevDependency(out, "@vendoai/cli", "latest")).toBe(out);
+  });
+
+  it("returns null on unparsable package.json", () => {
+    expect(addDevDependency("{nope", "@vendoai/cli", "latest")).toBeNull();
+  });
+});
+
 describe("addPrebuildSync", () => {
   it("creates a prebuild script, extends an existing one, and is idempotent", () => {
     const created = addPrebuildSync(JSON.stringify({ name: "x" }))!;
@@ -282,6 +304,17 @@ describe("wireNextApp", () => {
     expect(summary.skipped.some((s) => s.step === "sandbox-assets")).toBe(true);
   });
 
+  it("adds @vendoai/cli to the app's devDependencies so `vendo sync` resolves at build time", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const info = await detectTarget(dir);
+    await wireNextApp(dir, info, { force: false });
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
+      devDependencies?: Record<string, string>;
+    };
+    // prebuild runs `vendo sync`, so the CLI must be installed alongside it.
+    expect(pkg.devDependencies?.["@vendoai/cli"]).toBeDefined();
+  });
+
   it("writes instrumentation.ts at the project root for an app/ (non-src) layout", async () => {
     const dir = await scaffoldFreshApp(false);
     const info = await detectTarget(dir);
@@ -347,6 +380,58 @@ describe("wireNextApp", () => {
     expect(await fs.readFile(path.join(dir, "app/layout.tsx"), "utf8")).toBe(weird);
     expect(summary.skipped.some((s) => s.step === "layout")).toBe(true);
     expect(summary.manual.some((m) => m.includes("AppVendoRoot"))).toBe(true);
+  });
+
+  async function scaffoldWithNext(version: string): Promise<string> {
+    const dir = mkdtempSync(path.join(tmpdir(), "vendo-nextcfg-"));
+    const appDir = path.join(dir, "app");
+    await fs.mkdir(appDir, { recursive: true });
+    await fs.writeFile(path.join(appDir, "layout.tsx"), CREATE_NEXT_APP_LAYOUT);
+    await fs.writeFile(path.join(dir, "tsconfig.json"), "{}");
+    await fs.writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "app", dependencies: { next: version } }, null, 2),
+    );
+    return dir;
+  }
+
+  it("creates next.config.mjs with experimental.instrumentationHook on Next 14 (no config present)", async () => {
+    const dir = await scaffoldWithNext("14.2.3");
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    const cfg = await fs.readFile(path.join(dir, "next.config.mjs"), "utf8");
+    expect(cfg).toContain("instrumentationHook: true");
+    expect(summary.written).toContain("next.config.mjs");
+  });
+
+  it("does NOT touch next.config on Next 15+ (the flag is the default there)", async () => {
+    const dir = await scaffoldWithNext("15.0.0");
+    const info = await detectTarget(dir);
+    await wireNextApp(dir, info, { force: false });
+    expect(await exists(path.join(dir, "next.config.mjs"))).toBe(false);
+    expect(await exists(path.join(dir, "next.config.js"))).toBe(false);
+  });
+
+  it("skips + prints a manual step when a next.config already exists on Next 14 (no risky AST edit)", async () => {
+    const dir = await scaffoldWithNext("14.2.3");
+    await fs.writeFile(path.join(dir, "next.config.js"), "module.exports = { reactStrictMode: true };\n");
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    expect(await fs.readFile(path.join(dir, "next.config.js"), "utf8")).toContain("reactStrictMode: true");
+    expect(summary.manual.some((m) => m.includes("instrumentationHook"))).toBe(true);
+    expect(await exists(path.join(dir, "next.config.mjs"))).toBe(false);
+  });
+
+  it("reports already-wired when an existing config sets instrumentationHook", async () => {
+    const dir = await scaffoldWithNext("14.2.3");
+    await fs.writeFile(
+      path.join(dir, "next.config.mjs"),
+      "export default { experimental: { instrumentationHook: true } };\n",
+    );
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    expect(summary.skipped.some((s) => s.step === "next.config" && /already/.test(s.reason))).toBe(true);
+    expect(summary.manual.some((m) => m.includes("instrumentationHook"))).toBe(false);
   });
 
   it("returns null for non-Next targets and skips gracefully without an app dir", async () => {
