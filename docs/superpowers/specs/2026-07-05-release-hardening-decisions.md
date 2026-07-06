@@ -147,6 +147,15 @@ on new intent). Two items needed follow-up and were chased down:
   rebuild deploys it and a fresh browser check is confirming. The fix relies
   on slices carrying currency `display` strings — if the check shows the
   model omits them, a value-based fallback gets added.
+  **RESOLVED & VERIFIED (2026-07-06):** live check showed the model was
+  emitting raw cents in slice.value with NO display strings, so the
+  legend-derived center had nothing to work from. Fixed by strengthening the
+  descriptor (value is the final display amount, never raw cents; give each
+  money slice a formatted display; center is derived — omit centerValue for
+  sums). Two independent fresh runs now render $4,017.81 with a full legend.
+  Shipped in PR #65. A hard guarantee (display *required*) would break saved
+  donuts lacking it — left as your call; the prompt+derivation combo is
+  verified working in practice.
 - **Chart brand palettes don't apply (both apps) — RESOLVED to a scoped
   follow-up, needs your call.** Root-caused in OpenUI internals: the
   `*ChartPalette` keys are valid Theme *type* keys but aren't in OpenUI
