@@ -10,6 +10,7 @@ import {
 import { validateGeneratedPayload, type UINode } from "@vendoai/core";
 import { useShell } from "../context";
 import { diffHostComponents } from "../component-drift";
+import { GlassVeil } from "../components/GlassSkeleton";
 import type { RemixPin } from "../seams/remixes";
 import { snapshotElement } from "./snapshot";
 
@@ -85,9 +86,14 @@ export function VendoRemix({ id, label, context, className, children }: VendoRem
 
   // Guarded against unmount/id changes: a slow store resolving late must not
   // set a stale pin, and a pin for a different anchor never renders here.
+  // A CHANGED-event reload is a repaint (a pin edit landing on a mounted
+  // wrapper) — the glass veil shimmers over the stale view while it loads.
+  // Mount loads are not repaints: no veil on every page load.
   const loadToken = useRef(0);
-  const reload = useCallback(() => {
+  const [repainting, setRepainting] = useState(false);
+  const reload = useCallback((repaint = false) => {
     const token = ++loadToken.current;
+    if (repaint) setRepainting(true);
     remixes
       .get(id)
       .then((loaded) => {
@@ -97,6 +103,9 @@ export function VendoRemix({ id, label, context, className, children }: VendoRem
       .catch((err) => {
         console.warn(`[vendo] failed to load remix pin for "${id}"`, err);
         if (loadToken.current === token) setPin(null);
+      })
+      .finally(() => {
+        if (loadToken.current === token) setRepainting(false);
       });
   }, [remixes, id]);
   useEffect(() => {
@@ -107,7 +116,7 @@ export function VendoRemix({ id, label, context, className, children }: VendoRem
   }, [reload]);
   useEffect(() => {
     const onChange = (e: Event) => {
-      if ((e as CustomEvent<{ anchorId?: string }>).detail?.anchorId === id) reload();
+      if ((e as CustomEvent<{ anchorId?: string }>).detail?.anchorId === id) reload(true);
     };
     window.addEventListener(REMIX_CHANGED_EVENT, onChange);
     return () => window.removeEventListener(REMIX_CHANGED_EVENT, onChange);
@@ -175,6 +184,7 @@ export function VendoRemix({ id, label, context, className, children }: VendoRem
           children
         )}
       </div>
+      {repainting && <GlassVeil />}
       {mounted && (
         <button
           type="button"

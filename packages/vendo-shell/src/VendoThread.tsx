@@ -53,6 +53,9 @@ export interface VendoThreadProps {
   greeting?: string;
   suggestions?: string[];
   flows?: Vendo[];
+  /** True while the host's first store list is still in flight — the landing
+   *  library holds its space with glass skeleton cards instead of popping in. */
+  flowsLoading?: boolean;
   onOpenFlow?: (flow: Vendo) => void;
   /** Library management on the empty-state gallery (ENG-183). */
   onRenameFlow?: (flow: Vendo, name: string) => void;
@@ -84,12 +87,15 @@ export interface VendoThreadProps {
 }
 
 export function VendoThread({
-  greeting, suggestions = [], flows = [], onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
+  greeting, suggestions = [], flows = [], flowsLoading = false, onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
   heroComposer = false, onPin, onFeedback, voice,
 }: VendoThreadProps) {
   const chat = useVendoThread();
   const { integrations, sendConsent, trust, registry, scope, remixes, components } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
+  // False until the FIRST integrations list lands — the tray shows glass
+  // shimmer placeholder rows for that window only.
+  const [toolsLoaded, setToolsLoaded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [fadeProposal, setFadeProposal] = useState<{ messageId: string; toolName: string; proposalId: string; count?: number } | null>(null);
   const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
@@ -151,7 +157,12 @@ export function VendoThread({
     return null;
   }, [chat.items]);
 
-  const refresh = () => { void integrations.list().then(setTools); };
+  const refresh = () => {
+    void integrations.list().then((list) => {
+      setTools(list);
+      setToolsLoaded(true);
+    });
+  };
   useEffect(refresh, [integrations]);
   // Re-list when a connection changes (e.g. the user connects a tool on screen),
   // so the rail and selector reflect it without a reload.
@@ -369,6 +380,7 @@ export function VendoThread({
       <ConnectTray open={pickerOpen} onClose={() => setPickerOpen(false)}>
         <IntegrationsPicker
           integrations={tools}
+          loading={!toolsLoaded}
           // Resolves only after the refreshed list has landed in state, so the
           // picker's connecting row can observe its flip to connected.
           onConnect={(id) => integrations.connect(id).then(() => integrations.list()).then(setTools)}
@@ -410,6 +422,7 @@ export function VendoThread({
           greeting={greeting}
           suggestions={suggestions}
           flows={flows}
+          flowsLoading={flowsLoading}
           composer={composerInHero ? composerArea : undefined}
           onSuggestion={send}
           onOpenFlow={(f) => onOpenFlow?.(f)}

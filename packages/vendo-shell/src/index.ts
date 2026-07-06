@@ -37,6 +37,7 @@ export * from "./components/TurnActions";
 export * from "./components/AttachmentChips";
 export * from "./components/FileAttachment";
 export * from "./components/Skeleton";
+export * from "./components/GlassSkeleton";
 export * from "./components/ApprovalCard";
 export * from "./components/ApprovalBatchCard";
 export * from "./components/FadeProposalCard";

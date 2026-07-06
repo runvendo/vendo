@@ -112,3 +112,29 @@ describe("ConnectCard", () => {
     expect(screen.getByText("So I can total up your invoices.")).toBeTruthy();
   });
 });
+
+describe("IntegrationsPicker — loading state", () => {
+  it("shows glass shimmer placeholder rows while the first list is in flight", () => {
+    const { container } = render(
+      <IntegrationsPicker integrations={[]} loading onConnect={() => {}} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    const placeholders = container.querySelectorAll(".fl-picker-grid .fl-glass-shimmer");
+    expect(placeholders.length).toBeGreaterThan(0);
+    expect(container.querySelector(".fl-picker-loading")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("never blanks an already-listed tray during a background refresh", () => {
+    const { container } = render(
+      <IntegrationsPicker integrations={list} loading onConnect={() => {}} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    expect(container.querySelector(".fl-picker-loading")).toBeNull();
+    expect(screen.getByText("Gmail")).toBeTruthy();
+  });
+
+  it("shows no placeholders once loading settles on an empty catalog", () => {
+    const { container } = render(
+      <IntegrationsPicker integrations={[]} onConnect={() => {}} onDisconnect={() => {}} onClose={() => {}} />,
+    );
+    expect(container.querySelector(".fl-picker-loading")).toBeNull();
+  });
+});

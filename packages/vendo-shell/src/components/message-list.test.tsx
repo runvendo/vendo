@@ -68,6 +68,26 @@ describe("MessageList", () => {
     expect(screen.getByTestId("ui-node")).toBeTruthy();
   });
 
+  it("renders the render_view placeholder as the glass skeleton panel", () => {
+    const { container } = render(
+      <VendoProvider agent={createStubAgent()} components={[]}>
+        <VendoShellProvider renderNode={() => <div data-testid="rendered" />}>
+          <MessageList
+            items={[{ kind: "skeleton", key: "m1:1", messageId: "m1", name: "SpendChart" }]}
+            status="streaming"
+            onApprove={vi.fn()}
+          />
+        </VendoShellProvider>
+      </VendoProvider>,
+    );
+    // The glass panel lives inside the persistent reveal slot, carrying its
+    // own pulse-dot "Building your view…" line and the tinted shimmer grid.
+    const panel = container.querySelector(".fl-reveal .fl-glass");
+    expect(panel).toBeTruthy();
+    expect(screen.getByText("Building your view…")).toBeTruthy();
+    expect(panel?.querySelectorAll(".fl-glass-shimmer").length).toBeGreaterThan(0);
+  });
+
   it("renders an error item with friendly copy — raw detail never reaches the DOM", () => {
     const { container } = renderList([
       { kind: "error", key: "e1", messageId: "m", message: "Something exploded" } as unknown as ThreadItem,
