@@ -74,6 +74,26 @@ describe("discoverRemixCandidates", () => {
     expect(candidates.map((c) => c.suggestedLabel)).toEqual(["My Widget", "Beta", "Gamma Panel"]);
   });
 
+  it("keeps only the first proposal when the LLM proposes the same file twice, and trims the reason", async () => {
+    const dir = app({
+      "src/components/Alpha.tsx": "export function Alpha() { return <div/>; }",
+    });
+    const model = proposalModel([
+      { file: "src/components/Alpha.tsx", id: "alpha-one", label: "Alpha", reason: "  first reason  " },
+      { file: "src/components/Alpha.tsx", id: "alpha-two", label: "Alpha again", reason: "second reason" },
+    ]);
+
+    const { candidates, excluded } = await discoverRemixCandidates(dir, model);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      file: "src/components/Alpha.tsx",
+      suggestedId: "alpha-one",
+      reason: "first reason",
+    });
+    expect(excluded).toEqual([]);
+  });
+
   it("scopes the scan to capture's source root: in a src/-layout app, files outside src/ are never proposed", async () => {
     const dir = app({
       "src/components/DeadlineList.tsx": "export function DeadlineList() { return <ul/>; }",

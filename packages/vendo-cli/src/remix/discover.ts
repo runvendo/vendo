@@ -205,9 +205,11 @@ export async function discoverRemixCandidates(
       continue;
     }
     if (producedFiles.has(relFile)) continue; // duplicate proposal — first wins
-    // 1+2+3. Server-only directive, server/ or api/ path segment, or outside the
-    // app source root — the discovery-time subset of sync/capture's refusal,
-    // evaluated against the SAME source root capture uses.
+    // 1+2. Server-only directive or a server/ / api/ path segment — the
+    // discovery-time subset of sync/capture's refusal, evaluated against the
+    // SAME source root capture uses. (refusalReason's outside-root branch
+    // never fires here: scanned files always live under sourceRoot, so
+    // out-of-root files are caught by scan-scoping + the hallucination guard.)
     const refusal = refusalReason(src.file, src.source, sourceRoot);
     if (refusal) {
       excluded.push({ file: relFile, reason: refusal });
@@ -225,7 +227,7 @@ export async function discoverRemixCandidates(
       componentName: src.componentName,
       suggestedId: uniqueId(base, usedIds),
       suggestedLabel: p.label.trim() || src.componentName,
-      reason: p.reason,
+      reason: p.reason.trim(),
     });
   }
 
