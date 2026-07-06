@@ -102,7 +102,14 @@ export const vendoOptions: VendoHandlerOptions = {
   // identical shape — bootKey gives the boot registry a stable identity that
   // survives that split (see fetch-handler.ts's BootRegistry comment).
   bootKey: "demo-bank",
-  model: anthropic(process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6"),
+  // Only inject a model when a real credential exists — `detectCapabilities`
+  // treats ANY injected model as chat-capable (`hasInjectedModel`), so an
+  // unconditional inject would make a keyless boot report chat:true and then
+  // 500 on the first turn. This exists purely to pin the demo's model id;
+  // it must never be the thing that turns chat on.
+  ...(process.env.ANTHROPIC_API_KEY
+    ? { model: anthropic(process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6") }
+    : {}),
   // Per-run function (spec §7): grounds capability talk in the live toolset.
   instructions: (ctx) => buildInstructions({ toolSummary: ctx.toolSummary }),
   policy: demoPolicy,
