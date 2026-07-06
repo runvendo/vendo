@@ -4,7 +4,7 @@ Date: 2026-07-06
 Command: `pnpm corpus run --layer 1`
 Mode: real `vendo init` with LLM enabled. API keys were sourced from `apps/demo-bank/.env.local`; key values were not printed or committed.
 Scorecard artifacts: `corpus/.repos/.logs/scorecard.json` and `corpus/.repos/.logs/scorecard.md`
-Latest scorecard: `2026-07-06T08:10:47.953Z`
+Latest scorecard: `2026-07-06T17:17:37.889Z`
 
 ## Task 9 Manifest Substitution
 
@@ -19,18 +19,23 @@ Latest scorecard: `2026-07-06T08:10:47.953Z`
 | taxonomy | FAIL | 4/7 | `host.typecheck`, `host.build`, `init.idempotent` |
 | invoify | FAIL | 4/7 | `files.expected`, `host.build`, `init.idempotent` |
 | papermark | FAIL | 4/7 | `host.typecheck`, `host.build`, `init.idempotent` |
+| cal-com | PASS | 7/7 | none |
 
 ## Cross-Repo CLI Findings
 
-### HARNESS-001: cal-com is blocked on Yarn local package injection support
+### HARNESS-001: cal-com Yarn local package injection and init now pass
 
-The harness now detects Yarn repos before local Vendo package injection and fails early instead of falling back to pnpm-compatible package rewrites. `cal-com` remains blocked until the injector can rewrite Yarn workspaces and refresh `yarn.lock` safely.
+The harness now supports Yarn local package injection for `cal-com`. The injector rewrites `apps/web/package.json` dependencies to `file:vendor/*.tgz`, adds Yarn `resolutions`, adds matching root workspace `resolutions` with `file:apps/web/vendor/*.tgz`, and refreshes `yarn.lock` with immutable installs disabled. Both `vendo init` runs complete and report Yarn `resolutions` plus `YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install`.
+
+Follow-up verification on 2026-07-06: Cal.com's `apps/web/tsconfig.json` extends `@calcom/tsconfig/nextjs.json`, which extends `@calcom/tsconfig/base.json` and sets `moduleResolution: "node"`. Vendo's package metadata now exposes `vendoai/server` and `vendoai/react` to that Node10 resolver, and the harness ignores regenerated `vendor/*.tgz` bytes in the second-run idempotency diff. The fresh Layer 1 scorecard passes 7/7.
 
 Repro:
 
 ```sh
 pnpm corpus run cal-com --layer 1
 ```
+
+Logs: `corpus/.repos/.logs/cal-com/init.first.log`, `init.second.log`, and `yarn.lock` in the disposable checkout.
 
 ### CLI-001: Generated `prebuild` calls cannot find the intended Vendo CLI
 
@@ -66,6 +71,28 @@ pnpm corpus run <repo> --layer 1
 ```
 
 Logs: `corpus/.repos/.logs/<repo>/init.second.log` and `corpus/.repos/.logs/<repo>/init.second.diff`.
+
+## cal-com
+
+Layer 1 result: PASS, 7/7.
+
+Passed checks: `init.exit`, `files.expected`, `config.schema`, `host.typecheck`, `host.build`, `init.idempotent`, `tools.fail-closed`.
+
+Findings:
+
+- Yarn local injection succeeded. `apps/web/package.json` uses `file:vendor/*.tgz`, the workspace root uses `resolutions` pointing at `file:apps/web/vendor/*.tgz`, and both init logs report `resolutions` with `YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install`.
+- CLI dependency compatibility fixed: Cal.com's post-init TypeScript check and Next build now resolve `vendoai/server` and `vendoai/react` under its inherited `moduleResolution: "node"` config.
+- Harness idempotency fixed: the second init exits 0 and `init.second.diff` is empty after excluding regenerated `vendor/*.tgz` tarballs from the second-run diff.
+- CLI extraction robustness: route enrichment fell back to deterministic route inventory after fenced LLM JSON failed schema validation. Init still exited 0 and generated `81` tools.
+
+Repro:
+
+```sh
+pnpm corpus run cal-com --layer 1
+cd corpus/.repos/cal-com && corepack yarn turbo run type-check --filter=@calcom/web...
+```
+
+Logs: `corpus/.repos/.logs/cal-com/init.first.log`, `init.second.diff`, `structural.typecheck.stdout.log`, and `structural.build.stdout.log`.
 
 ## umami
 

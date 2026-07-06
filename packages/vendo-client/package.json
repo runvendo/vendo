@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Batteries-included Vendo client: VendoRoot, the sandbox stage mount, connect flow, and the voice driver.",
   "keywords": ["ai", "agent", "generative-ui", "react"],
   "license": "Apache-2.0",

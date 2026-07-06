@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One-command Vendo install: extracts theme, tools, and components from a host app and wires in the embedded agent.",
   "keywords": [
     "ai",

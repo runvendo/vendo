@@ -84,6 +84,10 @@ async function writeFakeVendoCli(root: string): Promise<string> {
     if (process.env.EXTRA_FILE) {
       writeFileSync(path.join(targetDir, process.env.EXTRA_FILE), "extra file\\n");
     }
+    if (process.env.WRITE_VENDOR_TARBALL) {
+      mkdirSync(path.join(targetDir, "vendor"), { recursive: true });
+      writeFileSync(path.join(targetDir, "vendor", "vendoai-0.1.0.tgz"), process.env.WRITE_VENDOR_TARBALL);
+    }
 
     const pkgPath = path.join(targetDir, "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
@@ -169,6 +173,33 @@ describe("runVendoInitStep", () => {
     expect(diff).toContain("diff --git a/apps/web/second-only.txt b/apps/web/second-only.txt");
     expect(diff).not.toContain("apps/web/.vendo/theme.json");
     expect(diff).not.toContain("apps/web/package.json");
+  });
+
+  it("ignores regenerated vendor tarballs in the second-run idempotency diff", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repo = { name: "fixture-next-app" };
+    await copyFixtureRepo(context);
+    const fakeCli = await writeFakeVendoCli(corpusRoot);
+
+    await runVendoInitStep(repo, {
+      context,
+      cliCommand: process.execPath,
+      cliArgs: [fakeCli],
+      artifactPrefix: "init.first",
+      env: { WRITE_VENDOR_TARBALL: "first bytes" },
+    });
+
+    const result = await runVendoInitStep(repo, {
+      context,
+      cliCommand: process.execPath,
+      cliArgs: [fakeCli],
+      artifactPrefix: "init.second",
+      diffBase: "pre-run",
+      env: { WRITE_VENDOR_TARBALL: "second bytes" },
+    });
+
+    await expect(readFile(result.artifacts.diff, "utf8")).resolves.toBe("");
   });
 
   it("returns a nonzero init exit code while still writing log and diff artifacts", async () => {

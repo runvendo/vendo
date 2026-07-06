@@ -1,6 +1,6 @@
 {
   "name": "vendoai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Vendo: an embedded agent your users talk to, acting through your own API and rendering brand-native generated UI. One package: `vendoai/server` for the route, `vendoai/react` for the UI. (Interim name — bare `vendo` is pending an npm name-dispute; npm's typosquat checker blocks it as \"too similar to send\".)",
   "keywords": ["ai", "agent", "generative-ui", "react", "nextjs", "devtool"],
   "license": "Apache-2.0",
@@ -26,15 +26,24 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./server": {
       "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
       "default": "./dist/server.js"
     },
     "./react": {
       "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
       "default": "./dist/react.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "server": ["dist/server.d.ts"],
+      "react": ["dist/react.d.ts"]
     }
   },
   "files": ["dist", "bin"],

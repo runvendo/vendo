@@ -146,15 +146,24 @@ async function captureGitDiff(
   gitBin: string,
   env: NodeJS.ProcessEnv,
   baseTree = "HEAD",
+  ignoreVendor = false,
 ): Promise<string> {
   const indexFile = path.join(logsDir, "init.diff.index");
   const gitEnv = { ...env, GIT_INDEX_FILE: indexFile };
+  const pathspecs = ignoreVendor
+    ? [".", ":(glob,exclude)vendor/**", ":(glob,exclude)**/vendor/**"]
+    : ["."];
 
   try {
     await rm(indexFile, { force: true });
     await checkedCommand(gitBin, ["read-tree", baseTree], repoDir, gitEnv);
     await checkedCommand(gitBin, ["add", "-A", "--", "."], repoDir, gitEnv);
-    const diff = await checkedCommand(gitBin, ["diff", "--cached", "--no-ext-diff", "--binary", baseTree, "--"], repoDir, gitEnv);
+    const diff = await checkedCommand(
+      gitBin,
+      ["diff", "--cached", "--no-ext-diff", "--binary", baseTree, "--", ...pathspecs],
+      repoDir,
+      gitEnv,
+    );
     return diff.stdout;
   } catch (error) {
     return `Unable to capture git diff: ${error instanceof Error ? error.message : String(error)}\n`;
@@ -199,7 +208,7 @@ export async function runVendoInitStep(
     delete artifacts.tokenCost;
   }
 
-  const diff = await captureGitDiff(repoDir, logsDir, options.gitBin ?? "git", env, diffBaseTree);
+  const diff = await captureGitDiff(repoDir, logsDir, options.gitBin ?? "git", env, diffBaseTree, options.diffBase === "pre-run");
   await writeFile(artifacts.diff, diff);
 
   return {
