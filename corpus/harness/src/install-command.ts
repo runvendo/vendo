@@ -17,6 +17,20 @@ function withoutPnpmFrozenFlags(args: readonly string[], options: { dropIgnoreWo
   return next.includes("--no-frozen-lockfile") ? next : ["--no-frozen-lockfile", ...next];
 }
 
+function withoutYarnFrozenFlags(args: readonly string[]): string[] {
+  return args.filter((arg) => {
+    if (arg === "--frozen-lockfile" || arg.startsWith("--frozen-lockfile=")) return false;
+    if (arg === "--immutable" || arg.startsWith("--immutable=")) return false;
+    if (arg === "--immutable-cache" || arg.startsWith("--immutable-cache=")) return false;
+    if (arg === "--check-cache" || arg.startsWith("--check-cache=")) return false;
+    return true;
+  });
+}
+
+function hasShellEnvAssignment(words: readonly string[], key: string): boolean {
+  return words.some((word) => word.startsWith(`${key}=`));
+}
+
 export function normalizeBootstrapInstallCommand(
   command: string,
   options: { dropIgnoreWorkspace?: boolean } = {},
@@ -41,12 +55,21 @@ export function normalizeBootstrapInstallCommand(
     return { command: normalized, changed: normalized !== command.trim() };
   }
 
+  const yarnIndex = words.indexOf("yarn");
+  if (yarnIndex >= 0 && words[yarnIndex + 1] === "install") {
+    const normalized = [
+      ...words.slice(0, yarnIndex + 2),
+      ...withoutYarnFrozenFlags(words.slice(yarnIndex + 2)),
+    ].join(" ");
+    return { command: normalized, changed: normalized !== command.trim() };
+  }
+
   return { command, changed: false };
 }
 
 export function normalizePostInjectionInstallCommand(
   command: string,
-  options: { dropIgnoreWorkspace?: boolean; pnpmConfig?: readonly string[] } = {},
+  options: { dropIgnoreWorkspace?: boolean; disableYarnImmutableInstalls?: boolean; pnpmConfig?: readonly string[] } = {},
 ): NormalizedInstallCommand {
   const words = shellWords(command);
   const pnpmIndex = words.indexOf("pnpm");
@@ -67,6 +90,19 @@ export function normalizePostInjectionInstallCommand(
       ...words.slice(0, npmIndex + 1),
       "install",
       ...words.slice(npmIndex + 2),
+    ].join(" ");
+    return { command: normalized, changed: normalized !== command.trim() };
+  }
+
+  const yarnIndex = words.indexOf("yarn");
+  if (yarnIndex >= 0 && words[yarnIndex + 1] === "install") {
+    const envPrefix = options.disableYarnImmutableInstalls && !hasShellEnvAssignment(words, "YARN_ENABLE_IMMUTABLE_INSTALLS")
+      ? ["YARN_ENABLE_IMMUTABLE_INSTALLS=false"]
+      : [];
+    const normalized = [
+      ...envPrefix,
+      ...words.slice(0, yarnIndex + 2),
+      ...withoutYarnFrozenFlags(words.slice(yarnIndex + 2)),
     ].join(" ");
     return { command: normalized, changed: normalized !== command.trim() };
   }

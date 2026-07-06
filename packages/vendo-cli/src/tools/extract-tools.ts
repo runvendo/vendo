@@ -26,18 +26,17 @@ export async function extractTools(
   if (info.openapiPath) {
     extracted = await convertOpenApi(info.openapiPath);
     source = "openapi";
-  } else if (model) {
+  } else {
     const scan = await scanRoutes(targetDir, model);
     extracted = scan.tools;
     errors.push(...scan.warnings);
     if (extracted.length > 0) {
       source = "route-scan";
-      errors.push(
-        "route-scan tools are all marked mutating (fail-closed: this surface is LLM-read) — review tools.json and relax genuinely read-only tools by hand",
-      );
-    } else errors.push("no OpenAPI spec and no scannable routes found — write .vendo/tools.json by hand");
-  } else {
-    errors.push("no OpenAPI spec found and LLM unavailable (set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY) — tools.json skipped");
+      if (!model) {
+        errors.push("LLM unavailable; route descriptions and input schemas use deterministic placeholders");
+      }
+    } else if (model) errors.push("no OpenAPI spec and no scannable routes found — write .vendo/tools.json by hand");
+    else errors.push("no OpenAPI spec found, no scannable routes found, and LLM unavailable (set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY) — tools.json skipped");
   }
 
   // Validate per entry against the frozen contract; drop and report invalid

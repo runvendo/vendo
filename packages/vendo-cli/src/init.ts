@@ -77,6 +77,12 @@ export interface InitOptions {
 
 type InitFailedStep = "theme" | "tools" | "components" | "wiring";
 
+function localPackageResolutionField(summary: LocalVendoInstallSummary): string {
+  if (summary.packageManager === "pnpm") return "pnpm.overrides";
+  if (summary.packageManager === "npm") return "overrides";
+  return "resolutions";
+}
+
 function noopTelemetry(): Telemetry {
   return {
     async track() {},
@@ -496,7 +502,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
         [
           "local packages:",
           `  wrote  ${localInstall.packages.length} local vendo tarballs + fluidkit into ${path.relative(targetDir, localInstall.vendorDir)}`,
-          `  edited package.json with file:vendor/* dependencies and ${localInstall.packageManager === "pnpm" ? "pnpm.overrides" : "overrides"}`,
+          `  edited package.json with file:vendor/* dependencies and ${localPackageResolutionField(localInstall)}`,
           `  next  run ${localInstall.installCommand}`,
         ].join("\n"),
       );
@@ -514,7 +520,7 @@ export async function runInit(opts: InitOptions): Promise<number> {
       [
         "",
         "Next steps:",
-        `  1. ${localInstall ? `run ${localInstall.installCommand}` : "install deps (npm install / pnpm install)"}`,
+        `  1. ${localInstall ? `run ${localInstall.installCommand}` : "install deps (npm install / pnpm install / yarn install)"}`,
         "  2. cp .env.example .env.local  and paste one provider API key (see comments)",
         "  3. npm run dev — then hit the launcher (or Cmd/Ctrl+K) and ask for a view",
       ].join("\n"),

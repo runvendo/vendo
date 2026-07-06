@@ -29,9 +29,8 @@ describe("toolsManifestSchema (canonical, re-exported from @vendoai/core)", () =
 });
 
 describe("annotationsFor (fail closed)", () => {
-  it("auto-allows only read-named GETs from a spec", () => {
+  it("auto-allows only read-named OpenAPI GETs", () => {
     expect(annotationsFor("get", "list_things", "openapi")).toEqual({ mutating: false, dangerous: false });
-    expect(annotationsFor("get", "get_profile", "openapi")).toEqual({ mutating: false, dangerous: false });
     // side-effect-shaped GETs fail closed (demo-bank's poll GET fires Slack,
     // its integrations GET calls connect())
     expect(annotationsFor("get", "poll_vendo", "openapi")).toEqual({ mutating: true, dangerous: false });
@@ -39,15 +38,18 @@ describe("annotationsFor (fail closed)", () => {
     expect(annotationsFor("get", "reset_vendo", "openapi")).toEqual({ mutating: true, dangerous: true });
   });
 
-  it("never auto-allows a route-scan tool, even read-named GETs", () => {
-    expect(annotationsFor("get", "list_transactions", "route-scan")).toEqual({ mutating: true, dangerous: false });
-    expect(annotationsFor("get", "get_profile", "route-scan")).toEqual({ mutating: true, dangerous: false });
-  });
-
   it("marks writes mutating and deletes/destructive names dangerous", () => {
     expect(annotationsFor("delete", "delete_payee", "openapi")).toEqual({ mutating: true, dangerous: true, idempotent: true });
     expect(annotationsFor("post", "cancel_order", "openapi")).toEqual({ mutating: true, dangerous: true });
     expect(annotationsFor("post", "create_payment", "openapi")).toEqual({ mutating: true, dangerous: false });
     expect(annotationsFor("put", "update_profile", "openapi")).toEqual({ mutating: true, dangerous: false, idempotent: true });
+    expect(annotationsFor("post", "postLinksIdTransfer", "route-scan")).toEqual({ mutating: true, dangerous: true });
+    expect(annotationsFor("post", "postInvoiceSend", "route-scan")).toEqual({ mutating: true, dangerous: true });
+  });
+
+  it("marks every route-scan tool mutating, including read-shaped GETs", () => {
+    expect(annotationsFor("get", "getProfile", "route-scan")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("get", "listInvoices", "route-scan")).toEqual({ mutating: true, dangerous: false });
+    expect(annotationsFor("get", "resetPreview", "route-scan")).toEqual({ mutating: true, dangerous: true });
   });
 });

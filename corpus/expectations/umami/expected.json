@@ -14,19 +14,19 @@
       "name": "getAdminTeams",
       "method": "GET",
       "path": "/api/admin/teams",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAdminUsers",
       "method": "GET",
       "path": "/api/admin/users",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAdminWebsites",
       "method": "GET",
       "path": "/api/admin/websites",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthLogin",
@@ -62,7 +62,7 @@
       "name": "getBoards",
       "method": "GET",
       "path": "/api/boards",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postBoards",
@@ -74,7 +74,7 @@
       "name": "getBoardsBoardId",
       "method": "GET",
       "path": "/api/boards/{boardId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postBoardsBoardId",
@@ -92,7 +92,7 @@
       "name": "getBoardsBoardIdShares",
       "method": "GET",
       "path": "/api/boards/{boardId}/shares",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postBoardsBoardIdShares",
@@ -104,13 +104,13 @@
       "name": "getConfig",
       "method": "GET",
       "path": "/api/config",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getDashboard",
       "method": "GET",
       "path": "/api/dashboard",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postDashboard",
@@ -122,13 +122,13 @@
       "name": "getHeartbeat",
       "method": "GET",
       "path": "/api/heartbeat",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinks",
       "method": "GET",
       "path": "/api/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinks",
@@ -140,7 +140,7 @@
       "name": "getLinksLinkId",
       "method": "GET",
       "path": "/api/links/{linkId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksLinkId",
@@ -158,7 +158,7 @@
       "name": "getLinksLinkIdShares",
       "method": "GET",
       "path": "/api/links/{linkId}/shares",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksLinkIdShares",
@@ -170,7 +170,7 @@
       "name": "getMe",
       "method": "GET",
       "path": "/api/me",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postMePassword",
@@ -182,19 +182,19 @@
       "name": "getMeTeams",
       "method": "GET",
       "path": "/api/me/teams",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getMeWebsites",
       "method": "GET",
       "path": "/api/me/websites",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getPixels",
       "method": "GET",
       "path": "/api/pixels",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postPixels",
@@ -206,7 +206,7 @@
       "name": "getPixelsPixelId",
       "method": "GET",
       "path": "/api/pixels/{pixelId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postPixelsPixelId",
@@ -224,7 +224,7 @@
       "name": "getPixelsPixelIdShares",
       "method": "GET",
       "path": "/api/pixels/{pixelId}/shares",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postPixelsPixelIdShares",
@@ -236,7 +236,7 @@
       "name": "getRealtimeWebsiteId",
       "method": "GET",
       "path": "/api/realtime/{websiteId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postRecord",
@@ -248,7 +248,7 @@
       "name": "getReports",
       "method": "GET",
       "path": "/api/reports",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postReports",
@@ -260,7 +260,7 @@
       "name": "getReportsReportId",
       "method": "GET",
       "path": "/api/reports/{reportId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postReportsReportId",
@@ -338,7 +338,7 @@
       "name": "getScriptsTelemetry",
       "method": "GET",
       "path": "/api/scripts/telemetry",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postSend",
@@ -356,13 +356,13 @@
       "name": "getShareSlug",
       "method": "GET",
       "path": "/api/share/{slug}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getShareIdShareId",
       "method": "GET",
       "path": "/api/share/id/{shareId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postShareIdShareId",
@@ -380,7 +380,7 @@
       "name": "getTeams",
       "method": "GET",
       "path": "/api/teams",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeams",
@@ -392,7 +392,7 @@
       "name": "getTeamsTeamId",
       "method": "GET",
       "path": "/api/teams/{teamId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamId",
@@ -410,25 +410,25 @@
       "name": "getTeamsTeamIdBoards",
       "method": "GET",
       "path": "/api/teams/{teamId}/boards",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdLinks",
       "method": "GET",
       "path": "/api/teams/{teamId}/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdPixels",
       "method": "GET",
       "path": "/api/teams/{teamId}/pixels",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdUsers",
       "method": "GET",
       "path": "/api/teams/{teamId}/users",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdUsers",
@@ -440,7 +440,7 @@
       "name": "getTeamsTeamIdUsersUserId",
       "method": "GET",
       "path": "/api/teams/{teamId}/users/{userId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdUsersUserId",
@@ -458,7 +458,7 @@
       "name": "getTeamsTeamIdWebsites",
       "method": "GET",
       "path": "/api/teams/{teamId}/websites",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsJoin",
@@ -476,7 +476,7 @@
       "name": "getUsersUserId",
       "method": "GET",
       "path": "/api/users/{userId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUsersUserId",
@@ -494,19 +494,19 @@
       "name": "getUsersUserIdTeams",
       "method": "GET",
       "path": "/api/users/{userId}/teams",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUsersUserIdWebsites",
       "method": "GET",
       "path": "/api/users/{userId}/websites",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsites",
       "method": "GET",
       "path": "/api/websites",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsites",
@@ -518,7 +518,7 @@
       "name": "getWebsitesWebsiteId",
       "method": "GET",
       "path": "/api/websites/{websiteId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsitesWebsiteId",
@@ -536,163 +536,163 @@
       "name": "getWebsitesWebsiteIdActive",
       "method": "GET",
       "path": "/api/websites/{websiteId}/active",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdDaterange",
       "method": "GET",
       "path": "/api/websites/{websiteId}/daterange",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventData",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivot",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data-pivot",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotArraySeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data-pivot/array-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotDateSeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data-pivot/date-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotNumericSeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data-pivot/numeric-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotNumericStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data-pivot/numeric-stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotPropertySeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data-pivot/property-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataEventId",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data/{eventId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataEvents",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data/events",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataFields",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data/fields",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataProperties",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data/properties",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventDataValues",
       "method": "GET",
       "path": "/api/websites/{websiteId}/event-data/values",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEvents",
       "method": "GET",
       "path": "/api/websites/{websiteId}/events",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventsSeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/events/series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdEventsStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/events/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdExport",
       "method": "GET",
       "path": "/api/websites/{websiteId}/export",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdMetrics",
       "method": "GET",
       "path": "/api/websites/{websiteId}/metrics",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdMetricsExpanded",
       "method": "GET",
       "path": "/api/websites/{websiteId}/metrics/expanded",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdPageviews",
       "method": "GET",
       "path": "/api/websites/{websiteId}/pageviews",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdRecorder",
       "method": "GET",
       "path": "/api/websites/{websiteId}/recorder",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdReplays",
       "method": "GET",
       "path": "/api/websites/{websiteId}/replays",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdReplaysReplayId",
       "method": "GET",
       "path": "/api/websites/{websiteId}/replays/{replayId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdReplaysSaved",
       "method": "GET",
       "path": "/api/websites/{websiteId}/replays/saved",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdReplaysSavedReplayId",
       "method": "GET",
       "path": "/api/websites/{websiteId}/replays/saved/{replayId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsitesWebsiteIdReplaysSavedReplayId",
@@ -704,7 +704,7 @@
       "name": "getWebsitesWebsiteIdReports",
       "method": "GET",
       "path": "/api/websites/{websiteId}/reports",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsitesWebsiteIdReset",
@@ -716,31 +716,31 @@
       "name": "getWebsitesWebsiteIdRevenueChart",
       "method": "GET",
       "path": "/api/websites/{websiteId}/revenue/chart",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdRevenueMetrics",
       "method": "GET",
       "path": "/api/websites/{websiteId}/revenue/metrics",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdRevenueSessions",
       "method": "GET",
       "path": "/api/websites/{websiteId}/revenue/sessions",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdRevenueStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/revenue/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSegments",
       "method": "GET",
       "path": "/api/websites/{websiteId}/segments",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsitesWebsiteIdSegments",
@@ -752,7 +752,7 @@
       "name": "getWebsitesWebsiteIdSegmentsSegmentId",
       "method": "GET",
       "path": "/api/websites/{websiteId}/segments/{segmentId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsitesWebsiteIdSegmentsSegmentId",
@@ -770,103 +770,103 @@
       "name": "getWebsitesWebsiteIdSessionDataPivot",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data-pivot",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataArraySeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/array-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataDateSeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/date-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataNumericSeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/numeric-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataNumericStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/numeric-stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataProperties",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/properties",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataPropertySeries",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/property-series",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataValues",
       "method": "GET",
       "path": "/api/websites/{websiteId}/session-data/values",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessions",
       "method": "GET",
       "path": "/api/websites/{websiteId}/sessions",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionId",
       "method": "GET",
       "path": "/api/websites/{websiteId}/sessions/{sessionId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionIdActivity",
       "method": "GET",
       "path": "/api/websites/{websiteId}/sessions/{sessionId}/activity",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionIdProperties",
       "method": "GET",
       "path": "/api/websites/{websiteId}/sessions/{sessionId}/properties",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionIdReplays",
       "method": "GET",
       "path": "/api/websites/{websiteId}/sessions/{sessionId}/replays",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionsStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/sessions/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdSessionsWeekly",
       "method": "GET",
       "path": "/api/websites/{websiteId}/sessions/weekly",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWebsitesWebsiteIdShares",
       "method": "GET",
       "path": "/api/websites/{websiteId}/shares",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsitesWebsiteIdShares",
@@ -878,7 +878,7 @@
       "name": "getWebsitesWebsiteIdStats",
       "method": "GET",
       "path": "/api/websites/{websiteId}/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWebsitesWebsiteIdTransfer",
@@ -890,23 +890,23 @@
       "name": "getWebsitesWebsiteIdValues",
       "method": "GET",
       "path": "/api/websites/{websiteId}/values",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     }
   ],
   "annotations": [
     {
       "name": "getAdminTeams",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAdminUsers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAdminWebsites",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -936,7 +936,7 @@
     },
     {
       "name": "getBoards",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -946,7 +946,7 @@
     },
     {
       "name": "getBoardsBoardId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -961,7 +961,7 @@
     },
     {
       "name": "getBoardsBoardIdShares",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -971,12 +971,12 @@
     },
     {
       "name": "getConfig",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getDashboard",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -986,12 +986,12 @@
     },
     {
       "name": "getHeartbeat",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1001,7 +1001,7 @@
     },
     {
       "name": "getLinksLinkId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1016,7 +1016,7 @@
     },
     {
       "name": "getLinksLinkIdShares",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1026,7 +1026,7 @@
     },
     {
       "name": "getMe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1036,17 +1036,17 @@
     },
     {
       "name": "getMeTeams",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMeWebsites",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getPixels",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1056,7 +1056,7 @@
     },
     {
       "name": "getPixelsPixelId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1071,7 +1071,7 @@
     },
     {
       "name": "getPixelsPixelIdShares",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1081,7 +1081,7 @@
     },
     {
       "name": "getRealtimeWebsiteId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1091,7 +1091,7 @@
     },
     {
       "name": "getReports",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1101,7 +1101,7 @@
     },
     {
       "name": "getReportsReportId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1166,7 +1166,7 @@
     },
     {
       "name": "getScriptsTelemetry",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1181,12 +1181,12 @@
     },
     {
       "name": "getShareSlug",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getShareIdShareId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1201,7 +1201,7 @@
     },
     {
       "name": "getTeams",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1211,7 +1211,7 @@
     },
     {
       "name": "getTeamsTeamId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1226,22 +1226,22 @@
     },
     {
       "name": "getTeamsTeamIdBoards",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdPixels",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdUsers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1251,7 +1251,7 @@
     },
     {
       "name": "getTeamsTeamIdUsersUserId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1266,7 +1266,7 @@
     },
     {
       "name": "getTeamsTeamIdWebsites",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1281,7 +1281,7 @@
     },
     {
       "name": "getUsersUserId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1296,17 +1296,17 @@
     },
     {
       "name": "getUsersUserIdTeams",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUsersUserIdWebsites",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsites",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1316,7 +1316,7 @@
     },
     {
       "name": "getWebsitesWebsiteId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1331,137 +1331,137 @@
     },
     {
       "name": "getWebsitesWebsiteIdActive",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdDaterange",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventData",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivot",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotArraySeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotDateSeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotNumericSeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotNumericStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataPivotPropertySeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataEventId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataEvents",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataFields",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataProperties",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventDataValues",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEvents",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventsSeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdEventsStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdExport",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdMetrics",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdMetricsExpanded",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdPageviews",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdRecorder",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdReplays",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdReplaysReplayId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdReplaysSaved",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdReplaysSavedReplayId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1471,7 +1471,7 @@
     },
     {
       "name": "getWebsitesWebsiteIdReports",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1481,27 +1481,27 @@
     },
     {
       "name": "getWebsitesWebsiteIdRevenueChart",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdRevenueMetrics",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdRevenueSessions",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdRevenueStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSegments",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1511,7 +1511,7 @@
     },
     {
       "name": "getWebsitesWebsiteIdSegmentsSegmentId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1526,87 +1526,87 @@
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataPivot",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataArraySeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataDateSeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataNumericSeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataNumericStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataProperties",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataPropertySeries",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionDataValues",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessions",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionIdActivity",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionIdProperties",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionsSessionIdReplays",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionsStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdSessionsWeekly",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWebsitesWebsiteIdShares",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1616,7 +1616,7 @@
     },
     {
       "name": "getWebsitesWebsiteIdStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1626,7 +1626,7 @@
     },
     {
       "name": "getWebsitesWebsiteIdValues",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     }
   ],

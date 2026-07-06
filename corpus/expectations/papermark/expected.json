@@ -20,7 +20,7 @@
       "name": "getAccountPasskeys",
       "method": "GET",
       "path": "/api/account/passkeys",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteAccountPasskeys",
@@ -32,7 +32,7 @@
       "name": "getAgreementsSigningAgreementResponseIdDownload",
       "method": "GET",
       "path": "/api/agreements/signing/{agreementResponseId}/download",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAgreementsSigningComplete",
@@ -50,13 +50,13 @@
       "name": "getAgreementsSigningStatus",
       "method": "GET",
       "path": "/api/agreements/signing/status",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAiChat",
       "method": "GET",
       "path": "/api/ai/chat",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAiChat",
@@ -68,7 +68,7 @@
       "name": "getAiChatChatId",
       "method": "GET",
       "path": "/api/ai/chat/{chatId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteAiChatChatId",
@@ -86,13 +86,13 @@
       "name": "getAiStoreRunsRunId",
       "method": "GET",
       "path": "/api/ai/store/runs/{runId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAiStoreTeamsTeamId",
       "method": "GET",
       "path": "/api/ai/store/teams/{teamId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAiStoreTeamsTeamIdDataroomsDataroomId",
@@ -116,13 +116,13 @@
       "name": "getAnalytics",
       "method": "GET",
       "path": "/api/analytics",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAuthNextauth",
       "method": "GET",
       "path": "/api/auth/{nextauth}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthNextauth",
@@ -134,7 +134,7 @@
       "name": "getAuthSamlAuthorize",
       "method": "GET",
       "path": "/api/auth/saml/authorize",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthSamlAuthorize",
@@ -158,7 +158,7 @@
       "name": "getAuthSamlUserinfo",
       "method": "GET",
       "path": "/api/auth/saml/userinfo",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthSamlVerify",
@@ -176,7 +176,7 @@
       "name": "getConversationsConversations",
       "method": "GET",
       "path": "/api/conversations/{conversations}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postConversationsConversations",
@@ -224,13 +224,13 @@
       "name": "getFaqs",
       "method": "GET",
       "path": "/api/faqs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getFeatureFlags",
       "method": "GET",
       "path": "/api/feature-flags",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postFeedback",
@@ -296,25 +296,25 @@
       "name": "getHealth",
       "method": "GET",
       "path": "/api/health",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getHelp",
       "method": "GET",
       "path": "/api/help",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getIntegrationsSlackOauthAuthorize",
       "method": "GET",
       "path": "/api/integrations/slack/oauth/authorize",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getIntegrationsSlackOauthCallback",
       "method": "GET",
       "path": "/api/integrations/slack/oauth/callback",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postInternalBillingAutomaticUnpause",
@@ -326,7 +326,7 @@
       "name": "getJobsGetThumbnail",
       "method": "GET",
       "path": "/api/jobs/get-thumbnail",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postJobsProcessDownloadBatch",
@@ -380,7 +380,7 @@
       "name": "getLinksId",
       "method": "GET",
       "path": "/api/links/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putLinksId",
@@ -398,7 +398,7 @@
       "name": "getLinksIdAnnotations",
       "method": "GET",
       "path": "/api/links/{id}/annotations",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putLinksIdArchive",
@@ -410,7 +410,7 @@
       "name": "getLinksIdDocumentsDocumentIdAnnotations",
       "method": "GET",
       "path": "/api/links/{id}/documents/{documentId}/annotations",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksIdDuplicate",
@@ -434,7 +434,7 @@
       "name": "getLinksIdUpload",
       "method": "GET",
       "path": "/api/links/{id}/upload",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksIdUpload",
@@ -446,7 +446,7 @@
       "name": "getLinksDomainsDomainSlug",
       "method": "GET",
       "path": "/api/links/domains/{domainSlug}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksDownload",
@@ -458,7 +458,7 @@
       "name": "getLinksDownloadJobId",
       "method": "GET",
       "path": "/api/links/download/{jobId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksDownloadBulk",
@@ -482,19 +482,19 @@
       "name": "getLinksDownloadFileJobIdPartIndex",
       "method": "GET",
       "path": "/api/links/download/file/{jobId}/{partIndex}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksDownloadJobs",
       "method": "GET",
       "path": "/api/links/download/jobs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getLinksDownloadVerify",
       "method": "GET",
       "path": "/api/links/download/verify",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postLinksDownloadVerify",
@@ -530,7 +530,7 @@
       "name": "getNotificationPreferencesDataroom",
       "method": "GET",
       "path": "/api/notification-preferences/dataroom",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postNotificationPreferencesDataroom",
@@ -542,13 +542,13 @@
       "name": "getOg",
       "method": "GET",
       "path": "/api/og",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getOgYir",
       "method": "GET",
       "path": "/api/og/yir",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postPasskeysRegister",
@@ -560,7 +560,7 @@
       "name": "getProgressToken",
       "method": "GET",
       "path": "/api/progress-token",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postRecordClick",
@@ -596,13 +596,13 @@
       "name": "getRevalidate",
       "method": "GET",
       "path": "/api/revalidate",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getScimV20Directory",
       "method": "GET",
       "path": "/api/scim/v2.0/{directory}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postScimV20Directory",
@@ -632,7 +632,7 @@
       "name": "getTeams",
       "method": "GET",
       "path": "/api/teams",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeams",
@@ -644,7 +644,7 @@
       "name": "getTeamsTeamId",
       "method": "GET",
       "path": "/api/teams/{teamId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteTeamsTeamId",
@@ -656,7 +656,7 @@
       "name": "getTeamsTeamIdAgreements",
       "method": "GET",
       "path": "/api/teams/{teamId}/agreements",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdAgreements",
@@ -686,13 +686,13 @@
       "name": "getTeamsTeamIdAgreementsAgreementIdResponses",
       "method": "GET",
       "path": "/api/teams/{teamId}/agreements/{agreementId}/responses",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdAgreementsAgreementIdResponsesResponseIdDownload",
       "method": "GET",
       "path": "/api/teams/{teamId}/agreements/{agreementId}/responses/{responseId}/download",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdAgreementsAgreementIdSigningPresign",
@@ -710,7 +710,7 @@
       "name": "getTeamsTeamIdAgreementsAgreementIdSigningSetupStatus",
       "method": "GET",
       "path": "/api/teams/{teamId}/agreements/{agreementId}/signing/setup-status",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdAgreementsAgreementIdSigningSync",
@@ -722,7 +722,7 @@
       "name": "getTeamsTeamIdAiSettings",
       "method": "GET",
       "path": "/api/teams/{teamId}/ai-settings",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdAiSettings",
@@ -734,7 +734,7 @@
       "name": "getTeamsTeamIdBranding",
       "method": "GET",
       "path": "/api/teams/{teamId}/branding",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdBranding",
@@ -764,7 +764,7 @@
       "name": "getTeamsTeamIdDatarooms",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDatarooms",
@@ -776,7 +776,7 @@
       "name": "getTeamsTeamIdDataroomsId",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdDataroomsId",
@@ -806,7 +806,7 @@
       "name": "getTeamsTeamIdDataroomsIdBranding",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/branding",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdBranding",
@@ -836,7 +836,7 @@
       "name": "getTeamsTeamIdDataroomsIdConversationsConversations",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/conversations/{conversations}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdConversationsConversations",
@@ -872,7 +872,7 @@
       "name": "getTeamsTeamIdDataroomsIdDocuments",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/documents",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdDocuments",
@@ -896,13 +896,13 @@
       "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdOverview",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/documents/{documentId}/overview",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdStats",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/documents/{documentId}/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdDataroomsIdDocumentsMove",
@@ -914,7 +914,7 @@
       "name": "getTeamsTeamIdDataroomsIdDownloadJobId",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/download/{jobId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdDownloadBulk",
@@ -926,7 +926,7 @@
       "name": "getTeamsTeamIdDataroomsIdDownloadJobs",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/download/jobs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdDuplicate",
@@ -938,7 +938,7 @@
       "name": "getTeamsTeamIdDataroomsIdExportVisits",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/export-visits",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdExportVisits",
@@ -950,7 +950,7 @@
       "name": "getTeamsTeamIdDataroomsIdFaqs",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/faqs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdFaqs",
@@ -974,13 +974,13 @@
       "name": "getTeamsTeamIdDataroomsIdFolderDocumentsName",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/folder-documents/{name}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFolders",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/folders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdFolders",
@@ -992,7 +992,7 @@
       "name": "getTeamsTeamIdDataroomsIdFoldersName",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/folders/{name}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdFoldersName",
@@ -1034,7 +1034,7 @@
       "name": "getTeamsTeamIdDataroomsIdFoldersParentsName",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/folders/parents/{name}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdFoldersParentsName",
@@ -1052,13 +1052,13 @@
       "name": "getTeamsTeamIdDataroomsIdFreezeDownload",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/freeze/download",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFreezeMonitorToken",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/freeze/monitor-token",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdFreezeRetryArchive",
@@ -1082,7 +1082,7 @@
       "name": "getTeamsTeamIdDataroomsIdGroups",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/groups",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdGroups",
@@ -1094,7 +1094,7 @@
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupId",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdDataroomsIdGroupsGroupId",
@@ -1118,7 +1118,7 @@
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdExportVisits",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/export-visits",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdExportVisits",
@@ -1136,7 +1136,7 @@
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdLinks",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdGroupsGroupIdMembers",
@@ -1160,19 +1160,19 @@
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdUninvited",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/uninvited",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdViews",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/groups/{groupId}/views",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdLinks",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdLinksLinkIdInvite",
@@ -1190,7 +1190,7 @@
       "name": "getTeamsTeamIdDataroomsIdMembers",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/members",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteTeamsTeamIdDataroomsIdMembers",
@@ -1202,7 +1202,7 @@
       "name": "getTeamsTeamIdDataroomsIdPermissionGroups",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdPermissionGroups",
@@ -1214,7 +1214,7 @@
       "name": "getTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/permission-groups/{permissionGroupId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
@@ -1244,13 +1244,13 @@
       "name": "getTeamsTeamIdDataroomsIdSearch",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/search",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdStats",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsIdUsers",
@@ -1262,43 +1262,43 @@
       "name": "getTeamsTeamIdDataroomsIdViewers",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/viewers",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViews",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/views",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsCount",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/views-count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdCustomFields",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/custom-fields",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdDocumentStats",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/document-stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdHistory",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/history",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdUserAgent",
       "method": "GET",
       "path": "/api/teams/{teamId}/datarooms/{id}/views/{viewId}/user-agent",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDataroomsCreateFromFolder",
@@ -1334,7 +1334,7 @@
       "name": "getTeamsTeamIdDirectorySync",
       "method": "GET",
       "path": "/api/teams/{teamId}/directory-sync",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDirectorySync",
@@ -1352,7 +1352,7 @@
       "name": "getTeamsTeamIdDocuments",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocuments",
@@ -1364,7 +1364,7 @@
       "name": "getTeamsTeamIdDocumentsId",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdDocumentsId",
@@ -1400,7 +1400,7 @@
       "name": "getTeamsTeamIdDocumentsIdAnnotations",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/annotations",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsIdAnnotations",
@@ -1412,7 +1412,7 @@
       "name": "getTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/annotations/{annotationId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
@@ -1442,7 +1442,7 @@
       "name": "getTeamsTeamIdDocumentsIdCheckNotionAccessibility",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/check-notion-accessibility",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsIdDuplicate",
@@ -1454,7 +1454,7 @@
       "name": "getTeamsTeamIdDocumentsIdExportVisits",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/export-visits",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsIdExportVisits",
@@ -1466,7 +1466,7 @@
       "name": "getTeamsTeamIdDocumentsIdLinks",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsIdLinksBulk",
@@ -1478,13 +1478,13 @@
       "name": "getTeamsTeamIdDocumentsIdOverview",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/overview",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdPreviewData",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/preview-data",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsIdPreviewPages",
@@ -1496,7 +1496,7 @@
       "name": "getTeamsTeamIdDocumentsIdStats",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdDocumentsIdToggleDarkMode",
@@ -1532,7 +1532,7 @@
       "name": "getTeamsTeamIdDocumentsIdVersions",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/versions",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsIdVersions",
@@ -1544,55 +1544,55 @@
       "name": "getTeamsTeamIdDocumentsIdVideoAnalytics",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/video-analytics",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViews",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsCount",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views-count",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdClickEvents",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/click-events",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdCustomFields",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/custom-fields",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdStats",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdUserAgent",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/user-agent",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdVideoStats",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/{id}/views/{viewId}/video-stats",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsAgreement",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/agreement",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsAgreement",
@@ -1604,13 +1604,13 @@
       "name": "getTeamsTeamIdDocumentsDocumentProcessingStatus",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/document-processing-status",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDocumentsHidden",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/hidden",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsHide",
@@ -1628,7 +1628,7 @@
       "name": "getTeamsTeamIdDocumentsSearch",
       "method": "GET",
       "path": "/api/teams/{teamId}/documents/search",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDocumentsUpdate",
@@ -1640,7 +1640,7 @@
       "name": "getTeamsTeamIdDomains",
       "method": "GET",
       "path": "/api/teams/{teamId}/domains",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdDomains",
@@ -1670,13 +1670,13 @@
       "name": "getTeamsTeamIdDomainsDomainValidate",
       "method": "GET",
       "path": "/api/teams/{teamId}/domains/{domain}/validate",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdDomainsDomainVerify",
       "method": "GET",
       "path": "/api/teams/{teamId}/domains/{domain}/verify",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdEnableAdvancedMode",
@@ -1688,7 +1688,7 @@
       "name": "getTeamsTeamIdExportJobs",
       "method": "GET",
       "path": "/api/teams/{teamId}/export-jobs",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdExportJobs",
@@ -1700,7 +1700,7 @@
       "name": "getTeamsTeamIdExportJobsExportId",
       "method": "GET",
       "path": "/api/teams/{teamId}/export-jobs/{exportId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdExportJobsExportId",
@@ -1724,13 +1724,13 @@
       "name": "getTeamsTeamIdFolderDocumentsName",
       "method": "GET",
       "path": "/api/teams/{teamId}/folder-documents/{name}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdFolders",
       "method": "GET",
       "path": "/api/teams/{teamId}/folders",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdFolders",
@@ -1742,7 +1742,7 @@
       "name": "getTeamsTeamIdFoldersName",
       "method": "GET",
       "path": "/api/teams/{teamId}/folders/{name}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdFoldersBulk",
@@ -1784,13 +1784,13 @@
       "name": "getTeamsTeamIdFoldersParentsName",
       "method": "GET",
       "path": "/api/teams/{teamId}/folders/parents/{name}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdGlobalBlockList",
       "method": "GET",
       "path": "/api/teams/{teamId}/global-block-list",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdGlobalBlockList",
@@ -1802,7 +1802,7 @@
       "name": "getTeamsTeamIdIgnoredDomains",
       "method": "GET",
       "path": "/api/teams/{teamId}/ignored-domains",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdIgnoredDomains",
@@ -1814,7 +1814,7 @@
       "name": "getTeamsTeamIdIncomingWebhooks",
       "method": "GET",
       "path": "/api/teams/{teamId}/incoming-webhooks",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdIncomingWebhooks",
@@ -1832,7 +1832,7 @@
       "name": "getTeamsTeamIdIntegrationsSlack",
       "method": "GET",
       "path": "/api/teams/{teamId}/integrations/slack",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdIntegrationsSlack",
@@ -1850,7 +1850,7 @@
       "name": "getTeamsTeamIdIntegrationsSlackChannels",
       "method": "GET",
       "path": "/api/teams/{teamId}/integrations/slack/channels",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdIntegrationsSlackChannels",
@@ -1862,7 +1862,7 @@
       "name": "getTeamsTeamIdInvitations",
       "method": "GET",
       "path": "/api/teams/{teamId}/invitations",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteTeamsTeamIdInvitations",
@@ -1874,7 +1874,7 @@
       "name": "getTeamsTeamIdInvitationsAccept",
       "method": "GET",
       "path": "/api/teams/{teamId}/invitations/accept",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdInvitationsResend",
@@ -1892,7 +1892,7 @@
       "name": "getTeamsTeamIdLimits",
       "method": "GET",
       "path": "/api/teams/{teamId}/limits",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteTeamsTeamIdLinksId",
@@ -1904,7 +1904,7 @@
       "name": "getTeamsTeamIdLinksIdVisits",
       "method": "GET",
       "path": "/api/teams/{teamId}/links/{id}/visits",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdLinksBulk",
@@ -1916,7 +1916,7 @@
       "name": "getTeamsTeamIdNotificationsPreferences",
       "method": "GET",
       "path": "/api/teams/{teamId}/notifications/preferences",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdNotificationsPreferences",
@@ -1928,7 +1928,7 @@
       "name": "getTeamsTeamIdPresets",
       "method": "GET",
       "path": "/api/teams/{teamId}/presets",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdPresets",
@@ -1940,7 +1940,7 @@
       "name": "getTeamsTeamIdPresetsId",
       "method": "GET",
       "path": "/api/teams/{teamId}/presets/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdPresetsId",
@@ -1964,7 +1964,7 @@
       "name": "getTeamsTeamIdSaml",
       "method": "GET",
       "path": "/api/teams/{teamId}/saml",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdSaml",
@@ -1988,7 +1988,7 @@
       "name": "getTeamsTeamIdSettings",
       "method": "GET",
       "path": "/api/teams/{teamId}/settings",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdSettings",
@@ -2000,7 +2000,7 @@
       "name": "getTeamsTeamIdSurvey",
       "method": "GET",
       "path": "/api/teams/{teamId}/survey",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdSurvey",
@@ -2012,7 +2012,7 @@
       "name": "getTeamsTeamIdTags",
       "method": "GET",
       "path": "/api/teams/{teamId}/tags",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdTags",
@@ -2036,7 +2036,7 @@
       "name": "getTeamsTeamIdTokens",
       "method": "GET",
       "path": "/api/teams/{teamId}/tokens",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdTokens",
@@ -2078,13 +2078,13 @@
       "name": "getTeamsTeamIdViewers",
       "method": "GET",
       "path": "/api/teams/{teamId}/viewers",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdViewersId",
       "method": "GET",
       "path": "/api/teams/{teamId}/viewers/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdViewsIdArchive",
@@ -2096,7 +2096,7 @@
       "name": "getTeamsTeamIdVisitorGroups",
       "method": "GET",
       "path": "/api/teams/{teamId}/visitor-groups",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdVisitorGroups",
@@ -2108,7 +2108,7 @@
       "name": "getTeamsTeamIdVisitorGroupsGroupId",
       "method": "GET",
       "path": "/api/teams/{teamId}/visitor-groups/{groupId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putTeamsTeamIdVisitorGroupsGroupId",
@@ -2126,7 +2126,7 @@
       "name": "getTeamsTeamIdWebhooks",
       "method": "GET",
       "path": "/api/teams/{teamId}/webhooks",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTeamsTeamIdWebhooks",
@@ -2138,7 +2138,7 @@
       "name": "getTeamsTeamIdWebhooksId",
       "method": "GET",
       "path": "/api/teams/{teamId}/webhooks/{id}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchTeamsTeamIdWebhooksId",
@@ -2156,25 +2156,25 @@
       "name": "getTeamsTeamIdWebhooksIdEvents",
       "method": "GET",
       "path": "/api/teams/{teamId}/webhooks/{id}/events",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdWorkflowLinks",
       "method": "GET",
       "path": "/api/teams/{teamId}/workflow-links",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getTeamsTeamIdYearlyRecap",
       "method": "GET",
       "path": "/api/teams/{teamId}/yearly-recap",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getUnsubscribeDataroom",
       "method": "GET",
       "path": "/api/unsubscribe/dataroom",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUnsubscribeDataroom",
@@ -2186,7 +2186,7 @@
       "name": "getUnsubscribeYir",
       "method": "GET",
       "path": "/api/unsubscribe/yir",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUnsubscribeYir",
@@ -2198,7 +2198,7 @@
       "name": "getUserSubscribe",
       "method": "GET",
       "path": "/api/user/subscribe",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postUserSubscribe",
@@ -2216,7 +2216,7 @@
       "name": "getVerifyLoginLink",
       "method": "GET",
       "path": "/api/verify/login-link",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postViews",
@@ -2276,7 +2276,7 @@
       "name": "getWorkflows",
       "method": "GET",
       "path": "/api/workflows",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkflows",
@@ -2288,7 +2288,7 @@
       "name": "getWorkflowsWorkflowId",
       "method": "GET",
       "path": "/api/workflows/{workflowId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchWorkflowsWorkflowId",
@@ -2306,13 +2306,13 @@
       "name": "getWorkflowsWorkflowIdExecutions",
       "method": "GET",
       "path": "/api/workflows/{workflowId}/executions",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getWorkflowsWorkflowIdSteps",
       "method": "GET",
       "path": "/api/workflows/{workflowId}/steps",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postWorkflowsWorkflowIdSteps",
@@ -2347,7 +2347,7 @@
     },
     {
       "name": "getAccountPasskeys",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2357,7 +2357,7 @@
     },
     {
       "name": "getAgreementsSigningAgreementResponseIdDownload",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2372,12 +2372,12 @@
     },
     {
       "name": "getAgreementsSigningStatus",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAiChat",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2387,7 +2387,7 @@
     },
     {
       "name": "getAiChatChatId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2402,12 +2402,12 @@
     },
     {
       "name": "getAiStoreRunsRunId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAiStoreTeamsTeamId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2427,12 +2427,12 @@
     },
     {
       "name": "getAnalytics",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAuthNextauth",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2442,7 +2442,7 @@
     },
     {
       "name": "getAuthSamlAuthorize",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2462,7 +2462,7 @@
     },
     {
       "name": "getAuthSamlUserinfo",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2477,7 +2477,7 @@
     },
     {
       "name": "getConversationsConversations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2517,12 +2517,12 @@
     },
     {
       "name": "getFaqs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getFeatureFlags",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2577,22 +2577,22 @@
     },
     {
       "name": "getHealth",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getHelp",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getIntegrationsSlackOauthAuthorize",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getIntegrationsSlackOauthCallback",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2602,7 +2602,7 @@
     },
     {
       "name": "getJobsGetThumbnail",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2647,7 +2647,7 @@
     },
     {
       "name": "getLinksId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2662,7 +2662,7 @@
     },
     {
       "name": "getLinksIdAnnotations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2672,7 +2672,7 @@
     },
     {
       "name": "getLinksIdDocumentsDocumentIdAnnotations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2692,7 +2692,7 @@
     },
     {
       "name": "getLinksIdUpload",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2702,7 +2702,7 @@
     },
     {
       "name": "getLinksDomainsDomainSlug",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2712,7 +2712,7 @@
     },
     {
       "name": "getLinksDownloadJobId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2732,17 +2732,17 @@
     },
     {
       "name": "getLinksDownloadFileJobIdPartIndex",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksDownloadJobs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getLinksDownloadVerify",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2772,7 +2772,7 @@
     },
     {
       "name": "getNotificationPreferencesDataroom",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2782,12 +2782,12 @@
     },
     {
       "name": "getOg",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getOgYir",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2797,7 +2797,7 @@
     },
     {
       "name": "getProgressToken",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2827,12 +2827,12 @@
     },
     {
       "name": "getRevalidate",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getScimV20Directory",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2857,7 +2857,7 @@
     },
     {
       "name": "getTeams",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2867,7 +2867,7 @@
     },
     {
       "name": "getTeamsTeamId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2877,7 +2877,7 @@
     },
     {
       "name": "getTeamsTeamIdAgreements",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2902,12 +2902,12 @@
     },
     {
       "name": "getTeamsTeamIdAgreementsAgreementIdResponses",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdAgreementsAgreementIdResponsesResponseIdDownload",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2922,7 +2922,7 @@
     },
     {
       "name": "getTeamsTeamIdAgreementsAgreementIdSigningSetupStatus",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2932,7 +2932,7 @@
     },
     {
       "name": "getTeamsTeamIdAiSettings",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2942,7 +2942,7 @@
     },
     {
       "name": "getTeamsTeamIdBranding",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2967,7 +2967,7 @@
     },
     {
       "name": "getTeamsTeamIdDatarooms",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -2977,7 +2977,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3002,7 +3002,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdBranding",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3027,7 +3027,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdConversationsConversations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3057,7 +3057,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdDocuments",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3077,12 +3077,12 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdOverview",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdDocumentsDocumentIdStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3092,7 +3092,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdDownloadJobId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3102,7 +3102,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdDownloadJobs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3112,7 +3112,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdExportVisits",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3122,7 +3122,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFaqs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3142,12 +3142,12 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFolderDocumentsName",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFolders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3157,7 +3157,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFoldersName",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3192,7 +3192,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFoldersParentsName",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3207,12 +3207,12 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFreezeDownload",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdFreezeMonitorToken",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3232,7 +3232,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdGroups",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3242,7 +3242,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3262,7 +3262,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdExportVisits",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3277,7 +3277,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3297,17 +3297,17 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdUninvited",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdGroupsGroupIdViews",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3322,7 +3322,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdMembers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3332,7 +3332,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdPermissionGroups",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3342,7 +3342,7 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdPermissionGroupsPermissionGroupId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3367,12 +3367,12 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdSearch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3382,37 +3382,37 @@
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViews",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdCustomFields",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdDocumentStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdHistory",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDataroomsIdViewsViewIdUserAgent",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3442,7 +3442,7 @@
     },
     {
       "name": "getTeamsTeamIdDirectorySync",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3457,7 +3457,7 @@
     },
     {
       "name": "getTeamsTeamIdDocuments",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3467,7 +3467,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3497,7 +3497,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdAnnotations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3507,7 +3507,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdAnnotationsAnnotationId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3532,7 +3532,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdCheckNotionAccessibility",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3542,7 +3542,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdExportVisits",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3552,7 +3552,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3562,12 +3562,12 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdOverview",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdPreviewData",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3577,7 +3577,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3607,7 +3607,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdVersions",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3617,47 +3617,47 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsIdVideoAnalytics",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViews",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsCount",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdClickEvents",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdCustomFields",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdUserAgent",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsIdViewsViewIdVideoStats",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsAgreement",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3667,12 +3667,12 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsDocumentProcessingStatus",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDocumentsHidden",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3687,7 +3687,7 @@
     },
     {
       "name": "getTeamsTeamIdDocumentsSearch",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3697,7 +3697,7 @@
     },
     {
       "name": "getTeamsTeamIdDomains",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3722,12 +3722,12 @@
     },
     {
       "name": "getTeamsTeamIdDomainsDomainValidate",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdDomainsDomainVerify",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3737,7 +3737,7 @@
     },
     {
       "name": "getTeamsTeamIdExportJobs",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3747,7 +3747,7 @@
     },
     {
       "name": "getTeamsTeamIdExportJobsExportId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3767,12 +3767,12 @@
     },
     {
       "name": "getTeamsTeamIdFolderDocumentsName",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdFolders",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3782,7 +3782,7 @@
     },
     {
       "name": "getTeamsTeamIdFoldersName",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3817,12 +3817,12 @@
     },
     {
       "name": "getTeamsTeamIdFoldersParentsName",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdGlobalBlockList",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3832,7 +3832,7 @@
     },
     {
       "name": "getTeamsTeamIdIgnoredDomains",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3842,7 +3842,7 @@
     },
     {
       "name": "getTeamsTeamIdIncomingWebhooks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3857,7 +3857,7 @@
     },
     {
       "name": "getTeamsTeamIdIntegrationsSlack",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3872,7 +3872,7 @@
     },
     {
       "name": "getTeamsTeamIdIntegrationsSlackChannels",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3882,7 +3882,7 @@
     },
     {
       "name": "getTeamsTeamIdInvitations",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3892,7 +3892,7 @@
     },
     {
       "name": "getTeamsTeamIdInvitationsAccept",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3907,7 +3907,7 @@
     },
     {
       "name": "getTeamsTeamIdLimits",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3917,7 +3917,7 @@
     },
     {
       "name": "getTeamsTeamIdLinksIdVisits",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3927,7 +3927,7 @@
     },
     {
       "name": "getTeamsTeamIdNotificationsPreferences",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3937,7 +3937,7 @@
     },
     {
       "name": "getTeamsTeamIdPresets",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3947,7 +3947,7 @@
     },
     {
       "name": "getTeamsTeamIdPresetsId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3967,7 +3967,7 @@
     },
     {
       "name": "getTeamsTeamIdSaml",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3987,7 +3987,7 @@
     },
     {
       "name": "getTeamsTeamIdSettings",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -3997,7 +3997,7 @@
     },
     {
       "name": "getTeamsTeamIdSurvey",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4007,7 +4007,7 @@
     },
     {
       "name": "getTeamsTeamIdTags",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4027,7 +4027,7 @@
     },
     {
       "name": "getTeamsTeamIdTokens",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4062,12 +4062,12 @@
     },
     {
       "name": "getTeamsTeamIdViewers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdViewersId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4077,7 +4077,7 @@
     },
     {
       "name": "getTeamsTeamIdVisitorGroups",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4087,7 +4087,7 @@
     },
     {
       "name": "getTeamsTeamIdVisitorGroupsGroupId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4102,7 +4102,7 @@
     },
     {
       "name": "getTeamsTeamIdWebhooks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4112,7 +4112,7 @@
     },
     {
       "name": "getTeamsTeamIdWebhooksId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4127,22 +4127,22 @@
     },
     {
       "name": "getTeamsTeamIdWebhooksIdEvents",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdWorkflowLinks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getTeamsTeamIdYearlyRecap",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getUnsubscribeDataroom",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4152,7 +4152,7 @@
     },
     {
       "name": "getUnsubscribeYir",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4162,7 +4162,7 @@
     },
     {
       "name": "getUserSubscribe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4177,7 +4177,7 @@
     },
     {
       "name": "getVerifyLoginLink",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4227,7 +4227,7 @@
     },
     {
       "name": "getWorkflows",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4237,7 +4237,7 @@
     },
     {
       "name": "getWorkflowsWorkflowId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -4252,12 +4252,12 @@
     },
     {
       "name": "getWorkflowsWorkflowIdExecutions",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getWorkflowsWorkflowIdSteps",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {

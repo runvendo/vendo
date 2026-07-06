@@ -10,23 +10,23 @@ describe("convertOpenApi", () => {
     const tools = await convertOpenApi(fixture);
     const names = tools.map((t) => t.name);
     expect(names).toEqual(
-      expect.arrayContaining(["list_transactions", "get_api_transactions_by_id", "create_payment", "delete_payee"]),
+      expect.arrayContaining(["listTransactions", "getTransactionsId", "createPayment", "deletePayee"]),
     );
 
-    const list = tools.find((t) => t.name === "list_transactions")!;
+    const list = tools.find((t) => t.name === "listTransactions")!;
     expect(list.annotations).toEqual({ mutating: false, dangerous: false });
     expect((list.inputSchema as { properties: Record<string, unknown> }).properties).toHaveProperty("limit");
 
-    const del = tools.find((t) => t.name === "delete_payee")!;
+    const del = tools.find((t) => t.name === "deletePayee")!;
     expect(del.annotations).toEqual({ mutating: true, dangerous: true, idempotent: true });
 
-    const create = tools.find((t) => t.name === "create_payment")!;
+    const create = tools.find((t) => t.name === "createPayment")!;
     // $ref resolved into the body property
     const body = (create.inputSchema as { properties: { body: { properties: Record<string, unknown> } } }).properties.body;
     expect(body.properties).toHaveProperty("amount");
     expect(create.binding).toEqual({ type: "http", method: "POST", path: "/api/payments" });
 
-    const byId = tools.find((t) => t.name === "get_api_transactions_by_id")!;
+    const byId = tools.find((t) => t.name === "getTransactionsId")!;
     expect((byId.inputSchema as { required?: string[] }).required).toContain("id");
   });
 });

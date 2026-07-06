@@ -128,10 +128,6 @@ function lockfileMentionsVendoPackage(lockfile: string): boolean {
     || /\/vendoai\/[^/\s]+/i.test(lockfile);
 }
 
-function lockfileHasLocalVendoResolution(lockfile: string): boolean {
-  return /file:(?:[^'"\s]+\/)?vendor\/vendoai-[^'"\s]+\.tgz/i.test(lockfile);
-}
-
 async function readOptional(file: string): Promise<string | null> {
   try {
     return await readFile(file, "utf8");
@@ -159,27 +155,22 @@ async function findPnpmWorkspaceRoot(checkoutDir: string, targetDir: string): Pr
   return undefined;
 }
 
-async function readPackageManager(dir: string): Promise<string | undefined> {
-  const source = await readOptional(path.join(dir, "package.json"));
-  if (!source) return undefined;
-  try {
-    const pkg = JSON.parse(source) as unknown;
-    return isRecord(pkg) && typeof pkg["packageManager"] === "string" ? pkg["packageManager"] : undefined;
-  } catch {
-    return undefined;
-  }
+function localVendoTarballLockfileSpec(lockfile: string): boolean {
+  return /file:[^\s"'#]*vendor\/vendoai(?:-[A-Za-z0-9._-]+)?-[^/\s"']+\.tgz/i.test(lockfile);
 }
 
-async function assertSupportedPackageManager(repo: InjectRepo, checkoutDir: string, targetDir: string): Promise<void> {
-  const dirs = [...new Set([checkoutDir, targetDir])];
-  for (const dir of dirs) {
-    const packageManager = await readPackageManager(dir);
-    if (packageManager?.startsWith("yarn@") || await pathExists(path.join(dir, "yarn.lock"))) {
-      throw new Error(
-        `Corpus repo ${repo.name} uses Yarn, but local Vendo package injection currently supports only pnpm and npm. This repo is blocked until Yarn injection support is implemented.`,
-      );
-    }
-  }
+function lockfileHasRegistryVendoResolution(lockfile: string): boolean {
+  return /registry\.npmjs\.org\/(?:@|%40)vendoai/i.test(lockfile)
+    || /registry\.npmjs\.org\/vendoai(?:\/|-)/i.test(lockfile)
+    || /registry\.yarnpkg\.com\/(?:@|%40)vendoai/i.test(lockfile)
+    || /registry\.yarnpkg\.com\/vendoai(?:\/|-)/i.test(lockfile)
+    || /(?:^|\n)\s*(?:resolution:\s*)?["']?(?:@vendoai\/[^@"'\s]+|vendoai)@npm:/m.test(lockfile);
+}
+
+function localPackageResolutionField(summary: LocalVendoInstallSummary): string {
+  if (summary.packageManager === "pnpm") return "pnpm.overrides";
+  if (summary.packageManager === "npm") return "overrides";
+  return "resolutions";
 }
 
 function installCommandSource(repo: InjectRepo, summary: LocalVendoInstallSummary): string {
@@ -187,15 +178,12 @@ function installCommandSource(repo: InjectRepo, summary: LocalVendoInstallSummar
   if (recipe) {
     if (summary.packageManager === "pnpm" && /\bpnpm\s+install\b/.test(recipe)) return recipe;
     if (summary.packageManager === "npm" && /\bnpm\s+(?:ci|install)\b/.test(recipe)) return recipe;
+    if ((summary.packageManager === "yarn-classic" || summary.packageManager === "yarn-berry") && /\byarn\s+install\b/.test(recipe)) return recipe;
   }
   return summary.installCommand;
 }
 
-async function assertLocalVendoResolution(
-  repoDir: string,
-  summary: LocalVendoInstallSummary,
-  lockfileDir = repoDir,
-): Promise<void> {
+async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoInstallSummary): Promise<void> {
   const pkg = JSON.parse(await readFile(path.join(repoDir, "package.json"), "utf8")) as Record<string, unknown>;
   const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
   for (const section of dependencySections) {
@@ -206,32 +194,35 @@ async function assertLocalVendoResolution(
     }
   }
 
+  const resolutionField = localPackageResolutionField(summary);
   const overridesContainer = summary.packageManager === "pnpm" && isRecord(pkg["pnpm"])
     ? pkg["pnpm"]["overrides"]
-    : pkg["overrides"];
+    : summary.packageManager === "npm"
+      ? pkg["overrides"]
+      : pkg["resolutions"];
   const overrides = stringRecord(overridesContainer);
   for (const name of summary.packages) {
     const spec = overrides[name];
     if (!spec || !localFileSpec(spec)) {
-      throw new Error(`${summary.packageManager === "pnpm" ? "pnpm.overrides" : "overrides"}.${name} must resolve from a local file:vendor/*.tgz tarball`);
+      throw new Error(`${resolutionField}.${name} must resolve from a local file:vendor/*.tgz tarball`);
     }
   }
   for (const [name, spec] of Object.entries(overrides)) {
     if (isVendoPackageName(name) && !localFileSpec(spec)) {
-      throw new Error(`${summary.packageManager === "pnpm" ? "pnpm.overrides" : "overrides"}.${name} must resolve from a local file:vendor/*.tgz tarball, got ${spec}`);
+      throw new Error(`${resolutionField}.${name} must resolve from a local file:vendor/*.tgz tarball, got ${spec}`);
     }
   }
 
-  const lockfileDirs = [...new Set([repoDir, lockfileDir].map((dir) => path.resolve(dir)))];
-  for (const dir of lockfileDirs) {
-    for (const fileName of ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json"]) {
-      const lockfile = await readOptional(path.join(dir, fileName));
+  const lockfileDirs = [...new Set([repoDir, summary.installDir ?? repoDir].map((dir) => path.resolve(dir)))];
+  for (const lockfileDir of lockfileDirs) {
+    for (const fileName of ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock"]) {
+      const lockfile = await readOptional(path.join(lockfileDir, fileName));
       if (!lockfile) continue;
-      const label = path.relative(process.cwd(), path.join(dir, fileName)) || fileName;
-      if (/registry\.npmjs\.org\/(?:@|%40)vendoai/i.test(lockfile) || /registry\.npmjs\.org\/vendoai(?:\/|-)/i.test(lockfile)) {
-        throw new Error(`${label} still references registry.npmjs.org for Vendo packages`);
+      const label = path.relative(repoDir, path.join(lockfileDir, fileName)) || fileName;
+      if (lockfileHasRegistryVendoResolution(lockfile)) {
+        throw new Error(`${label} still references registry.npmjs.org or registry.yarnpkg.com for Vendo packages`);
       }
-      if (lockfileMentionsVendoPackage(lockfile) && !lockfileHasLocalVendoResolution(lockfile)) {
+      if (lockfileMentionsVendoPackage(lockfile) && !localVendoTarballLockfileSpec(lockfile)) {
         throw new Error(`${label} mentions Vendo packages without file:vendor/*.tgz resolution`);
       }
     }
@@ -282,34 +273,37 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
       assertPathHasNoSpaces("workspace", workspaceRoot);
       assertPathHasNoSpaces("corpus repo", repoDir);
       await mkdir(context.reposDir, { recursive: true });
-      await assertSupportedPackageManager(repo, checkoutDir, repoDir);
 
-      const summary = await installLocalVendoPackages(repoDir, workspaceRoot, { pack: cachedPack });
+      const summary = await installLocalVendoPackages(repoDir, workspaceRoot, { pack: cachedPack, packageManagerRoot: checkoutDir });
       const pnpmWorkspaceRoot = summary.packageManager === "pnpm"
         ? await findPnpmWorkspaceRoot(checkoutDir, repoDir)
         : undefined;
-      const installDir = pnpmWorkspaceRoot ?? repoDir;
+      const installDir = pnpmWorkspaceRoot ?? summary.installDir ?? repoDir;
+      const installSummary = installDir === summary.installDir ? summary : { ...summary, installDir };
       if (runInstall) {
-        const sourceCommand = installCommandSource(repo, summary);
+        const sourceCommand = installCommandSource(repo, installSummary);
         const installCommand = normalizePostInjectionInstallCommand(sourceCommand, {
-          dropIgnoreWorkspace: Boolean(pnpmWorkspaceRoot && pnpmWorkspaceRoot !== repoDir),
-          pnpmConfig: [
-            "--config.minimumReleaseAge=0",
-            "--config.dangerouslyAllowAllBuilds=true",
-          ],
+          dropIgnoreWorkspace: installSummary.packageManager === "pnpm" && installDir !== repoDir,
+          disableYarnImmutableInstalls: installSummary.packageManager === "yarn-berry",
+          pnpmConfig: installSummary.packageManager === "pnpm"
+            ? [
+                "--config.minimumReleaseAge=0",
+                "--config.dangerouslyAllowAllBuilds=true",
+              ]
+            : [],
         });
         if (installCommand.changed) {
           log(`Corpus harness normalized post-injection install command for ${repo.name} from "${sourceCommand}" to non-frozen "${installCommand.command}" so file:vendor lockfile updates are allowed.`);
         }
         if (installDir !== repoDir) {
-          log(`Corpus harness running post-injection install for ${repo.name} from pnpm workspace root ${installDir} instead of appDir ${repoDir} so workspace: and catalog: dependencies resolve.`);
+          log(`Corpus harness running post-injection install for ${repo.name} from workspace root/package-manager root ${installDir} instead of appDir ${repoDir} so workspace:, catalog:, and root lockfile dependencies resolve.`);
         }
         await runInstallCommand(installCommand.command, installDir);
       }
-      await assertLocalVendoResolution(repoDir, summary, installDir);
+      await assertLocalVendoResolution(repoDir, installSummary);
 
       return {
-        ...summary,
+        ...installSummary,
         repoDir,
         initArgs: localVendoInitArgs(workspaceRoot),
       };

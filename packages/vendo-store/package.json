@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/store",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Durable persistence for Vendo: PGlite by default, Postgres in production.",
   "keywords": ["ai", "agent", "persistence", "postgres", "pglite", "drizzle"],
   "license": "Apache-2.0",

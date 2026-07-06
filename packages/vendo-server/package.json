@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider-agnostic server engine for Vendo embedded agents.",
   "keywords": ["ai", "agent", "generative-ui", "server", "llm"],
   "license": "Apache-2.0",
@@ -23,23 +23,36 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./capabilities": {
       "types": "./dist/capabilities.d.ts",
+      "import": "./dist/capabilities.js",
       "default": "./dist/capabilities.js"
     },
     "./model": {
       "types": "./dist/model.d.ts",
+      "import": "./dist/model.js",
       "default": "./dist/model.js"
     },
     "./manifest-tools": {
       "types": "./dist/manifest-tools.d.ts",
+      "import": "./dist/manifest-tools.js",
       "default": "./dist/manifest-tools.js"
     },
     "./catalog": {
       "types": "./dist/catalog.d.ts",
+      "import": "./dist/catalog.js",
       "default": "./dist/catalog.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "capabilities": ["dist/capabilities.d.ts"],
+      "model": ["dist/model.d.ts"],
+      "manifest-tools": ["dist/manifest-tools.d.ts"],
+      "catalog": ["dist/catalog.d.ts"]
     }
   },
   "files": ["dist"],

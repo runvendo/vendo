@@ -1,6 +1,6 @@
 {
   "name": "@vendoai/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One-command Vendo install: extracts theme, tools, and components from a host app and wires in the embedded agent.",
   "keywords": [
     "ai",
@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
-    "@clack/prompts": "^1.7.0",
+    "@clack/prompts": "1.6.0",
     "@scarf/scarf": "^1.4.0",
     "@tailwindcss/browser": "^4.1.0",
     "@tailwindcss/cli": "^4.1.0",
