@@ -140,8 +140,10 @@ function hostAction(toolName: string): ToolAction | null {
 export function toolAction(toolName: string): ToolAction {
   if (EXACT[toolName]) return { ...EXACT[toolName], question: toQuestion(EXACT[toolName].request) };
   if (/^GMAIL_/i.test(toolName)) {
-    if (/FETCH|SEARCH|LIST|GET|READ/i.test(toolName))
+    if (/FETCH|SEARCH|LIST|GET|READ|FIND/i.test(toolName))
       return { active: "Searching Gmail", done: "Searched Gmail", request: "Search Gmail", question: toQuestion("Search Gmail") };
+    if (/FORWARD/i.test(toolName))
+      return { active: "Forwarding email", done: "Forwarded email", request: "Forward email", question: toQuestion("Forward email") };
     if (/^GMAIL_SEND/i.test(toolName))
       return { active: "Sending email", done: "Sent email", request: "Send email", question: toQuestion("Send email") };
   }
