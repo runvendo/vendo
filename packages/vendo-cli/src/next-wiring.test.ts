@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   addDependency,
+  addDevDependency,
   addPrebuildSync,
   mergeInstrumentation,
   productNameFrom,
@@ -167,6 +168,27 @@ describe("addDependency", () => {
   });
 });
 
+describe("addDevDependency", () => {
+  it("creates the devDependencies block, adds sorted, and is idempotent", () => {
+    const created = addDevDependency(JSON.stringify({ name: "x" }, null, 2), "@vendoai/cli", "latest")!;
+    expect(JSON.parse(created).devDependencies["@vendoai/cli"]).toBe("latest");
+
+    const out = addDevDependency(
+      JSON.stringify({ name: "x", devDependencies: { vitest: "^2" } }, null, 2),
+      "@vendoai/cli",
+      "latest",
+    )!;
+    expect(Object.keys(JSON.parse(out).devDependencies)).toEqual(["@vendoai/cli", "vitest"]);
+
+    // Re-run leaves it alone.
+    expect(addDevDependency(out, "@vendoai/cli", "latest")).toBe(out);
+  });
+
+  it("returns null on unparsable package.json", () => {
+    expect(addDevDependency("{nope", "@vendoai/cli", "latest")).toBeNull();
+  });
+});
+
 describe("addPrebuildSync", () => {
   it("creates a prebuild script, extends an existing one, and is idempotent", () => {
     const created = addPrebuildSync(JSON.stringify({ name: "x" }))!;
@@ -280,6 +302,17 @@ describe("wireNextApp", () => {
 
     // sandbox assets aren't bundled in the source tree — reported, not fatal
     expect(summary.skipped.some((s) => s.step === "sandbox-assets")).toBe(true);
+  });
+
+  it("adds @vendoai/cli to the app's devDependencies so `vendo sync` resolves at build time", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const info = await detectTarget(dir);
+    await wireNextApp(dir, info, { force: false });
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
+      devDependencies?: Record<string, string>;
+    };
+    // prebuild runs `vendo sync`, so the CLI must be installed alongside it.
+    expect(pkg.devDependencies?.["@vendoai/cli"]).toBeDefined();
   });
 
   it("writes instrumentation.ts at the project root for an app/ (non-src) layout", async () => {

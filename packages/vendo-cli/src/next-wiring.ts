@@ -307,6 +307,24 @@ export function addDependency(pkgJson: string, name: string, version: string): s
   return JSON.stringify(pkg, null, 2) + "\n";
 }
 
+/** Merge a package into package.json `devDependencies` (same format contract as
+ *  addDependency). Build-time tooling (`@vendoai/cli` for `vendo sync`, the
+ *  component-bundle build deps) belongs in devDependencies, not runtime deps. */
+export function addDevDependency(pkgJson: string, name: string, version: string): string | null {
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(pkgJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const deps = (pkg["devDependencies"] ?? {}) as Record<string, string>;
+  if (deps[name]) return pkgJson; // already present — leave the file alone
+  pkg["devDependencies"] = Object.fromEntries(
+    Object.entries({ ...deps, [name]: version }).sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return JSON.stringify(pkg, null, 2) + "\n";
+}
+
 /** Add `vendo sync` to the app's `prebuild` script (create or extend),
  *  so every production build refreshes the capture + sandbox environment.
  *  Idempotent: never adds a second copy. */
@@ -532,8 +550,12 @@ export async function wireNextApp(
       summary.skipped.push({ step: "package.json", reason: "unparsable — add @vendoai/next yourself" });
       summary.manual.push('add "@vendoai/next" to package.json dependencies and install');
       summary.manual.push('add "vendo sync" to your package.json "prebuild" script');
+      summary.manual.push('add "@vendoai/cli" to package.json devDependencies (the prebuild `vendo sync` runner)');
     } else {
-      const withSync = addPrebuildSync(withDep) ?? withDep;
+      // @vendoai/cli is a devDependency: `prebuild: vendo sync` needs it to
+      // resolve at build time.
+      const withCli = addDevDependency(withDep, "@vendoai/cli", "latest") ?? withDep;
+      const withSync = addPrebuildSync(withCli) ?? withCli;
       if (withSync !== pkgRaw) {
         await fs.writeFile(path.join(targetDir, "package.json"), withSync);
         summary.edited.push("package.json");
