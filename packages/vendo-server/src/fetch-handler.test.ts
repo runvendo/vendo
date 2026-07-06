@@ -309,9 +309,10 @@ describe("createVendoFetchHandler", () => {
       Authorization: "Bearer sk-voice",
       "Content-Type": "application/json",
     });
-    expect(((init as RequestInit).headers as Record<string, string>)["OpenAI-Safety-Identifier"]).toMatch(
-      /^vendo_[a-f0-9]{64}$/,
-    );
+    const safetyId = ((init as RequestInit).headers as Record<string, string>)["OpenAI-Safety-Identifier"]!;
+    expect(safetyId).toMatch(/^vendo_[a-f0-9]+$/);
+    // OpenAI rejects an OpenAI-Safety-Identifier over 64 chars (400 -> mint 502).
+    expect(safetyId.length).toBeLessThanOrEqual(64);
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({
       session: {
         type: "realtime",
@@ -371,7 +372,7 @@ describe("createVendoFetchHandler", () => {
     expect(res.status).toBe(200);
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     const headers = init.headers as Record<string, string>;
-    expect(headers["OpenAI-Safety-Identifier"]).toMatch(/^vendo_[a-f0-9]{64}$/);
+    expect(headers["OpenAI-Safety-Identifier"]).toMatch(/^vendo_[a-f0-9]+$/);
     expect(headers["OpenAI-Safety-Identifier"]).not.toBe("browser-forged");
     expect(headers["OpenAI-Safety-Identifier"]).not.toContain("user-42");
   });

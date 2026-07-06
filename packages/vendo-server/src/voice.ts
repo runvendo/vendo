@@ -27,7 +27,9 @@ function safetyIdentifier(principal: VendoPrincipal | undefined, env: Record<str
   if (!principal?.userId) return undefined;
   const key = present(env["VENDO_OPENAI_SAFETY_SALT"]) ?? apiKey;
   const digest = createHmac("sha256", key).update(principal.userId).digest("hex");
-  return `vendo_${digest}`;
+  // OpenAI caps OpenAI-Safety-Identifier at 64 chars; `vendo_` + a full
+  // 64-hex digest is 70 and gets rejected (400 -> mint 502). Clamp to 64.
+  return `vendo_${digest}`.slice(0, 64);
 }
 
 export async function handleVoiceSessionPost(_req: Request, deps: VoiceSessionDeps = {}): Promise<Response> {
