@@ -22,9 +22,6 @@
 npx vendoai init .
 ```
 
-<p align="center"><sub>One command inside your Next.js app. No account, no hosted dependency.</sub><br>
-<sub>Works with Anthropic, OpenAI, or Google models · any MCP server · your existing OpenAPI spec</sub></p>
-
 <br>
 
 ## See it in action
@@ -152,13 +149,7 @@ through your permission policy. Deeper docs: [docs/](docs/).
 <br><code>vendo init</code> extracts design tokens from your app, and generated UI composes your own wrapped components plus a themeable catalog.
 </details>
 
-<br>
-
-<p align="center"><sub>If you think products should shape themselves to their users, <a href="https://github.com/runvendo/vendo">star the repo</a> and follow along.</sub></p>
-
 ---
 
-Docs live in [docs/](docs/). Build tooling collects anonymous, opt-out
-telemetry and never touches end-user data ([TELEMETRY.md](TELEMETRY.md)).
-PRs welcome: [CONTRIBUTING.md](CONTRIBUTING.md) · security reports:
-[SECURITY.md](SECURITY.md) · [Apache-2.0](LICENSE)
+PRs welcome: [CONTRIBUTING.md](CONTRIBUTING.md) · telemetry: [TELEMETRY.md](TELEMETRY.md) ·
+security reports: [SECURITY.md](SECURITY.md) · [Apache-2.0](LICENSE)
