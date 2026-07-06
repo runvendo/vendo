@@ -449,13 +449,15 @@ export async function runInit(opts: InitOptions): Promise<number> {
   }
   console.log(renderReport(report));
   // The remix step either ran (print its anchors/TODOs/summary) or was gated
-  // off (print a key-aware hint: no model → add a key; non-interactive/--yes →
-  // run interactively). No discovery/prompt/source edit happens on the gated path.
-  console.log(
-    remixResult
-      ? renderRemixStep(remixResult)
-      : remixHint(model === null ? "no-model" : "non-interactive"),
-  );
+  // off. On the gated path, print a key-aware hint (no model → add a key;
+  // non-interactive/--yes → run interactively) only on a first-run init —
+  // catch-up/refresh runs stay terse and skip the verbose explanation.
+  // No discovery/prompt/source edit happens on the gated path.
+  if (remixResult) {
+    console.log(renderRemixStep(remixResult));
+  } else if (!catchUp) {
+    console.log(remixHint(model === null ? "no-model" : "non-interactive"));
+  }
 
   // The install codemod (Next.js App Router): route handler, provider wrap,
   // .env.example, sandbox assets, dependency. Fail-open by design — anything

@@ -11,7 +11,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { walk } from "./fsx.js";
-import { findAppDir, DEFAULT_THEME_STUB } from "./next-wiring.js";
+import { findAppDir, maskLiterals, DEFAULT_THEME_STUB } from "./next-wiring.js";
 
 async function exists(p: string): Promise<boolean> {
   return fs.access(p).then(() => true, () => false);
@@ -80,6 +80,10 @@ export interface VendoState {
 // fact-gathering, not a parse: consumers key on file-level detection; the ids
 // list is best-effort and may diverge from sync/capture.ts's AST walk on
 // exotic attribute layouts. Dynamic ids (`id={...}`) simply yield no match.
+// File-level detection runs on the masked view (comment/string bodies blanked,
+// like anchor.ts's idempotence check) so a `// TODO: <VendoRemix ...>` comment
+// never falsely marks a file anchored; ids are still read from the raw text
+// (masking blanks the id string interior).
 const ANCHOR_ID_RE = /<VendoRemix\b[^>]*?\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 async function inspectRemixAnchors(targetDir: string): Promise<RemixAnchorSite[]> {
@@ -93,6 +97,10 @@ async function inspectRemixAnchors(targetDir: string): Promise<RemixAnchorSite[]
       continue;
     }
     if (!text.includes("VendoRemix")) continue;
+    // Confirm the tag is in real code, not a comment or string, before counting
+    // the file as anchored — otherwise a TODO comment mentioning <VendoRemix>
+    // would silently exclude the file from remix discovery.
+    if (!maskLiterals(text).includes("<VendoRemix")) continue;
     const ids = [...text.matchAll(ANCHOR_ID_RE)].map((m) => (m[1] ?? m[2])!);
     sites.push({ file: path.relative(targetDir, file).split(path.sep).join("/"), ids });
   }

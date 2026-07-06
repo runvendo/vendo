@@ -132,5 +132,7 @@ describe("vendo refresh (catch-up mode)", () => {
     expect(refreshed.out).not.toContain("Next steps:");
     // The no-key coaching line stays relevant in catch-up mode.
     expect(refreshed.out).toContain("only fills gaps");
+    // ...but the verbose first-run remix hint is suppressed on catch-up runs.
+    expect(refreshed.out).not.toContain("Remix anchors let your users");
   });
 });

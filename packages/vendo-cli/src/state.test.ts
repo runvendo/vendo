@@ -151,6 +151,21 @@ export default function Page({ id }: { id: string }) {
     expect(state.remixAnchors).toEqual([{ file: "src/app/page.tsx", ids: [] }]);
   });
 
+  it("ignores a <VendoRemix> mention inside a comment or string (masked-view detection)", async () => {
+    const dir = app({
+      "src/app/page.tsx": `export default function Page() {
+  // TODO: wrap this in <VendoRemix id="revenue"> once we design the overlay
+  const example = "<VendoRemix id='fake'>";
+  return <div>{example}</div>
+}
+`,
+    });
+    const state = await inspectVendoState(dir);
+    // The tag only appears in a comment and a string, not real JSX — the file
+    // must not be counted as anchored (else it silently drops from discovery).
+    expect(state.remixAnchors).toEqual([]);
+  });
+
   it("reports a fully wired app (route file + vendo-root present under src/app)", async () => {
     const dir = app({
       "src/app/layout.tsx": NEXT_LAYOUT,
