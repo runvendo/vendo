@@ -7,9 +7,10 @@
  * route (single-use approval tokens), and renders the shell's ApprovalCard
  * when the policy answers "approve".
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import type { UINode, ActionRequest, ActionResult, RegisteredComponent } from "@vendoai/core";
 import { VendoStage } from "@vendoai/react";
+import type { StageRoute } from "@vendoai/stage";
 import { ApprovalCard } from "@vendoai/shell";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@vendoai/components";
 import type { BrandTokens } from "@vendoai/components/theme";
@@ -128,9 +129,19 @@ export interface SandboxStageProps {
    *  version-agnostic; VendoRoot wires `useRouter().push`. Default:
    *  `location.assign`, still validated same-app first. */
   onNavigate?: (href: string) => void;
+  /** OPTIONAL live route supplier — the seam that keeps this generic client
+   *  Next-free (plain-React/Vite consumers must not pull `next` through here).
+   *  Called during render inside SandboxStage's Suspense boundary, so a Next
+   *  host implements it by reading its OWN `next/navigation`, e.g.
+   *  `() => ({ pathname: usePathname() ?? "", search: useSearchParams()?.toString() ? ... , params })`
+   *  (see apps/demo-bank's SandboxStage for the reference sourcing). `useSearchParams`
+   *  forces a Suspense boundary — satisfied here — so the sandbox re-renders on
+   *  query-only navigation. Omit it (any non-Next host) and the sandbox's route
+   *  shims resolve empty, exactly as before the route feature. */
+  routeSource?: () => StageRoute;
 }
 
-export function SandboxStage({ node, brand, components, basePath, onNavigate }: SandboxStageProps): ReactNode {
+export function SandboxStage({ node, brand, components, basePath, onNavigate, routeSource }: SandboxStageProps): ReactNode {
   const [sources, setSources] = useState<Sources | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Pending approvals keyed by requestId: concurrent gated dispatches each get
@@ -206,16 +217,19 @@ export function SandboxStage({ node, brand, components, basePath, onNavigate }: 
 
   return (
     <div>
-      <VendoStage
-        node={node}
-        components={[...prewiredComponents, ...components]}
-        reactSource={sources.react}
-        bundleSource={sources.bundle}
-        {...(sources.env ? { env: sources.env } : {})}
-        onAction={onAction}
-        theme={brandToCssVars(brand)}
-        componentTheme={{ theme: mapBrandToTheme(brand), mode: brand.mode ?? "light" }}
-      />
+      {/* Suspense satisfies useSearchParams()'s boundary requirement; the light
+          placeholder only shows during static prerender — on the client the
+          route resolves synchronously and the stage mounts once (no double iframe). */}
+      <Suspense fallback={<div data-testid="stage-route-loading" aria-busy="true" />}>
+        <RoutedStage
+          node={node}
+          components={components}
+          sources={sources}
+          onAction={onAction}
+          brand={brand}
+          {...(routeSource ? { routeSource } : {})}
+        />
+      </Suspense>
       {[...pending.entries()].map(([requestId, entry]) => (
         <div key={requestId} style={{ marginTop: 10 }}>
           <ApprovalCard
@@ -227,5 +241,42 @@ export function SandboxStage({ node, brand, components, basePath, onNavigate }: 
         </div>
       ))}
     </div>
+  );
+}
+
+/** Renders the sandbox stage, feeding in the host's live route when a
+ *  `routeSource` is supplied. Isolated so any hook subscription inside
+ *  `routeSource` (e.g. a Next host's `useSearchParams()`) lives under
+ *  SandboxStage's Suspense boundary (never at the top level, which would opt the
+ *  whole page into CSR). With no `routeSource` the stage mounts route-less and
+ *  the sandbox shims resolve empty. */
+function RoutedStage({
+  node,
+  components,
+  sources,
+  onAction,
+  brand,
+  routeSource,
+}: {
+  node: UINode;
+  components: RegisteredComponent[];
+  sources: Sources;
+  onAction: (req: ActionRequest) => Promise<ActionResult>;
+  brand: BrandTokens;
+  routeSource?: () => StageRoute;
+}): ReactNode {
+  const route = routeSource?.();
+  return (
+    <VendoStage
+      node={node}
+      components={[...prewiredComponents, ...components]}
+      reactSource={sources.react}
+      bundleSource={sources.bundle}
+      {...(sources.env ? { env: sources.env } : {})}
+      onAction={onAction}
+      theme={brandToCssVars(brand)}
+      componentTheme={{ theme: mapBrandToTheme(brand), mode: brand.mode ?? "light" }}
+      {...(route ? { route } : {})}
+    />
   );
 }
