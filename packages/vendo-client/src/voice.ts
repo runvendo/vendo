@@ -35,6 +35,10 @@ export interface CreateVendoVoiceOptions {
   instructionsExtra?: string[];
   /** Whether to expose the handler-backed integrations tools in voice. */
   integrations?: boolean;
+  /** Whether the handler's automations world is enabled — when true, voice
+   *  fetches the server-bridged authoring tools (create_automation, …) so it
+   *  can compile standing behaviors exactly like the chat loop does. */
+  automations?: boolean;
 }
 
 interface SourceDecl {
@@ -460,7 +464,10 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
   });
 
   async function createIntegrationVoiceTools(): Promise<{ tools: VoiceToolDef[]; unregister(): void }> {
-    if (!options.integrations) return { tools: [], unregister() {} };
+    // The /voice/tools bridge carries BOTH connected-integration tools (Composio)
+    // and server-executed control tools (automation authoring). Fetch it when
+    // either capability is on so voice reaches chat parity.
+    if (!options.integrations && !options.automations) return { tools: [], unregister() {} };
     try {
       const res = await fetch(`${basePath}/voice/tools`, { cache: "no-store" });
       if (!res.ok) return { tools: [], unregister() {} };
@@ -511,7 +518,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
   }
 
   const tools = [...displayTools, ...integrationTools, ...hostVoiceTools];
-  const instructions = buildInstructions(productName, tools, options.instructionsExtra ?? []);
+  const instructions = buildInstructions(productName, tools, options.instructionsExtra ?? [], options.automations ?? false);
   const greeting = `Hi, I'm ${productName}'s voice assistant; what can I help with?`;
 
   return {
@@ -524,7 +531,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     keyValueView,
     moneyFlowView,
     createIntegrationVoiceTools,
-    buildInstructions: (sessionTools) => buildInstructions(productName, sessionTools, options.instructionsExtra ?? []),
+    buildInstructions: (sessionTools) => buildInstructions(productName, sessionTools, options.instructionsExtra ?? [], options.automations ?? false),
     dispose() {
       for (const unregister of unregisterHostTools.splice(0)) unregister();
     },
@@ -546,7 +553,10 @@ function voiceToolSummary(tools: VoiceToolDef[]): ToolSummaryInput[] {
     });
 }
 
-function buildInstructions(productName: string, tools: VoiceToolDef[], extras: string[]): string {
+const AUTOMATION_VOICE_GUIDANCE =
+  "AUTOMATIONS: when the user asks for standing behavior (\"whenever X, do Y\", \"every morning…\", \"if a charge over $75 hits…\"), COMPILE it with the create_automation tool instead of doing the action yourself or just promising to remember — the automation does the work when it fires. Reference only tools that exist in your toolset and host events you have been told about. create_automation pauses for the user\'s approval (spoken yes or a tap) before it turns on.";
+
+function buildInstructions(productName: string, tools: VoiceToolDef[], extras: string[], automations = false): string {
   return buildVoiceInstructions({
     persona: [
       `You are ${productName}'s voice assistant. Warm, brisk, and plain-spoken.`,
@@ -556,6 +566,7 @@ function buildInstructions(productName: string, tools: VoiceToolDef[], extras: s
     extras: [
       "Use English (US) by default unless the user explicitly switches languages.",
       "Never claim something is on screen without calling a show_* tool first.",
+      ...(automations ? [AUTOMATION_VOICE_GUIDANCE] : []),
       ...extras,
     ],
   });

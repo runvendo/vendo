@@ -580,6 +580,7 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       worldScope,
       hostEvents: loaded.manifest.events,
       serverTools,
+      controlTools,
       getAgent,
       resolveRemixSource,
       remixSealer,
@@ -912,6 +913,7 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           store: s.connections,
           enabled: s.capabilities.integrations,
           principal: guard.principal,
+          controlTools: s.controlTools(),
         });
       }
       case "deliveries": {
@@ -1052,6 +1054,7 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           store: s.connections,
           enabled: s.capabilities.integrations,
           principal: guard.principal,
+          controlTools: s.controlTools(),
         });
       }
       case "tick": {

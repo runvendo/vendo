@@ -260,8 +260,9 @@ export function VendoRoot({
       productName,
       hostTools: hostToolDefs,
       integrations: capabilities.integrations,
+      automations: capabilities.automations !== false,
     });
-  }, [voice, capabilities?.voice, capabilities?.integrations, basePath, productName, hostToolDefs]);
+  }, [voice, capabilities?.voice, capabilities?.integrations, capabilities?.automations, basePath, productName, hostToolDefs]);
 
   useEffect(
     () => () => {

@@ -1200,3 +1200,6 @@
   .fl-voice-slide { transition: none; filter: none; }
   .fl-voice-dots button { transition: none; }
 }
+
+.fl-voice-consent.is-automation { display: block; padding: 0; background: none; border: none; box-shadow: none; }
+.fl-voice-consent.is-automation .fl-approval { width: 100%; max-width: none; }
