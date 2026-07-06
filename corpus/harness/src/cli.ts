@@ -30,6 +30,7 @@ import {
   type InitStepResult,
   type RunVendoInitStepOptions,
 } from "./init-step.js";
+import { prepareE2eRepo as defaultPrepareE2eRepo } from "./e2e-prep.js";
 import {
   runE2eLayer as defaultRunE2eLayer,
   type E2eLayerContext,
@@ -95,6 +96,7 @@ export interface CorpusCliDependencies {
   waitForBootShutdown?: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer?: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer?: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
+  prepareE2eRepo?: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
   runE2eLayer?: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
   commandRunner?: StructuralCommandRunner;
 }
@@ -115,6 +117,7 @@ interface ResolvedDeps {
   waitForBootShutdown: (handle: BootHandle, repo: ManifestEntry) => Promise<void>;
   runStructuralLayer: (ctx: StructuralLayerContext) => Promise<StructuralCheckResult[]>;
   runScoredLayer: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
+  prepareE2eRepo: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
   runE2eLayer: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
   commandRunner: StructuralCommandRunner;
 }
@@ -155,6 +158,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     waitForBootShutdown: deps.waitForBootShutdown ?? waitForBootShutdownSignal,
     runStructuralLayer: deps.runStructuralLayer ?? defaultRunStructuralLayer,
     runScoredLayer: deps.runScoredLayer ?? defaultRunScoredLayer,
+    prepareE2eRepo: deps.prepareE2eRepo ?? defaultPrepareE2eRepo,
     runE2eLayer: deps.runE2eLayer ?? defaultRunE2eLayer,
     commandRunner: deps.commandRunner ?? runShellCommand,
   };
@@ -539,6 +543,7 @@ async function runRepoThroughLayerOne(
         let layer: ScorecardLayerInput | undefined;
         const layerLogPaths = [...logPaths];
         try {
+          layerLogPaths.push(...await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name)));
           handle = await deps.bootRepo(repo, {
             context,
             env: deps.env,

@@ -12,6 +12,12 @@ export interface E2eLocator {
   first?(): E2eLocator;
 }
 
+export interface E2eFrameLocator {
+  locator(selector: string): E2eLocator;
+  getByRole(role: string, options?: { name?: string | RegExp }): E2eLocator;
+  getByTestId?(testId: string): E2eLocator;
+}
+
 export interface E2eRequest {
   url(): string;
   method(): string;
@@ -25,6 +31,7 @@ export interface E2ePage {
   getByRole(role: string, options?: { name?: string | RegExp }): E2eLocator;
   getByLabel(label: string | RegExp): E2eLocator;
   getByTestId?(testId: string): E2eLocator;
+  frameLocator?(selector: string): E2eFrameLocator;
   keyboard?: { press(key: string): Promise<void> };
   on?(event: "request", listener: (request: E2eRequest) => void): void;
   off?(event: "request", listener: (request: E2eRequest) => void): void;
@@ -164,15 +171,17 @@ interface ManifestToolBinding {
 const defaultK = 2;
 const defaultTimeoutMs = 60_000;
 const pollIntervalMs = 500;
+const surfaceOpenRetryMs = 500;
 const hardErrorSelector = [
-  '[role="alert"]',
-  ".fl-error",
-  '[data-testid="stage-load-error"]',
-  '[data-testid="unexpected-node"]',
-  '[data-testid="unimpl-node"]',
-  '[data-testid="vendo-invalid-props"]',
-  "[data-error]",
+  ".fl-error:visible",
+  ".fl-att-error:visible",
+  '[data-testid="stage-load-error"]:visible',
+  '[data-testid="unexpected-node"]:visible',
+  '[data-testid="unimpl-node"]:visible',
+  '[data-testid="vendo-invalid-props"]:visible',
+  '[data-error="true"]:visible',
 ].join(", ");
+const stageErrorSelector = "[data-error]:visible, [data-error-boundary]:visible";
 const errorToastText = /error|failed|unavailable|issue|problem|denied/i;
 
 const matcherObjectSchema = z.object({
@@ -488,7 +497,10 @@ async function runAttempt(
   try {
     session = await (ctx.pageFactory ?? defaultPageFactory)(script, attempt);
     recorder = await attachNetworkSignals(session.page, ctx.repoDir, ctx.readinessUrl, signals);
-    await session.page.goto(ctx.readinessUrl);
+    const targetUrl = attemptUrl(ctx.readinessUrl, script, attempt);
+    await session.page.goto(targetUrl);
+    await prepareHostPage(ctx.repoName, session.page, timeoutMs);
+    await restoreAttemptUrlAfterHostPrep(ctx.repoName, session.page, targetUrl);
     await openVendoSurface(session.page, timeoutMs);
     for (let index = 0; index < script.prompts.length; index += 1) {
       await sendPrompt(session.page, script.prompts[index] ?? "");
@@ -525,7 +537,7 @@ async function runAttempt(
     }));
   }
 
-  return {
+  const result: E2eAttemptResult = {
     attempt,
     pass: !error && assertions.every((assertion) => assertion.pass),
     assertions,
@@ -535,6 +547,12 @@ async function runAttempt(
     error,
     toolCalls: [...signals.toolCalls],
   };
+  if (!result.pass) {
+    const diagnosticPath = path.join(ctx.logsDir, `e2e.${safeFilePart(script.id)}.${attempt}.json`);
+    await writeFile(diagnosticPath, `${JSON.stringify(result, null, 2)}\n`);
+    screenshots.push(diagnosticPath);
+  }
+  return result;
 }
 
 async function defaultPageFactory(): Promise<E2ePageSession> {
@@ -549,6 +567,39 @@ async function defaultPageFactory(): Promise<E2ePageSession> {
       await browser.close();
     },
   };
+}
+
+function attemptUrl(baseUrl: string, script: ConversationScript, attempt: number): string {
+  try {
+    const url = new URL(baseUrl);
+    url.searchParams.set("vendoThread", `corpus-${safeFilePart(script.id)}-${attempt}`);
+    return url.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+async function prepareHostPage(repoName: string, page: E2ePage, timeoutMs: number): Promise<void> {
+  if (repoName !== "umami") return;
+  await loginToUmami(page, Math.min(timeoutMs, 15_000));
+}
+
+async function restoreAttemptUrlAfterHostPrep(repoName: string, page: E2ePage, targetUrl: string): Promise<void> {
+  if (repoName !== "umami") return;
+  await page.goto(targetUrl);
+}
+
+async function loginToUmami(page: E2ePage, timeoutMs: number): Promise<void> {
+  const username = page.locator('[data-test="input-username"] input, input[name="username"]');
+  await waitFor(async () => (await safeCount(username)) > 0, timeoutMs).catch(() => undefined);
+  if (await safeCount(username) === 0) return;
+
+  const password = page.locator('[data-test="input-password"] input, input[name="password"]');
+  if (!username.fill || !password.fill) return;
+  await username.fill("admin");
+  await password.fill("umami");
+  await clickIfPresent(page.getByRole("button", { name: /^login$/i }));
+  await waitFor(async () => (await safeCount(username)) === 0, timeoutMs).catch(() => undefined);
 }
 
 async function attachNetworkSignals(
@@ -612,13 +663,25 @@ async function loadManifestToolBindings(repoDir: string): Promise<ManifestToolBi
 }
 
 async function openVendoSurface(page: E2ePage, timeoutMs: number): Promise<void> {
-  if (await safeCount(page.getByRole("dialog")) > 0) return;
-  const launcher = page.getByRole("button", { name: /ask|assistant|vendo/i });
-  if (!await clickIfPresent(launcher)) {
-    await page.keyboard?.press("Meta+K");
-    await page.keyboard?.press("Control+K");
-  }
-  await waitFor(async () => (await safeCount(page.getByRole("dialog"))) > 0, timeoutMs);
+  const dialog = page.getByRole("dialog");
+  if (await safeCount(dialog) > 0) return;
+
+  let lastOpenAttempt = 0;
+  await waitFor(async () => {
+    if (await safeCount(dialog) > 0) return true;
+
+    const now = Date.now();
+    if (now - lastOpenAttempt >= surfaceOpenRetryMs) {
+      lastOpenAttempt = now;
+      const launcher = page.getByRole("button", { name: /ask|assistant|vendo/i });
+      if (!await clickIfPresent(launcher)) {
+        await page.keyboard?.press("Meta+K");
+        await page.keyboard?.press("Control+K");
+      }
+    }
+
+    return false;
+  }, timeoutMs);
 }
 
 async function sendPrompt(page: E2ePage, prompt: string): Promise<void> {
@@ -681,7 +744,10 @@ async function countViewDomMatches(page: E2ePage, assertion: Extract<Conversatio
   }
   if (assertion.role) {
     const literal = literalMatcherValue(assertion.role);
-    if (literal) count += await safeCount(page.getByRole(literal, roleOptions(assertion.text)));
+    if (literal) {
+      count += await safeCount(page.getByRole(literal, roleOptions(assertion.text)));
+      count += await countStageFrameRoleMatches(page, literal, assertion.text);
+    }
   }
   if (!assertion.testId && !assertion.component && !assertion.role) {
     count += await safeCount(page.getByTestId ? page.getByTestId("ui-node") : page.locator(attrSelector("data-testid", "ui-node")));
@@ -694,13 +760,22 @@ async function countViewDomMatches(page: E2ePage, assertion: Extract<Conversatio
   return count;
 }
 
+async function countStageFrameRoleMatches(page: E2ePage, role: string, text: TextMatcher | undefined): Promise<number> {
+  const frame = page.frameLocator?.('iframe#vendo-stage, iframe[title="Vendo stage"]');
+  if (!frame) return 0;
+  return safeCount(frame.getByRole(role, roleOptions(text)));
+}
+
 async function countErrorDomSignals(page: E2ePage): Promise<number> {
   const hardErrors = await safeCount(page.locator(hardErrorSelector));
-  const toasts = page.locator(".fl-toast");
+  const stageErrors = page.frameLocator
+    ? await safeCount(page.frameLocator('iframe#vendo-stage, iframe[title="Vendo stage"]').locator(stageErrorSelector))
+    : 0;
+  const toasts = page.locator(".fl-toast:visible");
   const toastCount = await safeCount(toasts);
-  if (toastCount === 0) return hardErrors;
+  if (toastCount === 0) return hardErrors + stageErrors;
   const text = await toasts.textContent?.();
-  return hardErrors + (text && errorToastText.test(text) ? toastCount : 0);
+  return hardErrors + stageErrors + (text && errorToastText.test(text) ? toastCount : 0);
 }
 
 function viewMatches(assertion: Extract<ConversationAssertion, { kind: "view-rendered" }>, view: E2eViewSignal): boolean {
