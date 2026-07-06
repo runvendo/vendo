@@ -8,6 +8,7 @@
  * reported and the anchor keeps whatever it can. The env NEVER fails the host
  * build for a classification gap.
  */
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -340,35 +341,49 @@ export async function buildEnvironment(
   }
 
   // 3. Import map (blob-resolved at runtime by the stage; paths are relative).
-  //    A local specifier that resolves to exactly ONE bundle across all anchors
-  //    goes in the flat `imports`; a specifier resolving to DIFFERENT bundles
-  //    per anchor (shared specifier, different files) goes in per-anchor
-  //    `scopes` so each anchor imports the correct one.
-  const specToOuts = new Map<string, Set<string>>();
+  //    The runtime import map is FLAT and applied globally. A local specifier
+  //    string that resolves to DIFFERENT files across anchors ("./cn" from two
+  //    components in different dirs) cannot be a single flat key, so give each
+  //    such anchor a UNIQUE specifier — rewriting its baseline source (which the
+  //    sandbox runs), its manifest key (which the model reads), and the flat
+  //    import entry together so all three agree and BOTH modules resolve.
+  //    Single-resolution specifiers (the common case) stay a plain flat entry.
+  //    NOTE: mutates `records` in place; the caller persists remix-sources.json
+  //    AFTER this so the rewritten baselines are what the runtime loads.
+  const specToFiles = new Map<string, Set<string>>();
+  for (const r of localResolved) {
+    let files = specToFiles.get(r.specifier);
+    if (!files) specToFiles.set(r.specifier, (files = new Set()));
+    files.add(r.file);
+  }
+  const localImports = new Map<string, string>(); // final specifier → ./vendor/<out>
   for (const r of localResolved) {
     const out = fileToOut.get(r.file);
-    if (!out) continue;
-    let outs = specToOuts.get(r.specifier);
-    if (!outs) specToOuts.set(r.specifier, (outs = new Set()));
-    outs.add(out);
-  }
-  const flatLocal: Array<[string, string]> = [];
-  for (const [specifier, outs] of specToOuts) {
-    if (outs.size === 1) flatLocal.push([specifier, `./vendor/${[...outs][0]!}`]);
-  }
-  const scopes: Record<string, Record<string, string>> = {};
-  for (const r of localResolved) {
-    const out = fileToOut.get(r.file);
-    if (!out || (specToOuts.get(r.specifier)?.size ?? 0) <= 1) continue; // flat-covered
-    (scopes[r.anchorId] ??= {})[r.specifier] = `./vendor/${out}`;
+    if (!out) continue; // failed to bundle → already marked absent, no map row
+    let spec = r.specifier;
+    if ((specToFiles.get(r.specifier)?.size ?? 0) > 1) {
+      spec = uniqueLocalSpecifier(r.specifier, r.file, targetDir);
+      const record = records[r.anchorId];
+      if (record) {
+        record.source = rewriteImportSpecifier(record.source, r.specifier, spec);
+        if (record.prepared !== undefined) {
+          record.prepared = rewriteImportSpecifier(record.prepared, r.specifier, spec);
+        }
+      }
+      const perImport = anchors[r.anchorId];
+      if (perImport && r.specifier in perImport && !(spec in perImport)) {
+        perImport[spec] = perImport[r.specifier]!;
+        delete perImport[r.specifier];
+      }
+    }
+    localImports.set(spec, `./vendor/${out}`);
   }
   const importMap = {
     imports: Object.fromEntries([
       ...[...npmToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
       ...[...shimToVendor].map(([specifier, outName]) => [specifier, `./vendor/${outName}`]),
-      ...flatLocal,
+      ...localImports,
     ]),
-    ...(Object.keys(scopes).length > 0 ? { scopes } : {}),
   };
   writeFileSync(path.join(envDir, "import-map.json"), `${JSON.stringify(importMap, null, 2)}\n`);
 
@@ -423,6 +438,24 @@ export async function buildEnvironment(
 
 function slug(specifier: string): string {
   return specifier.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+}
+
+/** A unique, still-relative specifier for a colliding local import, keyed by the
+ *  RESOLVED file (so two anchors resolving to the same file dedup to the same
+ *  specifier, different files diverge). The manifest key, the anchor's baseline
+ *  source, and the flat import entry are all rewritten to this together. */
+function uniqueLocalSpecifier(specifier: string, file: string, targetDir: string): string {
+  const h = createHash("sha256").update(path.relative(targetDir, file)).digest("hex").slice(0, 8);
+  return `${specifier}__${h}`;
+}
+
+/** Rewrite an import specifier (static `from "x"` and dynamic `import("x")`) in
+ *  a captured source string. */
+function rewriteImportSpecifier(code: string, from: string, to: string): string {
+  const q = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return code
+    .replace(new RegExp(`(from\\s*['"])${q}(['"])`, "g"), `$1${to}$2`)
+    .replace(new RegExp(`(import\\s*\\(\\s*['"])${q}(['"])`, "g"), `$1${to}$2`);
 }
 function kb(n: number): string {
   return `${(n / 1024).toFixed(1)}KB`;
