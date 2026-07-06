@@ -63,15 +63,49 @@ export default function useSWR<T = unknown>(key: unknown, _fetcher?: unknown): S
 
 export { useSWR };
 
-/** Global `mutate`. Wired to the same anchor-data cache `useSWR` reads: when
- *  `data` is supplied it writes it under the key so a subsequent `useSWR(key)`
- *  sees the new value, then resolves with it. With no data it is a safe resolved
- *  no-op (there is no revalidation — the fetcher is never run). */
-export function mutate<T = unknown>(key: unknown, data?: T): Promise<T | undefined> {
-  if (typeof key === "string" && data !== undefined) {
-    anchorStore()[key] = data;
+function keyString(key: unknown): string | undefined {
+  if (typeof key === "string") return key;
+  if (Array.isArray(key) && typeof key[0] === "string") return key[0];
+  return undefined;
+}
+
+/** Global `mutate`, wired to the same anchor-data cache `useSWR` reads. Supports:
+ *   - `mutate(key, data)` — write `data` under the key, resolve with it;
+ *   - `mutate(key)` — the revalidate form: no fetcher to run, so resolve with
+ *     the CURRENT cached value rather than silently dropping;
+ *   - `mutate(matcherFn[, data])` — predicate/broadcast form: apply the matcher
+ *     to every cache key, optionally write `data` to matches, resolve with the
+ *     array of matched values.
+ *  (No reactive re-render here — `useSWR` reads synchronously each render.) */
+export function mutate<T = unknown>(
+  keyOrMatcher: unknown,
+  data?: T,
+  _opts?: unknown,
+): Promise<T | undefined | Array<T | undefined>> {
+  const store = anchorStore();
+  const hasData = data !== undefined;
+
+  if (typeof keyOrMatcher === "function") {
+    const matcher = keyOrMatcher as (key: string) => unknown;
+    const results: Array<T | undefined> = [];
+    for (const k of Object.keys(store)) {
+      let matches = false;
+      try {
+        matches = Boolean(matcher(k));
+      } catch {
+        matches = false;
+      }
+      if (!matches) continue;
+      if (hasData) store[k] = data;
+      results.push(store[k] as T | undefined);
+    }
+    return Promise.resolve(results);
   }
-  return Promise.resolve(data);
+
+  const key = keyString(keyOrMatcher);
+  if (key === undefined) return Promise.resolve(undefined);
+  if (hasData) store[key] = data;
+  return Promise.resolve(store[key] as T | undefined);
 }
 
 export interface SWRConfiguration {

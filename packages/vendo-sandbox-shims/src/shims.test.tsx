@@ -273,6 +273,25 @@ describe("swr extra exports", () => {
     await expect(mutate("/api/x")).resolves.toBeUndefined();
   });
 
+  it("global mutate with a key only (revalidate form) resolves the current cached value", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/x": [1] };
+    await expect(mutate("/api/x")).resolves.toEqual([1]);
+  });
+
+  it("global mutate with a predicate matches cache entries and resolves their values", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/a": 1, "/api/b": 2, "/other": 3 };
+    const res = (await mutate((key: string) => key.startsWith("/api/"))) as unknown[];
+    expect(res).toEqual(expect.arrayContaining([1, 2]));
+    expect(res).not.toContain(3);
+  });
+
+  it("global mutate with a predicate + data writes matching entries only", async () => {
+    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/a": 1, "/api/b": 2 };
+    await mutate((key: string) => key === "/api/a", 99);
+    expect(useSWR("/api/a").data).toBe(99);
+    expect(useSWR("/api/b").data).toBe(2);
+  });
+
   it("SWRConfig renders its children (passthrough provider)", () => {
     render(<SWRConfig value={{}}>{<span>swr-child</span>}</SWRConfig>);
     expect(screen.getByText("swr-child")).toBeTruthy();
