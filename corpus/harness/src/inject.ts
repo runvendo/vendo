@@ -115,6 +115,16 @@ function localFileSpec(value: string): boolean {
   return /^file:vendor\/.+\.tgz$/.test(value);
 }
 
+function isVendoPackageName(name: string): boolean {
+  return name === "vendoai" || name.startsWith("@vendoai/");
+}
+
+function lockfileMentionsVendoPackage(lockfile: string): boolean {
+  return lockfile.includes("@vendoai/")
+    || /(^|\n)\s*['"]?vendoai['"]?:/m.test(lockfile)
+    || /\/vendoai\/[^/\s]+/i.test(lockfile);
+}
+
 function scopedInstallCommand(command: string): string {
   return command === "pnpm install" ? "pnpm install --ignore-workspace" : command;
 }
@@ -132,7 +142,7 @@ async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoIn
   const dependencySections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
   for (const section of dependencySections) {
     for (const [name, spec] of Object.entries(stringRecord(pkg[section]))) {
-      if (name.startsWith("@vendoai/") && !localFileSpec(spec)) {
+      if (isVendoPackageName(name) && !localFileSpec(spec)) {
         throw new Error(`${section}.${name} must resolve from a local file:vendor/*.tgz tarball, got ${spec}`);
       }
     }
@@ -149,7 +159,7 @@ async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoIn
     }
   }
   for (const [name, spec] of Object.entries(overrides)) {
-    if (name.startsWith("@vendoai/") && !localFileSpec(spec)) {
+    if (isVendoPackageName(name) && !localFileSpec(spec)) {
       throw new Error(`${summary.packageManager === "pnpm" ? "pnpm.overrides" : "overrides"}.${name} must resolve from a local file:vendor/*.tgz tarball, got ${spec}`);
     }
   }
@@ -157,11 +167,11 @@ async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoIn
   for (const fileName of ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json"]) {
     const lockfile = await readOptional(path.join(repoDir, fileName));
     if (!lockfile) continue;
-    if (/registry\.npmjs\.org\/(?:@|%40)vendoai/i.test(lockfile)) {
-      throw new Error(`${fileName} still references registry.npmjs.org for @vendoai packages`);
+    if (/registry\.npmjs\.org\/(?:@|%40)vendoai/i.test(lockfile) || /registry\.npmjs\.org\/vendoai(?:\/|-)/i.test(lockfile)) {
+      throw new Error(`${fileName} still references registry.npmjs.org for Vendo packages`);
     }
-    if (lockfile.includes("@vendoai/") && !lockfile.includes("file:vendor/vendoai-")) {
-      throw new Error(`${fileName} mentions @vendoai packages without file:vendor/*.tgz resolution`);
+    if (lockfileMentionsVendoPackage(lockfile) && !lockfile.includes("file:vendor/vendoai-")) {
+      throw new Error(`${fileName} mentions Vendo packages without file:vendor/*.tgz resolution`);
     }
   }
 }

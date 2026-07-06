@@ -34,42 +34,104 @@ async function createWorkspace(): Promise<string> {
     private: true,
     packageManager: "pnpm@9.12.0",
   });
-  await writeJson(path.join(workspaceRoot, "packages/vendo-core/package.json"), {
-    name: "@vendoai/core",
-    version: "0.1.0",
-    type: "module",
-    main: "index.js",
-    files: ["index.js"],
-  });
-  await writeJson(path.join(workspaceRoot, "packages/vendo-cli/package.json"), {
-    name: "@vendoai/cli",
-    version: "0.1.0",
-    type: "module",
-    main: "index.js",
-    files: ["index.js"],
-  });
-  await writeJson(path.join(workspaceRoot, "packages/vendo-next/package.json"), {
-    name: "@vendoai/next",
-    version: "0.1.0",
-    type: "module",
-    main: "index.js",
-    files: ["index.js"],
-    dependencies: {
-      "@vendoai/core": "0.1.0",
+
+  const packages: Array<{ dir: string; name: string; dependencies?: Record<string, string> }> = [
+    {
+      dir: "vendo",
+      name: "vendoai",
+      dependencies: {
+        "@vendoai/client": "0.1.0",
+        "@vendoai/components": "0.1.0",
+        "@vendoai/core": "0.1.0",
+        "@vendoai/react": "0.1.0",
+        "@vendoai/server": "0.1.0",
+        "@vendoai/shell": "0.1.0",
+      },
     },
-  });
-  await writeJson(path.join(workspaceRoot, "packages/vendo-shell/package.json"), {
-    name: "@vendoai/shell",
-    version: "0.1.0",
-    type: "module",
-    main: "index.js",
-    files: ["index.js"],
-    dependencies: {
-      "@vendoai/core": "0.1.0",
+    { dir: "vendo-cli", name: "@vendoai/cli" },
+    {
+      dir: "vendo-client",
+      name: "@vendoai/client",
+      dependencies: {
+        "@vendoai/components": "0.1.0",
+        "@vendoai/core": "0.1.0",
+        "@vendoai/react": "0.1.0",
+        "@vendoai/server": "0.1.0",
+        "@vendoai/shell": "0.1.0",
+        "@vendoai/stage": "0.1.0",
+      },
     },
-  });
-  for (const dir of ["vendo-cli", "vendo-core", "vendo-next", "vendo-shell"]) {
-    await writeFile(path.join(workspaceRoot, "packages", dir, "index.js"), "export {};\n");
+    {
+      dir: "vendo-components",
+      name: "@vendoai/components",
+      dependencies: {
+        "@vendoai/core": "0.1.0",
+      },
+    },
+    { dir: "vendo-core", name: "@vendoai/core" },
+    {
+      dir: "vendo-react",
+      name: "@vendoai/react",
+      dependencies: {
+        "@vendoai/core": "0.1.0",
+        "@vendoai/stage": "0.1.0",
+      },
+    },
+    {
+      dir: "vendo-runtime",
+      name: "@vendoai/runtime",
+      dependencies: {
+        "@vendoai/core": "0.1.0",
+      },
+    },
+    {
+      dir: "vendo-server",
+      name: "@vendoai/server",
+      dependencies: {
+        "@vendoai/components": "0.1.0",
+        "@vendoai/core": "0.1.0",
+        "@vendoai/runtime": "0.1.0",
+        "@vendoai/shell": "0.1.0",
+        "@vendoai/store": "0.1.0",
+        "@vendoai/telemetry": "0.1.0",
+      },
+    },
+    {
+      dir: "vendo-shell",
+      name: "@vendoai/shell",
+      dependencies: {
+        "@vendoai/core": "0.1.0",
+        "@vendoai/react": "0.1.0",
+      },
+    },
+    {
+      dir: "vendo-stage",
+      name: "@vendoai/stage",
+      dependencies: {
+        "@vendoai/core": "0.1.0",
+      },
+    },
+    {
+      dir: "vendo-store",
+      name: "@vendoai/store",
+      dependencies: {
+        "@vendoai/core": "0.1.0",
+        "@vendoai/runtime": "0.1.0",
+      },
+    },
+    { dir: "vendo-telemetry", name: "@vendoai/telemetry" },
+  ];
+
+  for (const pkg of packages) {
+    await writeJson(path.join(workspaceRoot, "packages", pkg.dir, "package.json"), {
+      name: pkg.name,
+      version: "0.1.0",
+      type: "module",
+      main: "index.js",
+      files: ["index.js"],
+      ...(pkg.dependencies ? { dependencies: pkg.dependencies } : {}),
+    });
+    await writeFile(path.join(workspaceRoot, "packages", pkg.dir, "index.js"), "export {};\n");
   }
   await mkdir(path.join(workspaceRoot, "vendor"), { recursive: true });
   await writeFile(path.join(workspaceRoot, "vendor/fluidkit-0.5.0-test.tgz"), "fixture fluidkit");
@@ -83,7 +145,7 @@ async function createTargetRepo(corpusRoot: string, name: string): Promise<strin
     name,
     packageManager: "pnpm@9.12.0",
     dependencies: {
-      "@vendoai/next": "latest",
+      "vendoai": "latest",
     },
   });
   return repoDir;
@@ -91,6 +153,7 @@ async function createTargetRepo(corpusRoot: string, name: string): Promise<strin
 
 function readPackageJson(repoDir: string): Promise<{
   dependencies: Record<string, string>;
+  devDependencies: Record<string, string>;
   pnpm: { overrides: Record<string, string> };
 }> {
   return readFile(path.join(repoDir, "package.json"), "utf8").then((source) => JSON.parse(source));
@@ -135,35 +198,71 @@ describe("createLocalVendoInjector", () => {
     expect(buildCount).toBe(1);
     expect([...packCounts.entries()].sort()).toEqual([
       ["@vendoai/cli", 1],
+      ["@vendoai/client", 1],
+      ["@vendoai/components", 1],
       ["@vendoai/core", 1],
-      ["@vendoai/next", 1],
+      ["@vendoai/react", 1],
+      ["@vendoai/runtime", 1],
+      ["@vendoai/server", 1],
       ["@vendoai/shell", 1],
+      ["@vendoai/stage", 1],
+      ["@vendoai/store", 1],
+      ["@vendoai/telemetry", 1],
+      ["vendoai", 1],
     ]);
     await expect(readdir(path.join(repoOne, "vendor"))).resolves.toEqual(expect.arrayContaining([
       "fluidkit-0.5.0-test.tgz",
+      "vendoai-0.1.0.tgz",
       "vendoai-cli-0.1.0.tgz",
+      "vendoai-client-0.1.0.tgz",
+      "vendoai-components-0.1.0.tgz",
       "vendoai-core-0.1.0.tgz",
-      "vendoai-next-0.1.0.tgz",
+      "vendoai-react-0.1.0.tgz",
+      "vendoai-runtime-0.1.0.tgz",
+      "vendoai-server-0.1.0.tgz",
       "vendoai-shell-0.1.0.tgz",
+      "vendoai-stage-0.1.0.tgz",
+      "vendoai-store-0.1.0.tgz",
+      "vendoai-telemetry-0.1.0.tgz",
     ]));
     await expect(readdir(path.join(repoTwo, "vendor"))).resolves.toEqual(expect.arrayContaining([
+      "vendoai-0.1.0.tgz",
       "vendoai-cli-0.1.0.tgz",
+      "vendoai-client-0.1.0.tgz",
+      "vendoai-components-0.1.0.tgz",
       "vendoai-core-0.1.0.tgz",
-      "vendoai-next-0.1.0.tgz",
+      "vendoai-react-0.1.0.tgz",
+      "vendoai-runtime-0.1.0.tgz",
+      "vendoai-server-0.1.0.tgz",
       "vendoai-shell-0.1.0.tgz",
+      "vendoai-stage-0.1.0.tgz",
+      "vendoai-store-0.1.0.tgz",
+      "vendoai-telemetry-0.1.0.tgz",
     ]));
 
     const pkg = await readPackageJson(repoTwo);
-    expect(pkg.dependencies["@vendoai/cli"]).toBe("file:vendor/vendoai-cli-0.1.0.tgz");
-    expect(pkg.dependencies["@vendoai/next"]).toBe("file:vendor/vendoai-next-0.1.0.tgz");
-    expect(pkg.dependencies["@vendoai/shell"]).toBe("file:vendor/vendoai-shell-0.1.0.tgz");
-    for (const name of ["@vendoai/cli", "@vendoai/core", "@vendoai/next", "@vendoai/shell"]) {
+    expect(pkg.dependencies["vendoai"]).toBe("file:vendor/vendoai-0.1.0.tgz");
+    expect(pkg.devDependencies["@vendoai/cli"]).toBe("file:vendor/vendoai-cli-0.1.0.tgz");
+    for (const name of [
+      "@vendoai/cli",
+      "@vendoai/client",
+      "@vendoai/components",
+      "@vendoai/core",
+      "@vendoai/react",
+      "@vendoai/runtime",
+      "@vendoai/server",
+      "@vendoai/shell",
+      "@vendoai/stage",
+      "@vendoai/store",
+      "@vendoai/telemetry",
+      "vendoai",
+    ]) {
       expect(pkg.pnpm.overrides[name]).toMatch(/^file:vendor\/vendoai-/);
     }
     expect(pkg.pnpm.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
   });
 
-  it("runs the host install command and accepts lockfiles that point @vendoai packages at local tarballs", async () => {
+  it("runs the host install command and accepts lockfiles that point Vendo packages at local tarballs", async () => {
     const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();
     const repoDir = await createTargetRepo(corpusRoot, "repo-lock");
@@ -181,12 +280,12 @@ describe("createLocalVendoInjector", () => {
         installCalls.push(`${command} @ ${cwd}`);
         await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
           "dependencies:",
-          "  '@vendoai/next':",
-          "    specifier: file:vendor/vendoai-next-0.1.0.tgz",
-          "    version: file:vendor/vendoai-next-0.1.0.tgz",
-          "  '@vendoai/shell':",
-          "    specifier: file:vendor/vendoai-shell-0.1.0.tgz",
-          "    version: file:vendor/vendoai-shell-0.1.0.tgz",
+          "  vendoai:",
+          "    specifier: file:vendor/vendoai-0.1.0.tgz",
+          "    version: file:vendor/vendoai-0.1.0.tgz",
+          "  '@vendoai/server':",
+          "    specifier: file:vendor/vendoai-server-0.1.0.tgz",
+          "    version: file:vendor/vendoai-server-0.1.0.tgz",
           "",
         ].join("\n"));
       },
@@ -196,10 +295,10 @@ describe("createLocalVendoInjector", () => {
 
     expect(result.initArgs).toEqual(["--local", workspaceRoot]);
     expect(installCalls).toEqual([`pnpm install --ignore-workspace @ ${repoDir}`]);
-    await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-next-0.1.0.tgz");
+    await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-0.1.0.tgz");
   });
 
-  it("rejects lockfiles that still point @vendoai packages at the registry", async () => {
+  it("rejects lockfiles that still point Vendo packages at the registry", async () => {
     const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();
     const repoDir = await createTargetRepo(corpusRoot, "repo-registry-lock");
@@ -215,16 +314,16 @@ describe("createLocalVendoInjector", () => {
       async runInstallCommand(_command, cwd) {
         await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
           "packages:",
-          "  /@vendoai/next/0.1.0:",
+          "  /vendoai/0.1.0:",
           "    resolution:",
-          "      tarball: https://registry.npmjs.org/@vendoai/next/-/next-0.1.0.tgz",
+          "      tarball: https://registry.npmjs.org/vendoai/-/vendoai-0.1.0.tgz",
           "",
         ].join("\n"));
       },
     });
 
-    await expect(injector.inject({ name: "repo-registry-lock" })).rejects.toThrow(/pnpm-lock\.yaml.*registry\.npmjs\.org.*@vendoai/i);
-    await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.toContain("file:vendor/vendoai-next-0.1.0.tgz");
+    await expect(injector.inject({ name: "repo-registry-lock" })).rejects.toThrow(/pnpm-lock\.yaml.*registry\.npmjs\.org.*Vendo/i);
+    await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.toContain("file:vendor/vendoai-0.1.0.tgz");
   });
 
   it("fails early when the workspace or corpus repo path contains a space", async () => {

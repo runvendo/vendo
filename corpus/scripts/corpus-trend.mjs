@@ -45,7 +45,9 @@ function deltaMarker(prev, curr) {
   return "▪ same";
 }
 
-const [, , prevPath, currPath] = process.argv;
+const args = process.argv.slice(2);
+const annotate = args.includes("--annotate");
+const [prevPath, currPath] = args.filter((a) => a !== "--annotate");
 
 const current = await readScorecard(currPath);
 if (!current) {
@@ -54,6 +56,25 @@ if (!current) {
 }
 
 const previous = prevPath ? await readScorecard(prevPath) : null;
+
+// --annotate: emit GitHub Actions warning commands (parsed from stdout, so
+// this mode must NOT be redirected to the step summary) and nothing else.
+if (annotate) {
+  const prevIdx = indexLayers(previous);
+  const currIdx = indexLayers(current);
+  const allKeys = [...new Set([...prevIdx.keys(), ...currIdx.keys()])].sort();
+  for (const key of allKeys) {
+    const marker = deltaMarker(prevIdx.get(key), currIdx.get(key));
+    if (marker.includes("regressed")) {
+      const [repo, layer] = key.split("::");
+      console.log(
+        `::warning title=Corpus regression::${repo} layer ${layer} regressed: ` +
+          `${scoreText(prevIdx.get(key))} -> ${scoreText(currIdx.get(key))}`,
+      );
+    }
+  }
+  process.exit(0);
+}
 
 const lines = [];
 lines.push("## Corpus trend");
