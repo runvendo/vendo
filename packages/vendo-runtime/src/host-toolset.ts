@@ -31,6 +31,10 @@ export function hostToolset(defs: HostToolDefinition[]): ToolSet {
     tools[def.name] = {
       ...base,
       annotations: def.annotations,
+      // Field-format hints ride top-level so `buildDescriptor` can carry them
+      // onto the descriptor (and thence the approval card/receipt), the same
+      // way it picks up the annotations and the client-executor marker.
+      ...(def.formats ? { formats: def.formats } : {}),
       [CLIENT_EXECUTOR_MARKER]: "client",
     } as unknown as Tool;
   }

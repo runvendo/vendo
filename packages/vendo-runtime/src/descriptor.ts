@@ -7,6 +7,8 @@
  * policy engine always reads from a single, normalised source of truth.
  */
 
+import type { FieldFormat } from "@vendoai/core";
+
 /**
  * Where a tool originated — used for merge precedence and provenance.
  *
@@ -58,6 +60,11 @@ export interface ToolDescriptor {
   description?: string;
   /** Toolkit id for integration tools (e.g. "gmail"), when derivable. */
   toolkit?: string;
+  /** Per-field display-format hints (field name → format) declared by a host
+   *  tool (`HostToolDefinition.formats`). Carried through to the approval
+   *  card/receipt so a money/date input renders faithfully ($500.00, not
+   *  50000). Absent for tools that declare none. */
+  formats?: Readonly<Record<string, FieldFormat>>;
 }
 
 /**
@@ -118,7 +125,17 @@ export function buildDescriptor(
       ? name.slice(0, name.indexOf("_")).toLowerCase()
       : undefined;
 
-  return { name, source, annotations, hasExecute, kind, executor, description, toolkit };
+  // Field-format hints travel top-level on the tool object (attached by
+  // `hostToolset`, alongside the annotations/executor marker) so they reach
+  // the approval card/receipt through the descriptor.
+  const formats =
+    isObj &&
+    typeof (tool as Record<string, unknown>)["formats"] === "object" &&
+    (tool as Record<string, unknown>)["formats"] !== null
+      ? ((tool as Record<string, unknown>)["formats"] as Readonly<Record<string, FieldFormat>>)
+      : undefined;
+
+  return { name, source, annotations, hasExecute, kind, executor, description, toolkit, ...(formats ? { formats } : {}) };
 }
 
 // ---------------------------------------------------------------------------

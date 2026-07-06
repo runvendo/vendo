@@ -50,7 +50,10 @@ export const manifestFieldFormatSchema = z.enum([
 export type FieldFormat = z.infer<typeof manifestFieldFormatSchema>;
 
 /** Field name → format. Keys are RESULT field names (any depth — hints are
- *  prose for the model, so JSON-pointer precision buys nothing).
+ *  prose for the model, so JSON-pointer precision buys nothing). The same
+ *  hints also style an approval card's INPUT fields of the same name (ENG-193
+ *  follow-up: a money/date input renders like the result does), on the
+ *  assumption a field's units are consistent between input and result.
  *
  *  Keys are constrained to the same identifier charset as tool names: they
  *  are interpolated into the prompt by `prompt/format-hints.ts`, so a

@@ -1,5 +1,5 @@
 import { isCatalogTool, toolAction } from "./tool-labels";
-import { approvalRows } from "./field-rows";
+import { approvalRows, type FieldFormats } from "./field-rows";
 
 export interface ApprovalCardProps {
   toolName: string;
@@ -15,6 +15,10 @@ export interface ApprovalCardProps {
   /** The judge/breaker's plain-language escalation reason (ENG-193 §4.2/§4.7),
    *  from the sibling data-consent part. Absent for an ordinary approval. */
   reason?: string;
+  /** Per-field display-format hints (`{ amount: "cents" }`) from the tool's
+   *  manifest, carried on the sibling data-consent part. Makes a critical
+   *  card's money/date fields render faithfully ($500.00, not 50000). */
+  formats?: FieldFormats;
   /** Voice sessions (ENG-185): a soft listening ring while a spoken yes is
    *  acceptable. Critical-tier cards never listen — voice only announces. */
   listening?: boolean;
@@ -54,7 +58,7 @@ export interface ApprovalCardProps {
  * receipt of how consent was given (buttons collapse into an outcome line).
  */
 export function ApprovalCard({
-  toolName, input, tier = "act", unverified = false, reason, listening = false, resolution, consequence, onApprove, onDecline,
+  toolName, input, tier = "act", unverified = false, reason, formats, listening = false, resolution, consequence, onApprove, onDecline,
 }: ApprovalCardProps) {
   const action = toolAction(toolName);
   const critical = tier === "critical";
@@ -66,7 +70,7 @@ export function ApprovalCard({
   // Material fields are a CRITICAL-tier concern only: the tool's declared
   // non-empty input fields, humanized labels + readable values, untruncated
   // (maxChars null is the same critical signal field-rows.ts always used).
-  const materialRows = critical ? approvalRows(input, null).rows : [];
+  const materialRows = critical ? approvalRows(input, null, formats).rows : [];
   const confirmLabel = critical ? `Confirm ${action.request.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : "Send it";
   const declineLabel = critical ? "Cancel" : "No";
   const approveClass = critical ? "fl-btn-ceremony" : escalated ? "fl-btn" : "fl-btn-primary";

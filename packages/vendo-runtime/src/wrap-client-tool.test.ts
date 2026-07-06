@@ -203,6 +203,23 @@ describe("wrapClientTool", () => {
     expect(seen[0]!.provenance).toEqual({ taintedSources: [] });
   });
 
+  it("carries the tool's declared field formats onto the data-consent part when the descriptor has them", async () => {
+    const writes: unknown[] = [];
+    const writer = { write: (part: unknown) => writes.push(part) } as never;
+    const wrapped = wrapClientTool({
+      name: "createTransfer",
+      tool: bareTool,
+      descriptor: { ...clientDescriptor("createTransfer"), formats: { amount: "cents" } },
+      policy: fixedPolicy("approve"),
+      principal: PRINCIPAL,
+      writer,
+    });
+    await wrapped.needsApproval!({}, { toolCallId: "call-fmt", messages: [] } as never);
+    expect(writes).toEqual([
+      { type: "data-consent", id: "consent-call-fmt", data: { toolCallId: "call-fmt", tier: "act", unverified: false, formats: { amount: "cents" } } },
+    ]);
+  });
+
   it("writes the escalation reason onto the data-consent part when the policy stamped one", async () => {
     const writes: unknown[] = [];
     const writer = { write: (part: unknown) => writes.push(part) } as never;

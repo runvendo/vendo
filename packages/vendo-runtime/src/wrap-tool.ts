@@ -178,6 +178,7 @@ export function wrapTool(args: WrapToolArgs): Tool {
           tier,
           unverified: isUnverified(descriptor),
           ...(reason ? { reason } : {}),
+          ...(descriptor.formats ? { formats: descriptor.formats } : {}),
         },
       });
     } catch (err) {

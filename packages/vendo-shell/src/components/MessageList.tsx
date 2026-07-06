@@ -267,6 +267,7 @@ export function MessageList({
                   tier={item.tier}
                   unverified={item.unverified}
                   reason={item.reason}
+                  formats={item.formats}
                   onApprove={() => onApprove(item.approvalId)}
                   onDecline={() => onDecline?.(item.approvalId)}
                 />
