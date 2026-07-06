@@ -2,7 +2,14 @@
   "name": "vendoai",
   "version": "0.2.0",
   "description": "Vendo: an embedded agent your users talk to, acting through your own API and rendering brand-native generated UI. One package: `vendoai/server` for the route, `vendoai/react` for the UI. (Interim name — bare `vendo` is pending an npm name-dispute; npm's typosquat checker blocks it as \"too similar to send\".)",
-  "keywords": ["ai", "agent", "generative-ui", "react", "nextjs", "devtool"],
+  "keywords": [
+    "ai",
+    "agent",
+    "generative-ui",
+    "react",
+    "nextjs",
+    "devtool"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -21,7 +28,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "vendo": "./bin/vendo.mjs"
+    "vendo": "bin/vendo.mjs"
   },
   "exports": {
     ".": {
@@ -42,11 +49,18 @@
   },
   "typesVersions": {
     "*": {
-      "server": ["dist/server.d.ts"],
-      "react": ["dist/react.d.ts"]
+      "server": [
+        "dist/server.d.ts"
+      ],
+      "react": [
+        "dist/react.d.ts"
+      ]
     }
   },
-  "files": ["dist", "bin"],
+  "files": [
+    "dist",
+    "bin"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "tsc -p tsconfig.json",
@@ -58,8 +72,12 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true },
-    "react-dom": { "optional": true }
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@vendoai/client": "workspace:*",
