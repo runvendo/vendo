@@ -9,11 +9,16 @@ gitignored; do not commit foreign repo code or generated run artifacts.
 - `pnpm corpus --help` prints the current harness commands.
 - `pnpm corpus validate` loads and validates `corpus/manifest.json`.
 - `pnpm corpus list` prints the pinned repos in the manifest.
+- `pnpm corpus run [repo...] --layer 1` runs the Layer 1 sweep for the selected
+  repos, or every manifest repo when none are named.
 - `pnpm --filter @vendoai/corpus-harness test` runs the harness unit tests.
 
-The harness currently validates/lists the manifest and has unit-tested helpers
-for clone, bootstrap, and local package injection. Init and verification layers
-land in later tasks.
+Run artifacts are written under `corpus/.repos/.logs/`, with a copy of the
+aggregate scorecard under each selected repo's `run/` directory. By default the
+runner invokes real `vendo init` with LLM steps enabled; pass `--skip-llm` for
+cheap harness runs. Pass `--json` to print the machine-readable scorecard, and
+`--strict` to make hard failures return a nonzero exit code. Without `--strict`,
+the sweep reports all repo failures and exits 0.
 
 ## Local Vendo injection
 
