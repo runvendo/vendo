@@ -34,7 +34,7 @@ That is the install. The codemod adds Vendo beside your existing code, the handl
     - `instrumentation.ts` or `src/instrumentation.ts` to start the scheduler in the Node.js runtime.
     - `.env.example` with provider, integration, storage, scheduler, and webhook variables.
     - `public/vendo/react-runtime.js` and `public/vendo/components-sandbox.js`.
-    - A `prebuild` script that runs `vendo sync`.
+    - A `prebuild` script that runs `vendo sync`. By default the sync runs via npx, which needs registry access at build time; add `@vendoai/cli` as a devDependency for hermetic or offline builds — the `vendo` bin picks it up automatically.
 
     The generated route is:
 

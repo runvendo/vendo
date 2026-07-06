@@ -69,5 +69,9 @@ writes or edits:
 | `public/vendo/react-runtime.js` and `public/vendo/components-sandbox.js` | Copies the sandbox runtime assets from the CLI bundle. |
 | `package.json` | Adds `vendo` to dependencies and adds `vendo sync` to `prebuild` when possible. |
 
+By default the `prebuild` sync runs via npx, which needs registry access at
+build time. For hermetic or offline builds, add `@vendoai/cli` as a
+devDependency — the `vendo` bin picks it up automatically.
+
 If the project is not a supported Next.js App Router target, `init` still writes
 the `.vendo/` extraction output it can produce, then reports the skipped wiring.

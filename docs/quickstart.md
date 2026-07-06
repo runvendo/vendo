@@ -35,7 +35,10 @@ npx vendo init .
   below) plus the storage and scheduler env vars (see
   [Persistence](#persistence));
 - copies the sandbox runtime assets into `public/vendo/`;
-- adds `vendo` to your dependencies.
+- adds `vendo` to your dependencies and a `prebuild` script that runs
+  `vendo sync`. By default the sync runs via npx, which needs registry access
+  at build time; add `@vendoai/cli` as a devDependency for hermetic or
+  offline builds — the `vendo` bin picks it up automatically.
 
 It never breaks existing code: any step it can't perform with certainty (an
 unusual layout, an unparsable package.json) is skipped and printed as an exact

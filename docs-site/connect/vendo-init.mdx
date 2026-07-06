@@ -38,6 +38,10 @@ On a Next.js App Router app, the codemod also writes or edits:
 | `public/vendo/components-sandbox.js` | Prewired component bundle for the sandbox. |
 | `package.json` | Adds `vendo` and a `prebuild` script that runs `vendo sync`. |
 
+By default the `prebuild` sync runs via npx, which needs registry access at
+build time. For hermetic or offline builds, add `@vendoai/cli` as a
+devDependency — the `vendo` bin picks it up automatically.
+
 The generated route has this shape:
 
 ```ts
