@@ -101,6 +101,8 @@ describe("codegen", () => {
       expect(() => assertSchemaValid(bad)).toThrow(/empty enum for "status"/);
     });
 
+    // Optional doesn't rescue an empty enum: z.enum([]).optional() accepts ONLY
+    // undefined, so the prop can never carry a value — still degenerate.
     it("detects a degenerate empty enum even when the prop is optional", () => {
       const bad: ComponentAnalysis = {
         ...analysis,

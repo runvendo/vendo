@@ -206,6 +206,11 @@ function exampleValue(p: ComponentAnalysis["props"][number]): unknown {
     // A well-formed enum has values; enumValues[0] is a member. An empty enum
     // has none, so the fallback deliberately fails the (degenerate) schema.
     case "enum": return p.enumValues?.[0] ?? "example";
+    // Exhaustiveness guard: a 7th prop type added to propSpecSchema without
+    // teaching this switch (and zodSource) must fail compile + loud at runtime,
+    // not silently return undefined and spuriously fail validation.
+    default:
+      throw new Error(`unhandled prop type ${JSON.stringify(p.type satisfies never)}`);
   }
 }
 

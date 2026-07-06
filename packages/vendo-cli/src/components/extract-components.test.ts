@@ -71,7 +71,10 @@ describe("extractComponents", () => {
     expect(summary.written).toEqual(["Badge"]);
     expect(summary.failed).toEqual([]);
     expect(count()).toBe(2); // original call + exactly one repair round-trip
-    await readFile(path.join(dir, ".vendo/components/Badge/descriptor.ts"), "utf8");
+    // The repaired (healthy) descriptor is what landed on disk.
+    await expect(readFile(path.join(dir, ".vendo/components/Badge/descriptor.ts"), "utf8")).resolves.toContain(
+      "z.string()",
+    );
   });
 
   it("reports a never-fixing degenerate schema as failed and writes nothing", async () => {
