@@ -87,7 +87,12 @@ consumers importing only `vendo/server` are unaffected.
   as a "Next adapter" — it's just an object of fetch handlers that happens
   to be the shape Next wants.
 - Client half: `VendoRoot`, `SandboxStage`, connect flow/node, voice driver,
-  navigate guard, notifications, server-store move into `@vendoai/react`.
+  navigate guard, notifications, server-store move into a new internal
+  package `@vendoai/client` (`packages/vendo-client`). (Amended 2026-07-05,
+  approved by Yousef: originally `@vendoai/react`, but `@vendoai/shell`
+  depends on `@vendoai/react` and this code imports shell heavily — moving
+  it into react would create a cycle. `@vendoai/client` sits at the top of
+  the React stack: client → shell → react → stage/core.)
 - Tests move with their code. The `packages/vendo-next` directory is removed
   from the workspace, turbo graph, and dependency-guard allowlist; the new
   `packages/vendo` is added.
