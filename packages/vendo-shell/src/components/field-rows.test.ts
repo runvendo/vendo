@@ -51,4 +51,47 @@ describe("approvalRows", () => {
     expect(rows).toHaveLength(12);
     expect(more).toBe(0);
   });
+
+  it("formats a `cents`-hinted field as currency — the critical-card money bug (raw 50000 → $500.00)", () => {
+    const { rows } = approvalRows(
+      { recipient_name: "Alex Rivera", amount: 50000, memo: "June rent" },
+      null,
+      { amount: "cents" },
+    );
+    expect(rows).toEqual([
+      { label: "Recipient name", value: "Alex Rivera" },
+      { label: "Amount", value: "$500.00" },
+      { label: "Memo", value: "June rent" },
+    ]);
+  });
+
+  it("leaves an un-hinted number untouched — never guesses a divisor", () => {
+    const { rows } = approvalRows({ amount: 50000 }, null);
+    expect(rows).toEqual([{ label: "Amount", value: "50000" }]);
+  });
+
+  it("adds thousands separators for large cents amounts", () => {
+    const { rows } = approvalRows({ amount: 1234567 }, null, { amount: "cents" });
+    expect(rows[0]).toEqual({ label: "Amount", value: "$12,345.67" });
+  });
+
+  it("renders negative cents with the sign outside the symbol", () => {
+    const { rows } = approvalRows({ amount: -5000 }, null, { amount: "cents" });
+    expect(rows[0]).toEqual({ label: "Amount", value: "-$50.00" });
+  });
+
+  it("never applies a cents hint to a non-number value (no guessing) — falls back to humanization", () => {
+    const { rows } = approvalRows({ amount: "50000" }, null, { amount: "cents" });
+    expect(rows[0]).toEqual({ label: "Amount", value: "50000" });
+  });
+
+  it("renders a `percent`-hinted number with a % sign, as-is (never rescaled)", () => {
+    const { rows } = approvalRows({ rate: 12.5 }, null, { rate: "percent" });
+    expect(rows[0]).toEqual({ label: "Rate", value: "12.5%" });
+  });
+
+  it("renders an `iso-date`-hinted string as a localized day without a timezone shift", () => {
+    const { rows } = approvalRows({ due: "2026-07-01" }, null, { due: "iso-date" });
+    expect(rows[0]).toEqual({ label: "Due", value: "Jul 1, 2026" });
+  });
 });
