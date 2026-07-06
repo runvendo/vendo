@@ -65,3 +65,26 @@ the orchestrating environment; Vendo-specific wiring never belongs here.
 4. Copy only host-app setup needs into `envTemplate`; never add Vendo-specific
    env vars or code.
 5. Run `pnpm corpus validate` and the harness tests.
+
+## Continuous integration
+
+The `Corpus Nightly` workflow (`.github/workflows/corpus-nightly.yml`) runs the
+sweep on a schedule (08:00 UTC daily) and on demand via `workflow_dispatch`
+(inputs: `repos` space-separated filter, `layer` 1/2/3). It builds the
+workspace, runs `pnpm corpus run --json`, writes the scorecard to the job
+summary, appends a trend delta versus the previous run
+(`corpus/scripts/corpus-trend.mjs`), and uploads `scorecard.json` + `.md` +
+per-repo logs as the `corpus-scorecard` artifact (30-day retention).
+
+PR CI is untouched — no LLM cost or flakiness is added to the merge path.
+
+Required secrets (Settings → Secrets and variables → Actions):
+
+- `ANTHROPIC_API_KEY` (required) — real `vendo init` extraction needs an LLM
+  key. The workflow fails fast if it is missing.
+- `OPENAI_API_KEY` (optional) — alternate provider.
+- `CORPUS_<REPO>_<KEY>` — per-repo bootstrap secrets referenced as
+  `${CORPUS_<REPO>_<KEY>}` placeholders in a manifest `envTemplate`.
+
+Run a filtered sweep on demand from the Actions tab → Corpus Nightly → Run
+workflow, e.g. `repos: umami taxonomy`, `layer: 1`.
