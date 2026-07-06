@@ -1,11 +1,25 @@
 /**
  * Minimal `next/navigation` shim. `useRouter().push/replace` (and `redirect`)
  * route the host app via vendo.navigate. `redirect`/`notFound` throw to unwind
- * the render (Next semantics, caught by the sandbox error boundary); the
- * router history methods and the read hooks that have no route channel are safe
- * no-ops / empty values so they never crash a render or event handler.
+ * the render (Next semantics, caught by the sandbox error boundary). The read
+ * hooks (usePathname/useSearchParams/useParams) resolve the host's real route
+ * from the read-only `window.__vendoRouteData` channel, falling back to empty
+ * values when absent; the router history methods stay safe no-ops so they never
+ * crash a render or event handler.
  */
 import { navigate } from "./dispatch.js";
+
+/** Read-only route channel the host injects (`window.__vendoRouteData`, set by
+ *  the stage runtime parallel to `__vendoAnchorData`). `search` is a raw query
+ *  string like "?q=1"; `params` is Next's dynamic-route params object. */
+interface RouteDataWindow {
+  __vendoRouteData?: { pathname?: string; search?: string; params?: Record<string, string | string[]> };
+}
+
+/** Never crashes when the channel is absent (SSR / no host): returns {}. */
+function routeData(): NonNullable<RouteDataWindow["__vendoRouteData"]> {
+  return (globalThis as unknown as RouteDataWindow).__vendoRouteData ?? {};
+}
 
 export function useRouter() {
   return {
@@ -30,19 +44,21 @@ export function useRouter() {
   };
 }
 
+/** The host's real pathname from the route channel (fallback "" with no host). */
 export function usePathname(): string {
-  return "";
+  return routeData().pathname ?? "";
 }
 
+/** The host's real query string, parsed from the route channel (fallback empty). */
 export function useSearchParams(): URLSearchParams {
-  return new URLSearchParams();
+  return new URLSearchParams(routeData().search ?? "");
 }
 
-/** No route channel exists in the sandbox yet, so there are no dynamic route
- *  params to surface — return an empty object rather than crash a component
- *  that reads `params.id`. */
+/** The host's real dynamic-route params from the route channel. Returns an empty
+ *  object when the channel is absent rather than crash a component reading
+ *  `params.id`. */
 export function useParams<T extends Record<string, string | string[]> = Record<string, string | string[]>>(): T {
-  return {} as T;
+  return (routeData().params ?? {}) as T;
 }
 
 /** Recognizable codes so a host/error-boundary can tell these apart from real

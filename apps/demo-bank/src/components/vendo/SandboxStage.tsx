@@ -6,9 +6,11 @@
  * onAction to the policy-governed action route, and renders an inline approval
  * prompt when the policy answers "approve".
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useSearchParams, useParams } from "next/navigation";
 import type { UINode, ActionRequest, ActionResult } from "@vendoai/core";
 import { VendoStage } from "@vendoai/react";
+import type { StageRoute } from "@vendoai/stage";
 import { ApprovalCard } from "@vendoai/shell";
 import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@vendoai/components";
 import { mapleHostComponents } from "@/vendo/host-components/descriptors";
@@ -73,6 +75,21 @@ function StageApproval({ req, settle }: { req: ActionRequest; settle: (approved:
       />
     </div>
   );
+}
+
+/** Live route supplier: feeds the host's REAL location into the sandbox so the
+ *  next/navigation shims resolve it. `useSearchParams` subscribes to query-only
+ *  navigation (so the sandbox re-renders) but forces a Suspense boundary. */
+function useHostRoute(): StageRoute {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const params = useParams();
+  const search = searchParams.toString();
+  return {
+    pathname: pathname ?? "",
+    search: search ? `?${search}` : "",
+    params: params as Record<string, string | string[]>, // catch-all segments stay string[]
+  };
 }
 
 export function SandboxStage({ node }: { node: UINode }): ReactNode {
@@ -142,15 +159,11 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
 
   return (
     <div>
-      <VendoStage
-        node={node}
-        components={[...prewiredComponents, ...mapleHostComponents]}
-        reactSource={sources.react}
-        bundleSource={sources.bundle}
-        onAction={onAction}
-        theme={theme}
-        componentTheme={componentTheme}
-      />
+      {/* Suspense satisfies useSearchParams()'s boundary requirement; on the
+          client the route resolves synchronously so the stage mounts once. */}
+      <Suspense fallback={<div data-testid="stage-loading" aria-busy="true" />}>
+        <RoutedStage node={node} sources={sources} onAction={onAction} />
+      </Suspense>
       {[...pending.entries()].map(([requestId, entry]) => (
         <StageApproval
           key={requestId}
@@ -159,5 +172,31 @@ export function SandboxStage({ node }: { node: UINode }): ReactNode {
         />
       ))}
     </div>
+  );
+}
+
+/** The stage with the host's live route fed in. Isolated so the
+ *  `useSearchParams()` subscription lives under the Suspense boundary above. */
+function RoutedStage({
+  node,
+  sources,
+  onAction,
+}: {
+  node: UINode;
+  sources: Sources;
+  onAction: (req: ActionRequest) => Promise<ActionResult>;
+}): ReactNode {
+  const route = useHostRoute();
+  return (
+    <VendoStage
+      node={node}
+      components={[...prewiredComponents, ...mapleHostComponents]}
+      reactSource={sources.react}
+      bundleSource={sources.bundle}
+      onAction={onAction}
+      theme={theme}
+      componentTheme={componentTheme}
+      route={route}
+    />
   );
 }
