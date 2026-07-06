@@ -1,15 +1,7 @@
 /**
- * Public API surface for `@vendoai/next/client` — the browser half of the
- * Next.js adapter: the VendoRoot provider that wires the shipped shell
- * surfaces to the routes `createVendoHandler()` serves.
+ * `@vendoai/next/client` is now a thin re-export of `@vendoai/client`, which
+ * owns the browser half of Vendo (VendoRoot, the sandbox stage mount,
+ * connect flow, and the voice driver). Kept here so existing imports from
+ * `@vendoai/next/client` keep working until this package is removed.
  */
-
-export const VENDO_NEXT_CLIENT_PACKAGE = "@vendoai/next/client";
-
-export { VendoRoot, type VendoRootProps } from "./vendo-root.js";
-export { SandboxStage, type SandboxStageProps } from "./sandbox-stage.js";
-export { createServerIntegrations } from "./integrations.js";
-export { createServerVendoStore } from "./server-store.js";
-export { createRunQuery, type RunQuery } from "./run-query.js";
-export { runConnectFlow, type ConnectOutcome } from "./connect-flow.js";
-export { createVendoVoice, type CreateVendoVoiceOptions } from "./voice.js";
+export * from "@vendoai/client";

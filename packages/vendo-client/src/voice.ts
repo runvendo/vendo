@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Zero-config voice driver for `@vendoai/next/client` (ENG-185).
+ * Zero-config voice driver for `@vendoai/client` (ENG-185).
  *
  * Hosts that use `createVendoHandler()` and set OPENAI_API_KEY get the same
  * topology as chat: the server only mints an ephemeral Realtime secret, while

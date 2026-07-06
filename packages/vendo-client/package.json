@@ -1,13 +1,13 @@
 {
-  "name": "@vendoai/next",
+  "name": "@vendoai/client",
   "version": "0.1.0",
-  "description": "Next.js integration for Vendo: the createVendoHandler route handler and VendoRoot.",
-  "keywords": ["ai", "agent", "generative-ui", "nextjs", "react"],
+  "description": "Batteries-included Vendo client: VendoRoot, the sandbox stage mount, connect flow, and the voice driver.",
+  "keywords": ["ai", "agent", "generative-ui", "react"],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/runvendo/vendo.git",
-    "directory": "packages/vendo-next"
+    "directory": "packages/vendo-client"
   },
   "homepage": "https://vendo.run",
   "bugs": "https://github.com/runvendo/vendo/issues",
@@ -24,10 +24,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./client": {
-      "types": "./dist/client/index.d.ts",
-      "default": "./dist/client/index.js"
     }
   },
   "files": ["dist"],
@@ -41,9 +37,12 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "@vendoai/client": "workspace:*",
+    "@vendoai/components": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/react": "workspace:*",
     "@vendoai/server": "workspace:*",
-    "@scarf/scarf": "^1.4.0"
+    "@vendoai/shell": "workspace:*",
+    "ai": "6.0.28"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",
@@ -55,9 +54,5 @@
     "react-dom": "^18.3.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
-  },
-  "scarfSettings": {
-    "defaultOptIn": true,
-    "allowTopLevel": true
   }
 }
