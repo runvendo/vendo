@@ -157,14 +157,14 @@ export default function RootLayout({ children }) {
 describe("addDependency", () => {
   it("adds the dep sorted and leaves existing files alone on re-run", () => {
     const pkg = JSON.stringify({ name: "x", dependencies: { zod: "^3", next: "16.0.0" } }, null, 2);
-    const out = addDependency(pkg, "@vendoai/next", "latest")!;
+    const out = addDependency(pkg, "vendo", "latest")!;
     const parsed = JSON.parse(out) as { dependencies: Record<string, string> };
-    expect(Object.keys(parsed.dependencies)).toEqual(["@vendoai/next", "next", "zod"]);
-    expect(addDependency(out, "@vendoai/next", "latest")).toBe(out);
+    expect(Object.keys(parsed.dependencies)).toEqual(["next", "vendo", "zod"]);
+    expect(addDependency(out, "vendo", "latest")).toBe(out);
   });
 
   it("returns null on unparsable package.json", () => {
-    expect(addDependency("{nope", "@vendoai/next", "latest")).toBeNull();
+    expect(addDependency("{nope", "vendo", "latest")).toBeNull();
   });
 });
 
@@ -202,7 +202,7 @@ describe("mergeInstrumentation", () => {
     expect(out).not.toBeNull();
     expect(out).toContain('console.log("boom")'); // original content survives
     expect(out).toContain("export async function register()");
-    expect(out).toContain('await import("@vendoai/next")');
+    expect(out).toContain('await import("vendo/server")');
     expect(out).toContain("startVendoScheduler()");
   });
 
@@ -212,8 +212,8 @@ describe("mergeInstrumentation", () => {
     expect(mergeInstrumentation(merged)).toBe(merged);
   });
 
-  it("is idempotent on a hand-wired file (already imports @vendoai/next)", () => {
-    const handWired = `export async function register() {\n  if (process.env.NEXT_RUNTIME === "nodejs") {\n    const { startVendoScheduler } = await import("@vendoai/next");\n    startVendoScheduler();\n  }\n}\n`;
+  it("is idempotent on a hand-wired file (already imports vendo/server)", () => {
+    const handWired = `export async function register() {\n  if (process.env.NEXT_RUNTIME === "nodejs") {\n    const { startVendoScheduler } = await import("vendo/server");\n    startVendoScheduler();\n  }\n}\n`;
     expect(mergeInstrumentation(handWired)).toBe(handWired);
   });
 
@@ -244,7 +244,8 @@ export default nextConfig;
     expect(out.kind).toBe("updated");
     if (out.kind !== "updated") throw new Error("expected next.config update");
     expect(out.source).toContain('"next-mdx-remote"');
-    expect(out.source).toContain('"@vendoai/next"');
+    expect(out.source).toContain('"vendo"');
+    expect(out.source).toContain('"@vendoai/client"');
     expect(out.source).toContain('"@vendoai/stage"');
     expect(out.source).toContain('"sharp"');
     expect(out.source).toContain('"@electric-sql/pglite"');
@@ -302,11 +303,12 @@ describe("wireNextApp", () => {
     const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
     };
-    expect(pkg.dependencies["@vendoai/next"]).toBeDefined();
+    expect(pkg.dependencies["vendo"]).toBeDefined();
     expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
     const nextConfig = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(nextConfig).toContain('transpilePackages: [');
-    expect(nextConfig).toContain('"@vendoai/next"');
+    expect(nextConfig).toContain('"vendo"');
+    expect(nextConfig).toContain('"@vendoai/client"');
     expect(nextConfig).toContain('"@vendoai/stage"');
     expect(nextConfig).toContain('serverExternalPackages: [');
     expect(nextConfig).toContain('"@electric-sql/pglite"');
@@ -315,7 +317,7 @@ describe("wireNextApp", () => {
     const instrumentation = await fs.readFile(path.join(dir, "src/instrumentation.ts"), "utf8");
     expect(instrumentation).toContain("export async function register()");
     expect(instrumentation).toContain('process.env.NEXT_RUNTIME === "nodejs"');
-    expect(instrumentation).toContain('await import("@vendoai/next")');
+    expect(instrumentation).toContain('await import("vendo/server")');
     expect(instrumentation).toContain("startVendoScheduler()");
     expect(summary.written).toContain("src/instrumentation.ts");
 
@@ -342,7 +344,8 @@ describe("wireNextApp", () => {
     const config = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(summary.written).toContain("next.config.ts");
     expect(config).toContain('import type { NextConfig } from "next"');
-    expect(config).toContain('"@vendoai/next"');
+    expect(config).toContain('"vendo"');
+    expect(config).toContain('"@vendoai/client"');
     expect(config).toContain('"@electric-sql/pglite"');
     expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
   });
@@ -365,6 +368,7 @@ export default nextConfig;
     const config = await fs.readFile(configPath, "utf8");
     expect(summary.edited).toContain("next.config.mjs");
     expect(config).toContain('"next-mdx-remote"');
+    expect(config).toContain('"@vendoai/client"');
     expect(config).toContain('"@vendoai/shell"');
     expect(config).toContain('"sharp"');
     expect(config).toContain('"@electric-sql/pglite"');

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-export const LOCAL_DIRECT_DEPENDENCIES = ["@vendoai/next", "@vendoai/shell"] as const;
+export const LOCAL_DIRECT_DEPENDENCIES = ["vendo"] as const;
 
 type PackageJson = Record<string, unknown>;
 
@@ -79,10 +79,14 @@ async function discoverWorkspacePackages(repoDir: string): Promise<Map<string, W
     } catch {
       continue;
     }
-    if (typeof pkg["name"] !== "string" || !pkg["name"].startsWith("@vendoai/")) continue;
+    if (typeof pkg["name"] !== "string") continue;
+    const name = pkg["name"];
+    // The umbrella `vendo` package itself, plus every `@vendoai/*` internal it
+    // (transitively) depends on — the closure walk below starts from `vendo`.
+    if (name !== "vendo" && !name.startsWith("@vendoai/")) continue;
     if (typeof pkg["version"] !== "string") continue;
-    packages.set(pkg["name"], {
-      name: pkg["name"],
+    packages.set(name, {
+      name,
       version: pkg["version"],
       dir,
       dependencies: stringRecord(pkg["dependencies"]),

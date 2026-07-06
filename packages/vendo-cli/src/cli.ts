@@ -27,7 +27,7 @@ Usage:
 Options:
   --skip-llm   Skip LLM-assisted steps (route scan, component discovery)
   --force      Overwrite existing .vendo/ files
-  --local      Pack local @vendoai packages from a Vendo monorepo into ./vendor
+  --local      Pack local vendo + @vendoai packages from a Vendo monorepo into ./vendor
 `;
 
 function parseInitArgs(args: string[]):
