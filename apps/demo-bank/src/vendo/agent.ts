@@ -44,7 +44,7 @@ function hostComponentCatalog(): string {
 }
 
 /** Maple's full system prompt — consumed by the demo agent factory below and
- *  by the @vendoai/next catch-all route (`instructions` option). Recomposed
+ *  by the `vendo/server` catch-all route (`instructions` option). Recomposed
  *  onto the shared prompt core (context-engineering spec §1): platform rules
  *  come from @vendoai/core sections; everything Maple-flavored stays HERE as
  *  host slots and extras. `toolSummary` (per-run, from the engine's

@@ -22,7 +22,7 @@ import {
 import type { EnvManifest, VendoAgent, RegisteredComponent } from "@vendoai/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@vendoai/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
-import { resolveRemixSealer } from "@vendoai/next";
+import { resolveRemixSealer } from "vendo/server";
 import { demoPolicy } from "./policy";
 import { cadenceBrand } from "./brand";
 import { demoAutomationInstructions } from "./automations";
@@ -242,7 +242,7 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): VendoAgent {
     // chat-handler.ts deliberately does NOT persist the request body — the
     // streamed assistant turn, with any approval-requested parts, must be in
     // the store BEFORE the client's consent POST arrives, which happens before
-    // any next chat turn. Mirrors packages/vendo-next/src/handler.ts's
+    // any next chat turn. Mirrors packages/vendo-server/src/fetch-handler.ts's
     // onSettled wiring (ENG-193 review 2026-07-04).
     //
     // Continuation turns (host-tool resumes, approval resumes) REVISE the
@@ -253,7 +253,7 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): VendoAgent {
     // approval-requested part never reached the store and consent 404'd).
     // `ThreadStore.replaceMessages` (optional seam member) persists the full
     // settled list; the append-only fallback stays for stores without it
-    // (same shape as vendo-next's handler.ts).
+    // (same shape as vendo-server's fetch-handler.ts).
     onSettled: async ({ messages, threadId }) => {
       // Skip runs whose threadId isn't a store-assigned thread (e.g. a direct
       // agent.run() test caller with no resolved thread) — the writes below

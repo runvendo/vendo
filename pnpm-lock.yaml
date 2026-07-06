@@ -40,9 +40,6 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/vendo-core
-      '@vendoai/next':
-        specifier: workspace:*
-        version: link:../../packages/vendo-next
       '@vendoai/react':
         specifier: workspace:*
         version: link:../../packages/vendo-react
@@ -82,6 +79,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      vendo:
+        specifier: workspace:*
+        version: link:../../packages/vendo
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -161,9 +161,6 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/vendo-core
-      '@vendoai/next':
-        specifier: workspace:*
-        version: link:../../packages/vendo-next
       '@vendoai/react':
         specifier: workspace:*
         version: link:../../packages/vendo-react
@@ -209,6 +206,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      vendo:
+        specifier: workspace:*
+        version: link:../../packages/vendo
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -335,18 +335,15 @@ importers:
 
   examples/node:
     dependencies:
-      '@vendoai/next':
-        specifier: workspace:*
-        version: link:../../packages/vendo-next
-      '@vendoai/server':
-        specifier: workspace:*
-        version: link:../../packages/vendo-server
       react:
         specifier: ^18.3.0
         version: 18.3.1
       react-dom:
         specifier: ^18.3.0
         version: 18.3.1(react@18.3.1)
+      vendo:
+        specifier: workspace:*
+        version: link:../../packages/vendo
     devDependencies:
       '@types/react':
         specifier: ^19.2.0

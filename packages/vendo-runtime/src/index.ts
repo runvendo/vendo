@@ -143,7 +143,7 @@ export type { SteeringToolsConfig } from "./steering-tools.js";
 
 // Consent endpoint (ENG-193 §4.5): server-validated grant creation behind
 // the consent channel. Transport-agnostic — hosts mount it behind their own
-// route (see @vendoai/next and the accounting demo).
+// route (see vendo/server and the accounting demo).
 export { handleConsent, createConsentLedger } from "./consent.js";
 export type { HandleConsentDeps, HandleConsentRequest, HandleConsentResult, ConsentLedger } from "./consent.js";
 

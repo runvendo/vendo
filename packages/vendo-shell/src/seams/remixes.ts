@@ -2,7 +2,7 @@
  * Remix persistence seam (VendoRemix, 2026-07-04 spec): the end user's
  * customization of a dev-wrapped host component, one pin per anchor for the
  * current user. Follows the VendoStore client-seam pattern (seams/store.ts);
- * @vendoai/next's VendoRoot provides a web-storage-backed client so pins
+ * `vendo/react`'s VendoRoot provides a web-storage-backed client so pins
  * survive reloads without server state.
  */
 import type { UINode } from "@vendoai/core";

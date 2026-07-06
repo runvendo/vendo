@@ -17,7 +17,7 @@ Both paths use the same automation runner and durable store when storage is enab
 ```ts
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { startVendoScheduler } = await import("@vendoai/next");
+    const { startVendoScheduler } = await import("vendo/server");
     startVendoScheduler();
   }
 }

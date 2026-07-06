@@ -3,7 +3,7 @@
  * (ENG-193 §4.5). A host mounts this behind its own HTTP route; this
  * module is transport-agnostic — no `Request`/`Response` here, so it is
  * testable without a server and portable to any route layer. It has TWO
- * production mounts in this plan: `@vendoai/next`'s catch-all (Task 5, the
+ * production mounts in this plan: `vendo/server`'s catch-all (Task 5, the
  * production path demo-bank runs) and the accounting demo's hand-rolled
  * route (Task 7) — see "Plan deviations" #1.
  *
@@ -283,7 +283,7 @@ export async function handleConsent(
           // it two lines above this block to load the thread's messages
           // (`deps.getMessages(principal, req.threadId)`) — i.e. it's the
           // STORE thread id the client resolved for this very consent
-          // request. On the production path (`@vendoai/next`'s
+          // request. On the production path (`vendo/server`'s
           // policy-stack.ts), `grantPolicy` is wired with
           // `contextKey: (ctx) => ctx.threadId`, and `ctx.threadId` is what
           // `engine.ts`'s `run()` resolves as `RunInput.threadId` (the

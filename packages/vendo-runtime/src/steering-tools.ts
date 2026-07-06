@@ -32,7 +32,7 @@
  * `automations/tools.ts`'s `createAutomationTools`, see this item's plan
  * deviation #1): `config.principal` is fixed at construction, not
  * re-resolved per chat request. Both hosts that wire this
- * (`@vendoai/next`, the accounting demo) already accept this limitation for
+ * (`vendo/server`, the accounting demo) already accept this limitation for
  * automation authoring tools; steering tools merge into the SAME static
  * server toolset and inherit it rather than introducing a new one.
  */

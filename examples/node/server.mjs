@@ -21,7 +21,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createVendoFetchHandler, toNodeHandler } from "@vendoai/server";
+import { createVendoFetchHandler, toNodeHandler } from "vendo/server";
 
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 const PORT = Number(process.env.PORT ?? 3300);

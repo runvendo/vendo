@@ -2,7 +2,7 @@
  * useTrustData — the Trust screen's data plane (ENG-193 §3 Moment 12/§4.3/
  * §6.2). Mirrors `useParkedActions`' seam pattern exactly: polls while
  * mounted, absent `trust` seam -> empty/no-op, the host wires real fetchers
- * (see @vendoai/next's catch-all and the accounting demo's trust-handler.ts).
+ * (see vendo/server's catch-all and the accounting demo's trust-handler.ts).
  * The diary (§3 Moment 10) is summarized CLIENT-SIDE from the last 7 days of
  * audit rows — no server-side diary concept exists; `automation_firing` is
  * counted at FIRING granularity (one per run), not per tool call inside a

@@ -90,13 +90,13 @@ to know:
 By default, schedules fire from an in-process timer that boots with your
 Next.js server — `vendo init` writes an `instrumentation.ts` (or
 `src/instrumentation.ts`, next to a `src/app`) that calls
-`startVendoScheduler()` from `@vendoai/next` when the Node.js runtime
+`startVendoScheduler()` from `vendo/server` when the Node.js runtime
 starts:
 
 ```ts
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { startVendoScheduler } = await import("@vendoai/next");
+    const { startVendoScheduler } = await import("vendo/server");
     startVendoScheduler();
   }
 }

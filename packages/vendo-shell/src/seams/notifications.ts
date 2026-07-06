@@ -1,6 +1,6 @@
 /**
  * Notifications seam (VendoToasts, 2026-07-04 spec): the client-side view of
- * the runtime's in-app Channels deliveries. The real client (@vendoai/next's
+ * the runtime's in-app Channels deliveries. The real client (`vendo/react`'s
  * VendoRoot) polls the handler's /deliveries route and posts approvals to
  * /resume; the local default is an inert seed for tests and storybook-style
  * hosts.

@@ -35,12 +35,12 @@ is live in your product. Full walkthrough: [docs/quickstart.md](docs/quickstart.
 
 | Package | What it is |
 |---|---|
+| `vendo` | The public install — `vendo/server` (`createVendoHandler`) + `vendo/react` (`<VendoRoot>`) |
 | `@vendoai/cli` | `vendo init` — one-command install into a Next.js app |
 | `@vendoai/core` | Manifest schemas, GenUI format, the five platform seams |
 | `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |
 | `@vendoai/runtime` | Embedded runtime: tools, automations, MCP client |
 | `@vendoai/react` | React provider + `useVendoChat` |
-| `@vendoai/next` | `createVendoHandler` route handler + `<VendoRoot>` for Next.js |
 | `@vendoai/shell` | The embedded surfaces: tabbed page, overlay, slot |
 | `@vendoai/components` | Brand-themeable component catalog |
 | `@vendoai/stage` | Sandboxed stage runtime and bridge for generated UI |

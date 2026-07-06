@@ -10,7 +10,8 @@ import { CADENCE_SCOPE, demoStore, resolveThreadRecordId } from "./store";
 describe("createDemoAgent onSettled wiring", () => {
   it("REGRESSION: persists the streamed turn (incl. an approval-requested part) before any consent POST arrives", async () => {
     // Guards the exact failing sequence ENG-193 review (2026-07-04) caught on
-    // packages/vendo-next: if only the client-SENT messages were persisted,
+    // the handler package (now packages/vendo-server): if only the
+    // client-SENT messages were persisted,
     // the streamed assistant turn — carrying the approval-requested part the
     // consent endpoint reads — is missing from the store. createDemoAgent's
     // onSettled hook (agent.ts) must be the thing that writes it.

@@ -1,7 +1,7 @@
 /**
  * The single `createVendoHandler()` options object — split out of route.ts
  * so `instrumentation.ts` can pass the SAME object reference to
- * `startVendoScheduler()`. Per `packages/vendo-next/src/handler.ts`'s
+ * `startVendoScheduler()`. Per `packages/vendo-server/src/fetch-handler.ts`'s
  * BootRegistry doc: the route and the scheduler boot hook must share one
  * assembled world, or the scheduler ends up ticking a DIFFERENT (private,
  * default) world than the one serving HTTP requests — any `automations.tools`
@@ -10,7 +10,7 @@
  * etc., so (unlike a pure zero-config install) it must wire this explicitly.
  */
 import { anthropic } from "@ai-sdk/anthropic";
-import type { VendoHandlerOptions, ConnectionsStore } from "@vendoai/next";
+import type { VendoHandlerOptions, ConnectionsStore } from "vendo/server";
 import type { VendoPrincipal, RegisteredTool, ToolDescriptor } from "@vendoai/runtime";
 import { buildInstructions } from "@/vendo/agent";
 import { demoPolicy } from "@/vendo/policy";
@@ -65,7 +65,7 @@ const demoConnections: ConnectionsStore = {
  * can exercise DrizzleAutomationStore, the boot scheduler, and grants — none
  * of which the demo's bespoke world goes through) and align the request
  * principal with that world's fixed scope (tenantId "vendo-embedded",
- * subject "vendo-default-user" — see packages/vendo-next/src/guard.ts's
+ * subject "vendo-default-user" — see packages/vendo-server/src/guard.ts's
  * WORLD_SCOPE) so the drill's seeded threads/vendos are visible through the
  * same identity the automations world runs as.
  */
@@ -100,7 +100,7 @@ export const vendoOptions: VendoHandlerOptions = {
   // compiles instrumentation.ts and route.ts into separate module graphs, so
   // this module can be evaluated twice, producing two `!==` objects with
   // identical shape — bootKey gives the boot registry a stable identity that
-  // survives that split (see handler.ts's BootRegistry comment).
+  // survives that split (see fetch-handler.ts's BootRegistry comment).
   bootKey: "demo-bank",
   model: anthropic(process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6"),
   // Per-run function (spec §7): grounds capability talk in the live toolset.

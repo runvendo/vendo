@@ -16,7 +16,7 @@
  * These are the ONLY tools `judgePolicy`/`cautionBreaker`/`volumeBreaker`
  * exempt (ENG-193 PR #40 review — ENG-193 item A: the judge/breaker exemption
  * must never fall through to host-supplied server tools). `"engine"` is a
- * mount-registered SERVER tool the host itself supplies (e.g. `@vendoai/next`'s
+ * mount-registered SERVER tool the host itself supplies (e.g. `vendo/server`'s
  * `options.tools`, a demo's `extraTools`) — judged/breaker-gated exactly like
  * any other tool, NOT exempt. Do not repurpose `"engine"` for control-plane
  * tools again; use `"control"`.
