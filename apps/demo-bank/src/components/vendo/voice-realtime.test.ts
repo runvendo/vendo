@@ -180,6 +180,44 @@ describe("heterogeneous rows (PR #43 review P1)", () => {
   });
 });
 
+describe("data-bound views carry the source tool's declared field formats", () => {
+  // The live repro (voice-view-formats): a bound Spending Breakdown table
+  // rendered raw integer cents because the model's formatting is DISCARDED
+  // when rows bind to the verbatim cached result — the declared
+  // x-vendo-formats map must travel into the Table columns instead.
+  it("stamps format onto matching columns when the source binds", () => {
+    const raw = { ok: true, data: { data: [{ category: "housing", amount: 285000 }] } };
+    replayRegistry.register("getSpendingInsights", async () => raw);
+    recordResult("getSpendingInsights", { month: "2026-07" }, raw);
+    const node = tableView({
+      title: "Spending Breakdown by Category",
+      columns: [
+        { key: "category", label: "Category" },
+        { key: "amount", label: "Amount" },
+      ],
+      rows: raw.data.data,
+      source: { tool: "getSpendingInsights", input: { month: "2026-07" }, rowsPath: "/data/data" },
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    expect(payload.queries?.[0]?.tool).toBe("getSpendingInsights");
+    const table = payload.nodes.find((n) => n.component === "Table");
+    expect(table?.props?.columns).toEqual([
+      { key: "category", label: "Category" },
+      { key: "amount", label: "Amount", format: "cents" },
+    ]);
+  });
+
+  it("leaves snapshot (unbound) columns unstamped — the model formats those rows", () => {
+    const node = tableView({
+      columns: [{ key: "amount", label: "Amount" }],
+      rows: [{ amount: "$2,850.00" }],
+    });
+    const payload = (node as { payload: GeneratedPayload }).payload;
+    const table = payload.nodes.find((n) => n.component === "Table");
+    expect(table?.props?.columns).toEqual([{ key: "amount", label: "Amount" }]);
+  });
+});
+
 describe("voice host tools carry result-field format hints", () => {
   it("appends RESULT FIELD FORMATS to annotated tools' voice descriptions", () => {
     const { hostVoiceTools } = __voiceTesting;

@@ -20,6 +20,8 @@ import {
   buildVoiceInstructions,
   capabilitySummary,
   executeHostToolCall,
+  renderFormatHints,
+  type FieldFormat,
   type GeneratedPayload,
   type HostToolDefinition,
   type ToolSummaryInput,
@@ -169,6 +171,15 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
   let viewSeq = 0;
   const nextId = (prefix: string) => `voice-${prefix}-${++viewSeq}`;
 
+  // Declared result-field formats by tool name: a BOUND table shows the raw
+  // cached result verbatim (the model's formatting is discarded by design),
+  // so the format must be stamped onto the columns for the Table to apply.
+  const formatsByTool = new Map<string, Record<string, FieldFormat>>(
+    (options.hostTools ?? [])
+      .filter((def) => def.formats)
+      .map((def) => [def.name, def.formats as Record<string, FieldFormat>]),
+  );
+
   function recordResult(tool: string, input: unknown, output: unknown): void {
     const key = resultKey(tool, input);
     if (sessionResults.size >= SESSION_RESULTS_MAX && !sessionResults.has(key)) {
@@ -215,8 +226,15 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     if (!columns?.length || !rows) return undefined;
 
     const matched = matchSource(source, columns);
+    // Bound rows are guaranteed RAW (verbatim cached result), so the source
+    // tool's declared formats apply deterministically. Snapshot rows are the
+    // model's own — its prompt-side format rules govern those.
+    const formats = matched ? formatsByTool.get(matched.tool) : undefined;
+    const boundColumns = formats
+      ? columns.map((c) => (formats[c.key] ? { ...c, format: formats[c.key] } : c))
+      : columns;
     const tableProps = matched
-      ? { columns, rows: { $path: `/source${matched.rowsPath}` } }
+      ? { columns: boundColumns, rows: { $path: `/source${matched.rowsPath}` } }
       : { columns, rows };
     return genNode(nextId("table"), {
       formatVersion: "vendo-genui/v1",
@@ -424,9 +442,13 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     const run = (input: unknown) =>
       executeHostToolCall(def, (input ?? {}) as Record<string, unknown>);
     if (tier === "read") unregisterHostTools.push(replayRegistry.register(def.name, run));
+    // Declared result-field formats travel with the voice tool too — parity
+    // with the chat path's hostToolset (the voice model reads cents/date
+    // rules in the same place it reads what the tool does).
+    const hints = def.formats ? renderFormatHints(def.formats) : "";
     return {
       name: def.name,
-      description: def.description,
+      description: hints ? `${def.description}\n${hints}` : def.description,
       parameters: def.inputSchema,
       tier,
       execute: async (input) => {
