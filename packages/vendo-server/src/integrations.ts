@@ -82,8 +82,12 @@ export async function handleIntegrationsGet(req: Request, deps: IntegrationsDeps
       // account) must not read as connected — downgrade it to "pending" so the
       // client keeps polling instead of showing connected with no toolkit.
       return Response.json({ status: status === "active" ? ("pending" as const) : status });
-    } catch {
-      return Response.json({ status: "failed" as const });
+    } catch (err) {
+      // A poll error is usually a transient Composio hiccup, not a terminal
+      // failure. Log it server-side like the connect handler does, and report
+      // "pending" so the client keeps polling rather than latching "failed".
+      console.error("[vendo] integrations status poll failed:", err);
+      return Response.json({ status: "pending" as const });
     }
   }
   return Response.json({ enabled: true, integrations: await deps.store.list() });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ComposioClient } from "@vendoai/runtime";
 import { WORLD_SCOPE } from "./guard.js";
 import {
@@ -119,6 +119,28 @@ describe("integrations endpoints", () => {
     );
     expect(await res.json()).toEqual({ status: "pending" });
     expect(await d.store.connectedToolkits()).toEqual([]);
+  });
+
+  it("status poll logs server-side and reports transient 'pending' when Composio throws (review)", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const d = deps({
+        client: stubClient({
+          connectionStatus: async () => {
+            throw new Error("composio blip");
+          },
+        }),
+      });
+      const res = await handleIntegrationsGet(
+        get("/api/vendo/integrations?status&id=gmail&account=acc-1"),
+        d,
+      );
+      // A poll error is transient, not terminal — client keeps polling.
+      expect(await res.json()).toEqual({ status: "pending" });
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("rejects an unknown toolkit id before spending the Composio key (review P1)", async () => {
