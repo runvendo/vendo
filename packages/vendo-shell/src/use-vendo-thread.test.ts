@@ -226,6 +226,29 @@ describe("toThreadItems — consent tier correlation", () => {
     expect(approval).toMatchObject({ toolCallId: "call-1", tier: "act", unverified: true });
   });
 
+  it("carries the tool's field formats from a sibling data-consent part onto the approval item", () => {
+    const items = toThreadItems([
+      msg("mfmt", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-1", state: "approval-requested",
+          input: { amount: 50000 }, approval: { id: "ap-1" } },
+        { type: "data-consent", data: { toolCallId: "call-1", tier: "critical", unverified: false, formats: { amount: "cents" } } },
+      ]),
+    ]);
+    const approval = items.find((i) => i.kind === "approval");
+    expect(approval).toMatchObject({ toolCallId: "call-1", tier: "critical", formats: { amount: "cents" } });
+  });
+
+  it("carries field formats onto a settled tool item too (the receipt formats like the card)", () => {
+    const items = toThreadItems([
+      msg("mfmt2", "assistant", [
+        { type: "tool-createTransfer", toolCallId: "call-2", state: "output-available", input: { amount: 50000 }, output: "ok" },
+        { type: "data-consent", data: { toolCallId: "call-2", tier: "critical", unverified: false, formats: { amount: "cents" } } },
+      ]),
+    ]);
+    const tool = items.find((i) => i.kind === "tool");
+    expect(tool).toMatchObject({ tier: "critical", formats: { amount: "cents" } });
+  });
+
   it("an approval with no matching data-consent part gets no tier (defensive — never crashes)", () => {
     const items = toThreadItems([
       msg("m2", "assistant", [{ type: "tool-x", toolCallId: "call-2", state: "approval-requested", input: {}, approval: { id: "ap-2" } }]),

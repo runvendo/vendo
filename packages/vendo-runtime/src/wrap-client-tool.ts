@@ -91,7 +91,13 @@ export function wrapClientTool(args: WrapClientToolArgs): Tool {
       writer.write({
         type: "data-consent",
         id: `consent-${toolCallId}`,
-        data: { toolCallId, tier, unverified: isUnverified(descriptor), ...(reason ? { reason } : {}) },
+        data: {
+          toolCallId,
+          tier,
+          unverified: isUnverified(descriptor),
+          ...(reason ? { reason } : {}),
+          ...(descriptor.formats ? { formats: descriptor.formats } : {}),
+        },
       });
     } catch (err) {
       console.error(`[vendo] failed to write data-consent part for "${toolCallId}":`, err);

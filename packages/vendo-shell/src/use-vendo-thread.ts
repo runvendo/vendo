@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { VendoUIMessage } from "@vendoai/core";
 import type { UINode } from "@vendoai/core";
 import { useVendoChat } from "@vendoai/react";
+import type { FieldFormats } from "./components/field-rows";
 
 export type ThreadItem =
   | { kind: "text"; key: string; messageId: string; role: "user" | "assistant"; text: string }
@@ -28,6 +29,9 @@ export type ThreadItem =
        *  read-tier calls and for messages from before this shipped. */
       tier?: "act" | "critical";
       unverified?: boolean;
+      /** Per-field display-format hints from the sibling data-consent part, so
+       *  the settled receipt formats a money/date field like the card did. */
+      formats?: FieldFormats;
     }
   | {
       kind: "approval";
@@ -42,6 +46,9 @@ export type ThreadItem =
       /** The judge/breaker's plain-language reason (ENG-193 §4.2/§4.7), from
        *  the sibling data-consent part. Absent for an ordinary approval. */
       reason?: string;
+      /** Per-field display-format hints from the sibling data-consent part, so
+       *  a money/date input renders faithfully ($500.00, not 50000). */
+      formats?: FieldFormats;
     }
   | {
       kind: "ui";
@@ -96,18 +103,19 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
     // rather than assuming ordering. The same pass collects remix envelopes
     // by paired node id (remix fast-edits) — envelope parts emit no item of
     // their own and pair regardless of stream order.
-    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string }>();
+    const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string; formats?: FieldFormats }>();
     const envelopes = new Map<string, string>();
     for (const rawPart of message.parts) {
       const part = rawPart as {
         type: string;
-        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; envelope?: string; uiNodeId?: string };
+        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; formats?: FieldFormats; envelope?: string; uiNodeId?: string };
       };
       if (part.type === "data-consent" && part.data?.toolCallId) {
         tierByToolCallId.set(part.data.toolCallId, {
           tier: part.data.tier as "act" | "critical",
           unverified: Boolean(part.data.unverified),
           ...(part.data.reason ? { reason: part.data.reason } : {}),
+          ...(part.data.formats ? { formats: part.data.formats } : {}),
         });
       }
       if (part.type === "data-remix-envelope" && part.data?.uiNodeId && part.data.envelope) {
@@ -167,6 +175,7 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
             kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
             tier: tierInfo?.tier, unverified: tierInfo?.unverified,
             ...(tierInfo?.reason ? { reason: tierInfo.reason } : {}),
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
           });
         } else {
           items.push({
@@ -180,6 +189,7 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
             output: part.output,
             errorText: part.errorText as string | undefined,
             tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
           });
         }
       } else if (part.type.startsWith("tool-")) {
@@ -192,6 +202,7 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
             kind: "approval", key, messageId, approvalId: approval.id, toolCallId, toolName, input: part.input,
             tier: tierInfo?.tier, unverified: tierInfo?.unverified,
             ...(tierInfo?.reason ? { reason: tierInfo.reason } : {}),
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
           });
         } else if (RENDER_TOOLS.has(toolName)) {
           // A render tool's finished output is the sibling data-ui node (so no chip).
@@ -221,6 +232,7 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
             output: part.output,
             errorText: part.errorText as string | undefined,
             tier: tierInfo?.tier, unverified: tierInfo?.unverified,
+            ...(tierInfo?.formats ? { formats: tierInfo.formats } : {}),
           });
         }
       }
