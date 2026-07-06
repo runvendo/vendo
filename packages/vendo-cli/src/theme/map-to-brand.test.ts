@@ -13,10 +13,10 @@ describe("mapVarsToBrand", () => {
     ]);
     expect(result.brand).toMatchObject({
       version: 1,
-      background: "#FBFBFA",
-      surface: "#FFFFFF",
+      background: "#fbfbfa",
+      surface: "#ffffff",
       text: "#111111",
-      mutedText: "#908C85",
+      mutedText: "#908c85",
       radius: "14px",
       mode: "light",
     });
@@ -45,12 +45,80 @@ describe("mapVarsToBrand", () => {
     expect(injection.defaulted).toContain("fontFamily");
   });
 
-  it("prefers accent-named vars and rejects non-hex colors", () => {
+  it("drops emoji-only fallbacks from resolved font stacks", () => {
     const result = mapVarsToBrand([
-      v("--color-primary", "oklch(0.7 0.1 250)"), v("--color-accent", "#FF0000"), v("--color-bg", "#FFFFFF"),
+      v("--font-sans", 'var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"'),
+      { name: "--font-geist-sans", value: "Geist Sans", file: "layout.tsx", darkScope: false, synthetic: true },
     ]);
-    expect(result.brand?.accent).toBe("#FF0000");
-    expect(result.unmapped.map((u) => u.name)).toContain("--color-primary");
+    expect(result.brand?.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif");
+  });
+
+  it("drops redundant platform fallbacks after the primary font", () => {
+    const result = mapVarsToBrand([
+      v("--font-sans", 'var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'),
+      { name: "--font-inter", value: "Inter", file: "layout.tsx", darkScope: false, synthetic: true },
+    ]);
+    expect(result.brand?.fontFamily).toBe("Inter, ui-sans-serif, system-ui, sans-serif");
+
+    const primarySystem = mapVarsToBrand([
+      v("--font-sans", "Roboto, Arial, sans-serif"),
+    ]);
+    expect(primarySystem.brand?.fontFamily).toBe("Roboto, sans-serif");
+  });
+
+  it("normalizes CSS color syntaxes and prefers primary as the brand accent", () => {
+    const result = mapVarsToBrand([
+      v("--color-primary", "oklch(62.3% 0.214 259.815)"), v("--color-accent", "#FF0000"), v("--color-bg", "#FFFFFF"),
+    ]);
+    expect(result.brand?.accent).toBe("#2b7fff");
+    expect(result.unmapped.map((u) => u.name)).toContain("--color-accent");
+  });
+
+  it("maps shadcn-style HSL token triples and rem radius", () => {
+    const result = mapVarsToBrand([
+      v("--background", "0 0% 100%"),
+      v("--foreground", "222.2 47.4% 11.2%"),
+      v("--card", "0 0% 100%"),
+      v("--primary", "222.2 47.4% 11.2%"),
+      v("--muted", "210 40% 96.1%"),
+      v("--muted-foreground", "215.4 16.3% 46.9%"),
+      v("--accent", "210 40% 96.1%"),
+      v("--radius", "0.5rem"),
+      v("--font-sans", "var(--font-inter), ui-sans-serif, system-ui, sans-serif"),
+      { name: "--font-inter", value: "Inter", file: "layout.tsx", darkScope: false, synthetic: true },
+    ]);
+    expect(result.brand).toMatchObject({
+      background: "#ffffff",
+      surface: "#ffffff",
+      accent: "#0f172a",
+      text: "#0f172a",
+      mutedText: "#64748b",
+      radius: "8px",
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+    });
+    expect(result.defaulted).toEqual([]);
+  });
+
+  it("resolves duplicate vars with CSS cascade order", () => {
+    const result = mapVarsToBrand([
+      v("--primary", "oklch(0.205 0 0)"),
+      v("--primary-foreground", "oklch(0.985 0 0)"),
+      v("--surface-base", "#ffffff"),
+      v("--surface-raised", "oklch(0.985 0 0)"),
+      v("--text-primary", "var(--gray-900)"),
+      v("--text-muted", "var(--gray-500)"),
+      v("--radius-default", ".375rem"),
+      v("--radius-3xl", "1.5rem"),
+      v("--gray-500", "oklch(0.556 0 0)"),
+      v("--gray-900", "oklch(0.205 0 0)"),
+      v("--primary", "oklch(62.3% 0.214 259.815)"),
+    ]);
+    expect(result.brand?.accent).toBe("#2b7fff");
+    expect(result.brand?.background).toBe("#fafafa");
+    expect(result.brand?.surface).toBe("#ffffff");
+    expect(result.brand?.text).toBe("#171717");
+    expect(result.brand?.mutedText).toBe("#737373");
+    expect(result.brand?.radius).toBe("6px");
   });
 
   it("skips companion -bg tokens and falls back to surface for background", () => {
@@ -79,7 +147,7 @@ describe("mapVarsToBrand", () => {
     // --color-panel is non-hex, so without the filter the surface slot's loose
     // "panel" match would claim the tint --color-panel-bg.
     const result = mapVarsToBrand([
-      v("--color-bg", "#FBFBFA"), v("--color-panel", "oklch(0.98 0 0)"), v("--color-panel-bg", "#ffeedd"),
+      v("--color-bg", "#FBFBFA"), v("--color-panel", "color-mix(in oklab, white, black)"), v("--color-panel-bg", "#ffeedd"),
     ]);
     expect(result.defaulted).toContain("surface");
   });
@@ -146,7 +214,7 @@ describe("mapVarsToBrand", () => {
       v("--color-bg", "#FFFFFF"), v("--color-accent", "#FF0000"),
       v("--color-teal-300", "#5eead4"), v("--color-teal-500", "#14b8a6"), v("--color-teal-700", "#0f766e"),
     ]);
-    expect(result.brand?.accent).toBe("#FF0000");
+    expect(result.brand?.accent).toBe("#ff0000");
   });
 
   it("flags a dark variant when dark-scoped vars exist", () => {

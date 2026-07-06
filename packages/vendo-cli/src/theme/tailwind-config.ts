@@ -1,25 +1,42 @@
-import { pathToFileURL } from "node:url";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { build } from "esbuild";
 import type { CssVarDecl } from "./css-vars.js";
 
 /**
- * Extract theme tokens from a Tailwind v3 JS config by importing it (dev-time,
+ * Extract theme tokens from a Tailwind v3 config by importing it (dev-time,
  * the developer's own code). Values are normalised into the same CssVarDecl
- * shape the CSS scanner produces so one mapping layer serves both.
- * TypeScript configs are NOT executed — reported for hand-editing instead.
+ * shape the CSS scanner produces so one mapping layer serves both. Configs are
+ * bundled through esbuild first so .ts files and mixed ESM/CommonJS configs
+ * load the same way real Tailwind projects write them.
  */
 export async function extractTailwindVars(
   configPath: string,
 ): Promise<{ vars: CssVarDecl[]; error: string | null }> {
-  if (configPath.endsWith(".ts")) {
-    return { vars: [], error: "TypeScript Tailwind configs are not executed; fill theme.json by hand or convert to JS" };
-  }
   let theme: Record<string, unknown>;
+  let tempDir: string | null = null;
   try {
-    const mod = await import(pathToFileURL(configPath).href);
+    tempDir = await mkdtemp(path.join(tmpdir(), "vendo-tailwind-"));
+    const bundled = path.join(tempDir, "tailwind.config.cjs");
+    await build({
+      entryPoints: [configPath],
+      outfile: bundled,
+      bundle: true,
+      platform: "node",
+      format: "cjs",
+      target: "node20",
+      absWorkingDir: path.dirname(configPath),
+      logLevel: "silent",
+    });
+    const mod = createRequire(bundled)(bundled);
     const cfg = (mod.default ?? mod) as { theme?: { extend?: Record<string, unknown> } & Record<string, unknown> };
     theme = { ...(cfg.theme ?? {}), ...((cfg.theme?.extend as Record<string, unknown>) ?? {}) };
   } catch (err) {
     return { vars: [], error: `could not load ${configPath}: ${err instanceof Error ? err.message : String(err)}` };
+  } finally {
+    if (tempDir) await rm(tempDir, { recursive: true, force: true });
   }
 
   const vars: CssVarDecl[] = [];
