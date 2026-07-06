@@ -39,6 +39,9 @@ export interface CreateWorldConfig {
   model: LanguageModel;
   /** Server-executed tools automation steps may reference. */
   tools?: Record<string, RegisteredTool>;
+  /** Host event types (from `.vendo/tools.json` `events`) available as
+   *  `host_event` automation triggers. */
+  hostEvents?: Array<{ name: string; description?: string }>;
   /** The engine store scope. One embedded tenant; subject = default user. */
   scope: Principal;
   /** ENG-193 §4.6/§6.2 — when present, a parked-action resolution appends the
@@ -139,7 +142,7 @@ export async function createAutomationsWorld(config: CreateWorldConfig): Promise
         scheduler,
         principal: config.scope,
         registeredTools: async () => registered,
-        hostEvents: [],
+        hostEvents: (config.hostEvents ?? []).map((e) => e.name),
         ...(threadId !== undefined ? { createdFromThreadId: threadId } : {}),
       }),
     tick: () => scheduler.tick(),

@@ -9,6 +9,7 @@ export interface InitReport {
   tools: ToolsSummary | null;
   components: ComponentsSummary | null;
   llmSkipped: boolean;
+  llmSkippedReason?: string;
 }
 
 export function renderReport(r: InitReport): string {
@@ -30,7 +31,12 @@ export function renderReport(r: InitReport): string {
     for (const x of r.components.excluded) lines.push(`  excluded ${x.file}: ${x.reason}`);
     for (const f of r.components.failed) lines.push(`  FAILED ${f.file}: ${f.error}`);
   }
-  if (r.llmSkipped) lines.push("LLM steps skipped (no ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY or --skip-llm): route-scan fallback, component discovery");
+  if (r.llmSkipped) {
+    const reason =
+      r.llmSkippedReason ??
+      "no ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY or --skip-llm";
+    lines.push(`LLM steps skipped (${reason}): route-scan fallback, component discovery`);
+  }
   lines.push("Extraction output is in .vendo/ — review and edit it (any wiring changes are listed below).");
   return lines.join("\n");
 }

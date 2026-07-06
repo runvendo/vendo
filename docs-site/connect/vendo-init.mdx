@@ -1,0 +1,112 @@
+---
+title: "The vendo init codemod"
+description: "What vendo init writes, what it never touches, and how to re-run it"
+---
+
+`npx vendo init .` is a codemod for connecting Vendo to an existing app. It extracts reviewable config into `.vendo/`, then wires a Next.js App Router app when it can do so without guessing.
+
+Run it from your app root:
+
+```bash
+npx vendo init .
+```
+
+## What it writes
+
+The extraction output lives under `.vendo/`. Treat this directory as the source of truth for what Vendo knows about your app.
+
+| File | Purpose |
+| --- | --- |
+| `.vendo/theme.json` | Brand tokens for generated UI. |
+| `.vendo/tools.json` | Host API tools and host event declarations. Written by extraction when tools are found; Next.js wiring creates an empty fallback if needed. |
+| `.vendo/components/<Name>/descriptor.ts` | Server-safe host component metadata. Written only when component discovery includes that component. |
+| `.vendo/components/<Name>/impl.tsx` | Sandbox wrapper for the matching host component. Written only with the descriptor. |
+| `.vendo/components/entry.ts` | Host component sandbox bundle entry. Written when at least one component wrapper is written. |
+| `.vendo/components/vite.config.mts` | Vite config for the host component sandbox bundle. Written with the component entry. |
+| `.vendo/README.md` | Notes on what was extracted and what you should review. |
+
+On a Next.js App Router app, the codemod also writes or edits:
+
+| File | Purpose |
+| --- | --- |
+| `app/api/vendo/[...path]/route.ts` or `src/app/api/vendo/[...path]/route.ts` | Catch-all route exporting `GET` and `POST` from `createVendoHandler()`. |
+| `app/vendo-root.tsx` or `src/app/vendo-root.tsx` | Client wrapper using `VendoRoot` from `@vendoai/next/client`, imported `.vendo/theme.json`, and imported `.vendo/tools.json`. |
+| `app/layout.*` or `src/app/layout.*` | Wraps the single root `{children}` expression in `<AppVendoRoot>`. |
+| `instrumentation.ts` or `src/instrumentation.ts` | Calls `startVendoScheduler()` in the Node.js runtime. |
+| `.env.example` | Provider keys, integration keys, model override, storage, scheduler, and webhook comments. |
+| `public/vendo/react-runtime.js` | React runtime shim for the sandbox. |
+| `public/vendo/components-sandbox.js` | Prewired component bundle for the sandbox. |
+| `package.json` | Adds `@vendoai/next` and a `prebuild` script that runs `vendo sync`. |
+
+The generated route has this shape:
+
+```ts
+import { createVendoHandler } from "@vendoai/next";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export const { GET, POST } = createVendoHandler();
+```
+
+The generated `.env.example` documents these keys:
+
+| Env var | Used for |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Chat and generated UI when Anthropic is the selected provider. |
+| `OPENAI_API_KEY` | Chat and generated UI when OpenAI is the selected provider. Also enables the voice capability flag. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Chat and generated UI when Google is the selected provider. |
+| `COMPOSIO_API_KEY` | Integration connect flows. |
+| `VENDO_MODEL` | Runtime model override. |
+| `DATABASE_URL` | Postgres storage. |
+| `VENDO_DATA_DIR` | PGlite data directory when `DATABASE_URL` is not set. |
+| `VENDO_TICK_SECRET` | Bearer token for external scheduler ticks. |
+| `COMPOSIO_WEBHOOK_SECRET` | Signature verification for Composio webhooks. |
+| `VENDO_SCHEDULER` | Scheduler mode. Set to `external` to disable the in-process timer. |
+
+## What it detects
+
+`vendo init` detects the app framework, Tailwind shape, CSS files, and an OpenAPI or Swagger file when one exists. The OpenAPI search covers common root and app-local paths such as `openapi.json`, `openapi.yaml`, `swagger.json`, `docs/openapi.json`, `public/openapi.json`, and `api/openapi.json`.
+
+The extraction order is:
+
+1. Theme tokens from CSS variables and Tailwind config.
+2. Tools from OpenAPI, or an LLM-assisted route scan when no spec exists and a model key is available.
+3. Component wrappers from exported PascalCase components under `components/`, when a model key is available.
+4. `.vendo/README.md`.
+5. Next.js wiring, if the target is a Next.js App Router app.
+
+If LLM steps are unavailable, or you pass `--skip-llm`, the codemod still extracts deterministic files such as theme tokens and still attempts Next.js wiring.
+
+```bash
+npx vendo init . --skip-llm
+```
+
+For init-time LLM steps, the CLI reads the same provider keys as the runtime. It also honors `VENDO_CLI_MODEL`; when set, that init-only override takes precedence over `VENDO_MODEL`.
+
+## Idempotence and `--force`
+
+Files under `.vendo/` are developer-editable. By default, `vendo init` refuses to overwrite existing generated artifacts there. Re-run with `--force` when you want to replace extracted `.vendo/` files with fresh output:
+
+```bash
+npx vendo init . --force
+```
+
+Next.js wiring is separately idempotent. Existing route and root wrapper files are skipped. An already wrapped layout is left alone. Existing sandbox assets are skipped unless `--force` is set.
+
+Review the result with `git diff` after every run. `.vendo/` is meant to be committed, edited, and reviewed like application code.
+
+## Manual follow-ups
+
+When the codemod cannot make a safe edit, it prints the skipped step and an exact manual instruction instead of guessing.
+
+Common skips are:
+
+- No App Router root layout at `app/layout.*` or `src/app/layout.*`.
+- A Pages Router app, or a route-group-only root layout, which is not auto-wired.
+- A root layout with zero or multiple real `{children}` expressions.
+- An existing `register()` function in `instrumentation.ts`. In this case, the codemod writes `instrumentation.vendo-example.ts` and asks you to merge the scheduler boot.
+- An unparsable `package.json`.
+- Existing route, wrapper, `.env.example`, or sandbox asset files.
+
+If `package.json` is edited, install dependencies with your package manager before starting the app.

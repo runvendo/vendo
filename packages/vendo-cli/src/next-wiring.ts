@@ -20,6 +20,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import type { FrameworkInfo } from "./detect.js";
 
 export interface WiringSummary {
@@ -44,6 +45,22 @@ async function readIf(p: string): Promise<string | null> {
     return null;
   }
 }
+
+export const VENDO_TRANSPILE_PACKAGES = [
+  "@vendoai/next",
+  "@vendoai/shell",
+  "@vendoai/react",
+  "@vendoai/components",
+  "@vendoai/core",
+  "@vendoai/runtime",
+  "@vendoai/server",
+  "@vendoai/store",
+  "@vendoai/stage",
+] as const;
+
+const NEXT_SERVER_EXTERNAL_PACKAGES = ["@electric-sql/pglite"] as const;
+const PGLITE_DEPENDENCY = "@electric-sql/pglite";
+const PGLITE_VERSION = "^0.2.0";
 
 /** Locate the App Router directory (`app/` or `src/app/`) with a root layout. */
 export async function findAppDir(
@@ -370,6 +387,250 @@ export function addPrebuildSync(pkgJson: string): string | null {
   return JSON.stringify(pkg, null, 2) + "\n";
 }
 
+export type NextConfigMergeResult =
+  | { kind: "updated"; source: string }
+  | { kind: "unchanged"; source: string }
+  | { kind: "skipped"; reason: string };
+
+function nextConfigScriptKind(fileName: string): ts.ScriptKind {
+  if (fileName.endsWith(".ts")) return ts.ScriptKind.TS;
+  if (fileName.endsWith(".tsx")) return ts.ScriptKind.TSX;
+  if (fileName.endsWith(".jsx")) return ts.ScriptKind.JSX;
+  return ts.ScriptKind.JS;
+}
+
+function unwrapConfigExpression(expr: ts.Expression): ts.Expression {
+  let cur = expr;
+  while (
+    ts.isParenthesizedExpression(cur) ||
+    ts.isAsExpression(cur) ||
+    ts.isSatisfiesExpression(cur) ||
+    ts.isTypeAssertionExpression(cur) ||
+    ts.isNonNullExpression(cur)
+  ) {
+    if (ts.isParenthesizedExpression(cur) || ts.isNonNullExpression(cur)) cur = cur.expression;
+    else cur = cur.expression;
+  }
+  return cur;
+}
+
+function isModuleExports(expr: ts.Expression): boolean {
+  return (
+    ts.isPropertyAccessExpression(expr) &&
+    expr.name.text === "exports" &&
+    ts.isIdentifier(expr.expression) &&
+    expr.expression.text === "module"
+  );
+}
+
+function propertyNameText(name: ts.PropertyName): string | null {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return null;
+}
+
+function lineLeadingIndent(source: string, pos: number): string {
+  const lineStart = source.lastIndexOf("\n", Math.max(0, pos - 1)) + 1;
+  const m = source.slice(lineStart, pos).match(/^[ \t]*/);
+  return m?.[0] ?? "";
+}
+
+function visualIndentAt(sf: ts.SourceFile, pos: number): string {
+  return " ".repeat(sf.getLineAndCharacterOfPosition(pos).character);
+}
+
+function findConfigObject(
+  source: string,
+  fileName: string,
+): { object: ts.ObjectLiteralExpression; sf: ts.SourceFile } | { reason: string } {
+  const sf = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    nextConfigScriptKind(fileName),
+  );
+  const objectVars = new Map<string, ts.ObjectLiteralExpression>();
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
+      const init = unwrapConfigExpression(decl.initializer);
+      if (ts.isObjectLiteralExpression(init)) objectVars.set(decl.name.text, init);
+    }
+  }
+
+  const candidates: ts.ObjectLiteralExpression[] = [];
+  let sawConfigExport = false;
+  const resolve = (expr: ts.Expression): ts.ObjectLiteralExpression | null => {
+    const unwrapped = unwrapConfigExpression(expr);
+    if (ts.isObjectLiteralExpression(unwrapped)) return unwrapped;
+    if (ts.isIdentifier(unwrapped)) return objectVars.get(unwrapped.text) ?? null;
+    return null;
+  };
+
+  for (const stmt of sf.statements) {
+    if (ts.isExportAssignment(stmt)) {
+      sawConfigExport = true;
+      const object = resolve(stmt.expression);
+      if (object) candidates.push(object);
+      continue;
+    }
+    if (!ts.isExpressionStatement(stmt) || !ts.isBinaryExpression(stmt.expression)) continue;
+    const expr = stmt.expression;
+    if (expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken || !isModuleExports(expr.left)) continue;
+    sawConfigExport = true;
+    const object = resolve(expr.right);
+    if (object) candidates.push(object);
+  }
+
+  if (candidates.length === 1) return { object: candidates[0]!, sf };
+  if (candidates.length > 1) return { reason: "multiple plain object config exports found" };
+  return {
+    reason: sawConfigExport
+      ? "config export is not a plain object literal"
+      : "no export default or module.exports config object found",
+  };
+}
+
+type StringArrayProperty =
+  | { kind: "present"; property: ts.PropertyAssignment; array: ts.ArrayLiteralExpression; values: string[] }
+  | { kind: "absent" }
+  | { kind: "skipped"; reason: string };
+
+function inspectStringArrayProperty(
+  object: ts.ObjectLiteralExpression,
+  propName: string,
+): StringArrayProperty {
+  let found: ts.ObjectLiteralElementLike | null = null;
+  for (const prop of object.properties) {
+    if (ts.isSpreadAssignment(prop)) {
+      return { kind: "skipped", reason: "config object uses object spread (...)" };
+    }
+    const name = prop.name ? propertyNameText(prop.name) : null;
+    if (prop.name && name === null) {
+      return { kind: "skipped", reason: "config object has computed property names" };
+    }
+    if (name !== propName) continue;
+    if (found) return { kind: "skipped", reason: `${propName} is declared more than once` };
+    found = prop;
+  }
+  if (!found) return { kind: "absent" };
+  if (!ts.isPropertyAssignment(found)) {
+    return { kind: "skipped", reason: `${propName} is not a property assignment` };
+  }
+  const init = unwrapConfigExpression(found.initializer);
+  if (!ts.isArrayLiteralExpression(init)) {
+    return { kind: "skipped", reason: `${propName} is not a string array literal` };
+  }
+  const values: string[] = [];
+  for (const element of init.elements) {
+    const item = unwrapConfigExpression(element as ts.Expression);
+    if (ts.isStringLiteral(item) || ts.isNoSubstitutionTemplateLiteral(item)) {
+      values.push(item.text);
+      continue;
+    }
+    return { kind: "skipped", reason: `${propName} contains non-string entries` };
+  }
+  return { kind: "present", property: found, array: init, values };
+}
+
+function mergeValues(existing: readonly string[], required: readonly string[]): string[] {
+  const present = new Set(existing);
+  return [...existing, ...required.filter((value) => !present.has(value))];
+}
+
+function hasEveryValue(existing: readonly string[], required: readonly string[]): boolean {
+  const present = new Set(existing);
+  return required.every((value) => present.has(value));
+}
+
+function renderStringArray(values: readonly string[], propertyIndent: string): string {
+  return `[\n${values.map((value) => `${propertyIndent}  ${JSON.stringify(value)},`).join("\n")}\n${propertyIndent}]`;
+}
+
+function renderConfigProperty(name: string, values: readonly string[], propertyIndent: string): string {
+  return `${propertyIndent}${name}: ${renderStringArray(values, propertyIndent)},`;
+}
+
+export function mergeNextConfig(source: string, fileName = "next.config.ts"): NextConfigMergeResult {
+  const found = findConfigObject(source, fileName);
+  if ("reason" in found) return { kind: "skipped", reason: found.reason };
+  const { object, sf } = found;
+  const transpile = inspectStringArrayProperty(object, "transpilePackages");
+  if (transpile.kind === "skipped") return { kind: "skipped", reason: transpile.reason };
+  const external = inspectStringArrayProperty(object, "serverExternalPackages");
+  if (external.kind === "skipped") return { kind: "skipped", reason: external.reason };
+
+  const replacements: Array<{ start: number; end: number; text: string }> = [];
+  const addedProps: string[] = [];
+  const propertyIndent =
+    object.properties.length > 0
+      ? visualIndentAt(sf, object.properties[0]!.getStart(sf))
+      : lineLeadingIndent(source, object.getStart(sf)) + "  ";
+  const closeIndent = lineLeadingIndent(source, object.getStart(sf));
+
+  if (transpile.kind === "present") {
+    if (!hasEveryValue(transpile.values, VENDO_TRANSPILE_PACKAGES)) {
+      replacements.push({
+        start: transpile.array.getStart(sf),
+        end: transpile.array.getEnd(),
+        text: renderStringArray(mergeValues(transpile.values, VENDO_TRANSPILE_PACKAGES), propertyIndent),
+      });
+    }
+  } else {
+    addedProps.push(renderConfigProperty("transpilePackages", VENDO_TRANSPILE_PACKAGES, propertyIndent));
+  }
+
+  if (external.kind === "present") {
+    if (!hasEveryValue(external.values, NEXT_SERVER_EXTERNAL_PACKAGES)) {
+      replacements.push({
+        start: external.array.getStart(sf),
+        end: external.array.getEnd(),
+        text: renderStringArray(mergeValues(external.values, NEXT_SERVER_EXTERNAL_PACKAGES), propertyIndent),
+      });
+    }
+  } else {
+    addedProps.push(renderConfigProperty("serverExternalPackages", NEXT_SERVER_EXTERNAL_PACKAGES, propertyIndent));
+  }
+
+  if (addedProps.length > 0) {
+    const closeBrace = object.getEnd() - 1;
+    const lastProp = object.properties[object.properties.length - 1];
+    let prefix = "\n";
+    if (lastProp) {
+      const betweenLastPropAndClose = source.slice(lastProp.getEnd(), closeBrace);
+      prefix = betweenLastPropAndClose.trimStart().startsWith(",") ? "\n" : ",\n";
+    }
+    replacements.push({
+      start: closeBrace,
+      end: closeBrace,
+      text: `${prefix}${addedProps.join("\n")}\n${closeIndent}`,
+    });
+  }
+
+  if (replacements.length === 0) return { kind: "unchanged", source };
+  let next = source;
+  for (const r of replacements.sort((a, b) => b.start - a.start)) {
+    next = next.slice(0, r.start) + r.text + next.slice(r.end);
+  }
+  return { kind: next === source ? "unchanged" : "updated", source: next };
+}
+
+function minimalNextConfigSource(tsConfig: boolean): string {
+  const body = [
+    "  transpilePackages: [",
+    ...VENDO_TRANSPILE_PACKAGES.map((pkg) => `    ${JSON.stringify(pkg)},`),
+    "  ],",
+    "  serverExternalPackages: [",
+    ...NEXT_SERVER_EXTERNAL_PACKAGES.map((pkg) => `    ${JSON.stringify(pkg)},`),
+    "  ],",
+  ].join("\n");
+  if (tsConfig) {
+    return `import type { NextConfig } from "next";\n\nconst nextConfig: NextConfig = {\n${body}\n};\n\nexport default nextConfig;\n`;
+  }
+  return `/** @type {import("next").NextConfig} */\nconst nextConfig = {\n${body}\n};\n\nexport default nextConfig;\n`;
+}
+
 /** Sandbox assets bundled with the CLI at build time (see scripts/bundle-assets.mjs). */
 function bundledAssetsDir(): string {
   return fileURLToPath(new URL("./assets/", import.meta.url));
@@ -382,6 +643,11 @@ const MANUAL_LAYOUT = (layoutFile: string) =>
 
 const MANUAL_INSTRUMENTATION = (exampleFile: string, instrumentationFile: string) =>
   `merge the scheduler boot from ${exampleFile} into your existing ${instrumentationFile}'s register() (see @vendoai/next)`;
+
+const MANUAL_NEXT_CONFIG = (configFile: string) =>
+  `merge Vendo's Next.js settings into ${configFile}: add missing entries to ` +
+  `transpilePackages (${VENDO_TRANSPILE_PACKAGES.join(", ")}) and add ` +
+  `serverExternalPackages: ["${NEXT_SERVER_EXTERNAL_PACKAGES.join('", "')}"]`;
 
 export async function wireNextApp(
   targetDir: string,
@@ -580,7 +846,47 @@ export async function wireNextApp(
     }
   }
 
-  // 6. Sandbox assets into public/vendo/.
+  // 6. next.config.* — Vendo's published packages need transpilation in host
+  // apps, and PGlite must stay external so its import.meta.url wasm loading
+  // survives Next's server bundling.
+  const configFiles = ["next.config.ts", "next.config.mjs", "next.config.js"]
+    .map((name) => path.join(targetDir, name));
+  const existingConfigFiles: string[] = [];
+  for (const configFile of configFiles) {
+    if (await exists(configFile)) existingConfigFiles.push(configFile);
+  }
+  if (existingConfigFiles.length === 0) {
+    const configFile = path.join(targetDir, ts ? "next.config.ts" : "next.config.mjs");
+    await fs.writeFile(configFile, minimalNextConfigSource(ts));
+    summary.written.push(rel(configFile));
+  } else if (existingConfigFiles.length > 1) {
+    const names = existingConfigFiles.map((file) => rel(file)).join(", ");
+    summary.skipped.push({ step: "next.config", reason: `multiple Next config files found (${names})` });
+    summary.manual.push(MANUAL_NEXT_CONFIG(names));
+  } else {
+    const configFile = existingConfigFiles[0]!;
+    const configSource = await readIf(configFile);
+    if (configSource === null) {
+      summary.skipped.push({ step: "next.config", reason: `${rel(configFile)} unreadable` });
+      summary.manual.push(MANUAL_NEXT_CONFIG(rel(configFile)));
+    } else {
+      const merged = mergeNextConfig(configSource, rel(configFile));
+      if (merged.kind === "skipped") {
+        summary.skipped.push({ step: "next.config", reason: `${rel(configFile)}: ${merged.reason}` });
+        summary.manual.push(MANUAL_NEXT_CONFIG(rel(configFile)));
+      } else if (merged.kind === "updated") {
+        await fs.writeFile(configFile, merged.source);
+        summary.edited.push(rel(configFile));
+      } else {
+        summary.skipped.push({
+          step: "next.config",
+          reason: "already includes Vendo package transpilation and PGlite externalization",
+        });
+      }
+    }
+  }
+
+  // 7. Sandbox assets into public/vendo/.
   const assetsDir = bundledAssetsDir();
   const publicDir = path.join(targetDir, "public/vendo");
   const assets: Array<[string, string]> = [
@@ -606,27 +912,31 @@ export async function wireNextApp(
     summary.written.push(rel(dest));
   }
 
-  // 7. package.json: @vendoai/next dependency + prebuild sync wiring.
+  // 8. package.json: @vendoai/next + PGlite dependencies + prebuild sync
+  // wiring. PGlite is also server-externalized in next.config, but pnpm's
+  // strict node_modules still requires it to be resolvable from the app root.
   if (pkgRaw) {
     const withDep = addDependency(pkgRaw, "@vendoai/next", "latest");
     if (withDep === null) {
-      summary.skipped.push({ step: "package.json", reason: "unparsable — add @vendoai/next yourself" });
+      summary.skipped.push({ step: "package.json", reason: "unparsable — add @vendoai/next and @electric-sql/pglite yourself" });
       summary.manual.push('add "@vendoai/next" to package.json dependencies and install');
+      summary.manual.push('add "@electric-sql/pglite" to package.json dependencies and install');
       summary.manual.push('add "vendo sync" to your package.json "prebuild" script');
       summary.manual.push('add "@vendoai/cli" to package.json devDependencies (the prebuild `vendo sync` runner)');
     } else {
       // @vendoai/cli is a devDependency: `prebuild: vendo sync` needs it to
-      // resolve at build time.
+      // resolve at build time. PGlite is a runtime dependency for the store.
       const withCli = addDevDependency(withDep, "@vendoai/cli", "latest") ?? withDep;
-      const withSync = addPrebuildSync(withCli) ?? withCli;
+      const withPglite = addDependency(withCli, PGLITE_DEPENDENCY, PGLITE_VERSION) ?? withCli;
+      const withSync = addPrebuildSync(withPglite) ?? withPglite;
       if (withSync !== pkgRaw) {
         await fs.writeFile(path.join(targetDir, "package.json"), withSync);
         summary.edited.push("package.json");
-        if (withDep !== pkgRaw) {
-          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @vendoai/next");
+        if (withPglite !== pkgRaw) {
+          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull @vendoai/next and @electric-sql/pglite");
         }
       } else {
-        summary.skipped.push({ step: "package.json", reason: "@vendoai/next + prebuild sync already present" });
+        summary.skipped.push({ step: "package.json", reason: "@vendoai/next + @electric-sql/pglite + prebuild sync already present" });
       }
     }
   }

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runInit } from "./init.js";
-import { textModel } from "./test-helpers.js";
+import { textModel, throwingModel } from "./test-helpers.js";
 
 const ROUTE_REPLY = JSON.stringify([{
   name: "list_things", description: "List things.", method: "get", path: "/api/things",
@@ -39,7 +39,14 @@ describe("runInit e2e (mock model)", () => {
     const tools = JSON.parse(await readFile(path.join(dir, ".vendo/tools.json"), "utf8"));
     expect(tools.tools[0].name).toBe("list_things");
     await readFile(path.join(dir, ".vendo/components/Badge/impl.tsx"), "utf8");
-    await readFile(path.join(dir, ".vendo/README.md"), "utf8");
+    const readme = await readFile(path.join(dir, ".vendo/README.md"), "utf8");
+    expect(readme).toContain("## Events");
+    expect(readme).toContain('"version": 1');
+    expect(readme).toContain('"events": [');
+    expect(readme).toContain('"name": "charge.posted"');
+    expect(readme).toContain("ingestVendoEvent()");
+    expect(readme).toContain("POST /api/vendo/events/ingest");
+    expect(readme).toContain("push at the source, relay webhooks, or poll upstream systems");
   });
 
   it("reports a clean error (not an unhandled rejection) when the model factory throws", async () => {
@@ -67,6 +74,45 @@ describe("runInit e2e (mock model)", () => {
         if (v === undefined) delete process.env[k];
         else process.env[k] = v;
       }
+    }
+  });
+
+  it("falls back to non-LLM init and still wires Next when route scan generation fails", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "init-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "host-app", dependencies: { next: "16.0.0" } }));
+    await writeFile(path.join(dir, "tsconfig.json"), "{}");
+    await mkdir(path.join(dir, "app/api/things"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/layout.tsx"),
+      "export default function RootLayout({ children }: { children: React.ReactNode }) { return <html><body>{children}</body></html>; }\n",
+    );
+    await writeFile(path.join(dir, "app/api/things/route.ts"), "export async function GET() { return Response.json([]); }\n");
+
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const code = await runInit({
+        targetDir: dir,
+        skipLlm: false,
+        force: false,
+        model: throwingModel("temperature is deprecated for this model"),
+      });
+      expect(code).toBe(0);
+      expect(err.mock.calls.flat().join("\n")).toContain("LLM-assisted route scan failed");
+      expect(err.mock.calls.flat().join("\n")).toContain("temperature is deprecated");
+      const out = log.mock.calls.flat().join("\n");
+      expect(out).toContain("next wiring:");
+      expect(out).toContain("LLM steps skipped");
+      const route = await readFile(path.join(dir, "app/api/vendo/[...path]/route.ts"), "utf8");
+      expect(route).toContain("createVendoHandler()");
+      const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf8")) as {
+        dependencies: Record<string, string>;
+      };
+      expect(pkg.dependencies["@vendoai/next"]).toBe("latest");
+      expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
+    } finally {
+      log.mockRestore();
+      err.mockRestore();
     }
   });
 

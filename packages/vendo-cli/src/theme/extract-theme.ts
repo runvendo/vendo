@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { FrameworkInfo } from "../detect.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
+import { collectNextFontVars } from "./next-fonts.js";
 import { extractTailwindVars } from "./tailwind-config.js";
 import { mapVarsToBrand, type BrandMappingResult } from "./map-to-brand.js";
 import { writeGenerated } from "../fsx.js";
@@ -28,6 +29,13 @@ export async function extractTheme(
     const { vars: twVars, error } = await extractTailwindVars(info.tailwindConfigPath);
     vars.push(...twVars);
     if (error) errors.push(error);
+  }
+  // next/font injects --font-* vars at runtime; recover them from source so
+  // font var() chains resolve to the actual family. An explicit CSS
+  // declaration of the same variable stays authoritative.
+  if (info.framework === "next") {
+    const declared = new Set(vars.map((v) => v.name));
+    vars.push(...(await collectNextFontVars(targetDir)).filter((v) => !declared.has(v.name)));
   }
 
   const result = mapVarsToBrand(vars);

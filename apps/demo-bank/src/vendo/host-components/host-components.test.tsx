@@ -33,4 +33,15 @@ describe("Maple host-component registration", () => {
     );
     expect(container.querySelector('[data-testid="vendo-invalid-props"]')).toBeNull();
   });
+
+  it("MapleSpendingDonut treats slice amounts as dollars per its descriptor, not cents", () => {
+    // Descriptor documents `amount` as "a positive dollar amount"; the app's
+    // Donut chart expects cents. The impl must bridge the two, or a $2,937
+    // spend renders as a $29.37 centered total.
+    const Impl = mapleHostImpls.MapleSpendingDonut;
+    const { container } = render(
+      <Impl slices={[{ category: "housing", amount: 2850 }, { category: "dining", amount: 87 }]} />,
+    );
+    expect(container.textContent).toContain("$2,937.00");
+  });
 });

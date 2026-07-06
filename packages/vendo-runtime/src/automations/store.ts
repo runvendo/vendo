@@ -229,6 +229,16 @@ export class DuplicateRunError extends Error {
   }
 }
 
+export class TriggerPayloadTooLargeError extends Error {
+  constructor(
+    readonly bytes: number,
+    readonly maxBytes: number,
+  ) {
+    super(`trigger payload is ${bytes} bytes; max is ${maxBytes}`);
+    this.name = "TriggerPayloadTooLargeError";
+  }
+}
+
 export interface CreateAutomationInput {
   spec: AutomationSpec;
   /** Display name; defaults to spec.name (the frozen save() supplies its own). */
@@ -346,6 +356,17 @@ export function triggerIndex(spec: AutomationSpec): { kind: TriggerKind; key: st
 function jsonBytes(value: unknown): number {
   const text = JSON.stringify(value);
   return text === undefined ? 0 : text.length;
+}
+
+export function triggerPayloadBytes(payload: unknown): number {
+  return jsonBytes(payload);
+}
+
+export function assertTriggerPayloadWithinCap(payload: unknown): void {
+  const bytes = triggerPayloadBytes(payload);
+  if (bytes > MAX_TRIGGER_PAYLOAD_BYTES) {
+    throw new TriggerPayloadTooLargeError(bytes, MAX_TRIGGER_PAYLOAD_BYTES);
+  }
 }
 
 /** Truncate an arbitrary JSON value to fit the cap, keeping it inspectable. */

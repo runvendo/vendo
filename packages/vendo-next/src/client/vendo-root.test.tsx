@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as shell from "@vendoai/shell";
 import * as serverStore from "./server-store.js";
+import * as voiceModule from "./voice.js";
+import type { VoiceDriver } from "@vendoai/shell";
 import { VendoRoot } from "./vendo-root.js";
 
 function stubFetch(capabilities: { chat: boolean; integrations: boolean; voice: boolean; storage?: boolean }) {
@@ -20,7 +22,35 @@ function stubFetch(capabilities: { chat: boolean; integrations: boolean; voice: 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
+
+function customVoice(start = vi.fn()): VoiceDriver {
+  return {
+    start(emit, init) {
+      start(emit, init);
+      return {
+        mute() {},
+        end() {},
+        approve() {},
+        decline() {},
+        stop() {},
+      };
+    },
+  };
+}
+
+const manifestTools = {
+  tools: [
+    {
+      name: "list_accounts",
+      description: "List accounts",
+      inputSchema: { type: "object", properties: {}, required: [] },
+      annotations: { mutating: false, dangerous: false, idempotent: true },
+      binding: { type: "http", method: "GET", path: "/api/accounts" },
+    },
+  ],
+};
 
 describe("VendoRoot", () => {
   it("renders children, the launcher pill and fetches capabilities", async () => {
@@ -252,6 +282,74 @@ describe("VendoRoot", () => {
         fetchMock.mock.calls.some(([u]) => String(u).includes("/api/vendo/threads/my%20thread")),
       ).toBe(true),
     );
+  });
+
+  it("auto-wires packaged voice when capabilities report voice:true and no voice prop is passed", async () => {
+    const createSpy = vi.spyOn(voiceModule, "createVendoVoice");
+    vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: true, voice: true }));
+    render(
+      <VendoRoot productName="Acme" basePath="/custom/vendo" tools={manifestTools}>
+        <div />
+      </VendoRoot>,
+    );
+
+    await waitFor(() =>
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          basePath: "/custom/vendo",
+          productName: "Acme",
+          integrations: true,
+          hostTools: [expect.objectContaining({ name: "list_accounts" })],
+        }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /ask acme/i }));
+    expect(await screen.findByLabelText("Start voice session")).toBeDefined();
+  });
+
+  it("keeps voice disabled when voice={false} even if the server reports voice:true", async () => {
+    vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: true, voice: true }));
+    render(
+      <VendoRoot productName="Acme" voice={false}>
+        <div />
+      </VendoRoot>,
+    );
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /ask acme/i })).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /ask acme/i }));
+    expect(screen.queryByLabelText("Start voice session")).toBeNull();
+  });
+
+  it("disposes the packaged voice driver on unmount", async () => {
+    const dispose = vi.fn();
+    vi.spyOn(voiceModule, "createVendoVoice").mockReturnValue({
+      ...customVoice(),
+      dispose,
+    } as voiceModule.DisposableVoiceDriver);
+    vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: true }));
+    const view = render(
+      <VendoRoot productName="Acme">
+        <div />
+      </VendoRoot>,
+    );
+
+    await waitFor(() => expect(voiceModule.createVendoVoice).toHaveBeenCalled());
+    view.unmount();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("uses a custom VoiceDriver even when packaged voice capability is unavailable", async () => {
+    const start = vi.fn();
+    vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false }));
+    render(
+      <VendoRoot productName="Acme" voice={customVoice(start)}>
+        <div />
+      </VendoRoot>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /ask acme/i }));
+    fireEvent.click(await screen.findByLabelText("Start voice session"));
+    expect(start).toHaveBeenCalledOnce();
   });
 
   it("tolerates an invalid theme by falling back to the default brand", () => {

@@ -29,6 +29,8 @@ export interface VendoRemixProps {
   /** The wrapper is one real div in the host's layout — layout classes that
    *  used to sit on the wrapped child (grid spans, widths) belong here. */
   className?: string;
+  /** Show the ✦ affordance on hover/focus by default, or keep it visible. */
+  affordance?: "hover" | "always";
   children: ReactNode;
 }
 
@@ -67,7 +69,14 @@ class RemixBoundary extends Component<
  * render in place with a "customized · reset" pill, fail-open to the original
  * children on any error or drift. SSR renders children only.
  */
-export function VendoRemix({ id, label, context, className, children }: VendoRemixProps) {
+export function VendoRemix({
+  id,
+  label,
+  context,
+  className,
+  affordance = "hover",
+  children,
+}: VendoRemixProps) {
   const { registry, remixes, renderNode, scope, components } = useShell();
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Client-only affordance: nothing beyond children exists until after mount.
@@ -189,6 +198,7 @@ export function VendoRemix({ id, label, context, className, children }: VendoRem
         <button
           type="button"
           className="fl-remix-btn"
+          data-affordance={affordance === "always" ? "always" : undefined}
           aria-label={`Ask about ${label ?? "this"}`}
           title={`Ask about ${label ?? "this"}`}
           onClick={openScoped}

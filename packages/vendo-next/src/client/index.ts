@@ -12,3 +12,4 @@ export { createServerIntegrations } from "./integrations.js";
 export { createServerVendoStore } from "./server-store.js";
 export { createRunQuery, type RunQuery } from "./run-query.js";
 export { runConnectFlow, type ConnectOutcome } from "./connect-flow.js";
+export { createVendoVoice, type CreateVendoVoiceOptions } from "./voice.js";

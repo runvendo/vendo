@@ -39,6 +39,8 @@ import { VendoConnectNode } from "./connect-node.js";
 import { createServerIntegrations } from "./integrations.js";
 import { createServerNotifications } from "./notifications.js";
 import { createRunQuery } from "./run-query.js";
+import { createVendoVoice } from "./voice.js";
+import type { VoiceDriver } from "@vendoai/shell";
 
 export interface VendoRootProps {
   /** `.vendo/theme.json`, imported as JSON. Invalid/absent → default brand. */
@@ -60,6 +62,10 @@ export interface VendoRootProps {
   /** Corner for the toast stack. Default "bottom-left" (the launcher pill
    *  owns bottom-right). */
   toastPlacement?: VendoToastsProps["placement"];
+  /** Realtime voice driver (ENG-185). Omit for zero-config voice when the
+   *  handler reports `voice:true`; pass `false` to opt out, or a custom
+   *  driver to override the packaged OpenAI Realtime wiring. */
+  voice?: VoiceDriver | false;
   children: ReactNode;
 }
 
@@ -110,6 +116,7 @@ export function VendoRoot({
   launcher = "pill",
   toasts = true,
   toastPlacement = "bottom-left",
+  voice,
   children,
 }: VendoRootProps) {
   const brand = useMemo(() => parseBrand(theme), [theme]);
@@ -219,6 +226,24 @@ export function VendoRoot({
   );
 
   const runQuery = useMemo(() => createRunQuery(basePath, manifestTools), [basePath, manifestTools]);
+  const effectiveVoice = useMemo<VoiceDriver | undefined>(() => {
+    if (voice === false) return undefined;
+    if (voice) return voice;
+    if (!capabilities?.voice) return undefined;
+    return createVendoVoice({
+      basePath,
+      productName,
+      hostTools: hostToolDefs,
+      integrations: capabilities.integrations,
+    });
+  }, [voice, capabilities?.voice, capabilities?.integrations, basePath, productName, hostToolDefs]);
+
+  useEffect(
+    () => () => {
+      (effectiveVoice as (VoiceDriver & { dispose?: () => void }) | undefined)?.dispose?.();
+    },
+    [effectiveVoice],
+  );
 
   const renderNode = useMemo(() => {
     const render = (node: UINode): ReactNode => {
@@ -280,6 +305,7 @@ export function VendoRoot({
               onOpenChange={setOpen}
               {...(greeting !== undefined ? { greeting } : {})}
               {...(suggestions !== undefined ? { suggestions } : {})}
+              {...(effectiveVoice ? { voice: effectiveVoice } : {})}
             />
           )}
           {chatEnabled && launcher === "pill" && !open && (

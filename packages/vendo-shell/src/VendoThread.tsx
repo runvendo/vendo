@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FileUIPart } from "ai";
 import type { AnchorContextBlock, ConsentResponse, VendoMetadata, UINode } from "@vendoai/core";
-import { useVendoThread } from "./use-vendo-thread";
+import { useVendoThread, type ThreadItem } from "./use-vendo-thread";
 import { REMIX_CHANGED_EVENT } from "./remix/VendoRemix";
 import { stampHostComponents } from "./component-drift";
 import type { Feedback } from "./components/TurnActions";
@@ -148,11 +148,12 @@ export function VendoThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceSession.supported, voiceSession.active, chat.items]);
 
-  // The most recent rendered view — what "Pin to card" commits.
-  const latestNode = useMemo<UINode | null>(() => {
+  // The most recent rendered view — what "Pin to card" commits. Keep the
+  // whole item so scoped remix pins preserve the paired sealed envelope.
+  const latestUiItem = useMemo<Extract<ThreadItem, { kind: "ui" }> | null>(() => {
     for (let i = chat.items.length - 1; i >= 0; i--) {
       const item = chat.items[i];
-      if (item?.kind === "ui") return item.node;
+      if (item?.kind === "ui") return item;
     }
     return null;
   }, [chat.items]);
@@ -199,14 +200,16 @@ export function VendoThread({
   };
   // Apply a remix candidate: pin it (stamped for drift detection) and tell the
   // mounted wrapper to swap in place.
-  const applyRemix = (node: UINode, envelope?: string) => {
-    if (node.kind !== "generated" || !node.remixAnchorId) return;
-    const anchorId = node.remixAnchorId;
-    const stamp = stampHostComponents(node, components ?? []);
+  const applyRemix = (node: UINode, envelope?: string, anchorIdOverride?: string) => {
+    if (node.kind !== "generated") return;
+    const anchorId = anchorIdOverride ?? node.remixAnchorId;
+    if (!anchorId) return;
+    const pinned = node.remixAnchorId === anchorId ? node : { ...node, remixAnchorId: anchorId };
+    const stamp = stampHostComponents(pinned, components ?? []);
     void remixes
       .pin({
         anchorId,
-        node,
+        node: pinned,
         ...(stamp ? { components: stamp } : {}),
         // The sealed authored state (remix fast-edits): opaque here; sent back
         // on scoped opens so the server can offer base:"pin" hunk editing.
@@ -216,6 +219,20 @@ export function VendoThread({
         window.dispatchEvent(new CustomEvent(REMIX_CHANGED_EVENT, { detail: { anchorId } }));
       })
       .catch((err) => console.warn(`[vendo] failed to apply remix for "${anchorId}"`, err));
+  };
+  const scopedPin = (node: UINode, envelope?: string) => {
+    const anchor = scope.current();
+    if (!anchor) return;
+    applyRemix(node, envelope, anchor.anchorId);
+  };
+  const pinSink = onPin ?? (activeScope ? scopedPin : undefined);
+  const pinLatest = () => {
+    if (!latestUiItem) return;
+    if (onPin) {
+      onPin(latestUiItem.node);
+      return;
+    }
+    scopedPin(latestUiItem.node, latestUiItem.envelope);
   };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
 
@@ -404,7 +421,7 @@ export function VendoThread({
           onEnd={voiceSession.end}
           onApprove={voiceSession.approve}
           onDecline={voiceSession.decline}
-          onPin={onPin}
+          onPin={pinSink}
           onClosed={() => {
             const finalSnapshot = voiceSession.close();
             const landed = voiceSessionMessages(finalSnapshot);
@@ -474,13 +491,13 @@ export function VendoThread({
             )}
           </div>
         )}
-      {onPin && (
+      {pinSink && (
         <div className="fl-pinbar">
           <button
             type="button"
             className="fl-pin-btn"
-            disabled={!latestNode}
-            onClick={() => latestNode && onPin(latestNode)}
+            disabled={!latestUiItem}
+            onClick={pinLatest}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -488,7 +505,7 @@ export function VendoThread({
             </svg>
             Pin to card
           </button>
-          <span className="fl-pinbar-hint">{latestNode ? "pins the latest view" : "describe a view first"}</span>
+          <span className="fl-pinbar-hint">{latestUiItem ? "pins the latest view" : "describe a view first"}</span>
         </div>
       )}
       {/* heroComposer surfaces hoist the composer into the Landing hero while

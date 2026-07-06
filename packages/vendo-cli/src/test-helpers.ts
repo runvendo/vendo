@@ -24,3 +24,11 @@ export function textModel(responses: string[]): MockLanguageModelV3 {
     }),
   });
 }
+
+export function throwingModel(message: string): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doGenerate: async (): Promise<LanguageModelV3GenerateResult> => {
+      throw new Error(message);
+    },
+  });
+}

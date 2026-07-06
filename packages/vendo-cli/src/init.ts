@@ -9,11 +9,14 @@ import { cliModel } from "./llm.js";
 import { renderReport, type InitReport } from "./report.js";
 import { writeGenerated } from "./fsx.js";
 import { wireNextApp, renderWiring } from "./next-wiring.js";
+import { installLocalVendoPackages, type LocalVendoInstallSummary } from "./local-pack.js";
 
 export interface InitOptions {
   targetDir: string;
   skipLlm: boolean;
   force: boolean;
+  /** Pack local Vendo workspace packages into the host app's vendor/ dir. */
+  localVendoDir?: string;
   /** test seam — pass null to force LLM-off, a mock to avoid the network */
   model?: LanguageModel | null;
   /** test seam — telemetry wiring overrides; omit in production for real env/key */
@@ -36,7 +39,7 @@ function noopTelemetry(): Telemetry {
 function initRunTelemetry(opts: InitOptions): Telemetry {
   try {
     return initTelemetry({
-      version: "0.0.0",
+      version: "0.1.0",
       runtime: false,
       home: opts.telemetry?.home,
       posthogKey: opts.telemetry?.posthogKey ?? process.env.VENDO_POSTHOG_KEY,
@@ -74,9 +77,45 @@ is LLM-read code and must not grant auto-allow); GETs with side-effect-shaped
 names are marked mutating even from OpenAPI. Relax annotations here by hand
 after review — this file is the reviewable source of truth.
 
+## Events
+
+Events are named payload contracts that automations can use as triggers. Add
+them to the \`events\` array in \`tools.json\`:
+
+\`\`\`json
+{
+  "version": 1,
+  "tools": [],
+  "events": [
+    {
+      "name": "charge.posted",
+      "description": "A card charge posted to an account.",
+      "payloadSchema": {
+        "type": "object",
+        "required": ["chargeId", "accountId", "amountCents"],
+        "properties": {
+          "chargeId": { "type": "string" },
+          "accountId": { "type": "string" },
+          "amountCents": { "type": "integer" },
+          "postedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  ]
+}
+\`\`\`
+
+Ingest events with \`ingestVendoEvent()\` or \`POST /api/vendo/events/ingest\`.
+Producers can push at the source, relay webhooks, or poll upstream systems; all
+three feed the same Vendo ingest path.
+
 \`vendo publish\` uploads tools.json to the Vendo registry — stubbed until the
 registry ships (ENG-198). Embedded hosts read this directory from disk.
 `;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export async function runInit(opts: InitOptions): Promise<number> {
@@ -101,20 +140,55 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return 1;
   }
 
-  const report: InitReport = { info, theme: null, tools: null, components: null, llmSkipped: model === null };
+  const report: InitReport = {
+    info,
+    theme: null,
+    tools: null,
+    components: null,
+    llmSkipped: model === null,
+    llmSkippedReason: model === null
+      ? (opts.skipLlm ? "--skip-llm" : "no ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY")
+      : undefined,
+  };
   let failedStep: InitFailedStep = "theme";
   try {
     failedStep = "theme";
     report.theme = await extractTheme(targetDir, info, opts);
     failedStep = "tools";
-    report.tools = await extractTools(targetDir, info, model, opts);
+    try {
+      report.tools = await extractTools(targetDir, info, model, opts);
+    } catch (err) {
+      // LLM route scanning is optional. If the provider rejects, warns via an
+      // exception, or otherwise fails, keep the deterministic init path moving
+      // so Next wiring still happens and the developer gets a reviewable diff.
+      // Deterministic OpenAPI conversion errors still fail init normally.
+      if (!model || info.openapiPath) throw err;
+      const message = errorMessage(err);
+      console.error(`LLM-assisted route scan failed; continuing without LLM: ${message}`);
+      model = null;
+      report.llmSkipped = true;
+      report.llmSkippedReason = "LLM-assisted route scan failed; continuing without LLM";
+      report.tools = await extractTools(targetDir, info, null, opts);
+      report.tools.errors.unshift(`LLM-assisted route scan failed (${message}) — continuing without LLM`);
+    }
     if (model) {
       failedStep = "components";
-      report.components = await extractComponents(targetDir, model, opts);
+      try {
+        report.components = await extractComponents(targetDir, model, opts);
+      } catch (err) {
+        const message = errorMessage(err);
+        console.error(`LLM-assisted component discovery failed; continuing without generated components: ${message}`);
+        report.components = {
+          candidates: 0,
+          written: [],
+          excluded: [],
+          failed: [{ file: "(component discovery)", error: message }],
+        };
+      }
     }
     await writeGenerated(path.join(targetDir, ".vendo/README.md"), readmeSource(report), opts);
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(errorMessage(err));
     await t.track("init_failed", { framework, failedStep });
     return 1;
   }
@@ -123,26 +197,40 @@ export async function runInit(opts: InitOptions): Promise<number> {
   // The install codemod (Next.js App Router): route handler, provider wrap,
   // .env.example, sandbox assets, dependency. Fail-open by design — anything
   // uncertain is skipped and reported, never guessed.
+  let wiringInstalled = false;
+  let localInstall: LocalVendoInstallSummary | null = null;
   try {
     failedStep = "wiring";
     const wiring = await wireNextApp(targetDir, info, { force: opts.force });
     const rendered = renderWiring(wiring);
     if (rendered) console.log(rendered);
-    if (wiring) {
+    wiringInstalled = wiring !== null;
+    if (opts.localVendoDir) {
+      localInstall = await installLocalVendoPackages(targetDir, opts.localVendoDir);
       console.log(
         [
-          "",
-          "Next steps:",
-          "  1. install deps (npm install / pnpm install)",
-          "  2. cp .env.example .env.local  and paste one provider API key (see comments)",
-          "  3. npm run dev — then hit the launcher (or Cmd/Ctrl+K) and ask for a view",
+          "local packages:",
+          `  wrote  ${localInstall.packages.length} @vendoai tarballs + fluidkit into ${path.relative(targetDir, localInstall.vendorDir)}`,
+          `  edited package.json with file:vendor/* dependencies and ${localInstall.packageManager === "pnpm" ? "pnpm.overrides" : "overrides"}`,
+          `  next  run ${localInstall.installCommand}`,
         ].join("\n"),
       );
     }
   } catch (err) {
-    console.error(`next wiring failed (review \`git diff\` — wiring writes are individually atomic): ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`init wiring failed (review \`git diff\` — writes are individually atomic): ${err instanceof Error ? err.message : String(err)}`);
     await t.track("init_failed", { framework, failedStep });
     return 1;
+  }
+  if (wiringInstalled) {
+    console.log(
+      [
+        "",
+        "Next steps:",
+        `  1. ${localInstall ? `run ${localInstall.installCommand}` : "install deps (npm install / pnpm install)"}`,
+        "  2. cp .env.example .env.local  and paste one provider API key (see comments)",
+        "  3. npm run dev — then hit the launcher (or Cmd/Ctrl+K) and ask for a view",
+      ].join("\n"),
+    );
   }
   await t.track("init_completed", {
     framework,

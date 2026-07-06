@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { LanguageModel } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
+import type { LanguageModelV3GenerateResult } from "@ai-sdk/provider";
 import { cliModel, generateJson } from "./llm.js";
 import { textModel } from "./test-helpers.js";
 
 const schema = z.object({ ok: z.boolean() });
+const ZERO_USAGE: LanguageModelV3GenerateResult["usage"] = {
+  inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 0, text: 0, reasoning: 0 },
+};
 
 describe("generateJson", () => {
   it("parses fenced JSON", async () => {
@@ -20,6 +26,23 @@ describe("generateJson", () => {
   it("recovers on the retry", async () => {
     const model = textModel(["nope", '{"ok": false}']);
     expect(await generateJson({ model, schema, prompt: "x" })).toEqual({ ok: false });
+  });
+
+  it("does not force a temperature override", async () => {
+    const calls: unknown[] = [];
+    const model = new MockLanguageModelV3({
+      doGenerate: async (opts): Promise<LanguageModelV3GenerateResult> => {
+        calls.push(opts);
+        return {
+          content: [{ type: "text", text: '{"ok": true}' }],
+          finishReason: { unified: "stop", raw: undefined },
+          usage: ZERO_USAGE,
+          warnings: [],
+        };
+      },
+    });
+    await expect(generateJson({ model, schema, prompt: "x" })).resolves.toEqual({ ok: true });
+    expect(JSON.stringify(calls)).not.toContain("temperature");
   });
 });
 

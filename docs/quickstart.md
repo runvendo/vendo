@@ -26,7 +26,8 @@ npx vendo init .
 - writes `app/api/vendo/[...path]/route.ts` containing
   `createVendoHandler()` — one catch-all serving `chat`, `action`,
   `integrations`, `capabilities`, `tick`, `webhooks/composio`, `threads` /
-  `threads/<id>`, and `vendos` / `vendos/<id>` / `vendos/<id>/delete`;
+  `threads/<id>`, `events/ingest`, and `vendos` / `vendos/<id>` /
+  `vendos/<id>/delete`;
 - writes `app/vendo-root.tsx` (a small client wrapper) and wraps your root
   layout's `{children}` with it — idempotently, respecting existing providers;
 - writes `instrumentation.ts` (or `src/instrumentation.ts`, next to a
@@ -144,6 +145,63 @@ Two properties matter:
   `mutating: true`, which means the policy pauses them for user approval.
   Relaxing an annotation to `mutating: false` (auto-run reads, saved-view
   refresh) is a reviewed edit you make by hand.
+
+## Events
+
+Host events are declared in `.vendo/tools.json` next to tools. Once declared,
+the automation authoring agent can compile `host_event` triggers from chat.
+
+```json
+{
+  "version": 1,
+  "tools": [],
+  "events": [
+    { "name": "transaction.created", "description": "A card transaction was created." }
+  ]
+}
+```
+
+Produce event instances at the source whenever you can:
+
+```ts
+import { ingestVendoEvent } from "@vendoai/next";
+
+await ingestVendoEvent("transaction.created", txn, {
+  eventId: txn.id,
+});
+```
+
+Relay third-party webhooks into your declared event names:
+
+```ts
+import { ingestVendoEvent } from "@vendoai/next";
+
+const body = await req.json();
+await ingestVendoEvent("transaction.created", body.data, {
+  eventId: req.headers.get("webhook-id") ?? body.data.id,
+});
+```
+
+For sources without push, run a 15-minute poller and use the source object's
+id as the dedupe key:
+
+```ts
+for (const txn of await bank.listTransactions({ since: cursor })) {
+  await ingestVendoEvent("transaction.created", txn, {
+    eventId: txn.id,
+  });
+}
+```
+
+Out-of-process producers can call `POST /api/vendo/events/ingest` with
+`{ "name", "payload", "eventId" }`; `eventId` is required and must be a stable
+producer delivery id. It uses the same local/principal guard as
+other mutating routes, and also accepts
+`Authorization: Bearer $VENDO_TICK_SECRET` when that secret is configured.
+`ingestVendoEvent()` accepts an omitted `eventId` for in-process fire-and-forget
+producers, but omitting it disables redelivery dedup across restarts. If you use
+`bootKey`, pass the same key to `createVendoHandler()` or `startVendoScheduler()`
+and to your producer.
 
 ## Customizing
 

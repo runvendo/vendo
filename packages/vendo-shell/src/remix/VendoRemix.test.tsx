@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -48,8 +49,32 @@ describe("VendoRemix", () => {
       </VendoRemix>,
     );
     expect(screen.getByTestId("host-widget").textContent).toBe("original");
-    await waitFor(() => expect(screen.getByLabelText("Ask about Widget")).toBeTruthy());
+    const affordance = await screen.findByLabelText("Ask about Widget");
+    expect(affordance.hasAttribute("data-affordance")).toBe(false);
     expect(document.querySelector(".fl-remix-pill")).toBeNull();
+  });
+
+  it("can keep the affordance visible for discoverability", async () => {
+    mount(
+      <VendoRemix id="w1" label="Widget" affordance="always">
+        <div data-testid="host-widget">original</div>
+      </VendoRemix>,
+    );
+    const affordance = await screen.findByLabelText("Ask about Widget");
+    expect(affordance.getAttribute("data-affordance")).toBe("always");
+  });
+
+  it("keeps CSS rules for persistent and default hover affordances", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    expect(css).toMatch(
+      /\.fl-remix-btn\[data-affordance="always"\]\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*scale\(1\);[^}]*\}/s,
+    );
+    expect(css).toMatch(
+      /\.fl-remix:hover\s+\.fl-remix-btn,\s*\.fl-remix:focus-within\s+\.fl-remix-btn\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*scale\(1\);[^}]*\}/s,
+    );
+    expect(css).toMatch(
+      /\.fl-remix-btn\s*\{[^}]*opacity:\s*0;[^}]*transform:\s*scale\(\.9\);[^}]*\}/s,
+    );
   });
 
   it("registers with the page registry on mount and deregisters on unmount", async () => {

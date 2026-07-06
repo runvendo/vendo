@@ -8,6 +8,7 @@ import {
   addDevDependency,
   addPrebuildSync,
   mergeInstrumentation,
+  mergeNextConfig,
   productNameFrom,
   wireNextApp,
   wrapLayoutChildren,
@@ -251,6 +252,39 @@ describe("mergeInstrumentation", () => {
   });
 });
 
+describe("mergeNextConfig", () => {
+  it("merges Vendo settings into a simple object-literal config", () => {
+    const source = `const nextConfig = {
+  reactStrictMode: true,
+  transpilePackages: ["next-mdx-remote"],
+  serverExternalPackages: ["sharp"],
+};
+
+export default nextConfig;
+`;
+    const out = mergeNextConfig(source, "next.config.mjs");
+    expect(out.kind).toBe("updated");
+    if (out.kind !== "updated") throw new Error("expected next.config update");
+    expect(out.source).toContain('"next-mdx-remote"');
+    expect(out.source).toContain('"@vendoai/next"');
+    expect(out.source).toContain('"@vendoai/stage"');
+    expect(out.source).toContain('"sharp"');
+    expect(out.source).toContain('"@electric-sql/pglite"');
+  });
+
+  it("skips ambiguous configs instead of guessing", () => {
+    const source = `import analyzer from "@next/bundle-analyzer";
+const withAnalyzer = analyzer();
+
+export default withAnalyzer({});
+`;
+    const out = mergeNextConfig(source, "next.config.mjs");
+    expect(out.kind).toBe("skipped");
+    if (out.kind !== "skipped") throw new Error("expected next.config skip");
+    expect(out.reason).toContain("plain object literal");
+  });
+});
+
 async function scaffoldFreshApp(withSrcDir: boolean): Promise<string> {
   const dir = mkdtempSync(path.join(tmpdir(), "vendo-wire-"));
   const appDir = path.join(dir, withSrcDir ? "src/app" : "app");
@@ -291,6 +325,13 @@ describe("wireNextApp", () => {
       dependencies: Record<string, string>;
     };
     expect(pkg.dependencies["@vendoai/next"]).toBeDefined();
+    expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
+    const nextConfig = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
+    expect(nextConfig).toContain('transpilePackages: [');
+    expect(nextConfig).toContain('"@vendoai/next"');
+    expect(nextConfig).toContain('"@vendoai/stage"');
+    expect(nextConfig).toContain('serverExternalPackages: [');
+    expect(nextConfig).toContain('"@electric-sql/pglite"');
 
     // src/app layout → instrumentation.ts lives under src/, matching Next's convention
     const instrumentation = await fs.readFile(path.join(dir, "src/instrumentation.ts"), "utf8");
@@ -322,6 +363,60 @@ describe("wireNextApp", () => {
     const instrumentation = await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8");
     expect(instrumentation).toContain("startVendoScheduler()");
     expect(await exists(path.join(dir, "src/instrumentation.ts"))).toBe(false);
+  });
+
+  it("creates a minimal next.config.ts when the app has none", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    const config = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
+    expect(summary.written).toContain("next.config.ts");
+    expect(config).toContain('import type { NextConfig } from "next"');
+    expect(config).toContain('"@vendoai/next"');
+    expect(config).toContain('"@electric-sql/pglite"');
+    expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
+  });
+
+  it("edits a simple next.config object literal without removing existing entries", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const configPath = path.join(dir, "next.config.mjs");
+    await fs.writeFile(
+      configPath,
+      `const nextConfig = {
+  transpilePackages: ["next-mdx-remote"],
+  serverExternalPackages: ["sharp"],
+};
+
+export default nextConfig;
+`,
+    );
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    const config = await fs.readFile(configPath, "utf8");
+    expect(summary.edited).toContain("next.config.mjs");
+    expect(config).toContain('"next-mdx-remote"');
+    expect(config).toContain('"@vendoai/shell"');
+    expect(config).toContain('"sharp"');
+    expect(config).toContain('"@electric-sql/pglite"');
+  });
+
+  it("skips ambiguous next.config files and reports exact manual instructions", async () => {
+    const dir = await scaffoldFreshApp(false);
+    const configPath = path.join(dir, "next.config.mjs");
+    const source = `import analyzer from "@next/bundle-analyzer";
+const withAnalyzer = analyzer();
+
+export default withAnalyzer({});
+`;
+    await fs.writeFile(configPath, source);
+    const info = await detectTarget(dir);
+    const summary = (await wireNextApp(dir, info, { force: false }))!;
+    expect(await fs.readFile(configPath, "utf8")).toBe(source);
+    expect(summary.skipped.some((s) => s.step === "next.config")).toBe(true);
+    expect(summary.manual.some((m) => m.includes("transpilePackages") && m.includes("@electric-sql/pglite"))).toBe(true);
   });
 
   it("merges into an existing instrumentation.ts non-destructively when it has no register()", async () => {
@@ -364,11 +459,15 @@ describe("wireNextApp", () => {
     const layoutAfterFirst = await fs.readFile(path.join(dir, "app/layout.tsx"), "utf8");
     const instrumentationAfterFirst = await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8");
     const envAfterFirst = await fs.readFile(path.join(dir, ".env.example"), "utf8");
+    const nextConfigAfterFirst = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
+    const pkgAfterFirst = await fs.readFile(path.join(dir, "package.json"), "utf8");
     const second = (await wireNextApp(dir, info, { force: false }))!;
     expect(second.edited).toEqual([]);
     expect(await fs.readFile(path.join(dir, "app/layout.tsx"), "utf8")).toBe(layoutAfterFirst);
     expect(await fs.readFile(path.join(dir, "instrumentation.ts"), "utf8")).toBe(instrumentationAfterFirst);
     expect(await fs.readFile(path.join(dir, ".env.example"), "utf8")).toBe(envAfterFirst);
+    expect(await fs.readFile(path.join(dir, "next.config.ts"), "utf8")).toBe(nextConfigAfterFirst);
+    expect(await fs.readFile(path.join(dir, "package.json"), "utf8")).toBe(pkgAfterFirst);
   });
 
   it("fails open on an unrecognizable layout: files written, layout untouched, manual steps printed", async () => {

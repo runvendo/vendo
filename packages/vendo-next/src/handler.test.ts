@@ -65,7 +65,9 @@ describe("routeTail", () => {
     ["/api/vendo/action", "action"],
     ["/api/vendo/integrations", "integrations"],
     ["/api/vendo/capabilities", "capabilities"],
+    ["/api/vendo/voice/session", "voice/session"],
     ["/api/vendo/tick", "tick"],
+    ["/api/vendo/events/ingest", "events/ingest"],
   ])("resolves %s to %s", (pathname, expected) => {
     expect(routeTail(req(pathname))).toBe(expected);
   });
@@ -558,7 +560,7 @@ describe("createVendoHandler", () => {
     // test-env safety net doesn't apply; this test doesn't care about
     // durability and must not touch disk.
     const { POST } = createVendoHandler({ vendoDir: emptyDir(), storage: false });
-    for (const p of ["chat", "action", "tick", "integrations", "vendos"]) {
+    for (const p of ["chat", "action", "tick", "events/ingest", "integrations", "vendos"]) {
       const res = await POST(
         new Request(`http://prod.example.com/api/vendo/${p}`, {
           method: "POST",

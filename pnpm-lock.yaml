@@ -7,6 +7,7 @@ settings:
 overrides:
   '@types/react': ^19.2.0
   '@types/react-dom': ^19.2.0
+  fluidkit: file:./vendor/fluidkit-0.5.0-656857b.tgz
 
 importers:
 
@@ -108,7 +109,7 @@ importers:
         version: 9.39.4(jiti@2.7.0)
       eslint-config-next:
         specifier: 16.2.9
-        version: 16.2.9(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
+        version: 16.2.9(@typescript-eslint/parser@8.62.1(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)
@@ -238,7 +239,7 @@ importers:
         version: 9.39.4(jiti@2.7.0)
       eslint-config-next:
         specifier: 16.2.9
-        version: 16.2.9(@typescript-eslint/parser@8.62.1(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
+        version: 16.2.9(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)
@@ -817,6 +818,9 @@ importers:
       ai:
         specifier: 6.0.28
         version: 6.0.28(zod@3.25.76)
+      fluidkit:
+        specifier: file:../../vendor/fluidkit-0.5.0-656857b.tgz
+        version: file:vendor/fluidkit-0.5.0-656857b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       katex:
         specifier: ^0.16.11
         version: 0.16.47
@@ -845,9 +849,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.0
         version: 19.2.3(@types/react@19.2.17)
-      fluidkit:
-        specifier: file:../../vendor/fluidkit-0.5.0-656857b.tgz
-        version: file:vendor/fluidkit-0.5.0-656857b.tgz(motion@12.42.2(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1

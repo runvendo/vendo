@@ -6,13 +6,23 @@
  */
 import type { AutomationFiring, Principal } from "@vendoai/core";
 import type { AutomationRunner } from "./runner.js";
-import type { AutomationEngineStore, TriggerEnvelope } from "./store.js";
+import type { AutomationEngineStore, AutomationRun, TriggerEnvelope } from "./store.js";
 
 export interface HostEventInput {
   /** Producer-supplied id (e.g. the transaction id) — the dedup key. */
-  eventId: string;
-  occurredAt: string;
+  eventId?: string;
+  occurredAt?: string;
   payload: unknown;
+}
+
+export interface HostEventIngestResult {
+  /** Enabled automations whose host_event trigger matched this event name. */
+  matched: number;
+  /** Runs actually created. Duplicate event ids produce fewer runs. */
+  fired: number;
+  /** The event id used in every trigger envelope for this ingest call. */
+  eventId: string;
+  runs: AutomationRun[];
 }
 
 export type HostEventIngest = (
@@ -21,36 +31,70 @@ export type HostEventIngest = (
   event: HostEventInput,
 ) => Promise<void>;
 
+let generatedHostEventCounter = 0;
+
+function generatedEventId(eventType: string, occurredAt: string): string {
+  generatedHostEventCounter += 1;
+  return `generated:${eventType}:${occurredAt}:${generatedHostEventCounter}`;
+}
+
 /**
- * Build the host-event ingest: fan out to the subject's enabled automations
- * matching the event type (never tenant-wide) and fire each one.
+ * Fan out to the subject's enabled automations matching the event type
+ * (never tenant-wide) and fire each one.
+ */
+export async function fireHostEventAutomations(
+  deps: {
+    store: AutomationEngineStore;
+    runner: AutomationRunner;
+  },
+  scope: Principal,
+  eventType: string,
+  event: HostEventInput,
+): Promise<HostEventIngestResult> {
+  const occurredAt = event.occurredAt ?? new Date().toISOString();
+  const eventId =
+    typeof event.eventId === "string" && event.eventId.length > 0
+      ? event.eventId
+      : generatedEventId(eventType, occurredAt);
+  const envelope: TriggerEnvelope = {
+    source: "host",
+    eventId,
+    subject: scope.subject,
+    occurredAt,
+    payload: event.payload,
+  };
+  const matches = await deps.store.findEnabledByTrigger(scope, {
+    kind: "host_event",
+    key: eventType,
+  });
+  const runs: AutomationRun[] = [];
+  for (const automation of matches) {
+    try {
+      const run = await deps.runner.fire(scope, automation.id, envelope);
+      if (run) runs.push(run);
+    } catch (error) {
+      // Same isolation rule as InProcessScheduler.tick(): one automation's
+      // failure (e.g. a transient store error) must not starve the other
+      // matches of this event.
+      console.error(`[vendo] host-event firing failed for automation ${automation.id}`, error);
+    }
+  }
+  return { matched: matches.length, fired: runs.length, eventId, runs };
+}
+
+/**
+ * Back-compatible embedded host-event ingest helper: same firing path as
+ * `fireHostEventAutomations`, but the public callback shape stays Promise<void>
+ * for existing hosts that typed their emitters that way.
  */
 export function createHostEventIngest(deps: {
   store: AutomationEngineStore;
   runner: AutomationRunner;
 }): HostEventIngest {
   return async (scope, eventType, event) => {
-    const envelope: TriggerEnvelope = {
-      source: "host",
-      eventId: event.eventId,
-      subject: scope.subject,
-      occurredAt: event.occurredAt,
-      payload: event.payload,
-    };
-    const matches = await deps.store.findEnabledByTrigger(scope, {
-      kind: "host_event",
-      key: eventType,
-    });
-    for (const automation of matches) {
-      try {
-        await deps.runner.fire(scope, automation.id, envelope);
-      } catch (error) {
-        // Same isolation rule as InProcessScheduler.tick(): one automation's
-        // failure (e.g. a transient store error) must not starve the other
-        // matches of this event.
-        console.error(`[vendo] host-event firing failed for automation ${automation.id}`, error);
-      }
-    }
+    // Delegates to fireHostEventAutomations (main's refactor), which now
+    // carries the per-firing isolation.
+    await fireHostEventAutomations(deps, scope, eventType, event);
   };
 }
 
