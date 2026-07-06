@@ -213,6 +213,11 @@ export function spliceRemixAnchor(source: string, req: SpliceRequest): SpliceRes
   const start = target.node.getStart(sf);
   const end = target.node.getEnd();
   const original = source.slice(start, end);
+  // Re-indent the FIRST line only (the element's opening tag under the new
+  // wrapper). Interior lines of a multi-line element keep their original
+  // offset — deliberately, not a bug: the syntax re-parse is the hard
+  // correctness guarantee, and a formatter normalizes the rest. Don't "fix"
+  // this into a full reindent.
   const indent = leadingIndent(source, start);
   const wrapper =
     `<VendoRemix id="${id}" label="${label}">\n` +
@@ -220,7 +225,9 @@ export function spliceRemixAnchor(source: string, req: SpliceRequest): SpliceRes
     `${indent}</VendoRemix>`;
   let code = source.slice(0, start) + wrapper + source.slice(end);
 
-  // Add the shell import unless one already brings VendoRemix in.
+  // Add the shell import unless one already brings VendoRemix in. VendoRemix
+  // only comes from @vendoai/shell, so any existing VendoRemix import IS the
+  // shell one — findImport matching by name is enough to skip re-importing.
   if (!findImport(sf, "VendoRemix")) {
     code = insertImportAfterDirectives(code, SHELL_IMPORT);
   }

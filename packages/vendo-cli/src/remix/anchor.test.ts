@@ -29,6 +29,16 @@ describe("spliceRemixAnchor", () => {
     expect(reparses(r.code)).toBe(true);
   });
 
+  it("wraps an arrow concise body wrapped in parentheses", () => {
+    const src = `export const Widget = () => (<List />);\n`;
+    const r = spliceRemixAnchor(src, { componentName: "Widget", id: "widget", label: "Widget" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.code).toContain('<VendoRemix id="widget" label="Widget">');
+    expect(r.code).toContain("<List />");
+    expect(reparses(r.code)).toBe(true);
+  });
+
   it("wraps a parenthesized multi-line return element", () => {
     const src = `export function Widget() {\n  return (\n    <Card>\n      <Row />\n    </Card>\n  );\n}\n`;
     const r = spliceRemixAnchor(src, { componentName: "Widget", id: "card", label: "Card" });
