@@ -105,6 +105,17 @@ Maple is visually strong but trust-breaking in prose and numbers.
 - Capabilities-fetch failure leaves the chat UI optimistically enabled
   forever (vendo-next client treats null capabilities as enabled).
 
+## New flags from wave 4 (client/state fixes)
+
+- **Cadence has no thread persistence at all** — its hand-rolled routes never
+  persist or serve threads, so the new reload-restore seam has nothing to
+  restore there. Wire Cadence to the durable thread store, or accept for the
+  demo?
+- **Composio-executed reads count as "actions you approved"** in the trust
+  diary on every host — Composio tools carry no annotations by design, so
+  reads can't be bucketed as reads. Needs an annotation source (toolkit
+  metadata? allowlist?) or a decision-aware audit field.
+
 ## Not decisions, but waiting on you
 
 - Your bug/UI notes (you mentioned having some) — they merge into the
