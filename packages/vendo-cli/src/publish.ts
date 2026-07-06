@@ -27,7 +27,7 @@ export async function runPublish(opts: { targetDir: string; ui?: Ui }): Promise<
   } catch (err) {
     ui.error(
       "cannot publish: .vendo/tools.json is missing or invalid",
-      err instanceof Error ? err.message : String(err),
+      `run \`vendo init\` to scaffold it, or fix the schema error: ${err instanceof Error ? err.message : String(err)}`,
     );
     return 1;
   }
@@ -42,13 +42,16 @@ export async function runPublish(opts: { targetDir: string; ui?: Ui }): Promise<
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       ui.step("ok", "theme.json", "not present");
     } else {
-      ui.error("cannot publish: .vendo/theme.json is invalid", err instanceof Error ? err.message : String(err));
+      ui.error(
+        "cannot publish: .vendo/theme.json is invalid",
+        `edit .vendo/theme.json to fix the schema error: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return 1;
     }
   }
 
   ui.note(
-    "  components/ not validated here — they are TS source; the compiler and bundle build check them, and publish assembly serializes them.",
+    "components/ not validated here — they are TS source; the compiler and bundle build check them, and publish assembly serializes them.",
   );
   ui.note(
     "publish is a validation stub: it checks your .vendo/ artifacts against the frozen schemas. " +

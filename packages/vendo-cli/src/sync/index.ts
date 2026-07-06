@@ -45,7 +45,7 @@ function isBreakage(line: string): boolean {
     line.includes("exceeds the") || // the vendored bundle blew the soft cap
     line.startsWith("skip override ") || // a configured anchor override is malformed
     line.startsWith("skip:") || // a VendoRemix anchor that cannot be captured
-    /^skip \S+:/.test(line) // an anchored capture was refused or unreadable
+    /^skip [^:]+:/.test(line) // an anchored capture was refused/unreadable (ids may contain spaces)
   );
 }
 

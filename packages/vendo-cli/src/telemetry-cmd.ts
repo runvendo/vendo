@@ -17,7 +17,8 @@ export function runTelemetryCmd(sub: string | undefined, io: TelemetryCmdIO): nu
   switch (sub) {
     case "status":
       ui.header("vendo telemetry");
-      ui.step(config.optedOut ? "warn" : "ok", `telemetry ${config.optedOut ? "disabled" : "enabled"}`);
+      // "ok" for both states — a user opt-out is a valid choice, not a problem.
+      ui.step("ok", `telemetry ${config.optedOut ? "disabled" : "enabled"}`);
       ui.note(`  anonymous id: ${config.anonymousId}`);
       ui.note(`  config: ${configPath(home)}`);
       ui.note("  details: TELEMETRY.md");
