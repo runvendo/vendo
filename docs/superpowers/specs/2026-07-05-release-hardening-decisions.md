@@ -4,6 +4,34 @@ Everything from the hardening effort that needs your call, in one place.
 Companion to the [bar](2026-07-05-release-hardening-bar.md) and
 [inventory](2026-07-05-release-hardening-inventory.md).
 
+## The full PR stack (2026-07-06)
+
+On top of your launch-prep **#60**: **#56** reliability/error-hygiene → **#64**
+policy integrity → **#65** data-correctness (+donut) / **#66** client-state →
+**#69** shell-UI → **#70** integrations+telemetry / **#72** sandbox-shims /
+**#73** cli install-init. Docs: **#58**. All green (typecheck + tests), each
+Codex-reviewed with findings fixed in-branch. Suggested merge order = that
+order; the last three (#70/#72/#73) are disjoint-package siblings on #69.
+
+Watch at merge (parallel sessions): **#67** independently fixed the donut cents
+bug at the host-impl layer (my #65 fixed the catalog Donut's center — different
+instances); **#68** deletes `@vendoai/next` for a `vendo` umbrella — my
+next-adapter references may need reconciling.
+
+## New flags from waves 6–8 (all non-blocking)
+
+- **Sandbox-shims real route values** (#72): `usePathname`/`useSearchParams`/
+  `useParams` return empty — real values need a NEW route channel across
+  `vendo-stage` (runtime + stage-host) and `vendo-react` (stage-adapter),
+  parallel to the existing `__vendoAnchorData` data channel. Cross-package
+  feature, deferred. **Want it built?**
+- **init on an existing next.config** (#73): fix 2 writes a fresh
+  `next.config.mjs` but leaves an existing one to a printed manual step rather
+  than AST-editing it. Safe-minimal; AST-merge is a follow-up if you want it.
+- **integrations spoof-case polling** (#70): a valid-but-foreign active account
+  now reports `pending` (never latches connected) but polls to the 120s client
+  timeout rather than fast-failing. Fast-fail is a one-line change if preferred.
+
 ## Blocking npm publish — RESOLVED by PR #60 (your parallel launch-prep session)
 
 1. ~~fluidkit distribution~~ — **decided: bundled into shell's dist via tsup**
