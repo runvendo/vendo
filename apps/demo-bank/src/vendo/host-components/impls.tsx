@@ -22,7 +22,7 @@ const MapleSparkline = bindHostImpl(sparklineDescriptor, (p) => (
 const MapleSpendingDonut = bindHostImpl(spendingDonutDescriptor, (p) => (
   // Descriptor documents `amount` in dollars; Maple's Donut (formatUSD) takes cents.
   <Donut
-    data={p.slices.map((s) => ({ ...s, amount: Math.round(s.amount * 100) })) as SpendingSlice[]}
+    data={(p.slices as SpendingSlice[]).map((s) => ({ ...s, amount: Math.round(s.amount * 100) }))}
     size={p.size ?? 200}
   />
 ));
