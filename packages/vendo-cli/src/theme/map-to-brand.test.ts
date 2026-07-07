@@ -96,19 +96,62 @@ describe("mapVarsToBrand", () => {
   });
 
   it("does not let status/error palettes win neutral text slots", () => {
-    const result = mapVarsToBrand([
-      v("--color-brand", "#00e6ca"),
-      v("--color-primary", "#0f172a"),
-      v("--color-secondary", "#f1f5f9"),
-      v("--color-error-foreground", "#7f1d1d"),
-      v("--color-error-background-muted", "#fee2e2"),
-    ]);
+    const result = mapVarsToBrand(
+      [
+        v("--color-brand", "#00e6ca"),
+        v("--color-primary", "#0f172a"),
+        v("--color-secondary", "#f1f5f9"),
+        v("--color-error-foreground", "#7f1d1d"),
+        v("--color-error-background-muted", "#fee2e2"),
+      ],
+      { mutedText: { value: "#64748b", source: "text-slate-500 ×191" } },
+    );
     expect(result.brand).toMatchObject({
       accent: "#00e6ca",
       surface: "#f1f5f9",
       text: "#0f172a",
       mutedText: "#64748b",
     });
+    expect(result.matched["mutedText"]).toBe("(inferred) text-slate-500 ×191");
+  });
+
+  it("uses inference fallbacks only when no declared var fills the slot", () => {
+    const result = mapVarsToBrand(
+      [v("--color-bg", "#ffffff"), v("--color-text-muted", "#9ca3af")],
+      { mutedText: { value: "#64748b", source: "text-slate-500 ×191" } },
+    );
+    expect(result.brand?.mutedText).toBe("#9ca3af");
+  });
+
+  const inferred = (name: string, value: string) => ({ ...v(name, value), inferred: true });
+
+  it("falls back to the text color as accent for monochrome utility-styled apps", () => {
+    const result = mapVarsToBrand([inferred("--background", "#ffffff"), inferred("--foreground", "#000000")]);
+    expect(result.brand?.accent).toBe("#000000");
+    expect(result.matched["accent"]).toBe("(monochrome) --foreground");
+  });
+
+  it("keeps the default accent when the text token is declared, not inferred", () => {
+    const result = mapVarsToBrand([v("--color-bg", "#ffffff"), v("--foreground", "#000000")]);
+    expect(result.defaulted).toContain("accent");
+  });
+
+  it("keeps the default accent when the inferred text color is chromatic", () => {
+    const result = mapVarsToBrand([inferred("--background", "#ffffff"), inferred("--foreground", "#7f1d3a")]);
+    expect(result.defaulted).toContain("accent");
+  });
+
+  it("assumes white cards on an inferred tinted near-white page background", () => {
+    const result = mapVarsToBrand([inferred("--background", "#fafafa"), inferred("--foreground", "#171717")]);
+    expect(result.brand?.surface).toBe("#ffffff");
+    expect(result.matched["surface"]).toBe("(tinted-bg) --background");
+  });
+
+  it("does not invent a white surface on saturated, dark, or declared backgrounds", () => {
+    const dark = mapVarsToBrand([inferred("--background", "#0a0a0a"), inferred("--foreground", "#fafafa")]);
+    expect(dark.defaulted).toContain("surface");
+    const declared = mapVarsToBrand([v("--background", "#fafafa"), v("--foreground", "#171717")]);
+    expect(declared.defaulted).toContain("surface");
   });
 
   it("normalizes CSS color syntaxes and prefers brand as the brand accent", () => {

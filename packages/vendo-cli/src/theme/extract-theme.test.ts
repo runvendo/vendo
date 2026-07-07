@@ -166,6 +166,12 @@ export default function RootLayout({ children }) { return <html className={inter
       path.join(dir, "app/unrelated.css"),
       `:root { --foreground: #7f1d1d; --muted-foreground: #fee2e2; --primary: #7f1d1d; }`,
     );
+    // No muted token is declared anywhere — the dominant text-slate-500
+    // utility across app source is the muted-text evidence (formbricks-style).
+    await writeFile(
+      path.join(dir, "app/list.tsx"),
+      Array.from({ length: 6 }, (_1, i) => `export function Row${i}() { return <span className="text-slate-500">muted</span>; }`).join("\n"),
+    );
 
     const info = await detectTarget(dir);
     await extractTheme(dir, info, { force: false });
@@ -209,7 +215,9 @@ export default function RootLayout({ children }) { return <html className={inter
       background: "#FFFFFF",
       surface: "#f1f5f9",
       text: "#0f172a",
-      mutedText: "#64748b",
+      // No muted token and no utility evidence in this fixture — the slot
+      // stays on Vendo's default rather than being invented.
+      mutedText: "#5B6470",
     });
   });
 

@@ -4,9 +4,9 @@ import path from "node:path";
 import type { FrameworkInfo } from "../detect.js";
 import { walk, writeGenerated } from "../fsx.js";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
-import { collectNextFontVars, collectNextLayoutVars } from "./next-fonts.js";
+import { collectNextFontVars, collectNextLayoutVars, TAILWIND_NEUTRAL_COLORS } from "./next-fonts.js";
 import { extractTailwindVars } from "./tailwind-config.js";
-import { mapVarsToBrand, type BrandMappingResult } from "./map-to-brand.js";
+import { mapVarsToBrand, type BrandMappingResult, type InferredSlotValue } from "./map-to-brand.js";
 import { resolveWorkspacePackageSpecifier } from "./workspace-resolve.js";
 
 export interface ThemeSummary extends Omit<BrandMappingResult, "brand"> {
@@ -149,6 +149,33 @@ async function collectCssFiles(targetDir: string, detectedCssFiles: string[]): P
   return { selected: entryGraph.length > 0 ? entryGraph : blindGraph, all: blindGraph };
 }
 
+/**
+ * Muted-text inference of last resort: when no CSS variable fills the slot,
+ * the app's dominant `text-<neutral>-<400..600>` Tailwind utility is its de
+ * facto muted-text token (formbricks styles secondary text with
+ * text-slate-500 in ~200 files; vercel/commerce with text-neutral-500).
+ * Bounded scan, strict majority — ambiguous usage infers nothing.
+ */
+const MUTED_UTILITY = /(?<![\w:-])text-(slate|gray|zinc|neutral|stone)-(400|500|600)\b/g;
+
+async function inferMutedTextFromUtilities(targetDir: string): Promise<InferredSlotValue | undefined> {
+  const files = await walk(targetDir, (rel) => /\.(tsx|jsx)$/.test(rel), 2_000);
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const source = await fs.readFile(file, "utf8").catch(() => "");
+    for (const match of source.matchAll(MUTED_UTILITY)) {
+      counts.set(`${match[1]}-${match[2]}`, (counts.get(`${match[1]}-${match[2]}`) ?? 0) + 1);
+    }
+  }
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const [winner, runnerUp] = ranked;
+  // Require real adoption and a clear winner, not a coin flip between scales.
+  if (!winner || winner[1] < 5 || (runnerUp && winner[1] < runnerUp[1] * 1.5)) return undefined;
+  const [family, step] = winner[0].split("-") as [string, string];
+  const value = TAILWIND_NEUTRAL_COLORS[family]?.[step];
+  return value ? { value, source: `text-${winner[0]} ×${winner[1]}` } : undefined;
+}
+
 export async function extractTheme(
   targetDir: string,
   info: FrameworkInfo,
@@ -182,7 +209,13 @@ export async function extractTheme(
     }));
   }
 
-  const result = mapVarsToBrand(vars);
+  // Inference fallbacks fill only slots no declared variable claims — map
+  // first, and pay the source scan only when the slot actually defaulted.
+  let result = mapVarsToBrand(vars);
+  if (result.defaulted.includes("mutedText")) {
+    const mutedText = await inferMutedTextFromUtilities(targetDir);
+    if (mutedText) result = mapVarsToBrand(vars, { mutedText });
+  }
   let written = false;
   if (result.brand) {
     await writeGenerated(

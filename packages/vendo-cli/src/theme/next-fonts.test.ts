@@ -137,17 +137,15 @@ describe("parseNextLayoutVars", () => {
   it("recovers a light Tailwind background class from layout source", () => {
     const source = `<body className={\`\${outfit.className} bg-slate-100 dark:bg-slate-800\`}>{children}</body>`;
     expect(parseNextLayoutVars(source, "app/[locale]/layout.tsx")).toEqual([
-      { name: "--background", value: "#f1f5f9", file: "app/[locale]/layout.tsx", darkScope: false },
+      { name: "--background", value: "#f1f5f9", file: "app/[locale]/layout.tsx", darkScope: false, inferred: true },
     ]);
   });
 
   it("recovers root text classes and token-backed custom background classes", () => {
     const source = `<body className="dark:bg-default bg-subtle text-black selection:bg-teal-300">{children}</body>`;
     expect(parseNextLayoutVars(source, "pages/_document.tsx")).toEqual([
-      { name: "--background", value: "var(--color-subtle)", file: "pages/_document.tsx", darkScope: false },
-      { name: "--foreground", value: "#000000", file: "pages/_document.tsx", darkScope: false },
-      { name: "--primary", value: "#000000", file: "pages/_document.tsx", darkScope: false },
-      { name: "--muted-foreground", value: "#737373", file: "pages/_document.tsx", darkScope: false },
+      { name: "--background", value: "var(--color-subtle)", file: "pages/_document.tsx", darkScope: false, inferred: true },
+      { name: "--foreground", value: "#000000", file: "pages/_document.tsx", darkScope: false, inferred: true },
     ]);
   });
 });

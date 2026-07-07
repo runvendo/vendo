@@ -260,9 +260,15 @@ function pick(
   return undefined;
 }
 
-function findColorByName(vars: CssVarDecl[], name: string, all: CssVarDecl[]): string | null {
-  const hit = vars.find((v) => v.name === name);
-  return hit ? normalizeColorVar(hit.value, all) : null;
+/**
+ * A slot value inferred from evidence weaker than a CSS variable (today: the
+ * dominant Tailwind utility across app source). Applied only when no declared
+ * var fills the slot — inference never overrides an explicit token.
+ */
+export interface InferredSlotValue {
+  value: string;
+  /** Human-readable evidence for the report, e.g. "text-slate-500 ×191". */
+  source: string;
 }
 
 /**
@@ -287,7 +293,10 @@ function isSafeFontStack(value: string): boolean {
   return value.length > 0 && !value.includes("var(") && !/[{};\n]/.test(value);
 }
 
-export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
+export function mapVarsToBrand(
+  all: CssVarDecl[],
+  fallbacks?: Partial<Record<ColorSlot, InferredSlotValue>>,
+): BrandMappingResult {
   // Synthetic decls (next/font recovery) resolve var() chains only — slots
   // pick from CSS-declared vars.
   const light = all.filter((v) => !v.darkScope && !v.synthetic);
@@ -307,6 +316,7 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
     return names.has(base) || names.has(`${base}-fg`);
   };
 
+  const hits: Partial<Record<ColorSlot, CssVarDecl>> = {};
   for (const { slot, fragments } of COLOR_SLOTS) {
     const candidates = light.filter((v) => !used.has(v) && !isCompanionTint(v) && (slot === "accent" || !STATUS_TOKEN.test(v.name)));
     let hit = pick(candidates, fragments, (value) => normalizeColorVar(value, all) !== null);
@@ -320,12 +330,43 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
         hit = surface;
       }
     }
-    if (hit) { used.add(hit); matched[slot] = hit.name; draft[slot] = normalizeColorVar(hit.value, all)!; }
-    else if (slot === "mutedText" && findColorByName(light, "--color-secondary", all) === "#f1f5f9" && findColorByName(light, "--color-primary", all) === "#0f172a") {
-      matched[slot] = "--color-slate-500";
-      draft[slot] = "#64748b";
+    if (hit) { used.add(hit); hits[slot] = hit; matched[slot] = hit.name; draft[slot] = normalizeColorVar(hit.value, all)!; }
+    else if (fallbacks?.[slot]) {
+      matched[slot] = `(inferred) ${fallbacks[slot]!.source}`;
+      draft[slot] = fallbacks[slot]!.value;
     }
     else { defaulted.push(slot); draft[slot] = defaultBrand[slot]; }
+  }
+
+  // The two rules below apply ONLY when the source slot was inferred from a
+  // RAW-palette root-layout utility class (bg-neutral-50, text-black). A
+  // token-backed class (text-ink → var(--color-ink)) means the app has a
+  // declared token system that simply lacks an accent/surface token — those
+  // keep Vendo's defaults; these rules exist for apps styled purely with
+  // Tailwind palette utilities.
+  const rawInferred = (hit: CssVarDecl | undefined) => Boolean(hit?.inferred) && !hit!.value.includes("var(");
+  //
+  // Monochrome brands: a utility-styled app whose body text is a pure dark
+  // neutral and that declares no accent-shaped token anywhere is styling its
+  // emphasis elements with the text color itself — use it, not Vendo's blue.
+  if (defaulted.includes("accent") && rawInferred(hits.text)) {
+    const text = draft["text"] as string;
+    if (hexChroma(text) === 0 && parseInt(text.slice(1, 3), 16) < 0x40) {
+      draft["accent"] = text;
+      matched["accent"] = `(monochrome) ${matched["text"]}`;
+      defaulted.splice(defaulted.indexOf("accent"), 1);
+    }
+  }
+  // Tinted page background with no surface token: cards sit on the tint as
+  // plain white (the near-universal "-50 shade page, white card" pattern).
+  if (defaulted.includes("surface") && rawInferred(hits.background)) {
+    const bg = draft["background"] as string;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt((bg as string).slice(i, i + 2), 16)) as [number, number, number];
+    if (bg !== "#ffffff" && hexChroma(bg) <= 12 && Math.min(r, g, b) >= 0xee) {
+      draft["surface"] = "#ffffff";
+      matched["surface"] = `(tinted-bg) ${matched["background"]}`;
+      defaulted.splice(defaulted.indexOf("surface"), 1);
+    }
   }
 
   const radius = pick(light, ["radius-cal", "radius-default", "radius-card", "radius"], (val) => normalizeRadius(val, all) !== null);
