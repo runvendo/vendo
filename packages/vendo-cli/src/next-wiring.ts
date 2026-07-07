@@ -62,6 +62,7 @@ export const VENDO_TRANSPILE_PACKAGES = [
 const NEXT_SERVER_EXTERNAL_PACKAGES = ["@electric-sql/pglite"] as const;
 const PGLITE_DEPENDENCY = "@electric-sql/pglite";
 const PGLITE_VERSION = "^0.2.0";
+const AI_SDK_ZOD_VERSION = "^3.25.76";
 
 /**
  * Default-brand theme stub written by wiring step 0 when extraction produced
@@ -376,6 +377,42 @@ export function addDependency(pkgJson: string, name: string, version: string): s
   return JSON.stringify(pkg, null, 2) + "\n";
 }
 
+/**
+ * AI SDK v6 imports both `zod/v3` and `zod/v4`. If a host app already depends
+ * on older Zod 3, Next resolves those imports against the host copy and the
+ * server build fails. Keep host apps on Zod 3, but require the release line
+ * that exposes those subpaths.
+ */
+export function ensureAiSdkZodDependency(pkgJson: string): string | null {
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(pkgJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const deps = (pkg["dependencies"] ?? {}) as Record<string, string>;
+  const current = deps["zod"];
+  if (current && zodRangeExposesAiSdkSubpaths(current)) return pkgJson;
+  pkg["dependencies"] = Object.fromEntries(
+    Object.entries({ ...deps, zod: AI_SDK_ZOD_VERSION }).sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return JSON.stringify(pkg, null, 2) + "\n";
+}
+
+function zodRangeExposesAiSdkSubpaths(range: string): boolean {
+  const match = range.match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  if (!Number.isFinite(major) || !Number.isFinite(minor) || !Number.isFinite(patch)) return false;
+  if (major > 3) return true;
+  if (major < 3) return false;
+  if (minor > 25) return true;
+  if (minor < 25) return false;
+  return patch >= 76;
+}
+
 /** Merge a package into package.json `devDependencies` (same format contract as
  *  addDependency). Build-time tooling (`@vendoai/cli` for `vendo sync`, the
  *  component-bundle build deps) belongs in devDependencies, not runtime deps. */
@@ -672,6 +709,10 @@ export const SANDBOX_ASSETS: ReadonlyArray<readonly [bundled: string, installed:
   ["vendo-components-sandbox.js", "components-sandbox.js"],
 ] as const;
 
+export function sandboxAssetSource(source: string): string {
+  return source.startsWith("// @ts-nocheck") ? source : `// @ts-nocheck\n${source}`;
+}
+
 const MANUAL_LAYOUT = (layoutFile: string) =>
   `wrap your root layout's {children} manually in ${layoutFile}:\n` +
   `    import { AppVendoRoot } from "./vendo-root";\n` +
@@ -923,19 +964,21 @@ export async function wireNextApp(
       continue;
     }
     await fs.mkdir(publicDir, { recursive: true });
-    await fs.copyFile(src, dest);
+    await fs.writeFile(dest, sandboxAssetSource(await fs.readFile(src, "utf8")));
     summary.written.push(rel(dest));
   }
 
-  // 8. package.json: vendo + PGlite dependencies + prebuild sync
-  // wiring. PGlite is also server-externalized in next.config, but pnpm's
-  // strict node_modules still requires it to be resolvable from the app root.
+  // 8. package.json: vendo + PGlite + AI SDK-compatible Zod dependencies +
+  // prebuild sync wiring. PGlite is also server-externalized in next.config,
+  // but pnpm's strict node_modules still requires it to be resolvable from the
+  // app root.
   if (pkgRaw) {
     const withDep = addDependency(pkgRaw, "vendoai", "latest");
     if (withDep === null) {
       summary.skipped.push({ step: "package.json", reason: "unparsable — add vendoai and @electric-sql/pglite yourself" });
       summary.manual.push('add "vendoai" to package.json dependencies and install');
       summary.manual.push('add "@electric-sql/pglite" to package.json dependencies and install');
+      summary.manual.push('add "zod": "^3.25.76" to package.json dependencies and install');
       summary.manual.push('add "vendo sync" to your package.json "prebuild" script');
       summary.manual.push('add "@vendoai/cli" to package.json devDependencies (the prebuild `vendo sync` runner)');
     } else {
@@ -943,15 +986,16 @@ export async function wireNextApp(
       // resolve at build time. PGlite is a runtime dependency for the store.
       const withCli = addDevDependency(withDep, "@vendoai/cli", "latest") ?? withDep;
       const withPglite = addDependency(withCli, PGLITE_DEPENDENCY, PGLITE_VERSION) ?? withCli;
-      const withSync = addPrebuildSync(withPglite) ?? withPglite;
+      const withZod = ensureAiSdkZodDependency(withPglite) ?? withPglite;
+      const withSync = addPrebuildSync(withZod) ?? withZod;
       if (withSync !== pkgRaw) {
         await fs.writeFile(path.join(targetDir, "package.json"), withSync);
         summary.edited.push("package.json");
-        if (withPglite !== pkgRaw) {
-          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull vendoai and @electric-sql/pglite");
+        if (withZod !== pkgRaw) {
+          summary.manual.push("run your package manager's install (npm/pnpm/yarn) to pull vendoai, @electric-sql/pglite, and zod");
         }
       } else {
-        summary.skipped.push({ step: "package.json", reason: "vendoai + @electric-sql/pglite + prebuild sync already present" });
+        summary.skipped.push({ step: "package.json", reason: "vendoai + @electric-sql/pglite + zod + prebuild sync already present" });
       }
     }
   }

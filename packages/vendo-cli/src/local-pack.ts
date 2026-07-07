@@ -10,6 +10,7 @@ export const LOCAL_DIRECT_DEPENDENCIES = ["vendoai"] as const;
  *  CLI's own @vendoai/* deps are devDependencies (vite-bundled into its dist),
  *  so packing it adds nothing else to the runtime closure. */
 export const LOCAL_DEV_DEPENDENCIES = ["@vendoai/cli"] as const;
+const AI_SDK_ZOD_VERSION = "^3.25.76";
 
 type PackageJson = Record<string, unknown>;
 export type LocalPackageManager = "pnpm" | "npm" | "yarn-classic" | "yarn-berry";
@@ -318,7 +319,7 @@ export function rewritePackageJsonForLocalVendo(
         manual: localPackageManualInstructions(tarballs, opts.packageManager),
       };
     }
-    pnpm["overrides"] = sortedRecord({ ...overridesResult.value, ...localOverrides });
+    pnpm["overrides"] = sortedRecord({ ...overridesResult.value, zod: AI_SDK_ZOD_VERSION, ...localOverrides });
     pkg["pnpm"] = pnpm;
   } else if (opts.packageManager === "npm") {
     const overridesResult = objectRecord(pkg["overrides"], "overrides");

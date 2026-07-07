@@ -19,7 +19,7 @@
  * importing the bare package name lets a bundler's tree-shaking fail to prove
  * those barrel modules are side-effect-free and inline them anyway).
  */
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
 import {
   DEFAULT_MODEL_ID,
@@ -47,6 +47,7 @@ const PROVIDER_PACKAGE: Record<Exclude<ModelProvider, "anthropic">, string> = {
 /** Injectable importer, defaulting to the real dynamic import (tests supply a fake). */
 export interface ResolveModelDeps {
   import?: (spec: string) => Promise<unknown>;
+  fetch?: typeof fetch;
 }
 
 /**
@@ -99,7 +100,8 @@ export async function resolveModel(
     choice.kind === "configured" ? choice.modelId : DEFAULT_MODEL_ID.anthropic;
 
   if (provider === "anthropic") {
-    return anthropic(modelId);
+    const providerFactory = deps.fetch ? createAnthropic({ fetch: deps.fetch as never }) : anthropic;
+    return providerFactory(modelId);
   }
   const importer = deps.import ?? ((spec: string) => import(spec));
   return loadOptionalProvider(importer, provider, modelId);
