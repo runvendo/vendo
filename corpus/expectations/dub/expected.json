@@ -317,12 +317,6 @@
       "readOrWrite": "write"
     },
     {
-      "name": "headAppsflyerWebhook",
-      "method": "HEAD",
-      "path": "/api/appsflyer/webhook",
-      "readOrWrite": "write"
-    },
-    {
       "name": "postAuditLogsExport",
       "method": "POST",
       "path": "/api/audit-logs/export",
@@ -2195,20 +2189,8 @@
       "readOrWrite": "write"
     },
     {
-      "name": "optionsOauthToken",
-      "method": "OPTIONS",
-      "path": "/api/oauth/token",
-      "readOrWrite": "write"
-    },
-    {
       "name": "getOauthUserinfo",
       "method": "GET",
-      "path": "/api/oauth/userinfo",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "optionsOauthUserinfo",
-      "method": "OPTIONS",
       "path": "/api/oauth/userinfo",
       "readOrWrite": "write"
     },
@@ -3011,12 +2993,6 @@
       "readOrWrite": "write"
     },
     {
-      "name": "optionsQr",
-      "method": "OPTIONS",
-      "path": "/api/qr",
-      "readOrWrite": "write"
-    },
-    {
       "name": "postResendWebhook",
       "method": "POST",
       "path": "/api/resend/webhook",
@@ -3083,20 +3059,8 @@
       "readOrWrite": "write"
     },
     {
-      "name": "optionsShopifyPixel",
-      "method": "OPTIONS",
-      "path": "/api/shopify/pixel",
-      "readOrWrite": "write"
-    },
-    {
       "name": "getSingularWebhook",
       "method": "GET",
-      "path": "/api/singular/webhook",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "headSingularWebhook",
-      "method": "HEAD",
       "path": "/api/singular/webhook",
       "readOrWrite": "write"
     },
@@ -3127,12 +3091,6 @@
     {
       "name": "patchStripeIntegration",
       "method": "PATCH",
-      "path": "/api/stripe/integration",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "optionsStripeIntegration",
-      "method": "OPTIONS",
       "path": "/api/stripe/integration",
       "readOrWrite": "write"
     },
@@ -3245,20 +3203,8 @@
       "readOrWrite": "write"
     },
     {
-      "name": "optionsTrackApplication",
-      "method": "OPTIONS",
-      "path": "/api/track/application",
-      "readOrWrite": "write"
-    },
-    {
       "name": "postTrackClick",
       "method": "POST",
-      "path": "/api/track/click",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "optionsTrackClick",
-      "method": "OPTIONS",
       "path": "/api/track/click",
       "readOrWrite": "write"
     },
@@ -3275,20 +3221,8 @@
       "readOrWrite": "write"
     },
     {
-      "name": "optionsTrackLeadClient",
-      "method": "OPTIONS",
-      "path": "/api/track/lead/client",
-      "readOrWrite": "write"
-    },
-    {
       "name": "postTrackOpen",
       "method": "POST",
-      "path": "/api/track/open",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "optionsTrackOpen",
-      "method": "OPTIONS",
       "path": "/api/track/open",
       "readOrWrite": "write"
     },
@@ -3305,20 +3239,8 @@
       "readOrWrite": "write"
     },
     {
-      "name": "optionsTrackSaleClient",
-      "method": "OPTIONS",
-      "path": "/api/track/sale/client",
-      "readOrWrite": "write"
-    },
-    {
       "name": "postTrackVisit",
       "method": "POST",
-      "path": "/api/track/visit",
-      "readOrWrite": "write"
-    },
-    {
-      "name": "optionsTrackVisit",
-      "method": "OPTIONS",
       "path": "/api/track/visit",
       "readOrWrite": "write"
     },
@@ -4041,11 +3963,6 @@
     },
     {
       "name": "getAppsflyerWebhook",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "headAppsflyerWebhook",
       "mutating": true,
       "dangerous": false
     },
@@ -5628,17 +5545,7 @@
       "dangerous": false
     },
     {
-      "name": "optionsOauthToken",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "getOauthUserinfo",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "optionsOauthUserinfo",
       "mutating": true,
       "dangerous": false
     },
@@ -6321,11 +6228,6 @@
       "dangerous": false
     },
     {
-      "name": "optionsQr",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "postResendWebhook",
       "mutating": true,
       "dangerous": false
@@ -6383,17 +6285,7 @@
       "dangerous": false
     },
     {
-      "name": "optionsShopifyPixel",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "getSingularWebhook",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "headSingularWebhook",
       "mutating": true,
       "dangerous": false
     },
@@ -6419,11 +6311,6 @@
     },
     {
       "name": "patchStripeIntegration",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "optionsStripeIntegration",
       "mutating": true,
       "dangerous": false
     },
@@ -6521,17 +6408,7 @@
       "dangerous": false
     },
     {
-      "name": "optionsTrackApplication",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "postTrackClick",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "optionsTrackClick",
       "mutating": true,
       "dangerous": false
     },
@@ -6546,17 +6423,7 @@
       "dangerous": false
     },
     {
-      "name": "optionsTrackLeadClient",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "postTrackOpen",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "optionsTrackOpen",
       "mutating": true,
       "dangerous": false
     },
@@ -6571,17 +6438,7 @@
       "dangerous": false
     },
     {
-      "name": "optionsTrackSaleClient",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
       "name": "postTrackVisit",
-      "mutating": true,
-      "dangerous": false
-    },
-    {
-      "name": "optionsTrackVisit",
       "mutating": true,
       "dangerous": false
     },
