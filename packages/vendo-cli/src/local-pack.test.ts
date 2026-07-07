@@ -57,6 +57,28 @@ describe("rewritePackageJsonForLocalVendo", () => {
       expect(pkg.pnpm.overrides[tarball.name]).toBe(`file:vendor/${tarball.fileName}`);
     }
     expect(pkg.pnpm.overrides["@types/react"]).toBe("^19.2.0");
+    expect(pkg.pnpm.overrides["zod"]).toBe("^3.25.76");
+  });
+
+  it("keeps the host's own Zod when its range already exposes the AI SDK subpaths", () => {
+    for (const hostZod of ["^3.25.76", "^4.0.0"]) {
+      const out = rewritePackageJsonForLocalVendo(
+        JSON.stringify({
+          name: "host",
+          packageManager: "pnpm@9.12.0",
+          dependencies: { next: "16.0.0", vendoai: "latest", zod: hostZod },
+          pnpm: { overrides: {} },
+        }),
+        LOCAL_TARBALLS,
+        { packageManager: "pnpm" },
+      );
+      expect(out.kind).toBe("updated");
+      if (out.kind !== "updated") throw new Error("expected local package rewrite");
+      const pkg = JSON.parse(out.source) as { pnpm: { overrides: Record<string, string> } };
+      // Overriding Zod 4 (or an already-new-enough Zod 3) down to the pinned
+      // range breaks the host's own z.* API surface at runtime (umami).
+      expect(pkg.pnpm.overrides["zod"]).toBeUndefined();
+    }
   });
 
   it("uses npm overrides as the fallback package-manager shape", () => {

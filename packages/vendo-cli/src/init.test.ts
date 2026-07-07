@@ -340,13 +340,35 @@ describe("additive re-run (decision matrix)", () => {
     expect(second.err).not.toContain("LLM must not be called");
     expect(second.out).toContain("theme.json: kept");
     expect(second.out).toContain("tools.json: kept");
-    // The wrapped candidate must be filtered out BEFORE any model call — a
-    // filter regression would surface as a FAILED analysis line, not a kept one.
-    expect(second.out).toContain("already wrapped in .vendo/components/ — kept");
+    expect(second.out).toContain("components/: kept");
     expect(second.out).not.toContain("FAILED");
     expect(await readFile(themePath, "utf8")).toBe(editedTheme);
     expect(await readFile(toolsPath, "utf8")).toBe(editedTools);
     expect(await readFile(implPath, "utf8")).toBe(implBefore);
+  });
+
+  it("plain re-run with an existing component catalog does not add newly scanned wrappers", async () => {
+    const dir = await wiredNextAppFixture();
+    const first = await runCaptured({
+      targetDir: dir,
+      skipLlm: false,
+      force: false,
+      model: textModel([ROUTE_REPLY, COMPONENT_REPLY]),
+    });
+    expect(first.code).toBe(0);
+
+    await writeFile(path.join(dir, "components/ui/panel.tsx"), "export const Panel = () => null");
+
+    const second = await runCaptured({
+      targetDir: dir,
+      skipLlm: false,
+      force: false,
+      model: throwingModel("LLM must not be called on a plain re-run with an existing component catalog"),
+    });
+    expect(second.code).toBe(0);
+    expect(second.err).not.toContain("LLM must not be called");
+    expect(second.out).toContain("components/: kept");
+    await expect(readFile(path.join(dir, ".vendo/components/Panel/impl.tsx"), "utf8")).rejects.toThrow();
   });
 
   it("re-extracts theme over the wiring-written default stub once CSS vars are available", async () => {
@@ -388,7 +410,7 @@ describe("additive re-run (decision matrix)", () => {
     expect(run.out).toContain("Next steps:");
   });
 
-  it("init on an already-wired app behaves as refresh: suppresses the onboarding block", async () => {
+  it("init on an already-wired app suppresses the onboarding block", async () => {
     const dir = await wiredNextAppFixture();
     const first = await runCaptured({ targetDir: dir, skipLlm: true, force: false });
     expect(first.code).toBe(0);

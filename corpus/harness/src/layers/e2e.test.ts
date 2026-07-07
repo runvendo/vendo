@@ -382,4 +382,72 @@ describe("runE2eLayer", () => {
     ]);
     expect(promptSent).toBe(true);
   });
+
+  it("visits Papermark's e2e login route and restores the per-attempt Vendo thread URL", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-"));
+    const expectationsRoot = path.join(root, "expectations");
+    const logsDir = path.join(root, "logs");
+    const repoDir = path.join(root, "repo");
+    await mkdir(path.join(expectationsRoot, "papermark"), { recursive: true });
+    await mkdir(path.join(repoDir, ".vendo"), { recursive: true });
+    await writeFile(path.join(repoDir, ".vendo/tools.json"), JSON.stringify({ version: 1, tools: [], events: [] }));
+    await writeFile(
+      path.join(expectationsRoot, "papermark", "conversations.json"),
+      JSON.stringify({
+        version: 1,
+        k: 1,
+        threshold: 1,
+        timeoutMs: 2_000,
+        conversations: [
+          {
+            id: "papermark-login",
+            prompts: ["show me documents"],
+            assertions: [{ kind: "no-error-toast" }],
+          },
+        ],
+      }),
+    );
+
+    const gotoUrls: string[] = [];
+    let promptSent = false;
+    const page: E2ePage = {
+      async goto(url: string) {
+        gotoUrls.push(url);
+      },
+      locator(selector: string) {
+        if (selector === "body" || selector.includes("[role='dialog']")) return new FakeLocator(1, "dialog ready");
+        return new FakeLocator(0);
+      },
+      getByRole(role: string) {
+        if (role === "dialog") return new FakeLocator(1);
+        return new FakeLocator(0);
+      },
+      getByLabel() {
+        return new FakeLocator(1, "", {
+          fill: () => {},
+          press: () => {
+            promptSent = true;
+          },
+        });
+      },
+    };
+
+    const result = await runE2eLayer({
+      repoName: "papermark",
+      repoDir,
+      readinessUrl: "http://127.0.0.1:3000",
+      expectationsRoot,
+      logsDir,
+      pageFactory: async () => ({ page }),
+      now: () => new Date("2026-07-06T00:00:00.000Z"),
+    });
+
+    expect(result.layer.status).toBe("pass");
+    expect(gotoUrls).toEqual([
+      "http://127.0.0.1:3000/corpus-e2e?vendoThread=corpus-papermark-login-1",
+      "http://127.0.0.1:3000/api/corpus-login",
+      "http://127.0.0.1:3000/corpus-e2e?vendoThread=corpus-papermark-login-1",
+    ]);
+    expect(promptSent).toBe(true);
+  });
 });

@@ -44,7 +44,7 @@ describe("extractTailwindVars", () => {
     await writeFile(
       path.join(dir, "node_modules/tailwindcss/defaultTheme.js"),
       `const util = require("util");
-module.exports = { fontFamily: { sans: ["ui-sans-serif", util.format("%s", "system-ui"), "sans-serif"] } };
+module.exports = { fontFamily: { sans: ["ui-sans-serif", util.format("%s", "system-ui"), "sans-serif", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"] } };
 `,
     );
     const cfg = path.join(dir, "tailwind.config.ts");
@@ -58,7 +58,7 @@ export default {
     expect(error).toBeNull();
     expect(vars).toContainEqual(expect.objectContaining({
       name: "--font-sans",
-      value: expect.stringContaining("var(--font-geist-sans), ui-sans-serif"),
+      value: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
     }));
   });
 

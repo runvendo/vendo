@@ -497,9 +497,9 @@ async function runAttempt(
   try {
     session = await (ctx.pageFactory ?? defaultPageFactory)(script, attempt);
     recorder = await attachNetworkSignals(session.page, ctx.repoDir, ctx.readinessUrl, signals);
-    const targetUrl = attemptUrl(ctx.readinessUrl, script, attempt);
+    const targetUrl = attemptUrl(ctx.readinessUrl, ctx.repoName, script, attempt);
     await session.page.goto(targetUrl);
-    await prepareHostPage(ctx.repoName, session.page, timeoutMs);
+    await prepareHostPage(ctx.repoName, session.page, timeoutMs, targetUrl);
     await restoreAttemptUrlAfterHostPrep(ctx.repoName, session.page, targetUrl);
     await openVendoSurface(session.page, timeoutMs);
     for (let index = 0; index < script.prompts.length; index += 1) {
@@ -569,9 +569,12 @@ async function defaultPageFactory(): Promise<E2ePageSession> {
   };
 }
 
-function attemptUrl(baseUrl: string, script: ConversationScript, attempt: number): string {
+function attemptUrl(baseUrl: string, repoName: string, script: ConversationScript, attempt: number): string {
   try {
     const url = new URL(baseUrl);
+    if (repoName === "papermark") {
+      url.pathname = "/corpus-e2e";
+    }
     url.searchParams.set("vendoThread", `corpus-${safeFilePart(script.id)}-${attempt}`);
     return url.toString();
   } catch {
@@ -579,13 +582,23 @@ function attemptUrl(baseUrl: string, script: ConversationScript, attempt: number
   }
 }
 
-async function prepareHostPage(repoName: string, page: E2ePage, timeoutMs: number): Promise<void> {
-  if (repoName !== "umami") return;
-  await loginToUmami(page, Math.min(timeoutMs, 15_000));
+async function prepareHostPage(
+  repoName: string,
+  page: E2ePage,
+  timeoutMs: number,
+  targetUrl: string,
+): Promise<void> {
+  if (repoName === "umami") {
+    await loginToUmami(page, Math.min(timeoutMs, 15_000));
+    return;
+  }
+  if (repoName === "papermark") {
+    await loginToPapermark(page, targetUrl);
+  }
 }
 
 async function restoreAttemptUrlAfterHostPrep(repoName: string, page: E2ePage, targetUrl: string): Promise<void> {
-  if (repoName !== "umami") return;
+  if (repoName !== "umami" && repoName !== "papermark") return;
   await page.goto(targetUrl);
 }
 
@@ -600,6 +613,11 @@ async function loginToUmami(page: E2ePage, timeoutMs: number): Promise<void> {
   await password.fill("umami");
   await clickIfPresent(page.getByRole("button", { name: /^login$/i }));
   await waitFor(async () => (await safeCount(username)) === 0, timeoutMs).catch(() => undefined);
+}
+
+async function loginToPapermark(page: E2ePage, targetUrl: string): Promise<void> {
+  const loginUrl = new URL("/api/corpus-login", targetUrl);
+  await page.goto(loginUrl.toString());
 }
 
 async function attachNetworkSignals(

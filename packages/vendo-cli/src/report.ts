@@ -12,6 +12,8 @@ export interface InitReport {
   keptTheme?: boolean;
   /** tools.json already had real content and was left untouched (additive re-run). */
   keptTools?: boolean;
+  /** Component wrappers already exist and a plain init re-run left the catalog untouched. */
+  keptComponents?: boolean;
   llmSkipped: boolean;
   llmSkippedReason?: string;
 }
@@ -40,6 +42,9 @@ export function renderReport(r: InitReport): string {
       lines.push(`  deselected in picker (not wrapped): ${r.components.deselected.join(", ")}`);
     }
     if (r.components.pickerCancelled) lines.push("  component picker skipped — nothing generated");
+  }
+  if (r.keptComponents) {
+    lines.push("components/: kept (existing catalog left unchanged; run `vendo refresh` to add new wrappers)");
   }
   if (r.llmSkipped) {
     const reason =

@@ -2,12 +2,18 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { build } from "esbuild";
+import { build, stop } from "esbuild";
 import type { CssVarDecl } from "./css-vars.js";
 import { resolveWorkspacePackageSpecifier } from "./workspace-resolve.js";
 
 const SOURCE_SANS_FALLBACK = ["ui-sans-serif", "system-ui", "sans-serif"];
 const SOURCE_MONO_FALLBACK = ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"];
+const TAILWIND_EMOJI_FONT_FALLBACKS = new Set([
+  "apple color emoji",
+  "segoe ui emoji",
+  "segoe ui symbol",
+  "noto color emoji",
+]);
 const SOURCE_IMPORT_RE = /\bimport\s+(?:[^"']+\s+from\s+)?["']([^"']+)["']|\brequire\(\s*["']([^"']+)["']\s*\)/g;
 const RESOLVE_EXTENSIONS = ["", ".ts", ".tsx", ".js", ".mjs", ".cjs"];
 
@@ -79,7 +85,14 @@ function parseFontArray(body: string): string[] {
     if (spread?.endsWith(".sans")) values.push(...SOURCE_SANS_FALLBACK);
     else if (spread?.endsWith(".mono")) values.push(...SOURCE_MONO_FALLBACK);
   }
-  return values;
+  return withoutTailwindEmojiFallbacks(values);
+}
+
+function withoutTailwindEmojiFallbacks(values: string[]): string[] {
+  return values.filter((value) => {
+    const normalized = value.replace(/^["']|["']$/g, "").toLowerCase();
+    return !TAILWIND_EMOJI_FONT_FALLBACKS.has(normalized);
+  });
 }
 
 function parseSourceFontFamilyVars(source: string, file: string): CssVarDecl[] {
@@ -148,6 +161,7 @@ export async function extractTailwindVars(
     error = `could not load ${configPath}: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
+    stop();
   }
 
   const vars: CssVarDecl[] = [];
@@ -171,7 +185,7 @@ export async function extractTailwindVars(
   const fonts = theme?.["fontFamily"] as Record<string, unknown> | undefined;
   if (fonts) {
     for (const [name, v] of Object.entries(fonts)) {
-      const value = Array.isArray(v) ? v.join(", ") : typeof v === "string" ? v : undefined;
+      const value = Array.isArray(v) ? withoutTailwindEmojiFallbacks(v.map(String)).join(", ") : typeof v === "string" ? v : undefined;
       if (value) vars.push({ name: `--font-${name}`, value, file, darkScope: false });
     }
   }

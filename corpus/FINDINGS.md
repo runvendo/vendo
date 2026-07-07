@@ -1,5 +1,53 @@
 # Corpus Findings
 
+## Layer 3 Live E2E Campaign (deep tier complete)
+
+Date: 2026-07-07
+Command: `pnpm corpus run umami skateshop papermark --layer 3` (booted apps,
+real LLM, Playwright over the embedded Vendo surface; keys sourced from
+`apps/demo-bank/.env.local`, values not printed or committed).
+
+**Result: all three deep-tier repos pass Layer 3 live — skateshop 5/5 and
+papermark 5/5 pass@2 (first-ever runs), umami re-verified 5/5 — and the
+nightly workflow gained a dedicated Layer 3 job.**
+
+What it took (details in the PR):
+
+- **skateshop prep**: the app exposes no product REST API (server actions
+  only), so prep injects a deterministic e2e REST facade
+  (`src/app/api/corpus/*`) over skateshop's own drizzle queries, a curated
+  tools manifest (reads auto-allowed, cart/order writes approval-gated), a
+  `get_skateshop_checkout_defaults` read (the order conversation references
+  "default checkout details"), handler guidance, per-attempt thread ids, and
+  Clerk/seed boot patches.
+- **papermark prep**: deterministic prisma fixture seed (team, three PDFs,
+  Investor Room dataroom, analyst@example.test viewer activity), a
+  `/api/corpus-login` NextAuth JWT session route + Playwright login step, a
+  stable `/corpus-e2e` host page (the dashboard route was too brittle to
+  drive; tools still hit papermark's real team/document/link/dataroom APIs
+  with the seeded session), curated tools, handler guidance, thread ids.
+- **CLI fixes shaken out by the campaign** (all with regression tests):
+  - Plain `vendo init` re-runs on a fully-initialized app are now
+    deterministic and byte-stable (no model call, component catalog kept);
+    `vendo refresh` remains the explicit gap-fill command. This fixes the
+    long-standing `init.idempotent` Layer 1 flake at the product level.
+  - Zod: hosts whose zod range predates the AI SDK's `zod/v3`+`zod/v4`
+    subpaths are floored to `^3.25.76` — and ONLY those. The initial
+    unconditional pnpm override downgraded umami's Zod 4 and 500'd its own
+    API (`z.uuid is not a function`), collapsing umami's Layer 3 to a
+    tool-retry loop; the override is now conditional (floor, not downgrade).
+  - Copied sandbox assets get `// @ts-nocheck` so `checkJs` hosts
+    (skateshop) stop sweeping bundled runtime JS into their typecheck.
+  - Tailwind config extraction stops esbuild's service and filters emoji
+    fallback fonts from executed/parsed `fontFamily` values.
+  - CLI provider fetches send `Connection: close` so one-shot init exits
+    promptly.
+
+Fixture-vs-product note: Layer 3 preps patch the DISPOSABLE corpus checkout
+only (the umami precedent) — curated tool manifests are hand-written
+integrations, so read tools may be `mutating: false` there; the route-scan
+fail-closed rule governs generated manifests and is untouched.
+
 ## Batch B Extraction Generalization Campaign
 
 Date: 2026-07-06 (evening)

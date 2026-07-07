@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { zodRangeExposesAiSdkSubpaths } from "./next-wiring.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -10,6 +11,7 @@ export const LOCAL_DIRECT_DEPENDENCIES = ["vendoai"] as const;
  *  CLI's own @vendoai/* deps are devDependencies (vite-bundled into its dist),
  *  so packing it adds nothing else to the runtime closure. */
 export const LOCAL_DEV_DEPENDENCIES = ["@vendoai/cli"] as const;
+const AI_SDK_ZOD_VERSION = "^3.25.76";
 
 type PackageJson = Record<string, unknown>;
 export type LocalPackageManager = "pnpm" | "npm" | "yarn-classic" | "yarn-berry";
@@ -318,7 +320,15 @@ export function rewritePackageJsonForLocalVendo(
         manual: localPackageManualInstructions(tarballs, opts.packageManager),
       };
     }
-    pnpm["overrides"] = sortedRecord({ ...overridesResult.value, ...localOverrides });
+    // Pin Zod for the AI SDK's zod/v3 + zod/v4 subpath imports ONLY when the
+    // host's own range predates them. A host already on a new-enough Zod 3 —
+    // or on Zod 4 (umami) — keeps its version: overriding Zod 4 down to 3.x
+    // breaks the host's own z.* API surface at runtime.
+    const hostZodRange = stringRecord(pkg["dependencies"])["zod"];
+    const zodOverride: Record<string, string> = hostZodRange && zodRangeExposesAiSdkSubpaths(hostZodRange)
+      ? {}
+      : { zod: AI_SDK_ZOD_VERSION };
+    pnpm["overrides"] = sortedRecord({ ...overridesResult.value, ...zodOverride, ...localOverrides });
     pkg["pnpm"] = pnpm;
   } else if (opts.packageManager === "npm") {
     const overridesResult = objectRecord(pkg["overrides"], "overrides");

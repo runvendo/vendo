@@ -306,7 +306,7 @@ describe("runCli run", () => {
     expect(scoredContexts[0]?.repoDir).toBe(appRoot);
   });
 
-  it("uses --skip-llm only when requested and can print JSON to stdout", async () => {
+  it("uses --skip-llm when requested and can print JSON", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repo = manifestEntry("repo-json");
@@ -362,6 +362,7 @@ describe("runCli run", () => {
       strict: false,
       repos: [{ repo: "repo-json", layers: [{ status: "pass" }] }],
     });
+
   });
 
   it("runs Layer 1 then Layer 2 and prints baseline update candidates", async () => {
