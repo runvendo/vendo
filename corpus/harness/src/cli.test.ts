@@ -306,17 +306,18 @@ describe("runCli run", () => {
     expect(scoredContexts[0]?.repoDir).toBe(appRoot);
   });
 
-  it("uses --skip-llm only when requested and can print JSON to stdout", async () => {
+  it("uses --skip-llm when requested, keeps Papermark init deterministic, and can print JSON", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repo = manifestEntry("repo-json");
+    const papermarkRepo = manifestEntry("papermark");
     const skipLlmValues: Array<boolean | undefined> = [];
     const stdout: string[] = [];
     const deps: CorpusCliDependencies = {
       now: () => new Date("2026-07-05T12:00:00.000Z"),
       stdout: (line) => { stdout.push(line); },
       stderr: () => {},
-      loadManifest: async () => [repo],
+      loadManifest: async () => [repo, papermarkRepo],
       createContext: () => context,
       ensureRepoCheckout: async (entry) => {
         await writeHostPackage(context.repoDir(entry.name));
@@ -362,6 +363,13 @@ describe("runCli run", () => {
       strict: false,
       repos: [{ repo: "repo-json", layers: [{ status: "pass" }] }],
     });
+
+    skipLlmValues.length = 0;
+    stdout.length = 0;
+    const papermarkExitCode = await runCli(["run", "papermark", "--layer", "1"], deps);
+
+    expect(papermarkExitCode).toBe(0);
+    expect(skipLlmValues).toEqual([true, true]);
   });
 
   it("runs Layer 1 then Layer 2 and prints baseline update candidates", async () => {
