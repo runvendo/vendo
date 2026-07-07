@@ -11,6 +11,12 @@
   },
   "tools": [
     {
+      "name": "get",
+      "method": "GET",
+      "path": "/api",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getActivityLogs",
       "method": "GET",
       "path": "/api/activity-logs",
@@ -2203,7 +2209,7 @@
     {
       "name": "getOgAvatarSeed",
       "method": "GET",
-      "path": "/api/og/avatar/{[...seed]}",
+      "path": "/api/og/avatar/{seed}",
       "readOrWrite": "write"
     },
     {
@@ -3708,6 +3714,11 @@
     }
   ],
   "annotations": [
+    {
+      "name": "get",
+      "mutating": true,
+      "dangerous": false
+    },
     {
       "name": "getActivityLogs",
       "mutating": true,
