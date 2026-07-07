@@ -399,7 +399,7 @@ export function ensureAiSdkZodDependency(pkgJson: string): string | null {
   return JSON.stringify(pkg, null, 2) + "\n";
 }
 
-function zodRangeExposesAiSdkSubpaths(range: string): boolean {
+export function zodRangeExposesAiSdkSubpaths(range: string): boolean {
   const match = range.match(/(\d+)\.(\d+)\.(\d+)/);
   if (!match) return false;
   const major = Number(match[1]);
