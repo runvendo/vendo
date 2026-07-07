@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ManifestEntry } from "./manifest.js";
+import { prepareSkateshopE2eRepo } from "./e2e-prep/skateshop.js";
 
 const umamiInstructions = [
   "This corpus run uses Umami seed data for Demo Blog (blog.example.com) and Demo SaaS (app.example.com).",
@@ -215,6 +216,7 @@ export async function prepareE2eRepo(
   appRoot: string,
   logsDir: string,
 ): Promise<string[]> {
+  if (repo.name === "skateshop") return prepareSkateshopE2eRepo(appRoot, logsDir);
   if (repo.name !== "umami") return [];
 
   await mkdir(logsDir, { recursive: true });
