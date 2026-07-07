@@ -17,6 +17,246 @@
       "readOrWrite": "write"
     },
     {
+      "name": "getAdminAnalytics",
+      "method": "GET",
+      "path": "/api/admin/analytics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminBan",
+      "method": "POST",
+      "path": "/api/admin/ban",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminCommissions",
+      "method": "GET",
+      "path": "/api/admin/commissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminDomainsRefresh",
+      "method": "POST",
+      "path": "/api/admin/domains/refresh",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminDomainsRegisterPremium",
+      "method": "POST",
+      "path": "/api/admin/domains/register-premium",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminDomainsRenew",
+      "method": "POST",
+      "path": "/api/admin/domains/renew",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminDomainsSearchAvailability",
+      "method": "GET",
+      "path": "/api/admin/domains/search-availability",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminEvents",
+      "method": "GET",
+      "path": "/api/admin/events",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminFraudAlerts",
+      "method": "GET",
+      "path": "/api/admin/fraud-alerts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchAdminFraudAlertsId",
+      "method": "PATCH",
+      "path": "/api/admin/fraud-alerts/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminImpersonate",
+      "method": "POST",
+      "path": "/api/admin/impersonate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminLinks",
+      "method": "GET",
+      "path": "/api/admin/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteAdminLinksBan",
+      "method": "DELETE",
+      "path": "/api/admin/links/ban",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminLinksCount",
+      "method": "GET",
+      "path": "/api/admin/links/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPartnersPartnerId",
+      "method": "GET",
+      "path": "/api/admin/partners/{partnerId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchAdminPartnersPartnerId",
+      "method": "PATCH",
+      "path": "/api/admin/partners/{partnerId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminPartnersPartnerIdGenerateVeriffSession",
+      "method": "POST",
+      "path": "/api/admin/partners/{partnerId}/generate-veriff-session",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchAdminPartnersPartnerIdNetworkStatus",
+      "method": "PATCH",
+      "path": "/api/admin/partners/{partnerId}/network-status",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminPartnersPartnerIdPlatforms",
+      "method": "POST",
+      "path": "/api/admin/partners/{partnerId}/platforms",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPartnersPartnerIdSharedPlatforms",
+      "method": "GET",
+      "path": "/api/admin/partners/{partnerId}/shared-platforms",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminPartnersPartnerIdVerifyIdentity",
+      "method": "POST",
+      "path": "/api/admin/partners/{partnerId}/verify-identity",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminPartnersDeleteAccount",
+      "method": "POST",
+      "path": "/api/admin/partners/delete-account",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPartnersFraud",
+      "method": "GET",
+      "path": "/api/admin/partners/fraud",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPartnersNetwork",
+      "method": "GET",
+      "path": "/api/admin/partners/network",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPartnersNetworkCount",
+      "method": "GET",
+      "path": "/api/admin/partners/network/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPartnersTrusted",
+      "method": "GET",
+      "path": "/api/admin/partners/trusted",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminPartnersTrusted",
+      "method": "POST",
+      "path": "/api/admin/partners/trusted",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteAdminPartnersTrusted",
+      "method": "DELETE",
+      "path": "/api/admin/partners/trusted",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPayouts",
+      "method": "GET",
+      "path": "/api/admin/payouts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPayoutsPaypal",
+      "method": "GET",
+      "path": "/api/admin/payouts/paypal",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPayoutsStablecoin",
+      "method": "GET",
+      "path": "/api/admin/payouts/stablecoin",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminPrograms",
+      "method": "GET",
+      "path": "/api/admin/programs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminPrograms",
+      "method": "POST",
+      "path": "/api/admin/programs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchAdminPrograms",
+      "method": "PATCH",
+      "path": "/api/admin/programs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchAdminProgramsProgramId",
+      "method": "PATCH",
+      "path": "/api/admin/programs/{programId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteAdminProgramsProgramId",
+      "method": "DELETE",
+      "path": "/api/admin/programs/{programId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminProgramsSales",
+      "method": "GET",
+      "path": "/api/admin/programs/sales",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminResetLoginAttempts",
+      "method": "POST",
+      "path": "/api/admin/reset-login-attempts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAdminRevenue",
+      "method": "GET",
+      "path": "/api/admin/revenue",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAdminSlackSupportInvite",
+      "method": "POST",
+      "path": "/api/admin/slack-support-invite",
+      "readOrWrite": "write"
+    },
+    {
       "name": "postAiCompletion",
       "method": "POST",
       "path": "/api/ai/completion",
@@ -71,6 +311,24 @@
       "readOrWrite": "write"
     },
     {
+      "name": "getAppsflyerWebhook",
+      "method": "GET",
+      "path": "/api/appsflyer/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "headAppsflyerWebhook",
+      "method": "HEAD",
+      "path": "/api/appsflyer/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuditLogsExport",
+      "method": "POST",
+      "path": "/api/audit-logs/export",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getAuthNextauth",
       "method": "GET",
       "path": "/api/auth/{nextauth}",
@@ -86,6 +344,102 @@
       "name": "postAuthResetPassword",
       "method": "POST",
       "path": "/api/auth/reset-password",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAuthSamlAuthorize",
+      "method": "GET",
+      "path": "/api/auth/saml/authorize",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthSamlAuthorize",
+      "method": "POST",
+      "path": "/api/auth/saml/authorize",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthSamlCallback",
+      "method": "POST",
+      "path": "/api/auth/saml/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthSamlToken",
+      "method": "POST",
+      "path": "/api/auth/saml/token",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getAuthSamlUserinfo",
+      "method": "GET",
+      "path": "/api/auth/saml/userinfo",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postAuthSamlVerify",
+      "method": "POST",
+      "path": "/api/auth/saml/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBounties",
+      "method": "GET",
+      "path": "/api/bounties",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postBounties",
+      "method": "POST",
+      "path": "/api/bounties",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBountiesBountyId",
+      "method": "GET",
+      "path": "/api/bounties/{bountyId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchBountiesBountyId",
+      "method": "PATCH",
+      "path": "/api/bounties/{bountyId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteBountiesBountyId",
+      "method": "DELETE",
+      "path": "/api/bounties/{bountyId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBountiesBountyIdSubmissions",
+      "method": "GET",
+      "path": "/api/bounties/{bountyId}/submissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postBountiesBountyIdSubmissionsSubmissionIdApprove",
+      "method": "POST",
+      "path": "/api/bounties/{bountyId}/submissions/{submissionId}/approve",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postBountiesBountyIdSubmissionsSubmissionIdReject",
+      "method": "POST",
+      "path": "/api/bounties/{bountyId}/submissions/{submissionId}/reject",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postBountiesBountyIdSyncSocialMetrics",
+      "method": "POST",
+      "path": "/api/bounties/{bountyId}/sync-social-metrics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getBountiesCountSubmissions",
+      "method": "GET",
+      "path": "/api/bounties/count/submissions",
       "readOrWrite": "write"
     },
     {
@@ -113,6 +467,888 @@
       "readOrWrite": "write"
     },
     {
+      "name": "getCampaigns",
+      "method": "GET",
+      "path": "/api/campaigns",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCampaigns",
+      "method": "POST",
+      "path": "/api/campaigns",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCampaignsCampaignId",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchCampaignsCampaignId",
+      "method": "PATCH",
+      "path": "/api/campaigns/{campaignId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteCampaignsCampaignId",
+      "method": "DELETE",
+      "path": "/api/campaigns/{campaignId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCampaignsCampaignIdDuplicate",
+      "method": "POST",
+      "path": "/api/campaigns/{campaignId}/duplicate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCampaignsCampaignIdEvents",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}/events",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCampaignsCampaignIdEventsCount",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}/events/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCampaignsCampaignIdPreview",
+      "method": "POST",
+      "path": "/api/campaigns/{campaignId}/preview",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCampaignsCampaignIdSummary",
+      "method": "GET",
+      "path": "/api/campaigns/{campaignId}/summary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCampaignsCount",
+      "method": "GET",
+      "path": "/api/campaigns/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCommissions",
+      "method": "GET",
+      "path": "/api/commissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCommissions",
+      "method": "POST",
+      "path": "/api/commissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCommissionsCommissionId",
+      "method": "GET",
+      "path": "/api/commissions/{commissionId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchCommissionsCommissionId",
+      "method": "PATCH",
+      "path": "/api/commissions/{commissionId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCommissionsAnalytics",
+      "method": "GET",
+      "path": "/api/commissions/analytics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchCommissionsBulk",
+      "method": "PATCH",
+      "path": "/api/commissions/bulk",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCommissionsCount",
+      "method": "GET",
+      "path": "/api/commissions/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCommissionsExport",
+      "method": "GET",
+      "path": "/api/commissions/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronAggregateClicks",
+      "method": "POST",
+      "path": "/api/cron/aggregate-clicks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronAggregateClicksProcess",
+      "method": "POST",
+      "path": "/api/cron/aggregate-clicks/process",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronBountiesCreateDraftSubmissions",
+      "method": "POST",
+      "path": "/api/cron/bounties/create-draft-submissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronBountiesNotifyPartners",
+      "method": "POST",
+      "path": "/api/cron/bounties/notify-partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronBountiesQueueSyncSocialMetrics",
+      "method": "GET",
+      "path": "/api/cron/bounties/queue-sync-social-metrics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronBountiesSyncSocialMetrics",
+      "method": "POST",
+      "path": "/api/cron/bounties/sync-social-metrics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCampaignsBroadcast",
+      "method": "POST",
+      "path": "/api/cron/campaigns/broadcast",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupDeclinedInvites",
+      "method": "POST",
+      "path": "/api/cron/cleanup/declined-invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupDemoEmbedPartners",
+      "method": "POST",
+      "path": "/api/cron/cleanup/demo-embed-partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupE2eTests",
+      "method": "POST",
+      "path": "/api/cron/cleanup/e2e-tests",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupExpiredFraudGroups",
+      "method": "POST",
+      "path": "/api/cron/cleanup/expired-fraud-groups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupExpiredTokens",
+      "method": "POST",
+      "path": "/api/cron/cleanup/expired-tokens",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupLinkRetention",
+      "method": "POST",
+      "path": "/api/cron/cleanup/link-retention",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupOrphanedRewards",
+      "method": "POST",
+      "path": "/api/cron/cleanup/orphaned-rewards",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupRejectedApplications",
+      "method": "POST",
+      "path": "/api/cron/cleanup/rejected-applications",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCleanupUnenrolledPartners",
+      "method": "POST",
+      "path": "/api/cron/cleanup/unenrolled-partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCommissionsReferralsBackfill",
+      "method": "POST",
+      "path": "/api/cron/commissions/referrals/backfill",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCommissionsReferralsCreate",
+      "method": "POST",
+      "path": "/api/cron/commissions/referrals/create",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronCommissionsReferralsQueue",
+      "method": "POST",
+      "path": "/api/cron/commissions/referrals/queue",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDiscountCodesCreate",
+      "method": "POST",
+      "path": "/api/cron/discount-codes/create",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDiscountCodesCreateQueueBatches",
+      "method": "POST",
+      "path": "/api/cron/discount-codes/create/queue-batches",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDiscountCodesDisable",
+      "method": "POST",
+      "path": "/api/cron/discount-codes/disable",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDisposableEmails",
+      "method": "POST",
+      "path": "/api/cron/disposable-emails",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDomainsDelete",
+      "method": "POST",
+      "path": "/api/cron/domains/delete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronDomainsRenewalPayments",
+      "method": "GET",
+      "path": "/api/cron/domains/renewal-payments",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronDomainsRenewalReminders",
+      "method": "GET",
+      "path": "/api/cron/domains/renewal-reminders",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDomainsTransfer",
+      "method": "POST",
+      "path": "/api/cron/domains/transfer",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronDomainsUpdate",
+      "method": "POST",
+      "path": "/api/cron/domains/update",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronDomainsVerify",
+      "method": "GET",
+      "path": "/api/cron/domains/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronEmailDomainsUpdate",
+      "method": "POST",
+      "path": "/api/cron/email-domains/update",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronEmailDomainsVerify",
+      "method": "GET",
+      "path": "/api/cron/email-domains/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronExportCommissions",
+      "method": "POST",
+      "path": "/api/cron/export/commissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronExportCustomers",
+      "method": "POST",
+      "path": "/api/cron/export/customers",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronExportEventsPartner",
+      "method": "POST",
+      "path": "/api/cron/export/events/partner",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronExportEventsWorkspace",
+      "method": "POST",
+      "path": "/api/cron/export/events/workspace",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronExportLinks",
+      "method": "POST",
+      "path": "/api/cron/export/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronExportPartners",
+      "method": "POST",
+      "path": "/api/cron/export/partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronExportPayouts",
+      "method": "POST",
+      "path": "/api/cron/export/payouts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronFoldersDelete",
+      "method": "POST",
+      "path": "/api/cron/folders/delete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronFramerBackfillLeadsBatch",
+      "method": "POST",
+      "path": "/api/cron/framer/backfill-leads-batch",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronFraudSummary",
+      "method": "GET",
+      "path": "/api/cron/fraud/summary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronFraudSummary",
+      "method": "POST",
+      "path": "/api/cron/fraud/summary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronFxRates",
+      "method": "POST",
+      "path": "/api/cron/fx-rates",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronGroupsCreateDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/create-default-links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronGroupsDeleteDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/delete-default-links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronGroupsRemapDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/remap-default-links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronGroupsRemapDiscountCodes",
+      "method": "POST",
+      "path": "/api/cron/groups/remap-discount-codes",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronGroupsSyncUtm",
+      "method": "POST",
+      "path": "/api/cron/groups/sync-utm",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronGroupsUpdateDefaultLinks",
+      "method": "POST",
+      "path": "/api/cron/groups/update-default-links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportBitly",
+      "method": "POST",
+      "path": "/api/cron/import/bitly",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportCsv",
+      "method": "POST",
+      "path": "/api/cron/import/csv",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportFirstpromoter",
+      "method": "POST",
+      "path": "/api/cron/import/firstpromoter",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportPartnerstack",
+      "method": "POST",
+      "path": "/api/cron/import/partnerstack",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportRebrandly",
+      "method": "POST",
+      "path": "/api/cron/import/rebrandly",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportRewardful",
+      "method": "POST",
+      "path": "/api/cron/import/rewardful",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportShort",
+      "method": "POST",
+      "path": "/api/cron/import/short",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportTapfiliate",
+      "method": "POST",
+      "path": "/api/cron/import/tapfiliate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronImportTolt",
+      "method": "POST",
+      "path": "/api/cron/import/tolt",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronInvoicesRetryFailed",
+      "method": "POST",
+      "path": "/api/cron/invoices/retry-failed",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronLinksLinkIdCompleteTests",
+      "method": "POST",
+      "path": "/api/cron/links/{linkId}/complete-tests",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronLinksDelete",
+      "method": "POST",
+      "path": "/api/cron/links/delete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronLinksInvalidateForDiscounts",
+      "method": "POST",
+      "path": "/api/cron/links/invalidate-for-discounts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronLinksInvalidateForPartners",
+      "method": "POST",
+      "path": "/api/cron/links/invalidate-for-partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronMessagesNotifyPartner",
+      "method": "POST",
+      "path": "/api/cron/messages/notify-partner",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronMessagesNotifyProgram",
+      "method": "POST",
+      "path": "/api/cron/messages/notify-program",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronNetworkCalculateProgramSimilarities",
+      "method": "POST",
+      "path": "/api/cron/network/calculate-program-similarities",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnerPlatforms",
+      "method": "POST",
+      "path": "/api/cron/partner-platforms",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronPartnerPlatformsWebsite",
+      "method": "GET",
+      "path": "/api/cron/partner-platforms/website",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnerPlatformsYoutube",
+      "method": "POST",
+      "path": "/api/cron/partner-platforms/youtube",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronPartnerProgramSummary",
+      "method": "GET",
+      "path": "/api/cron/partner-program-summary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnerProgramSummaryProcess",
+      "method": "POST",
+      "path": "/api/cron/partner-program-summary/process",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnersAutoApprove",
+      "method": "POST",
+      "path": "/api/cron/partners/auto-approve",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnersAutoReject",
+      "method": "POST",
+      "path": "/api/cron/partners/auto-reject",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnersBan",
+      "method": "POST",
+      "path": "/api/cron/partners/ban",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnersDeactivate",
+      "method": "POST",
+      "path": "/api/cron/partners/deactivate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnersMergeAccounts",
+      "method": "POST",
+      "path": "/api/cron/partners/merge-accounts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPartnersVerifyCountryChange",
+      "method": "POST",
+      "path": "/api/cron/partners/verify-country-change",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronPayoutsAggregateDueCommissions",
+      "method": "GET",
+      "path": "/api/cron/payouts/aggregate-due-commissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsAggregateDueCommissions",
+      "method": "POST",
+      "path": "/api/cron/payouts/aggregate-due-commissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsBalanceAvailable",
+      "method": "POST",
+      "path": "/api/cron/payouts/balance-available",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsChargeSucceeded",
+      "method": "POST",
+      "path": "/api/cron/payouts/charge-succeeded",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronPayoutsForceWithdrawals",
+      "method": "GET",
+      "path": "/api/cron/payouts/force-withdrawals",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsForceWithdrawals",
+      "method": "POST",
+      "path": "/api/cron/payouts/force-withdrawals",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsPayoutFailed",
+      "method": "POST",
+      "path": "/api/cron/payouts/payout-failed",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsPayoutPaid",
+      "method": "POST",
+      "path": "/api/cron/payouts/payout-paid",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsProcess",
+      "method": "POST",
+      "path": "/api/cron/payouts/process",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsProcessUpdates",
+      "method": "POST",
+      "path": "/api/cron/payouts/process/updates",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronPayoutsRemindersPartners",
+      "method": "GET",
+      "path": "/api/cron/payouts/reminders/partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsRemindersPartners",
+      "method": "POST",
+      "path": "/api/cron/payouts/reminders/partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronPayoutsRemindersProgramOwners",
+      "method": "GET",
+      "path": "/api/cron/payouts/reminders/program-owners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsSendStripePayout",
+      "method": "POST",
+      "path": "/api/cron/payouts/send-stripe-payout",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPayoutsSendTremendousPayout",
+      "method": "POST",
+      "path": "/api/cron/payouts/send-tremendous-payout",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronPendingApplicationsSummary",
+      "method": "GET",
+      "path": "/api/cron/pending-applications-summary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronPendingApplicationsSummary",
+      "method": "POST",
+      "path": "/api/cron/pending-applications-summary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronProgramApplicationReminder",
+      "method": "POST",
+      "path": "/api/cron/program-application-reminder",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronProgramsDeactivate",
+      "method": "POST",
+      "path": "/api/cron/programs/deactivate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronProgramsReactivate",
+      "method": "POST",
+      "path": "/api/cron/programs/reactivate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronRewardsProcess",
+      "method": "POST",
+      "path": "/api/cron/rewards/process",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronSendBatchEmail",
+      "method": "POST",
+      "path": "/api/cron/send-batch-email",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronShopifyOrderPaid",
+      "method": "POST",
+      "path": "/api/cron/shopify/order-paid",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronSitemapsImport",
+      "method": "POST",
+      "path": "/api/cron/sitemaps/import",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronSitemapsQueue",
+      "method": "GET",
+      "path": "/api/cron/sitemaps/queue",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronSitemapsQueue",
+      "method": "POST",
+      "path": "/api/cron/sitemaps/queue",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronStreamsSendLinkClickedWebhooks",
+      "method": "GET",
+      "path": "/api/cron/streams/send-link-clicked-webhooks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronStreamsUpdatePartnerStats",
+      "method": "GET",
+      "path": "/api/cron/streams/update-partner-stats",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronStreamsUpdateWorkspaceClicks",
+      "method": "GET",
+      "path": "/api/cron/streams/update-workspace-clicks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronStreamsUpdateWorkspaceLinksUsage",
+      "method": "GET",
+      "path": "/api/cron/streams/update-workspace-links-usage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronTagsDeleteLinkTag",
+      "method": "POST",
+      "path": "/api/cron/tags/delete-link-tag",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronTagsDeletePartnerTag",
+      "method": "POST",
+      "path": "/api/cron/tags/delete-partner-tag",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronTrialEmails",
+      "method": "GET",
+      "path": "/api/cron/trial-emails",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronTrialEmails",
+      "method": "POST",
+      "path": "/api/cron/trial-emails",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronTriggerBackup",
+      "method": "GET",
+      "path": "/api/cron/trigger-backup",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronTriggerWithdrawal",
+      "method": "GET",
+      "path": "/api/cron/trigger-withdrawal",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronUsage",
+      "method": "POST",
+      "path": "/api/cron/usage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCronWebhooksSyncClickWorkspaces",
+      "method": "GET",
+      "path": "/api/cron/webhooks/sync-click-workspaces",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronWelcomeUser",
+      "method": "POST",
+      "path": "/api/cron/welcome-user",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronWorkflowsWorkflowId",
+      "method": "POST",
+      "path": "/api/cron/workflows/{workflowId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCronWorkspacesDelete",
+      "method": "POST",
+      "path": "/api/cron/workspaces/delete",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomers",
+      "method": "GET",
+      "path": "/api/customers",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postCustomers",
+      "method": "POST",
+      "path": "/api/customers",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomersId",
+      "method": "GET",
+      "path": "/api/customers/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchCustomersId",
+      "method": "PATCH",
+      "path": "/api/customers/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteCustomersId",
+      "method": "DELETE",
+      "path": "/api/customers/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomersIdActivity",
+      "method": "GET",
+      "path": "/api/customers/{id}/activity",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomersIdStripeInvoices",
+      "method": "GET",
+      "path": "/api/customers/{id}/stripe-invoices",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomersCount",
+      "method": "GET",
+      "path": "/api/customers/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomersExport",
+      "method": "GET",
+      "path": "/api/customers/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getCustomersSearchStripe",
+      "method": "GET",
+      "path": "/api/customers/search-stripe",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getDashboards",
       "method": "GET",
       "path": "/api/dashboards",
@@ -134,6 +1370,24 @@
       "name": "deleteDashboardsId",
       "method": "DELETE",
       "path": "/api/dashboards/{id}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getDiscountCodes",
+      "method": "GET",
+      "path": "/api/discount-codes",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postDiscountCodes",
+      "method": "POST",
+      "path": "/api/discount-codes",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteDiscountCodesDiscountCodeId",
+      "method": "DELETE",
+      "path": "/api/discount-codes/{discountCodeId}",
       "readOrWrite": "write"
     },
     {
@@ -227,15 +1481,207 @@
       "readOrWrite": "write"
     },
     {
+      "name": "postDomainsRegister",
+      "method": "POST",
+      "path": "/api/domains/register",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getDomainsSearchAvailability",
       "method": "GET",
       "path": "/api/domains/search-availability",
       "readOrWrite": "write"
     },
     {
+      "name": "getDomainsStatus",
+      "method": "GET",
+      "path": "/api/domains/status",
+      "readOrWrite": "write"
+    },
+    {
       "name": "postDubWebhook",
       "method": "POST",
       "path": "/api/dub/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteE2eBountiesBountyId",
+      "method": "DELETE",
+      "path": "/api/e2e/bounties/{bountyId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchE2eEnrollments",
+      "method": "PATCH",
+      "path": "/api/e2e/enrollments",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getE2eNotificationEmails",
+      "method": "GET",
+      "path": "/api/e2e/notification-emails",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postE2eNotificationEmails",
+      "method": "POST",
+      "path": "/api/e2e/notification-emails",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteE2eNotificationEmails",
+      "method": "DELETE",
+      "path": "/api/e2e/notification-emails",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postE2ePartnersPendingProgramApplication",
+      "method": "POST",
+      "path": "/api/e2e/partners/pending-program-application",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postE2eTriggerWorkflowWorkflowId",
+      "method": "POST",
+      "path": "/api/e2e/trigger-workflow/{workflowId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getE2eWorkflows",
+      "method": "GET",
+      "path": "/api/e2e/workflows",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchE2eWorkflowsWorkflowId",
+      "method": "PATCH",
+      "path": "/api/e2e/workflows/{workflowId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmailDomains",
+      "method": "GET",
+      "path": "/api/email-domains",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postEmailDomains",
+      "method": "POST",
+      "path": "/api/email-domains",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchEmailDomainsDomain",
+      "method": "PATCH",
+      "path": "/api/email-domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteEmailDomainsDomain",
+      "method": "DELETE",
+      "path": "/api/email-domains/{domain}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmailDomainsDomainVerify",
+      "method": "GET",
+      "path": "/api/email-domains/{domain}/verify",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsAnalytics",
+      "method": "GET",
+      "path": "/api/embed/referrals/analytics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsBountiesBountyIdSocialContentStats",
+      "method": "GET",
+      "path": "/api/embed/referrals/bounties/{bountyId}/social-content-stats",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postEmbedReferralsBountiesBountyIdUpload",
+      "method": "POST",
+      "path": "/api/embed/referrals/bounties/{bountyId}/upload",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsEarnings",
+      "method": "GET",
+      "path": "/api/embed/referrals/earnings",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsEarningsTimeseries",
+      "method": "GET",
+      "path": "/api/embed/referrals/earnings/timeseries",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsEvents",
+      "method": "GET",
+      "path": "/api/embed/referrals/events",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsLeaderboard",
+      "method": "GET",
+      "path": "/api/embed/referrals/leaderboard",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsLinks",
+      "method": "GET",
+      "path": "/api/embed/referrals/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postEmbedReferralsLinks",
+      "method": "POST",
+      "path": "/api/embed/referrals/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchEmbedReferralsLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/embed/referrals/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postEmbedReferralsSubmissions",
+      "method": "POST",
+      "path": "/api/embed/referrals/submissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEmbedReferralsToken",
+      "method": "GET",
+      "path": "/api/embed/referrals/token",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postEmbedReferralsTremendousSendOtp",
+      "method": "POST",
+      "path": "/api/embed/referrals/tremendous/send-otp",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postEmbedReferralsTremendousVerifyOtp",
+      "method": "POST",
+      "path": "/api/embed/referrals/tremendous/verify-otp",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEvents",
+      "method": "GET",
+      "path": "/api/events",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getEventsExport",
+      "method": "GET",
+      "path": "/api/events/export",
       "readOrWrite": "write"
     },
     {
@@ -299,6 +1745,138 @@
       "readOrWrite": "write"
     },
     {
+      "name": "getFraudEvents",
+      "method": "GET",
+      "path": "/api/fraud/events",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFraudEventsCount",
+      "method": "GET",
+      "path": "/api/fraud/events/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFraudGroups",
+      "method": "GET",
+      "path": "/api/fraud/groups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFraudGroupsCount",
+      "method": "GET",
+      "path": "/api/fraud/groups/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getFraudRules",
+      "method": "GET",
+      "path": "/api/fraud/rules",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchFraudRules",
+      "method": "PATCH",
+      "path": "/api/fraud/rules",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getGroups",
+      "method": "GET",
+      "path": "/api/groups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postGroups",
+      "method": "POST",
+      "path": "/api/groups",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getGroupsGroupIdOrSlug",
+      "method": "GET",
+      "path": "/api/groups/{groupIdOrSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchGroupsGroupIdOrSlug",
+      "method": "PATCH",
+      "path": "/api/groups/{groupIdOrSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteGroupsGroupIdOrSlug",
+      "method": "DELETE",
+      "path": "/api/groups/{groupIdOrSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugDefault",
+      "method": "POST",
+      "path": "/api/groups/{groupIdOrSlug}/default",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getGroupsGroupIdOrSlugDefaultLinks",
+      "method": "GET",
+      "path": "/api/groups/{groupIdOrSlug}/default-links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugDefaultLinks",
+      "method": "POST",
+      "path": "/api/groups/{groupIdOrSlug}/default-links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchGroupsGroupIdOrSlugDefaultLinksDefaultLinkId",
+      "method": "PATCH",
+      "path": "/api/groups/{groupIdOrSlug}/default-links/{defaultLinkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteGroupsGroupIdOrSlugDefaultLinksDefaultLinkId",
+      "method": "DELETE",
+      "path": "/api/groups/{groupIdOrSlug}/default-links/{defaultLinkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugPartners",
+      "method": "POST",
+      "path": "/api/groups/{groupIdOrSlug}/partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getGroupsCount",
+      "method": "GET",
+      "path": "/api/groups/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getGroupsRules",
+      "method": "GET",
+      "path": "/api/groups/rules",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getHubspotCallback",
+      "method": "GET",
+      "path": "/api/hubspot/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postHubspotWebhook",
+      "method": "POST",
+      "path": "/api/hubspot/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postHubspotWebhookProcess",
+      "method": "POST",
+      "path": "/api/hubspot/webhook/process",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getIntegrations",
       "method": "GET",
       "path": "/api/integrations",
@@ -308,6 +1886,36 @@
       "name": "deleteIntegrationsUninstall",
       "method": "DELETE",
       "path": "/api/integrations/uninstall",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getIntercomCallback",
+      "method": "GET",
+      "path": "/api/intercom/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postIntercomWebhook",
+      "method": "POST",
+      "path": "/api/intercom/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postIntercomWebhookHealthCheck",
+      "method": "POST",
+      "path": "/api/intercom/webhook/health-check",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postIntercomWebhookProcess",
+      "method": "POST",
+      "path": "/api/intercom/webhook/process",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postIntercomWebhookUninstall",
+      "method": "POST",
+      "path": "/api/intercom/webhook/uninstall",
       "readOrWrite": "write"
     },
     {
@@ -455,6 +2063,18 @@
       "readOrWrite": "write"
     },
     {
+      "name": "getMessages",
+      "method": "GET",
+      "path": "/api/messages",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMessagesCount",
+      "method": "GET",
+      "path": "/api/messages/count",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getMiscCheckFavicon",
       "method": "GET",
       "path": "/api/misc/check-favicon",
@@ -464,6 +2084,72 @@
       "name": "getMiscCheckWorkspaceSlug",
       "method": "GET",
       "path": "/api/misc/check-workspace-slug",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMockRewardfulAffiliates",
+      "method": "GET",
+      "path": "/api/mock/rewardful/affiliates",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMockRewardfulCampaigns",
+      "method": "GET",
+      "path": "/api/mock/rewardful/campaigns",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMockRewardfulCampaignsCampaignId",
+      "method": "GET",
+      "path": "/api/mock/rewardful/campaigns/{campaignId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMockRewardfulCommissions",
+      "method": "GET",
+      "path": "/api/mock/rewardful/commissions",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMockRewardfulReferrals",
+      "method": "GET",
+      "path": "/api/mock/rewardful/referrals",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getNetworkPartners",
+      "method": "GET",
+      "path": "/api/network/partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getNetworkPartnersCount",
+      "method": "GET",
+      "path": "/api/network/partners/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getNetworkPartnersInvitesUsage",
+      "method": "GET",
+      "path": "/api/network/partners/invites-usage",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getNetworkPrograms",
+      "method": "GET",
+      "path": "/api/network/programs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getNetworkProgramsCount",
+      "method": "GET",
+      "path": "/api/network/programs/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getNetworkProgramsSummary",
+      "method": "GET",
+      "path": "/api/network/programs/summary",
       "readOrWrite": "write"
     },
     {
@@ -509,8 +2195,20 @@
       "readOrWrite": "write"
     },
     {
+      "name": "optionsOauthToken",
+      "method": "OPTIONS",
+      "path": "/api/oauth/token",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getOauthUserinfo",
       "method": "GET",
+      "path": "/api/oauth/userinfo",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsOauthUserinfo",
+      "method": "OPTIONS",
       "path": "/api/oauth/userinfo",
       "readOrWrite": "write"
     },
@@ -545,9 +2243,573 @@
       "readOrWrite": "write"
     },
     {
+      "name": "getPartnerProfile",
+      "method": "GET",
+      "path": "/api/partner-profile",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileInvites",
+      "method": "GET",
+      "path": "/api/partner-profile/invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnerProfileInvites",
+      "method": "POST",
+      "path": "/api/partner-profile/invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchPartnerProfileInvites",
+      "method": "PATCH",
+      "path": "/api/partner-profile/invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePartnerProfileInvites",
+      "method": "DELETE",
+      "path": "/api/partner-profile/invites",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnerProfileInvitesAccept",
+      "method": "POST",
+      "path": "/api/partner-profile/invites/accept",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileMessages",
+      "method": "GET",
+      "path": "/api/partner-profile/messages",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileMessagesCount",
+      "method": "GET",
+      "path": "/api/partner-profile/messages/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileNotificationPreferences",
+      "method": "GET",
+      "path": "/api/partner-profile/notification-preferences",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfilePayouts",
+      "method": "GET",
+      "path": "/api/partner-profile/payouts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfilePayoutsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/payouts/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfilePayoutsSettings",
+      "method": "GET",
+      "path": "/api/partner-profile/payouts/settings",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfilePostbacks",
+      "method": "GET",
+      "path": "/api/partner-profile/postbacks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnerProfilePostbacks",
+      "method": "POST",
+      "path": "/api/partner-profile/postbacks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfilePostbacksPostbackId",
+      "method": "GET",
+      "path": "/api/partner-profile/postbacks/{postbackId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchPartnerProfilePostbacksPostbackId",
+      "method": "PATCH",
+      "path": "/api/partner-profile/postbacks/{postbackId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePartnerProfilePostbacksPostbackId",
+      "method": "DELETE",
+      "path": "/api/partner-profile/postbacks/{postbackId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfilePostbacksPostbackIdEvents",
+      "method": "GET",
+      "path": "/api/partner-profile/postbacks/{postbackId}/events",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnerProfilePostbacksPostbackIdRotateSecret",
+      "method": "POST",
+      "path": "/api/partner-profile/postbacks/{postbackId}/rotate-secret",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnerProfilePostbacksPostbackIdSendTest",
+      "method": "POST",
+      "path": "/api/partner-profile/postbacks/{postbackId}/send-test",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfilePrograms",
+      "method": "GET",
+      "path": "/api/partner-profile/programs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramId",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdActivityLogs",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/activity-logs",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdAnalytics",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/analytics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdAnalyticsExport",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/analytics/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBounties",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/bounties",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBountiesBountyId",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/bounties/{bountyId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBountiesBountyIdSocialContentStats",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/bounties/{bountyId}/social-content-stats",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomers",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/customers",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomersCustomerId",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/customers/{customerId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomersCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/customers/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarnings",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/earnings",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarningsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/earnings/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarningsTimeseries",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/earnings/timeseries",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEvents",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/events",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEventsExport",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/events/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdGroupsGroupIdOrSlug",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/groups/{groupIdOrSlug}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdLinks",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnerProfileProgramsProgramIdLinks",
+      "method": "POST",
+      "path": "/api/partner-profile/programs/{programId}/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchPartnerProfileProgramsProgramIdLinksLinkId",
+      "method": "PATCH",
+      "path": "/api/partner-profile/programs/{programId}/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePartnerProfileProgramsProgramIdLinksLinkId",
+      "method": "DELETE",
+      "path": "/api/partner-profile/programs/{programId}/links/{linkId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdReferrals",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/referrals",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdReferralsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/referrals/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdResources",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/resources",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdSubmittedLeads",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/submitted-leads",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdSubmittedLeadsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/{programId}/submitted-leads/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileProgramsCount",
+      "method": "GET",
+      "path": "/api/partner-profile/programs/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileReferrals",
+      "method": "GET",
+      "path": "/api/partner-profile/referrals",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileReferralsStats",
+      "method": "GET",
+      "path": "/api/partner-profile/referrals/stats",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileReferralsTimeseries",
+      "method": "GET",
+      "path": "/api/partner-profile/referrals/timeseries",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileRewind",
+      "method": "GET",
+      "path": "/api/partner-profile/rewind",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnerProfileUsers",
+      "method": "GET",
+      "path": "/api/partner-profile/users",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchPartnerProfileUsers",
+      "method": "PATCH",
+      "path": "/api/partner-profile/users",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deletePartnerProfileUsers",
+      "method": "DELETE",
+      "path": "/api/partner-profile/users",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartners",
+      "method": "GET",
+      "path": "/api/partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartners",
+      "method": "POST",
+      "path": "/api/partners",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersPartnerId",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersPartnerIdApplicationRisks",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/application-risks",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersPartnerIdComments",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/comments",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersPartnerIdCommentsCount",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/comments/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersPartnerIdCrossProgramSummary",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/cross-program-summary",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersPartnerIdReferral",
+      "method": "GET",
+      "path": "/api/partners/{partnerId}/referral",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersAnalytics",
+      "method": "GET",
+      "path": "/api/partners/analytics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersApplications",
+      "method": "GET",
+      "path": "/api/partners/applications",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersApplicationsApplicationId",
+      "method": "GET",
+      "path": "/api/partners/applications/{applicationId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersApplicationsAnalytics",
+      "method": "GET",
+      "path": "/api/partners/applications/analytics",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnersApplicationsApprove",
+      "method": "POST",
+      "path": "/api/partners/applications/approve",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersApplicationsExport",
+      "method": "GET",
+      "path": "/api/partners/applications/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersApplicationsHistory",
+      "method": "GET",
+      "path": "/api/partners/applications/history",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnersApplicationsReject",
+      "method": "POST",
+      "path": "/api/partners/applications/reject",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnersBan",
+      "method": "POST",
+      "path": "/api/partners/ban",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersCount",
+      "method": "GET",
+      "path": "/api/partners/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnersDeactivate",
+      "method": "POST",
+      "path": "/api/partners/deactivate",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersExport",
+      "method": "GET",
+      "path": "/api/partners/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersLinks",
+      "method": "GET",
+      "path": "/api/partners/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPartnersLinks",
+      "method": "POST",
+      "path": "/api/partners/links",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putPartnersLinksUpsert",
+      "method": "PUT",
+      "path": "/api/partners/links/upsert",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersPlatformsCallback",
+      "method": "GET",
+      "path": "/api/partners/platforms/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersTags",
+      "method": "GET",
+      "path": "/api/partners/tags",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPartnersTagsCount",
+      "method": "GET",
+      "path": "/api/partners/tags/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPayouts",
+      "method": "GET",
+      "path": "/api/payouts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPayoutsPayoutId",
+      "method": "GET",
+      "path": "/api/payouts/{payoutId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPayoutsCount",
+      "method": "GET",
+      "path": "/api/payouts/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPayoutsExport",
+      "method": "GET",
+      "path": "/api/payouts/export",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getPaypalCallback",
+      "method": "GET",
+      "path": "/api/paypal/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postPaypalWebhook",
+      "method": "POST",
+      "path": "/api/paypal/webhook",
+      "readOrWrite": "write"
+    },
+    {
       "name": "postPostbacksCallback",
       "method": "POST",
       "path": "/api/postbacks/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsProgramId",
+      "method": "GET",
+      "path": "/api/programs/{programId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsProgramIdDiscounts",
+      "method": "GET",
+      "path": "/api/programs/{programId}/discounts",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsProgramIdPayoutsEligible",
+      "method": "GET",
+      "path": "/api/programs/{programId}/payouts/eligible",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsProgramIdPayoutsEligibleCount",
+      "method": "GET",
+      "path": "/api/programs/{programId}/payouts/eligible/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsProgramIdResources",
+      "method": "GET",
+      "path": "/api/programs/{programId}/resources",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsProgramIdSubmittedLeads",
+      "method": "GET",
+      "path": "/api/programs/{programId}/submitted-leads",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsProgramIdSubmittedLeadsCount",
+      "method": "GET",
+      "path": "/api/programs/{programId}/submitted-leads/count",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getProgramsRewardfulCampaigns",
+      "method": "GET",
+      "path": "/api/programs/rewardful/campaigns",
       "readOrWrite": "write"
     },
     {
@@ -749,6 +3011,12 @@
       "readOrWrite": "write"
     },
     {
+      "name": "optionsQr",
+      "method": "OPTIONS",
+      "path": "/api/qr",
+      "readOrWrite": "write"
+    },
+    {
       "name": "postResendWebhook",
       "method": "POST",
       "path": "/api/resend/webhook",
@@ -761,6 +3029,78 @@
       "readOrWrite": "write"
     },
     {
+      "name": "getRewards",
+      "method": "GET",
+      "path": "/api/rewards",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getRewardsRewardId",
+      "method": "GET",
+      "path": "/api/rewards/{rewardId}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getScimV20Directory",
+      "method": "GET",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postScimV20Directory",
+      "method": "POST",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "putScimV20Directory",
+      "method": "PUT",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "deleteScimV20Directory",
+      "method": "DELETE",
+      "path": "/api/scim/v2.0/{directory}",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchShopifyIntegrationCallback",
+      "method": "PATCH",
+      "path": "/api/shopify/integration/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postShopifyIntegrationWebhook",
+      "method": "POST",
+      "path": "/api/shopify/integration/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postShopifyPixel",
+      "method": "POST",
+      "path": "/api/shopify/pixel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsShopifyPixel",
+      "method": "OPTIONS",
+      "path": "/api/shopify/pixel",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getSingularWebhook",
+      "method": "GET",
+      "path": "/api/singular/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "headSingularWebhook",
+      "method": "HEAD",
+      "path": "/api/singular/webhook",
+      "readOrWrite": "write"
+    },
+    {
       "name": "getSlackCallback",
       "method": "GET",
       "path": "/api/slack/callback",
@@ -770,6 +3110,54 @@
       "name": "postSlackSlashCommands",
       "method": "POST",
       "path": "/api/slack/slash-commands",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postStripeConnectV2Webhook",
+      "method": "POST",
+      "path": "/api/stripe/connect/v2/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postStripeConnectWebhook",
+      "method": "POST",
+      "path": "/api/stripe/connect/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "patchStripeIntegration",
+      "method": "PATCH",
+      "path": "/api/stripe/integration",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsStripeIntegration",
+      "method": "OPTIONS",
+      "path": "/api/stripe/integration",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postStripeIntegrationWebhook",
+      "method": "POST",
+      "path": "/api/stripe/integration/webhook",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postStripeIntegrationWebhookSandbox",
+      "method": "POST",
+      "path": "/api/stripe/integration/webhook/sandbox",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postStripeIntegrationWebhookTest",
+      "method": "POST",
+      "path": "/api/stripe/integration/webhook/test",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postStripeWebhook",
+      "method": "POST",
+      "path": "/api/stripe/webhook",
       "readOrWrite": "write"
     },
     {
@@ -848,6 +3236,90 @@
       "name": "postTokensEmbedReferrals",
       "method": "POST",
       "path": "/api/tokens/embed/referrals",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackApplication",
+      "method": "POST",
+      "path": "/api/track/application",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsTrackApplication",
+      "method": "OPTIONS",
+      "path": "/api/track/application",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackClick",
+      "method": "POST",
+      "path": "/api/track/click",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsTrackClick",
+      "method": "OPTIONS",
+      "path": "/api/track/click",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackLead",
+      "method": "POST",
+      "path": "/api/track/lead",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackLeadClient",
+      "method": "POST",
+      "path": "/api/track/lead/client",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsTrackLeadClient",
+      "method": "OPTIONS",
+      "path": "/api/track/lead/client",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackOpen",
+      "method": "POST",
+      "path": "/api/track/open",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsTrackOpen",
+      "method": "OPTIONS",
+      "path": "/api/track/open",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackSale",
+      "method": "POST",
+      "path": "/api/track/sale",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackSaleClient",
+      "method": "POST",
+      "path": "/api/track/sale/client",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsTrackSaleClient",
+      "method": "OPTIONS",
+      "path": "/api/track/sale/client",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postTrackVisit",
+      "method": "POST",
+      "path": "/api/track/visit",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "optionsTrackVisit",
+      "method": "OPTIONS",
+      "path": "/api/track/visit",
       "readOrWrite": "write"
     },
     {
@@ -1010,6 +3482,18 @@
       "name": "postWebhooksCallback",
       "method": "POST",
       "path": "/api/webhooks/callback",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkflowsCreatePartnerCommission",
+      "method": "POST",
+      "path": "/api/workflows/create-partner-commission",
+      "readOrWrite": "write"
+    },
+    {
+      "name": "postWorkflowsPartnerApproved",
+      "method": "POST",
+      "path": "/api/workflows/partner-approved",
       "readOrWrite": "write"
     },
     {
@@ -1308,6 +3792,209 @@
       "dangerous": false
     },
     {
+      "name": "getAdminAnalytics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminBan",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminCommissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminDomainsRefresh",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminDomainsRegisterPremium",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminDomainsRenew",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminDomainsSearchAvailability",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminEvents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminFraudAlerts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchAdminFraudAlertsId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminImpersonate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteAdminLinksBan",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getAdminLinksCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPartnersPartnerId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchAdminPartnersPartnerId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminPartnersPartnerIdGenerateVeriffSession",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchAdminPartnersPartnerIdNetworkStatus",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminPartnersPartnerIdPlatforms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPartnersPartnerIdSharedPlatforms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminPartnersPartnerIdVerifyIdentity",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminPartnersDeleteAccount",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getAdminPartnersFraud",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPartnersNetwork",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPartnersNetworkCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPartnersTrusted",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminPartnersTrusted",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteAdminPartnersTrusted",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getAdminPayouts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPayoutsPaypal",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPayoutsStablecoin",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAdminPrograms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminPrograms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchAdminPrograms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchAdminProgramsProgramId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteAdminProgramsProgramId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getAdminProgramsSales",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminResetLoginAttempts",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getAdminRevenue",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAdminSlackSupportInvite",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
       "name": "postAiCompletion",
       "mutating": true,
       "dangerous": false
@@ -1353,6 +4040,21 @@
       "dangerous": false
     },
     {
+      "name": "getAppsflyerWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "headAppsflyerWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuditLogsExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "getAuthNextauth",
       "mutating": true,
       "dangerous": false
@@ -1366,6 +4068,87 @@
       "name": "postAuthResetPassword",
       "mutating": true,
       "dangerous": true
+    },
+    {
+      "name": "getAuthSamlAuthorize",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlAuthorize",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlToken",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getAuthSamlUserinfo",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postAuthSamlVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getBounties",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postBounties",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getBountiesBountyId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchBountiesBountyId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteBountiesBountyId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getBountiesBountyIdSubmissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postBountiesBountyIdSubmissionsSubmissionIdApprove",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postBountiesBountyIdSubmissionsSubmissionIdReject",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postBountiesBountyIdSyncSocialMetrics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getBountiesCountSubmissions",
+      "mutating": true,
+      "dangerous": false
     },
     {
       "name": "getCallbackBitly",
@@ -1388,6 +4171,743 @@
       "dangerous": false
     },
     {
+      "name": "getCampaigns",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCampaigns",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCampaignsCampaignId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchCampaignsCampaignId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteCampaignsCampaignId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "postCampaignsCampaignIdDuplicate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCampaignsCampaignIdEvents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCampaignsCampaignIdEventsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCampaignsCampaignIdPreview",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCampaignsCampaignIdSummary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCampaignsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCommissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCommissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCommissionsCommissionId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchCommissionsCommissionId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCommissionsAnalytics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchCommissionsBulk",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCommissionsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCommissionsExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronAggregateClicks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronAggregateClicksProcess",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronBountiesCreateDraftSubmissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronBountiesNotifyPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronBountiesQueueSyncSocialMetrics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronBountiesSyncSocialMetrics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCampaignsBroadcast",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupDeclinedInvites",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupDemoEmbedPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupE2eTests",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupExpiredFraudGroups",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupExpiredTokens",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupLinkRetention",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupOrphanedRewards",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupRejectedApplications",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCleanupUnenrolledPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCommissionsReferralsBackfill",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCommissionsReferralsCreate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronCommissionsReferralsQueue",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDiscountCodesCreate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDiscountCodesCreateQueueBatches",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDiscountCodesDisable",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDisposableEmails",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDomainsDelete",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getCronDomainsRenewalPayments",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronDomainsRenewalReminders",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronDomainsTransfer",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postCronDomainsUpdate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronDomainsVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronEmailDomainsUpdate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronEmailDomainsVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronExportCommissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronExportCustomers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronExportEventsPartner",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronExportEventsWorkspace",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronExportLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronExportPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronExportPayouts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronFoldersDelete",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postCronFramerBackfillLeadsBatch",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronFraudSummary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronFraudSummary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronFxRates",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronGroupsCreateDefaultLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronGroupsDeleteDefaultLinks",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postCronGroupsRemapDefaultLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronGroupsRemapDiscountCodes",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronGroupsSyncUtm",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronGroupsUpdateDefaultLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportBitly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportCsv",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportFirstpromoter",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportPartnerstack",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportRebrandly",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportRewardful",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportShort",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportTapfiliate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronImportTolt",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronInvoicesRetryFailed",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronLinksLinkIdCompleteTests",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronLinksDelete",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postCronLinksInvalidateForDiscounts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronLinksInvalidateForPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronMessagesNotifyPartner",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronMessagesNotifyProgram",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronNetworkCalculateProgramSimilarities",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnerPlatforms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronPartnerPlatformsWebsite",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnerPlatformsYoutube",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronPartnerProgramSummary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnerProgramSummaryProcess",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnersAutoApprove",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnersAutoReject",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnersBan",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnersDeactivate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnersMergeAccounts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPartnersVerifyCountryChange",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronPayoutsAggregateDueCommissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsAggregateDueCommissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsBalanceAvailable",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsChargeSucceeded",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronPayoutsForceWithdrawals",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsForceWithdrawals",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsPayoutFailed",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsPayoutPaid",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsProcess",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsProcessUpdates",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronPayoutsRemindersPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsRemindersPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronPayoutsRemindersProgramOwners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPayoutsSendStripePayout",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postCronPayoutsSendTremendousPayout",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getCronPendingApplicationsSummary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronPendingApplicationsSummary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronProgramApplicationReminder",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronProgramsDeactivate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronProgramsReactivate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronRewardsProcess",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronSendBatchEmail",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postCronShopifyOrderPaid",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronSitemapsImport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronSitemapsQueue",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronSitemapsQueue",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronStreamsSendLinkClickedWebhooks",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getCronStreamsUpdatePartnerStats",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronStreamsUpdateWorkspaceClicks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronStreamsUpdateWorkspaceLinksUsage",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronTagsDeleteLinkTag",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postCronTagsDeletePartnerTag",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getCronTrialEmails",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronTrialEmails",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronTriggerBackup",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronTriggerWithdrawal",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronUsage",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCronWebhooksSyncClickWorkspaces",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronWelcomeUser",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronWorkflowsWorkflowId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCronWorkspacesDelete",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getCustomers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postCustomers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCustomersId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchCustomersId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteCustomersId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getCustomersIdActivity",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCustomersIdStripeInvoices",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCustomersCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCustomersExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getCustomersSearchStripe",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "getDashboards",
       "mutating": true,
       "dangerous": false
@@ -1404,6 +4924,22 @@
     },
     {
       "name": "deleteDashboardsId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getDiscountCodes",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postDiscountCodes",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteDiscountCodesDiscountCodeId",
       "mutating": true,
       "dangerous": true,
       "idempotent": true
@@ -1485,12 +5021,175 @@
       "dangerous": false
     },
     {
+      "name": "postDomainsRegister",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "getDomainsSearchAvailability",
       "mutating": true,
       "dangerous": false
     },
     {
+      "name": "getDomainsStatus",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "postDubWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteE2eBountiesBountyId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "patchE2eEnrollments",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getE2eNotificationEmails",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postE2eNotificationEmails",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteE2eNotificationEmails",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "postE2ePartnersPendingProgramApplication",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postE2eTriggerWorkflowWorkflowId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getE2eWorkflows",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchE2eWorkflowsWorkflowId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmailDomains",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postEmailDomains",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchEmailDomainsDomain",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteEmailDomainsDomain",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getEmailDomainsDomainVerify",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsAnalytics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsBountiesBountyIdSocialContentStats",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postEmbedReferralsBountiesBountyIdUpload",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsEarnings",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsEarningsTimeseries",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsEvents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsLeaderboard",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postEmbedReferralsLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchEmbedReferralsLinksLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postEmbedReferralsSubmissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEmbedReferralsToken",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postEmbedReferralsTremendousSendOtp",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "postEmbedReferralsTremendousVerifyOtp",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEvents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getEventsExport",
       "mutating": true,
       "dangerous": false
     },
@@ -1546,6 +5245,118 @@
       "dangerous": false
     },
     {
+      "name": "getFraudEvents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getFraudEventsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getFraudGroups",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getFraudGroupsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getFraudRules",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchFraudRules",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getGroups",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postGroups",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getGroupsGroupIdOrSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchGroupsGroupIdOrSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteGroupsGroupIdOrSlug",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugDefault",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getGroupsGroupIdOrSlugDefaultLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugDefaultLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchGroupsGroupIdOrSlugDefaultLinksDefaultLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deleteGroupsGroupIdOrSlugDefaultLinksDefaultLinkId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "postGroupsGroupIdOrSlugPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getGroupsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getGroupsRules",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getHubspotCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postHubspotWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postHubspotWebhookProcess",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "getIntegrations",
       "mutating": true,
       "dangerous": false
@@ -1555,6 +5366,31 @@
       "mutating": true,
       "dangerous": true,
       "idempotent": true
+    },
+    {
+      "name": "getIntercomCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postIntercomWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postIntercomWebhookHealthCheck",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postIntercomWebhookProcess",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postIntercomWebhookUninstall",
+      "mutating": true,
+      "dangerous": false
     },
     {
       "name": "getLinks",
@@ -1681,12 +5517,77 @@
       "dangerous": false
     },
     {
+      "name": "getMessages",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMessagesCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "getMiscCheckFavicon",
       "mutating": true,
       "dangerous": false
     },
     {
       "name": "getMiscCheckWorkspaceSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMockRewardfulAffiliates",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMockRewardfulCampaigns",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMockRewardfulCampaignsCampaignId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMockRewardfulCommissions",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMockRewardfulReferrals",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getNetworkPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getNetworkPartnersCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getNetworkPartnersInvitesUsage",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getNetworkPrograms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getNetworkProgramsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getNetworkProgramsSummary",
       "mutating": true,
       "dangerous": false
     },
@@ -1727,7 +5628,17 @@
       "dangerous": false
     },
     {
+      "name": "optionsOauthToken",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "getOauthUserinfo",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsOauthUserinfo",
       "mutating": true,
       "dangerous": false
     },
@@ -1757,7 +5668,482 @@
       "dangerous": false
     },
     {
+      "name": "getPartnerProfile",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileInvites",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnerProfileInvites",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchPartnerProfileInvites",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deletePartnerProfileInvites",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "postPartnerProfileInvitesAccept",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileMessages",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileMessagesCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileNotificationPreferences",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfilePayouts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfilePayoutsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfilePayoutsSettings",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfilePostbacks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnerProfilePostbacks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfilePostbacksPostbackId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchPartnerProfilePostbacksPostbackId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deletePartnerProfilePostbacksPostbackId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getPartnerProfilePostbacksPostbackIdEvents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnerProfilePostbacksPostbackIdRotateSecret",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnerProfilePostbacksPostbackIdSendTest",
+      "mutating": true,
+      "dangerous": true
+    },
+    {
+      "name": "getPartnerProfilePrograms",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdActivityLogs",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdAnalytics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdAnalyticsExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBounties",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBountiesBountyId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdBountiesBountyIdSocialContentStats",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomersCustomerId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdCustomersCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarnings",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarningsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEarningsTimeseries",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEvents",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdEventsExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdGroupsGroupIdOrSlug",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnerProfileProgramsProgramIdLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchPartnerProfileProgramsProgramIdLinksLinkId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deletePartnerProfileProgramsProgramIdLinksLinkId",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdReferrals",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdReferralsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdResources",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdSubmittedLeads",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsProgramIdSubmittedLeadsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileProgramsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileReferrals",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileReferralsStats",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileReferralsTimeseries",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileRewind",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnerProfileUsers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchPartnerProfileUsers",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "deletePartnerProfileUsers",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "getPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartners",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersPartnerId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersPartnerIdApplicationRisks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersPartnerIdComments",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersPartnerIdCommentsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersPartnerIdCrossProgramSummary",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersPartnerIdReferral",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersAnalytics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersApplications",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersApplicationsApplicationId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersApplicationsAnalytics",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnersApplicationsApprove",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersApplicationsExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersApplicationsHistory",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnersApplicationsReject",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnersBan",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnersDeactivate",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPartnersLinks",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putPartnersLinksUpsert",
+      "mutating": true,
+      "dangerous": false,
+      "idempotent": true
+    },
+    {
+      "name": "getPartnersPlatformsCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersTags",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPartnersTagsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPayouts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPayoutsPayoutId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPayoutsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPayoutsExport",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getPaypalCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postPaypalWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "postPostbacksCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsProgramId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsProgramIdDiscounts",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsProgramIdPayoutsEligible",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsProgramIdPayoutsEligibleCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsProgramIdResources",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsProgramIdSubmittedLeads",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsProgramIdSubmittedLeadsCount",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getProgramsRewardfulCampaigns",
       "mutating": true,
       "dangerous": false
     },
@@ -1935,6 +6321,11 @@
       "dangerous": false
     },
     {
+      "name": "optionsQr",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "postResendWebhook",
       "mutating": true,
       "dangerous": false
@@ -1945,12 +6336,114 @@
       "dangerous": false
     },
     {
+      "name": "getRewards",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getRewardsRewardId",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getScimV20Directory",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postScimV20Directory",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "putScimV20Directory",
+      "mutating": true,
+      "dangerous": false,
+      "idempotent": true
+    },
+    {
+      "name": "deleteScimV20Directory",
+      "mutating": true,
+      "dangerous": true,
+      "idempotent": true
+    },
+    {
+      "name": "patchShopifyIntegrationCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postShopifyIntegrationWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postShopifyPixel",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsShopifyPixel",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getSingularWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "headSingularWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
       "name": "getSlackCallback",
       "mutating": true,
       "dangerous": false
     },
     {
       "name": "postSlackSlashCommands",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postStripeConnectV2Webhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postStripeConnectWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "patchStripeIntegration",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsStripeIntegration",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postStripeIntegrationWebhook",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postStripeIntegrationWebhookSandbox",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postStripeIntegrationWebhookTest",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postStripeWebhook",
       "mutating": true,
       "dangerous": false
     },
@@ -2019,6 +6512,76 @@
     },
     {
       "name": "postTokensEmbedReferrals",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackApplication",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsTrackApplication",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackClick",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsTrackClick",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackLead",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackLeadClient",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsTrackLeadClient",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackOpen",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsTrackOpen",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackSale",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackSaleClient",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsTrackSaleClient",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postTrackVisit",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "optionsTrackVisit",
       "mutating": true,
       "dangerous": false
     },
@@ -2159,6 +6722,16 @@
     },
     {
       "name": "postWebhooksCallback",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkflowsCreatePartnerCommission",
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "postWorkflowsPartnerApproved",
       "mutating": true,
       "dangerous": false
     },
