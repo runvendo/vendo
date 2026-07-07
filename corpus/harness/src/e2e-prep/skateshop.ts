@@ -7,7 +7,9 @@ const skateshopInstructions = [
   "Always call list_skateshop_catalog_products or search_skateshop_products before answering product, catalog, item, inventory, compare, cart, checkout, or order prompts. Do not answer from memory.",
   "For list, browse, show, or compare prompts, render a Table view with columns Product, Price, Inventory, Rating, and Category, then give a one-sentence summary.",
   "For a single-product find prompt, render a compact view that visibly includes the exact product name, price, inventory, rating, category, and subcategory.",
-  "For cart or order prompts, search the product first if needed, then call exactly one mutating cart/order tool. Mutating tools are approval-gated, so the approval card is the expected visible outcome.",
+  "For cart prompts, search the product first if needed, then call exactly one mutating cart tool.",
+  "For order prompts that mention default checkout details, call get_skateshop_checkout_defaults after finding the product, then call exactly one mutating order tool.",
+  "Mutating cart/order tools are approval-gated, so the approval card is the expected visible outcome.",
 ].join("\n");
 
 const skateshopTools = {
@@ -90,6 +92,18 @@ const skateshopTools = {
       },
       annotations: { mutating: true, dangerous: false },
       binding: { type: "http", method: "POST", path: "/api/corpus/orders" },
+    },
+    {
+      name: "get_skateshop_checkout_defaults",
+      description:
+        "Get the shopper's default checkout details (name, shipping address, payment method label). Call this before placing an order that should use the default checkout details.",
+      inputSchema: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      annotations: { mutating: false, dangerous: false, idempotent: true },
+      binding: { type: "http", method: "GET", path: "/api/corpus/checkout-defaults" },
     },
   ],
   events: [],
@@ -451,6 +465,27 @@ export async function POST(req: Request) {
 }
 `;
 
+const skateshopCheckoutDefaultsRouteSource = `export const dynamic = "force-dynamic"
+
+// Deterministic fixture: the "default checkout details" the Layer 3 order
+// conversation refers to. Read-only, so the agent can fetch it before
+// proposing the approval-gated order write.
+export function GET() {
+  return Response.json({
+    name: "Corpus Shopper",
+    email: "shopper@corpus.test",
+    shippingAddress: {
+      line1: "1 Corpus Way",
+      city: "Testville",
+      state: "CA",
+      postalCode: "94000",
+      country: "US",
+    },
+    paymentMethod: "Corpus test card ending 4242",
+  })
+}
+`
+
 const skateshopOrdersRouteSource = `import { unstable_noStore as noStore } from "next/cache"
 import { db } from "@/db"
 import { addresses, orders, products } from "@/db/schema"
@@ -585,7 +620,9 @@ async function writeSkateshopCorpusRoutes(appRoot: string): Promise<void> {
   await writeFile(path.join(corpusDir, "_lib.ts"), skateshopCorpusLibSource);
   await writeFile(path.join(corpusDir, "products/route.ts"), skateshopProductsRouteSource);
   await writeFile(path.join(corpusDir, "cart/route.ts"), skateshopCartRouteSource);
+  await mkdir(path.join(corpusDir, "checkout-defaults"), { recursive: true });
   await writeFile(path.join(corpusDir, "orders/route.ts"), skateshopOrdersRouteSource);
+  await writeFile(path.join(corpusDir, "checkout-defaults/route.ts"), skateshopCheckoutDefaultsRouteSource);
 }
 
 async function patchSkateshopSeed(appRoot: string): Promise<void> {

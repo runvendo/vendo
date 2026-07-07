@@ -32,18 +32,21 @@ import { prepareE2eRepo } from "./e2e-prep.js";
       "search_skateshop_products",
       "add_skateshop_item_to_cart",
       "place_skateshop_order",
+      "get_skateshop_checkout_defaults",
     ]);
     expect(tools.tools.map((tool) => [tool.name, tool.annotations])).toEqual([
       ["list_skateshop_catalog_products", { mutating: false, dangerous: false, idempotent: true }],
       ["search_skateshop_products", { mutating: false, dangerous: false, idempotent: true }],
       ["add_skateshop_item_to_cart", { mutating: true, dangerous: false }],
       ["place_skateshop_order", { mutating: true, dangerous: false }],
+      ["get_skateshop_checkout_defaults", { mutating: false, dangerous: false, idempotent: true }],
     ]);
     expect(tools.tools.map((tool) => [tool.binding.method, tool.binding.path])).toEqual([
       ["GET", "/api/corpus/products"],
       ["GET", "/api/corpus/products"],
       ["POST", "/api/corpus/cart"],
       ["POST", "/api/corpus/orders"],
+      ["GET", "/api/corpus/checkout-defaults"],
     ]);
     expect(route).toContain("storage: false");
     expect(route).toContain("instructionsExtra");
