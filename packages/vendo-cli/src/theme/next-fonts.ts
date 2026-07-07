@@ -176,26 +176,51 @@ function tokenBackedColorVar(prefix: string, token: string): string | null {
   return `var(--color-${token.replace(new RegExp(`^${prefix}-`), "")})`;
 }
 
+/** Non-color `text-*` / `bg-*` utilities that must never claim a color slot
+ * (sizing, alignment, wrapping, background layout). Steps like `2xl` never
+ * match the token regex ([a-z] first char), so only lowercase words appear. */
+const NON_COLOR_TEXT_TOKENS = new Set([
+  "xs", "sm", "base", "lg", "xl",
+  "left", "center", "right", "justify", "start", "end",
+  "wrap", "nowrap", "balance", "pretty", "clip", "ellipsis", "truncate",
+]);
+const NON_COLOR_BG_TOKENS = new Set([
+  "auto", "cover", "contain", "fixed", "local", "scroll", "none",
+  "top", "bottom", "left", "right", "center",
+]);
+const NON_COLOR_BG_PREFIXES = /^(?:gradient-|repeat|clip-|origin-|blend-|opacity-)/;
+
+/**
+ * The first raw Tailwind palette color among the matches wins; otherwise the
+ * first plausible token-backed custom color (`bg-subtle` → var(--color-subtle)).
+ * Scanning all matches keeps non-color utilities (`text-sm`, `bg-no-repeat`)
+ * from shadowing the real color class that follows them.
+ */
+function pickColorToken(
+  src: string,
+  re: RegExp,
+  prefix: string,
+  isNonColor: (token: string) => boolean,
+): string | null {
+  let tokenBacked: string | null = null;
+  for (const match of src.matchAll(re)) {
+    const token = match[1]!;
+    const raw = resolveTailwindColor(token);
+    if (raw) return raw;
+    if (tokenBacked === null && !isNonColor(token)) tokenBacked = tokenBackedColorVar(prefix, token);
+  }
+  return tokenBacked;
+}
+
 export function parseNextLayoutVars(source: string, file: string): CssVarDecl[] {
   const src = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const out: CssVarDecl[] = [];
   const bgRe = /(?<![\w:-])bg-([a-z][a-z0-9-]*(?:-(?:50|100|200|300|400|500|600|700|800|900|950))?)\b/g;
-  for (const match of src.matchAll(bgRe)) {
-    const token = match[1]!;
-    const value = resolveTailwindColor(token) ?? tokenBackedColorVar("bg", token);
-    if (value) {
-      out.push({ name: "--background", value, file, darkScope: false, inferred: true });
-      break;
-    }
-  }
+  const bg = pickColorToken(src, bgRe, "bg", (t) => NON_COLOR_BG_TOKENS.has(t) || NON_COLOR_BG_PREFIXES.test(t));
+  if (bg) out.push({ name: "--background", value: bg, file, darkScope: false, inferred: true });
   const textRe = /(?<![\w:-])text-([a-z][a-z0-9-]*(?:-(?:50|100|200|300|400|500|600|700|800|900|950))?)\b/g;
-  for (const match of src.matchAll(textRe)) {
-    const token = match[1]!;
-    const value = resolveTailwindColor(token) ?? tokenBackedColorVar("text", token);
-    if (!value) continue;
-    out.push({ name: "--foreground", value, file, darkScope: false, inferred: true });
-    break;
-  }
+  const text = pickColorToken(src, textRe, "text", (t) => NON_COLOR_TEXT_TOKENS.has(t));
+  if (text) out.push({ name: "--foreground", value: text, file, darkScope: false, inferred: true });
   return out;
 }
 

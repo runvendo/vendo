@@ -175,6 +175,12 @@ export async function extractTailwindVars(
       if (value) vars.push({ name: `--font-${name}`, value, file, darkScope: false });
     }
   }
-  vars.push(...await extractSourceTailwindVars(configPath));
+  // Source-level fontFamily parsing is the fallback for configs whose imports
+  // can't be executed (workspace presets outside the app's node_modules). An
+  // executed config stays authoritative — parsing its source too would let a
+  // duplicate, unresolved declaration shadow the executed value on ties.
+  if (!vars.some((v) => v.name.startsWith("--font-"))) {
+    vars.push(...await extractSourceTailwindVars(configPath));
+  }
   return { vars, error };
 }

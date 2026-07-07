@@ -148,4 +148,20 @@ describe("parseNextLayoutVars", () => {
       { name: "--foreground", value: "#000000", file: "pages/_document.tsx", darkScope: false, inferred: true },
     ]);
   });
+
+  it("skips non-color utilities so they cannot shadow the real color class", () => {
+    const source = `<body className="text-sm bg-no-repeat bg-cover bg-neutral-50 text-black">{children}</body>`;
+    expect(parseNextLayoutVars(source, "app/layout.tsx")).toEqual([
+      { name: "--background", value: "#fafafa", file: "app/layout.tsx", darkScope: false, inferred: true },
+      { name: "--foreground", value: "#000000", file: "app/layout.tsx", darkScope: false, inferred: true },
+    ]);
+  });
+
+  it("prefers a raw palette color over an earlier token-backed candidate", () => {
+    const source = `<body className="bg-page bg-slate-100 text-ellipsis text-ink">{children}</body>`;
+    expect(parseNextLayoutVars(source, "app/layout.tsx")).toEqual([
+      { name: "--background", value: "#f1f5f9", file: "app/layout.tsx", darkScope: false, inferred: true },
+      { name: "--foreground", value: "var(--color-ink)", file: "app/layout.tsx", darkScope: false, inferred: true },
+    ]);
+  });
 });
