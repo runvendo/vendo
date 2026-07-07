@@ -45,33 +45,114 @@ describe("mapVarsToBrand", () => {
     expect(injection.defaulted).toContain("fontFamily");
   });
 
-  it("drops emoji-only fallbacks from resolved font stacks", () => {
+  it("preserves explicit emoji fallbacks from resolved font stacks", () => {
     const result = mapVarsToBrand([
       v("--font-sans", 'var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"'),
       { name: "--font-geist-sans", value: "Geist Sans", file: "layout.tsx", darkScope: false, synthetic: true },
     ]);
-    expect(result.brand?.fontFamily).toBe("Geist Sans, ui-sans-serif, system-ui, sans-serif");
+    expect(result.brand?.fontFamily).toBe('Geist Sans, ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"');
   });
 
-  it("drops redundant platform fallbacks after the primary font", () => {
+  it("preserves explicit platform fallbacks after the primary font", () => {
     const result = mapVarsToBrand([
       v("--font-sans", 'var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'),
       { name: "--font-inter", value: "Inter", file: "layout.tsx", darkScope: false, synthetic: true },
     ]);
-    expect(result.brand?.fontFamily).toBe("Inter, ui-sans-serif, system-ui, sans-serif");
+    expect(result.brand?.fontFamily).toBe('Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif');
 
     const primarySystem = mapVarsToBrand([
       v("--font-sans", "Roboto, Arial, sans-serif"),
     ]);
-    expect(primarySystem.brand?.fontFamily).toBe("Roboto, sans-serif");
+    expect(primarySystem.brand?.fontFamily).toBe("Roboto, Arial, sans-serif");
   });
 
-  it("normalizes CSS color syntaxes and prefers primary as the brand accent", () => {
+  it("adds a generic fallback for single resolved CSS font vars", () => {
     const result = mapVarsToBrand([
-      v("--color-primary", "oklch(62.3% 0.214 259.815)"), v("--color-accent", "#FF0000"), v("--color-bg", "#FFFFFF"),
+      v("--font-sans", "var(--font-geist)"),
+      { name: "--font-geist", value: "Geist", file: "layout.tsx", darkScope: false, synthetic: true },
     ]);
-    expect(result.brand?.accent).toBe("#2b7fff");
-    expect(result.unmapped.map((u) => u.name)).toContain("--color-accent");
+    expect(result.brand?.fontFamily).toBe("Geist, sans-serif");
+  });
+
+  it("prefers default app surfaces and app-specific radius tokens over muted companions", () => {
+    const result = mapVarsToBrand([
+      v("--background", "var(--cal-bg-subtle)"),
+      v("--cal-bg-subtle", "hsla(220, 14%, 94%, 1)"),
+      v("--cal-bg", "#fff"),
+      v("--cal-bg-muted", "hsla(210, 20%, 97%, 1)"),
+      v("--cal-brand", "#111827"),
+      v("--cal-text", "#3c3e44"),
+      v("--cal-text-muted", "#9ca3b0"),
+      v("--radius", "0.625rem"),
+      v("--radius-cal", "0.25rem"),
+    ]);
+    expect(result.brand).toMatchObject({
+      background: "#eeeff2",
+      surface: "#ffffff",
+      radius: "4px",
+    });
+    expect(result.matched["surface"]).toBe("--cal-bg");
+    expect(result.matched["radius"]).toBe("--radius-cal");
+  });
+
+  it("does not let status/error palettes win neutral text slots", () => {
+    const result = mapVarsToBrand([
+      v("--color-brand", "#00e6ca"),
+      v("--color-primary", "#0f172a"),
+      v("--color-secondary", "#f1f5f9"),
+      v("--color-error-foreground", "#7f1d1d"),
+      v("--color-error-background-muted", "#fee2e2"),
+    ]);
+    expect(result.brand).toMatchObject({
+      accent: "#00e6ca",
+      surface: "#f1f5f9",
+      text: "#0f172a",
+      mutedText: "#64748b",
+    });
+  });
+
+  it("normalizes CSS color syntaxes and prefers brand as the brand accent", () => {
+    const result = mapVarsToBrand([
+      v("--color-primary", "oklch(62.3% 0.214 259.815)"), v("--color-brand", "#00E6CA"), v("--color-bg", "#FFFFFF"),
+    ]);
+    expect(result.brand?.accent).toBe("#00e6ca");
+    expect(result.brand?.text).toBe("#2b7fff");
+  });
+
+  it("normalizes bare RGB triples and maps named default/muted content scales", () => {
+    const result = mapVarsToBrand([
+      v("--bg-default", "255 255 255"),
+      v("--bg-muted", "250 250 250"),
+      v("--bg-subtle", "245 245 245"),
+      v("--bg-inverted", "23 23 23"),
+      v("--content-muted", "163 163 163"),
+      v("--content-default", "64 64 64"),
+      v("--content-emphasis", "23 23 23"),
+    ]);
+    expect(result.brand).toMatchObject({
+      background: "#ffffff",
+      surface: "#fafafa",
+      accent: "#171717",
+      text: "#404040",
+      mutedText: "#a3a3a3",
+    });
+  });
+
+  it("normalizes hsla() token values", () => {
+    const result = mapVarsToBrand([
+      v("--background", "hsla(220, 14%, 94%, 1)"),
+      v("--card", "hsla(0, 0%, 100%, 1)"),
+      v("--primary", "hsla(221, 39%, 11%, 1)"),
+      v("--foreground", "hsla(220, 6%, 25%, 1)"),
+      v("--muted-foreground", "hsla(218, 11%, 65%, 1)"),
+    ]);
+    expect(result.brand).toMatchObject({
+      background: "#eeeff2",
+      surface: "#ffffff",
+      accent: "#111827",
+      text: "#3c3e44",
+      mutedText: "#9ca3b0",
+    });
   });
 
   it("maps shadcn-style HSL token triples and rem radius", () => {
