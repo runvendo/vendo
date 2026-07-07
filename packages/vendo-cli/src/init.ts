@@ -38,12 +38,11 @@ export interface InitOptions {
   localVendoDir?: string;
   /**
    * Which command drives this pipeline. `"refresh"` — and, implicitly, a plain
-   * `init` re-run on an already-wired app — runs in *catch-up* mode: the same
-   * additive extraction (gap-fill theme/tools, propose only genuinely-new
-   * components/remix candidates), but the first-run onboarding text (the
-   * "Next steps:" block and the idempotent wiring re-explanation) is suppressed
-   * as noise. Defaults to `"init"`. `vendo refresh` sets it to `"refresh"`;
-   * this realizes "re-running init on a wired app behaves exactly like refresh".
+   * `init` re-run on an already-wired app — runs in *catch-up* mode for
+   * presentation and deterministic gap-filling, but keeps an existing component
+   * catalog stable. Use `vendo refresh` when you want to discover additional
+   * component/remix candidates after the app has grown. Defaults to `"init"`.
+   * `vendo refresh` sets it to `"refresh"`.
    */
   mode?: "init" | "refresh";
 
@@ -293,11 +292,36 @@ export async function runInit(opts: InitOptions): Promise<number> {
   const framework = info.framework;
   await t.track("init_started", { framework });
 
+  // What already exists drives every skip/extract decision below: re-runs are
+  // additive (fill gaps, never clobber); --force regenerates but warns first.
+  const state = await inspectVendoState(targetDir);
+
+  // Catch-up mode: an explicit `vendo refresh`, OR a plain `init` re-run on an
+  // already-wired app. The presentation is the same either way: first-run
+  // onboarding text is noise for an app already set up, so the "Next steps:"
+  // block is suppressed and idempotent wiring is verified silently rather than
+  // re-explained. Component discovery is deliberately stricter for plain init:
+  // once a catalog exists, re-running init leaves it byte-stable; refresh is the
+  // command that offers newly discovered wrappers.
+  //
+  // NOTE: `state.wired.wired` is read from PRE-wiring state (before wireNextApp
+  // below actually installs the route/root). This is deliberate — it must stay
+  // computed here so a genuine first run (unwired at this point) still onboards.
+  // Do not move this after wireNextApp: that would flip every first run to
+  // catch-up and silently suppress the onboarding block.
+  const catchUp = opts.mode === "refresh" || state.wired.wired;
+  const keepExistingComponentCatalog =
+    catchUp && (opts.mode ?? "init") === "init" && state.components.length > 0 && !opts.force;
+  const stableInitRerun =
+    keepExistingComponentCatalog && state.theme.status === "real" && state.tools.status === "real";
+
   let model: LanguageModel | null;
   let keyPrompt: KeyPromptOutcome = "not-shown";
   let keySaved = false;
   try {
-    if (opts.skipLlm) {
+    if (stableInitRerun) {
+      model = null;
+    } else if (opts.skipLlm) {
       model = null;
     } else if (opts.model !== undefined) {
       // Test seam: an explicit model (or explicit null) bypasses self-resolution
@@ -331,29 +355,11 @@ export async function runInit(opts: InitOptions): Promise<number> {
   // ends with a coaching line (add a key, re-run — init only fills gaps). A key
   // the prompt saved but couldn't verify (missing optional peer) prints its own
   // install hint instead, so the generic coaching line is suppressed there.
-  const noProviderKey = model === null && !opts.skipLlm && !keySaved;
-
-  // What already exists drives every skip/extract decision below: re-runs are
-  // additive (fill gaps, never clobber); --force regenerates but warns first.
-  const state = await inspectVendoState(targetDir);
+  const noProviderKey = model === null && !opts.skipLlm && !keySaved && !stableInitRerun;
   if (opts.force) {
     const warning = await forceOverwriteWarning(targetDir, state);
     if (warning) console.log(warning);
   }
-
-  // Catch-up mode: an explicit `vendo refresh`, OR a plain `init` re-run on an
-  // already-wired app (re-running init on a wired app behaves exactly like
-  // refresh). The additive extraction below is identical either way — the only
-  // difference is presentational: first-run onboarding text is noise for an app
-  // already set up, so the "Next steps:" block is suppressed and idempotent
-  // wiring is verified silently rather than re-explained.
-  //
-  // NOTE: `state.wired.wired` is read from PRE-wiring state (before wireNextApp
-  // below actually installs the route/root). This is deliberate — it must stay
-  // computed here so a genuine first run (unwired at this point) still onboards.
-  // Do not move this after wireNextApp: that would flip every first run to
-  // catch-up and silently suppress the onboarding block.
-  const catchUp = opts.mode === "refresh" || state.wired.wired;
 
   const report: InitReport = {
     info,
@@ -362,7 +368,11 @@ export async function runInit(opts: InitOptions): Promise<number> {
     components: null,
     llmSkipped: model === null,
     llmSkippedReason: model === null
-      ? (opts.skipLlm ? "--skip-llm" : "no ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY")
+      ? (
+        stableInitRerun
+          ? "already initialized"
+          : opts.skipLlm ? "--skip-llm" : "no ANTHROPIC_API_KEY/OPENAI_API_KEY/GOOGLE_GENERATIVE_AI_API_KEY"
+      )
       : undefined,
   };
   let failedStep: InitFailedStep = "theme";
@@ -404,7 +414,9 @@ export async function runInit(opts: InitOptions): Promise<number> {
         report.tools.errors.unshift(`LLM-assisted route scan failed (${message}) — continuing without LLM`);
       }
     }
-    if (model) {
+    if (keepExistingComponentCatalog) {
+      report.keptComponents = true;
+    } else if (model) {
       failedStep = "components";
       try {
         // Only unwrapped candidates are analyzed/proposed; existing wrapper

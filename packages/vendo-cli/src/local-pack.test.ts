@@ -57,6 +57,7 @@ describe("rewritePackageJsonForLocalVendo", () => {
       expect(pkg.pnpm.overrides[tarball.name]).toBe(`file:vendor/${tarball.fileName}`);
     }
     expect(pkg.pnpm.overrides["@types/react"]).toBe("^19.2.0");
+    expect(pkg.pnpm.overrides["zod"]).toBe("^3.25.76");
   });
 
   it("uses npm overrides as the fallback package-manager shape", () => {

@@ -47,7 +47,7 @@ export async function cliModel(
   const cliOverride = env["VENDO_CLI_MODEL"]?.trim();
   const resolvedEnv = cliOverride ? { ...env, VENDO_MODEL: cliOverride } : env;
   if (!hasProviderKey(resolvedEnv)) return null;
-  return resolveModel(resolvedEnv, deps);
+  return resolveModel(resolvedEnv, { ...deps, fetch: deps?.fetch ?? cliProviderFetch });
 }
 
 /**
@@ -62,6 +62,12 @@ const CLI_ENV_KEYS = [
   "VENDO_CLI_MODEL",
   "VENDO_MODEL",
 ] as const;
+
+export function cliProviderFetch(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): ReturnType<typeof fetch> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("connection")) headers.set("connection", "close");
+  return fetch(input, { ...init, headers });
+}
 
 /**
  * Minimal `.env` parser (no `dotenv` dependency exists in the workspace, and a

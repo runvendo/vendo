@@ -27,8 +27,8 @@ Setup (you run these):
                   .vendo/ and wire the app (route handler, provider, sandbox assets,
                   prebuild sync). Interactive — prompts for a provider key and lets you
                   pick components to wrap and widgets to make remixable. Safe to re-run:
-                  additive (fills gaps, never overwrites); on a wired app it behaves
-                  like refresh.
+                  fills missing setup, never overwrites, and keeps an existing
+                  component catalog stable.
   refresh [dir]   Catch up an existing install: fill gaps and offer only what's new,
                   with the same pickers as init. Run it after your app has grown.
   doctor [dir]    Check your Vendo install — keys, wiring, .vendo state, storage,

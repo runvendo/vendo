@@ -7,9 +7,11 @@ import {
   addDependency,
   addDevDependency,
   addPrebuildSync,
+  ensureAiSdkZodDependency,
   mergeInstrumentation,
   mergeNextConfig,
   productNameFrom,
+  sandboxAssetSource,
   wireNextApp,
   wrapLayoutChildren,
 } from "./next-wiring.js";
@@ -169,6 +171,30 @@ describe("addDependency", () => {
   });
 });
 
+describe("ensureAiSdkZodDependency", () => {
+  it("adds zod when a host app has no zod dependency", () => {
+    const pkg = JSON.stringify({ name: "x", dependencies: { next: "16.0.0" } }, null, 2);
+    const out = ensureAiSdkZodDependency(pkg)!;
+    const parsed = JSON.parse(out) as { dependencies: Record<string, string> };
+
+    expect(parsed.dependencies["zod"]).toBe("^3.25.76");
+  });
+
+  it("upgrades zod versions that do not expose zod/v3 and zod/v4 subpaths", () => {
+    const pkg = JSON.stringify({ name: "x", dependencies: { next: "16.0.0", zod: "^3.23.8" } }, null, 2);
+    const out = ensureAiSdkZodDependency(pkg)!;
+    const parsed = JSON.parse(out) as { dependencies: Record<string, string> };
+
+    expect(parsed.dependencies["zod"]).toBe("^3.25.76");
+  });
+
+  it("keeps zod versions that already satisfy ai SDK subpath imports", () => {
+    const pkg = JSON.stringify({ name: "x", dependencies: { next: "16.0.0", zod: "^3.25.76" } }, null, 2);
+
+    expect(ensureAiSdkZodDependency(pkg)).toBe(pkg);
+  });
+});
+
 describe("addDevDependency", () => {
   it("creates the devDependencies block, adds sorted, and is idempotent", () => {
     const created = addDevDependency(JSON.stringify({ name: "x" }, null, 2), "@vendoai/cli", "latest")!;
@@ -187,6 +213,13 @@ describe("addDevDependency", () => {
 
   it("returns null on unparsable package.json", () => {
     expect(addDevDependency("{nope", "@vendoai/cli", "latest")).toBeNull();
+  });
+});
+
+describe("sandboxAssetSource", () => {
+  it("prepends ts-nocheck so checkJs host apps do not typecheck copied runtime bundles", () => {
+    expect(sandboxAssetSource("console.log('runtime')")).toBe("// @ts-nocheck\nconsole.log('runtime')");
+    expect(sandboxAssetSource("// @ts-nocheck\nconsole.log('runtime')")).toBe("// @ts-nocheck\nconsole.log('runtime')");
   });
 });
 
@@ -327,6 +360,7 @@ describe("wireNextApp", () => {
     };
     expect(pkg.dependencies["vendoai"]).toBeDefined();
     expect(pkg.dependencies["@electric-sql/pglite"]).toBe("^0.2.0");
+    expect(pkg.dependencies["zod"]).toBe("^3.25.76");
     const nextConfig = await fs.readFile(path.join(dir, "next.config.ts"), "utf8");
     expect(nextConfig).toContain('transpilePackages: [');
     expect(nextConfig).toContain('"vendoai"');
