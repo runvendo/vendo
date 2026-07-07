@@ -285,13 +285,6 @@ function localVendoDirFromInitArgs(args: readonly string[]): string | undefined 
   return undefined;
 }
 
-function skipInitLlm(repo: ManifestEntry, options: Pick<RunCommandOptions, "skipLlm">): boolean {
-  if (options.skipLlm) return true;
-  // Papermark Layer 3 uses a hand-curated tools manifest and fixture prep; the
-  // real-LLM signal comes from the booted Vendo chat, not CLI init enrichment.
-  return repo.name === "papermark";
-}
-
 function failureLayer(
   layer: number,
   name: string,
@@ -490,7 +483,7 @@ async function runRepoThroughLayerOne(
       context,
       env: deps.env,
       localVendoDir,
-      skipLlm: skipInitLlm(repo, options),
+      skipLlm: options.skipLlm ? true : false,
     };
     const firstInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.first" });
     logPaths.push(...artifactPaths(firstInit.artifacts));
@@ -639,7 +632,7 @@ async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): 
     context,
     env: deps.env,
     localVendoDir,
-    skipLlm: skipInitLlm(repo, options),
+    skipLlm: options.skipLlm ? true : false,
     artifactPrefix: "boot.init",
   });
   if (init.exitCode !== 0) {
