@@ -14,7 +14,7 @@
       "name": "getAuthNextauth",
       "method": "GET",
       "path": "/api/auth/{nextauth}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthNextauth",
@@ -38,7 +38,7 @@
       "name": "getTrpcEdgeTrpc",
       "method": "GET",
       "path": "/api/trpc/edge/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcEdgeTrpc",
@@ -50,7 +50,7 @@
       "name": "getTrpcLambdaTrpc",
       "method": "GET",
       "path": "/api/trpc/lambda/{trpc}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTrpcLambdaTrpc",
@@ -62,7 +62,7 @@
   "annotations": [
     {
       "name": "getAuthNextauth",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -82,7 +82,7 @@
     },
     {
       "name": "getTrpcEdgeTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -92,7 +92,7 @@
     },
     {
       "name": "getTrpcLambdaTrpc",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {

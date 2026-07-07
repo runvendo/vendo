@@ -14,13 +14,24 @@
       "name": "getMonitorHealthcheck",
       "method": "GET",
       "path": "/api/_monitor/healthcheck",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
+    },
+    {
+      "name": "getMonitorSentry",
+      "method": "GET",
+      "path": "/api/_monitor/sentry",
+      "readOrWrite": "write"
     }
   ],
   "annotations": [
     {
       "name": "getMonitorHealthcheck",
-      "mutating": false,
+      "mutating": true,
+      "dangerous": false
+    },
+    {
+      "name": "getMonitorSentry",
+      "mutating": true,
       "dangerous": false
     }
   ],

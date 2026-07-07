@@ -1,6 +1,69 @@
 # Corpus Findings
 
-Date: 2026-07-06
+## Batch B Extraction Generalization Campaign
+
+Date: 2026-07-06 (evening)
+Command: `pnpm corpus run --layer 2 --json` (all 12 repos, real `vendo init`
+with LLM enabled; keys sourced from `apps/demo-bank/.env.local`, values not
+printed or committed).
+Scorecard: `corpus/.repos/.logs/scorecard.{json,md}`.
+
+**Result: Layer 2 is 10/10 on all 12 repos — every Batch B repo joined the
+dev set at the bar, with zero Layer 2 hard failures and no Batch A
+regression.**
+
+| Repo | Layer 2 before | Layer 2 after |
+| --- | ---: | ---: |
+| cal-com | 0.99 | 10/10 |
+| dub | 3.10 | 10/10 |
+| formbricks | 5.0 | 10/10 |
+| inbox-zero | 10.0 | 10/10 |
+| openstatus | 4.0 | 10/10 |
+| teable | scorer hard-fail → 4.0 | 10/10 |
+| vercel-commerce | 5.0 | 10/10 |
+| umami / skateshop / taxonomy / invoify / papermark | 10/10 | 10/10 |
+
+What moved the scores (details in the PR):
+
+- **LABEL-001 (fixed)**: Batch B labels marked side-effect-free GETs
+  `readOrWrite: "read"`, violating the write-always route-scan convention this
+  directory's README documents (Batch A labels contain zero GET-reads). On
+  inbox-zero and formbricks every single tool miss was this flip. Normalized
+  by `corpus/scripts/normalize-batch-b-labels.py`; the fail-closed extractor
+  invariant was NOT touched.
+- **LABEL-002 (fixed)**: dub's inventory covered only `app/api/**` and skipped
+  the 348 served route files under `app/(ee)/api/**`; relabeled from pinned
+  source (215 → 617 tools; HEAD/OPTIONS excluded as non-agent verbs). teable
+  gained its second real Pages API route (`GET /api/_monitor/sentry`).
+- **CLI (route-scan)**: star/named re-exports, aliased default re-exports with
+  tsconfig `paths`, `defaultHandler({...})` method maps, tRPC
+  `createNextApiHandler`, webhook-POST tiebreak for pages default exports.
+- **CLI (theme)**: CSS `@import` chain following (incl. workspace packages
+  outside the app dir), entry-graph CSS priority over the blind walk, RGB
+  triplets/`hsla()`, geist/@fontsource/next-font-inline recovery, Tailwind
+  config source parsing, and utility-class inference of last resort (dominant
+  muted-text utility; raw-palette monochrome/white-card fallbacks that never
+  override declared token systems).
+
+Remaining Layer 1 items on this run — all pre-existing, none Layer 2, none
+introduced by the campaign diff:
+
+- `init.idempotent` (umami, invoify, inbox-zero): LLM component discovery is
+  additive-nondeterministic across runs — a component that failed schema
+  generation on run 1 lands on run 2, so the second-run diff is non-empty.
+  Harness policy question: additive `.vendo/components/` gap-fill is designed
+  behavior; the check may want to ignore new component dirs.
+- `host.typecheck` (skateshop): the repo's `tsconfig` sweeps
+  `public/vendo/*.js` bundled runtime assets into `tsc` (known since the
+  first sweep).
+- `host.build` (skateshop, taxonomy): contentlayer/webpack failures inside the
+  pinned repos' own toolchains after any dependency graph change.
+- `files.expected` (invoify): root layout has no single `{children}`
+  expression, so init fail-closes on the wrap (documented CLI behavior).
+- `files.expected` (teable): Pages Router apps aren't auto-wired
+  (`AppVendoRoot`/sandbox assets are manual there) — tracked CLI follow-up.
+
+
 Command: `pnpm corpus run --layer 1`
 Mode: real `vendo init` with LLM enabled. API keys were sourced from `apps/demo-bank/.env.local`; key values were not printed or committed.
 Scorecard artifacts: `corpus/.repos/.logs/scorecard.json` and `corpus/.repos/.logs/scorecard.md`

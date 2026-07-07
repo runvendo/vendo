@@ -12,6 +12,10 @@ export interface CssVarDecl {
   /** Not declared in CSS (e.g. recovered from next/font source) — usable to
    * resolve var() chains but never picked directly for a slot. */
   synthetic?: boolean;
+  /** Guessed from Tailwind utility classes on root layout elements rather
+   * than declared as a token. Pickable, but weak evidence: derived fallback
+   * rules (monochrome accent, white-card surface) apply only to these. */
+  inferred?: boolean;
 }
 
 const DARK_SELECTOR = /(\.dark\b|\[data-theme=["']?dark["']?\]|prefers-color-scheme:\s*dark)/;

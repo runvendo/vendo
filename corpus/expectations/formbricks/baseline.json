@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-06T20:23:24.225Z",
+  "generatedAt": "2026-07-07T01:53:06.000Z",
   "score": {
-    "passed": 3.775,
+    "passed": 10,
     "total": 10,
-    "value": 0.3775
+    "value": 1
   }
 }

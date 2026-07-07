@@ -111,6 +111,170 @@ export default function RootLayout({ children }) { return <html className={inter
     expect(summary.defaulted).toEqual([]);
   });
 
+  it("follows CSS @import chains outside the app directory", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-css-import-chain-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^4.0.0" } }));
+    await mkdir(path.join(dir, "packages/theme"), { recursive: true });
+    await mkdir(path.join(dir, "src/app"), { recursive: true });
+    await writeFile(
+      path.join(dir, "packages/theme/tokens.css"),
+      `:root {
+        --background: hsla(220, 14%, 94%, 1);
+        --card: #fff;
+        --primary: #111827;
+        --foreground: #3c3e44;
+        --muted-foreground: #9ca3b0;
+        --radius: 0.25rem;
+      }`,
+    );
+    await writeFile(path.join(dir, "src/app/globals.css"), `@import "../../packages/theme/tokens.css";`);
+    await writeFile(path.join(dir, "src/app/layout.tsx"), `import "./globals.css"; export default function RootLayout({ children }) { return <body>{children}</body>; }`);
+
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written).toMatchObject({
+      background: "#eeeff2",
+      surface: "#ffffff",
+      accent: "#111827",
+      text: "#3c3e44",
+      mutedText: "#9ca3b0",
+      radius: "4px",
+    });
+  });
+
+  it("prefers entry-reachable CSS over unrelated app CSS files", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-entry-css-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^4.0.0" } }));
+    await mkdir(path.join(dir, "app"), { recursive: true });
+    await mkdir(path.join(dir, "modules/ui"), { recursive: true });
+    await writeFile(
+      path.join(dir, "modules/ui/globals.css"),
+      `@theme {
+        --color-brand: #00e6ca;
+        --color-primary: #0f172a;
+        --color-secondary: #f1f5f9;
+        --background: #ffffff;
+        --radius: 0.5rem;
+      }`,
+    );
+    await writeFile(
+      path.join(dir, "app/layout.tsx"),
+      `import "../modules/ui/globals.css"; export default function RootLayout({ children }) { return <body>{children}</body>; }`,
+    );
+    await writeFile(
+      path.join(dir, "app/unrelated.css"),
+      `:root { --foreground: #7f1d1d; --muted-foreground: #fee2e2; --primary: #7f1d1d; }`,
+    );
+    // No muted token is declared anywhere — the dominant text-slate-500
+    // utility across app source is the muted-text evidence (formbricks-style).
+    await writeFile(
+      path.join(dir, "app/list.tsx"),
+      Array.from({ length: 6 }, (_1, i) => `export function Row${i}() { return <span className="text-slate-500">muted</span>; }`).join("\n"),
+    );
+
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written).toMatchObject({
+      accent: "#00e6ca",
+      surface: "#f1f5f9",
+      text: "#0f172a",
+      mutedText: "#64748b",
+    });
+  });
+
+  it("keeps nested route layouts from overriding root layout theme inference", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-root-layout-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^4.0.0" } }));
+    await mkdir(path.join(dir, "app/nested"), { recursive: true });
+    await mkdir(path.join(dir, "modules/ui"), { recursive: true });
+    await writeFile(
+      path.join(dir, "modules/ui/globals.css"),
+      `@theme {
+        --color-brand: #00e6ca;
+        --color-primary: #0f172a;
+        --color-secondary: #f1f5f9;
+        --color-error-foreground: #7f1d1d;
+        --color-error-background-muted: #fee2e2;
+      }`,
+    );
+    await writeFile(
+      path.join(dir, "app/layout.tsx"),
+      `import "../modules/ui/globals.css"; export default function RootLayout({ children }) { return <body>{children}</body>; }`,
+    );
+    await writeFile(
+      path.join(dir, "app/nested/layout.tsx"),
+      `export default function NestedLayout({ children }) { return <main className="bg-slate-50 text-slate-700">{children}</main>; }`,
+    );
+
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written).toMatchObject({
+      background: "#FFFFFF",
+      surface: "#f1f5f9",
+      text: "#0f172a",
+      // No muted token and no utility evidence in this fixture — the slot
+      // stays on Vendo's default rather than being invented.
+      mutedText: "#5B6470",
+    });
+  });
+
+  it("resolves self-referential CSS font vars through inline next/font styles", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-inline-font-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^4.0.0" } }));
+    await mkdir(path.join(dir, "app"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/globals.css"),
+      `:root {
+        --background: #ffffff;
+        --font-sans: var(--font-sans);
+      }`,
+    );
+    await writeFile(
+      path.join(dir, "app/layout.tsx"),
+      `import { Inter } from "next/font/google";
+import "./globals.css";
+const interFont = Inter({ subsets: ["latin"], variable: "--font-sans" });
+export default function RootLayout({ children }) {
+  return <html><head><style>{\`:root { --font-sans: \${interFont.style.fontFamily.replace(/\\'/g, "")}, system-ui; }\`}</style></head><body>{children}</body></html>;
+}
+`,
+    );
+
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written.fontFamily).toBe("Inter, system-ui, sans-serif");
+  });
+
+  it("falls back to nested layouts when the root layout is only a passthrough", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "theme-passthrough-layout-"));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^4.0.0" } }));
+    await mkdir(path.join(dir, "app/[locale]"), { recursive: true });
+    await writeFile(
+      path.join(dir, "app/globals.css"),
+      `:root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --primary: 222.2 47.4% 11.2%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+      }`,
+    );
+    await writeFile(path.join(dir, "app/layout.tsx"), `import "./globals.css"; export default function RootLayout({ children }) { return children; }`);
+    await writeFile(
+      path.join(dir, "app/[locale]/layout.tsx"),
+      `export default function LocaleLayout({ children }) { return <html><body className="bg-slate-100">{children}</body></html>; }`,
+    );
+
+    const info = await detectTarget(dir);
+    await extractTheme(dir, info, { force: false });
+    const written = JSON.parse(await readFile(path.join(dir, ".vendo/theme.json"), "utf8"));
+    expect(written.background).toBe("#f1f5f9");
+  });
+
   it("loads Tailwind TypeScript configs and resolves font vars through next/font", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "theme-tw-ts-"));
     await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "^15.0.0", tailwindcss: "^3.4.0" } }));

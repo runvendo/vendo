@@ -14,7 +14,7 @@
       "name": "getAuthAll",
       "method": "GET",
       "path": "/api/auth/{all}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthAll",
@@ -26,7 +26,7 @@
       "name": "getAuthSamlAuthorize",
       "method": "GET",
       "path": "/api/auth/saml/authorize",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postAuthSamlCallback",
@@ -44,13 +44,13 @@
       "name": "getAuthSamlUserinfo",
       "method": "GET",
       "path": "/api/auth/saml/userinfo",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getAuthSsoRecoveryComplete",
       "method": "GET",
       "path": "/api/auth/sso/recovery/complete",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postBillingStripeWebhook",
@@ -62,7 +62,7 @@
       "name": "getEnvoyAuthPath",
       "method": "GET",
       "path": "/api/envoy-auth/{path}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postEnvoyAuthPath",
@@ -92,7 +92,7 @@
       "name": "getGoogleSheet",
       "method": "GET",
       "path": "/api/google-sheet",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getGoogleSheetCallback",
@@ -110,7 +110,7 @@
       "name": "getTraefikAuthPath",
       "method": "GET",
       "path": "/api/traefik-auth/{path}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postTraefikAuthPath",
@@ -152,13 +152,13 @@
       "name": "getV1ClientWorkspaceIdDisplaysDisplayIdResponse",
       "method": "GET",
       "path": "/api/v1/client/{workspaceId}/displays/{displayId}/response",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1ClientWorkspaceIdEnvironment",
       "method": "GET",
       "path": "/api/v1/client/{workspaceId}/environment",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV1ClientWorkspaceIdResponses",
@@ -188,13 +188,13 @@
       "name": "getV1ClientOg",
       "method": "GET",
       "path": "/api/v1/client/og",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1IntegrationsAirtable",
       "method": "GET",
       "path": "/api/v1/integrations/airtable",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1IntegrationsAirtableCallback",
@@ -206,13 +206,13 @@
       "name": "getV1IntegrationsAirtableTables",
       "method": "GET",
       "path": "/api/v1/integrations/airtable/tables",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1IntegrationsNotion",
       "method": "GET",
       "path": "/api/v1/integrations/notion",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1IntegrationsNotionCallback",
@@ -224,7 +224,7 @@
       "name": "getV1IntegrationsSlack",
       "method": "GET",
       "path": "/api/v1/integrations/slack",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1IntegrationsSlackCallback",
@@ -236,7 +236,7 @@
       "name": "getV1ManagementActionClasses",
       "method": "GET",
       "path": "/api/v1/management/action-classes",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV1ManagementActionClasses",
@@ -248,7 +248,7 @@
       "name": "getV1ManagementActionClassesActionClassId",
       "method": "GET",
       "path": "/api/v1/management/action-classes/{actionClassId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV1ManagementActionClassesActionClassId",
@@ -266,7 +266,7 @@
       "name": "getV1ManagementContactAttributeKeys",
       "method": "GET",
       "path": "/api/v1/management/contact-attribute-keys",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV1ManagementContactAttributeKeys",
@@ -278,7 +278,7 @@
       "name": "getV1ManagementContactAttributeKeysContactAttributeKeyId",
       "method": "GET",
       "path": "/api/v1/management/contact-attribute-keys/{contactAttributeKeyId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV1ManagementContactAttributeKeysContactAttributeKeyId",
@@ -296,19 +296,19 @@
       "name": "getV1ManagementContactAttributes",
       "method": "GET",
       "path": "/api/v1/management/contact-attributes",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1ManagementContacts",
       "method": "GET",
       "path": "/api/v1/management/contacts",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1ManagementContactsContactId",
       "method": "GET",
       "path": "/api/v1/management/contacts/{contactId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteV1ManagementContactsContactId",
@@ -320,13 +320,13 @@
       "name": "getV1ManagementMe",
       "method": "GET",
       "path": "/api/v1/management/me",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1ManagementResponses",
       "method": "GET",
       "path": "/api/v1/management/responses",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV1ManagementResponses",
@@ -338,7 +338,7 @@
       "name": "getV1ManagementResponsesResponseId",
       "method": "GET",
       "path": "/api/v1/management/responses/{responseId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV1ManagementResponsesResponseId",
@@ -362,7 +362,7 @@
       "name": "getV1ManagementSurveys",
       "method": "GET",
       "path": "/api/v1/management/surveys",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV1ManagementSurveys",
@@ -374,7 +374,7 @@
       "name": "getV1ManagementSurveysSurveyId",
       "method": "GET",
       "path": "/api/v1/management/surveys/{surveyId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV1ManagementSurveysSurveyId",
@@ -392,13 +392,13 @@
       "name": "getV1ManagementSurveysSurveyIdSingleUseIds",
       "method": "GET",
       "path": "/api/v1/management/surveys/{surveyId}/singleUseIds",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV1Webhooks",
       "method": "GET",
       "path": "/api/v1/webhooks",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV1Webhooks",
@@ -410,7 +410,7 @@
       "name": "getV1WebhooksWebhookId",
       "method": "GET",
       "path": "/api/v1/webhooks/{webhookId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "deleteV1WebhooksWebhookId",
@@ -428,7 +428,7 @@
       "name": "getV2ClientWorkspaceIdEnvironment",
       "method": "GET",
       "path": "/api/v2/client/{workspaceId}/environment",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV2ClientWorkspaceIdResponses",
@@ -458,13 +458,13 @@
       "name": "getV2Health",
       "method": "GET",
       "path": "/api/v2/health",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV2ManagementContactAttributeKeys",
       "method": "GET",
       "path": "/api/v2/management/contact-attribute-keys",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV2ManagementContactAttributeKeys",
@@ -476,7 +476,7 @@
       "name": "getV2ManagementContactAttributeKeysContactAttributeKeyId",
       "method": "GET",
       "path": "/api/v2/management/contact-attribute-keys/{contactAttributeKeyId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV2ManagementContactAttributeKeysContactAttributeKeyId",
@@ -506,7 +506,7 @@
       "name": "getV2ManagementResponses",
       "method": "GET",
       "path": "/api/v2/management/responses",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV2ManagementResponses",
@@ -518,7 +518,7 @@
       "name": "getV2ManagementResponsesResponseId",
       "method": "GET",
       "path": "/api/v2/management/responses/{responseId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV2ManagementResponsesResponseId",
@@ -536,19 +536,19 @@
       "name": "getV2ManagementSurveysSurveyIdContactLinksContactsContactId",
       "method": "GET",
       "path": "/api/v2/management/surveys/{surveyId}/contact-links/contacts/{contactId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV2ManagementSurveysSurveyIdContactLinksSegmentsSegmentId",
       "method": "GET",
       "path": "/api/v2/management/surveys/{surveyId}/contact-links/segments/{segmentId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV2ManagementWebhooks",
       "method": "GET",
       "path": "/api/v2/management/webhooks",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV2ManagementWebhooks",
@@ -560,7 +560,7 @@
       "name": "getV2ManagementWebhooksWebhookId",
       "method": "GET",
       "path": "/api/v2/management/webhooks/{webhookId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV2ManagementWebhooksWebhookId",
@@ -578,13 +578,13 @@
       "name": "getV2Me",
       "method": "GET",
       "path": "/api/v2/me",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV2OrganizationsOrganizationIdTeams",
       "method": "GET",
       "path": "/api/v2/organizations/{organizationId}/teams",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV2OrganizationsOrganizationIdTeams",
@@ -596,7 +596,7 @@
       "name": "getV2OrganizationsOrganizationIdTeamsTeamId",
       "method": "GET",
       "path": "/api/v2/organizations/{organizationId}/teams/{teamId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "putV2OrganizationsOrganizationIdTeamsTeamId",
@@ -614,7 +614,7 @@
       "name": "getV2OrganizationsOrganizationIdUsers",
       "method": "GET",
       "path": "/api/v2/organizations/{organizationId}/users",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV2OrganizationsOrganizationIdUsers",
@@ -632,7 +632,7 @@
       "name": "getV2OrganizationsOrganizationIdWorkspaceTeams",
       "method": "GET",
       "path": "/api/v2/organizations/{organizationId}/workspace-teams",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV2OrganizationsOrganizationIdWorkspaceTeams",
@@ -656,19 +656,19 @@
       "name": "getV2Roles",
       "method": "GET",
       "path": "/api/v2/roles",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV3ActionClasses",
       "method": "GET",
       "path": "/api/v3/action-classes",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "getV3ContactAttributeKeys",
       "method": "GET",
       "path": "/api/v3/contact-attribute-keys",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV3FeedbackRecordsToken",
@@ -686,7 +686,7 @@
       "name": "getV3Surveys",
       "method": "GET",
       "path": "/api/v3/surveys",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "postV3Surveys",
@@ -698,7 +698,7 @@
       "name": "getV3SurveysSurveyId",
       "method": "GET",
       "path": "/api/v3/surveys/{surveyId}",
-      "readOrWrite": "read"
+      "readOrWrite": "write"
     },
     {
       "name": "patchV3SurveysSurveyId",
@@ -734,7 +734,7 @@
   "annotations": [
     {
       "name": "getAuthAll",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -744,7 +744,7 @@
     },
     {
       "name": "getAuthSamlAuthorize",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -759,12 +759,12 @@
     },
     {
       "name": "getAuthSamlUserinfo",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getAuthSsoRecoveryComplete",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -774,7 +774,7 @@
     },
     {
       "name": "getEnvoyAuthPath",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -785,7 +785,8 @@
     {
       "name": "putEnvoyAuthPath",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchEnvoyAuthPath",
@@ -795,11 +796,12 @@
     {
       "name": "deleteEnvoyAuthPath",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getGoogleSheet",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -814,7 +816,7 @@
     },
     {
       "name": "getTraefikAuthPath",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -825,7 +827,8 @@
     {
       "name": "putTraefikAuthPath",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "patchTraefikAuthPath",
@@ -835,7 +838,8 @@
     {
       "name": "deleteTraefikAuthPath",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postUnifyFeedbackSourcesCsvImport",
@@ -849,12 +853,12 @@
     },
     {
       "name": "getV1ClientWorkspaceIdDisplaysDisplayIdResponse",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1ClientWorkspaceIdEnvironment",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -865,7 +869,8 @@
     {
       "name": "putV1ClientWorkspaceIdResponsesResponseId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "postV1ClientWorkspaceIdStorage",
@@ -879,12 +884,12 @@
     },
     {
       "name": "getV1ClientOg",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1IntegrationsAirtable",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -894,12 +899,12 @@
     },
     {
       "name": "getV1IntegrationsAirtableTables",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1IntegrationsNotion",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -909,7 +914,7 @@
     },
     {
       "name": "getV1IntegrationsSlack",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -919,7 +924,7 @@
     },
     {
       "name": "getV1ManagementActionClasses",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -929,22 +934,24 @@
     },
     {
       "name": "getV1ManagementActionClassesActionClassId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV1ManagementActionClassesActionClassId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV1ManagementActionClassesActionClassId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV1ManagementContactAttributeKeys",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -954,47 +961,50 @@
     },
     {
       "name": "getV1ManagementContactAttributeKeysContactAttributeKeyId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV1ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV1ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV1ManagementContactAttributes",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1ManagementContacts",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1ManagementContactsContactId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "deleteV1ManagementContactsContactId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV1ManagementMe",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1ManagementResponses",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1004,18 +1014,20 @@
     },
     {
       "name": "getV1ManagementResponsesResponseId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV1ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV1ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postV1ManagementStorage",
@@ -1024,7 +1036,7 @@
     },
     {
       "name": "getV1ManagementSurveys",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1034,27 +1046,29 @@
     },
     {
       "name": "getV1ManagementSurveysSurveyId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV1ManagementSurveysSurveyId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV1ManagementSurveysSurveyId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV1ManagementSurveysSurveyIdSingleUseIds",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV1Webhooks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1064,13 +1078,14 @@
     },
     {
       "name": "getV1WebhooksWebhookId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "deleteV1WebhooksWebhookId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postV2ClientWorkspaceIdDisplays",
@@ -1079,7 +1094,7 @@
     },
     {
       "name": "getV2ClientWorkspaceIdEnvironment",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1090,7 +1105,8 @@
     {
       "name": "putV2ClientWorkspaceIdResponsesResponseId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "postV2ClientWorkspaceIdStorage",
@@ -1104,12 +1120,12 @@
     },
     {
       "name": "getV2Health",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV2ManagementContactAttributeKeys",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1119,18 +1135,20 @@
     },
     {
       "name": "getV2ManagementContactAttributeKeysContactAttributeKeyId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV2ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV2ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postV2ManagementContacts",
@@ -1140,11 +1158,12 @@
     {
       "name": "putV2ManagementContactsBulk",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "getV2ManagementResponses",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1154,32 +1173,34 @@
     },
     {
       "name": "getV2ManagementResponsesResponseId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV2ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV2ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV2ManagementSurveysSurveyIdContactLinksContactsContactId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV2ManagementSurveysSurveyIdContactLinksSegmentsSegmentId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV2ManagementWebhooks",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1189,27 +1210,29 @@
     },
     {
       "name": "getV2ManagementWebhooksWebhookId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV2ManagementWebhooksWebhookId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV2ManagementWebhooksWebhookId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV2Me",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV2OrganizationsOrganizationIdTeams",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1219,22 +1242,24 @@
     },
     {
       "name": "getV2OrganizationsOrganizationIdTeamsTeamId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "putV2OrganizationsOrganizationIdTeamsTeamId",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV2OrganizationsOrganizationIdTeamsTeamId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV2OrganizationsOrganizationIdUsers",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1249,7 +1274,7 @@
     },
     {
       "name": "getV2OrganizationsOrganizationIdWorkspaceTeams",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1260,26 +1285,28 @@
     {
       "name": "putV2OrganizationsOrganizationIdWorkspaceTeams",
       "mutating": true,
-      "dangerous": false
+      "dangerous": false,
+      "idempotent": true
     },
     {
       "name": "deleteV2OrganizationsOrganizationIdWorkspaceTeams",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "getV2Roles",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV3ActionClasses",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
       "name": "getV3ContactAttributeKeys",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1294,7 +1321,7 @@
     },
     {
       "name": "getV3Surveys",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1304,7 +1331,7 @@
     },
     {
       "name": "getV3SurveysSurveyId",
-      "mutating": false,
+      "mutating": true,
       "dangerous": false
     },
     {
@@ -1315,7 +1342,8 @@
     {
       "name": "deleteV3SurveysSurveyId",
       "mutating": true,
-      "dangerous": true
+      "dangerous": true,
+      "idempotent": true
     },
     {
       "name": "postV3SurveysGenerate",
