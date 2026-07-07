@@ -26,6 +26,25 @@ interface RouteSource {
   catchAll: boolean;
 }
 
+interface ResolvedRouteSource {
+  file: string;
+  source: string;
+}
+
+interface TsconfigPathAlias {
+  pattern: string;
+  targets: string[];
+}
+
+interface ReExportTarget {
+  specifier: string;
+  assumeDefaultExport: boolean;
+}
+
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
+const MAX_REEXPORT_DEPTH = 4;
+const tsconfigAliasCache = new Map<string, Promise<TsconfigPathAlias[]>>();
+
 function cleanSegment(segment: string): string | null {
   if (segment.startsWith("(") && segment.endsWith(")")) return null;
   if (segment.startsWith("@")) return null;
@@ -265,53 +284,264 @@ function isVendoOwnRoute(urlPath: string): boolean {
   return urlPath === "/api/vendo" || urlPath.startsWith("/api/vendo/");
 }
 
-async function resolveImportSource(importer: string, specifier: string, targetDir: string): Promise<string | null> {
-  const base = specifier.startsWith("@/")
-    ? path.join(targetDir, specifier.slice(2))
-    : specifier.startsWith(".")
-      ? path.resolve(path.dirname(importer), specifier)
-      : null;
-  if (!base) return null;
+function stripJsonComments(source: string): string {
+  let stripped = "";
+  let quote: "'" | "\"" | null = null;
+  let escaped = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    if (quote) {
+      stripped += ch;
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === "\"") {
+      quote = ch;
+      stripped += ch;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") {
+        stripped += " ";
+        i += 1;
+      }
+      if (i < source.length) stripped += "\n";
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      stripped += "  ";
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+        stripped += source[i] === "\n" ? "\n" : " ";
+        i += 1;
+      }
+      if (i < source.length) stripped += "  ";
+      i += 1;
+      continue;
+    }
+    stripped += ch;
+  }
+  return stripped;
+}
 
-  const candidates = [
+function parseJsonLike(source: string): unknown {
+  return JSON.parse(stripJsonComments(source).replace(/,\s*([}\]])/g, "$1"));
+}
+
+function resolveExtendsPath(value: unknown, configDir: string): string | null {
+  if (typeof value !== "string" || (!value.startsWith(".") && !path.isAbsolute(value))) return null;
+  const resolved = path.resolve(configDir, value);
+  return path.extname(resolved) ? resolved : `${resolved}.json`;
+}
+
+async function loadTsconfigAliases(configPath: string, depth = 0): Promise<TsconfigPathAlias[]> {
+  let parsed: any;
+  try {
+    parsed = parseJsonLike(await fs.readFile(configPath, "utf8"));
+  } catch {
+    return [];
+  }
+
+  const configDir = path.dirname(configPath);
+  const aliases: TsconfigPathAlias[] = [];
+  const extended = depth === 0 ? resolveExtendsPath(parsed?.extends, configDir) : null;
+  if (extended) aliases.push(...await loadTsconfigAliases(extended, depth + 1));
+
+  const compilerOptions = parsed?.compilerOptions && typeof parsed.compilerOptions === "object" ? parsed.compilerOptions : {};
+  const baseUrl = path.resolve(configDir, typeof compilerOptions.baseUrl === "string" ? compilerOptions.baseUrl : ".");
+  const paths = compilerOptions.paths && typeof compilerOptions.paths === "object" ? compilerOptions.paths : {};
+  for (const [pattern, rawTargets] of Object.entries(paths)) {
+    const targets = Array.isArray(rawTargets)
+      ? rawTargets.filter((target): target is string => typeof target === "string").map((target) => path.resolve(baseUrl, target))
+      : [];
+    if (targets.length > 0) aliases.push({ pattern, targets });
+  }
+  return aliases;
+}
+
+function tsconfigAliases(targetDir: string): Promise<TsconfigPathAlias[]> {
+  const key = path.resolve(targetDir);
+  const existing = tsconfigAliasCache.get(key);
+  if (existing) return existing;
+  const aliases = loadTsconfigAliases(path.join(key, "tsconfig.json"));
+  tsconfigAliasCache.set(key, aliases);
+  return aliases;
+}
+
+function importBasesFromAlias(specifier: string, alias: TsconfigPathAlias): string[] {
+  const star = alias.pattern.indexOf("*");
+  if (star === -1) return specifier === alias.pattern ? alias.targets : [];
+
+  const prefix = alias.pattern.slice(0, star);
+  const suffix = alias.pattern.slice(star + 1);
+  if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) return [];
+
+  const matched = specifier.slice(prefix.length, specifier.length - suffix.length);
+  return alias.targets.map((target) => target.replace("*", matched));
+}
+
+function sourceCandidates(base: string): string[] {
+  return [
     base,
-    `${base}.ts`,
-    `${base}.tsx`,
-    `${base}.js`,
-    `${base}.jsx`,
-    path.join(base, "index.ts"),
-    path.join(base, "index.tsx"),
-    path.join(base, "index.js"),
-    path.join(base, "index.jsx"),
+    ...SOURCE_EXTENSIONS.map((extension) => `${base}${extension}`),
+    ...SOURCE_EXTENSIONS.map((extension) => path.join(base, `index${extension}`)),
   ];
-  for (const candidate of candidates) {
-    try {
-      return await fs.readFile(candidate, "utf8");
-    } catch {
-      // Try the next source-owned resolution candidate.
+}
+
+function isSourceOwnedCandidate(candidate: string): boolean {
+  return !candidate.split(path.sep).includes("node_modules");
+}
+
+async function resolveImportSource(importer: string, specifier: string, targetDir: string): Promise<ResolvedRouteSource | null> {
+  const bases: string[] = [];
+  if (specifier.startsWith("@/")) {
+    bases.push(path.join(targetDir, specifier.slice(2)));
+  } else if (specifier.startsWith(".")) {
+    bases.push(path.resolve(path.dirname(importer), specifier));
+  } else {
+    for (const alias of await tsconfigAliases(targetDir)) {
+      bases.push(...importBasesFromAlias(specifier, alias));
+    }
+  }
+
+  for (const base of bases) {
+    for (const candidate of sourceCandidates(base)) {
+      if (!isSourceOwnedCandidate(candidate)) continue;
+      try {
+        return { file: candidate, source: await fs.readFile(candidate, "utf8") };
+      } catch {
+        // Try the next source-owned resolution candidate.
+      }
     }
   }
   return null;
 }
 
+function topLevelObjectLiteral(source: string, openBrace: number): string | null {
+  let depth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+  for (let i = openBrace; i < source.length; i += 1) {
+    const ch = source[i]!;
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === "\"" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(openBrace + 1, i);
+    }
+  }
+  return null;
+}
+
+function firstObjectArgument(source: string, callee: RegExp): string | null {
+  for (const match of source.matchAll(callee)) {
+    let index = (match.index ?? 0) + match[0].length;
+    while (/\s/.test(source[index] ?? "")) index += 1;
+    if (source[index] !== "(") continue;
+    index += 1;
+    while (/\s/.test(source[index] ?? "")) index += 1;
+    if (source[index] !== "{") continue;
+    return topLevelObjectLiteral(source, index);
+  }
+  return null;
+}
+
+function methodKeyObjectVerbs(source: string): Set<HttpMethod> | null {
+  const objectBody = firstObjectArgument(source, /\bdefaultHandler\s*/g);
+  if (!objectBody) return null;
+
+  const verbs = new Set<HttpMethod>();
+  for (const entry of splitTopLevelDeclarators(objectBody)) {
+    const key = entry.trim().match(/^(?:(["'])(GET|POST|PUT|PATCH|DELETE)\1|(GET|POST|PUT|PATCH|DELETE))\s*:/);
+    addMethod(verbs, key?.[2] ?? key?.[3]);
+  }
+  return verbs.size > 0 ? verbs : null;
+}
+
 async function verbsWithReExportFallback(route: RouteSource, targetDir: string): Promise<Set<HttpMethod>> {
-  const verbs = exportedVerbs(route.source, route.kind);
+  return verbsFromSource(route.file, route.source, route, targetDir, new Set(), 0, false);
+}
+
+async function verbsFromSource(
+  file: string,
+  source: string,
+  route: RouteSource,
+  targetDir: string,
+  visited: Set<string>,
+  depth: number,
+  assumeDefaultExport: boolean,
+): Promise<Set<HttpMethod>> {
+  const visitKey = `${file}\t${assumeDefaultExport ? "default" : "named"}`;
+  if (visited.has(visitKey)) return new Set();
+  visited.add(visitKey);
+
+  const verbs = exportedVerbs(source, route.kind);
   if (verbs.size > 0) return verbs;
-  const routeMapVerbs = routeMapMappedVerbs(route.source, route);
+  const routeMapVerbs = routeMapMappedVerbs(source, route);
   if (routeMapVerbs) return routeMapVerbs;
+  const methodKeyVerbs = methodKeyObjectVerbs(source);
+  if (methodKeyVerbs) return methodKeyVerbs;
 
-  const importDefault = route.source.match(/import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'][\s\S]*?export\s+default\s+\1\b/);
-  const exportDefault = route.source.match(/export\s*\{\s*default\s*\}\s*from\s+["']([^"']+)["']/);
-  const delegate = route.source.match(/return\s+(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(\s*req\s*,\s*res\b/);
-  const specifier = importDefault?.[2] ?? exportDefault?.[1] ?? (delegate?.[1] ? importSpecifierFor(route.source, delegate[1]) : undefined);
-  if (!specifier) return inferredPageDefaultVerbs(route.source, route.kind);
+  if (depth < MAX_REEXPORT_DEPTH) {
+    const reExportVerbs = new Set<HttpMethod>();
+    for (const target of reExportTargets(source)) {
+      const resolved = await resolveImportSource(file, target.specifier, targetDir);
+      if (!resolved) continue;
+      const nested = await verbsFromSource(
+        resolved.file,
+        resolved.source,
+        route,
+        targetDir,
+        visited,
+        depth + 1,
+        target.assumeDefaultExport,
+      );
+      for (const method of nested) reExportVerbs.add(method);
+    }
+    if (reExportVerbs.size > 0) return reExportVerbs;
+  }
 
-  const resolved = await resolveImportSource(route.file, specifier, targetDir);
-  if (!resolved) return inferredPageDefaultVerbs(route.source, route.kind);
-  const resolvedRouteMapVerbs = routeMapMappedVerbs(resolved, route);
-  if (resolvedRouteMapVerbs) return resolvedRouteMapVerbs;
-  const resolvedVerbs = exportedVerbs(resolved, route.kind);
-  return resolvedVerbs.size > 0 ? resolvedVerbs : inferredPageDefaultVerbs(route.source, route.kind);
+  return inferredPageDefaultVerbs(source, route, assumeDefaultExport);
+}
+
+function reExportTargets(source: string): ReExportTarget[] {
+  const targets: ReExportTarget[] = [];
+  for (const match of source.matchAll(/export\s+\*\s+from\s+["']([^"']+)["']/g)) {
+    if (match[1]) targets.push({ specifier: match[1], assumeDefaultExport: false });
+  }
+  for (const match of source.matchAll(/export\s*\{([^}]+)\}\s*from\s+["']([^"']+)["']/g)) {
+    const body = match[1] ?? "";
+    const specifier = match[2];
+    if (!specifier) continue;
+    for (const part of body.split(",")) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const names = trimmed.split(/\s+as\s+/).map((value) => value.trim());
+      const exported = names[1] ?? names[0];
+      if (exported === "default") targets.push({ specifier, assumeDefaultExport: true });
+    }
+  }
+
+  const importDefault = source.match(/import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'][\s\S]*?export\s+default\s+\1\b/);
+  if (importDefault?.[2]) targets.push({ specifier: importDefault[2], assumeDefaultExport: true });
+
+  const delegate = source.match(/return\s+(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(\s*req\s*,\s*res\b/);
+  const delegateSpecifier = delegate?.[1] ? importSpecifierFor(source, delegate[1]) : undefined;
+  if (delegateSpecifier) targets.push({ specifier: delegateSpecifier, assumeDefaultExport: true });
+
+  return targets;
 }
 
 function routeMapMappedVerbs(source: string, route: RouteSource): Set<HttpMethod> | null {
@@ -341,10 +571,37 @@ function importSpecifierFor(source: string, localName: string): string | undefin
   return undefined;
 }
 
-function inferredPageDefaultVerbs(source: string, kind: RouteSource["kind"]): Set<HttpMethod> {
+function hasPagesDefaultHandler(source: string, assumeDefaultExport: boolean): boolean {
+  return (
+    assumeDefaultExport ||
+    /\bexport\s+default\b/.test(source) ||
+    /export\s*\{[^}]+(?:\bas\s+default\b|\bdefault\b)[^}]*\}\s*from\b/.test(source)
+  );
+}
+
+function hasDisabledBodyParser(source: string): boolean {
+  return /\bbodyParser\s*:\s*false\b/.test(source);
+}
+
+function inferredPageDefaultVerbs(source: string, route: RouteSource, assumeDefaultExport = false): Set<HttpMethod> {
   const verbs = new Set<HttpMethod>();
-  if (kind !== "pages" || !/\bexport\s+default\b/.test(source) || /\breq\.method\b/.test(source)) return verbs;
+  if (route.kind !== "pages" || !hasPagesDefaultHandler(source, assumeDefaultExport) || /\breq\.method\b/.test(source)) return verbs;
+
+  if (/\bcreateNextApiHandler\s*\(/.test(source)) {
+    verbs.add("GET");
+    verbs.add("POST");
+    return verbs;
+  }
+
+  if (/\bhandlerMap\b/.test(source) && /\bapiHandlers\b/.test(source) && route.catchAll) {
+    verbs.add("POST");
+    return verbs;
+  }
+
   if (/\bhandleUpload\s*\(/.test(source) || /\breq\.body\b/.test(source)) verbs.add("POST");
+  // Webhook receivers commonly disable Next's body parser for signature
+  // verification and are write-side callbacks even when CE stubs only 404.
+  else if (hasDisabledBodyParser(source) || route.urlPath.endsWith("/webhook")) verbs.add("POST");
   else verbs.add("GET");
   return verbs;
 }

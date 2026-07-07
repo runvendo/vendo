@@ -251,6 +251,159 @@ describe("scanRoutes", () => {
     ]);
   });
 
+  it("follows App Router star re-exports and keeps the re-exporting route path", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "app/api/projects"), { recursive: true });
+    await mkdir(path.join(dir, "app/api/workspaces"), { recursive: true });
+    await writeFile(path.join(dir, "app/api/projects/route.ts"), `export * from "../workspaces/route";\n`);
+    await writeFile(
+      path.join(dir, "app/api/workspaces/route.ts"),
+      `export async function GET() { return Response.json([]); }\nexport async function POST() { return Response.json({ ok: true }); }\n`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["getProjects", "GET", "/api/projects"],
+      ["postProjects", "POST", "/api/projects"],
+      ["getWorkspaces", "GET", "/api/workspaces"],
+      ["postWorkspaces", "POST", "/api/workspaces"],
+    ]);
+  });
+
+  it("follows named default re-exports through tsconfig paths for Pages API handlers", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await writeFile(
+      path.join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@lib/*": ["lib/*"] } } }),
+    );
+    await mkdir(path.join(dir, "pages/api/auth"), { recursive: true });
+    await mkdir(path.join(dir, "lib/pages/auth"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/auth/verify-email.ts"),
+      `export { handler as default } from "@lib/pages/auth/verify-email";\n`,
+    );
+    await writeFile(
+      path.join(dir, "lib/pages/auth/verify-email.ts"),
+      `export async function handler(_req, res) { return res.status(200).json({ ok: true }); }\n`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["getAuthVerifyEmail", "GET", "/api/auth/verify-email"],
+    ]);
+  });
+
+  it("uses defaultHandler method-key maps for Pages API default exports", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "pages/api/apps"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/apps/add.ts"),
+      `
+import defaultHandler from "@calcom/lib/server/defaultHandler";
+export default defaultHandler({
+  GET: Promise.resolve({ default: getHandler }),
+  POST: Promise.resolve({ default: postHandler }),
+});
+`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["getAppsAdd", "GET", "/api/apps/add"],
+      ["postAppsAdd", "POST", "/api/apps/add"],
+    ]);
+  });
+
+  it("treats tRPC Next API handlers as GET and POST endpoints", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "pages/api/trpc/admin"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/trpc/admin/[trpc].ts"),
+      `
+import { createNextApiHandler } from "@calcom/trpc/server/createNextApiHandler";
+export default createNextApiHandler(adminRouter);
+`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["getTrpcAdminTrpc", "GET", "/api/trpc/admin/{trpc}"],
+      ["postTrpcAdminTrpc", "POST", "/api/trpc/admin/{trpc}"],
+    ]);
+  });
+
+  it("infers POST, not GET, for Pages API webhook default handlers without method evidence", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "pages/api/stripe"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/stripe/webhook.ts"),
+      `
+export const config = { api: { bodyParser: false } };
+export default function handler(_req, res) {
+  res.status(404).json({ message: "webhooks unavailable" });
+}
+`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["postStripeWebhook", "POST", "/api/stripe/webhook"],
+    ]);
+  });
+
+  it("infers POST for Pages API webhook default re-exports with disabled body parsing", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "pages/api/integrations/alby"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/integrations/alby/webhook.ts"),
+      `
+export { default } from "@calcom/app-store/alby/api/webhook";
+export const config = { api: { bodyParser: false } };
+`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["postIntegrationsAlbyWebhook", "POST", "/api/integrations/alby/webhook"],
+    ]);
+  });
+
+  it("infers POST for dynamic integration handler-map Pages API routes", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
+    await mkdir(path.join(dir, "pages/api/integrations"), { recursive: true });
+    await writeFile(
+      path.join(dir, "pages/api/integrations/[...args].ts"),
+      `
+const handler = async (req, res) => {
+  const handlerMap = (await import("@calcom/app-store/apps.server.generated")).apiHandlers;
+  const handlers = await handlerMap[String(req.query.args?.[0])];
+  const handler = handlers?.[String(req.query.args?.[1])];
+  if (typeof handler === "function") await handler(req, res);
+};
+export default handler;
+`,
+    );
+
+    const { tools, warnings } = await scanRoutes(dir, null);
+
+    expect(warnings).toEqual([]);
+    expect(tools.map((tool) => [tool.name, tool.binding.method, tool.binding.path])).toEqual([
+      ["postIntegrationsArgs", "POST", "/api/integrations/{args}"],
+    ]);
+  });
+
   it("prefers App Router over Pages API when both map to the same URL path", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "routes-"));
     await mkdir(path.join(dir, "app/api/shared"), { recursive: true });
