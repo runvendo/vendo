@@ -3,6 +3,50 @@ import path from "node:path";
 import { walk } from "../fsx.js";
 import type { CssVarDecl } from "./css-vars.js";
 
+const TAILWIND_SANS_FALLBACK = "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji";
+const ENTRY_LAYOUT_CANDIDATES = [
+  "app/layout.tsx",
+  "app/layout.jsx",
+  "app/layout.ts",
+  "app/layout.js",
+  "src/app/layout.tsx",
+  "src/app/layout.jsx",
+  "src/app/layout.ts",
+  "src/app/layout.js",
+  "pages/_app.tsx",
+  "pages/_app.jsx",
+  "pages/_app.ts",
+  "pages/_app.js",
+  "src/pages/_app.tsx",
+  "src/pages/_app.jsx",
+  "src/pages/_app.ts",
+  "src/pages/_app.js",
+  "pages/_document.tsx",
+  "pages/_document.jsx",
+  "pages/_document.ts",
+  "pages/_document.js",
+  "src/pages/_document.tsx",
+  "src/pages/_document.jsx",
+  "src/pages/_document.ts",
+  "src/pages/_document.js",
+];
+
+function titleCaseFontSourceSlug(slug: string): string {
+  return slug
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+async function exists(file: string): Promise<boolean> {
+  return fs.access(file).then(() => true, () => false);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * next/font injects `--font-*` variables at runtime (className on <html>), so
  * they never appear in CSS. Recover them from source: a next/font/google
@@ -15,6 +59,17 @@ export function parseNextFontVars(source: string, file: string): CssVarDecl[] {
   // Strip comments so stale commented-out loader calls can't win.
   const src = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const out: CssVarDecl[] = [];
+  const fontSourceRe = /import\s+["']@fontsource(?:-variable)?\/([^"']+)["']/g;
+  for (const match of src.matchAll(fontSourceRe)) {
+    const isVariable = match[0]!.includes("@fontsource-variable/");
+    const family = `${titleCaseFontSourceSlug(match[1]!)}${isVariable ? " Variable" : ""}`;
+    out.push({
+      name: "--font-family",
+      value: `${family}, ${TAILWIND_SANS_FALLBACK}`,
+      file,
+      darkScope: false,
+    });
+  }
   const importRe = /import\s*\{([^}]+)\}\s*from\s*["']next\/font\/google["']/g;
   for (const im of src.matchAll(importRe)) {
     for (const spec of im[1]!.split(",")) {
@@ -40,6 +95,7 @@ export function parseNextFontVars(source: string, file: string): CssVarDecl[] {
         }
         continue;
       }
+      const instance = assignment?.[2];
       out.push({
         name: variable[1],
         value: family,
@@ -47,6 +103,18 @@ export function parseNextFontVars(source: string, file: string): CssVarDecl[] {
         darkScope: false,
         synthetic: true,
       });
+      if (instance) {
+        const inlineVar = src.match(new RegExp(`${escapeRegExp(variable[1])}\\s*:\\s*\\$\\{\\s*${instance}\\.style\\.fontFamily[^}]*\\}\\s*,\\s*([^;\\n\`]+)`));
+        const fallback = inlineVar?.[1]?.trim();
+        if (fallback) {
+          out.push({
+            name: variable[1],
+            value: `${family}, ${fallback}`,
+            file,
+            darkScope: false,
+          });
+        }
+      }
     }
   }
   const geistRe = /import\s*\{([^}]+)\}\s*from\s*["']geist\/font\/(sans|mono)["']/g;
@@ -56,6 +124,14 @@ export function parseNextFontVars(source: string, file: string): CssVarDecl[] {
       const [exportName] = spec.split(/\s+as\s+/).map((s) => s.trim());
       if (!exportName) continue;
       if (kind === "sans" && exportName === "GeistSans") {
+        if (new RegExp(`\\b${exportName}\\.(?:variable|className)\\b`).test(src)) {
+          out.push({
+            name: "--font-family",
+            value: "Geist Sans, ui-sans-serif, system-ui, sans-serif",
+            file,
+            darkScope: false,
+          });
+        }
         out.push({
           name: "--font-geist-sans",
           value: "Geist Sans",
@@ -86,22 +162,44 @@ const TAILWIND_NEUTRAL_COLORS: Record<string, Record<string, string>> = {
   stone: { "50": "#fafaf9", "100": "#f5f5f4", "200": "#e7e5e4", "300": "#d6d3d1", "400": "#a8a29e", "500": "#78716c", "600": "#57534e", "700": "#44403c", "800": "#292524", "900": "#1c1917", "950": "#0c0a09" },
 };
 
+function resolveTailwindColor(token: string): string | null {
+  if (token === "white") return "#ffffff";
+  if (token === "black") return "#000000";
+  const [scale, step] = token.split("-");
+  return scale && step ? (TAILWIND_NEUTRAL_COLORS[scale]?.[step] ?? null) : null;
+}
+
+function tokenBackedColorVar(prefix: string, token: string): string | null {
+  if (!/^[a-z][a-z0-9-]*$/.test(token)) return null;
+  if (["transparent", "current", "inherit"].includes(token)) return null;
+  if (token.includes("/")) return null;
+  return `var(--color-${token.replace(new RegExp(`^${prefix}-`), "")})`;
+}
+
 export function parseNextLayoutVars(source: string, file: string): CssVarDecl[] {
   const src = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const out: CssVarDecl[] = [];
-  const bgRe = /(?<![\w:-])bg-(white|black|(?:slate|gray|zinc|neutral|stone)-(?:50|100|200|300|400|500|600|700|800|900|950))\b/g;
+  const bgRe = /(?<![\w:-])bg-([a-z][a-z0-9-]*(?:-(?:50|100|200|300|400|500|600|700|800|900|950))?)\b/g;
   for (const match of src.matchAll(bgRe)) {
     const token = match[1]!;
-    const value = token === "white" ? "#ffffff"
-      : token === "black" ? "#000000"
-      : (() => {
-          const [scale, step] = token.split("-");
-          return scale && step ? TAILWIND_NEUTRAL_COLORS[scale]?.[step] : undefined;
-        })();
+    const value = resolveTailwindColor(token) ?? tokenBackedColorVar("bg", token);
     if (value) {
       out.push({ name: "--background", value, file, darkScope: false });
+      if (token === "neutral-50") out.push({ name: "--card", value: "#ffffff", file, darkScope: false });
       break;
     }
+  }
+  const textRe = /(?<![\w:-])text-([a-z][a-z0-9-]*(?:-(?:50|100|200|300|400|500|600|700|800|900|950))?)\b/g;
+  for (const match of src.matchAll(textRe)) {
+    const token = match[1]!;
+    const value = resolveTailwindColor(token) ?? tokenBackedColorVar("text", token);
+    if (!value) continue;
+    out.push({ name: "--foreground", value, file, darkScope: false });
+    if (token === "black") {
+      out.push({ name: "--primary", value, file, darkScope: false });
+      out.push({ name: "--muted-foreground", value: "#737373", file, darkScope: false });
+    }
+    break;
   }
   return out;
 }
@@ -111,12 +209,25 @@ export function parseNextLayoutVars(source: string, file: string): CssVarDecl[] 
  * repos and pay hundreds of reads on the init path. */
 const FONT_SOURCE_FILE = /(^|\/)(layout|_app|_document|fonts?)\.(tsx|jsx|ts|js|mjs)$/;
 
+async function collectEntryLayoutFiles(targetDir: string): Promise<string[]> {
+  const files = await Promise.all(
+    ENTRY_LAYOUT_CANDIDATES.map(async (candidate) => {
+      const file = path.join(targetDir, candidate);
+      return await exists(file) ? file : null;
+    }),
+  );
+  return files.filter((file): file is string => Boolean(file));
+}
+
 export async function collectNextFontVars(targetDir: string): Promise<CssVarDecl[]> {
-  const files = await walk(targetDir, (p) => FONT_SOURCE_FILE.test(p), 500);
+  const files = [...new Set([
+    ...await collectEntryLayoutFiles(targetDir),
+    ...await walk(targetDir, (p) => FONT_SOURCE_FILE.test(p), 500),
+  ])];
   const out: CssVarDecl[] = [];
   for (const f of files) {
     const src = await fs.readFile(f, "utf8").catch(() => null);
-    if (src?.includes("next/font/google") || src?.includes("geist/font/")) {
+    if (src?.includes("next/font/google") || src?.includes("geist/font/") || src?.includes("@fontsource")) {
       out.push(...parseNextFontVars(src, path.relative(targetDir, f)));
     }
   }
@@ -124,11 +235,22 @@ export async function collectNextFontVars(targetDir: string): Promise<CssVarDecl
 }
 
 export async function collectNextLayoutVars(targetDir: string): Promise<CssVarDecl[]> {
-  const files = await walk(targetDir, (p) => FONT_SOURCE_FILE.test(p), 500);
+  const entryFiles = await collectEntryLayoutFiles(targetDir);
+  const files = entryFiles.length > 0 ? entryFiles : await walk(targetDir, (p) => FONT_SOURCE_FILE.test(p), 500);
   const out: CssVarDecl[] = [];
+  let entryOwnsDocument = false;
   for (const f of files) {
     const src = await fs.readFile(f, "utf8").catch(() => null);
-    if (src) out.push(...parseNextLayoutVars(src, path.relative(targetDir, f)));
+    if (!src) continue;
+    if (entryFiles.includes(f) && /<\s*(html|body)\b/.test(src)) entryOwnsDocument = true;
+    out.push(...parseNextLayoutVars(src, path.relative(targetDir, f)));
+  }
+  if (entryFiles.length > 0 && out.length === 0 && !entryOwnsDocument) {
+    const fallback = await walk(targetDir, (p) => FONT_SOURCE_FILE.test(p), 500);
+    for (const f of fallback.filter((file) => !entryFiles.includes(file))) {
+      const src = await fs.readFile(f, "utf8").catch(() => null);
+      if (src) out.push(...parseNextLayoutVars(src, path.relative(targetDir, f)));
+    }
   }
   return out;
 }

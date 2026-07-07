@@ -62,6 +62,45 @@ export default {
     }));
   });
 
+  it("falls back to source parsing for workspace-imported fontFamily arrays", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "tw-workspace-"));
+    await mkdir(path.join(dir, "apps/web"), { recursive: true });
+    await mkdir(path.join(dir, "packages/tailwind-config"), { recursive: true });
+    await writeFile(path.join(dir, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n  - packages/*\n");
+    await writeFile(
+      path.join(dir, "packages/tailwind-config/package.json"),
+      JSON.stringify({ name: "@acme/tailwind-config" }),
+    );
+    await writeFile(
+      path.join(dir, "packages/tailwind-config/tailwind.config.ts"),
+      `export default {
+  theme: { extend: {
+    fontFamily: { default: ["var(--font-inter)", "system-ui", "sans-serif"] },
+  } },
+};`,
+    );
+    const cfg = path.join(dir, "apps/web/tailwind.config.ts");
+    await writeFile(
+      cfg,
+      `import sharedConfig from "@acme/tailwind-config/tailwind.config";
+export default {
+  ...sharedConfig,
+  theme: { extend: { fontFamily: { sans: ["var(--font-geist-sans)", ...fontFamily.sans] } } },
+};`,
+    );
+
+    const { vars, error } = await extractTailwindVars(cfg);
+    expect(error).toMatch(/could not load/);
+    expect(vars).toContainEqual(expect.objectContaining({
+      name: "--font-default",
+      value: "var(--font-inter), system-ui, sans-serif",
+    }));
+    expect(vars).toContainEqual(expect.objectContaining({
+      name: "--font-sans",
+      value: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
+    }));
+  });
+
   it("reports unloadable configs instead of throwing", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "tw-"));
     const cfg = path.join(dir, "tailwind.config.mjs");

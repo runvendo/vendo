@@ -25,6 +25,20 @@ const body = BodyFont({ subsets: ["latin"], variable: "--font-body" })
     ]);
   });
 
+  it("recovers inline next/font style font-family assignments", () => {
+    const source = `
+import { Inter } from "next/font/google"
+const interFont = Inter({ subsets: ["latin"], variable: "--font-sans" })
+export default function RootLayout() {
+  return <style>{\`:root { --font-sans: \${interFont.style.fontFamily.replace(/\\'/g, "")}, system-ui; }\`}</style>
+}
+`;
+    expect(parseNextFontVars(source, "app/layout.tsx")).toEqual([
+      { name: "--font-sans", value: "Inter", file: "app/layout.tsx", darkScope: false, synthetic: true },
+      { name: "--font-sans", value: "Inter, system-ui", file: "app/layout.tsx", darkScope: false },
+    ]);
+  });
+
   it("ignores commented-out loader calls", () => {
     const source = `
 import { Inter } from "next/font/google"
@@ -45,6 +59,38 @@ import { GeistMono } from "geist/font/mono"
     expect(parseNextFontVars(source, "layout.tsx")).toEqual([
       { name: "--font-geist-sans", value: "Geist Sans", file: "layout.tsx", darkScope: false, synthetic: true },
       { name: "--font-geist-mono", value: "Geist Mono", file: "layout.tsx", darkScope: false, synthetic: true },
+    ]);
+  });
+
+  it("recovers direct Geist package page font usage", () => {
+    const source = `
+import { GeistSans } from "geist/font/sans"
+export default function RootLayout({ children }) {
+  return <html className={GeistSans.variable}><body>{children}</body></html>
+}
+`;
+    expect(parseNextFontVars(source, "app/layout.tsx")).toEqual([
+      {
+        name: "--font-family",
+        value: "Geist Sans, ui-sans-serif, system-ui, sans-serif",
+        file: "app/layout.tsx",
+        darkScope: false,
+      },
+      { name: "--font-geist-sans", value: "Geist Sans", file: "app/layout.tsx", darkScope: false, synthetic: true },
+    ]);
+  });
+
+  it("recovers @fontsource-variable imports as a concrete page font stack", () => {
+    const source = `
+import '@fontsource-variable/inter';
+`;
+    expect(parseNextFontVars(source, "pages/_app.tsx")).toEqual([
+      {
+        name: "--font-family",
+        value: "Inter Variable, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji",
+        file: "pages/_app.tsx",
+        darkScope: false,
+      },
     ]);
   });
 
@@ -92,6 +138,16 @@ describe("parseNextLayoutVars", () => {
     const source = `<body className={\`\${outfit.className} bg-slate-100 dark:bg-slate-800\`}>{children}</body>`;
     expect(parseNextLayoutVars(source, "app/[locale]/layout.tsx")).toEqual([
       { name: "--background", value: "#f1f5f9", file: "app/[locale]/layout.tsx", darkScope: false },
+    ]);
+  });
+
+  it("recovers root text classes and token-backed custom background classes", () => {
+    const source = `<body className="dark:bg-default bg-subtle text-black selection:bg-teal-300">{children}</body>`;
+    expect(parseNextLayoutVars(source, "pages/_document.tsx")).toEqual([
+      { name: "--background", value: "var(--color-subtle)", file: "pages/_document.tsx", darkScope: false },
+      { name: "--foreground", value: "#000000", file: "pages/_document.tsx", darkScope: false },
+      { name: "--primary", value: "#000000", file: "pages/_document.tsx", darkScope: false },
+      { name: "--muted-foreground", value: "#737373", file: "pages/_document.tsx", darkScope: false },
     ]);
   });
 });

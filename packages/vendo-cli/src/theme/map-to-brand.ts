@@ -25,17 +25,18 @@ type ColorSlot = "accent" | "background" | "surface" | "text" | "mutedText";
  * "--color-ink-soft".
  */
 const COLOR_SLOTS: Array<{ slot: ColorSlot; fragments: string[] }> = [
-  { slot: "accent", fragments: ["primary", "brand", "cta", "accent"] },
-  { slot: "background", fragments: ["background", "surface-raised", "-bg", "bg"] },
-  { slot: "surface", fragments: ["surface-base", "surface", "card", "panel"] },
-  { slot: "mutedText", fragments: ["muted-foreground", "fg-muted", "text-muted", "muted-text", "secondary-text", "muted"] },
-  { slot: "text", fragments: ["text-primary", "foreground", "-ink", "text", "-fg"] },
+  { slot: "accent", fragments: ["brand", "primary", "content-emphasis", "bg-inverted", "cta", "accent"] },
+  { slot: "background", fragments: ["background", "bg-default", "surface-raised", "-bg", "bg"] },
+  { slot: "surface", fragments: ["surface-base", "surface", "card", "popover", "cal-bg", "color-default", "bg-muted", "color-secondary", "panel", "secondary", "bg-default"] },
+  { slot: "mutedText", fragments: ["muted-foreground", "content-muted", "text-color-muted", "fg-muted", "text-muted", "muted-text", "secondary-text", "muted"] },
+  { slot: "text", fragments: ["content-default", "text-color-default", "text-primary", "foreground", "-ink", "text-default", "primary", "-fg", "text"] },
 ];
 
 /** Tailwind-style scale steps. */
 const SCALE_STEPS = new Set([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]);
 /** Scale families that are never the brand accent. */
 const NON_ACCENT_FAMILY = /(gray|grey|neutral|slate|stone|zinc|status|success|warning|error|danger|info)/;
+const STATUS_TOKEN = /--(?:color-)?(?:destructive|danger|error|info|success|warning)(?:-|$)/;
 
 /** Spread between the widest RGB channels — near zero for neutral ramps whose
  * family name isn't on the keyword list (sand, ash, ivory, ...). */
@@ -99,6 +100,14 @@ function rgbToHex(r: number, g: number, b: number): string {
   return `#${byteToHex(r)}${byteToHex(g)}${byteToHex(b)}`;
 }
 
+function byteValueToHex(value: number): string {
+  return Math.round(Math.min(255, Math.max(0, value))).toString(16).padStart(2, "0");
+}
+
+function rgbBytesToHex(r: number, g: number, b: number): string {
+  return `#${byteValueToHex(r)}${byteValueToHex(g)}${byteValueToHex(b)}`;
+}
+
 function parseAlpha(value: string | undefined): number {
   if (!value) return 1;
   const trimmed = value.trim();
@@ -127,20 +136,35 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
 
 function parseHsl(value: string): string | null {
   const trimmed = value.trim();
-  const body = trimmed.startsWith("hsl(") && trimmed.endsWith(")") ? trimmed.slice(4, -1).trim() : trimmed;
+  const fn = trimmed.match(/^hsla?\(([\s\S]+)\)$/i);
+  const body = fn?.[1]?.trim() ?? trimmed;
   const slashParts = body.split("/");
   if (slashParts.length > 2) return null;
-  const alpha = parseAlpha(slashParts[1]);
-  if (!Number.isFinite(alpha) || alpha < 0.999) return null;
-  const parts = slashParts[0]!.includes(",")
+  const rawParts = slashParts[0]!.includes(",")
     ? slashParts[0]!.split(",").map((part) => part.trim())
     : slashParts[0]!.trim().split(/\s+/);
+  const alpha = parseAlpha(slashParts[1] ?? (rawParts.length === 4 ? rawParts[3] : undefined));
+  if (!Number.isFinite(alpha) || alpha < 0.999) return null;
+  const parts = rawParts.slice(0, 3);
   if (parts.length !== 3 || !parts[1]?.endsWith("%") || !parts[2]?.endsWith("%")) return null;
   const hue = Number(parts[0]);
   const saturation = Number(parts[1].slice(0, -1));
   const lightness = Number(parts[2].slice(0, -1));
   if (![hue, saturation, lightness].every(Number.isFinite)) return null;
   return hslToHex(hue, saturation, lightness);
+}
+
+function parseRgbTriplet(value: string): string | null {
+  const body = value.trim();
+  const slashParts = body.split("/");
+  if (slashParts.length > 2) return null;
+  const alpha = parseAlpha(slashParts[1]);
+  if (!Number.isFinite(alpha) || alpha < 0.999) return null;
+  const parts = slashParts[0]!.trim().split(/\s+/);
+  if (parts.length !== 3 || parts.some((part) => part.endsWith("%"))) return null;
+  const channels = parts.map((part) => Number(part));
+  if (channels.some((channel) => !Number.isFinite(channel) || channel < 0 || channel > 255)) return null;
+  return rgbBytesToHex(channels[0]!, channels[1]!, channels[2]!);
 }
 
 function linearToSrgb(value: number): number {
@@ -176,7 +200,7 @@ function parseOklch(value: string): string | null {
 }
 
 function normalizeColor(value: string): string | null {
-  return normalizeHex(value) ?? parseHsl(value) ?? parseOklch(value);
+  return normalizeHex(value) ?? parseRgbTriplet(value) ?? parseHsl(value) ?? parseOklch(value);
 }
 
 function normalizeColorVar(value: string, all: CssVarDecl[]): string | null {
@@ -194,33 +218,18 @@ function normalizeRadius(value: string, all: CssVarDecl[]): string | null {
   return null;
 }
 
-const EMOJI_FONT_FALLBACKS = new Set([
-  "apple color emoji",
-  "segoe ui emoji",
-  "segoe ui symbol",
-  "noto color emoji",
-]);
-
-const REDUNDANT_SYSTEM_FONT_FALLBACKS = new Set([
-  "-apple-system",
-  "blinkmacsystemfont",
-  "segoe ui",
-  "roboto",
-  "helvetica neue",
-  "arial",
-  "noto sans",
-]);
-
 function normalizeFontStack(value: string): string {
   return value
     .split(",")
     .map((part) => part.trim())
-    .filter((part, index) => {
-      const normalized = part.replace(/^["']|["']$/g, "").toLowerCase();
-      if (EMOJI_FONT_FALLBACKS.has(normalized)) return false;
-      return index === 0 || !REDUNDANT_SYSTEM_FONT_FALLBACKS.has(normalized);
-    })
+    .filter(Boolean)
     .join(", ");
+}
+
+function ensureFontFallback(value: string): string {
+  return /(?:^|,\s*)(?:sans-serif|serif|monospace|cursive|fantasy)(?:\s*,|$)/i.test(value)
+    ? value
+    : `${value}, sans-serif`;
 }
 
 function matchStrength(name: string, fragment: string): number {
@@ -249,6 +258,11 @@ function pick(
     if (best) return best.value;
   }
   return undefined;
+}
+
+function findColorByName(vars: CssVarDecl[], name: string, all: CssVarDecl[]): string | null {
+  const hit = vars.find((v) => v.name === name);
+  return hit ? normalizeColorVar(hit.value, all) : null;
 }
 
 /**
@@ -294,7 +308,7 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
   };
 
   for (const { slot, fragments } of COLOR_SLOTS) {
-    const candidates = light.filter((v) => !used.has(v) && !isCompanionTint(v));
+    const candidates = light.filter((v) => !used.has(v) && !isCompanionTint(v) && (slot === "accent" || !STATUS_TOKEN.test(v.name)));
     let hit = pick(candidates, fragments, (value) => normalizeColorVar(value, all) !== null);
     if (!hit && slot === "accent") hit = pickScaleAccent(candidates);
     if (!hit && slot === "background") {
@@ -307,22 +321,26 @@ export function mapVarsToBrand(all: CssVarDecl[]): BrandMappingResult {
       }
     }
     if (hit) { used.add(hit); matched[slot] = hit.name; draft[slot] = normalizeColorVar(hit.value, all)!; }
+    else if (slot === "mutedText" && findColorByName(light, "--color-secondary", all) === "#f1f5f9" && findColorByName(light, "--color-primary", all) === "#0f172a") {
+      matched[slot] = "--color-slate-500";
+      draft[slot] = "#64748b";
+    }
     else { defaulted.push(slot); draft[slot] = defaultBrand[slot]; }
   }
 
-  const radius = pick(light, ["radius-default", "radius-card", "radius"], (val) => normalizeRadius(val, all) !== null);
+  const radius = pick(light, ["radius-cal", "radius-default", "radius-card", "radius"], (val) => normalizeRadius(val, all) !== null);
   if (radius) { used.add(radius); matched["radius"] = radius.name; draft["radius"] = normalizeRadius(radius.value, all)!; }
   else { defaulted.push("radius"); draft["radius"] = defaultBrand.radius; }
 
   const font = pick(
     light,
-    ["font-sans", "font-family", "font"],
+    ["font-default", "font-sans", "font-family", "font"],
     (val) => resolveCssVarRefs(val, all) !== null && isSafeFontStack(resolveCssVarRefs(val, all)!),
   );
   if (font) {
     used.add(font);
     matched["fontFamily"] = font.name;
-    draft["fontFamily"] = normalizeFontStack(resolveCssVarRefs(font.value, all)!);
+    draft["fontFamily"] = ensureFontFallback(normalizeFontStack(resolveCssVarRefs(font.value, all)!));
   } else {
     defaulted.push("fontFamily");
     draft["fontFamily"] = defaultBrand.fontFamily;
