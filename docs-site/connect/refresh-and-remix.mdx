@@ -11,7 +11,7 @@ description: "Catch up an existing install and let end users customize widgets"
 npx vendo refresh .
 ```
 
-`refresh` is the catch-up command. It re-runs extraction against only what is new: your theme is kept, tools are gap-filled, only unwrapped components are proposed, and only unanchored widgets are offered. It verifies the Next.js wiring silently and never overwrites. Running `vendo init` on an already-wired app does the same thing.
+`refresh` is the catch-up command. It re-runs extraction against only what is new: your theme is kept, tools are gap-filled, only unwrapped components are proposed, and only unanchored widgets are offered. It verifies the Next.js wiring silently and never overwrites. A plain `vendo init` re-run on a fully-wired app is a no-op — it verifies wiring and exits without calling the model — so use `refresh` whenever you want new discovery.
 
 Use it whenever:
 
@@ -48,4 +48,4 @@ After wrapping, `vendo sync` captures a baseline for each anchor on your next bu
 
 ## No provider key yet?
 
-The pickers need an LLM to propose candidates. Without a provider key, `init`/`refresh` run the deterministic steps (theme tokens, OpenAPI tools, Next.js wiring) and print what they skipped. Add a key to `.env.local` and re-run to get the assisted steps. See [The vendo init codemod](/connect/vendo-init) for the full re-run story.
+The pickers need an LLM to propose candidates. Without a provider key, `init`/`refresh` run the deterministic steps (theme tokens, OpenAPI tools, Next.js wiring) and print what they skipped. Add a key to `.env.local` and run `vendo refresh` to get the assisted steps. See [The vendo init codemod](/connect/vendo-init) for the full re-run story.

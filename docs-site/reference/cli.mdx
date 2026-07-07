@@ -13,8 +13,8 @@ npx vendo <command> [dir] [options]
 
 | Command | Purpose |
 | --- | --- |
-| `init [dir]` | Set up Vendo in a Next.js app (run once). Extracts theme, tools, and components into `.vendo/` and wires the app. Interactive: prompts for a provider key and opens the component and remix pickers. Safe to re-run; on an already-wired app it behaves like `refresh`. |
-| `refresh [dir]` | Catch up an existing install. Same additive pipeline as `init`, offering only what is new — kept theme, gap-filled tools, unwrapped components, unanchored widgets. See [Refresh and remix](/connect/refresh-and-remix). |
+| `init [dir]` | Set up Vendo in a Next.js app (run once). Extracts theme, tools, and components into `.vendo/` and wires the app. Interactive: prompts for a provider key and opens the component and remix pickers. Safe to re-run; on a fully-wired app it verifies wiring and exits without calling the model — use `refresh` to discover new tools or components. |
+| `refresh [dir]` | Catch up an existing install. Runs the additive discovery pipeline, offering only what is new — kept theme, gap-filled tools, unwrapped components, unanchored widgets. Use this whenever you add a provider key, grow your API, or add new components. See [Refresh and remix](/connect/refresh-and-remix). |
 | `doctor [dir]` | Read-only health check: keys, model override, wiring, `.vendo/` state, storage, scheduler, telemetry. Never writes. Hard failures exit non-zero; warnings exit zero. |
 | `sync [dir]` | Capture wrapped-component source and rebuild the sandbox bundle. `init` wires this into your `prebuild` script; you rarely run it by hand. |
 | `publish [dir]` | Validate `.vendo/tools.json` and print the sha256 a real publish would key on. Registry publish is a stub until ENG-198; embedded hosts read `.vendo/` from disk and never need it. |
