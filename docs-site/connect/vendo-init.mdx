@@ -1,6 +1,6 @@
 ---
 title: "The vendo init codemod"
-description: "What vendo init writes, what it never touches, and how to re-run it"
+description: "Learn what vendo init writes into .vendo/, how it wires a Next.js App Router app, and how safe re-runs and refresh keep your install current."
 ---
 
 `npx vendo init` is a codemod for connecting Vendo to an existing app. It extracts reviewable config into `.vendo/`, then wires a Next.js App Router app when it can do so without guessing.
@@ -96,7 +96,11 @@ For init-time LLM steps, the CLI reads the same provider keys as the runtime. It
 
 ## Safe to re-run
 
-Re-running `init` is safe and deterministic. On a fully-wired app — theme, tools, components, and Next.js wiring all present — a plain re-run verifies wiring, skips the model, and leaves `.vendo/` byte-stable. Use [`vendo refresh`](/connect/refresh-and-remix) as the explicit catch-up command when you want to discover new tools or components: it runs the same additive pipeline, keeping your theme, gap-filling tools, and offering only unwrapped components and unanchored widgets. Nothing under `.vendo/` is overwritten, and Next.js wiring is idempotent: existing route and root wrapper files are skipped, an already wrapped layout is left alone, and existing sandbox assets are skipped unless `--force` is set.
+Re-running `init` is safe and deterministic. On a fully-wired app — theme, tools, components, and Next.js wiring all present — a plain re-run verifies wiring, skips the model, and leaves `.vendo/` byte-stable.
+
+Use [`vendo refresh`](/connect/refresh-and-remix) as the explicit catch-up command when you want to discover new tools or components. It runs the same additive pipeline: your theme is kept, tools are gap-filled, and only unwrapped components and unanchored widgets are offered.
+
+Nothing under `.vendo/` is overwritten, and Next.js wiring is idempotent. Existing route and root wrapper files are skipped, an already wrapped layout is left alone, and existing sandbox assets are skipped unless `--force` is set.
 
 <Note>
   **Added an API key later?** Add it to `.env.local` and run `vendo refresh`. Refresh picks up the key and offers the LLM-assisted steps — tools, components, and remix — that ran without a key the first time. Grew your API since install? Same command catches up the new tools and components.
