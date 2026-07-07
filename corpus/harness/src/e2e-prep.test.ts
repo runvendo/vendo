@@ -4,82 +4,6 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { prepareE2eRepo } from "./e2e-prep.js";
 
-  it("adds Skateshop corpus routes, reviewed tools, handler guidance, and per-attempt thread ids", async () => {
-    const { appRoot, logsDir } = await createSkateshopFixture();
-    const logs = await prepareE2eRepo({ name: "skateshop" }, appRoot, logsDir);
-
-    const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
-      tools: Array<{
-        name: string;
-        annotations: { mutating: boolean; dangerous: boolean; idempotent?: boolean };
-        binding: { method: string; path: string };
-      }>;
-    };
-    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"), "utf8");
-    const root = await readFile(path.join(appRoot, "src/app/vendo-root.tsx"), "utf8");
-    const layout = await readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8");
-    const corpusLib = await readFile(path.join(appRoot, "src/app/api/corpus/_lib.ts"), "utf8");
-    const productsRoute = await readFile(path.join(appRoot, "src/app/api/corpus/products/route.ts"), "utf8");
-    const cartRoute = await readFile(path.join(appRoot, "src/app/api/corpus/cart/route.ts"), "utf8");
-    const ordersRoute = await readFile(path.join(appRoot, "src/app/api/corpus/orders/route.ts"), "utf8");
-    const seed = await readFile(path.join(appRoot, "src/db/seed.ts"), "utf8");
-    const middleware = await readFile(path.join(appRoot, "middleware.ts"), "utf8");
-    const userQuery = await readFile(path.join(appRoot, "src/lib/queries/user.ts"), "utf8");
-    const log = await readFile(logs[0]!, "utf8");
-
-    expect(tools.tools.map((tool) => tool.name)).toEqual([
-      "list_skateshop_catalog_products",
-      "search_skateshop_products",
-      "add_skateshop_item_to_cart",
-      "place_skateshop_order",
-      "get_skateshop_checkout_defaults",
-    ]);
-    expect(tools.tools.map((tool) => [tool.name, tool.annotations])).toEqual([
-      ["list_skateshop_catalog_products", { mutating: false, dangerous: false, idempotent: true }],
-      ["search_skateshop_products", { mutating: false, dangerous: false, idempotent: true }],
-      ["add_skateshop_item_to_cart", { mutating: true, dangerous: false }],
-      ["place_skateshop_order", { mutating: true, dangerous: false }],
-      ["get_skateshop_checkout_defaults", { mutating: false, dangerous: false, idempotent: true }],
-    ]);
-    expect(tools.tools.map((tool) => [tool.binding.method, tool.binding.path])).toEqual([
-      ["GET", "/api/corpus/products"],
-      ["GET", "/api/corpus/products"],
-      ["POST", "/api/corpus/cart"],
-      ["POST", "/api/corpus/orders"],
-      ["GET", "/api/corpus/checkout-defaults"],
-    ]);
-    expect(route).toContain("storage: false");
-    expect(route).toContain("instructionsExtra");
-    expect(route).toContain("Youness gradient cuts impact 8.375 skateboard deck");
-    expect(route).toContain("render a Table view");
-    expect(root).toContain("threadId={threadId}");
-    expect(root).toContain("vendoThread");
-    expect(layout).not.toContain("ClerkProvider");
-    expect(layout).toContain("<html");
-    expect(corpusLib).toContain('from "@/assets/data/products.json"');
-    expect(corpusLib).toContain("ensureCorpusCatalog");
-    expect(corpusLib).toContain("seededProductIds");
-    expect(productsRoute).toContain("searchCorpusProducts");
-    expect(productsRoute).toContain("Response.json");
-    expect(cartRoute).toContain('from "@/lib/actions/cart"');
-    expect(cartRoute).toContain("addToCart");
-    expect(ordersRoute).toContain("db.insert(orders)");
-    expect(seed).toContain("Corpus boot runs seed before the dev server is listening");
-    expect(seed).toContain("revalidateItems().catch");
-    expect(middleware).toContain("isCorpusE2eRequest");
-    expect(middleware).toContain("NextResponse.next()");
-    expect(middleware).toContain('pathname === "/"');
-    expect(middleware).toContain("vendoThread");
-    expect(middleware).toContain("/api/corpus");
-    expect(userQuery).not.toContain("@clerk/nextjs/server");
-    expect(userQuery).toContain("cache(async () => null)");
-    expect(log).toContain("Skateshop Layer 3 tools manifest");
-    expect(log).toContain("Skateshop corpus API routes");
-    expect(log).toContain("Skateshop seed revalidation fail-open");
-    expect(log).toContain("Skateshop Clerk middleware corpus bypass");
-    expect(log).toContain("Skateshop Clerk provider corpus bypass");
-    expect(log).toContain("Skateshop cached user query corpus bypass");
-  });
 
 async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
@@ -254,6 +178,82 @@ export function AppVendoRoot({ children }: { children: ReactNode }) {
 }
 
 describe("prepareE2eRepo", () => {
+  it("adds Skateshop corpus routes, reviewed tools, handler guidance, and per-attempt thread ids", async () => {
+    const { appRoot, logsDir } = await createSkateshopFixture();
+    const logs = await prepareE2eRepo({ name: "skateshop" }, appRoot, logsDir);
+
+    const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
+      tools: Array<{
+        name: string;
+        annotations: { mutating: boolean; dangerous: boolean; idempotent?: boolean };
+        binding: { method: string; path: string };
+      }>;
+    };
+    const route = await readFile(path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"), "utf8");
+    const root = await readFile(path.join(appRoot, "src/app/vendo-root.tsx"), "utf8");
+    const layout = await readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8");
+    const corpusLib = await readFile(path.join(appRoot, "src/app/api/corpus/_lib.ts"), "utf8");
+    const productsRoute = await readFile(path.join(appRoot, "src/app/api/corpus/products/route.ts"), "utf8");
+    const cartRoute = await readFile(path.join(appRoot, "src/app/api/corpus/cart/route.ts"), "utf8");
+    const ordersRoute = await readFile(path.join(appRoot, "src/app/api/corpus/orders/route.ts"), "utf8");
+    const seed = await readFile(path.join(appRoot, "src/db/seed.ts"), "utf8");
+    const middleware = await readFile(path.join(appRoot, "middleware.ts"), "utf8");
+    const userQuery = await readFile(path.join(appRoot, "src/lib/queries/user.ts"), "utf8");
+    const log = await readFile(logs[0]!, "utf8");
+
+    expect(tools.tools.map((tool) => tool.name)).toEqual([
+      "list_skateshop_catalog_products",
+      "search_skateshop_products",
+      "add_skateshop_item_to_cart",
+      "place_skateshop_order",
+      "get_skateshop_checkout_defaults",
+    ]);
+    expect(tools.tools.map((tool) => [tool.name, tool.annotations])).toEqual([
+      ["list_skateshop_catalog_products", { mutating: false, dangerous: false, idempotent: true }],
+      ["search_skateshop_products", { mutating: false, dangerous: false, idempotent: true }],
+      ["add_skateshop_item_to_cart", { mutating: true, dangerous: false }],
+      ["place_skateshop_order", { mutating: true, dangerous: false }],
+      ["get_skateshop_checkout_defaults", { mutating: false, dangerous: false, idempotent: true }],
+    ]);
+    expect(tools.tools.map((tool) => [tool.binding.method, tool.binding.path])).toEqual([
+      ["GET", "/api/corpus/products"],
+      ["GET", "/api/corpus/products"],
+      ["POST", "/api/corpus/cart"],
+      ["POST", "/api/corpus/orders"],
+      ["GET", "/api/corpus/checkout-defaults"],
+    ]);
+    expect(route).toContain("storage: false");
+    expect(route).toContain("instructionsExtra");
+    expect(route).toContain("Youness gradient cuts impact 8.375 skateboard deck");
+    expect(route).toContain("render a Table view");
+    expect(root).toContain("threadId={threadId}");
+    expect(root).toContain("vendoThread");
+    expect(layout).not.toContain("ClerkProvider");
+    expect(layout).toContain("<html");
+    expect(corpusLib).toContain('from "@/assets/data/products.json"');
+    expect(corpusLib).toContain("ensureCorpusCatalog");
+    expect(corpusLib).toContain("seededProductIds");
+    expect(productsRoute).toContain("searchCorpusProducts");
+    expect(productsRoute).toContain("Response.json");
+    expect(cartRoute).toContain('from "@/lib/actions/cart"');
+    expect(cartRoute).toContain("addToCart");
+    expect(ordersRoute).toContain("db.insert(orders)");
+    expect(seed).toContain("Corpus boot runs seed before the dev server is listening");
+    expect(seed).toContain("revalidateItems().catch");
+    expect(middleware).toContain("isCorpusE2eRequest");
+    expect(middleware).toContain("NextResponse.next()");
+    expect(middleware).toContain('pathname === "/"');
+    expect(middleware).toContain("vendoThread");
+    expect(middleware).toContain("/api/corpus");
+    expect(userQuery).not.toContain("@clerk/nextjs/server");
+    expect(userQuery).toContain("cache(async () => null)");
+    expect(log).toContain("Skateshop Layer 3 tools manifest");
+    expect(log).toContain("Skateshop corpus API routes");
+    expect(log).toContain("Skateshop seed revalidation fail-open");
+    expect(log).toContain("Skateshop Clerk middleware corpus bypass");
+    expect(log).toContain("Skateshop Clerk provider corpus bypass");
+    expect(log).toContain("Skateshop cached user query corpus bypass");
+  });
   it("adds Umami Layer 3 tools, handler guidance, auth fetch, and per-attempt thread ids", async () => {
     const { appRoot, logsDir } = await createUmamiFixture();
     const logs = await prepareE2eRepo({ name: "umami" }, appRoot, logsDir);
