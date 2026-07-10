@@ -46,7 +46,7 @@ interface ToolDescriptor {
   description: string;                       // drives LLM tool selection
   inputSchema: JsonSchemaDocument;           // plain JSON Schema (wire format)
   outputSchema?: JsonSchemaDocument;
-  risk?: "read" | "write" | "destructive";   // HOST-OWNED, versioned (§3.1); undeclared/unknown-external ⇒ destructive
+  risk?: "read" | "write" | "destructive";   // HOST-OWNED, versioned (§3.1); default depends on source (§3.1)
   idempotent?: boolean;                      // "safe to retry?" — automations read this
   binding?: ToolBinding;                     // how it reaches the host API (http | … extension point)
   formats?: Record<string, FieldFormat>;     // display hints (cents, iso-date, …) — carried over
@@ -89,11 +89,17 @@ One vocabulary replaces both of today's (`{mutating, dangerous}` manifest boolea
 | `read` | auto-runs (the egress jail is what makes this safe — see §6 invariant I1) |
 | `write` | asks until granted; grants can suppress |
 | `destructive` | **always asks — no grant, fade, or rule may ever suppress** ("money always needs you") |
-| *(undeclared)* | treated as `write` **plus an orthogonal `unverified` flag**, surfaced on cards and the Trust screen |
 
-MCP ingestion is lossless: `readOnlyHint → read`, `destructiveHint → destructive`, `idempotentHint → idempotent`. Approval-need is **Vendo metadata enforced by guard server-side** — never delegated to a framework field (Vercel v7 deprecated per-tool `needsApproval`; we deliberately do not couple). The ladder deliberately stays three levels; finer policy dimensions (data sensitivity, external exposure, unattended-run eligibility) are guard-track policy inputs, not core shapes (review ruling).
+**The missing-label default depends on the source — two distinct populations** (round-3 fix; these were conflated):
 
-**Labels are host-owned facts, not model opinions (security review).** A risk label is a security fact the whole ladder rests on, so: it is **host-declared and versioned** (part of `tools.json`, feeds the seal §5.1); the agent can never author or lower it; an **unknown/unlabeled external tool defaults to `destructive`** (fail-safe, not `write`); and the label is a *policy input evaluated server-side at the binding endpoint*, not merely a UI hint — a mislabeled tool must not become the only thing standing between an automation and a destructive call. Descriptor drift in a label lapses grants via the seal.
+| Source of an unlabeled tool | Default |
+|---|---|
+| **Host-owned** (the host's own API, extractor couldn't infer risk) | `write` **+ `unverified` flag** — usable and grantable, flagged on cards/Trust screen. The source is trusted; only the risk is unknown. |
+| **External / untrusted** (ingested MCP tools, a shared/imported module's foreign tools) | `destructive` — fail-safe. No host authority vouches for it, so it gets the non-suppressible tier until a host explicitly labels it. |
+
+MCP ingestion is lossless where hints exist: `readOnlyHint → read`, `destructiveHint → destructive`, `idempotentHint → idempotent`; an MCP tool with *no* informative hint is external-unlabeled → `destructive`. Approval-need is **Vendo metadata enforced by guard server-side** — never delegated to a framework field (Vercel v7 deprecated per-tool `needsApproval`; we deliberately do not couple). The ladder deliberately stays three levels; finer policy dimensions (data sensitivity, external exposure, unattended-run eligibility) are guard-track policy inputs, not core shapes (review ruling).
+
+**Labels are host-owned facts, not model opinions (security review).** A risk label is a security fact the whole ladder rests on, so: it is **host-declared and versioned** (part of `tools.json`, feeds the approvalSeal §5.1); the agent can never author or lower it; missing labels default per the source table above (host-owned → `write`+unverified; external → `destructive`); and the label is a *policy input evaluated server-side at the binding endpoint*, not merely a UI hint — a mislabeled tool must not become the only thing standing between an automation and a destructive call. Descriptor drift in a label lapses grants via the approvalSeal.
 
 ### 3.2 Framework interop (the "user never worries about it" design)
 
@@ -163,8 +169,10 @@ buildKey    = hash( repo commit sha + canonical envelope )          // what to c
 approvalSeal = hash( buildKey + descriptor hashes of every host tool the module was approved to use )
 ```
 
-- **Caches** (compiled bundle, warm snapshot) key on `buildKey` — a host tweaking one tool's *description* must not invalidate every module's compiled artifact.
-- **Grants and audit** bind to `approvalSeal` — so drift in a granted tool's behavior *does* lapse the approval even though no file changed. Any envelope security edit (widened egress, retimed trigger), any repo change, and any granted-tool descriptor drift **lapses the grants and re-prompts** — closing the "edit the trigger to every-minute without touching code" hole.
+- **Caches** (compiled bundle, warm snapshot) key on `buildKey` — a host tweaking one tool's *description* must not invalidate every module's compiled artifact. This is the ONLY use of `buildKey`.
+- **Grants, audit, provenance, `ModuleRef`, share signatures, and the immutability check (I8)** all bind to `approvalSeal` — so drift in a granted tool's behavior *does* lapse the approval even though no file changed. Any envelope security edit (widened egress, retimed trigger), any repo change, and any granted-tool descriptor drift **lapses the grants and re-prompts** — closing the "edit the trigger to every-minute without touching code" hole.
+
+**Terminology (round-3 fix):** where the rest of this doc says **`seal`**, it means **`approvalSeal`** — the security-binding key. `buildKey` is *only* ever the cache key and is always named explicitly. `ModuleRef` carries `approvalSeal`; warm snapshots are content-addressed by `buildKey` but a run additionally verifies the `approvalSeal` it executes under (I8), so a cache hit never bypasses approval.
 
 **No time-of-check/time-of-use gap (security review — invariant I8).** The seal a user approves is immutable; grant minting is compare-and-set against that exact seal, and every run/build/cache read must prove the same seal or **fail closed**. A repo/envelope/descriptor mutation between save-card and mint (or a stale warm snapshot from a superseded seal) can never be executed under the old approval.
 
@@ -402,7 +410,7 @@ await storage.meter.increment(ctx.principal, ctx.provenance.kind, cost(ctx));
 const guard2 = createGuard({ database: { grants: myRedisGrants, audit: myAudit } });
 ```
 
-**Named types used above** (one-line glosses so §8/§15 are self-contained): `ModuleRef` = `{ id; seal }` handle to a stored module; `ModuleView` = `{ element; dispose() }` the mounted iframe/view; `RunResult` = `{ status; outcome?; error? }` from a headless run; `ModuleWorkspace` = the agent's live sandbox dir with `writeFile`/`save()`; `ToolBinding` = the discriminated `http | …` execution binding.
+**Named types used above** (one-line glosses so §8/§15 are self-contained): `ModuleRef` = `{ id; approvalSeal }` handle to a stored module (the seal it was approved under); `ModuleView` = `{ element; dispose() }` the mounted iframe/view; `RunResult` = `{ status; outcome?; error? }` from a headless run; `ModuleWorkspace` = the agent's live sandbox dir with `writeFile`/`save()`; `ToolBinding` = the discriminated `http | …` execution binding.
 
 ## 16. Open questions → owned by other tracks
 
