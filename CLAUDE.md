@@ -9,7 +9,6 @@ generated UI in a sandboxed, brand-native surface.
 - `packages/`: the published libraries (vendo, cli, client, components, core,
   react, runtime, sandbox-shims, server, shell, stage, store, telemetry)
 - `apps/` — demo host apps (demo-bank "Maple", demo-accounting "Cadence")
-- `examples/` — minimal usage examples
 - `docs/` — integration docs
 
 ## Commands

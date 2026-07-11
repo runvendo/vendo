@@ -72,8 +72,6 @@ export const mcpJsonSchema = z
   })
   .strict();
 
-export type McpJson = z.infer<typeof mcpJsonSchema>;
-
 const ENV_REF = /\$\{([A-Z0-9_]+)\}/g;
 
 /**

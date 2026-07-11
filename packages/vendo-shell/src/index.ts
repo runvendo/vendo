@@ -38,7 +38,6 @@ export * from "./components/VoiceButton";
 export * from "./components/Composer";
 export * from "./components/MessageList";
 export * from "./components/SuggestionChips";
-export * from "./components/FlowGallery";
 export * from "./relative-time";
 export * from "./components/Landing";
 export * from "./components/IntegrationsPicker";

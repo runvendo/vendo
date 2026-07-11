@@ -39,8 +39,6 @@
     "@ai-sdk/anthropic": "3.0.12",
     "@clack/prompts": "1.6.0",
     "@scarf/scarf": "^1.4.0",
-    "@tailwindcss/browser": "^4.1.0",
-    "@tailwindcss/cli": "^4.1.0",
     "ai": "6.0.28",
     "esbuild": "^0.25.0",
     "picocolors": "^1.1.1",

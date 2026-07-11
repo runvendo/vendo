@@ -7,7 +7,7 @@ describe("public API", () => {
       "VendoPage", "VendoOverlay", "VendoSlot", "VendoThread",
       "VendoShellProvider", "useShell", "useVendoThread", "toThreadItems",
       "MessageList", "Composer", "ApprovalCard", "UINodeView", "Landing",
-      "SuggestionChips", "FlowGallery", "ConnectDock", "ConnectTray", "IntegrationsPicker",
+      "SuggestionChips", "ConnectDock", "ConnectTray", "IntegrationsPicker",
       "ConnectCard", "StreamingText", "ToolCall", "VoiceButton",
       "themeToStyle", "createLocalIntegrations", "VendoRemix",
       "VoiceStage", "VoiceBlob", "useVoiceSession", "createScriptedVoiceDriver",

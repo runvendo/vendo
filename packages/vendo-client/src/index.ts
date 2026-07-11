@@ -4,8 +4,6 @@
  * surfaces to the routes `createVendoHandler()` serves.
  */
 
-export const VENDO_CLIENT_PACKAGE = "@vendoai/client";
-
 export { VendoRoot, type VendoRootProps } from "./vendo-root.js";
 export { SandboxStage, type SandboxStageProps } from "./sandbox-stage.js";
 export { createServerIntegrations } from "./integrations.js";

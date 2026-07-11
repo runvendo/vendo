@@ -82,7 +82,6 @@ export const componentProposalSchema = z.object({
     }),
   ),
 });
-export type ComponentProposals = z.infer<typeof componentProposalSchema>;
 
 export interface ProposedComponent {
   candidate: ComponentCandidate;

@@ -4,8 +4,6 @@
  * automations; depends only on the five frozen seams + @vendoai/core).
  */
 
-export const VENDO_RUNTIME_PACKAGE = "@vendoai/runtime";
-
 // Engine
 export { createVendoAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine.js";
 export type { VendoAgentConfig, InstructionContext } from "./engine.js";
