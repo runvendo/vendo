@@ -1,9 +1,4 @@
-/**
- * `.vendo/tools.json` is the reviewable manifest the @vendoai/next handler
- * loads at runtime — these tests pin the demo's format annotations (money is
- * integer CENTS everywhere in the bank API) so the render_view prompt always
- * carries the divide-by-100 rule for money-bearing tools.
- */
+/** The reviewable tools manifest mirrors hostTools; these tests pin its integer-cents format annotations. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";

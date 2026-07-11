@@ -431,7 +431,7 @@ export function addDevDependency(pkgJson: string, name: string, version: string)
 }
 
 /** Add `vendo sync` to the app's `prebuild` script (create or extend),
- *  so every production build refreshes the capture + sandbox environment.
+ *  so every production build runs the stable Vendo prebuild hook.
  *  Idempotent: never adds a second copy. */
 export function addPrebuildSync(pkgJson: string): string | null {
   let pkg: Record<string, unknown>;

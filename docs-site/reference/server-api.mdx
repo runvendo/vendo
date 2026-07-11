@@ -20,7 +20,6 @@ createServer(toNodeHandler(handler)).listen(3000);
 
 | Export | Purpose |
 | --- | --- |
-| `VENDO_SERVER_PACKAGE` | Constant string, `"@vendoai/server"`. |
 | `createVendoHandler` | Returns the ready-made `{ GET, POST }` route pair for file-router catch-all routes. |
 | `VendoRouteHandlers` | Type for the `{ GET, POST }` route pair. |
 | `createVendoFetchHandler` | Returns the fetch-native Vendo handler, `(Request) => Promise<Response>`. |

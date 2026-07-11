@@ -224,23 +224,6 @@
       }
     },
     {
-      "name": "poll_vendo",
-      "description": "Runs a Vendo detector tick: reads current transactions, matches active rules against new charges, and fires the Slack snitch. Returns fired events so the client can surface confirmations.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      },
-      "annotations": {
-        "mutating": true,
-        "dangerous": false
-      },
-      "binding": {
-        "type": "http",
-        "method": "GET",
-        "path": "/api/vendo/poll"
-      }
-    },
-    {
       "name": "reset_vendo",
       "description": "Resets the demo to its pristine starting state by re-seeding data, clearing active rules, resetting the poller baseline, and resetting connections. Returns { reset: true } on success.",
       "inputSchema": {

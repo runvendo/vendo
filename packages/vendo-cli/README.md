@@ -9,7 +9,6 @@ vendo init [dir]      Set up Vendo in a Next.js app.
 vendo refresh [dir]   Fill gaps in an existing install and offer new components.
 vendo doctor [dir]    Check the install without writing.
 vendo sync [dir]      Report generated build artifacts as current.
-vendo publish [dir]   Validate the local manifest and print its content hash.
 vendo telemetry <status|enable|disable>   View or change anonymous usage telemetry.
 ```
 
@@ -50,5 +49,3 @@ Override the model with `VENDO_CLI_MODEL` or `VENDO_MODEL`; `VENDO_CLI_MODEL` wi
 - `--yes`: run non-interactively and skip the component picker.
 - `--local <dir>`: pack local Vendo packages into `./vendor` before installation.
 - `--version`: print the CLI version.
-
-`vendo publish` validates `.vendo/tools.json`, validates `.vendo/theme.json` when present, and prints the tools manifest SHA-256. It does not upload files.

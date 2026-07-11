@@ -45,7 +45,7 @@
     "build:bundle-ext": "vite build -c tests/browser/vite.bundle-ext.config.ts",
     "build:all-bundles": "pnpm run build:bundle && pnpm run build:react-shim && pnpm run build:bundle-ext",
     "test": "vitest run",
-    "test:browser": "pnpm run build:real-bundle && playwright test -c tests/browser/playwright.config.ts",
+    "test:browser": "pnpm run build:all-bundles && pnpm run build:real-bundle && playwright test -c tests/browser/playwright.config.ts",
     "build:real-bundle": "pnpm -w --filter @vendoai/components build:sandbox && node tests/browser/copy-real-bundle.mjs",
     "test:e2e": "playwright test -c tests/browser/playwright.config.ts gate-e2e-llm.spec.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

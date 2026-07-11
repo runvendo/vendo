@@ -1,17 +1,7 @@
 import { getStore } from "./store"
 import type { Transaction } from "./types"
 
-/**
- * Maple's irreversible write: send money to a person. Unlike placeOrder (a
- * card charge), this moves funds OUT of the user's checking account and can't
- * be undone — the guardrail policy classifies it CRITICAL via
- * `x-vendo-dangerous: true` in openapi.json, so the agent always shows the
- * ceremony consent card (Amount, Recipient) before it runs.
- *
- * It mutates the in-memory demo store only: debit checking, append a posted
- * transfer. No real money moves. Vendo's poller discovers the new row through
- * the existing transactions API, same as every other charge.
- */
+/** Sends demo money by debiting checking and appending a posted transfer; no real money moves. */
 export interface TransferMoneyInput {
   amount?: number // cents
   recipientName?: string

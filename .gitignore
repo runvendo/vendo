@@ -16,7 +16,9 @@ corpus/.repos/
 .playwright-mcp/
 *.png
 packages/vendo-stage/tests/browser/public/components-sandbox.js
-apps/demo-bank/vendo-sandbox/dist/
+packages/vendo-stage/tests/browser/public/host-bundle.js
+packages/vendo-stage/tests/browser/public/host-bundle-ext.js
+packages/vendo-stage/tests/browser/public/vendo-react-runtime.js
 
 # Vendo demo runtime state (PGlite) — created by pnpm demo, never committed.
 apps/*/.vendo/data/

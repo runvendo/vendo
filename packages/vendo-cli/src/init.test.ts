@@ -52,6 +52,7 @@ describe("runInit e2e (mock model)", () => {
     expect(readme).toContain("ingestVendoEvent()");
     expect(readme).toContain("POST /api/vendo/events/ingest");
     expect(readme).toContain("push at the source, relay webhooks, or poll upstream systems");
+    expect(readme).not.toContain("vendo publish");
   });
 
   it("interactive run shows the catalog picker and wraps only the picked component", async () => {

@@ -17,7 +17,6 @@ npx vendo <command> [dir] [options]
 | `refresh [dir]` | Catch up an existing install. Same additive pipeline as `init`, offering only what is new — kept theme, gap-filled tools, and unwrapped components. See [Refresh](/connect/refresh). |
 | `doctor [dir]` | Read-only health check: keys, model override, wiring, `.vendo/` state, storage, scheduler, telemetry. Never writes. Hard failures exit non-zero; warnings exit zero. |
 | `sync [dir]` | Stable prebuild command that reports generated artifacts are up to date. `init` wires this into your `prebuild` script; you rarely run it by hand. |
-| `publish [dir]` | Validate `.vendo/tools.json` and print the sha256 a real publish would key on. Registry publish is a stub until ENG-198; embedded hosts read `.vendo/` from disk and never need it. |
 | `telemetry <status\|enable\|disable>` | View or change anonymous usage telemetry. |
 
 ## Flags

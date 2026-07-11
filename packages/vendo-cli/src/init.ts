@@ -160,9 +160,6 @@ them to the \`events\` array in \`tools.json\`:
 Ingest events with \`ingestVendoEvent()\` or \`POST /api/vendo/events/ingest\`.
 Producers can push at the source, relay webhooks, or poll upstream systems; all
 three feed the same Vendo ingest path.
-
-\`vendo publish\` validates tools.json and prints its content hash. Embedded
-hosts read this directory from disk.
 `;
 }
 
