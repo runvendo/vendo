@@ -29,7 +29,12 @@ Not in the folder, by construction:
 
 ## 2. Storage of the artifact
 
-The folder is a logical shape with one storage rule: file contents live in the app file store (S3-compatible object storage, content-addressed so versions and forks share unchanged files; a local-disk default keeps zero-config installs working). Everything queryable lives in Postgres (`vendo_` tables): manifests, version graph, head pointers, installs, and all app records. This content-addressed layer is new work, not the current flat saved-record store. The folder materializes to a real filesystem in three places: inside the sandbox at rungs 2 to 4, on `.vendoapp` export, and optionally as a dev checkout. Apps are addressed by id; files within an app by folder path. Tar ingestion safety and canonical hashing rules live in an implementation appendix, not this spec.
+The folder is the interchange shape (export and sandbox), not the storage shape. Storage follows one split:
+
+- Apps without `server/` (rungs 1 to 3, the overwhelming case): one Postgres row per version holding the manifest fields and the UI inline (jsonb tree + component sources). No object storage involved. This is close to the existing saved-record store.
+- Apps with `server/`: the same version row, plus the project files in an S3-compatible object store (content-addressed per file so a 50-file project edited one file at a time is not duplicated per version; local-disk default keeps zero-config installs working), plus a sandbox snapshot id per version.
+
+`manifest.json` and the folder exist only at the edges: export mints them from the row (`.vendoapp`), the sandbox materializes them, import maps them back. Apps are addressed by id; files within an app by folder path. Tar ingestion safety rules live in an implementation appendix, not this spec.
 
 ## 3. Installs
 
