@@ -29,7 +29,7 @@ Not in the folder, by construction:
 
 ## 2. Storage of the artifact
 
-The folder is a logical shape. Its canonical home is the store (host Postgres, `vendo_` tables), content-addressed so versions and forks share unchanged files. This content-addressed layer is new work, not the current flat saved-record store. The folder materializes to a real filesystem in three places: inside the sandbox at rungs 2 to 4, on `.vendoapp` export, and optionally as a dev checkout. Apps are addressed by id; files within an app by folder path. Tar ingestion safety and canonical hashing rules live in an implementation appendix, not this spec.
+The folder is a logical shape with one storage rule: file contents live in the app file store (S3-compatible object storage, content-addressed so versions and forks share unchanged files; a local-disk default keeps zero-config installs working). Everything queryable lives in Postgres (`vendo_` tables): manifests, version graph, head pointers, installs, and all app records. This content-addressed layer is new work, not the current flat saved-record store. The folder materializes to a real filesystem in three places: inside the sandbox at rungs 2 to 4, on `.vendoapp` export, and optionally as a dev checkout. Apps are addressed by id; files within an app by folder path. Tar ingestion safety and canonical hashing rules live in an implementation appendix, not this spec.
 
 ## 3. Installs
 
