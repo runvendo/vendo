@@ -351,9 +351,6 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../vendo-core
-      '@vendoai/sandbox-shims':
-        specifier: workspace:*
-        version: link:../vendo-sandbox-shims
       '@vendoai/server':
         specifier: workspace:*
         version: link:../vendo-server
@@ -622,27 +619,6 @@ importers:
         version: 18.3.1(react@18.3.1)
       typescript:
         specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
-
-  packages/vendo-sandbox-shims:
-    devDependencies:
-      '@testing-library/react':
-        specifier: ^16.1.0
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@types/react':
-        specifier: ^19.2.0
-        version: 19.2.17
-      jsdom:
-        specifier: ^25.0.0
-        version: 25.0.1
-      react:
-        specifier: ^19.0.0
-        version: 19.2.4
-      typescript:
-        specifier: ^5.9.0
         version: 5.9.3
       vitest:
         specifier: ^2.1.0

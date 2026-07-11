@@ -170,7 +170,7 @@ COMPOSIO_API_KEY=
 const STORAGE_ENV = `# Vendo — durable storage + automation scheduler (all optional; unset
 # values fall back to zero-config embedded storage, see docs/persistence-and-deploy.md)
 #
-# OPTIONAL: Postgres connection string for threads/vendos/automations/decisions.
+# OPTIONAL: Postgres connection string for threads/automations/decisions.
 # Unset uses an embedded PGlite database — zero-config, good for local dev and
 # single-instance deploys, not for serverless/multi-instance ones.
 # DATABASE_URL=

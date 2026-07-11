@@ -96,8 +96,8 @@ describe("Trust-screen demo handlers", () => {
   });
 
   it("queries the audit log honoring sinceMs", async () => {
-    await demoStore.audit.append({ at: "2026-07-01T00:00:00Z", principal: CADENCE_SCOPE, kind: "tool_execution", toolName: "get_deadlines", mutating: false });
-    await demoStore.audit.append({ at: "2026-07-04T00:00:00Z", principal: CADENCE_SCOPE, kind: "tool_execution", toolName: "sendClientMessage", mutating: true });
+    await demoStore.audit.append({ at: "2026-07-01T00:00:00Z", principal: CADENCE_SCOPE, kind: "tool_execution", toolName: "get_deadlines", toolCallId: "call-audit-1", mutating: false, dangerous: false, outcome: "ok" });
+    await demoStore.audit.append({ at: "2026-07-04T00:00:00Z", principal: CADENCE_SCOPE, kind: "tool_execution", toolName: "sendClientMessage", toolCallId: "call-audit-2", mutating: true, dangerous: false, outcome: "ok" });
     const res = await handleDemoAuditQuery(
       req(`http://localhost/api/vendo/audit?sinceMs=${Date.parse("2026-07-02T00:00:00Z")}`),
     );

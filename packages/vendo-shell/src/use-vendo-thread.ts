@@ -92,7 +92,10 @@ export type RenderItem =
  * redundant sliver next to the rendered component. Mirrors `RENDER_VIEW_TOOL_NAME`
  * and `REQUEST_CONNECT_TOOL_NAME` in `@vendoai/runtime`.
  */
-const RENDER_TOOLS = new Set(["render_view", "request_connect"]);
+// "edit_view" no longer exists but stays suppressed: durable stores hold
+// pre-v0 threads whose historical edit_view parts would otherwise render
+// as raw tool chips on reopen.
+const RENDER_TOOLS = new Set(["render_view", "request_connect", "edit_view"]);
 
 /** Render tools that stream a view being built (skeleton-worthy). */
 const SKELETON_TOOLS = new Set(["render_view"]);

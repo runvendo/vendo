@@ -52,7 +52,6 @@
     "@types/node": "^22.0.0",
     "@vendoai/components": "workspace:*",
     "@vendoai/core": "workspace:*",
-    "@vendoai/sandbox-shims": "workspace:*",
     "@vendoai/server": "workspace:*",
     "@vendoai/telemetry": "workspace:*",
     "ajv": "^8.17.0",

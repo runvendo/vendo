@@ -100,6 +100,4 @@ installVendoHost(hostImpls, {
 });
 ```
 
-`vendo sync` also builds a sandbox environment from source CSS when it can find a globals file such as `src/app/globals.css`, `app/globals.css`, `src/styles/globals.css`, or `styles/globals.css`. It writes sanitized CSS to `.vendo/env/host.css` and mirrors it to `public/vendo/env/host.css` for the stage to fetch.
-
-The sanitizer drops `@import`, non-`data:` `url(...)`, image sets, and external URL references. The sandbox keeps `connect-src 'none'`, so CSS cannot fetch from the network.
+The sandbox keeps `connect-src 'none'`, so styles cannot fetch from the network.

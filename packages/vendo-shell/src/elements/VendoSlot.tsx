@@ -5,7 +5,6 @@ import { VendoThread } from "../VendoThread";
 
 export interface VendoSlotProps {
   vendoId: string;
-  savedNode?: unknown;
   emptyLabel?: string;
   greeting?: string;
   suggestions?: string[];

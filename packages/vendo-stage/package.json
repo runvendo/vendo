@@ -47,7 +47,7 @@
     "test": "vitest run",
     "test:browser": "pnpm run build:all-bundles && pnpm run build:real-bundle && playwright test -c tests/browser/playwright.config.ts",
     "build:real-bundle": "pnpm -w --filter @vendoai/components build:sandbox && node tests/browser/copy-real-bundle.mjs",
-    "test:e2e": "playwright test -c tests/browser/playwright.config.ts gate-e2e-llm.spec.ts",
+    "test:e2e": "pnpm run build:all-bundles && pnpm run build:real-bundle && playwright test -c tests/browser/playwright.config.ts gate-e2e-llm.spec.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -16,7 +16,7 @@ function PageSurface() {
   return (
     <div className="fl-page">
       <div className="fl-tabbar">
-        <span className="fl-tab" aria-current="page">Chat</span>
+        <span className="fl-tab" aria-selected="true">Chat</span>
         <button
           type="button"
           className="fl-tab fl-tab-trust"

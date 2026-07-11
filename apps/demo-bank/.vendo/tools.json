@@ -225,7 +225,7 @@
     },
     {
       "name": "reset_vendo",
-      "description": "Resets the demo to its pristine starting state by re-seeding data, clearing active rules, resetting the poller baseline, and resetting connections. Returns { reset: true } on success.",
+      "description": "Resets the demo to its pristine starting state by re-seeding data and resetting connections. Returns { reset: true } on success.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -362,7 +362,7 @@
     },
     {
       "name": "create_order",
-      "description": "Places a late-night delivery order, appending a new transaction to the store. The Vendo poller will discover the new transaction on its next tick.",
+      "description": "Places a late-night delivery order, appending a new transaction to the store.",
       "inputSchema": {
         "type": "object",
         "properties": {},
