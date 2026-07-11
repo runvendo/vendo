@@ -37,11 +37,11 @@
       },
       {
         "group": "Connect your app",
-        "pages": ["connect/vendo-init", "connect/refresh-and-remix", "connect/api-tools", "connect/host-components", "connect/theming", "connect/instructions"]
+        "pages": ["connect/vendo-init", "connect/refresh", "connect/api-tools", "connect/host-components", "connect/theming", "connect/instructions"]
       },
       {
         "group": "Capabilities",
-        "pages": ["capabilities/integrations", "capabilities/mcp", "capabilities/automations", "capabilities/saved-views", "capabilities/voice"]
+        "pages": ["capabilities/integrations", "capabilities/mcp", "capabilities/voice"]
       },
       {
         "group": "Deploy and operate",

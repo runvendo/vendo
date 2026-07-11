@@ -10,7 +10,7 @@ win over env where an explicit option exists.
 
 | Variable | Effect | Default |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Enables chat and generated UI through Anthropic. It has first provider precedence. Also provides fallback key material for remix pin sealing when `VENDO_SEAL_SECRET` is unset and no model is injected. | Unset. |
+| `ANTHROPIC_API_KEY` | Enables chat and generated UI through Anthropic. It has first provider precedence. | Unset. |
 | `OPENAI_API_KEY` | Enables chat and generated UI through OpenAI when no Anthropic key is present. Also sets the `voice` capability flag. | Unset. |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Enables chat and generated UI through Google when Anthropic and OpenAI keys are absent. | Unset. |
 | `VENDO_MODEL` | Overrides the runtime model. Accepts `provider/model` or a bare model id. A bare id applies to the detected provider, or Anthropic if none is detected. | Provider default: `claude-sonnet-5`, `gpt-5.5`, or `gemini-3.5-flash`. |
@@ -61,12 +61,6 @@ use the default PGlite file store, boot fails and asks you to set
 | `VENDO_TELEMETRY_DISABLED` | `1` or `true` disables telemetry. | Telemetry allowed unless another opt-out applies. |
 | `DO_NOT_TRACK` | `1` or `true` disables telemetry. | Unset. |
 | `CI` | Any non-empty value except `0` or `false` disables telemetry. | Unset. |
-
-## Development Diagnostics
-
-| Variable | Effect | Default |
-| --- | --- | --- |
-| `VENDO_BENCH` | Set to `1` to log `edit_view` apply and materialize timings. | Disabled. |
 
 ## MCP Header Templates
 

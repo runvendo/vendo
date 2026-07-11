@@ -14,5 +14,3 @@ Set `OPENAI_API_KEY` on your server to make the handler report `voice: true` fro
 `@vendoai/shell` exports `createRealtimeVoiceDriver`. It expects a `getSession()` function that returns an ephemeral Realtime client secret. Keep your raw `OPENAI_API_KEY` on the server. The browser receives only the ephemeral secret.
 
 Voice approvals follow the same tier model as chat. Read tools run directly. Act tools show a consent bar and can be approved by voice or by tapping. Critical tools require on-screen confirmation.
-
-Voice sessions can receive a compact thread brief, visible views, recent tool results, and saved views. If you pass saved views into `VendoThread`, the session also gets an `open_saved_vendo` tool so a customer can ask for a saved view by name.

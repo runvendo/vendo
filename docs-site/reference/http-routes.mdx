@@ -27,9 +27,10 @@ Composio webhook signature instead of a user principal.
 
 | Route | Purpose | Auth posture |
 | --- | --- | --- |
-| `GET /capabilities` | Returns `{ chat, integrations, voice, mcp, storage }`. | No principal guard. Returns booleans derived from env, config, and assembled storage. |
+| `GET /capabilities` | Returns `{ chat, integrations, voice, mcp, storage, automations }`. | Uses the principal guard when the handler has a custom `principal`; otherwise it is open for zero-config client boot. `storage` is currently `false`; `automations` reflects the assembled world. |
 | `GET /integrations` | Lists integration catalog entries and connection state. | Principal guard. If `COMPOSIO_API_KEY` is missing, returns `enabled: false` and an empty catalog. |
 | `GET /integrations?status&id=<id>&account=<connectedAccountId>` | Polls Composio connection status and marks a toolkit connected when active. | Principal guard and known-toolkit validation. |
+| `GET /voice/tools` | Lists connected integration tools and eligible automation control tools for a realtime voice session. | Principal guard. Automation control tools are limited to the embedded world's subject. |
 | `GET /deliveries?since=<cursor>` | Lists automation delivery messages for in-app toasts. | Principal guard, automations enabled, and single-tenant subject check. |
 | `GET /parked-actions` | Lists unresolved parked automation actions. | Principal guard and automations enabled. |
 | `GET /grants` | Lists standing grants plus automation-version grants for the Trust surface. | Principal guard. |
@@ -38,8 +39,6 @@ Composio webhook signature instead of a user principal.
 | `GET /critical-tools` | Lists tools classified as critical by the policy descriptor rules. | Principal guard. |
 | `GET /threads` | Lists stored chat threads for the resolved principal. | Principal guard. |
 | `GET /threads/<threadId>` | Returns stored messages for one thread. | Principal guard. |
-| `GET /vendos` | Lists saved generated views for the resolved principal. | Principal guard. |
-| `GET /vendos/<id>` | Loads one saved generated view. | Principal guard. Returns `404` when missing. |
 
 ## POST Routes
 
@@ -48,7 +47,10 @@ Composio webhook signature instead of a user principal.
 | `POST /chat` | Streams an agent turn from UI messages. | Requires chat capability from a provider key or injected model, then principal guard. |
 | `POST /action` | Executes a server-side action from generated UI after policy evaluation. | Principal guard and policy. Approval decisions return a single-use approval token before execution. |
 | `POST /integrations` | Connects or disconnects an integration. Body action is `"connect"` or `"disconnect"`. | Principal guard, known-toolkit validation, and `COMPOSIO_API_KEY`. Returns `503` when integrations are disabled. |
+| `POST /voice/session` | Mints an ephemeral OpenAI Realtime client secret. | Principal guard and `OPENAI_API_KEY`. The raw provider key remains on the server. |
+| `POST /voice/tools` | Executes one connected integration or automation control tool for a realtime voice session. | Principal guard. Automation control tools are limited to the embedded world's subject. |
 | `POST /tick` | Runs one scheduler tick. | Automations enabled. If a bearer token is present and `VENDO_TICK_SECRET` is set, it must match. Without bearer auth, falls back to principal guard. |
+| `POST /events/ingest` | Fires declared `host_event` automations from `{ name, payload, eventId }`. | Automations enabled. Accepts the tick bearer secret or falls back to principal auth. Enforces bounded bodies and stable event ids. |
 | `POST /webhooks/composio` | Accepts Composio trigger webhooks and fires matching automations. | No principal guard. Requires `COMPOSIO_WEBHOOK_SECRET` and valid `webhook-id`, `webhook-timestamp`, and `webhook-signature` headers. |
 | `POST /resume` | Resumes a paused automation run from an approval toast. | Principal guard, automations enabled, and single-tenant subject check. |
 | `POST /consent` | Records a consent response and may mint a grant. | Principal guard. Validates the consent body and live tool descriptor. |
@@ -56,8 +58,6 @@ Composio webhook signature instead of a user principal.
 | `POST /parked-actions/resolve` | Approves or declines a parked automation action. | Principal guard and automations enabled. |
 | `POST /grants/revoke` | Revokes a standing grant. | Principal guard. |
 | `POST /rules/revoke` | Revokes an always-ask rule. | Principal guard. |
-| `POST /vendos` | Saves a generated view draft. | Principal guard. Rejects ids that collide with reserved route segments or contain `/`. |
-| `POST /vendos/<id>/delete` | Deletes a saved generated view. | Principal guard. |
 
 ## Not Found
 

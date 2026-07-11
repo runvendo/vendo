@@ -8,7 +8,6 @@ The main export includes:
 - `UINode`, generated UI payload validation, graph resolution, JSON Pointer bindings, and host-prop checks;
 - the typed `UIMessage` stream protocol, consent records, fade proposals, and agent interfaces;
 - component registry types and helpers;
-- `.vendo/` host-install manifest schemas for theme, components, tools, and host events;
 - runtime seam interfaces for storage, identity, execution, scheduling, and delivery;
 - shared prompt assembly, capability summaries, output caps, and text helpers.
 
@@ -37,6 +36,6 @@ The main export includes:
 
 Use `validateGeneratedPayload(input)` for non-throwing validation. `@vendoai/stage` renders the resolved `UINode` tree.
 
-See [manifest contracts](../../docs/contracts/manifest.md) and [runtime seams](../../docs/contracts/seams.md).
+See [runtime seams](../../docs/contracts/seams.md).
 
 Phase 1 direction: core slims to contracts only, while the app format and its runtime move to an apps package.

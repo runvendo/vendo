@@ -35,7 +35,7 @@ export const statusPillDescriptor = hostComponent(
 export const hostComponents = toHostRegistry([statusPillDescriptor]);
 ```
 
-`toHostRegistry()` returns the `RegisteredComponent[]` shape accepted by `createVendoHandler()` and by the stage renderer. The `version` option is optional. Leave it unset for version `"1"`, and bump it when a breaking prop or behavior change would affect saved views.
+`toHostRegistry()` returns the `RegisteredComponent[]` shape accepted by `createVendoHandler()` and by the stage renderer. The `version` option is optional. Leave it unset for version `"1"`.
 
 ## Implementation
 

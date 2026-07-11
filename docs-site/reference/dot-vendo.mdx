@@ -79,7 +79,6 @@ lower snake case, for example `invoice.paid`.
 | Path | Writer | Hand edits |
 | --- | --- | --- |
 | `.vendo/mcp.json` | You create this file by hand. | Supported. It declares MCP servers. Header values may use `${ENV_VAR}` templates. Missing env values drop that server at boot. |
-| `.vendo/remix-sources.json` | `vendo sync`. | Not recommended. It is generated from captured remix anchors and will be replaced by sync. |
 | `.vendo/env/manifest.json` | `vendo sync`. | Not recommended. It describes the sandbox environment built by sync. |
 | `.vendo/env/**` | `vendo sync`. | Not recommended. These are vendored or shimmed sandbox-environment assets. |
 

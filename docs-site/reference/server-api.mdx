@@ -21,9 +21,13 @@ createServer(toNodeHandler(handler)).listen(3000);
 | Export | Purpose |
 | --- | --- |
 | `VENDO_SERVER_PACKAGE` | Constant string, `"@vendoai/server"`. |
+| `createVendoHandler` | Returns the ready-made `{ GET, POST }` route pair for file-router catch-all routes. |
+| `VendoRouteHandlers` | Type for the `{ GET, POST }` route pair. |
 | `createVendoFetchHandler` | Returns the fetch-native Vendo handler, `(Request) => Promise<Response>`. |
 | `VendoFetchHandler` | Type for the fetch-native handler. |
 | `VendoState` | Type for the assembled handler state. |
+| `ingestVendoEvent` | Fires a declared host event directly against the assembled Vendo world. |
+| `IngestVendoEventOptions`, `IngestVendoEventResult` | Input and result types for direct host-event ingestion. |
 | `routeTail` | Resolves the Vendo route suffix from a request URL, independent of mount prefix. |
 | `ensureVendoState` | Assembles or reuses the process-wide Vendo state used by the scheduler. |
 | `bootRegistry` | Process-wide boot registry used to coordinate route and scheduler state. |
@@ -50,7 +54,7 @@ fetch `Request` signal if the client disconnects.
 | `parseHandlerOptions` | Validates `VendoHandlerOptions` and rejects unknown keys. |
 | `VendoHandlerOptions` | Shared options type for `createVendoFetchHandler` and `createVendoHandler`. |
 | `IntegrationCatalogEntry` | `{ id: string; name: string }` entry used by the integrations catalog option. |
-| `loadVendoDir` | Loads `.vendo/theme.json`, `.vendo/tools.json`, `.vendo/remix-sources.json`, `.vendo/env/manifest.json`, and `.vendo/mcp.json`. |
+| `loadVendoDir` | Loads `.vendo/theme.json`, `.vendo/tools.json`, and `.vendo/mcp.json`. |
 | `LoadedVendoDir` | Return type for `loadVendoDir`. |
 | `manifestToolsToHostTools` | Converts `.vendo/tools.json` manifest entries into host tool definitions. |
 | `resolveMcpServers` | Resolves MCP server config and substitutes `${ENV_VAR}` header templates. |
@@ -102,9 +106,6 @@ fetch `Request` signal if the client disconnects.
 | `CreateWorldConfig` | Config type for `createAutomationsWorld`. |
 | `createThreadIndex` | Maps client thread ids to stored thread ids. |
 | `ThreadIndex` | Thread index interface. |
-| `createDrizzleVendoRegistry` | Creates a durable saved-view registry. |
-| `createInMemoryVendoRegistry` | Creates an in-memory saved-view registry. |
-| `VendoRegistry` | Saved-view registry interface. |
 | `createApprovalStore` | Creates the short-lived action approval-token store. |
 | `ApprovalStore` | Approval-token store interface. |
 
@@ -118,24 +119,14 @@ Use them only if you are composing your own router.
 | `handleChat`, `ChatDeps` | Agent chat streaming route. |
 | `handleAction`, `ActionDeps` | Server action dispatch route. |
 | `handleIntegrationsGet`, `handleIntegrationsPost`, `IntegrationsDeps` | Integration catalog, connect, disconnect, and status routes. |
-| `handleVendosGet`, `handleVendosPost` | Saved generated view routes. |
 | `handleConsentRoute`, `ConsentRouteDeps` | Consent response route. |
 | `handleFadeProposalRoute`, `FadeProposalRouteDeps` | Fade proposal resolution route. |
+| `handleVoiceSessionPost`, `VoiceSessionDeps` | Ephemeral OpenAI Realtime client-secret route. |
 | `listParkedActionsRoute`, `resolveParkedActionRoute` | Parked automation actions routes. |
 | `listGrantsRoute`, `revokeGrantRoute` | Trust grant routes. |
 | `listRulesRoute`, `revokeRuleRoute` | Trust always-ask rule routes. |
 | `queryAuditRoute` | Trust audit query route. |
 | `listCriticalToolsRoute` | Trust critical-tools route. |
-
-## Remix Helpers
-
-| Export | Purpose |
-| --- | --- |
-| `applyVerifiedPinBase` | Applies a verified remix pin envelope to UI messages. |
-| `enrichAnchorSources` | Adds server-side captured anchor source to remix requests. |
-| `createSourceResolver` | Creates a source resolver from handler options and captured `.vendo` sources. |
-| `capSource` | Caps captured component source text. |
-| `resolveRemixSealer` | Resolves the remix envelope sealer from options and env. |
 
 ## Subpath Exports
 

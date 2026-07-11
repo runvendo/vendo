@@ -13,10 +13,10 @@ npx vendo <command> [dir] [options]
 
 | Command | Purpose |
 | --- | --- |
-| `init [dir]` | Set up Vendo in a Next.js app (run once). Extracts theme, tools, and components into `.vendo/` and wires the app. Interactive: prompts for a provider key and opens the component and remix pickers. Safe to re-run; on an already-wired app it behaves like `refresh`. |
-| `refresh [dir]` | Catch up an existing install. Same additive pipeline as `init`, offering only what is new — kept theme, gap-filled tools, unwrapped components, unanchored widgets. See [Refresh and remix](/connect/refresh-and-remix). |
+| `init [dir]` | Set up Vendo in a Next.js app (run once). Extracts theme, tools, and components into `.vendo/` and wires the app. Interactive: prompts for a provider key and opens the component picker. Safe to re-run; on an already-wired app it behaves like `refresh`. |
+| `refresh [dir]` | Catch up an existing install. Same additive pipeline as `init`, offering only what is new — kept theme, gap-filled tools, and unwrapped components. See [Refresh](/connect/refresh). |
 | `doctor [dir]` | Read-only health check: keys, model override, wiring, `.vendo/` state, storage, scheduler, telemetry. Never writes. Hard failures exit non-zero; warnings exit zero. |
-| `sync [dir]` | Capture wrapped-component source and rebuild the sandbox bundle. `init` wires this into your `prebuild` script; you rarely run it by hand. |
+| `sync [dir]` | Stable prebuild command that reports generated artifacts are up to date. `init` wires this into your `prebuild` script; you rarely run it by hand. |
 | `publish [dir]` | Validate `.vendo/tools.json` and print the sha256 a real publish would key on. Registry publish is a stub until ENG-198; embedded hosts read `.vendo/` from disk and never need it. |
 | `telemetry <status\|enable\|disable>` | View or change anonymous usage telemetry. |
 
@@ -24,9 +24,9 @@ npx vendo <command> [dir] [options]
 
 | Flag | Behavior |
 | --- | --- |
-| `--skip-llm` | Skips LLM-assisted steps (route scanning, component and remix discovery). Deterministic theme extraction, OpenAPI extraction, `.vendo/README.md`, and Next.js wiring still run. |
+| `--skip-llm` | Skips LLM-assisted steps (route scanning and component discovery). Deterministic theme extraction, OpenAPI extraction, `.vendo/README.md`, and Next.js wiring still run. |
 | `--force` | Allows generated `.vendo/` artifacts to be overwritten, and existing sandbox asset files in `public/vendo/` to be replaced (warns first). Existing route and wrapper files are still skipped rather than rewritten. Applies to `init` and `refresh`. |
-| `--yes` | Non-interactive: no prompts. Resolves keys from env / `.env.local` only and skips the component and remix pickers (source edits stay human-gated). |
+| `--yes` | Non-interactive: no prompts. Resolves keys from env / `.env.local` only and skips the component picker (source edits stay human-gated). |
 | `--local <dir>` | Packs local `@vendoai` packages from a Vendo monorepo into `./vendor` (development use). |
 | `--version` | Prints the CLI version. |
 

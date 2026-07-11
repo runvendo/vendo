@@ -9,7 +9,7 @@ In production, the default identity fails closed. A request is accepted only whe
 
 ## Add A Principal Resolver
 
-`principal` is the production gate. It runs for identity-bearing routes such as chat, actions, integrations, threads, saved views, and trust routes. Return a principal to allow the request. Return `null` to reject it with `403`.
+`principal` is the production gate. It runs for identity-bearing routes such as chat, actions, integrations, threads, and trust routes. Return a principal to allow the request. Return `null` to reject it with `403`.
 
 ```ts
 import { createVendoHandler } from "vendoai/server";

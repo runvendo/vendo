@@ -87,21 +87,6 @@ stage. The code runs only inside the sandbox.
 }
 ```
 
-## Refreshable Data
-
-When a view displays data fetched from a tool, `render_view` can declare
-`queries`. Each query names the tool call that produced one subtree of `data`.
-Saved views can re-run those queries later through the same policy-governed
-tool path and patch fresh results back into the view.
-
-```json
-{
-  "path": "/invoices",
-  "tool": "listInvoices",
-  "input": { "limit": 25 }
-}
-```
-
 ## The Sandbox Boundary
 
 Generated UI renders in `@vendoai/stage`, an iframe created with

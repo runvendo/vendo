@@ -176,9 +176,7 @@ Composio triggers (Gmail, Slack, etc. firing without polling). To wire it:
    everything.
 
 **Local dev:** Composio can't reach `localhost`. Use a tunnel (ngrok,
-Cloudflare Tunnel, etc.) pointed at the webhook route, or skip the webhook
-entirely and fire the automation by hand — ask the agent to run it, which
-calls the `run_automation_now` tool — while developing.
+Cloudflare Tunnel, etc.) pointed at the webhook route.
 
 **The connect-fast-path caveat.** The integrations POST endpoint's "connect"
 action has a fast path: if you're already authorized with Composio for a

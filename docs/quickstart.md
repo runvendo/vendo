@@ -153,13 +153,12 @@ Two properties matter:
   anywhere else.
 - The extractor is **fail-closed**: route-scanned tools are all marked
   `mutating: true`, which means the policy pauses them for user approval.
-  Relaxing an annotation to `mutating: false` (auto-run reads, saved-view
-  refresh) is a reviewed edit you make by hand.
+  Relaxing an annotation to `mutating: false` (auto-run reads) is a reviewed
+  edit you make by hand.
 
 ## Events
 
-Host events are declared in `.vendo/tools.json` next to tools. Once declared,
-the automation authoring agent can compile `host_event` triggers from chat.
+Host events are declared in `.vendo/tools.json` next to tools.
 
 ```json
 {
@@ -270,10 +269,6 @@ import { createVendoFetchHandler } from "vendoai/server";
 const vendo = createVendoFetchHandler();
 app.all("/api/vendo/*", (c) => vendo(c.req.raw));
 ```
-
-See `examples/node` for a full working server (plain `node:http` plus a Vite
-client) including serving the sandbox runtime assets that Next.js handles
-implicitly.
 
 ## Persistence
 
