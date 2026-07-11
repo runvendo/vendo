@@ -7,7 +7,7 @@ Scope: the artifact format only. Runtime internals and the generation engine are
 
 ## 1. Core model
 
-One artifact for everything Vendo produces: an app is a folder with a manifest. A quick chat view is an unsaved app with only a UI. An automation is an app with a trigger. Nothing converts between kinds; fields accumulate as the app grows. The format is named `vendo/app@1`. The interchange form (sharing, the open standard, shipping to a sandbox) is the folder as a tarball, extension `.vapp`.
+One artifact for everything Vendo produces: an app is a folder with a manifest. A quick chat view is an unsaved app with only a UI. An automation is an app with a trigger. Nothing converts between kinds; fields accumulate as the app grows. The format is named `vendo/app@1`. The interchange form (sharing, the open standard, shipping to a sandbox) is the folder as a tarball, extension `.vendoapp`.
 
 Apps have two origins, same format: created from new (born in conversation, no lineage, runs jailed) and remixed from the product (a pin: a fork of a host component's real source, see section 8). The user never chooses between them; both are just conversation.
 
@@ -29,7 +29,7 @@ Not in the folder, by construction:
 
 ## 2. Storage of the artifact
 
-The folder is a logical shape. Its canonical home is the store (host Postgres, `vendo_` tables), content-addressed so versions and forks share unchanged files. This content-addressed layer is new work, not the current flat saved-record store. The folder materializes to a real filesystem in three places: inside the sandbox at rungs 2 to 4, on `.vapp` export, and optionally as a dev checkout. Apps are addressed by id; files within an app by folder path. Tar ingestion safety and canonical hashing rules live in an implementation appendix, not this spec.
+The folder is a logical shape. Its canonical home is the store (host Postgres, `vendo_` tables), content-addressed so versions and forks share unchanged files. This content-addressed layer is new work, not the current flat saved-record store. The folder materializes to a real filesystem in three places: inside the sandbox at rungs 2 to 4, on `.vendoapp` export, and optionally as a dev checkout. Apps are addressed by id; files within an app by folder path. Tar ingestion safety and canonical hashing rules live in an implementation appendix, not this spec.
 
 ## 3. Installs
 
@@ -117,7 +117,7 @@ A pin is an edit of the host's actual component source, running in the product a
 ## 9. Sharing and export
 
 - Sharing hands over a frozen copy: fresh install, empty data, no grants.
-- A `.vapp` export contains only the folder. Data, caches, and grants live outside it by construction and cannot leak.
+- A `.vendoapp` export contains only the folder. Data, caches, and grants live outside it by construction and cannot leak.
 - Host-derived files (pins) export only with host permission; export fails rather than silently stripping them (a stripped pin changes behavior).
 - Jail and sandbox rules are unchanged by sharing: no network in the jail, manifest egress in the sandbox, secrets never readable.
 
