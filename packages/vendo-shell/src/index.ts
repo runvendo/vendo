@@ -11,20 +11,12 @@ export * from "./use-trust-data";
 export * from "./voice/voice-session";
 export * from "./voice/scripted-driver";
 export * from "./voice/realtime-driver";
-export * from "./voice/replay-registry";
 export * from "./voice/session-brief";
 export * from "./voice/voice-messages";
 export * from "./voice/use-voice-session";
 export * from "./voice/VoiceBlob";
 export * from "./voice/VoiceStage";
-export * from "./seams/store";
-export * from "./seams/web-storage";
-export * from "./seams/remixes";
-export * from "./seams/web-remixes";
 export * from "./seams/notifications";
-export * from "./seams/query";
-export * from "./reopen";
-export * from "./component-drift";
 export * from "./seams/integrations";
 
 export * from "./components/StreamingText";
@@ -47,7 +39,6 @@ export * from "./components/Composer";
 export * from "./components/MessageList";
 export * from "./components/SuggestionChips";
 export * from "./components/FlowGallery";
-export * from "./components/VendoToast";
 export * from "./relative-time";
 export * from "./components/Landing";
 export * from "./components/IntegrationsPicker";
@@ -59,9 +50,6 @@ export * from "./components/WaitingList";
 export * from "./components/TrustScreen";
 
 export * from "./remix/VendoRemix";
-export * from "./remix/page-context-registry";
-export * from "./remix/scope";
-export * from "./remix/snapshot";
 export * from "./toasts/VendoToasts";
 export * from "./toasts/toast-queue";
 

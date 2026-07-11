@@ -28,10 +28,6 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     // Catalog picker: offered = componentsOffered, accepted = componentCount.
     "componentsOffered",
     "componentCount",
-    // Remix picker (anchors spliced into host source): offered/wrapped/skipped.
-    "remixOffered",
-    "remixWrapped",
-    "remixSkipped",
     "toolCount",
     "durationMs",
   ]),

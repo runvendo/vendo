@@ -17,7 +17,6 @@ describe("buildChatInstructions", () => {
       "WHEN TO RENDER UI",
       "BRAND: be calm.",
       "HOW render_view WORKS",
-      "REFRESHABLE VIEWS",
       "DATA FIDELITY",
       "BUILDING BLOCKS",
       "You can do host things.",
@@ -70,7 +69,7 @@ describe("buildChatInstructions", () => {
 });
 
 describe("buildVoiceInstructions", () => {
-  it("carries persona, anti-yap, show-vs-say, source protocol, and guardrails last", () => {
+  it("carries persona, anti-yap, show-vs-say, data fidelity, and guardrails last", () => {
     const text = buildVoiceInstructions({
       persona: "You are Testo's voice assistant.",
       extras: ["Amounts are in integer cents."],
@@ -79,7 +78,6 @@ describe("buildVoiceInstructions", () => {
       "Testo's voice assistant",
       "HOW YOU SPEAK",
       "SHOW vs SAY",
-      "REFRESHABLE VIEWS",
       "DATA FIDELITY",
       "MOST RECENT permission request",
       "Amounts are in integer cents.",

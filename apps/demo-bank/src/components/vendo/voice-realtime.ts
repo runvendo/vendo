@@ -11,7 +11,6 @@
 import {
   annotationsToTier,
   createRealtimeVoiceDriver,
-  replayRegistry,
   type VoiceDriver,
   type VoiceDriverHandle,
   type VoiceEvent,
@@ -36,7 +35,7 @@ let viewSeq = 0;
 /**
  * Per-session cache of read-tool results (spec §3): the model's `source`
  * declaration is matched against what the CLIENT actually fetched, so the
- * refreshable payload stores the verbatim (capped) result — the model never
+ * data-bound payload stores the verbatim (capped) result — the model never
  * has to round-trip raw data. Bounded FIFO; latest result per key wins.
  */
 const sessionResults = new Map<string, unknown>();
@@ -99,20 +98,19 @@ function resolvePointer(value: unknown, pointer: string): unknown {
 
 /** Validate a source declaration against the session cache: the pointed-at
  *  value must be an array of records whose fields cover the column keys, and
- *  the tool must be replayable. Any failure → snapshot (never an error). */
+ *  the result must be present in this session. Any failure → snapshot. */
 function matchSource(
   source: SourceDecl | undefined,
   columns: Array<{ key: string }>,
 ): { raw: unknown; tool: string; input: unknown; rowsPath: string } | undefined {
   if (!source?.tool || typeof source.rowsPath !== "string") return undefined;
-  if (!replayRegistry.has(source.tool)) return undefined;
   const key = resultKey(source.tool, source.input);
   if (!sessionResults.has(key)) return undefined;
   const raw = sessionResults.get(key);
   const rows = resolvePointer(raw, source.rowsPath);
   if (!Array.isArray(rows)) return undefined;
-  // An EMPTY result is still a valid, refreshable declaration (rows may exist
-  // on a later refresh) — column validation only applies when rows exist.
+  // An EMPTY result is still a valid declaration; column validation only
+  // applies when rows exist.
   if (rows.length > 0) {
     // Declared columns must exist AND be scalar in EVERY row (review P1:
     // heterogeneous rows can be scalar in row 1 and nested in row 2): bound
@@ -131,8 +129,7 @@ function matchSource(
 
 /** Wrap rows/columns from the model into a sandbox-rendered Table view. When
  *  the model declares a valid `source`, the payload is DATA-BOUND (rows via
- *  $path into the verbatim cached result) and declares `queries`, so pinning
- *  it yields a view that refreshes on reopen — the chat protocol (spec §3). */
+ *  $path into the verbatim cached result) and preserves query provenance. */
 function tableView(input: unknown): UINode | undefined {
   const { title, columns, rows, source } = (input ?? {}) as {
     title?: string;
@@ -195,12 +192,12 @@ function keyValueView(input: unknown): UINode | undefined {
   };
 }
 
-/** Optional provenance declaration (spec §3): lets the client build a
- *  refreshable, data-bound payload from its own cached copy of the result. */
+/** Optional provenance declaration: lets the client build a data-bound
+ *  payload from its own cached copy of the result. */
 const SOURCE_PARAM = {
   type: "object",
   description:
-    "Where the shown data came from, when it came from ONE tool call you made: the tool name, the exact input you passed, and the JSON pointer to the row array inside that tool's result (e.g. '/data/transactions'). Use raw field names as column keys when declaring this. Makes the view refreshable when pinned.",
+    "Where the shown data came from, when it came from ONE tool call you made: the tool name, the exact input you passed, and the JSON pointer to the row array inside that tool's result (e.g. '/data/transactions'). Use raw field names as column keys so the client can bind the exact rows.",
   properties: {
     tool: { type: "string" },
     input: { type: "object" },
@@ -213,7 +210,7 @@ const displayTools: VoiceToolDef[] = [
   {
     name: "show_table",
     description:
-      "Display structured rows (transactions, comparisons) as a table on screen. Use this to SHOW data — then speak only the headline. Declare `source` when the rows came from a tool call so the view stays refreshable.",
+      "Display structured rows (transactions, comparisons) as a table on screen. Use this to SHOW data — then speak only the headline. Declare `source` when the rows came from a tool call so the client can bind the exact result.",
     parameters: {
       type: "object",
       properties: {
@@ -313,13 +310,11 @@ const integrationTools: VoiceToolDef[] = [
 ];
 
 /** Every Maple host-API operation, straight through the chat-side executor.
- *  Read-tier results are recorded for `source` matching, and read tools are
- *  registered for saved-view replay (spec §3). */
+ *  Read-tier results are recorded for `source` matching. */
 const hostVoiceTools: VoiceToolDef[] = mapleHostToolDefs.map((def) => {
   const tier = annotationsToTier(def.annotations);
   const run = (input: unknown) =>
     executeHostToolCall(def, (input ?? {}) as Record<string, unknown>);
-  if (tier === "read") replayRegistry.register(def.name, run);
   // Declared result-field formats travel with the voice tool too — parity
   // with the chat path's hostToolset (a voice model reads cents/date rules
   // in the same place it reads what the tool does).
@@ -403,9 +398,6 @@ async function fetchIntegrationVoiceTools(): Promise<VoiceToolDef[]> {
         if (!exec.ok) throw new Error(json.error ?? `integration tool failed (${exec.status})`);
         return json.result;
       };
-      // Read tools replay through the same (capping) bridge on reopen, so the
-      // refreshed shape matches the initial one (spec §3/§5).
-      if (tier === "read") replayRegistry.register(tool.name, run);
       return {
         name: tool.name,
         description: tool.description,

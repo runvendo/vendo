@@ -17,10 +17,8 @@ function evaluate(toolName: string, descriptor?: Partial<ToolDescriptor>) {
 }
 
 describe("defaultVendoPolicy", () => {
-  it("allows the engine's own render, edit, and connect tools", async () => {
+  it("allows the engine's own render and connect tools", async () => {
     expect(await evaluate("render_view")).toBe("allow");
-    // Approval-per-edit would erase the fast-edit latency win (plan review).
-    expect(await evaluate("edit_view")).toBe("allow");
     expect(await evaluate("request_connect")).toBe("allow");
   });
 

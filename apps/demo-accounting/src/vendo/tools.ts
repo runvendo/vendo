@@ -2,9 +2,8 @@
  * The Cadence agent's in-process tools: read-only views over the firm's store,
  * shaped for generated UI. These exist alongside the camelCase host-API tools
  * for one reason — they run SERVER-SIDE in the same Next process, so the
- * sandbox action route (a generated component's vendo.dispatch) and the
- * saved-view refresh seam (runQuery on reopen) can execute them without a
- * browser session. Writes have no in-process form: they go through the
+ * sandbox action route (a generated component's vendo.dispatch) can execute
+ * them without a browser session. Writes have no in-process form: they go through the
  * client-executed host tools and their approval cards.
  */
 import { tool, type Tool, type ToolSet } from "ai";

@@ -18,8 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${hanken.variable} ${splineMono.variable}`}>
       <body className="min-h-screen antialiased">
         {/* Vendo's layer WRAPS the app: the Cmd/Ctrl+K overlay, automation
-            toasts, and the shared provider that VendoRemix wrappers inside
-            the page reach for scoping and pinned remixes. */}
+            toasts, and the shared provider used by the page. */}
         <VendoLayer>
           <AppShell>{children}</AppShell>
         </VendoLayer>

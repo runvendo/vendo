@@ -58,21 +58,7 @@ export {
 } from "./fetch-handler.js";
 export { createVendoHandler, type VendoRouteHandlers } from "./route-handler.js";
 export { startVendoScheduler } from "./boot.js";
-export {
-  createDrizzleVendoRegistry,
-  createInMemoryVendoRegistry,
-  handleVendosGet,
-  handleVendosPost,
-  type VendoRegistry,
-} from "./vendos.js";
 export { toNodeHandler, type FetchHandler, type NodeHandler } from "./node.js";
-export {
-  applyVerifiedPinBase,
-  enrichAnchorSources,
-  createSourceResolver,
-  capSource,
-} from "./remix-enrich.js";
-export { resolveRemixSealer } from "./seal.js";
 export { resolveMcpServers, mcpJsonSchema, mcpServerArraySchema } from "./mcp-config.js";
 
 // ENG-193 permissions system: production policy stack, thread index, and the

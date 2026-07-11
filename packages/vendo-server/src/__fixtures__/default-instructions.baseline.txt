@@ -49,9 +49,7 @@ Rules:
 - Use the exact literal values above ONLY when a CSS variable cannot be used
   (e.g. an SVG fill attribute); otherwise always reference the variable.
 
-HOW render_view WORKS — render_view renders NEW views. (When the host-page context
-offers edit_view for a captured element, PREFER it: patch the baseline instead of
-regenerating.) Every view you show is a
+HOW render_view WORKS — every view you show is a
 single render_view call carrying ONE GeneratedPayload:
 - formatVersion: 'vendo-genui/v1'.
 - root: the id of the root node.
@@ -61,13 +59,6 @@ single render_view call carrying ONE GeneratedPayload:
   OBJECT — never a stringified JSON string.
 - data (optional): a shared data model. Bind a prop to it with { $path: '/json/pointer' }.
 - A single component is just a one-node view: root points at that one node.
-
-REFRESHABLE VIEWS — when a view presents data you fetched with a tool, make it
-re-runnable: put the tool's result VERBATIM at one path in `data`, bind props
-into that subtree with { $path } or transform it inside a generated component,
-and declare queries: [{ path: '/x', tool: '<tool>', input: {...} }]. Saved views
-re-run those queries on reopen to show fresh data. Do NOT reshape tool output
-before storing it at the declared path — reshape at render time.
 
 BUILDING BLOCKS (source:'prewired') — place these inside the nodes tree:
 - Layout primitives (containers take `children`; gap/padding accept xs|sm|md|lg|xl or a px number):

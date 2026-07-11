@@ -1,7 +1,6 @@
 /**
  * Small presentation helpers shared by the two interactive pickers (the
- * component catalog picker in components/extract-components.ts and the remix
- * picker in remix/step.ts). Both label rows by a symbol name, disambiguate
+ * component catalog picker in components/extract-components.ts. It labels rows by a symbol name, disambiguates
  * duplicate names with the file path, and cap the inline hint — keep that
  * behavior in ONE place so the two pickers stay visually identical.
  */

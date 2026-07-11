@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { VendoUIMessage } from "@vendoai/core";
-import { toThreadItems, groupThreadItems, originatingPrompt, type ThreadItem } from "./use-vendo-thread";
+import { toThreadItems, groupThreadItems, type ThreadItem } from "./use-vendo-thread";
 
 const msg = (id: string, role: "user" | "assistant", parts: unknown[]): VendoUIMessage =>
   ({ id, role, parts } as unknown as VendoUIMessage);
@@ -149,52 +149,6 @@ describe("toThreadItems", () => {
       msg("m6", "assistant", [{ type: "tool-render_view", state: "input-available", input: {} }]),
     ]);
     expect(items[0]).toEqual({ kind: "skeleton", key: "m6:0", messageId: "m6", name: undefined });
-  });
-});
-
-describe("toThreadItems — remix fast-edits", () => {
-  const uiPart = (id: string) => ({
-    type: "data-ui",
-    data: { id, kind: "generated", payload: { formatVersion: "vendo-genui/v1", root: "r", nodes: [] } },
-  });
-  const envPart = (uiNodeId: string, envelope = "sealed-blob") => ({
-    type: "data-remix-envelope",
-    data: { envelope, uiNodeId },
-  });
-
-  it("pairs an envelope to its ui item by node id (envelope AFTER the ui part)", () => {
-    const items = toThreadItems([msg("a1", "assistant", [uiPart("view-1"), envPart("view-1")])]);
-    expect(items).toHaveLength(1); // the envelope part emits no item of its own
-    expect(items[0]).toMatchObject({ kind: "ui", envelope: "sealed-blob" });
-  });
-
-  it("pairs when the envelope streams BEFORE the ui part", () => {
-    const items = toThreadItems([msg("a1", "assistant", [envPart("view-1"), uiPart("view-1")])]);
-    expect(items[0]).toMatchObject({ kind: "ui", envelope: "sealed-blob" });
-  });
-
-  it("leaves unpaired ui items envelope-free; mismatched ids don't cross-pair", () => {
-    const items = toThreadItems([
-      msg("a1", "assistant", [uiPart("view-1"), envPart("view-OTHER"), uiPart("view-2")]),
-    ]);
-    const uis = items.filter((i) => i.kind === "ui");
-    expect(uis).toHaveLength(2);
-    for (const ui of uis) expect(ui.kind === "ui" && ui.envelope).toBeUndefined();
-  });
-
-  it("shows the pending skeleton for edit_view like render_view; suppresses its finished chip", () => {
-    const streaming = toThreadItems([
-      msg("a2", "assistant", [{ type: "tool-edit_view", state: "input-streaming", input: {} }]),
-    ]);
-    expect(streaming[0]?.kind).toBe("skeleton");
-    const done = toThreadItems([
-      msg("a3", "assistant", [{ type: "tool-edit_view", state: "output-available" }]),
-    ]);
-    expect(done).toHaveLength(0);
-    const failed = toThreadItems([
-      msg("a4", "assistant", [{ type: "tool-edit_view", state: "output-error", errorText: "mismatch" }]),
-    ]);
-    expect(failed[0]?.kind).toBe("error");
   });
 });
 
@@ -457,17 +411,5 @@ describe("groupThreadItems — batching excludes unverified act-tier calls", () 
     const batch = grouped.find((g) => g.kind === "approval-batch") as { items: { approvalId: string }[] } | undefined;
     expect(batch?.items.map((i) => i.approvalId)).toEqual(["ap1", "ap2"]);
     expect(grouped.filter((g) => g.kind === "approval")).toHaveLength(1); // the unverified one, alone
-  });
-});
-
-describe("originatingPrompt", () => {
-  it("finds the nearest preceding user text", () => {
-    const items = [
-      { kind: "text", key: "m1:0", messageId: "m1", role: "user", text: "show my spending" },
-      { kind: "text", key: "m2:0", messageId: "m2", role: "assistant", text: "sure" },
-      { kind: "ui", key: "m2:1", messageId: "m2", node: { id: "v", kind: "generated", payload: {} } },
-    ] as ThreadItem[];
-    expect(originatingPrompt(items, "m2:1")).toBe("show my spending");
-    expect(originatingPrompt(items, "missing")).toBeUndefined();
   });
 });

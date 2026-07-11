@@ -15,17 +15,9 @@ describe("vendoai/react", () => {
     expect(mod).toHaveProperty("VendoRoot");
     expect(mod).toHaveProperty("useVendoChat");
     expect(mod).toHaveProperty("ApprovalCard");
-  });
-
-  it("resolves the RunQuery collision in favor of @vendoai/client (no ambiguous-export drop)", async () => {
-    const client = await import("@vendoai/client");
-    const shell = await import("../dist/react.js");
-    // Both packages export a `createRunQuery` / type named `RunQuery`; the
-    // umbrella module must still surface the runtime value (createRunQuery
-    // only lives in @vendoai/client, so its presence proves client's half of
-    // the star-export survived rather than being silently shadowed).
-    expect(shell).toHaveProperty("createRunQuery");
-    expect(shell.createRunQuery).toBe(client.createRunQuery);
+    expect(mod).toHaveProperty("VendoRemix");
+    expect(mod).not.toHaveProperty("createRunQuery");
+    expect(mod).not.toHaveProperty("createLocalStore");
   });
 });
 

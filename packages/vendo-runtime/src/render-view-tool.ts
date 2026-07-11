@@ -10,7 +10,6 @@ import type { UIMessageStreamWriter } from "ai";
 import { z } from "zod";
 import type { VendoUIMessage, RegisteredComponent } from "@vendoai/core";
 import { materializeView } from "./materialize-view.js";
-import { hashSources, type RemixSealer } from "./remix/envelope.js";
 
 type VendoWriter = UIMessageStreamWriter<VendoUIMessage>;
 
@@ -20,19 +19,6 @@ export interface RenderViewToolOptions {
    *  correctable tool errors the model can repair, instead of only degrading
    *  to placeholders in the stage (ENG-186). */
   components?: RegisteredComponent[];
-  /** The VendoRemix anchor this conversation is scoped to, if any. Views
-   *  rendered under a scope are tagged as remix candidates for that anchor. */
-  remixAnchorId?: string;
-  /** Envelope minting for remix-tagged results (remix fast-edits epic): a
-   *  first remix rendered via render_view is immediately pin-editable. Only
-   *  set when the anchor has a captured baseline (sourceHash provenance). */
-  seal?: {
-    sealer: RemixSealer;
-    principalUserId: string;
-    /** Hash of the captured source this remix descends from. */
-    sourceHash: string;
-    now?: () => string;
-  };
 }
 
 const genNodeSchema = z.object({
@@ -53,8 +39,8 @@ const dataQuerySchema = z.object({
 });
 
 export function createRenderViewTool(writer: VendoWriter, options: RenderViewToolOptions = {}) {
-  // Node ids key saved vendos (ENG-183), and a tool instance lives for ONE
-  // request — a bare counter would make every session's first view "view-1".
+  // A tool instance lives for one request, so a bare counter would make every
+  // session's first view "view-1".
   // The random suffix keeps ids unique across instances.
   let counter = 0;
   const mintId = () => `view-${++counter}-${crypto.randomUUID().slice(0, 8)}`;
@@ -81,42 +67,20 @@ export function createRenderViewTool(writer: VendoWriter, options: RenderViewToo
       components: z.record(z.string(), z.string()).optional()
         .describe("PascalCase name → ESM source for novel components (max 16, 64KB each)."),
       queries: z.array(dataQuerySchema).optional()
-        .describe("Provenance of `data` for refreshable views: which policy-governed tool calls produced it. " +
+        .describe("Optional provenance of `data`: which policy-governed tool calls produced it. " +
           "Place each tool's result VERBATIM at its `path` in `data` (transform inside generated components, " +
-          "not between tool and data). Reopening a saved view re-runs these to fetch fresh data."),
+          "not between tool and data)."),
     }),
     execute: async (payload) => {
       // Validation runs on the ORIGINAL authored payload (name/cap checks apply
       // to what the model emitted); compilation to plain ESM happens before
-      // shipping — the shared materialization path (also edit_view's tail).
+      // shipping.
       const result = materializeView(payload, {
         components: options.components,
-        remixAnchorId: options.remixAnchorId,
         mintId,
       });
       if (!result.ok) return `render_view error ${result.error}`;
       writer.write({ type: "data-ui", id: result.node.id, data: result.node });
-      // A remix-tagged render is immediately pin-editable: pair the authored
-      // state as a sealed envelope, same as edit_view results.
-      if (options.seal && options.remixAnchorId) {
-        const sources = result.authored.components ?? {};
-        const now = options.seal.now ?? (() => new Date().toISOString());
-        writer.write({
-          type: "data-remix-envelope",
-          data: {
-            envelope: options.seal.sealer.mint({
-              anchorId: options.remixAnchorId,
-              principalUserId: options.seal.principalUserId,
-              payload: result.authored,
-              sources,
-              sourceHash: options.seal.sourceHash,
-              baseHash: hashSources(sources),
-              issuedAt: now(),
-            }),
-            uiNodeId: result.node.id,
-          },
-        });
-      }
       return "rendered";
     },
   });

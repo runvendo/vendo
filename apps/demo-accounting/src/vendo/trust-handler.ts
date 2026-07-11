@@ -8,7 +8,6 @@
  */
 import { createGrantManager, createRuleManager, dangerTier } from "@vendoai/runtime";
 import { demoStore, CADENCE_SCOPE } from "./store";
-import { automationsWorld } from "./automations";
 import { cadenceHostToolDefs } from "./host-tools";
 import { hostToolset } from "@vendoai/runtime";
 import { resolveToolDescriptor } from "./tool-registry";
@@ -28,16 +27,6 @@ export async function handleDemoGrantsList(req: Request): Promise<Response> {
     ...(g.source.kind === "compiled-rule" && g.source.rule ? { plainText: g.source.rule } : {}),
     since: g.grantedAt, source: g.source.kind,
   }));
-  const automations = await automationsWorld().store.list(CADENCE_SCOPE);
-  for (const automation of automations) {
-    const version = await automationsWorld().store.getVersion(CADENCE_SCOPE, automation.id, automation.currentVersion);
-    for (const grant of version?.grants ?? []) {
-      rows.push({
-        id: undefined, tool: grant.tool, scopePreview: "runs as agreed",
-        since: grant.grantedAt, source: "automation", automationName: automation.name,
-      } as never);
-    }
-  }
   return Response.json({ grants: rows });
 }
 
@@ -87,7 +76,7 @@ const hostTools = hostToolset(cadenceHostToolDefs);
 
 export async function handleDemoCriticalTools(req: Request): Promise<Response> {
   if (!demoPrincipalAllowed(req)) return Response.json({ error: LOCAL_ONLY_MESSAGE }, { status: 403 });
-  const names = [...new Set([...Object.keys(hostTools), ...Object.keys(automationsWorld().authoringTools())])];
+  const names = Object.keys(hostTools);
   const tools = names
     .map((name) => ({ name, descriptor: resolveToolDescriptor(name) }))
     .filter((t): t is { name: string; descriptor: NonNullable<ReturnType<typeof resolveToolDescriptor>> } => t.descriptor !== undefined)

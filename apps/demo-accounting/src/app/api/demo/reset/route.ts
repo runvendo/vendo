@@ -7,14 +7,12 @@
 import { dashboardMetrics } from "@/server/documents"
 import { ok } from "@/server/http"
 import { resetStore } from "@/server/store"
-import { resetAutomations } from "@/vendo/automations"
 import { resetDemoStore } from "@/vendo/store"
 
 export const runtime = "nodejs"
 
 export async function POST() {
   resetStore()
-  resetAutomations()
   await resetDemoStore()
   return ok(dashboardMetrics())
 }

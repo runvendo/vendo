@@ -8,8 +8,6 @@
 export {
   createInMemoryStore,
   InMemoryAuditLog,
-  InMemoryRemixStore,
-  InMemorySavedVendoStore,
   InMemoryThreadStore,
   type InMemoryStore,
 } from "./in-memory-store.js";

@@ -1,8 +1,7 @@
 /**
  * The in-process tools that are safe to re-run without the user asking.
- * Isomorphic single source: the server policy allowlists them, tools.ts
- * implements exactly this set, and the client's reopen runQuery seam refuses
- * anything else BEFORE the network call.
+ * Isomorphic single source: the server policy allowlists them and tools.ts
+ * implements exactly this set.
  */
 export const READ_ONLY_TOOLS = [
   "get_dashboard",

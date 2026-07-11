@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import type { FileUIPart } from "ai";
-import type { AnchorContextBlock, ConsentResponse, VendoMetadata, UINode } from "@vendoai/core";
-import { useVendoThread, type ThreadItem } from "./use-vendo-thread";
-import { REMIX_CHANGED_EVENT } from "./remix/VendoRemix";
-import { stampHostComponents } from "./component-drift";
+import type { ConsentResponse } from "@vendoai/core";
+import { useVendoThread } from "./use-vendo-thread";
 import type { Feedback } from "./components/TurnActions";
 import { useShell, type SendConsentResult } from "./context";
-import type { Vendo } from "./seams/store";
 import type { Integration } from "./seams/integrations";
 import { Landing } from "./components/Landing";
 import { MessageList } from "./components/MessageList";
@@ -20,7 +17,7 @@ import { VoiceStage } from "./voice/VoiceStage";
 import { useVoiceSession } from "./voice/use-voice-session";
 import { voiceSessionMessages } from "./voice/voice-messages";
 import { voiceSessionBrief } from "./voice/session-brief";
-import type { VoiceDriver, VoiceToolDef } from "./voice/voice-session";
+import type { VoiceDriver } from "./voice/voice-session";
 
 /**
  * ENG-193 PR #40 review — item B: nothing requires the SDK's approval resume
@@ -52,15 +49,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined>
 export interface VendoThreadProps {
   greeting?: string;
   suggestions?: string[];
-  flows?: Vendo[];
-  /** True while the host's first store list is still in flight — the landing
-   *  library holds its space with glass skeleton cards instead of popping in. */
-  flowsLoading?: boolean;
-  onOpenFlow?: (flow: Vendo) => void;
-  /** Library management on the empty-state gallery (ENG-183). */
-  onRenameFlow?: (flow: Vendo, name: string) => void;
-  onPinFlow?: (flow: Vendo, pinned: boolean) => void;
-  onDeleteFlow?: (flow: Vendo) => void;
   /**
    * Hoist the composer into the Landing hero on the empty state (the library
    * page layout Yousef approved). OFF by default: the overlay and slot keep
@@ -68,11 +56,6 @@ export interface VendoThreadProps {
    * composer remount on the first send (draft is empty at that moment).
    */
   heroComposer?: boolean;
-  /**
-   * When set, shows a "Pin to card" footer that commits the latest rendered view
-   * to a host slot. Slot-only seam — other surfaces omit it and render unchanged.
-   */
-  onPin?: (node: UINode) => void;
   /**
    * Host sink for a turn's thumbs up/down. The shell stores no feedback itself;
    * omit to hide the feedback controls entirely.
@@ -87,50 +70,22 @@ export interface VendoThreadProps {
 }
 
 export function VendoThread({
-  greeting, suggestions = [], flows = [], flowsLoading = false, onOpenFlow, onRenameFlow, onPinFlow, onDeleteFlow,
-  heroComposer = false, onPin, onFeedback, voice,
+  greeting, suggestions = [], heroComposer = false, onFeedback, voice,
 }: VendoThreadProps) {
   const chat = useVendoThread();
-  const { integrations, sendConsent, trust, registry, scope, remixes, components } = useShell();
+  const { integrations, sendConsent, trust } = useShell();
   const [tools, setTools] = useState<Integration[]>([]);
   // False until the FIRST integrations list lands — the tray shows glass
   // shimmer placeholder rows for that window only.
   const [toolsLoaded, setToolsLoaded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [fadeProposal, setFadeProposal] = useState<{ messageId: string; toolName: string; proposalId: string; count?: number } | null>(null);
-  const activeScope = useSyncExternalStore(scope.subscribe, scope.current, () => null);
   const voiceSession = useVoiceSession(voice);
 
-  // Context carry-over (spec §4): a structured session brief — conversation
-  // tail, on-screen views, tool-result digests, saved vendos — plus the
-  // shell-contributed open_saved_vendo tool so "open my coffee view" works.
+  // Context carry-over: conversation tail, on-screen views, and tool-result digests.
   const startVoice = () => {
-    const context = voiceSessionBrief({ items: chat.items, flows });
-    const sessionTools: VoiceToolDef[] = onOpenFlow
-      ? [
-          {
-            name: "open_saved_vendo",
-            description:
-              "Open one of the user's saved views by its id (listed in your session brief). Use when the user asks for a saved view by name.",
-            parameters: {
-              type: "object",
-              properties: { id: { type: "string", description: "saved vendo id" } },
-              required: ["id"],
-            },
-            tier: "read",
-            execute: async (input) => {
-              const { id } = (input ?? {}) as { id?: string };
-              const flow = flows.find((f) => f.id === id);
-              if (!flow) return { opened: false, error: `no saved view with id ${id}` };
-              onOpenFlow(flow);
-              return { opened: true, name: flow.name };
-            },
-          },
-        ]
-      : [];
-    voiceSession.start(
-      context || sessionTools.length ? { context, sessionTools } : undefined,
-    );
+    const context = voiceSessionBrief({ items: chat.items });
+    voiceSession.start(context ? { context } : undefined);
   };
 
   // Cmd/Ctrl+Shift+K toggles a voice session (sibling of the overlay's Cmd+K).
@@ -147,16 +102,6 @@ export function VendoThread({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceSession.supported, voiceSession.active, chat.items]);
-
-  // The most recent rendered view — what "Pin to card" commits. Keep the
-  // whole item so scoped remix pins preserve the paired sealed envelope.
-  const latestUiItem = useMemo<Extract<ThreadItem, { kind: "ui" }> | null>(() => {
-    for (let i = chat.items.length - 1; i >= 0; i--) {
-      const item = chat.items[i];
-      if (item?.kind === "ui") return item;
-    }
-    return null;
-  }, [chat.items]);
 
   const refresh = () => {
     void integrations.list().then((list) => {
@@ -184,55 +129,10 @@ export function VendoThread({
     if (chat.status === "error") logErrorDetail(chat.error);
   }, [chat.status, chat.error]);
 
-  // Anchor context (VendoRemix): a scoped send carries the clicked anchor
-  // (snapshot included); every send lists the page's other anchors ambiently.
   const send = (text: string, files?: FileUIPart[]) => {
-    const scoped = activeScope;
-    const ambient = registry.ambient().filter((a) => a.anchorId !== scoped?.anchorId);
-    const anchors: AnchorContextBlock | undefined =
-      scoped || ambient.length > 0
-        ? { ...(scoped ? { scoped } : {}), ...(ambient.length > 0 ? { ambient } : {}) }
-        : undefined;
-    const message: { text: string; files?: FileUIPart[]; metadata?: VendoMetadata } = { text };
+    const message: { text: string; files?: FileUIPart[] } = { text };
     if (files) message.files = files;
-    if (anchors) message.metadata = { anchors };
     void chat.sendMessage(message);
-  };
-  // Apply a remix candidate: pin it (stamped for drift detection) and tell the
-  // mounted wrapper to swap in place.
-  const applyRemix = (node: UINode, envelope?: string, anchorIdOverride?: string) => {
-    if (node.kind !== "generated") return;
-    const anchorId = anchorIdOverride ?? node.remixAnchorId;
-    if (!anchorId) return;
-    const pinned = node.remixAnchorId === anchorId ? node : { ...node, remixAnchorId: anchorId };
-    const stamp = stampHostComponents(pinned, components ?? []);
-    void remixes
-      .pin({
-        anchorId,
-        node: pinned,
-        ...(stamp ? { components: stamp } : {}),
-        // The sealed authored state (remix fast-edits): opaque here; sent back
-        // on scoped opens so the server can offer base:"pin" hunk editing.
-        ...(envelope !== undefined ? { envelope } : {}),
-      })
-      .then(() => {
-        window.dispatchEvent(new CustomEvent(REMIX_CHANGED_EVENT, { detail: { anchorId } }));
-      })
-      .catch((err) => console.warn(`[vendo] failed to apply remix for "${anchorId}"`, err));
-  };
-  const scopedPin = (node: UINode, envelope?: string) => {
-    const anchor = scope.current();
-    if (!anchor) return;
-    applyRemix(node, envelope, anchor.anchorId);
-  };
-  const pinSink = onPin ?? (activeScope ? scopedPin : undefined);
-  const pinLatest = () => {
-    if (!latestUiItem) return;
-    if (onPin) {
-      onPin(latestUiItem.node);
-      return;
-    }
-    scopedPin(latestUiItem.node, latestUiItem.envelope);
   };
   const regenerate = (messageId: string) => { void chat.regenerate({ messageId }); };
 
@@ -421,7 +321,6 @@ export function VendoThread({
           onEnd={voiceSession.end}
           onApprove={voiceSession.approve}
           onDecline={voiceSession.decline}
-          onPin={pinSink}
           onClosed={() => {
             const finalSnapshot = voiceSession.close();
             const landed = voiceSessionMessages(finalSnapshot);
@@ -438,14 +337,8 @@ export function VendoThread({
         <Landing
           greeting={greeting}
           suggestions={suggestions}
-          flows={flows}
-          flowsLoading={flowsLoading}
           composer={composerInHero ? composerArea : undefined}
           onSuggestion={send}
-          onOpenFlow={(f) => onOpenFlow?.(f)}
-          onRenameFlow={onRenameFlow}
-          onPinFlow={onPinFlow}
-          onDeleteFlow={onDeleteFlow}
         />
       ) : (
         <ThreadErrorBoundary resetKey={chat.items.length}>
@@ -462,7 +355,6 @@ export function VendoThread({
             fadeProposal={fadeProposal}
             onAcceptFade={() => resolveFade(true)}
             onDeclineFade={() => resolveFade(false)}
-            onApplyRemix={applyRemix}
           />
         </ThreadErrorBoundary>
       )}
@@ -491,26 +383,6 @@ export function VendoThread({
             )}
           </div>
         )}
-      {/* One pin affordance per surface: scoped chat already offers the
-          per-message "Apply to page" button, so the footer bar renders only
-          for slot hosts that pass an explicit onPin (their sole pin path). */}
-      {onPin && (
-        <div className="fl-pinbar">
-          <button
-            type="button"
-            className="fl-pin-btn"
-            disabled={!latestUiItem}
-            onClick={pinLatest}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 17v5" /><path d="M5 17h14l-1.5-4.5a2 2 0 0 1 0-1.3L19 7H5l1.5 4.2a2 2 0 0 1 0 1.3Z" />
-            </svg>
-            Pin to card
-          </button>
-          <span className="fl-pinbar-hint">{latestUiItem ? "pins the latest view" : "describe a view first"}</span>
-        </div>
-      )}
       {/* heroComposer surfaces hoist the composer into the Landing hero while
           empty; everyone else keeps it here at the bottom, always. */}
       {!composerInHero && composerArea}

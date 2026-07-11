@@ -3,7 +3,6 @@
 import Link from "next/link"
 import { ArrowUpRight, CalendarCheck2 } from "lucide-react"
 import useSWR from "swr"
-import { VendoRemix } from "@vendoai/shell"
 import { Badge, type BadgeVariant } from "@/components/ui/badge"
 import { Card, CardHeader } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -76,20 +75,7 @@ export function DeadlineList({ className }: { className?: string }) {
   const entries = data?.slice(0, 5)
 
   return (
-    /* Remixable (2026-07-04 spec): renders exactly as-is by default; the ✦
-       affordance lets the user customize this widget via the shared overlay,
-       with the live entries flowing into any pinned remix. The wrapper takes
-       the layout className — it is the grid child now. */
-    <VendoRemix
-      id="upcoming-deadlines"
-      label="Upcoming deadlines"
-      // Keyed by the component's own fetch key: the sandbox's swr shim resolves
-      // useSWR("/api/deadlines") straight from this object, so the prepared
-      // baseline renders live data without adaptation.
-      context={{ "/api/deadlines": data }}
-      className={className}
-    >
-    <Card className="overflow-hidden">
+    <Card className={cn("overflow-hidden", className)}>
       <CardHeader
         title="Upcoming deadlines"
         action={
@@ -130,6 +116,5 @@ export function DeadlineList({ className }: { className?: string }) {
         </ul>
       )}
     </Card>
-    </VendoRemix>
   )
 }

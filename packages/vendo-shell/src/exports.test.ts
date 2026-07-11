@@ -9,10 +9,20 @@ describe("public API", () => {
       "MessageList", "Composer", "ApprovalCard", "UINodeView", "Landing",
       "SuggestionChips", "FlowGallery", "ConnectDock", "ConnectTray", "IntegrationsPicker",
       "ConnectCard", "StreamingText", "ToolCall", "VoiceButton",
-      "themeToStyle", "createLocalStore", "createLocalIntegrations",
+      "themeToStyle", "createLocalIntegrations", "VendoRemix",
       "VoiceStage", "VoiceBlob", "useVoiceSession", "createScriptedVoiceDriver",
       "voiceSessionMessages", "reduceVoice",
     ];
     for (const name of names) expect(shell).toHaveProperty(name);
+    for (const removed of [
+      "createLocalStore",
+      "createWebStorage",
+      "createLocalRemixes",
+      "createWebRemixes",
+      "reopenVendo",
+      "originatingPrompt",
+    ]) {
+      expect(shell).not.toHaveProperty(removed);
+    }
   });
 });

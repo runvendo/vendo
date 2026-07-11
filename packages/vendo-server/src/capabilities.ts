@@ -22,9 +22,7 @@ export interface VendoCapabilities {
   voice: boolean;
   /** True when the host declared ≥1 MCP server (set by the handler, not env). */
   mcp: boolean;
-  /** True when the assembled handler built a durable storage handle (set by
-   *  the handler from the resolved `storage` option, not env — see
-   *  fetch-handler.ts's GET "capabilities" case). */
+  /** Saved-artifact storage is absent pending the app-format rebuild. */
   storage: boolean;
   /** True when the automations world is live (set by the handler from the
    *  resolved `automations` option, not env). `false` tells the client not

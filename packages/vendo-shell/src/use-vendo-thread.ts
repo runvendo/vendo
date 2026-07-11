@@ -73,9 +73,6 @@ export type ThreadItem =
       key: string;
       messageId: string;
       node: UINode;
-      /** Sealed authored-state envelope paired to this node (remix fast-edits);
-       *  stored opaquely with the pin so later edits can patch base:"pin". */
-      envelope?: string;
     }
   | { kind: "skeleton"; key: string; messageId: string; name?: string }
   | { kind: "error"; key: string; messageId: string; message: string };
@@ -95,10 +92,10 @@ export type RenderItem =
  * redundant sliver next to the rendered component. Mirrors `RENDER_VIEW_TOOL_NAME`
  * and `REQUEST_CONNECT_TOOL_NAME` in `@vendoai/runtime`.
  */
-const RENDER_TOOLS = new Set(["render_view", "edit_view", "request_connect"]);
+const RENDER_TOOLS = new Set(["render_view", "request_connect"]);
 
 /** Render tools that stream a view being built (skeleton-worthy). */
-const SKELETON_TOOLS = new Set(["render_view", "edit_view"]);
+const SKELETON_TOOLS = new Set(["render_view"]);
 
 /** Reads the streaming component name out of a render tool part's partial input (if any). */
 function renderName(input: unknown): string | undefined {
@@ -118,15 +115,12 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
     // First pass: index this message's data-consent parts by toolCallId
     // (ENG-193 §4.5) — a tool part and its tier metadata can arrive in either
     // order within the same message, so both branches below read this map
-    // rather than assuming ordering. The same pass collects remix envelopes
-    // by paired node id (remix fast-edits) — envelope parts emit no item of
-    // their own and pair regardless of stream order.
+    // rather than assuming ordering.
     const tierByToolCallId = new Map<string, { tier: "act" | "critical"; unverified: boolean; reason?: string; formats?: FieldFormats }>();
-    const envelopes = new Map<string, string>();
     for (const rawPart of message.parts) {
       const part = rawPart as {
         type: string;
-        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; formats?: unknown; envelope?: string; uiNodeId?: string };
+        data?: { toolCallId?: string; tier?: string; unverified?: boolean; reason?: string; formats?: unknown };
       };
       if (part.type === "data-consent" && part.data?.toolCallId) {
         const formats = normalizeFormats(part.data.formats);
@@ -137,16 +131,10 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
           ...(formats ? { formats } : {}),
         });
       }
-      if (part.type === "data-remix-envelope" && part.data?.uiNodeId && part.data.envelope) {
-        envelopes.set(part.data.uiNodeId, part.data.envelope);
-      }
     }
     message.parts.forEach((rawPart, index) => {
       const part = rawPart as { type: string; [k: string]: unknown };
       const key = `${message.id}:${index}`;
-      if (part.type === "data-remix-envelope") {
-        return; // consumed by the pre-pass; pairs onto its ui item below
-      }
       if (part.type === "text") {
         items.push({ kind: "text", key, messageId, role, text: String(part.text ?? "") });
       } else if (part.type === "file") {
@@ -166,13 +154,11 @@ export function toThreadItems(messages: VendoUIMessage[]): ThreadItem[] {
         items.push({ kind: "error", key, messageId, message: text });
       } else if (part.type === "data-ui") {
         const node = part.data as UINode;
-        const envelope = envelopes.get(node.id);
         items.push({
           kind: "ui",
           key,
           messageId,
           node,
-          ...(envelope !== undefined ? { envelope } : {}),
         });
       } else if (part.type === "data-consent") {
         // Consumed via tierByToolCallId above — never its own render item.
@@ -367,18 +353,6 @@ export function groupThreadItems(items: ThreadItem[]): RenderItem[] {
     }
   }
   return out;
-}
-
-/** The nearest user text item preceding the item with key `uiKey` — i.e. the
- *  prompt that produced a rendered view. Used when saving a vendo (ENG-183). */
-export function originatingPrompt(items: ThreadItem[], uiKey: string): string | undefined {
-  const at = items.findIndex((item) => item.key === uiKey);
-  if (at < 0) return undefined;
-  for (let i = at - 1; i >= 0; i--) {
-    const item = items[i];
-    if (item?.kind === "text" && item.role === "user" && item.text.trim()) return item.text;
-  }
-  return undefined;
 }
 
 /** Hook: F1 chat plus the normalized item list. */

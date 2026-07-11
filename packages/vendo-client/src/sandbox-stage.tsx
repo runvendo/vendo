@@ -16,57 +16,9 @@ import { prewiredComponents, brandToCssVars, mapBrandToTheme } from "@vendoai/co
 import type { BrandTokens } from "@vendoai/components/theme";
 import { NAVIGATE_ACTION, isSafeAppPath } from "./navigate.js";
 
-interface StageEnv {
-  modules?: Record<string, string>;
-  css?: string;
-  tailwindRuntimeSrc?: string;
-}
-
 interface Sources {
   react: string;
   bundle: string;
-  /** Furnished environment (remix-fidelity), when `vendo sync` produced one.
-   *  Fetched HOST-side and passed as strings; the stage blobs them so the
-   *  iframe CSP never changes. Absent → bare sandbox, byte-identical to before. */
-  env?: StageEnv;
-}
-
-interface EnvImportMap {
-  imports?: Record<string, string>;
-}
-
-/** Fetch the vendo-sync env (import map + vendored modules + host CSS) on the
- *  host origin. Missing env is normal (fresh install / no sync) — returns
- *  undefined, never throws. */
-async function loadEnv(): Promise<StageEnv | undefined> {
-  const mapRes = await fetch("/vendo/env/import-map.json").catch(() => null);
-  const css = await fetch("/vendo/env/host.css")
-    .then((r) => (r.ok ? r.text() : undefined))
-    .catch(() => undefined);
-  const tw = await fetch("/vendo/env/tailwind.js")
-    .then((r) => (r.ok ? r.text() : undefined))
-    .catch(() => undefined);
-  let modules: Record<string, string> | undefined;
-  if (mapRes?.ok) {
-    const map = (await mapRes.json().catch(() => ({}))) as EnvImportMap;
-    const entries = await Promise.all(
-      Object.entries(map.imports ?? {}).map(async ([specifier, rel]) => {
-        // Only fetch bundle-relative `./` paths, resolved strictly under
-        // /vendo/env/. A malformed/hostile import map with an absolute URL
-        // must NOT cause a host-side fetch that bypasses the iframe's
-        // connect-src 'none' (Codex review).
-        if (typeof rel !== "string" || !rel.startsWith("./")) return null;
-        const url = new URL(rel.replace(/^\.\//, "/vendo/env/"), location.origin);
-        if (url.origin !== location.origin || !url.pathname.startsWith("/vendo/env/")) return null;
-        const src = await fetch(url).then((r) => (r.ok ? r.text() : undefined)).catch(() => undefined);
-        return src !== undefined ? ([specifier, src] as const) : null;
-      }),
-    );
-    const kept = entries.filter((e): e is readonly [string, string] => e !== null);
-    if (kept.length > 0) modules = Object.fromEntries(kept);
-  }
-  if (!modules && !css && !tw) return undefined;
-  return { ...(modules ? { modules } : {}), ...(css ? { css } : {}), ...(tw ? { tailwindRuntimeSrc: tw } : {}) };
 }
 
 let sourcesPromise: Promise<Sources> | null = null;
@@ -82,8 +34,7 @@ function loadSources(): Promise<Sources> {
         if (!r.ok) throw new Error("components bundle missing — run `vendo init` to copy sandbox assets into public/vendo/");
         return r.text();
       }),
-      loadEnv(),
-    ]).then(([react, bundle, env]) => ({ react, bundle, ...(env ? { env } : {}) }));
+    ]).then(([react, bundle]) => ({ react, bundle }));
     sourcesPromise.catch(() => {
       sourcesPromise = null; // allow retry on failure
     });
@@ -272,7 +223,6 @@ function RoutedStage({
       components={[...prewiredComponents, ...components]}
       reactSource={sources.react}
       bundleSource={sources.bundle}
-      {...(sources.env ? { env: sources.env } : {})}
       onAction={onAction}
       theme={brandToCssVars(brand)}
       componentTheme={{ theme: mapBrandToTheme(brand), mode: brand.mode ?? "light" }}

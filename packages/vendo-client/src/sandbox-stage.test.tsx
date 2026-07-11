@@ -34,7 +34,7 @@ function stubSources() {
       const url = String(input);
       if (url.includes("react-runtime.js")) return new Response("/* react */", { status: 200 });
       if (url.includes("components-sandbox.js")) return new Response("/* bundle */", { status: 200 });
-      return new Response("", { status: 404 }); // env assets absent → bare sandbox
+      return new Response("", { status: 404 });
     }),
   );
 }

@@ -1,7 +1,7 @@
 /**
  * The CLI's one and only seam onto an interactive terminal: masked text input
  * (for pasting a secret like an API key) and a checkbox-style multi-select
- * (for the component/remix pickers in later tasks). Thin on purpose — no
+ * (for the component picker). Thin on purpose — no
  * business logic, no TTY/CI detection (that's `ui.ts`'s job; callers consult
  * it and decide whether to prompt at all before ever reaching this module).
  *

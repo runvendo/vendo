@@ -1,11 +1,10 @@
 import type { VendoUIMessage } from "../protocol.js";
-import type { UINode } from "../ui.js";
 import type { CompiledRuleStore } from "./compiled-rules.js";
 import type { GrantStore } from "./grants.js";
 import type { Principal } from "./principal.js";
 
 /**
- * Store seam — threads, saved vendos, automations, audit (Decision 1/6).
+ * Store seam — threads, automations, audit, grants, and rules.
  *
  * | Deployment | Implementation |
  * |---|---|
@@ -21,10 +20,8 @@ import type { Principal } from "./principal.js";
  */
 export interface Store {
   threads: ThreadStore;
-  vendos: SavedVendoStore;
   automations: AutomationStore;
   audit: AuditLog;
-  remixes: RemixStore;
   /** ENG-193: standing user permission grants. Optional — additive to the
    *  frozen seam (same pattern as the reserved memory member). */
   grants?: GrantStore;
@@ -65,39 +62,6 @@ export interface ThreadStore {
 }
 
 /**
- * A saved vendo (ENG-183, Decision 6): declarative UI tree + bound data
- * query + originating prompt. Reopening re-renders the tree and re-runs the
- * query through the normal tool path (policy applies).
- */
-export interface SavedVendo {
-  id: string;
-  name: string;
-  pinned: boolean;
-  uiTree: UINode;
-  /** Re-executed via the Executor on reopen — never a raw DB query. */
-  query: { toolName: string; input: unknown };
-  originatingPrompt: string;
-  /** Host-component name → registry version stamped at save time (ENG-186).
-   *  Reopen diffs it against the live registry to surface component drift.
-   *  Absent on trees with no host nodes and on pre-versioning records. */
-  components?: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SavedVendoStore {
-  /** The store assigns `id` and both timestamps — callers never supply them
-   *  (same authorship rule as `ThreadStore.create`). */
-  save(
-    scope: Principal,
-    vendo: Omit<SavedVendo, "id" | "createdAt" | "updatedAt">,
-  ): Promise<SavedVendo>;
-  get(scope: Principal, id: string): Promise<SavedVendo | undefined>;
-  list(scope: Principal): Promise<SavedVendo[]>;
-  delete(scope: Principal, id: string): Promise<void>;
-}
-
-/**
  * Automation records. The spec DSL is deliberately opaque here (`spec:
  * unknown`) — its shape is decided at ENG-188's brainstorm (Decision 5). This
  * store freezes only what every design needs: identity, lifecycle, run history.
@@ -132,34 +96,6 @@ export interface AutomationStore {
   list(scope: Principal): Promise<AutomationRecord[]>;
   recordRun(scope: Principal, run: AutomationRun): Promise<void>;
   listRuns(scope: Principal, automationId: string): Promise<AutomationRun[]>;
-}
-
-/**
- * A pinned remix (VendoRemix, 2026-07-04 spec): the end user's customization
- * of a dev-wrapped host component. Unlike SavedVendo there is no bound query —
- * the anchor is the data source, feeding its `context` into the tree as host
- * props on every render. One pin per (principal, anchorId).
- */
-export interface RemixRecord {
-  anchorId: string;
-  uiTree: UINode;
-  originatingPrompt: string;
-  /** Host-component name → registry version, same drift semantics as SavedVendo. */
-  components?: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface RemixStore {
-  /** Upsert — the store owns the anchor stamp and both timestamps; `createdAt`
-   *  survives re-pins. */
-  pin(
-    scope: Principal,
-    anchorId: string,
-    record: Omit<RemixRecord, "anchorId" | "createdAt" | "updatedAt">,
-  ): Promise<RemixRecord>;
-  get(scope: Principal, anchorId: string): Promise<RemixRecord | undefined>;
-  unpin(scope: Principal, anchorId: string): Promise<void>;
 }
 
 /**

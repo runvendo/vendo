@@ -1,8 +1,0 @@
-{
-  "remixAnchors": {
-    "upcoming-deadlines": {
-      "file": "src/components/dashboard/deadline-list.tsx",
-      "exportName": "DeadlineList"
-    }
-  }
-}

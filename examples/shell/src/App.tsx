@@ -1,13 +1,11 @@
 import type { ComponentType } from "react";
 import { z } from "zod";
-import { type UINode } from "@vendoai/core";
 import { createStubAgent } from "@vendoai/core/testing";
 import { VendoProvider } from "@vendoai/react";
 import {
   VendoShellProvider,
   VendoPage,
   VendoOverlay,
-  VendoSlot,
   createLocalIntegrations,
 } from "@vendoai/shell";
 
@@ -52,8 +50,6 @@ const seededIntegrations = () =>
     { id: "slack", name: "Slack", connected: false },
     { id: "notion", name: "Notion", connected: false },
   ]);
-
-const savedNode: UINode = { id: "ui-saved", kind: "component", source: "prewired", name: "DemoCard", props: { title: "June spending · vendo" } };
 
 const suggestions = ["Show my spending", "Set a budget", "Pay a bill"];
 
@@ -101,20 +97,6 @@ export function App() {
         </div>
       </Section>
 
-      <Section title="Element 03 · VendoSlot (empty + filled)" height={320}>
-        <div style={{ height: "100%", background: "#f7f7f6", padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <VendoProvider agent={agent} components={components}>
-            <VendoShellProvider impls={impls} integrations={seededIntegrations()}>
-              <VendoSlot vendoId="slot-empty" emptyLabel="Design a vendo here" />
-            </VendoShellProvider>
-          </VendoProvider>
-          <VendoProvider agent={agent} components={components}>
-            <VendoShellProvider impls={impls} integrations={seededIntegrations()}>
-              <VendoSlot vendoId="slot-filled" savedNode={savedNode} />
-            </VendoShellProvider>
-          </VendoProvider>
-        </div>
-      </Section>
     </div>
   );
 }

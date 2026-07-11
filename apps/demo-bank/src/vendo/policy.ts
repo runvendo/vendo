@@ -4,20 +4,14 @@
  * Layered on the @vendoai/runtime policy machinery: one deterministic name-based
  * layer. Render + in-process demo tools and read-shaped external tools run
  * freely; anything write-shaped or unknown requires approval. The same policy
- * governs automation firings: the interpreter evaluates it per step, and an
- * approve-gated step runs unattended only under a scope-hashed grant.
  */
 import { annotationPolicy, composePolicy, type ApprovalPolicy } from "@vendoai/runtime";
 
-/** In-process tools that are safe by construction (incl. read-shaped
- *  automation authoring; create/update/delete/pause/run-now stay gated). */
+/** In-process tools that are safe by construction. */
 const ALWAYS_ALLOW = new Set([
   "render_view",
-  "edit_view",
   "request_connect",
   "get_transactions",
-  "list_automations",
-  "get_automation_runs",
 ]);
 
 /** Read-shaped external (Composio) verb segments — safe to run freely. */

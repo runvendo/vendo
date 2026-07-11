@@ -61,7 +61,6 @@ describe("routeTail", () => {
     ["/api/vendo/webhooks/composio", "webhooks/composio"],
     ["/api/vendo/threads", "threads"],
     ["/api/vendo/threads/t1", "threads/t1"],
-    ["/api/vendo/vendos/f1/delete", "vendos/f1/delete"],
     // Regression: the five existing endpoints still resolve under any mount.
     ["/api/vendo/action", "action"],
     ["/api/vendo/integrations", "integrations"],
@@ -282,14 +281,14 @@ describe("createVendoHandler", () => {
     expect(await res.json()).toEqual({ chat: true, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
-  it("reports storage:true once durable storage actually assembles (not just from an env key)", async () => {
+  it("reports the removed saved-artifact storage capability as false", async () => {
     const { GET } = createVendoHandler({
       vendoDir: emptyDir(),
       storage: { pglite: { dataDir: `memory://vendo-next-capabilities-storage-${Date.now()}` } },
     });
     const res = await GET(req("/api/vendo/capabilities"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: true, automations: true });
+    expect(await res.json()).toEqual({ chat: false, integrations: false, voice: false, mcp: false, storage: false, automations: true });
   });
 
   it("warns once, no matter how many requests, when running without durable storage in production", async () => {
@@ -437,57 +436,12 @@ describe("createVendoHandler", () => {
     expect(anon.status).toBe(403);
   });
 
-  it("GET/POST /vendos are wired end-to-end (save, list, load, delete, 404, principal isolation)", async () => {
-    const dataDir = `memory://vendo-next-vendos-handler-${Date.now()}`;
-    const principalOf = (r: Request) => {
-      const userId = r.headers.get("x-user");
-      return userId ? { userId } : null;
-    };
-    const { GET, POST } = createVendoHandler({
-      vendoDir: emptyDir(),
-      storage: { pglite: { dataDir } },
-      principal: async (r) => principalOf(r),
-    });
-    const withUser = (user: string) => ({ headers: { host: "localhost:3000", "x-user": user } });
-    const node = { kind: "component", id: "n1", name: "Text", props: {} };
-
-    const saved = await POST(
-      req("/api/vendo/vendos", {
-        method: "POST",
-        body: JSON.stringify({ id: "f1", name: "first", node }),
-        ...withUser("alice"),
-      }),
-    );
-    expect(saved.status).toBe(200);
-    const savedBody = (await saved.json()) as { id: string; createdAt: number; updatedAt: number };
-    expect(savedBody.id).toBe("f1");
-    expect(typeof savedBody.createdAt).toBe("number");
-    expect(typeof savedBody.updatedAt).toBe("number");
-
-    const aliceList = await GET(req("/api/vendo/vendos", withUser("alice")));
-    expect((await aliceList.json()) as Array<{ id: string }>).toEqual([savedBody]);
-
-    // Isolation: a different user sees nothing.
-    const bobList = await GET(req("/api/vendo/vendos", withUser("bob")));
-    expect(await bobList.json()).toEqual([]);
-
-    const one = await GET(req("/api/vendo/vendos/f1", withUser("alice")));
-    expect(await one.json()).toEqual(savedBody);
-
-    const missing = await GET(req("/api/vendo/vendos/nope", withUser("alice")));
-    expect(missing.status).toBe(404);
-
-    const bobReadsAlice = await GET(req("/api/vendo/vendos/f1", withUser("bob")));
-    expect(bobReadsAlice.status).toBe(404);
-
-    const del = await POST(req("/api/vendo/vendos/f1/delete", { method: "POST", ...withUser("alice") }));
-    expect(del.status).toBe(200);
-    const gone = await GET(req("/api/vendo/vendos/f1", withUser("alice")));
-    expect(gone.status).toBe(404);
-
-    // No principal (resolver returns null) → 403, never a bare list.
-    const anon = await GET(req("/api/vendo/vendos", { headers: { host: "localhost:3000" } }));
-    expect(anon.status).toBe(403);
+  it("returns 404 for the removed /vendos route family", async () => {
+    const { GET, POST } = createVendoHandler({ vendoDir: emptyDir(), storage: false });
+    expect((await GET(req("/api/vendo/vendos"))).status).toBe(404);
+    expect((await GET(req("/api/vendo/vendos/f1"))).status).toBe(404);
+    expect((await POST(req("/api/vendo/vendos", { method: "POST" }))).status).toBe(404);
+    expect((await POST(req("/api/vendo/vendos/f1/delete", { method: "POST" }))).status).toBe(404);
   });
 
   it("REGRESSION: a remote caller's boot failure gets the generic message, not the raw one", async () => {
@@ -561,7 +515,7 @@ describe("createVendoHandler", () => {
     // test-env safety net doesn't apply; this test doesn't care about
     // durability and must not touch disk.
     const { POST } = createVendoHandler({ vendoDir: emptyDir(), storage: false });
-    for (const p of ["chat", "action", "tick", "events/ingest", "integrations", "vendos"]) {
+    for (const p of ["chat", "action", "tick", "events/ingest", "integrations"]) {
       const res = await POST(
         new Request(`http://prod.example.com/api/vendo/${p}`, {
           method: "POST",

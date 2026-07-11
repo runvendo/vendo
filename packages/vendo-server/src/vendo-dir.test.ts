@@ -76,58 +76,6 @@ describe("loadVendoDir", () => {
     expect(() => loadVendoDir(path.join(dir, ".vendo"))).toThrow(/theme\.json/);
   });
 
-  it("reads vendo sync artifacts: remix-sources.json + env/manifest.json (absent → defaults)", () => {
-    const dir = scratch();
-    mkdirSync(path.join(dir, ".vendo/env"), { recursive: true });
-    writeFileSync(
-      path.join(dir, ".vendo/remix-sources.json"),
-      JSON.stringify({
-        "upcoming-deadlines": {
-          file: "src/components/dashboard/deadline-list.tsx",
-          exportName: "DeadlineList",
-          source: "export function DeadlineList() {}",
-          sourceHash: "h1",
-          capturedAt: "2026-07-04T00:00:00.000Z",
-        },
-      }),
-    );
-    writeFileSync(
-      path.join(dir, ".vendo/env/manifest.json"),
-      JSON.stringify({
-        anchors: {
-          "upcoming-deadlines": {
-            "lucide-react": { kind: "real" },
-            swr: { kind: "shimmed", note: "anchor data" },
-          },
-        },
-        vendorSizes: { "lucide-react": 41000 },
-      }),
-    );
-    const loaded = loadVendoDir(path.join(dir, ".vendo"));
-    expect(loaded.remixSources["upcoming-deadlines"]?.exportName).toBe("DeadlineList");
-    expect(loaded.envManifest?.anchors["upcoming-deadlines"]?.["swr"]).toEqual({
-      kind: "shimmed",
-      note: "anchor data",
-    });
-
-    // Absent → defaults, not errors.
-    const empty = loadVendoDir(path.join(scratch(), ".vendo"));
-    expect(empty.remixSources).toEqual({});
-    expect(empty.envManifest).toBeUndefined();
-  });
-
-  it("fails loud on schema-invalid remix-sources.json and env/manifest.json", () => {
-    const dir = scratch();
-    mkdirSync(path.join(dir, ".vendo"));
-    writeFileSync(path.join(dir, ".vendo/remix-sources.json"), JSON.stringify({ a: { file: "" } }));
-    expect(() => loadVendoDir(path.join(dir, ".vendo"))).toThrow(/remix-sources\.json/);
-
-    const dir2 = scratch();
-    mkdirSync(path.join(dir2, ".vendo/env"), { recursive: true });
-    writeFileSync(path.join(dir2, ".vendo/env/manifest.json"), JSON.stringify({ anchors: { a: { x: { kind: "??" } } } }));
-    expect(() => loadVendoDir(path.join(dir2, ".vendo"))).toThrow(/manifest\.json/);
-  });
-
   it("returns undefined mcpServers when mcp.json is absent (zero-config)", () => {
     const loaded = loadVendoDir(path.join(scratch(), ".vendo"));
     expect(loaded.mcpServers).toBeUndefined();

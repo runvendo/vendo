@@ -6,7 +6,6 @@ import { detectTarget } from "./detect.js";
 import { extractTheme } from "./theme/extract-theme.js";
 import { extractTools } from "./tools/extract-tools.js";
 import { extractComponents } from "./components/extract-components.js";
-import { runRemixStep, renderRemixStep, remixHint, type RemixStepResult } from "./remix/step.js";
 import type { ResolveModelDeps } from "@vendoai/server/model";
 import { resolveCliModel } from "./llm.js";
 import {
@@ -41,7 +40,7 @@ export interface InitOptions {
    * `init` re-run on an already-wired app — runs in *catch-up* mode for
    * presentation and deterministic gap-filling, but keeps an existing component
    * catalog stable. Use `vendo refresh` when you want to discover additional
-   * component/remix candidates after the app has grown. Defaults to `"init"`.
+   * component candidates after the app has grown. Defaults to `"init"`.
    * `vendo refresh` sets it to `"refresh"`.
    */
   mode?: "init" | "refresh";
@@ -376,9 +375,6 @@ export async function runInit(opts: InitOptions): Promise<number> {
       : undefined,
   };
   let failedStep: InitFailedStep = "theme";
-  // The remix step's outcome (null when it didn't run) — a seam Task 17 reads
-  // for wrapped/skipped telemetry counts on the completed event.
-  let remixResult: RemixStepResult | null = null;
   try {
     failedStep = "theme";
     if (state.theme.status === "real" && !opts.force) {
@@ -446,14 +442,6 @@ export async function runInit(opts: InitOptions): Promise<number> {
         };
       }
     }
-    // The SECOND interactive picker: propose widget-shaped components a user
-    // might want to customize and wrap the picks in a <VendoRemix> anchor IN
-    // THE HOST SOURCE. Runs only with a model AND an interactive, non-`--yes`
-    // run (source edits stay human-gated); no model → no discovery. The step
-    // never throws — an ambiguous splice or IO error is reported, not fatal.
-    if (model && interactive) {
-      remixResult = await runRemixStep(targetDir, model, opts.interactor ?? createInteractor());
-    }
     // The README is generated documentation, kept when present (it tells the
     // developer the directory is theirs to edit).
     await writeGenerated(path.join(targetDir, ".vendo/README.md"), readmeSource(report), {
@@ -466,17 +454,6 @@ export async function runInit(opts: InitOptions): Promise<number> {
     return 1;
   }
   console.log(renderReport(report));
-  // The remix step either ran (print its anchors/TODOs/summary) or was gated
-  // off. On the gated path, print a key-aware hint (no model → add a key;
-  // non-interactive/--yes → run interactively) only on a first-run init —
-  // catch-up/refresh runs stay terse and skip the verbose explanation.
-  // No discovery/prompt/source edit happens on the gated path.
-  if (remixResult) {
-    console.log(renderRemixStep(remixResult));
-  } else if (!catchUp) {
-    console.log(remixHint(model === null ? "no-model" : "non-interactive"));
-  }
-
   // The install codemod (Next.js App Router): route handler, provider wrap,
   // .env.example, sandbox assets, dependency. Fail-open by design — anything
   // uncertain is skipped and reported, never guessed.
@@ -554,12 +531,6 @@ export async function runInit(opts: InitOptions): Promise<number> {
     // wrappers). Deterministic (no-model) runs never run the picker → 0.
     componentsOffered: report.components?.offered ?? 0,
     componentCount: report.components?.written.length ?? 0,
-    // Remix picker (splices <VendoRemix> anchors into host source): offered =
-    // candidateCount, and how many were wrapped vs skipped. Null when the step
-    // didn't run (no model / non-interactive / --yes) → 0s.
-    remixOffered: remixResult?.candidateCount ?? 0,
-    remixWrapped: remixResult?.wrapped.length ?? 0,
-    remixSkipped: remixResult?.skipped.length ?? 0,
     toolCount: report.tools?.toolCount ?? 0,
     durationMs: Date.now() - startedAt,
   });

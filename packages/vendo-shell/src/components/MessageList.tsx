@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { UINode } from "@vendoai/core";
 import { groupThreadItems, type ThreadItem } from "../use-vendo-thread";
 import { StreamingText } from "./StreamingText";
 import { ApprovalCard } from "./ApprovalCard";
@@ -39,14 +38,11 @@ export interface MessageListProps {
   fadeProposal?: { messageId: string; toolName: string; count?: number } | null;
   onAcceptFade?: () => void;
   onDeclineFade?: () => void;
-  /** Pin a remix candidate onto its VendoRemix anchor. When provided,
-   *  generated views tagged with `remixAnchorId` grow an Apply bar. */
-  onApplyRemix?: (node: UINode, envelope?: string) => void;
 }
 
 export function MessageList({
   items, status, onApprove, onDecline, onApproveBatch, onApproveSubset, onDeclineBatch, onRegenerate, onFeedback,
-  fadeProposal, onAcceptFade, onDeclineFade, onApplyRemix,
+  fadeProposal, onAcceptFade, onDeclineFade,
 }: MessageListProps) {
   const rendered = useMemo(() => groupThreadItems(items), [items]);
   // Render-slot keys (ENG-205): a skeleton and the ui view that replaces it
@@ -313,18 +309,6 @@ export function MessageList({
               return (
                 <FluidReveal key={slotKeys.get(item.key)} phase="view">
                   <UINodeView node={item.node} />
-                  {onApplyRemix && item.node.remixAnchorId !== undefined && (
-                    <div className="fl-applybar">
-                      <button
-                        type="button"
-                        className="fl-apply-btn"
-                        onClick={() => onApplyRemix(item.node, item.envelope)}
-                      >
-                        ✦ Apply to page
-                      </button>
-                      <span className="fl-applybar-hint">replaces the wrapped element for you</span>
-                    </div>
-                  )}
                 </FluidReveal>
               );
             case "error": {

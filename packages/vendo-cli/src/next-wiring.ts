@@ -315,8 +315,7 @@ export function maskLiterals(source: string): string {
  * it — so skip leading comments/whitespace (found on the masked copy, which has
  * comment CONTENT blanked but delimiters/offsets intact) before checking, then
  * detect the directive on the ORIGINAL at that offset (the mask also blanks the
- * "use client" string interior). Shared by wrapLayoutChildren and the remix
- * anchor splice so both call sites agree byte-for-byte.
+ * "use client" string interior).
  */
 export function insertImportAfterDirectives(source: string, importStmt: string): string {
   const headerLen = maskLiterals(source).match(/^\s*/)?.[0].length ?? 0;

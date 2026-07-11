@@ -78,18 +78,10 @@ import {
   handleIntegrationsPost,
 } from "./integrations.js";
 import { detectCapabilities } from "./capabilities.js";
-import {
-  createDrizzleVendoRegistry,
-  createInMemoryVendoRegistry,
-  handleVendosGet,
-  handleVendosPost,
-} from "./vendos.js";
 import { loadVendoDir } from "./vendo-dir.js";
 import { resolveMcpServers } from "./mcp-config.js";
 import { manifestToolsToHostTools } from "./manifest-tools.js";
 import { buildInstructions, createAgentCache } from "./agent.js";
-import { createSourceResolver } from "./remix-enrich.js";
-import { resolveRemixSealer } from "./seal.js";
 import { createAutomationsWorld, type VendoAutomationsWorld } from "./world.js";
 import { anthropic } from "@ai-sdk/anthropic";
 import { DEFAULT_MODEL_ID } from "./model-choice.js";
@@ -105,12 +97,6 @@ import { handleComposioWebhook } from "./webhooks.js";
 import { handleVoiceSessionPost } from "./voice.js";
 import { handleVoiceToolsGet, handleVoiceToolsPost } from "./voice-tools.js";
 
-// Exported for vendos.ts's save-path id validation (a saved vendo's id
-// is caller-assigned, unlike threads' store-assigned UUIDs — see the
-// Boundary note on routeTail below). Not imported there to avoid a
-// fetch-handler.ts <-> vendos.ts cycle (fetch-handler.ts already imports
-// vendos.ts); vendos.ts keeps its own minimal copy with a
-// cross-reference comment back to this Set — keep the two in sync.
 export const FIRST_SEGMENTS = new Set([
   "chat",
   "action",
@@ -130,7 +116,6 @@ export const FIRST_SEGMENTS = new Set([
   "critical-tools",
   "webhooks",
   "threads",
-  "vendos",
 ]);
 
 /**
@@ -155,7 +140,6 @@ export function routeTail(req: Request): string {
  * Route tails (from `routeTail`) whose POST is a browser-credentialed mutation
  * and must clear the central CSRF gate. Excludes `chat` (policy-gated),
  * `tick` (bearer service auth), and `webhooks/composio` (signature auth).
- * Prefix families ("vendos/<id>/delete") are matched separately.
  */
 const CSRF_PROTECTED_POST_TAILS = new Set([
   "integrations",
@@ -167,11 +151,10 @@ const CSRF_PROTECTED_POST_TAILS = new Set([
   "parked-actions/resolve",
   "grants/revoke",
   "rules/revoke",
-  "vendos",
 ]);
 
 function isCsrfProtectedPost(tail: string): boolean {
-  return CSRF_PROTECTED_POST_TAILS.has(tail) || tail.startsWith("vendos/");
+  return CSRF_PROTECTED_POST_TAILS.has(tail);
 }
 
 export type VendoFetchHandler = (req: Request) => Promise<Response>;
@@ -277,10 +260,6 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       options.store?.threads ??
       (storage ? createDrizzleThreadStore(storage) : new InMemoryThreadStore(() => new Date().toISOString()));
     const threadIndex = createThreadIndex(threads);
-    // Saved vendos: same durable-handle-or-in-memory posture as threads, but
-    // over the shell's VendoStore shape, not core's SavedVendoStore — see
-    // vendos.ts's header for why the two don't share an implementation.
-    const vendos = storage ? createDrizzleVendoRegistry(storage) : createInMemoryVendoRegistry();
     const breakers = options.store?.breakers ?? createBreakerState();
     const fadeTracker = options.store?.fadeTracker ?? createFadeTracker();
     // Review follow-up: per-(principal, toolCallId) consent idempotency —
@@ -459,25 +438,10 @@ async function assembleVendoState(options: VendoHandlerOptions) {
           ...(options.instructionsExtra ? { extra: options.instructionsExtra } : {}),
         }));
 
-    // Remix-source enrichment: option first, then vendo sync's capture
-    // (re-read from disk in dev; see remix-enrich.ts).
-    const resolveRemixSource = createSourceResolver({
-      ...(options.remixSources ? { option: options.remixSources } : {}),
-      captured: loaded.remixSources,
-    });
-
-    // Pin-envelope sealing (remix fast-edits). No key material → pin editing
-    // degrades to the anchor baseline; everything else is unaffected.
-    const remixSealer = resolveRemixSealer({
-      sealSecret: options.sealSecret,
-      hasInjectedModel: options.model !== undefined,
-    });
-
     const getAgent = createAgentCache({
       model,
       policy,
       instructions,
-      ...(loaded.envManifest ? { envManifest: loaded.envManifest } : {}),
       // The engine's render_view registry must know the prewired catalog too —
       // host-node validation rejects any name it can't find (ENG-186).
       components: [...prewiredComponents, ...(options.components ?? [])],
@@ -487,7 +451,6 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       ...(mcpServers.length > 0 ? { mcpServers } : {}),
       ...(options.cacheKey ? { cacheKey: options.cacheKey } : {}),
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-      ...(remixSealer ? { remixSealer } : {}),
       // ENG-193 §6.2: persist each SETTLED run's full message list to the
       // thread store. This is the single writer for thread messages (chat.ts
       // deliberately does NOT persist the request body) — the streamed
@@ -583,8 +546,6 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       serverTools,
       controlTools,
       getAgent,
-      resolveRemixSource,
-      remixSealer,
       approvals: createApprovalStore(),
       grants,
       rules,
@@ -596,9 +557,7 @@ async function assembleVendoState(options: VendoHandlerOptions) {
       fadeTracker,
       consentSeen,
       clientTools,
-      vendos,
-      // The shared durable handle (null = in-memory). Reused by later tasks
-      // to wire the decision/thread/vendo/connections stores durably too.
+      // The shared durable handle (null = in-memory).
       storage,
       // Set when a configured provider's optional peer failed to load; chat
       // is gated off and its 503 carries this actionable hint.
@@ -890,14 +849,11 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           const guard = await resolvePrincipal(req, options);
           if (!guard.ok) return guard.response;
         }
-        // `storage`/`automations` depend on the ASSEMBLED state (whether a
-        // durable handle / an automations world was actually built), not an
-        // env key — detectCapabilities() alone can't know them, so they're
-        // merged in here. `automations: false` is what stops the client's
-        // deliveries poll from 404ing forever.
+        // Storage no longer represents a user-facing saved-artifact
+        // capability. Automations still reflects the assembled world.
         return Response.json({
           ...s.capabilities,
-          storage: s.storage !== null,
+          storage: false,
           automations: s.world !== null,
         });
       }
@@ -984,8 +940,6 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
         if (!guard.ok) return guard.response;
         return Response.json(await s.threads.list(threadScope(guard.principal)));
       }
-      case "vendos":
-        return handleVendosGet(req, "vendos", { registry: s.vendos, options });
       default: {
         const tail = routeTail(req);
         if (tail.startsWith("threads/")) {
@@ -993,9 +947,6 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           if (!guard.ok) return guard.response;
           const threadId = decodeURIComponent(tail.slice("threads/".length));
           return Response.json(await s.threads.getMessages(threadScope(guard.principal), threadId));
-        }
-        if (tail.startsWith("vendos/")) {
-          return handleVendosGet(req, tail, { registry: s.vendos, options });
         }
         return Response.json({ error: "not found" }, { status: 404 });
       }
@@ -1019,8 +970,6 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           hostTools: s.hostTools,
           options,
           threads: s.threads,
-          resolveRemixSource: s.resolveRemixSource,
-          ...(s.remixSealer ? { remixSealer: s.remixSealer } : {}),
           // capabilities.chat is the single source of truth: it already
           // folds in an injected model (via hasInjectedModel above) alongside
           // any configured provider key.
@@ -1228,8 +1177,6 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
       }
       // POST /api/vendo/grants/revoke AND POST /api/vendo/rules/revoke
       // (ENG-193 §3 Moment 12/item-6) — full-tail keys keep them distinct.
-      case "vendos":
-        return handleVendosPost(req, "vendos", { registry: s.vendos, options });
       case "grants/revoke":
       case "rules/revoke": {
         const isRuleRevoke = routeTail(req) === "rules/revoke";
@@ -1241,11 +1188,6 @@ export function createVendoFetchHandler(rawOptions: VendoHandlerOptions = {}): V
           : revokeGrantRoute(req, { grants: s.grants, audit: s.audit, principal });
       }
       default: {
-        const tail = routeTail(req);
-        // Delete verb convention: POST vendos/<id>/delete (no DELETE method).
-        if (tail.startsWith("vendos/")) {
-          return handleVendosPost(req, tail, { registry: s.vendos, options });
-        }
         return Response.json({ error: "not found" }, { status: 404 });
       }
     }

@@ -4,15 +4,12 @@
  * Builds the real `createVendoAgent` (anthropic model + the annotation-driven
  * `demoPolicy` guardrail) with a general-purpose generative-UI system prompt.
  * The toolset is: Cadence's own API (client-executed host tools registered by
- * the chat handler), the in-process read tools, the ENG-188 automation
- * authoring tools (injected by the chat route so they share the world), and
- * Composio Gmail + Google Calendar (pre-connected for the demo subject). This
+ * the chat handler), the in-process read tools, and Composio Gmail + Google
+ * Calendar (pre-connected for the demo subject). This
  * module pulls in `@composio/core` (Node internals) and the anthropic
  * provider, so it MUST stay server-only — import it from route handlers,
  * never from a client component.
  */
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { anthropic } from "@ai-sdk/anthropic";
 import {
   createVendoAgent,
@@ -20,13 +17,11 @@ import {
   type ComposioClient,
 } from "@vendoai/runtime";
 import { dataFidelitySection, hostIdentitySection } from "@vendoai/core";
-import type { EnvManifest, VendoAgent, RegisteredComponent } from "@vendoai/core";
+import type { VendoAgent, RegisteredComponent } from "@vendoai/core";
 import { prewiredComponents, brandToCssVars, componentPromptCatalog } from "@vendoai/components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
-import { resolveRemixSealer } from "vendoai/server";
 import { demoPolicy } from "./policy";
 import { cadenceBrand } from "./brand";
-import { demoAutomationInstructions } from "./automations";
 import { cadenceHostComponents } from "./host-components/descriptors";
 import { CADENCE_SCOPE, demoStore } from "./store";
 
@@ -89,9 +84,7 @@ export function buildInstructions(): string {
       },
     }),
     "",
-    "HOW render_view WORKS — render_view renders NEW views. (When the host-page context",
-    "offers edit_view for a captured element, PREFER it: patch the baseline instead of",
-    "regenerating.) Every view you show is a",
+    "HOW render_view WORKS — every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
     "- formatVersion: 'vendo-genui/v1'.",
     "- root: the id of the root node.",
@@ -101,16 +94,6 @@ export function buildInstructions(): string {
     "  OBJECT — never a stringified JSON string.",
     "- data (optional): a shared data model. Bind a prop to it with { $path: '/json/pointer' }.",
     "- A single component is just a one-node view: root points at that one node.",
-    "",
-    "REFRESHABLE VIEWS — when a view presents data you fetched with a tool, make it",
-    "re-runnable: put the tool's result VERBATIM at one path in `data` (e.g.",
-    "data.clients = the exact get_clients output), bind props into that subtree with",
-    "{ $path } or transform it inside a generated component, and declare",
-    "queries: [{ path: '/clients', tool: 'get_clients', input: { missingDocs: true } }].",
-    "Saved views re-run those queries on reopen to show fresh data. Do NOT reshape",
-    "tool output before storing it at the declared path — reshape at render time.",
-    "Only the snake_case read tools (get_dashboard, get_clients, get_client_documents,",
-    "get_deadlines, get_activity) are replayable in queries — never a camelCase API tool.",
     "",
     // Platform data-fidelity floor (shared prompt core): literal calendar
     // dates, no guessed money divisors, totals match their rows.
@@ -170,23 +153,17 @@ export function buildInstructions(): string {
     "- The firm's standing integrations, connected and ready: Gmail (GMAIL_* tools) and",
     "  Google Calendar (GOOGLECALENDAR_* tools). Reads run freely; sends/creates pause",
     "  for approval. Use them when the user asks to email someone or manage the calendar",
-    "  directly, and inside automations via the automation world's registered tools.",
+    "  directly.",
     "- Chasing documents is the firm's daily grind: you can find who is missing what",
     "  (get_deadlines, get_client_documents), draft the chase message, and send it via",
     "  sendClientMessage (in-app portal message) or GMAIL_SEND_EMAIL (real email) after",
     "  approval. When a client uploads the WRONG document (status needs_review with a",
     "  note), you can reject it with a clear reason the client sees, or verify a correct one.",
-    "- You can set up standing AUTOMATIONS that fire on their own (see the AUTOMATIONS",
-    "  section below). When you create one, do NOT perform its action (e.g. the emails)",
-    "  yourself — the automation does that when it fires; just confirm it is active, in",
-    "  plain language.",
     "- You can turn firm data into whatever visualization best answers the question —",
     "  a table of at-risk clients, document-progress meters, a deadline timeline. Pick",
     "  the component that makes the pattern obvious and call out the most notable point.",
     "- More broadly, for non-accounting or open-ended requests, compose the blocks (and",
     "  novel components when needed) into the most useful bespoke interface you can.",
-    "",
-    demoAutomationInstructions(),
   ].join("\n");
 }
 
@@ -195,36 +172,16 @@ export interface CreateDemoAgentOptions {
   model?: LanguageModel;
   /** Inject a Composio client (tests pass a stub; production builds the real one). */
   composioClient?: ComposioClient;
-  /** Extra in-process HOST tools (demoTools() only) — judged/breaker-gated
-   *  normally (source "engine"). ENG-193 PR #40 review (item A): must NOT
-   *  carry the automation world's authoring tools or steering tools; see
-   *  `controlTools`. */
+  /** Extra in-process HOST tools (demoTools() only). */
   extraTools?: ToolSet;
-  /** Vendo's own control-plane tools — the automation world's authoring
-   *  tools + steering tools, so they share one world. Exempt from the
-   *  judge/breakers (source "control"). */
+  /** Vendo's control-plane steering tools. */
   controlTools?: ToolSet;
   /** Composio toolkits to ingest; defaults to the demo's standing pair. */
   toolkits?: string[];
 }
 
-/** The furnished-sandbox manifest from `vendo sync` (absent → bare env). */
-function loadEnvManifest(): EnvManifest | undefined {
-  try {
-    return JSON.parse(
-      readFileSync(path.join(process.cwd(), ".vendo", "env", "manifest.json"), "utf8"),
-    ) as EnvManifest;
-  } catch {
-    return undefined;
-  }
-}
-
 export function createDemoAgent(opts: CreateDemoAgentOptions = {}): VendoAgent {
   const model = opts.model ?? anthropic(DEMO_MODEL);
-  // Pin-envelope sealing (remix fast-edits): ANTHROPIC_API_KEY is this demo's
-  // own key, so the HKDF fallback is meaningful here.
-  const remixSealer = resolveRemixSealer({ hasInjectedModel: false });
-  const envManifest = loadEnvManifest();
   return createVendoAgent({
     model,
     policy: demoPolicy,
@@ -237,8 +194,6 @@ export function createDemoAgent(opts: CreateDemoAgentOptions = {}): VendoAgent {
     controlTools: opts.controlTools,
     maxSteps: 10,
     components: [...prewiredComponents, ...cadenceHostComponents],
-    ...(remixSealer ? { remixSealer } : {}),
-    ...(envManifest ? { envManifest } : {}),
     // ENG-193 review follow-up (queued gap): the Trust diary read 0
     // tool_execution events despite live client-tool sends (Gmail/Calendar
     // and Cadence's own host tools all execute in the browser — there's no

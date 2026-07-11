@@ -445,7 +445,7 @@ describe("parked actions", () => {
   });
 
   it("filters by automationId, runId, and unresolvedOnly", async () => {
-    const store = new InMemoryAutomationStore();
+    const store = new InMemoryAutomationStore({ now: () => "2026-07-04T00:00:00Z" });
     const a1 = await store.createParkedAction(scope, draft({ runId: "run-1" }));
     await store.createParkedAction(scope, draft({ runId: "run-2", automationId: "auto-2" }));
     await store.resolveParkedAction(scope, a1.id, "declined", "2026-07-04T01:00:00Z");

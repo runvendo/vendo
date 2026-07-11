@@ -29,20 +29,6 @@ describe("createRenderViewTool", () => {
     expect(written.data.payload).toEqual(VALID);
   });
 
-  it("tags the emitted node as a remix candidate when scoped to an anchor", async () => {
-    const writer = writerMock();
-    const tool = createRenderViewTool(writer, { remixAnchorId: "invoices-widget" });
-    await tool.execute!(VALID as never, {} as never);
-    const written = (writer.write as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(written.data.remixAnchorId).toBe("invoices-widget");
-    // And the untagged default stays untagged (backward compatibility).
-    const plainWriter = writerMock();
-    await createRenderViewTool(plainWriter).execute!(VALID as never, {} as never);
-    expect(
-      (plainWriter.write as ReturnType<typeof vi.fn>).mock.calls[0][0].data.remixAnchorId,
-    ).toBeUndefined();
-  });
-
   it("returns the validation error (and writes nothing) for an invalid payload", async () => {
     const writer = writerMock();
     const tool = createRenderViewTool(writer);

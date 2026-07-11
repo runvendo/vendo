@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { LanguageModel } from "ai";
-import { automationSpecSchema, hashDescriptor, type AutomationSpec, type RegisteredTool } from "@vendoai/runtime";
+import {
+  InMemoryAutomationStore,
+  automationSpecSchema,
+  hashDescriptor,
+  type AutomationSpec,
+  type RegisteredTool,
+} from "@vendoai/runtime";
 import { createAutomationsWorld } from "./world.js";
 import { defaultVendoPolicy } from "./default-policy.js";
 import { listParkedActionsRoute, resolveParkedActionRoute } from "./parked-actions.js";
 
 const PRINCIPAL = { userId: "u1" };
 const SCOPE = { tenantId: "vendo-embedded", subject: "u1" };
-const NOW = "2026-07-04T00:00:00Z";
+const NOW = new Date().toISOString();
 
 function makeTool(name: string): RegisteredTool & { calls: Record<string, unknown>[] } {
   const calls: Record<string, unknown>[] = [];
@@ -27,6 +33,7 @@ function makeWorld(tools: Record<string, RegisteredTool> = {}) {
     model: { modelId: "stub" } as unknown as LanguageModel,
     scope: SCOPE,
     tools,
+    store: new InMemoryAutomationStore({ now: () => NOW }),
   });
 }
 

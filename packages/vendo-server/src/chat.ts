@@ -29,14 +29,12 @@ import type {
   VendoAgent,
   VendoUIMessage,
   Principal,
-  RemixSourceResolver,
   ThreadStore,
 } from "@vendoai/core";
-import { hostToolset, type RemixSealer } from "@vendoai/runtime";
+import { hostToolset } from "@vendoai/runtime";
 import type { HostToolDefinition } from "@vendoai/core";
 import { resolvePrincipal, threadScope } from "./guard.js";
 import type { ThreadIndex } from "./threads.js";
-import { applyVerifiedPinBase, enrichAnchorSources } from "./remix-enrich.js";
 import type { VendoHandlerOptions } from "./options.js";
 import { devTelemetry } from "./telemetry-dev.js";
 
@@ -68,12 +66,6 @@ export interface ChatDeps {
    *  thread persistence existed keep working with no request-side writes
    *  (the engine's onSettled hook still persists settled runs). */
   threads?: ThreadStore;
-  /** Server-side anchor source lookup (remix-fidelity). Client-supplied
-   *  `scoped.remixSource` is stripped regardless. */
-  resolveRemixSource?: RemixSourceResolver;
-  /** Verifies client-carried pin envelopes into `scoped.pinBase` (remix
-   *  fast-edits). Absent → envelopes are dropped, pin editing unavailable. */
-  remixSealer?: RemixSealer;
 }
 
 /** Reduces the UIMessage-chunk stream to its terminal message and upserts it.
@@ -161,14 +153,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   }
 
   const stream = (await deps.getAgent()).run({
-    // Enrichment strips client-supplied source/pinBase and confines the raw
-    // envelope to the last user message; verification then converts it into
-    // a trusted `pinBase` (or drops it) BEFORE the engine sees anything.
-    messages: applyVerifiedPinBase(
-      enrichAnchorSources(messages, deps.resolveRemixSource ?? (() => undefined)),
-      deps.remixSealer,
-      guard.principal.userId,
-    ),
+    messages,
     // The app's own API surface enters through the caller seam: no execute —
     // the policy gates each call and the BROWSER executes approved ones on
     // the user's session via the SDK's host-tool runner.

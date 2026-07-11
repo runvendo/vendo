@@ -1,7 +1,7 @@
 /**
  * In-memory implementations of the frozen Store seam (@vendoai/core) for
  * tests and embedded use (architecture Decision 1: embedded Store is "host's
- * choice; in-memory/SQLite in CI"). Thread/vendo/audit stores are new; the
+ * choice; in-memory/SQLite in CI"). Thread/audit stores are provided here; the
  * automations sub-store reuses ENG-188's InMemoryAutomationStore, which
  * already implements the frozen AutomationStore surface.
  *
@@ -18,10 +18,6 @@ import type {
   AuditLog,
   VendoUIMessage,
   Principal,
-  RemixRecord,
-  RemixStore,
-  SavedVendo,
-  SavedVendoStore,
   Store,
   ThreadRecord,
   ThreadStore,
@@ -148,110 +144,6 @@ export class InMemoryThreadStore implements ThreadStore {
   }
 }
 
-interface OwnedVendo extends SavedVendo {
-  tenantId: string;
-  subject: string;
-}
-
-export class InMemorySavedVendoStore implements SavedVendoStore {
-  private vendos = new Map<string, OwnedVendo>();
-  private idCounter = 0;
-  constructor(private readonly clock: () => string) {}
-
-  private owned(scope: Principal, f: OwnedVendo | undefined): OwnedVendo | undefined {
-    if (!f) return undefined;
-    return sameScope(scope, f) ? f : undefined;
-  }
-
-  async save(
-    scope: Principal,
-    vendo: Omit<SavedVendo, "id" | "createdAt" | "updatedAt">,
-  ): Promise<SavedVendo> {
-    const now = this.clock();
-    const owned: OwnedVendo = {
-      ...structuredClone(vendo),
-      id: `vendo-${++this.idCounter}`,
-      createdAt: now,
-      updatedAt: now,
-      tenantId: scope.tenantId,
-      subject: scope.subject,
-    };
-    this.vendos.set(owned.id, owned);
-    return this.toRecord(owned);
-  }
-
-  async get(scope: Principal, id: string): Promise<SavedVendo | undefined> {
-    const owned = this.owned(scope, this.vendos.get(id));
-    return owned ? this.toRecord(owned) : undefined;
-  }
-
-  async list(scope: Principal): Promise<SavedVendo[]> {
-    return [...this.vendos.values()]
-      .filter((f) => this.owned(scope, f) !== undefined)
-      .map((f) => this.toRecord(f));
-  }
-
-  private toRecord(owned: OwnedVendo): SavedVendo {
-    const { tenantId: _t, subject: _s, ...record } = structuredClone(owned);
-    return record;
-  }
-
-  async delete(scope: Principal, id: string): Promise<void> {
-    if (this.owned(scope, this.vendos.get(id))) this.vendos.delete(id);
-  }
-}
-
-interface OwnedRemix extends RemixRecord {
-  tenantId: string;
-  subject: string;
-}
-
-export class InMemoryRemixStore implements RemixStore {
-  /** Keyed by anchorId → owned records; ownership compared as fields. */
-  private pins = new Map<string, OwnedRemix[]>();
-  constructor(private readonly clock: () => string) {}
-
-  private find(scope: Principal, anchorId: string): OwnedRemix | undefined {
-    return this.pins.get(anchorId)?.find((r) => sameScope(scope, r));
-  }
-
-  async pin(
-    scope: Principal,
-    anchorId: string,
-    record: Omit<RemixRecord, "anchorId" | "createdAt" | "updatedAt">,
-  ): Promise<RemixRecord> {
-    const now = this.clock();
-    const existing = this.find(scope, anchorId);
-    const owned: OwnedRemix = {
-      ...structuredClone(record),
-      anchorId,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      tenantId: scope.tenantId,
-      subject: scope.subject,
-    };
-    const rest = (this.pins.get(anchorId) ?? []).filter((r) => !sameScope(scope, r));
-    this.pins.set(anchorId, [...rest, owned]);
-    return this.toRecord(owned);
-  }
-
-  async get(scope: Principal, anchorId: string): Promise<RemixRecord | undefined> {
-    const owned = this.find(scope, anchorId);
-    return owned ? this.toRecord(owned) : undefined;
-  }
-
-  async unpin(scope: Principal, anchorId: string): Promise<void> {
-    const rest = (this.pins.get(anchorId) ?? []).filter((r) => !sameScope(scope, r));
-    if (rest.length === 0) this.pins.delete(anchorId);
-    else this.pins.set(anchorId, rest);
-  }
-
-  private toRecord(owned: OwnedRemix): RemixRecord {
-    const { tenantId: _t, subject: _s, ...record } = structuredClone(owned);
-    return record;
-  }
-}
-
 /** Append-only: the log clones on both sides of the boundary, so neither the
  *  caller's event object nor anything read via `events` is a live reference. */
 export class InMemoryAuditLog implements AuditLog {
@@ -285,19 +177,15 @@ export class InMemoryAuditLog implements AuditLog {
 
 export interface InMemoryStore extends Store {
   threads: InMemoryThreadStore;
-  vendos: InMemorySavedVendoStore;
   automations: InMemoryAutomationStore;
   audit: InMemoryAuditLog;
-  remixes: InMemoryRemixStore;
 }
 
 export function createInMemoryStore(opts: { now?: () => string } = {}): InMemoryStore {
   const clock = opts.now ?? (() => new Date().toISOString());
   return {
     threads: new InMemoryThreadStore(clock),
-    vendos: new InMemorySavedVendoStore(clock),
     automations: new InMemoryAutomationStore({ now: clock }),
     audit: new InMemoryAuditLog(),
-    remixes: new InMemoryRemixStore(clock),
   };
 }

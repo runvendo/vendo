@@ -7,8 +7,7 @@
  *
  *   VendoProvider (HTTP transport → /chat, browser host-tool executor)
  *   └ VendoThemeProvider (brand from .vendo/theme.json)
- *     └ VendoShellProvider (sandboxed renderNode, saved-view store,
- *        reads-only query replay, capability-gated integrations)
+   *     └ VendoShellProvider (sandboxed renderNode, capability-gated integrations)
  *       └ children + VendoOverlay (Cmd/Ctrl+K) + a floating launcher pill
  *
  * Capability-additive: the integrations tray only appears when the server
@@ -24,12 +23,9 @@ import {
   VendoShellProvider,
   VendoToasts,
   createLocalIntegrations,
-  createWebRemixes,
-  createWebStorage,
   type VendoIntegrations,
   type VendoToastsProps,
 } from "@vendoai/shell";
-import { createServerVendoStore } from "./server-store.js";
 import { VendoThemeProvider } from "@vendoai/components";
 import { brandTokensSchema, defaultBrand, type BrandTokens } from "@vendoai/components/theme";
 import { brandToCssVars } from "@vendoai/components/descriptors";
@@ -39,7 +35,6 @@ import { SandboxStage } from "./sandbox-stage.js";
 import { VendoConnectNode } from "./connect-node.js";
 import { createServerIntegrations } from "./integrations.js";
 import { createServerNotifications } from "./notifications.js";
-import { createRunQuery } from "./run-query.js";
 import { createVendoVoice } from "./voice.js";
 import type { VoiceDriver } from "@vendoai/shell";
 
@@ -227,25 +222,6 @@ export function VendoRoot({
     [basePath, threadId],
   );
 
-  // Saved vendos survive reloads. Server-backed (durable across devices,
-  // no localStorage quota) when the handler reports the `storage` capability;
-  // localStorage otherwise — including the optimistic `capabilities === null`
-  // window before the fetch above resolves, which is why `capabilities?.storage`
-  // (not `capabilities`) drives this: the store switches under the surfaces
-  // using it the moment capabilities land, never blocking on them. No
-  // localStorage→server migration in v1 (see docs/persistence-and-deploy.md).
-  // Only touches localStorage inside its own methods, so importing stays SSR-safe.
-  const store = useMemo(
-    () =>
-      capabilities?.storage
-        ? createServerVendoStore(basePath)
-        : createWebStorage({ namespace: `vendo:${threadId}` }),
-    [capabilities?.storage, basePath, threadId],
-  );
-
-  // Remix pins (VendoRemix) follow the same web-storage pattern; the
-  // notifications client polls the handler's deliveries feed (VendoToasts).
-  const remixes = useMemo(() => createWebRemixes({ namespace: `vendo:${threadId}` }), [threadId]);
   const notifications = useMemo(() => createServerNotifications(basePath), [basePath]);
 
   const integrations = useMemo<VendoIntegrations>(
@@ -256,7 +232,6 @@ export function VendoRoot({
     [capabilities?.integrations, basePath],
   );
 
-  const runQuery = useMemo(() => createRunQuery(basePath, manifestTools), [basePath, manifestTools]);
   const effectiveVoice = useMemo<VoiceDriver | undefined>(() => {
     if (voice === false) return undefined;
     if (voice) return voice;
@@ -329,11 +304,7 @@ export function VendoRoot({
         <VendoShellProvider
           renderNode={renderNode}
           integrations={integrations}
-          store={store}
-          remixes={remixes}
           notifications={notifications}
-          runQuery={runQuery}
-          components={[]}
           theme={{ scheme: brand.mode === "dark" ? "dark" : "light" }}
           cssVars={brandToCssVars(brand)}
           productName={productName}

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { replayRegistry } from "@vendoai/shell";
 import type { GeneratedPayload } from "@vendoai/core";
 import { __voiceTesting } from "./voice-realtime";
 
@@ -16,7 +15,6 @@ const RAW = {
 
 describe("voice refreshable views (spec §3)", () => {
   it("builds a DATA-BOUND payload with queries when source matches the cache", () => {
-    replayRegistry.register("listTransactions", async () => RAW);
     recordResult("listTransactions", { month: "march" }, RAW);
     const node = tableView({
       title: "March",
@@ -33,19 +31,12 @@ describe("voice refreshable views (spec §3)", () => {
     expect(table?.props?.rows).toEqual({ $path: "/source/data/transactions" });
   });
 
-  it("degrades to a snapshot when the source is unmatched, unreplayable, or misshapen", () => {
+  it("degrades to a snapshot when the source is unmatched or misshapen", () => {
     // unmatched input
     const unmatched = tableView({
       columns: COLUMNS,
       rows: RAW.data.transactions,
       source: { tool: "listTransactions", input: { month: "april" }, rowsPath: "/data/transactions" },
-    });
-    // tool not in the replay registry
-    recordResult("createOrder", {}, RAW);
-    const unreplayable = tableView({
-      columns: COLUMNS,
-      rows: RAW.data.transactions,
-      source: { tool: "createOrder", input: {}, rowsPath: "/data/transactions" },
     });
     // rowsPath pointing at a non-array
     const misshapen = tableView({
@@ -59,7 +50,7 @@ describe("voice refreshable views (spec §3)", () => {
       rows: [{ nope: 1 }],
       source: { tool: "listTransactions", input: { month: "march" }, rowsPath: "/data/transactions" },
     });
-    for (const node of [unmatched, unreplayable, misshapen, wrongColumns]) {
+    for (const node of [unmatched, misshapen, wrongColumns]) {
       const payload = (node as { payload: GeneratedPayload }).payload;
       expect(payload.queries).toBeUndefined();
       expect(payload.data).toBeUndefined();
@@ -78,7 +69,6 @@ describe("voice refreshable views (spec §3)", () => {
 describe("review fixes (PR #41 triage)", () => {
   it("accepts an EMPTY result as a valid refreshable declaration", () => {
     const emptyRaw = { ok: true, data: { transactions: [] } };
-    replayRegistry.register("listTransactions", async () => emptyRaw);
     recordResult("listTransactions", { month: "may" }, emptyRaw);
     const node = tableView({
       columns: COLUMNS,
@@ -128,7 +118,6 @@ describe("live voice check fixes (real Maple row shapes)", () => {
   const REAL_RAW = { status: 200, ok: true, data: { data: REAL_ROWS } };
 
   it("binds when declared columns are scalar, even though rows carry nested fields", () => {
-    replayRegistry.register("listTransactions", async () => REAL_RAW);
     recordResult("listTransactions", { limit: 40 }, REAL_RAW);
     const node = tableView({
       columns: [
@@ -165,7 +154,6 @@ describe("heterogeneous rows (PR #43 review P1)", () => {
         ],
       },
     };
-    replayRegistry.register("listTransactions", async () => mixed);
     recordResult("listTransactions", { limit: 42 }, mixed);
     const node = tableView({
       columns: [
@@ -187,7 +175,6 @@ describe("data-bound views carry the source tool's declared field formats", () =
   // x-vendo-formats map must travel into the Table columns instead.
   it("stamps format onto matching columns when the source binds", () => {
     const raw = { ok: true, data: { data: [{ category: "housing", amount: 285000 }] } };
-    replayRegistry.register("getSpendingInsights", async () => raw);
     recordResult("getSpendingInsights", { month: "2026-07" }, raw);
     const node = tableView({
       title: "Spending Breakdown by Category",

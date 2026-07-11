@@ -3,20 +3,18 @@
  * per-block-capped replacement for the raw text tail a voice session used to
  * get. Assembled client-side from what the shell already holds — thread items
  * (text, tool parts), visible `data-ui` payloads (provenance from their own
- * `queries`), and the saved-vendo gallery — and rendered to plain text into
+ * `queries`) — and rendered to plain text into
  * the existing `VoiceSessionInit.context` slot (no driver protocol change).
  */
 import { isGeneratedNode, type GeneratedPayload, type UINode } from "@vendoai/core";
 import type { ThreadItem } from "../use-vendo-thread";
-import type { Vendo } from "../seams/store";
 
 /** Per-block character caps + a total budget (connect-time tokens are real). */
 const CAPS = {
   tail: 2_000,
   views: 800,
   tools: 800,
-  flows: 400,
-  total: 3_600,
+  total: 3_200,
 } as const;
 
 const TAIL_TURNS = 16;
@@ -52,7 +50,7 @@ function describeView(node: UINode): string {
       "title"
     ] as string | undefined);
   // Data-bound tables carry rows as { $path } into payload.data — resolve the
-  // pointer so refreshable views still report a row count.
+  // pointer so data-bound views still report a row count.
   let rows = table?.props?.["rows"];
   if (rows && typeof rows === "object" && !Array.isArray(rows)) {
     const pointer = (rows as { $path?: string }).$path;
@@ -79,12 +77,11 @@ function describeView(node: UINode): string {
 
 export interface VoiceSessionBriefInput {
   items: ThreadItem[];
-  flows?: Vendo[];
 }
 
 /**
  * Render the brief, or "" when there is nothing to carry over. Block order:
- * conversation tail → on-screen views → recent tool results → saved vendos,
+ * conversation tail → on-screen views → recent tool results,
  * each individually capped, the whole thing budget-capped.
  */
 export function voiceSessionBrief(input: VoiceSessionBriefInput): string {
@@ -124,15 +121,6 @@ export function voiceSessionBrief(input: VoiceSessionBriefInput): string {
       `Data already fetched this conversation (reuse it instead of re-fetching):\n${toolLines
         .join("\n")
         .slice(0, CAPS.tools)}`,
-    );
-  }
-
-  if (input.flows?.length) {
-    const flowLines = input.flows.map((f) => `- "${f.name}" (id ${f.id})`);
-    blocks.push(
-      `The user's saved views (open one with open_saved_vendo when asked):\n${flowLines
-        .join("\n")
-        .slice(0, CAPS.flows)}`,
     );
   }
 

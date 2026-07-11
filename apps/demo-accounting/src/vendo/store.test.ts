@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoStore, resetDemoStore, resolveThreadRecordId } from "./store";
-import { CADENCE_SCOPE } from "./automations";
+import { CADENCE_SCOPE, demoStore, resetDemoStore, resolveThreadRecordId } from "./store";
 
 describe("demo store + thread id mapping", () => {
   it("has grants and audit wired (item-1 primitives)", async () => {

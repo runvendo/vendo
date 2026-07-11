@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { automationSpecSchema, type AutomationSpec } from "@vendoai/runtime";
 import {
   handleDemoGrantsList,
   handleDemoGrantsRevoke,
@@ -9,23 +8,11 @@ import {
   handleDemoCriticalTools,
 } from "./trust-handler";
 import { demoStore, CADENCE_SCOPE } from "./store";
-import { automationsWorld } from "./automations";
 
 function req(url: string, init: RequestInit = {}): Request {
   return new Request(url, {
     headers: { "content-type": "application/json", host: "localhost", ...init.headers },
     ...init,
-  });
-}
-
-function minimalSpec(name: string): AutomationSpec {
-  return automationSpecSchema.parse({
-    dslVersion: 1,
-    name,
-    description: "test",
-    prompt: "test",
-    trigger: { type: "host_event", event: "transaction.created" },
-    execution: { mode: "steps", steps: [{ id: "noop", type: "tool", tool: "get_deadlines", input: {} }] },
   });
 }
 
@@ -35,24 +22,15 @@ describe("Trust-screen demo handlers", () => {
     delete process.env.VENDO_DEMO_PUBLIC;
   });
 
-  it("lists standing grants and federates automation-version grants", async () => {
+  it("lists standing grants", async () => {
     const grant = await demoStore.grants.create(CADENCE_SCOPE, {
       tool: "sendClientMessage", descriptorHash: "h1", scope: { kind: "tool" }, duration: "standing",
       source: { kind: "chat" },
     });
-    const { store } = automationsWorld();
-    await store.create(CADENCE_SCOPE, {
-      spec: minimalSpec("Morning chase"),
-      grants: [{ tool: "GMAIL_SEND_EMAIL", descriptorHash: "h2", scopeHash: "s1", grantedAt: "2026-07-04T00:00:00Z" }],
-    });
-
     const res = await handleDemoGrantsList(req("http://localhost/api/vendo/grants"));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { grants: { id?: string; tool: string; source: string; automationName?: string }[] };
+    const body = (await res.json()) as { grants: { id?: string; tool: string; source: string }[] };
     expect(body.grants.some((g) => g.id === grant.id && g.tool === "sendClientMessage")).toBe(true);
-    const automationRow = body.grants.find((g) => g.source === "automation" && g.automationName === "Morning chase");
-    expect(automationRow).toBeDefined();
-    expect(automationRow?.id).toBeUndefined();
   });
 
   it("revokes a live grant, 404s an unknown one, 400s a malformed body", async () => {

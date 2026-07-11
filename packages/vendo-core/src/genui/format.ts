@@ -39,7 +39,7 @@ export interface GeneratedPayload {
   root: string;
   nodes: GenNode[];
   data?: Record<string, unknown>;
-  /** Declared provenance of `data`: re-runnable on reopen for fresh data. */
+  /** Optional declared provenance of `data`. */
   queries?: DataQuery[];
   /** Tier 2.5: name → ESM React component source, evaluated in-sandbox. */
   components?: Record<string, string>;

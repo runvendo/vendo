@@ -1,149 +1,39 @@
-import { useEffect, useRef, useState } from "react";
-import type { UINode } from "@vendoai/core";
-import { useVendoChat } from "@vendoai/react";
+import { useState } from "react";
 import { useShell } from "../context";
-import { UINodeView } from "../components/UINodeView";
 import { OverlayPanel } from "../components/OverlayPanel";
 import { VendoThread } from "../VendoThread";
 
 export interface VendoSlotProps {
   vendoId: string;
-  /** Seed the slot with a node (e.g. SSR/fixture). localStorage wins otherwise. */
-  savedNode?: UINode;
+  savedNode?: unknown;
   emptyLabel?: string;
-  /** Design-overlay greeting + suggestions — same shape as the Cmd+K overlay so
-   *  the design experience matches it (plus the pin-to-card footer). */
   greeting?: string;
   suggestions?: string[];
-  /** Realtime voice seam (ENG-185) — the mic appears wherever the composer
-   *  does, including this slot's design overlay. */
   voice?: import("../voice/voice-session").VoiceDriver;
 }
 
-const storageKey = (id: string) => `vendo-slot:${id}`;
-
-/**
- * A generative card embedded in a host surface. Empty, it shows a ghost preview
- * inviting a click; clicking opens an overlay chat. The view you pin from the
- * thread becomes the card's resting state (persisted to localStorage), with an
- * overflow menu to edit (reopen the chat) or remove (back to blank).
- */
 export function VendoSlot({
   vendoId,
-  savedNode,
   emptyLabel = "Design a view",
   greeting,
   suggestions = [],
   voice,
 }: VendoSlotProps) {
   const { productName } = useShell();
-  // Brand-neutral default: the shell ships no product names of its own; hosts
-  // brand the copy via the `productName` seam (or an explicit `greeting`).
+  const [open, setOpen] = useState(false);
   const slotGreeting =
     greeting ?? (productName ? `What can ${productName} build here?` : "What can I build here?");
-  const [pinned, setPinned] = useState<UINode | null>(savedNode ?? null);
-  const [designing, setDesigning] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const { setMessages } = useVendoChat();
-
-  // Hydrate from localStorage after mount so SSR and first client render agree
-  // (both start empty), then the saved view fills in.
-  useEffect(() => {
-    if (savedNode) return;
-    try {
-      const raw = window.localStorage.getItem(storageKey(vendoId));
-      if (raw) setPinned(JSON.parse(raw) as UINode);
-    } catch {
-      /* malformed or blocked storage — treat as empty */
-    }
-  }, [vendoId, savedNode]);
-
-  // Close the overflow menu on outside click / Escape.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
-  const persist = (node: UINode | null) => {
-    try {
-      if (node) window.localStorage.setItem(storageKey(vendoId), JSON.stringify(node));
-      else window.localStorage.removeItem(storageKey(vendoId));
-    } catch {
-      /* storage unavailable — state stays in memory */
-    }
-  };
-
-  const pin = (node: UINode) => { setPinned(node); persist(node); setDesigning(false); };
-  const edit = () => { setMenuOpen(false); setDesigning(true); };
-  const remove = () => {
-    setPinned(null);
-    persist(null);
-    setMenuOpen(false);
-    void setMessages([]); // start a fresh conversation next time
-  };
 
   return (
     <div className="fl-slot" data-vendo-id={vendoId}>
-      {pinned ? (
-        <div className="fl-slot-filled">
-          <UINodeView node={pinned} />
-          <div className="fl-slot-menu-wrap" ref={menuRef}>
-            <button
-              type="button"
-              className="fl-slot-menu-btn"
-              aria-label="Vendo options"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <div className="fl-slot-menu" role="menu">
-                <button type="button" role="menuitem" onClick={edit}>Edit view</button>
-                <button type="button" role="menuitem" className="is-danger" onClick={remove}>Remove</button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <button type="button" className="fl-slot-ghost" onClick={() => setDesigning(true)}>
-          <div className="fl-slot-skel" aria-hidden>
-            <span className="fl-skel-line" style={{ width: "55%" }} />
-            <span className="fl-skel-line" style={{ width: "34%" }} />
-            <div className="fl-skel-bars">
-              <span style={{ height: "55%" }} />
-              <span style={{ height: "82%" }} />
-              <span style={{ height: "44%" }} />
-              <span style={{ height: "92%" }} />
-              <span style={{ height: "60%" }} />
-            </div>
-          </div>
-          <span className="fl-slot-cta">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-            </svg>
-            <span className="fl-slot-cta-label">{emptyLabel}</span>
-            <small>describe it, I&apos;ll render it</small>
-          </span>
-        </button>
-      )}
-      <OverlayPanel open={designing} onClose={() => setDesigning(false)} ariaLabel="Design view">
-        <VendoThread greeting={slotGreeting} suggestions={suggestions} onPin={pin} voice={voice} />
+      <button type="button" className="fl-slot-ghost" onClick={() => setOpen(true)}>
+        <span className="fl-slot-cta">
+          <span className="fl-slot-cta-label">{emptyLabel}</span>
+          <small>describe it, I&apos;ll render it</small>
+        </span>
+      </button>
+      <OverlayPanel open={open} onClose={() => setOpen(false)} ariaLabel="Design view">
+        <VendoThread greeting={slotGreeting} suggestions={suggestions} voice={voice} />
       </OverlayPanel>
     </div>
   );

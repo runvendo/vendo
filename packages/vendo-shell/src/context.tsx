@@ -1,13 +1,8 @@
-import { createContext, useContext, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import type { RegisteredComponent, UINode } from "@vendoai/core";
+import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
+import type { UINode } from "@vendoai/core";
 import { themeToStyle, type VendoTheme } from "./theme";
-import { createLocalStore, type VendoStore } from "./seams/store";
 import { createLocalIntegrations, type VendoIntegrations } from "./seams/integrations";
 import { createLocalNotifications, type VendoNotifications } from "./seams/notifications";
-import { createLocalRemixes, type RemixClient } from "./seams/remixes";
-import { createPageContextRegistry, type PageContextRegistry } from "./remix/page-context-registry";
-import { createScopeStore, type ScopeStore } from "./remix/scope";
-import type { RunQuery } from "./seams/query";
 import type { ParkedActionRow } from "./components/WaitingList";
 import "./styles.css";
 
@@ -77,24 +72,9 @@ export interface SendConsentResult {
 export type RenderNode = (node: UINode) => ReactNode;
 
 export interface ShellContextValue {
-  store: VendoStore;
   integrations: VendoIntegrations;
-  /** Per-user pinned remixes of dev-wrapped host components (VendoRemix). */
-  remixes: RemixClient;
   /** Automation deliveries feed + approval resume (VendoToasts). */
   notifications: VendoNotifications;
-  /** Mounted VendoRemix anchors on the current page — created per provider,
-   *  not a prop. Gives every surface "what's on this page" awareness. */
-  registry: PageContextRegistry;
-  /** Which anchor the shared overlay is scoped to right now (created per
-   *  provider). Affordance clicks open it; the overlay clears it on close. */
-  scope: ScopeStore;
-  /** Host seam: re-run one declared data query through the policy-governed
-   *  tool path (ENG-183). Absent → reopened views stay snapshots. */
-  runQuery?: RunQuery;
-  /** Live-refresh cadence for OPEN saved views (ms). Ticks only while the tab
-   *  is visible and stop after repeated failures. 0 disables. Default 60s. */
-  refreshIntervalMs: number;
   renderNode: RenderNode;
   /** Host brand theme — so portaled surfaces (the overlay) can re-apply it. */
   theme?: VendoTheme;
@@ -106,9 +86,6 @@ export interface ShellContextValue {
   /** What the host calls its assistant (e.g. "Maple"). Default copy that names
    *  the product reads it — the shell package itself ships ZERO brand strings. */
   productName?: string;
-  /** F1 component registry (prewired + host). When present, reopened saved
-   *  views diff their stamp against it and surface drift (ENG-186). */
-  components?: RegisteredComponent[];
   /** Posts a ConsentResponse (ENG-193 §4.5). Absent → approve/decline still
    *  work via the SDK's native approval boolean alone, just with no server
    *  grant/audit trail — the graceful no-op default every other seam here has.
@@ -127,19 +104,6 @@ export interface ShellContextValue {
 
 const ShellContext = createContext<ShellContextValue | null>(null);
 
-/** Fire the no-store dev warning at most once per module lifetime. */
-let warnedNoStore = false;
-function warnNoStoreOnce() {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
-    ?.env;
-  if (warnedNoStore || env?.NODE_ENV === "production") return;
-  warnedNoStore = true;
-  console.warn(
-    "[vendo] No `store` prop passed to VendoShellProvider; using an in-memory " +
-      "store that resets on remount. Saved views will not persist. Pass a `store` (see ENG-183).",
-  );
-}
-
 type ImplMap = Record<string, ComponentType<Record<string, unknown>>>;
 
 /**
@@ -157,16 +121,9 @@ function defaultRenderNode(node: UINode, impls: ImplMap): ReactNode {
 }
 
 export interface VendoShellProviderProps {
-  store?: VendoStore;
   integrations?: VendoIntegrations;
-  /** Remix persistence client; defaults to in-memory (pins reset on remount). */
-  remixes?: RemixClient;
   /** Automation deliveries client; defaults to an inert empty feed. */
   notifications?: VendoNotifications;
-  /** Host seam for reopening saved views with fresh data; see ShellContextValue. */
-  runQuery?: RunQuery;
-  /** Live-refresh cadence for open saved views (ms); 0 disables. Default 60s. */
-  refreshIntervalMs?: number;
   /** Override the render surface. Default is a non-production fallback; wire F3's
    *  sandboxed `VendoStage` here for real generated UI. */
   renderNode?: RenderNode;
@@ -177,8 +134,6 @@ export interface VendoShellProviderProps {
   cssVars?: Record<string, string>;
   /** What the host calls its assistant; read by default copy that names it. */
   productName?: string;
-  /** F1 component registry; enables drift detection on reopened saved views. */
-  components?: RegisteredComponent[];
   /** Posts a ConsentResponse; see ShellContextValue. */
   sendConsent?: (
     response: import("@vendoai/core").ConsentResponse,
@@ -192,32 +147,19 @@ export interface VendoShellProviderProps {
 }
 
 export function VendoShellProvider({
-  store, integrations, remixes, notifications, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions, trust, children,
+  integrations, notifications, renderNode, impls, theme, cssVars, productName, sendConsent, parkedActions, trust, children,
 }: VendoShellProviderProps) {
-  if (store === undefined) warnNoStoreOnce();
-
-  // Stable per provider instance: re-renders must never drop registrations.
-  const [registry] = useState(createPageContextRegistry);
-  const [scope] = useState(createScopeStore);
-
   const value = useMemo<ShellContextValue>(() => ({
-    store: store ?? createLocalStore(),
     integrations: integrations ?? createLocalIntegrations([]),
-    remixes: remixes ?? createLocalRemixes(),
     notifications: notifications ?? createLocalNotifications(),
-    registry,
-    scope,
-    runQuery,
-    refreshIntervalMs: refreshIntervalMs ?? 60_000,
     renderNode: renderNode ?? ((node) => defaultRenderNode(node, impls ?? {})),
     theme,
     cssVars: cssVars ?? {},
     productName,
-    components,
     sendConsent,
     parkedActions,
     trust,
-  }), [store, integrations, remixes, notifications, registry, scope, runQuery, refreshIntervalMs, renderNode, impls, theme, cssVars, productName, components, sendConsent, parkedActions, trust]);
+  }), [integrations, notifications, renderNode, impls, theme, cssVars, productName, sendConsent, parkedActions, trust]);
 
   return (
     <ShellContext.Provider value={value}>

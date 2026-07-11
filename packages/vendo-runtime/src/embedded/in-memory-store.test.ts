@@ -111,77 +111,6 @@ describe("InMemoryThreadStore.upsertMessages", () => {
   });
 });
 
-describe("InMemorySavedVendoStore", () => {
-  const draft = {
-    name: "Late-night spend",
-    pinned: false,
-    uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
-    query: { toolName: "get_transactions", input: { limit: 40 } },
-    originatingPrompt: "show my late-night spending",
-  };
-
-  it("saves with store-owned identity and scopes reads/deletes", async () => {
-    const store = createInMemoryStore({ now });
-    const saved = await store.vendos.save(scope, draft);
-    expect(saved.id).toBeTruthy();
-    expect(saved.createdAt).toBe(now());
-    expect(await store.vendos.get(scope, saved.id)).toEqual(saved);
-    expect(await store.vendos.get(other, saved.id)).toBeUndefined();
-    await store.vendos.delete(other, saved.id); // no-op outside scope
-    expect(await store.vendos.list(scope)).toHaveLength(1);
-    await store.vendos.delete(scope, saved.id);
-    expect(await store.vendos.list(scope)).toHaveLength(0);
-  });
-});
-
-describe("InMemoryRemixStore", () => {
-  it("pins with upsert semantics: one record per (principal, anchorId), createdAt survives re-pins", async () => {
-    let tick = 0;
-    const ticking = () => `2026-07-04T00:00:0${tick++}.000Z`;
-    const store = createInMemoryStore({ now: ticking });
-    const first = await store.remixes.pin(scope, "invoices-widget", {
-      uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
-      originatingPrompt: "add a days-late column",
-      components: { InvoiceRow: "v1" },
-    });
-    expect(first.anchorId).toBe("invoices-widget");
-    expect(first.createdAt).toBe("2026-07-04T00:00:00.000Z");
-
-    const second = await store.remixes.pin(scope, "invoices-widget", {
-      uiTree: { kind: "component", id: "n2", name: "Text", props: {} } as never,
-      originatingPrompt: "also sort by it",
-    });
-    expect(second.createdAt).toBe(first.createdAt);
-    expect(second.updatedAt).not.toBe(first.updatedAt);
-    expect((await store.remixes.get(scope, "invoices-widget"))?.uiTree.id).toBe("n2");
-  });
-
-  it("scopes reads and unpins per principal", async () => {
-    const store = createInMemoryStore({ now });
-    await store.remixes.pin(scope, "a1", {
-      uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
-      originatingPrompt: "p",
-    });
-    expect(await store.remixes.get(other, "a1")).toBeUndefined();
-    await store.remixes.unpin(other, "a1");
-    expect(await store.remixes.get(scope, "a1")).toBeDefined();
-    await store.remixes.unpin(scope, "a1");
-    expect(await store.remixes.get(scope, "a1")).toBeUndefined();
-  });
-
-  it("is isolated from caller mutation on both sides of the boundary", async () => {
-    const store = createInMemoryStore({ now });
-    const draft = {
-      uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
-      originatingPrompt: "p",
-    };
-    const pinned = await store.remixes.pin(scope, "a1", draft);
-    (draft.uiTree as { id: string }).id = "corrupted-by-draft";
-    (pinned.uiTree as { id: string }).id = "corrupted-by-return";
-    expect((await store.remixes.get(scope, "a1"))?.uiTree.id).toBe("n1");
-  });
-});
-
 describe("InMemoryAuditLog", () => {
   it("appends and exposes events for tests (append-only)", async () => {
     const store = createInMemoryStore({ now });
@@ -282,15 +211,6 @@ describe("Principal scope integrity", () => {
     expect(await store.threads.get(right, thread.id)).toBeUndefined();
     expect(await store.threads.list(right)).toHaveLength(0);
 
-    const saved = await store.vendos.save(left, {
-      name: "n",
-      pinned: false,
-      uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
-      query: { toolName: "t", input: {} },
-      originatingPrompt: "p",
-    });
-    expect(await store.vendos.get(right, saved.id)).toBeUndefined();
-    expect(await store.vendos.list(right)).toHaveLength(0);
   });
 });
 
@@ -307,24 +227,6 @@ describe("isolation from caller mutation (PR #22 review)", () => {
 
     (readBack[0] as { id: string }).id = "mutated-output";
     expect((await store.threads.getMessages(scope, thread.id))[0]?.id).toBe("m1");
-  });
-
-  it("saved vendos are isolated from draft and returned-record mutation", async () => {
-    const store = createInMemoryStore({ now });
-    const draft = {
-      name: "n",
-      pinned: false,
-      uiTree: { kind: "component", id: "n1", name: "Text", props: {} } as never,
-      query: { toolName: "t", input: { limit: 40 } },
-      originatingPrompt: "p",
-    };
-    const saved = await store.vendos.save(scope, draft);
-
-    (draft.uiTree as { id: string }).id = "corrupted-by-draft";
-    (saved.query.input as { limit: number }).limit = 999;
-    const got = await store.vendos.get(scope, saved.id);
-    expect((got?.uiTree as { id: string }).id).toBe("n1");
-    expect((got?.query.input as { limit: number }).limit).toBe(40);
   });
 
   it("audit log is append-only: neither the input event, the returned array, nor its elements are live references", async () => {
@@ -348,7 +250,7 @@ describe("isolation from caller mutation (PR #22 review)", () => {
 });
 
 describe("createInMemoryStore", () => {
-  it("aggregates all four frozen sub-stores", async () => {
+  it("aggregates the surviving store seams", async () => {
     const store = createInMemoryStore({ now });
     const record = await store.automations.save(scope, {
       name: "snitch",

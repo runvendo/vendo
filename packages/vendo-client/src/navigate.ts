@@ -12,7 +12,7 @@ export const NAVIGATE_ACTION = "vendo.navigate";
 const UNSAFE_CHARS = /[\u0000-\u001f\u007f\\]/;
 
 /**
- * A remixed component may only navigate to same-app paths. Reject external
+ * A sandbox component may only navigate to same-app paths. Reject external
  * URLs, protocol-relative (`//host`), scheme handlers, and anything a browser
  * would resolve to a different origin.
  *

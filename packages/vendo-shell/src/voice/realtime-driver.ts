@@ -142,7 +142,7 @@ export function createRealtimeVoiceDriver(options: RealtimeVoiceDriverOptions): 
         if (dc && dc.readyState === "open") dc.send(JSON.stringify(payload));
       };
 
-      // Session-scoped tools (spec §4, e.g. the shell's open_saved_vendo)
+      // Session-scoped tools supplied by the host.
       // merge with the driver's fixed set; per-name, session wins.
       const tools = [
         ...(options.tools ?? []).filter(

@@ -12,7 +12,6 @@
  */
 import type { LanguageModel, ToolSet } from "ai";
 import type {
-  EnvManifest,
   VendoAgent,
   RegisteredComponent,
   ToolSummaryInput,
@@ -37,7 +36,6 @@ import {
   componentPromptCatalog,
 } from "@vendoai/components/descriptors";
 import { buildAutomationInstructions } from "@vendoai/runtime";
-import type { RemixSealer } from "@vendoai/runtime";
 import type { IntegrationCatalogEntry } from "./options.js";
 
 export interface BuildInstructionsInput {
@@ -167,11 +165,6 @@ export interface AgentFactoryConfig {
   /** Extra cache-key material from the host (e.g. store generation). */
   cacheKey?: () => string;
   maxSteps?: number;
-  /** Sandbox environment manifest (vendo sync) → engine prompt precision. */
-  envManifest?: EnvManifest;
-  /** Envelope sealer (remix fast-edits): enables edit_view pin bases and
-   *  envelope minting on remix-tagged results. */
-  remixSealer?: RemixSealer;
   /**
    * Settled-run persistence hook (ENG-193 §6.2), passed straight to every
    * cached agent. It receives the run's threadId, so one fixed hook can
@@ -216,8 +209,6 @@ export function createAgentCache(config: AgentFactoryConfig): () => Promise<Vend
         ...(config.onSettled ? { onSettled: config.onSettled } : {}),
         ...(config.audit ? { audit: config.audit } : {}),
         ...(config.auditPrincipal ? { auditPrincipal: config.auditPrincipal } : {}),
-        ...(config.envManifest ? { envManifest: config.envManifest } : {}),
-        ...(config.remixSealer ? { remixSealer: config.remixSealer } : {}),
         components: config.components,
       });
       agents.set(key, agent);

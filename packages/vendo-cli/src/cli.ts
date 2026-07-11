@@ -26,7 +26,7 @@ Setup (you run these):
   init [dir]      Set up Vendo in a Next.js app: extract theme/tools/components into
                   .vendo/ and wire the app (route handler, provider, sandbox assets,
                   prebuild sync). Interactive — prompts for a provider key and lets you
-                  pick components to wrap and widgets to make remixable. Safe to re-run:
+                  pick components to wrap. Safe to re-run:
                   fills missing setup, never overwrites, and keeps an existing
                   component catalog stable.
   refresh [dir]   Catch up an existing install: fill gaps and offer only what's new,
@@ -35,7 +35,7 @@ Setup (you run these):
                   scheduler, telemetry — and report problems with fixes. Read-only.
 
 Runs automatically in your build:
-  sync [dir]      Capture wrapped-component source + rebuild the sandbox environment.
+  sync [dir]      Refresh generated build artifacts.
                   init wires this into your prebuild script; you rarely run it by hand.
 
 Coming with the registry:
@@ -45,10 +45,10 @@ Management:
   telemetry <status|enable|disable>   View or change anonymous usage telemetry (TELEMETRY.md)
 
 Options:
-  --skip-llm   Skip LLM-assisted steps (route scan, component/remix discovery)
+  --skip-llm   Skip LLM-assisted steps (route scan, component discovery)
   --force      Overwrite existing .vendo/ files (init/refresh; warns before overwriting)
   --yes        Non-interactive: no prompts; resolve keys from env / .env.local only;
-               skip the component/remix pickers (source edits stay human-gated)
+               skip the component picker (source edits stay human-gated)
   --local      Pack local vendo + @vendoai packages from a Vendo monorepo into ./vendor
   --version    Print the CLI version
 `;
