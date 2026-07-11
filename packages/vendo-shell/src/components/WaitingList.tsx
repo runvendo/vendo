@@ -31,8 +31,7 @@ export function WaitingList({ actions, onApprove, onDecline }: WaitingListProps)
       {actions.map((action) => {
         const label = toolAction(action.tool);
         const critical = action.tier === "critical";
-        // requestedAt is an ISO timestamp (store-stamped); relativeTimeLabel
-        // takes epoch ms (same convention FlowGallery's updatedAt uses).
+        // requestedAt is an ISO timestamp (store-stamped); relativeTimeLabel takes epoch ms.
         const requestedMs = Date.parse(action.requestedAt);
         return (
           <div key={action.id} className={`fl-waiting-row${critical ? " fl-waiting-row--ceremony" : ""}`}>

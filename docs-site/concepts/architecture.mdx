@@ -40,15 +40,15 @@ The server process:
   integrations, MCP tools, and Vendo control tools such as `render_view`.
 - Applies the approval policy before any governed action can run.
 - Serves routes such as `/chat`, `/action`, `/capabilities`, `/integrations`,
-  `/threads`, `/vendos`, `/tick`, and `/webhooks/composio` under your mount.
+  `/threads`, `/tick`, and `/webhooks/composio` under your mount.
 - Uses durable storage by default, with embedded PGlite at `.vendo/data` unless
   you pass `storage: false` or configure Postgres with `DATABASE_URL`.
 
 ## Customer Browser
 
 The browser owns the product surface. `VendoRoot` mounts the overlay, launcher,
-theme provider, saved-view store, integration UI, notification toasts, and the
-browser-side host-tool executor.
+theme provider, integration UI, notification toasts, and the browser-side
+host-tool executor.
 
 Host API tools from `.vendo/tools.json` execute in this browser, not on a Vendo
 service. Vendo registers those tools with the server-side agent so the model can
@@ -56,8 +56,8 @@ choose them, but the actual HTTP request is made by the customer's browser with
 `credentials: "include"`. That means the call uses your app's existing session
 and authorization layer.
 
-The browser also renders approval cards, Connect cards, activity panels, saved
-views, and notification toasts. Trust and Waiting surfaces can be wired through
+The browser also renders approval cards, Connect cards, activity panels, and
+notification toasts. Trust and Waiting surfaces can be wired through
 the shell seams backed by the handler's trust and parked-action routes.
 
 ## Sandboxed Iframe

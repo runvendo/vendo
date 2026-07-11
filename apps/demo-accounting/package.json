@@ -15,16 +15,12 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
-    "@ai-sdk/react": "3.0.30",
     "@vendoai/components": "workspace:*",
     "@vendoai/core": "workspace:*",
     "@vendoai/react": "workspace:*",
     "@vendoai/runtime": "workspace:*",
     "@vendoai/shell": "workspace:*",
     "@vendoai/stage": "workspace:*",
-    "@openuidev/react-headless": "^0.8.2",
-    "@openuidev/react-lang": "^0.2.6",
-    "@openuidev/react-ui": "^0.11.9",
     "ai": "6.0.28",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
@@ -34,7 +30,6 @@
     "react-dom": "19.2.4",
     "swr": "^2.4.2",
     "tailwind-merge": "^3.6.0",
-    "vendoai": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {
@@ -43,7 +38,6 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^4.3.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",

@@ -54,7 +54,7 @@ export const automationRuns = vendo.table("automation_runs", {
  *  agent step couldn't run unattended, resolved standalone later. Indexed
  *  columns cover the list filters; the full ParkedAction payload (frozen
  *  input, guard bindings, tier, hashes, resolution detail) lives in `record`
- *  jsonb, mirrored the way `saved_vendos.record` already is. */
+ *  jsonb so indexed lifecycle fields and the complete record stay together. */
 export const parkedActions = vendo.table("parked_actions", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
@@ -96,14 +96,6 @@ export const threadMessages = vendo.table("thread_messages", {
   uniqueIndex("thread_messages_id_uq").on(t.tenantId, t.subject, t.threadId, t.messageId),
   uniqueIndex("thread_messages_seq_uq").on(t.tenantId, t.subject, t.threadId, t.seq),
 ]);
-
-export const savedVendos = vendo.table("saved_vendos", {
-  id: text("id").notNull(),
-  tenantId: text("tenant_id").notNull(),
-  subject: text("subject").notNull(),
-  record: jsonb("record").notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (t) => [primaryKey({ columns: [t.tenantId, t.subject, t.id] })]);
 
 export const connections = vendo.table("connections", {
   toolkit: text("toolkit").notNull(),

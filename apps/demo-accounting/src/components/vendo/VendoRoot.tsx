@@ -17,69 +17,14 @@ import { VendoProvider } from "@vendoai/react";
 import {
   VendoShellProvider,
   createLocalIntegrations,
-  createWebRemixes,
-  createWebStorage,
-  type VendoNotifications,
 } from "@vendoai/shell";
 import { prewiredComponents, VendoThemeProvider, brandToCssVars } from "@vendoai/components";
 import { cadenceBrand } from "@/vendo/brand";
 import { cadenceHostComponents } from "@/vendo/host-components/descriptors";
 import { cadenceHostToolDefs } from "@/vendo/host-tools";
 import { renderNode } from "./render-node";
-import { runQuery } from "./run-query";
-import { listParkedActions, resolveParkedAction } from "./parked-actions";
 import { createSendConsent } from "./consent";
 import { listGrants, revokeGrant, listRules, revokeRule, queryAudit, listCriticalTools, resolveFadeProposal } from "./trust";
-
-// The real embedded-mode store (ENG-183): saved vendos survive reloads. One
-// module-scope instance so every surface shares it; it only touches
-// localStorage inside its methods, so importing it stays SSR-safe.
-const store = createWebStorage({ namespace: "cadence-demo" });
-
-// Remix pins (VendoRemix) follow the same web-storage pattern.
-const remixes = createWebRemixes({ namespace: "cadence-demo" });
-
-// VendoToasts feed: poll the world's retained deliveries, resume approvals.
-const notifications: VendoNotifications = {
-  async listSince(since) {
-    const res = await fetch(`/api/vendo/deliveries?since=${since}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`deliveries request failed (${res.status})`);
-    const body = (await res.json()) as {
-      deliveries?: Array<{
-        cursor: number;
-        message: {
-          text: string;
-          automation?: { kind: "completed" | "approval-required"; runId: string; stepId?: string; summary: string };
-        };
-      }>;
-    };
-    return (body.deliveries ?? []).flatMap(({ cursor, message }) =>
-      message.automation
-        ? [
-            {
-              cursor,
-              kind: message.automation.kind,
-              runId: message.automation.runId,
-              ...(message.automation.stepId !== undefined
-                ? { stepId: message.automation.stepId }
-                : {}),
-              summary: message.automation.summary,
-              text: message.text,
-            },
-          ]
-        : [],
-    );
-  },
-  async resume(runId, approved, stepId) {
-    const res = await fetch("/api/vendo/resume", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId, approved, ...(stepId !== undefined ? { stepId } : {}) }),
-    });
-    if (!res.ok) throw new Error(`resume request failed (${res.status})`);
-    return ((await res.json()) as { stale?: boolean }).stale === true ? "stale" : "resumed";
-  },
-};
 
 // The firm's standing integrations, shown CONNECTED in the shell's in-bar
 // connect tray (ENG-205) because they truly are: the agent ingests both
@@ -128,16 +73,8 @@ export function VendoRoot({
         <VendoShellProvider
           renderNode={renderNode}
           integrations={integrations}
-          store={store}
-          remixes={remixes}
-          notifications={notifications}
-          runQuery={runQuery}
           sendConsent={sendConsent}
-          parkedActions={{ list: listParkedActions, resolve: resolveParkedAction }}
           trust={{ listGrants, revokeGrant, listRules, revokeRule, queryAudit, listCriticalTools, resolveFadeProposal }}
-          // Same registry as VendoProvider — reopened saved views diff their
-          // host-component stamp against it and surface drift (ENG-186).
-          components={[...prewiredComponents, ...cadenceHostComponents]}
           theme={{ scheme: "light" }}
           cssVars={{
             ...brandToCssVars(cadenceBrand),

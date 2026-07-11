@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import * as shell from "@vendoai/shell";
-import * as serverStore from "./server-store.js";
 import * as voiceModule from "./voice.js";
 import type { VoiceDriver } from "@vendoai/shell";
 import { VendoRoot } from "./vendo-root.js";
@@ -147,35 +145,6 @@ describe("VendoRoot", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /ask acme/i })).toBeNull(),
     );
-  });
-
-  it("picks localStorage optimistically, then switches to the server-backed store once capabilities report storage:true", async () => {
-    const webStorageSpy = vi.spyOn(shell, "createWebStorage");
-    const serverStoreSpy = vi.spyOn(serverStore, "createServerVendoStore");
-    vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false, storage: true }));
-    render(
-      <VendoRoot productName="Acme" basePath="/api/vendo">
-        <div data-testid="app4" />
-      </VendoRoot>,
-    );
-    // Optimistic first render (capabilities still null): localStorage.
-    expect(webStorageSpy).toHaveBeenCalledWith({ namespace: "vendo:vendo" });
-    await waitFor(() => expect(serverStoreSpy).toHaveBeenCalledWith("/api/vendo"));
-    webStorageSpy.mockRestore();
-    serverStoreSpy.mockRestore();
-  });
-
-  it("stays on localStorage when the server reports storage:false", async () => {
-    const serverStoreSpy = vi.spyOn(serverStore, "createServerVendoStore");
-    vi.stubGlobal("fetch", stubFetch({ chat: true, integrations: false, voice: false, storage: false }));
-    render(
-      <VendoRoot productName="Acme">
-        <div data-testid="app5" />
-      </VendoRoot>,
-    );
-    await waitFor(() => expect(screen.getByTestId("app5")).toBeDefined());
-    expect(serverStoreSpy).not.toHaveBeenCalled();
-    serverStoreSpy.mockRestore();
   });
 
   it("retries a failed capabilities fetch with backoff until the server answers", async () => {

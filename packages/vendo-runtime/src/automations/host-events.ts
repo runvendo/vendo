@@ -1,19 +1,12 @@
 /**
  * Ingest paths (spec section c, contracts freeze): host events and, later,
  * Composio trigger webhooks do NOT pass through the Scheduler seam — they
- * invoke the firing pipeline directly. Both wiring helpers reduce a producer
- * to `runner.fire(scope, id, envelope)`.
+ * invoke the firing pipeline directly through
+ * `runner.fire(scope, id, envelope)`.
  */
 import type { AutomationFiring, Principal } from "@vendoai/core";
 import type { AutomationRunner } from "./runner.js";
 import type { AutomationEngineStore, AutomationRun, TriggerEnvelope } from "./store.js";
-
-export interface HostEventInput {
-  /** Producer-supplied id (e.g. the transaction id) — the dedup key. */
-  eventId?: string;
-  occurredAt?: string;
-  payload: unknown;
-}
 
 export interface HostEventIngestResult {
   /** Enabled automations whose host_event trigger matched this event name. */
@@ -24,12 +17,6 @@ export interface HostEventIngestResult {
   eventId: string;
   runs: AutomationRun[];
 }
-
-export type HostEventIngest = (
-  scope: Principal,
-  eventType: string,
-  event: HostEventInput,
-) => Promise<void>;
 
 let generatedHostEventCounter = 0;
 
@@ -49,7 +36,12 @@ export async function fireHostEventAutomations(
   },
   scope: Principal,
   eventType: string,
-  event: HostEventInput,
+  event: {
+    /** Producer-supplied id (e.g. the transaction id) — the dedup key. */
+    eventId?: string;
+    occurredAt?: string;
+    payload: unknown;
+  },
 ): Promise<HostEventIngestResult> {
   const occurredAt = event.occurredAt ?? new Date().toISOString();
   const eventId =
@@ -80,22 +72,6 @@ export async function fireHostEventAutomations(
     }
   }
   return { matched: matches.length, fired: runs.length, eventId, runs };
-}
-
-/**
- * Back-compatible embedded host-event ingest helper: same firing path as
- * `fireHostEventAutomations`, but the public callback shape stays Promise<void>
- * for existing hosts that typed their emitters that way.
- */
-export function createHostEventIngest(deps: {
-  store: AutomationEngineStore;
-  runner: AutomationRunner;
-}): HostEventIngest {
-  return async (scope, eventType, event) => {
-    // Delegates to fireHostEventAutomations (main's refactor), which now
-    // carries the per-firing isolation.
-    await fireHostEventAutomations(deps, scope, eventType, event);
-  };
 }
 
 /**

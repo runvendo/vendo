@@ -1,21 +1,12 @@
 /**
  * The single `createVendoHandler()` options object — split out of route.ts
- * so `instrumentation.ts` can pass the SAME object reference to
- * `startVendoScheduler()`. Per `packages/vendo-server/src/fetch-handler.ts`'s
- * BootRegistry doc: the route and the scheduler boot hook must share one
- * assembled world, or the scheduler ends up ticking a DIFFERENT (private,
- * default) world than the one serving HTTP requests — any `automations.tools`
- * the route registers would silently be invisible to firings the internal
- * scheduler drives. Demo-bank customizes `model`/`policy`/`tools`/`automations`
- * etc., so (unlike a pure zero-config install) it must wire this explicitly.
+ * for the demo-bank host.
  */
 import { anthropic } from "@ai-sdk/anthropic";
 import type { VendoHandlerOptions, ConnectionsStore } from "vendoai/server";
-import type { VendoPrincipal, RegisteredTool, ToolDescriptor } from "@vendoai/runtime";
 import { buildInstructions } from "@/vendo/agent";
 import { demoPolicy } from "@/vendo/policy";
 import { demoTools } from "@/vendo/tools";
-import { automationsWorld, automationsGeneration } from "@/vendo/automations";
 import {
   listIntegrations,
   connect,
@@ -56,45 +47,7 @@ const demoConnections: ConnectionsStore = {
   findByConnectedAccount,
 };
 
-/**
- * Persistence-drill flag (scripts/drill-persistence.mjs — see
- * docs/superpowers/plans/2026-07-04-automations-oss-persistence.md Task 19).
- * OFF by default: the demo keeps its normal shape (its own bespoke in-memory
- * automations world for chat authoring, `DEMO_PRINCIPAL`). Set VENDO_DRILL=1
- * to turn on the HANDLER's built-in automations world instead (so the drill
- * can exercise DrizzleAutomationStore, the boot scheduler, and grants — none
- * of which the demo's bespoke world goes through) and align the request
- * principal with that world's fixed scope (tenantId "vendo-embedded",
- * subject "vendo-default-user" — see packages/vendo-server/src/guard.ts's
- * WORLD_SCOPE) so the drill's seeded threads/vendos are visible through the
- * same identity the automations world runs as.
- */
-const DRILL_MODE = process.env.VENDO_DRILL === "1";
-
-/** MUST byte-for-byte match scripts/drill-persistence.constants.mjs's copy:
- *  computeGrant hashes over this object, and a mismatched descriptor makes
- *  the seeded grant invalid (the step would pause for approval instead of
- *  running unattended). */
-const DRILL_ECHO_DESCRIPTOR: ToolDescriptor = {
-  name: "drill_echo",
-  source: "caller",
-  annotations: {},
-  hasExecute: true,
-  kind: "function",
-};
-
-const drillTools: Record<string, RegisteredTool> = {
-  drill_echo: {
-    descriptor: DRILL_ECHO_DESCRIPTOR,
-    execute: async () => ({ ok: true, result: { ok: true } }),
-  },
-};
-
-const DRILL_PRINCIPAL: VendoPrincipal = { userId: "vendo-default-user" };
-
-/** One shared object — same reference every time this module is imported
- *  (ES modules are singletons), passed verbatim to both `createVendoHandler`
- *  (route.ts) and `startVendoScheduler` (instrumentation.ts). */
+/** One shared object — same reference every time this module is imported. */
 export const vendoOptions: VendoHandlerOptions = {
   // Belt-and-suspenders alongside the shared-object fast path above: Next.js
   // compiles instrumentation.ts and route.ts into separate module graphs, so
@@ -113,11 +66,10 @@ export const vendoOptions: VendoHandlerOptions = {
   // Per-run function (spec §7): grounds capability talk in the live toolset.
   instructions: (ctx) => buildInstructions({ toolSummary: ctx.toolSummary }),
   policy: demoPolicy,
-  tools: () => ({ ...demoTools(), ...automationsWorld().authoringTools() }),
+  tools: demoTools,
   components: mapleHostComponents,
   hostTools: mapleHostToolDefs,
   connections: demoConnections,
-  principal: (req) => (principalAllowed(req) ? (DRILL_MODE ? DRILL_PRINCIPAL : DEMO_PRINCIPAL) : null),
-  cacheKey: () => String(automationsGeneration()),
-  automations: DRILL_MODE ? { tools: drillTools } : false,
+  principal: (req) => (principalAllowed(req) ? DEMO_PRINCIPAL : null),
+  automations: false,
 };

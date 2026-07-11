@@ -7,12 +7,22 @@ describe("public API", () => {
       "VendoPage", "VendoOverlay", "VendoSlot", "VendoThread",
       "VendoShellProvider", "useShell", "useVendoThread", "toThreadItems",
       "MessageList", "Composer", "ApprovalCard", "UINodeView", "Landing",
-      "SuggestionChips", "FlowGallery", "ConnectDock", "ConnectTray", "IntegrationsPicker",
+      "SuggestionChips", "ConnectDock", "ConnectTray", "IntegrationsPicker",
       "ConnectCard", "StreamingText", "ToolCall", "VoiceButton",
-      "themeToStyle", "createLocalStore", "createLocalIntegrations",
+      "themeToStyle", "createLocalIntegrations",
       "VoiceStage", "VoiceBlob", "useVoiceSession", "createScriptedVoiceDriver",
       "voiceSessionMessages", "reduceVoice",
     ];
     for (const name of names) expect(shell).toHaveProperty(name);
+    for (const removed of [
+      "createLocalStore",
+      "createWebStorage",
+      "createLocalRemixes",
+      "createWebRemixes",
+      "reopenVendo",
+      "originatingPrompt",
+    ]) {
+      expect(shell).not.toHaveProperty(removed);
+    }
   });
 });

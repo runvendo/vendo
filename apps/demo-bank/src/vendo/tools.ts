@@ -3,8 +3,6 @@
  *
  *  - `get_transactions` reads Maple's store so the agent can fill the
  *    TimeOfDayClock (and find specific charges).
- *  - Standing rules are AUTOMATIONS now: the authoring tools come from the
- *    automations world (see automations.ts), merged in by the chat route.
  *
  * These run server-side inside the same Next process, so they read the
  * repositories directly rather than self-calling the HTTP API.

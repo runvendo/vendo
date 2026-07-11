@@ -4,8 +4,6 @@
  * automations; depends only on the five frozen seams + @vendoai/core).
  */
 
-export const VENDO_RUNTIME_PACKAGE = "@vendoai/runtime";
-
 // Engine
 export { createVendoAgent, RENDER_VIEW_TOOL_NAME, REQUEST_CONNECT_TOOL_NAME } from "./engine.js";
 export type { VendoAgentConfig, InstructionContext } from "./engine.js";
@@ -41,11 +39,8 @@ export type { ToolSourceInput } from "./toolset.js";
 // Render view tool
 export { createRenderViewTool } from "./render-view-tool.js";
 
-// Edit view tool (remix fast-edits delta path) + shared materialization
-export { createEditViewTool, EDIT_VIEW_TOOL_NAME } from "./edit-view-tool.js";
-export type { EditViewToolOptions } from "./edit-view-tool.js";
+// Shared view materialization
 export { materializeView } from "./materialize-view.js";
-export { hashSources } from "./remix/envelope.js";
 
 // Brand guidance (data-driven system-prompt section from host theme tokens)
 export { buildBrandGuidance } from "./brand-guidance.js";
@@ -61,14 +56,6 @@ export {
   repairToolInputText,
   escapeControlCharsInJsonStrings,
 } from "./json-repair.js";
-
-// Remix fast-edits primitives (baseline/hunks/envelope)
-export { normalizeBaseline, numberedLines, NORMALIZER_VERSION } from "./remix/baseline.js";
-export type { NormalizedBaseline } from "./remix/baseline.js";
-export { applyHunks, validateHunkLines } from "./remix/hunks.js";
-export type { Hunk, HunkError, HunkResult } from "./remix/hunks.js";
-export { createRemixSealer, deriveSealKey } from "./remix/envelope.js";
-export type { RemixSealer, SealKey, SealKeySources, MintInput, VerifyContext } from "./remix/envelope.js";
 
 // Request connect tool (host-privileged Connect card)
 export { createRequestConnectTool } from "./request-connect-tool.js";
@@ -98,8 +85,6 @@ export * from "./automations/index.js";
 export {
   createInMemoryStore,
   InMemoryAuditLog,
-  InMemoryRemixStore,
-  InMemorySavedVendoStore,
   InMemoryThreadStore,
   type InMemoryStore,
 } from "./embedded/in-memory-store.js";

@@ -25,8 +25,7 @@ npx vendo init
 - writes `app/api/vendo/[...path]/route.ts` containing
   `createVendoHandler()` — one catch-all serving `chat`, `action`,
   `integrations`, `capabilities`, `tick`, `webhooks/composio`, `threads` /
-  `threads/<id>`, `events/ingest`, and `vendos` / `vendos/<id>` /
-  `vendos/<id>/delete`;
+  `threads/<id>`, and `events/ingest`;
 - writes `app/vendo-root.tsx` (a small client wrapper) and wraps your root
   layout's `{children}` with it — idempotently, respecting existing providers;
 - writes `instrumentation.ts` (or `src/instrumentation.ts`, next to a
@@ -45,11 +44,10 @@ unusual layout, an unparsable package.json) is skipped and printed as an exact
 manual instruction instead. Review the whole install in one `git diff`.
 
 `init` is interactive: it prompts for a provider key (saved to `.env.local`),
-then offers a picker of **components** to wrap for generated UI and a picker of
-**widgets** to make remixable in your source. It's safe to re-run — it fills
-gaps and never overwrites. Once installed, `vendo refresh` catches the install
-up as your app grows (or after you add a key). `vendo doctor` runs a read-only
-health check on the whole install.
+then offers a picker of **components** to wrap for generated UI. It's safe to
+re-run: it fills gaps and never overwrites. Once installed, `vendo refresh`
+catches the install up as your app grows (or after you add a key). `vendo
+doctor` runs a read-only health check on the whole install.
 
 ## One key = working product
 
@@ -155,13 +153,12 @@ Two properties matter:
   anywhere else.
 - The extractor is **fail-closed**: route-scanned tools are all marked
   `mutating: true`, which means the policy pauses them for user approval.
-  Relaxing an annotation to `mutating: false` (auto-run reads, saved-view
-  refresh) is a reviewed edit you make by hand.
+  Relaxing an annotation to `mutating: false` (auto-run reads) is a reviewed
+  edit you make by hand.
 
 ## Events
 
-Host events are declared in `.vendo/tools.json` next to tools. Once declared,
-the automation authoring agent can compile `host_event` triggers from chat.
+Host events are declared in `.vendo/tools.json` next to tools.
 
 ```json
 {
@@ -273,16 +270,12 @@ const vendo = createVendoFetchHandler();
 app.all("/api/vendo/*", (c) => vendo(c.req.raw));
 ```
 
-See `examples/node` for a full working server (plain `node:http` plus a Vite
-client) including serving the sandbox runtime assets that Next.js handles
-implicitly.
-
 ## Persistence
 
 Storage is durable by default: with no `storage` option, `createVendoHandler`
 opens an embedded PGlite database at `.vendo/data` and persists automations
 (with their versions, grants, and run history), approval decisions, chat
-threads, and saved vendos — all of it survives a server restart. Point
+threads, integration connections, and operational metadata. Point
 `DATABASE_URL` at a hosted Postgres (Supabase, Neon, RDS) to move off PGlite,
 or pass `storage: false` to opt back into in-memory. The scheduler that fires
 schedules without a browser open boots from the `instrumentation.ts` the

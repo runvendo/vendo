@@ -7,11 +7,8 @@ import type { Channels } from "./channels.js";
 import type {
   Store,
   ThreadStore,
-  SavedVendoStore,
   AutomationStore,
   AuditLog,
-  RemixStore,
-  RemixRecord,
 } from "./store.js";
 
 const principal: Principal = { tenantId: "t1", subject: "u1" };
@@ -34,17 +31,6 @@ function makeStore(): Store {
     getMessages: async () => [],
     upsertMessages: async () => {},
   };
-  const vendos: SavedVendoStore = {
-    save: async (_scope, f) => ({
-      ...f,
-      id: "f1",
-      createdAt: "2026-07-01T00:00:00Z",
-      updatedAt: "2026-07-01T00:00:00Z",
-    }),
-    get: async () => undefined,
-    list: async () => [],
-    delete: async () => {},
-  };
   const automations: AutomationStore = {
     save: async (_scope, a) => ({
       ...a,
@@ -58,26 +44,7 @@ function makeStore(): Store {
     listRuns: async () => [],
   };
   const audit: AuditLog = { append: async () => {}, query: async () => [] };
-  const remixPins = new Map<string, RemixRecord>();
-  const remixes: RemixStore = {
-    pin: async (scope, anchorId, record) => {
-      const key = `${scope.tenantId}:${scope.subject}:${anchorId}`;
-      const existing = remixPins.get(key);
-      const pinned: RemixRecord = {
-        ...record,
-        anchorId,
-        createdAt: existing?.createdAt ?? "2026-07-04T00:00:00Z",
-        updatedAt: "2026-07-04T00:00:01Z",
-      };
-      remixPins.set(key, pinned);
-      return pinned;
-    },
-    get: async (scope, anchorId) => remixPins.get(`${scope.tenantId}:${scope.subject}:${anchorId}`),
-    unpin: async (scope, anchorId) => {
-      remixPins.delete(`${scope.tenantId}:${scope.subject}:${anchorId}`);
-    },
-  };
-  return { threads, vendos, automations, audit, remixes };
+  return { threads, automations, audit };
 }
 
 describe("seam interfaces are implementable in-memory", () => {
@@ -85,16 +52,13 @@ describe("seam interfaces are implementable in-memory", () => {
     const store = makeStore();
     const t = await store.threads.create(principal, { title: "hi" });
     expect(t.tenantId).toBe("t1");
-    // The store owns identity AND timestamps — callers never supply either.
-    const f = await store.vendos.save(principal, {
-      name: "My invoices",
-      pinned: false,
-      uiTree: { id: "n1", kind: "generated", payload: {} },
-      query: { toolName: "listInvoices", input: {} },
-      originatingPrompt: "show my invoices",
+    const automation = await store.automations.save(principal, {
+      name: "Morning report",
+      status: "enabled",
+      spec: {},
     });
-    expect(f.id).toBe("f1");
-    expect(f.createdAt).toBeTruthy();
+    expect(automation.id).toBe("a1");
+    expect(automation.createdAt).toBeTruthy();
   });
 
   it("CredentialBroker", async () => {
@@ -155,35 +119,6 @@ describe("seam interfaces are implementable in-memory", () => {
     };
     await channels.deliver({ channel: "in-app", principal, text: "done" });
     expect(sent).toEqual(["in-app"]);
-  });
-
-  it("RemixStore pins one record per (principal, anchorId) with upsert semantics", async () => {
-    const store = makeStore();
-    const first = await store.remixes.pin(principal, "invoices-widget", {
-      uiTree: { id: "n1", kind: "generated", payload: {} },
-      originatingPrompt: "add a days-late column",
-      components: { InvoiceRow: "v1" },
-    });
-    // The store owns the anchor stamp and both timestamps.
-    expect(first.anchorId).toBe("invoices-widget");
-    expect(first.createdAt).toBeTruthy();
-    expect(first.components).toEqual({ InvoiceRow: "v1" });
-
-    // Upsert: pinning again replaces, preserving createdAt.
-    const second = await store.remixes.pin(principal, "invoices-widget", {
-      uiTree: { id: "n2", kind: "generated", payload: {} },
-      originatingPrompt: "also sort by it",
-    });
-    expect(second.createdAt).toBe(first.createdAt);
-    expect((await store.remixes.get(principal, "invoices-widget"))?.uiTree.id).toBe("n2");
-
-    // Principal isolation: another subject sees nothing.
-    const other = { tenantId: "t1", subject: "u2" };
-    expect(await store.remixes.get(other, "invoices-widget")).toBeUndefined();
-
-    // Unpin restores the default.
-    await store.remixes.unpin(principal, "invoices-widget");
-    expect(await store.remixes.get(principal, "invoices-widget")).toBeUndefined();
   });
 
   it("Channels carries the optional structured automation delivery", async () => {

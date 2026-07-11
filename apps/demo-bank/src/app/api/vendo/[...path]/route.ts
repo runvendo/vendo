@@ -1,24 +1,18 @@
 /**
- * All Vendo endpoints (chat, action, integrations, capabilities, tick) —
+ * Vendo chat, action, integration, capability, and thread endpoints —
  * served by `createVendoHandler()` from `vendoai/server`, wired to Maple's
  * demo modules. This replaces the hand-rolled chat/action/integrations
  * routes and is the proof the handler covers a real host's needs:
  *
- *  - the agent cache keys on the demo connection store + automations-world
- *    generation (`cacheKey`), so connecting a toolkit or resetting the demo
- *    rebuilds the agent exactly as before;
  *  - `connections` injects the demo store, so /api/vendo/reset still clears
  *    connection state;
- *  - the demo's own automations world flows in through `tools` (handler
- *    automations stay off, except under the persistence drill — see
- *    ./vendo/handler-options.ts);
+ *  - `tools` exposes Maple's transaction reader alongside the live host API;
  *  - the local-only guard keeps VENDO_DEMO_PUBLIC=1 as the deploy opt-in.
  *
  * The options object lives in ./vendo/handler-options.ts (not inline here)
- * so instrumentation.ts can import the SAME reference for
- * `startVendoScheduler()` — see that file's doc comment for why.
+ * so every route uses the same host configuration.
  *
- * The sibling static routes (poll, reset) remain demo-custom and win over
+ * The sibling static routes (reset and voice) remain demo-custom and win over
  * this catch-all in Next routing.
  */
 import { createVendoHandler } from "vendoai/server";

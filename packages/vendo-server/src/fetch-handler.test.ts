@@ -564,7 +564,6 @@ describe("createVendoFetchHandler", () => {
     "parked-actions/resolve",
     "grants/revoke",
     "rules/revoke",
-    "vendos",
   ];
 
   it("rejects a cross-site POST to every browser-credentialed mutating route", async () => {

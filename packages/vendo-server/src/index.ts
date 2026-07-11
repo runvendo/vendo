@@ -12,8 +12,6 @@
  * this from a client component.
  */
 
-export const VENDO_SERVER_PACKAGE = "@vendoai/server";
-
 export { handleChat, type ChatDeps } from "./chat.js";
 export { handleAction, createApprovalStore, type ActionDeps, type ApprovalStore } from "./action.js";
 export {
@@ -58,21 +56,7 @@ export {
 } from "./fetch-handler.js";
 export { createVendoHandler, type VendoRouteHandlers } from "./route-handler.js";
 export { startVendoScheduler } from "./boot.js";
-export {
-  createDrizzleVendoRegistry,
-  createInMemoryVendoRegistry,
-  handleVendosGet,
-  handleVendosPost,
-  type VendoRegistry,
-} from "./vendos.js";
 export { toNodeHandler, type FetchHandler, type NodeHandler } from "./node.js";
-export {
-  applyVerifiedPinBase,
-  enrichAnchorSources,
-  createSourceResolver,
-  capSource,
-} from "./remix-enrich.js";
-export { resolveRemixSealer } from "./seal.js";
 export { resolveMcpServers, mcpJsonSchema, mcpServerArraySchema } from "./mcp-config.js";
 
 // ENG-193 permissions system: production policy stack, thread index, and the

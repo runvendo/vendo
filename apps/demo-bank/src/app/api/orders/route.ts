@@ -1,8 +1,4 @@
-/**
- * POST /api/orders — Maple's one write. Places a late-night delivery order,
- * appending a transaction. The order page calls this; the Vendo poller then
- * discovers the new row via the existing /api/transactions read API.
- */
+/** POST /api/orders places a late-night delivery order and appends its transaction. */
 import { placeOrder, type PlaceOrderInput } from "@/server/orders"
 import { ok } from "@/server/http"
 

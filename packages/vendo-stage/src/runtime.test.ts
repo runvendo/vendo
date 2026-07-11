@@ -72,8 +72,8 @@ describe("stage runtime source", () => {
     );
   });
   it("injects the read-only route channel (window.__vendoRouteData) on init and re-patches it on ui/update", () => {
-    // Parallel to __vendoAnchorData: set on the full render (init) and refreshed
-    // on ui/update, so the next/navigation shims resolve the host's real route.
+    // Set on the full render (init) and refreshed on ui/update, so the
+    // next/navigation shims resolve the host's real route.
     expect(STAGE_RUNTIME_SRC).toContain("window.__vendoRouteData = params.route || {}");
     expect(STAGE_RUNTIME_SRC).toContain("window.__vendoRouteData = p.route");
   });

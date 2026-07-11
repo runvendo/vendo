@@ -17,8 +17,8 @@ export function isPropBinding(v: unknown): v is PropBinding {
 }
 
 /** Declared provenance of a `data` subtree: the tool call that produced it.
- *  Reopening a saved view re-runs these through the normal (policy-governed)
- *  tool path and patches results back in at `path` (ENG-183). */
+ *  The wire field stays reserved while live generated views use the data
+ *  payload directly. */
 export interface DataQuery {
   /** RFC 6901 JSON Pointer into `data`; "" replaces the whole model. */
   path: string;
@@ -39,7 +39,7 @@ export interface GeneratedPayload {
   root: string;
   nodes: GenNode[];
   data?: Record<string, unknown>;
-  /** Declared provenance of `data`: re-runnable on reopen for fresh data. */
+  /** Optional declared provenance of `data`. */
   queries?: DataQuery[];
   /** Tier 2.5: name → ESM React component source, evaluated in-sandbox. */
   components?: Record<string, string>;

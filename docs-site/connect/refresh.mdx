@@ -1,0 +1,36 @@
+---
+title: "Refresh"
+description: "Catch up an existing install as your app grows"
+---
+
+`vendo init` runs once to set up your app. As your app grows, or after you add a provider key, `vendo refresh` catches the install up. Both commands use the same additive pipeline and component picker.
+
+## `vendo refresh`
+
+```bash
+npx vendo refresh .
+```
+
+`refresh` is the catch-up command. It re-runs extraction against only what is new: your theme is kept, tools are gap-filled, and only unwrapped components are proposed. It verifies the Next.js wiring silently and never overwrites. Running `vendo init` on an already-wired app does the same thing.
+
+Use it whenever:
+
+- You added a provider key after the first `init` (the LLM-assisted steps that were skipped now run).
+- Your API surface grew and you want the new routes as tools.
+- You added components you want Vendo to know about.
+
+With a provider key present and an interactive terminal, `init` and `refresh` open a component picker. It is pre-checked with the candidates the LLM proposed; deselect anything you do not want.
+
+The picker lists host components discovered by LLM analysis. Each pick is wrapped as a descriptor + sandbox-wrapper pair under `.vendo/components/`, so generated UI can compose your real components. This is the same output described in [Host components](/connect/host-components).
+
+## `vendo sync`
+
+`vendo init` wires `vendo sync` into your `prebuild` script. It is a stable build command that currently reports generated artifacts are up to date, so you rarely run it by hand.
+
+```bash
+npx vendo sync .
+```
+
+## No provider key yet?
+
+The component picker needs an LLM to propose candidates. Without a provider key, `init`/`refresh` run the deterministic steps (theme tokens, OpenAPI tools, Next.js wiring) and print what they skipped. Add a key to `.env.local` and re-run to get the assisted steps. See [The vendo init codemod](/connect/vendo-init) for the full re-run story.

@@ -26,22 +26,13 @@ describe("demoPolicy", () => {
   it("allows the render tool and the in-process reads", async () => {
     for (const name of [
       "render_view",
-      "edit_view",
       "get_dashboard",
       "get_clients",
       "get_client_documents",
       "get_deadlines",
       "get_activity",
-      "list_automations",
-      "get_automation_runs",
     ]) {
       expect(await evaluate(name), name).toBe("allow");
-    }
-  });
-
-  it("gates automation authoring writes", async () => {
-    for (const name of ["create_automation", "update_automation", "delete_automation", "pause_automation", "run_automation_now"]) {
-      expect(await evaluate(name), name).toBe("approve");
     }
   });
 
@@ -92,9 +83,9 @@ describe("demoPolicy", () => {
     // INVARIANT: even a grant seeded for a critical (destructiveHint) tool
     // never suppresses it — grantPolicy refuses to apply by type, before any
     // grant lookup.
-    const criticalDescriptor = resolveToolDescriptor("create_automation")!;
+    const criticalDescriptor = resolveToolDescriptor("setDocumentStatus")!;
     await demoStore.grants.create(CADENCE_SCOPE, {
-      tool: "create_automation",
+      tool: "setDocumentStatus",
       descriptorHash: hashDescriptor(criticalDescriptor),
       scope: { kind: "tool" },
       duration: "standing",
@@ -102,7 +93,7 @@ describe("demoPolicy", () => {
     });
     expect(
       await demoPolicy.evaluate({
-        toolName: "create_automation",
+        toolName: "setDocumentStatus",
         input: {},
         descriptor: criticalDescriptor,
         principal: PRINCIPAL,

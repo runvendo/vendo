@@ -10,7 +10,6 @@
 import {
   annotationsToTier,
   createRealtimeVoiceDriver,
-  replayRegistry,
   type VoiceDriver,
   type VoiceDriverHandle,
   type VoiceToolDef,
@@ -66,7 +65,7 @@ const SESSION_RESULTS_MAX = 32;
 const SOURCE_PARAM = {
   type: "object",
   description:
-    "Where the shown data came from, when it came from ONE tool call you made: the tool name, the exact input you passed, and the JSON pointer to the row array inside that tool's result (e.g. '/data/transactions'). Use raw field names as column keys when declaring this. Makes the view refreshable when pinned.",
+    "Where the shown data came from, when it came from ONE tool call you made: the tool name, the exact input you passed, and the JSON pointer to the row array inside that tool's result (e.g. '/data/transactions'). Use raw field names as column keys so the client can bind the exact rows.",
   properties: {
     tool: { type: "string" },
     input: { type: "object" },
@@ -171,7 +170,6 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
   const basePath = options.basePath ?? "/api/vendo";
   const productName = cleanName(options.productName);
   const sessionResults = new Map<string, unknown>();
-  const unregisterHostTools: Array<() => void> = [];
   let viewSeq = 0;
   const nextId = (prefix: string) => `voice-${prefix}-${++viewSeq}`;
 
@@ -198,7 +196,6 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     columns: Array<{ key: string }>,
   ): { raw: unknown; tool: string; input: Record<string, unknown>; rowsPath: string } | undefined {
     if (!source?.tool || typeof source.rowsPath !== "string") return undefined;
-    if (!replayRegistry.has(source.tool)) return undefined;
     const key = resultKey(source.tool, source.input);
     if (!sessionResults.has(key)) return undefined;
     const raw = sessionResults.get(key);
@@ -298,7 +295,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     {
       name: "show_table",
       description:
-        "Display structured rows (transactions, comparisons) as a table on screen. Use this to SHOW data, then speak only the headline. Declare `source` when the rows came from a tool call so the view stays refreshable.",
+        "Display structured rows (transactions, comparisons) as a table on screen. Use this to SHOW data, then speak only the headline. Declare `source` when the rows came from a tool call so the client can bind the exact result.",
       parameters: {
         type: "object",
         properties: {
@@ -445,7 +442,6 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     const tier = annotationsToTier(def.annotations);
     const run = (input: unknown) =>
       executeHostToolCall(def, (input ?? {}) as Record<string, unknown>);
-    if (tier === "read") unregisterHostTools.push(replayRegistry.register(def.name, run));
     // Declared result-field formats travel with the voice tool too — parity
     // with the chat path's hostToolset (the voice model reads cents/date
     // rules in the same place it reads what the tool does).
@@ -479,7 +475,6 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
           tier: string;
         }>;
       };
-      const unregisters: Array<() => void> = [];
       const tools = (body.tools ?? []).map((tool) => {
         const tier: VoiceToolDef["tier"] =
           tool.tier === "read" ? "read" : tool.tier === "critical" ? "critical" : "act";
@@ -493,7 +488,6 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
           if (!exec.ok) throw new Error(json.error ?? `integration tool failed (${exec.status})`);
           return json.result;
         };
-        if (tier === "read") unregisters.push(replayRegistry.register(tool.name, run));
         return {
           name: tool.name,
           description: tool.description,
@@ -508,9 +502,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
       });
       return {
         tools,
-        unregister() {
-          for (const unregister of unregisters.splice(0)) unregister();
-        },
+        unregister() {},
       };
     } catch {
       return { tools: [], unregister() {} };
@@ -532,9 +524,7 @@ function createVoiceInternals(options: CreateVendoVoiceOptions = {}): VoiceInter
     moneyFlowView,
     createIntegrationVoiceTools,
     buildInstructions: (sessionTools) => buildInstructions(productName, sessionTools, options.instructionsExtra ?? [], options.automations ?? false),
-    dispose() {
-      for (const unregister of unregisterHostTools.splice(0)) unregister();
-    },
+    dispose() {},
   };
 }
 

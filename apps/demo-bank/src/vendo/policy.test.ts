@@ -15,12 +15,6 @@ describe("demoPolicy", () => {
       expect(await demoPolicy.evaluate(ctx(name))).toBe("allow");
     }
   });
-  it("gates automation authoring (standing authority is always approval-gated)", async () => {
-    expect(await demoPolicy.evaluate(ctx("create_automation"))).toBe("approve");
-    expect(await demoPolicy.evaluate(ctx("update_automation"))).toBe("approve");
-    expect(await demoPolicy.evaluate(ctx("delete_automation"))).toBe("approve");
-    expect(await demoPolicy.evaluate(ctx("list_automations"))).toBe("allow");
-  });
   it("allows read-shaped Composio tools", async () => {
     expect(await demoPolicy.evaluate(ctx("GMAIL_FETCH_EMAILS"))).toBe("allow");
     expect(await demoPolicy.evaluate(ctx("SLACK_LIST_CHANNELS"))).toBe("allow");

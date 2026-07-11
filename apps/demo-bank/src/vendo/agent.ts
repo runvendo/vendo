@@ -7,9 +7,8 @@
  * the anthropic provider, so it MUST stay server-only — import it from route
  * handlers, never from a client component.
  *
- * Per-beat in-process tools (transaction reads for Beat 1, rule-setting for
- * Beat 3) are injected by the caller via `extraTools` so this factory stays
- * focused on assembly.
+ * In-process read tools are injected by the caller via `extraTools` so this
+ * factory stays focused on assembly.
  */
 import { anthropic } from "@ai-sdk/anthropic";
 import {
@@ -28,7 +27,6 @@ import { mapleHostComponents } from "./host-components/descriptors";
 import type { LanguageModel, ToolSet } from "ai";
 import { demoPolicy } from "./policy";
 import { mapleBrand } from "./brand";
-import { demoAutomationInstructions } from "./automations";
 
 /** Default model — fast + capable for a live, low-latency demo. Overridable. */
 const DEMO_MODEL = process.env.VENDO_DEMO_MODEL ?? "claude-sonnet-4-6";
@@ -115,10 +113,6 @@ export function buildInstructions(opts?: { toolSummary?: ToolSummaryInput[] }): 
     "  Gmail) to find the underlying receipt or confirmation, then render an itemized view",
     "  from the REAL details you find — and surface the meaningful detail (like the actual",
     "  order time), not just metadata.",
-    "- You can set up standing AUTOMATIONS that fire on their own (see the AUTOMATIONS",
-    "  section below). When you create one, do NOT perform its action (e.g. a Slack post)",
-    "  yourself — the automation does that when it fires; just confirm it is active, in",
-    "  plain language.",
     "- More broadly, for non-financial or open-ended requests, compose the blocks (and",
     "  novel components when needed) into the most useful bespoke interface you can.",
   ].join("\n");
@@ -133,7 +127,6 @@ export function buildInstructions(opts?: { toolSummary?: ToolSummaryInput[] }): 
       ? { toolSummary: capabilitySummary(opts.toolSummary, MAPLE_TOOLKITS) }
       : {}),
     toolkits: MAPLE_TOOLKITS,
-    extras: [demoAutomationInstructions()],
   });
 }
 
@@ -149,7 +142,7 @@ export interface CreateDemoAgentOptions {
   model?: LanguageModel;
   /** Inject a Composio client (tests pass a stub; production builds the real one). */
   composioClient?: ComposioClient;
-  /** Per-beat in-process tools (transaction reads, rule-setting). */
+  /** In-process read tools. */
   extraTools?: ToolSet;
   /**
    * Composio toolkits to ingest. Driven by the demo connection store: the caller

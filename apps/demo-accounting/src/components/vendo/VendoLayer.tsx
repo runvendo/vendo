@@ -2,34 +2,22 @@
 
 /**
  * The Vendo layer dropped over Cadence. A single client island that owns the
- * shared agent session, the Cmd/Ctrl+K overlay, automation toasts, and the
- * scheduler heartbeat. Mounted once in the root layout WRAPPING the app UI —
- * page content must live inside the provider so VendoRemix wrappers reach
- * the same registry/overlay (2026-07-04 spec).
+ * shared agent session and the Cmd/Ctrl+K overlay. Mounted once in the root
+ * layout wrapping the app UI.
  *
  * No persistent launcher: Vendo is invisible until summoned with Cmd/Ctrl+K.
- * Stage shortcut: Cmd/Ctrl+Shift+Period resets the demo (store + automations).
+ * Stage shortcut: Cmd/Ctrl+Shift+Period resets the demo.
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { VendoOverlay, VendoToasts } from "@vendoai/shell";
+import { VendoOverlay } from "@vendoai/shell";
 import { VendoRoot } from "./VendoRoot";
 
 const SUGGESTIONS = [
-  "Which clients are still missing documents?",
-  "every morning, email any clients missing docs. If anyone is within 3 days of a deadline, book a call with them on my calendar",
+  "Show Rivera Landscaping's missing documents as a checklist",
+  "Compare document progress for every client in a table",
+  "Send Marisol Rivera a reminder about the missing W-2, 1099-NEC, and receipts",
 ];
-
-/** Ping the scheduler so due cron automations fire — the in-process scheduler
- *  owns no timer of its own (a Next dev singleton must not leak intervals). */
-function useSchedulerHeartbeat(intervalMs = 30_000) {
-  useEffect(() => {
-    const tick = () => void fetch("/api/vendo/tick", { method: "POST" }).catch(() => {});
-    tick();
-    const id = setInterval(tick, intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-}
 
 async function resetDemo(): Promise<void> {
   try {
@@ -43,7 +31,6 @@ async function resetDemo(): Promise<void> {
 export function VendoLayer({ children }: { children: ReactNode }) {
   const [overlayOpen, setOverlayOpen] = useState(false);
   const pathname = usePathname();
-  useSchedulerHeartbeat();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -59,7 +46,7 @@ export function VendoLayer({ children }: { children: ReactNode }) {
 
   // The /assistant page owns its own full-page surface; the floating overlay
   // stays out of its way (one summonable chat per screen). The provider still
-  // wraps the page so remix wrappers and toasts keep working there.
+  // wraps the page so the shared agent context remains available.
   const floatingSurfaces = !pathname?.startsWith("/assistant");
 
   return (
@@ -76,8 +63,6 @@ export function VendoLayer({ children }: { children: ReactNode }) {
           onOpenChange={setOverlayOpen}
         />
       )}
-      {/* Automation deliveries: completions + approvals (2026-07-04 spec). */}
-      <VendoToasts placement="bottom-right" namespace="cadence-demo" />
     </VendoRoot>
   );
 }

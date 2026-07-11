@@ -2,7 +2,6 @@ import { useState, type ComponentType } from "react";
 import type { VendoAgent, RegisteredComponent } from "@vendoai/core";
 import { VendoProvider } from "@vendoai/react";
 import { VendoShellProvider } from "../context";
-import type { VendoStore } from "../seams/store";
 import type { VendoIntegrations } from "../seams/integrations";
 import { themeToStyle, type VendoTheme } from "../theme";
 import { useMobileTakeover } from "../use-mobile-takeover";
@@ -11,7 +10,6 @@ import { VendoThread } from "../VendoThread";
 export interface VendoPageProps {
   agent: VendoAgent;
   components: RegisteredComponent[];
-  store?: VendoStore;
   integrations?: VendoIntegrations;
   impls?: Record<string, ComponentType<Record<string, unknown>>>;
   theme?: VendoTheme;
@@ -27,7 +25,7 @@ let tabSeq = 0;
 const newTab = (): Tab => ({ id: `tab-${++tabSeq}`, title: "New vendo" });
 
 export function VendoPage(props: VendoPageProps) {
-  const { agent, components, store, integrations, impls, theme, cssVars, greeting, suggestions } = props;
+  const { agent, components, integrations, impls, theme, cssVars, greeting, suggestions } = props;
   const [tabs, setTabs] = useState<Tab[]>(() => [newTab()]);
   const [activeId, setActiveId] = useState<string>(() => tabs[0]!.id);
   // Below 768px the page presents full-screen over the host layout (the
@@ -63,7 +61,7 @@ export function VendoPage(props: VendoPageProps) {
         {tabs.map((tab) => (
           <div key={tab.id} className="fl-page-pane" hidden={tab.id !== activeId}>
             <VendoProvider agent={agent} components={components}>
-              <VendoShellProvider store={store} integrations={integrations} impls={impls} theme={theme} cssVars={cssVars}>
+              <VendoShellProvider integrations={integrations} impls={impls} theme={theme} cssVars={cssVars}>
                 <VendoThread greeting={greeting} suggestions={suggestions} />
               </VendoShellProvider>
             </VendoProvider>

@@ -20,8 +20,8 @@ describe("cli dispatch", () => {
     const help = log.mock.calls.flat().join("\n");
     expect(help).toContain("Setup (you run these):");
     expect(help).toContain("Runs automatically in your build:");
-    expect(help).toContain("Coming with the registry:");
-    for (const cmd of ["init", "refresh", "doctor", "sync", "publish", "telemetry"]) {
+    expect(help).toContain("Management:");
+    for (const cmd of ["init", "refresh", "doctor", "sync", "telemetry"]) {
       expect(help).toContain(cmd);
     }
     log.mockRestore();

@@ -111,8 +111,7 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const result = await entry.execute(input ?? {}, { toolCallId: `voice-${Date.now()}`, messages: [] });
     // Voice budget is tighter than chat's (realtime tokens are the expensive
-    // ones); capping here also covers saved-view REPLAY through this bridge,
-    // so initial and refreshed shapes match (spec §5).
+    // ones), so cap integration results before returning them to the session.
     return Response.json({ result: capToolOutput(result, VOICE_TOOL_OUTPUT_BUDGET).result });
   } catch (error) {
     console.error("[vendo voice] integration tool failed", tool, error);

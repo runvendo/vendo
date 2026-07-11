@@ -36,16 +36,3 @@ export interface PolicyVerdict {
   suppressible: boolean;
   unverified: boolean;
 }
-
-export function buildVerdict(
-  decision: "allow" | "approve" | "deny",
-  descriptor: ToolDescriptor,
-): PolicyVerdict {
-  const tier = dangerTier(descriptor);
-  return {
-    outcome: decision === "approve" ? "ask" : decision,
-    tier,
-    suppressible: tier !== "critical",
-    unverified: isUnverified(descriptor),
-  };
-}

@@ -161,7 +161,7 @@ export async function runDoctor(opts: DoctorOptions): Promise<number> {
   const provider = detectProviderFromEnv(envView);
   if (provider) {
     ok(`provider key detected`, PROVIDER_ENV_VAR[provider]);
-    ok("capabilities: chat, generated UI, tools/components/remix discovery");
+    ok("capabilities: chat, generated UI, tools/components discovery");
   } else {
     warn("no provider key found", "set ANTHROPIC_API_KEY (or OPENAI_/GOOGLE_) in .env.local, or run `vendo init`");
     warn("capabilities: deterministic-only (chat, generated UI, assisted discovery disabled)");

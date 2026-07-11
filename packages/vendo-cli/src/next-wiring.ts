@@ -170,7 +170,7 @@ COMPOSIO_API_KEY=
 const STORAGE_ENV = `# Vendo — durable storage + automation scheduler (all optional; unset
 # values fall back to zero-config embedded storage, see docs/persistence-and-deploy.md)
 #
-# OPTIONAL: Postgres connection string for threads/vendos/automations/decisions.
+# OPTIONAL: Postgres connection string for threads/automations/decisions.
 # Unset uses an embedded PGlite database — zero-config, good for local dev and
 # single-instance deploys, not for serverless/multi-instance ones.
 # DATABASE_URL=
@@ -315,8 +315,7 @@ export function maskLiterals(source: string): string {
  * it — so skip leading comments/whitespace (found on the masked copy, which has
  * comment CONTENT blanked but delimiters/offsets intact) before checking, then
  * detect the directive on the ORIGINAL at that offset (the mask also blanks the
- * "use client" string interior). Shared by wrapLayoutChildren and the remix
- * anchor splice so both call sites agree byte-for-byte.
+ * "use client" string interior).
  */
 export function insertImportAfterDirectives(source: string, importStmt: string): string {
   const headerLen = maskLiterals(source).match(/^\s*/)?.[0].length ?? 0;
@@ -432,7 +431,7 @@ export function addDevDependency(pkgJson: string, name: string, version: string)
 }
 
 /** Add `vendo sync` to the app's `prebuild` script (create or extend),
- *  so every production build refreshes the capture + sandbox environment.
+ *  so every production build runs the stable Vendo prebuild hook.
  *  Idempotent: never adds a second copy. */
 export function addPrebuildSync(pkgJson: string): string | null {
   let pkg: Record<string, unknown>;

@@ -16,19 +16,13 @@ import { useMemo, type ReactNode } from "react";
 import { DefaultChatTransport } from "ai";
 import type { VendoUIMessage } from "@vendoai/core";
 import { VendoProvider } from "@vendoai/react";
-import { VendoShellProvider, createWebStorage } from "@vendoai/shell";
+import { VendoShellProvider } from "@vendoai/shell";
 import { prewiredComponents, VendoThemeProvider, brandToCssVars } from "@vendoai/components";
 import { mapleBrand } from "@/vendo/brand";
 import { mapleHostComponents } from "@/vendo/host-components/descriptors";
 import { mapleHostToolDefs } from "@/vendo/host-tools";
 import { renderNode } from "./render-node";
 import { createComposioIntegrations } from "./integrations";
-import { runQuery } from "./run-query";
-
-// The real embedded-mode store (ENG-183): saved vendos survive reloads. One
-// module-scope instance so every surface shares it; it only touches
-// localStorage inside its methods, so importing it stays SSR-safe.
-const store = createWebStorage({ namespace: "maple-demo" });
 
 export function VendoRoot({
   children,
@@ -85,11 +79,6 @@ export function VendoRoot({
         <VendoShellProvider
           renderNode={renderNode}
           integrations={integrations}
-          store={store}
-          runQuery={runQuery}
-          // Same registry as VendoProvider — reopened saved views diff their
-          // host-component stamp against it and surface drift (ENG-186).
-          components={[...prewiredComponents, ...mapleHostComponents]}
           theme={{ scheme: "light" }}
           cssVars={{
             ...brandToCssVars(mapleBrand),

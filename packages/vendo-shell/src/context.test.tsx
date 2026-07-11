@@ -6,7 +6,7 @@ import { VendoShellProvider, useShell } from "./context";
 
 function Probe() {
   const shell = useShell();
-  return <div data-testid="probe">{[typeof shell.store.list, typeof shell.integrations.list, typeof shell.renderNode].join(",")}</div>;
+  return <div data-testid="probe">{[typeof shell.integrations.list, typeof shell.renderNode].join(",")}</div>;
 }
 
 function Probe2({ onRead }: { onRead: (v: unknown) => void }) {
@@ -15,7 +15,7 @@ function Probe2({ onRead }: { onRead: (v: unknown) => void }) {
 }
 
 describe("VendoShellProvider", () => {
-  it("provides store, integrations, and renderNode defaults", () => {
+  it("provides integrations and renderNode defaults", () => {
     render(
       <VendoProvider agent={createStubAgent()} components={[]}>
         <VendoShellProvider>
@@ -23,7 +23,7 @@ describe("VendoShellProvider", () => {
         </VendoShellProvider>
       </VendoProvider>,
     );
-    expect(screen.getByTestId("probe").textContent).toBe("function,function,function");
+    expect(screen.getByTestId("probe").textContent).toBe("function,function");
   });
 
   it("applies the vendo-root class", () => {

@@ -1,14 +1,7 @@
 import { getStore } from "./store"
 import type { Transaction } from "./types"
 
-/**
- * Maple's one write: place a (late-night) delivery order. This is the bank's own
- * concern — it appends a transaction like any charge. Vendo never hooks this;
- * its poller discovers the new row through the existing transactions API.
- *
- * The timestamp is pinned to ~1:3x AM Pacific so the charge reads as late-night
- * regardless of the server's timezone (the demo window is PDT, -07:00).
- */
+/** Places a delivery order transaction at a pinned late-night Pacific timestamp. */
 export interface PlaceOrderInput {
   merchant?: string
   amountCents?: number

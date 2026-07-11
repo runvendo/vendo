@@ -20,16 +20,8 @@
  * 2026-07-04, see `packages/vendo-server`'s equivalent chat.ts/fetch-handler.ts fix).
  */
 import { createUIMessageStreamResponse } from "ai";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import type { VendoAgent, VendoUIMessage } from "@vendoai/core";
 import { hostToolset } from "@vendoai/runtime";
-import {
-  applyVerifiedPinBase,
-  createSourceResolver,
-  enrichAnchorSources,
-  resolveRemixSealer,
-} from "vendoai/server";
 import { DEMO_PRINCIPAL } from "./principal";
 import { cadenceHostToolDefs } from "./host-tools";
 import { demoPrincipalAllowed, LOCAL_ONLY_MESSAGE } from "./local-guard";
@@ -42,23 +34,6 @@ interface ChatRequestBody {
   id?: string;
   messages?: VendoUIMessage[];
 }
-
-/**
- * Remix sources now come from `vendo sync`'s capture (the anchor→file
- * mapping lives in vendo.config.json `remixAnchors`, so the CLI records
- * deadline-list.tsx and the env builder vendors what IT imports). The shared
- * resolver re-reads the mapped file in dev, so edits are never stale.
- */
-const capturedRemixSources = (() => {
-  try {
-    return JSON.parse(
-      readFileSync(path.join(process.cwd(), ".vendo", "remix-sources.json"), "utf8"),
-    ) as Record<string, import("@vendoai/core").RemixSourceRecord>;
-  } catch {
-    return {}; // no sync run — remix falls open to the DOM-snapshot baseline
-  }
-})();
-const resolveRemixSource = createSourceResolver({ captured: capturedRemixSources });
 
 export async function handleChat(req: Request, agent: VendoAgent): Promise<Response> {
   if (!demoPrincipalAllowed(req)) {
@@ -74,15 +49,7 @@ export async function handleChat(req: Request, agent: VendoAgent): Promise<Respo
   const clientThreadId = typeof body.id === "string" && body.id.length > 0 ? body.id : "cadence-demo";
   const threadRecordId = await resolveThreadRecordId(CADENCE_SCOPE, clientThreadId);
   const stream = agent.run({
-    // Strip any client-supplied source, enrich the scoped anchor from the raw
-    // file read (remix-fidelity epic), then verify the pin envelope into a
-    // trusted base (remix fast-edits) — same key derivation as the agent's
-    // sealer, so mint and verify agree.
-    messages: applyVerifiedPinBase(
-      enrichAnchorSources(messages, resolveRemixSource),
-      resolveRemixSealer({ hasInjectedModel: false }),
-      DEMO_PRINCIPAL.userId,
-    ),
+    messages,
     // Cadence's own API surface enters through the caller seam (ENG-202): no
     // execute — the policy gates each call and the BROWSER executes approved
     // ones on the user's session via the SDK's host-tool runner.

@@ -11,7 +11,7 @@ const noop = () => {};
 
 function renderStage(snapshot: VoiceSnapshot, overrides: Partial<Parameters<typeof VoiceStage>[0]> = {}) {
   return render(
-    <VendoShellProvider store={undefined as never}>
+    <VendoShellProvider>
       <VoiceStage
         snapshot={snapshot}
         onMute={noop}
@@ -53,7 +53,7 @@ describe("VoiceStage", () => {
 
     const settled = reduceVoice(pending, { type: "approval-resolved", id: "a1", resolution: "voice" });
     rerender(
-      <VendoShellProvider store={undefined as never}>
+      <VendoShellProvider>
         <VoiceStage snapshot={settled} onMute={noop} onEnd={noop} onApprove={onApprove} onDecline={noop} onClosed={noop} />
       </VendoShellProvider>,
     );
@@ -111,25 +111,11 @@ describe("VoiceStage", () => {
       type: "approval", id: "a1", toolName: "send_email", input: {}, tier: "act",
     });
     rerender(
-      <VendoShellProvider store={undefined as never}>
+      <VendoShellProvider>
         <VoiceStage snapshot={withApproval} onMute={noop} onEnd={noop} onApprove={noop} onDecline={noop} onClosed={noop} />
       </VendoShellProvider>,
     );
     expect(container.querySelector(".fl-voice-drawer")).toBeNull(); // drawer yielded to the consent bar
-  });
-
-  it("offers Pin this view in the post-call browse state when a pin sink is wired", () => {
-    const onPin = vi.fn();
-    const node = { id: "n9", kind: "component", source: "prewired", name: "Table", props: {} } as const;
-    renderStage(
-      snapshotOf([
-        { type: "view", id: "v1", node },
-        { type: "status", status: "ended" },
-      ]),
-      { onPin },
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Pin this view/ }));
-    expect(onPin).toHaveBeenCalledWith(node);
   });
 
   it("stays on the stage after the session ends; Back to chat is the explicit exit", () => {

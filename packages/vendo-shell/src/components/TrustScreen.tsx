@@ -1,13 +1,12 @@
 /**
- * TrustScreen (spec §3 Moment 12) — behind a quiet shield icon. Six
- * sections: what's handled without asking, standing always-ask Rules
+ * TrustScreen (spec §3 Moment 12) — behind a quiet shield icon. It shows
+ * what's handled without asking, standing always-ask Rules
  * (ENG-193 item 6 — its own section, deliberately NOT folded into "Handled
  * without asking": a rule ADDS friction, the opposite of that heading; see
- * the item-6 plan's deviation #4), what automations run unattended
- * (read-only, federated), what always needs the human (critical tools,
+ * the item-6 plan's deviation #4), what always needs the human (critical tools,
  * can't be changed), what's waiting, and the weekly plain-English
- * activity/diary. Seams: `useTrustData` (mirrors `useParkedActions`
- * exactly).
+ * activity/diary. Hosts with existing unattended runs also get their
+ * federated grants. Seams: `useTrustData` (mirrors `useParkedActions`).
  */
 import { useTrustData } from "../use-trust-data";
 import { toolAction } from "./tool-labels";
@@ -85,18 +84,19 @@ export function TrustScreen({ onClose }: TrustScreenProps) {
         ))}
       </section>
 
-      <section className="fl-trust-section">
-        <h3 className="fl-trust-section-head">Automations</h3>
-        {automationGrants.length === 0 && <div className="fl-trust-empty">No automations running unattended yet.</div>}
-        {automationGrants.map((g, i) => (
-          <div key={`${g.automationName}-${g.tool}-${i}`} className="fl-trust-row">
-            <div className="fl-trust-row-main">
-              <div className="fl-trust-row-title">{g.automationName} — {toolAction(g.tool).request}</div>
-              <div className="fl-trust-row-meta">runs as agreed</div>
+      {automationGrants.length > 0 && (
+        <section className="fl-trust-section">
+          <h3 className="fl-trust-section-head">Automations</h3>
+          {automationGrants.map((g, i) => (
+            <div key={`${g.automationName}-${g.tool}-${i}`} className="fl-trust-row">
+              <div className="fl-trust-row-main">
+                <div className="fl-trust-row-title">{g.automationName} — {toolAction(g.tool).request}</div>
+                <div className="fl-trust-row-meta">runs as agreed</div>
+              </div>
             </div>
-          </div>
-        ))}
-      </section>
+          ))}
+        </section>
+      )}
 
       <section className="fl-trust-section">
         <h3 className="fl-trust-section-head">Always needs you</h3>
@@ -118,8 +118,8 @@ export function TrustScreen({ onClose }: TrustScreenProps) {
         <h3 className="fl-trust-section-head">Activity — {diary.total} actions this week</h3>
         <div className="fl-trust-diary">
           This week I handled {diary.total} thing{diary.total === 1 ? "" : "s"} — {diary.reads} reads,{" "}
-          {diary.approved} action{diary.approved === 1 ? "" : "s"} you approved, {diary.automationRuns} ran in
-          automations. Big actions: {diary.bigActions}.
+          {diary.approved} action{diary.approved === 1 ? "" : "s"} you approved
+          {diary.automationRuns > 0 ? `, ${diary.automationRuns} ran in automations` : ""}. Big actions: {diary.bigActions}.
         </div>
         <div className="fl-trust-activity">
           {activity.slice(0, 20).map((row, i) => (

@@ -16,9 +16,7 @@ export type PromptModality = "chat" | "voice";
 /** The `vendo-genui/v1` payload protocol (chat renders full views). */
 export function genuiFormatSection(): string {
   return [
-    "HOW render_view WORKS — render_view renders NEW views. (When the host-page context",
-    "offers edit_view for a captured element, PREFER it: patch the baseline instead of",
-    "regenerating.) Every view you show is a",
+    "HOW render_view WORKS — every view you show is a",
     "single render_view call carrying ONE GeneratedPayload:",
     "- formatVersion: 'vendo-genui/v1'.",
     "- root: the id of the root node.",
@@ -60,29 +58,6 @@ export function showVsSaySection(modality: PromptModality): string {
     "Connect and approval cards are for actions the user must take on screen — if a capability is already in your tool list, use it silently. Data summaries (tables, labelled rows) are not cards; show them freely when data has shape.",
     "Don't narrate tool mechanics — say what you're doing in the user's terms ('pulling up March'), never tool names.",
     "When asking permission, be concrete in one sentence: name the amount, the payee, the destination.",
-  ].join("\n");
-}
-
-/** The saved-view refresh protocol. */
-export function refreshableViewsSection(modality: PromptModality): string {
-  if (modality === "chat") {
-    return [
-      "REFRESHABLE VIEWS — when a view presents data you fetched with a tool, make it",
-      "re-runnable: put the tool's result VERBATIM at one path in `data` (e.g.",
-      "data.transactions = the exact get_transactions output), bind props into that",
-      "subtree with { $path } or transform it inside a generated component, and declare",
-      "queries: [{ path: '/transactions', tool: 'get_transactions', input: { limit: 40 } }].",
-      "Saved views re-run those queries on reopen to show fresh data. Do NOT reshape",
-      "tool output before storing it at the declared path — reshape at render time.",
-    ].join("\n");
-  }
-  return [
-    "REFRESHABLE VIEWS: when data you display came from a tool call, declare it —",
-    "pass source: { tool, input, rowsPath } on the display tool, where rowsPath is the",
-    "JSON pointer to the row array inside that tool's result (e.g. '/data/transactions').",
-    "Use the raw field names from the tool result as column keys; labels can be human-friendly.",
-    "Declare source honestly, and only for data you actually fetched with that exact call —",
-    "the view then refreshes itself when the user reopens it later.",
   ].join("\n");
 }
 
@@ -280,9 +255,9 @@ export function capabilitiesSection(
 export function proactivitySection(modality: PromptModality): string {
   const shared = [
     "SUGGESTIONS: you may volunteer at most ONE suggestion per turn, and only when it",
-    "directly connects to what just happened — a view worth pinning, a request you have",
-    "now handled repeatedly that could become an automation, or a missing integration",
-    "that blocks a better answer. If the user declines or ignores a suggestion, drop it",
+    "directly connects to what just happened — a useful follow-up view, a request you have",
+    "now handled that has a clear next step, or a missing integration that blocks a better",
+    "answer. If the user declines or ignores a suggestion, drop it",
     "for the rest of the session. Never attach a suggestion to a permission request.",
     "Suggesting is not doing — acting on one still goes through the normal approval.",
   ];

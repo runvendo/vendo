@@ -2,8 +2,8 @@
 
 /**
  * The generative Vendo slot on the Maple dashboard. Empty, it shows a ghost
- * preview you click to describe a view; the agent builds it in an overlay and
- * you pin the result into this card. It runs in its own isolated thread
+ * preview you click to describe a view; the agent renders it in an overlay.
+ * It runs in its own isolated thread
  * ("maple-slot") so it never crosses wires with the floating dock/overlay.
  */
 import { VendoThemeProvider } from "@vendoai/components"

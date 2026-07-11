@@ -15,8 +15,8 @@ vi.mock("@vendoai/react", () => ({
 
 // NOTE: this file deliberately does NOT import or mock `next/navigation`.
 // The generic @vendoai/client must stay Next-free (a Next dependency here
-// would break plain-React/Vite consumers like examples/node). Route is now an
-// OPTIONAL host-supplied input; a Next host passes it from its own
+// would break plain-React/Vite consumers). Route is now an OPTIONAL
+// host-supplied input; a Next host passes it from its own
 // next/navigation. These tests exercise both the supplied and absent paths.
 
 import { SandboxStage } from "./sandbox-stage.js";
@@ -34,7 +34,7 @@ function stubSources() {
       const url = String(input);
       if (url.includes("react-runtime.js")) return new Response("/* react */", { status: 200 });
       if (url.includes("components-sandbox.js")) return new Response("/* bundle */", { status: 200 });
-      return new Response("", { status: 404 }); // env assets absent → bare sandbox
+      return new Response("", { status: 404 });
     }),
   );
 }

@@ -1,7 +1,7 @@
 /**
  * Cadence's `trust` shell seam (ENG-193 §3 Moment 12/§4.3/§6.2): fetches the
  * Trust screen's data from this app's own routes (trust-handler.ts,
- * fade-proposal-handler.ts), mirroring `parked-actions.ts`/`consent.ts`'s
+ * fade-proposal-handler.ts), mirroring `consent.ts`'s
  * plain-fetch style exactly.
  */
 import type { TrustAuditRow, TrustGrantRow, TrustRuleRow } from "@vendoai/shell";

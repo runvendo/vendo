@@ -44,7 +44,6 @@ describe("inspectVendoState", () => {
     expect(state.theme).toEqual({ exists: false, status: "missing" });
     expect(state.tools).toEqual({ exists: false, status: "missing" });
     expect(state.components).toEqual([]);
-    expect(state.remixAnchors).toEqual([]);
     expect(state.wired).toEqual({ appDir: null, routeFile: false, rootFile: false, wired: false });
   });
 
@@ -115,57 +114,6 @@ describe("inspectVendoState", () => {
     expect(state.components).toEqual(["Badge"]);
   });
 
-  it("finds a source file with a literal-id VendoRemix anchor", async () => {
-    const dir = app({
-      "src/app/page.tsx": `import { VendoRemix } from "@vendoai/shell"
-export default function Page() {
-  return <VendoRemix id="upcoming-deadlines"><DeadlineList /></VendoRemix>
-}
-`,
-    });
-    const state = await inspectVendoState(dir);
-    expect(state.remixAnchors).toEqual([{ file: "src/app/page.tsx", ids: ["upcoming-deadlines"] }]);
-  });
-
-  it("finds a single-quoted literal-id VendoRemix anchor (capture.ts's AST walk accepts both quote styles)", async () => {
-    const dir = app({
-      "src/app/page.tsx": `import { VendoRemix } from '@vendoai/shell'
-export default function Page() {
-  return <VendoRemix id='upcoming-deadlines'><DeadlineList /></VendoRemix>
-}
-`,
-    });
-    const state = await inspectVendoState(dir);
-    expect(state.remixAnchors).toEqual([{ file: "src/app/page.tsx", ids: ["upcoming-deadlines"] }]);
-  });
-
-  it("finds a dynamic-id VendoRemix anchor with an empty ids list", async () => {
-    const dir = app({
-      "src/app/page.tsx": `import { VendoRemix } from "@vendoai/shell"
-export default function Page({ id }: { id: string }) {
-  return <VendoRemix id={id}><div /></VendoRemix>
-}
-`,
-    });
-    const state = await inspectVendoState(dir);
-    expect(state.remixAnchors).toEqual([{ file: "src/app/page.tsx", ids: [] }]);
-  });
-
-  it("ignores a <VendoRemix> mention inside a comment or string (masked-view detection)", async () => {
-    const dir = app({
-      "src/app/page.tsx": `export default function Page() {
-  // TODO: wrap this in <VendoRemix id="revenue"> once we design the overlay
-  const example = "<VendoRemix id='fake'>";
-  return <div>{example}</div>
-}
-`,
-    });
-    const state = await inspectVendoState(dir);
-    // The tag only appears in a comment and a string, not real JSX — the file
-    // must not be counted as anchored (else it silently drops from discovery).
-    expect(state.remixAnchors).toEqual([]);
-  });
-
   it("reports a fully wired app (route file + vendo-root present under src/app)", async () => {
     const dir = app({
       "src/app/layout.tsx": NEXT_LAYOUT,
@@ -182,11 +130,4 @@ export default function Page({ id }: { id: string }) {
     expect(state.wired).toEqual({ appDir: "app", routeFile: false, rootFile: false, wired: false });
   });
 
-  it("does not scan inside .vendo/ for remix anchors", async () => {
-    const dir = app({
-      ".vendo/components/Badge/impl.tsx": `<VendoRemix id="should-not-count" />`,
-    });
-    const state = await inspectVendoState(dir);
-    expect(state.remixAnchors).toEqual([]);
-  });
 });

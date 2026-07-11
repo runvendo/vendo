@@ -39,13 +39,3 @@ export function GlassSkeleton({ label = "Building your view…" }: GlassSkeleton
     </div>
   );
 }
-
-/**
- * The shimmer OVER a stale view: an absolutely-positioned, pointer-transparent
- * sweep for repaint moments (saved-vendo live refresh, remix pin edits) — the
- * stale content stays readable underneath instead of flashing out. The parent
- * container must be positioned (`position: relative`).
- */
-export function GlassVeil() {
-  return <div className="fl-glass-veil fl-glass-shimmer" aria-hidden="true" />;
-}

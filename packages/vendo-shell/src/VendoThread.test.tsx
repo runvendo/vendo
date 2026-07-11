@@ -1,13 +1,12 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
-import type { ConsentResponse, UINode } from "@vendoai/core";
+import type { ConsentResponse } from "@vendoai/core";
 import { createStubAgent } from "@vendoai/core/testing";
 import { z } from "zod";
 import { VendoProvider } from "@vendoai/react";
-import { VendoShellProvider, useShell, type SendConsentResult, type ShellContextValue } from "./context";
+import { VendoShellProvider, type SendConsentResult } from "./context";
 import { VendoThread } from "./VendoThread";
 import type { ThreadItem } from "./use-vendo-thread";
-import { createLocalRemixes } from "./seams/remixes";
 
 function DemoCard({ title }: { title: string }) {
   return <div data-testid="demo-card">{title}</div>;
@@ -45,11 +44,6 @@ vi.mock("./use-vendo-thread", async (importOriginal) => {
 afterEach(() => {
   chatRef.current = null;
 });
-
-function ShellProbe({ onRead }: { onRead: (shell: ShellContextValue) => void }) {
-  onRead(useShell());
-  return null;
-}
 
 describe("VendoThread composer placement", () => {
   const mount = (heroComposer: boolean) =>
@@ -93,91 +87,6 @@ describe("VendoThread end-to-end", () => {
     fireEvent.click(screen.getByText("Send it"));
     await waitFor(() => screen.getByTestId("demo-card"));
     expect(screen.getByTestId("demo-card").textContent).toBe("Hello from Vendo");
-  });
-});
-
-describe("VendoThread scoped remix pinning", () => {
-  const node: UINode = {
-    id: "view-1",
-    kind: "generated",
-    payload: {
-      formatVersion: "vendo-genui/v1",
-      root: "root",
-      nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: "Pinned" } }],
-    },
-  };
-
-  it("applies the scoped view through the message's Apply button (one affordance, envelope preserved)", async () => {
-    const remixes = createLocalRemixes();
-    let shell: ShellContextValue | undefined;
-    chatRef.current = {
-      items: [
-        {
-          kind: "ui",
-          key: "m1:0",
-          messageId: "m1",
-          node: { ...node, remixAnchorId: "deadline-list" },
-          envelope: "sealed-authored-state",
-        },
-      ],
-      status: "ready",
-      addToolApprovalResponse: vi.fn(),
-      sendMessage: vi.fn(),
-      regenerate: vi.fn(),
-      stop: vi.fn(),
-      clearError: vi.fn(),
-    };
-
-    render(
-      <VendoShellProvider remixes={remixes}>
-        <ShellProbe onRead={(next) => { shell = next; }} />
-        <VendoThread />
-      </VendoShellProvider>,
-    );
-
-    act(() => {
-      shell!.scope.open({ anchorId: "deadline-list", label: "Deadlines" });
-    });
-    // Scoped chat shows exactly ONE pin affordance: the per-message Apply.
-    // The footer pin bar is reserved for slot hosts with an explicit onPin.
-    expect(screen.queryByRole("button", { name: /pin to card/i })).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: /apply to page/i }));
-
-    await waitFor(async () => {
-      const pin = await remixes.get("deadline-list");
-      expect(pin?.node).toMatchObject({ kind: "generated", remixAnchorId: "deadline-list" });
-      expect(pin?.envelope).toBe("sealed-authored-state");
-    });
-  });
-
-  it("keeps an explicit onPin prop as the slot-host override even when scope is active", async () => {
-    const remixes = createLocalRemixes();
-    const onPin = vi.fn();
-    let shell: ShellContextValue | undefined;
-    chatRef.current = {
-      items: [{ kind: "ui", key: "m1:0", messageId: "m1", node }],
-      status: "ready",
-      addToolApprovalResponse: vi.fn(),
-      sendMessage: vi.fn(),
-      regenerate: vi.fn(),
-      stop: vi.fn(),
-      clearError: vi.fn(),
-    };
-
-    render(
-      <VendoShellProvider remixes={remixes}>
-        <ShellProbe onRead={(next) => { shell = next; }} />
-        <VendoThread onPin={onPin} />
-      </VendoShellProvider>,
-    );
-
-    act(() => {
-      shell!.scope.open({ anchorId: "deadline-list" });
-    });
-    fireEvent.click(await screen.findByRole("button", { name: /pin to card/i }));
-
-    expect(onPin).toHaveBeenCalledWith(node);
-    expect(await remixes.get("deadline-list")).toBeNull();
   });
 });
 

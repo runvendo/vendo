@@ -11,8 +11,7 @@ pnpm test
 ```
 
 Node 20+, pnpm 9. The repo is a turbo monorepo: `packages/` are the published
-`@vendoai/*` libraries, `apps/` are demo hosts, `examples/` are minimal usage
-examples.
+`@vendoai/*` libraries and `apps/` are demo hosts.
 
 Run a demo host: `pnpm demo` (see `apps/demo-bank/README.md` for env setup).
 

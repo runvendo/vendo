@@ -100,7 +100,7 @@ export async function extractComponents(
     // Labels are component names, never paths — except when two files export
     // the same name, where bare names would render identical rows (and an
     // ambiguous deselected report line): duplicates get the rel path appended,
-    // unique names stay bare (shared with the remix picker via picker-util).
+    // unique names stay bare.
     const labelFor = disambiguatedLabels(
       proposal.wrappable.map((w) => w.candidate),
       (c) => c.exportName,

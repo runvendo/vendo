@@ -3,15 +3,13 @@
  *
  * Pure fact-gathering — deterministic, no LLM, no writes. This module answers
  * "what already exists" (does theme.json exist, is tools.json the fallback
- * stub or real, which components have wrapper dirs, which source files
- * already contain VendoRemix anchors, is the app wired). It contains NO
+ * stub or real, which components have wrapper dirs, and whether the app is wired). It contains NO
  * decision logic about what to extract, propose, or fix — that's for the
  * callers (`init`, `refresh`, `doctor`, `sync`) to decide from these facts.
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { walk } from "./fsx.js";
-import { findAppDir, maskLiterals, DEFAULT_THEME_STUB } from "./next-wiring.js";
+import { findAppDir, DEFAULT_THEME_STUB } from "./next-wiring.js";
 
 async function exists(p: string): Promise<boolean> {
   return fs.access(p).then(() => true, () => false);
@@ -50,13 +48,6 @@ export type ToolsStatus = "missing" | "empty-fallback" | "real";
  *  JSON — is "real" and additive consumers keep it. */
 export type ThemeStatus = "missing" | "default-stub" | "real";
 
-export interface RemixAnchorSite {
-  /** Path relative to targetDir, forward-slash separated. */
-  file: string;
-  /** Literal anchor ids found in this file (dynamic `id={...}` anchors contribute no id here). */
-  ids: string[];
-}
-
 export interface WiringState {
   /** "app" or "src/app" relative to targetDir, or null if no App Router root layout was found. */
   appDir: string | null;
@@ -71,40 +62,7 @@ export interface VendoState {
   tools: { exists: boolean; status: ToolsStatus };
   /** Component names with a wrapper dir under .vendo/components/ (descriptor.ts + impl.tsx present). */
   components: string[];
-  /** App source files containing at least one <VendoRemix ...> anchor. */
-  remixAnchors: RemixAnchorSite[];
   wired: WiringState;
-}
-
-// Literal-id capture inside a <VendoRemix ...> opening tag. A cheap regex for
-// fact-gathering, not a parse: consumers key on file-level detection; the ids
-// list is best-effort and may diverge from sync/capture.ts's AST walk on
-// exotic attribute layouts. Dynamic ids (`id={...}`) simply yield no match.
-// File-level detection runs on the masked view (comment/string bodies blanked,
-// like anchor.ts's idempotence check) so a `// TODO: <VendoRemix ...>` comment
-// never falsely marks a file anchored; ids are still read from the raw text
-// (masking blanks the id string interior).
-const ANCHOR_ID_RE = /<VendoRemix\b[^>]*?\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-
-async function inspectRemixAnchors(targetDir: string): Promise<RemixAnchorSite[]> {
-  const files = await walk(targetDir, (rel) => /\.(tsx|jsx)$/.test(rel));
-  const sites: RemixAnchorSite[] = [];
-  for (const file of files) {
-    let text: string;
-    try {
-      text = await fs.readFile(file, "utf8");
-    } catch {
-      continue;
-    }
-    if (!text.includes("VendoRemix")) continue;
-    // Confirm the tag is in real code, not a comment or string, before counting
-    // the file as anchored — otherwise a TODO comment mentioning <VendoRemix>
-    // would silently exclude the file from remix discovery.
-    if (!maskLiterals(text).includes("<VendoRemix")) continue;
-    const ids = [...text.matchAll(ANCHOR_ID_RE)].map((m) => (m[1] ?? m[2])!);
-    sites.push({ file: path.relative(targetDir, file).split(path.sep).join("/"), ids });
-  }
-  return sites.sort((a, b) => a.file.localeCompare(b.file));
 }
 
 async function inspectComponents(targetDir: string): Promise<string[]> {
@@ -164,9 +122,8 @@ export async function inspectVendoState(targetDir: string): Promise<VendoState> 
     toolsStatus = deepEqual(parsed, EMPTY_TOOLS_FALLBACK) ? "empty-fallback" : "real";
   }
 
-  const [components, remixAnchors, wired] = await Promise.all([
+  const [components, wired] = await Promise.all([
     inspectComponents(targetDir),
-    inspectRemixAnchors(targetDir),
     inspectWired(targetDir),
   ]);
 
@@ -174,7 +131,6 @@ export async function inspectVendoState(targetDir: string): Promise<VendoState> 
     theme: { exists: themeExists, status: themeStatus },
     tools: { exists: toolsExists, status: toolsStatus },
     components,
-    remixAnchors,
     wired,
   };
 }

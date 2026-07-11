@@ -1,15 +1,12 @@
 /**
  * The Cadence demo's guardrail policy, layered on the @vendoai/runtime policy
- * machinery (same shape as demo-bank's — the automation grant/approval path
- * depends on these decisions):
+ * machinery:
  *
  * - Client-executed host-API tools (the OpenAPI adapter) carry real MCP-style
  *   annotations — decide from those (reads auto-allow, mutations approve).
- * - In-process read tools and automation-authoring reads are allowlisted.
- * - Composio tools (chat-ingested AND the automation world's registered
- *   GMAIL_SEND_EMAIL / GOOGLECALENDAR_CREATE_EVENT) decide by verb segment:
- *   read verbs run freely, write verbs require approval — which is exactly
- *   what makes the AutomationCard mint grants for the two sends.
+ * - In-process read tools are allowlisted.
+ * - Composio tools decide by verb segment: read verbs run freely and write
+ *   verbs require approval.
  * - Everything else fails safe to approval.
  *
  * ENG-193 item 2 (§4.3/§6.2): the exported `demoPolicy` composes the item-1
@@ -42,17 +39,9 @@ import {
 import { READ_ONLY_TOOLS } from "./tools";
 import { demoStore, CADENCE_SCOPE } from "./store";
 
-/** In-process tools that are safe by construction (incl. read-shaped
- *  automation authoring; create/update/delete/pause/run-now stay gated). */
+/** In-process tools that are safe by construction. */
 const ALWAYS_ALLOW = new Set<string>([
   "render_view",
-  "edit_view",
-  "list_automations",
-  "get_automation_runs",
-  // In-process read tool registered for the automation world (ENG-193 item-4
-  // fixture beside set_document_status in automations.ts) — read-only by
-  // construction, same class as get_deadlines.
-  "get_documents_for_review",
   ...READ_ONLY_TOOLS,
 ]);
 

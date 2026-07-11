@@ -1,7 +1,6 @@
 export {
   genuiFormatSection,
   showVsSaySection,
-  refreshableViewsSection,
   connectSection,
   consentSection,
   dataFidelitySection,

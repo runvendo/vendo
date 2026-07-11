@@ -4,7 +4,7 @@
  * | Deployment | Implementation |
  * |---|---|
  * | Embedded | none, or host cron invoking the handler |
- * | Cloud | pg-boss worker in apps/cloud |
+ * | Managed | Vendo Cloud scheduler |
  *
  * This seam owns TIME-based triggers only. The other two trigger sources
  * (signed host webhooks, Composio triggers) are ingest paths that invoke the

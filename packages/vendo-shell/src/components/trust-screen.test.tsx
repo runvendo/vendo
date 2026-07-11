@@ -62,6 +62,22 @@ describe("TrustScreen (ENG-193 §3 Moment 12)", () => {
     expect(revokeGrant).toHaveBeenCalledWith("g1");
   });
 
+  it("omits automation copy when the host has no automation grants or runs", async () => {
+    render(
+      <VendoShellProvider
+        trust={stubTrust({
+          listGrants: async () => GRANTS.filter((grant) => grant.source !== "automation"),
+          queryAudit: async () => AUDIT.filter((row) => row.kind !== "automation_firing"),
+        })}
+      >
+        <TrustScreen onClose={() => {}} />
+      </VendoShellProvider>,
+    );
+    await waitFor(() => screen.getByText(/Handled without asking/i));
+    expect(screen.queryByText(/^Automations$/i)).toBeNull();
+    expect(screen.getByText(/This week I handled/i).textContent).not.toMatch(/automation/i);
+  });
+
   it("shows no revoke control for an automation-federated row", async () => {
     render(
       <VendoShellProvider trust={stubTrust()}>

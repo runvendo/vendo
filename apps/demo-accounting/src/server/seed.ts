@@ -63,12 +63,12 @@ export function buildSeed(anchor: Date = new Date()): SeedData {
 
   // 12 clients. The first 8 have at least one missing document (the dashboard's
   // hero number); the last 4 are fully verified. Rivera and Chen sit INSIDE the
-  // 3-day deadline window (the Vendo demo automation books calls for them);
-  // the rest stagger out to ~10 weeks so the countdown always reads urgent.
+  // 3-day deadline window so deadline and document-chase views have urgent
+  // examples; the rest stagger out to ~10 weeks.
   //
   // Contact emails are plus-addressed to the demo Gmail account (yousef@vendo.run)
-  // ON PURPOSE: the Vendo automation sends REAL email via Composio Gmail, and
-  // real sends must land in an inbox we own — never at third-party domains.
+  // ON PURPOSE: approval-gated Gmail sends must land in an inbox we own — never
+  // at third-party domains.
   const clients: Client[] = [
     { id: "cl_rivera", businessName: "Rivera Landscaping LLC", entityType: "s_corp",
       contactName: "Marisol Rivera", contactEmail: "yousef+rivera@vendo.run",

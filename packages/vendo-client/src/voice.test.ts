@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { replayRegistry } from "@vendoai/shell";
 import type { GeneratedPayload, HostToolDefinition } from "@vendoai/core";
 import { __voiceTesting } from "./voice.js";
 
@@ -34,7 +33,6 @@ describe("createVendoVoice internals", () => {
   it("builds a data-bound table payload when source matches the replay cache", () => {
     const internals = trackedInternals();
     const raw = { ok: true, data: { rows: [{ merchant: "Cafe", amount: 42 }] } };
-    disposers.push(replayRegistry.register("listTransactionsForPackagedVoice", async () => raw));
     internals.recordResult("listTransactionsForPackagedVoice", { limit: 10 }, raw);
 
     const node = internals.tableView({
@@ -135,7 +133,7 @@ describe("createVendoVoice internals", () => {
     });
   });
 
-  it("fetches connected integration voice tools, registers read replay, and records session results", async () => {
+  it("fetches connected integration voice tools and records session results", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/voice/tools") && init?.method !== "POST") {
@@ -164,7 +162,6 @@ describe("createVendoVoice internals", () => {
     disposers.push(session.unregister);
     const gmail = session.tools.find((t) => t.name === "GMAIL_FETCH_EMAILS");
     expect(gmail?.tier).toBe("read");
-    expect(replayRegistry.has("GMAIL_FETCH_EMAILS")).toBe(true);
 
     const output = await gmail?.execute({ query: "invoice" });
     expect(output).toEqual({ data: { rows: [{ subject: "Invoice" }] } });
@@ -178,19 +175,6 @@ describe("createVendoVoice internals", () => {
     ]);
 
     session.unregister();
-    expect(replayRegistry.has("GMAIL_FETCH_EMAILS")).toBe(false);
-  });
-
-  it("keeps the latest read-tool replay registration when an older driver is disposed", async () => {
-    const first = trackedInternals({ hostTools: [readAccounts] });
-    const second = trackedInternals({ hostTools: [readAccounts] });
-
-    expect(replayRegistry.has("list_accounts")).toBe(true);
-    first.dispose();
-    expect(replayRegistry.has("list_accounts")).toBe(true);
-
-    second.dispose();
-    expect(replayRegistry.has("list_accounts")).toBe(false);
   });
 
   it("composes voice instructions from product persona, host tools, and fixed extras", () => {

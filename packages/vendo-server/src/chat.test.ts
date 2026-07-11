@@ -108,50 +108,6 @@ describe("handleChat", () => {
     expect(input["tools"]).toEqual({});
   });
 
-  it("verifies a scoped envelope into pinBase for the resolved principal (remix fast-edits)", async () => {
-    const { createRemixSealer, deriveSealKey } = await import("@vendoai/runtime");
-    const sealer = createRemixSealer(deriveSealKey({ secret: "s" })!);
-    const payload = {
-      formatVersion: "vendo-genui/v1" as const,
-      root: "r",
-      nodes: [{ id: "r", component: "C", source: "generated" as const }],
-      components: { C: "export default function C(){return null}" },
-    };
-    const envelope = sealer.mint({
-      anchorId: "widget",
-      principalUserId: "vendo-default-user",
-      payload,
-      sources: payload.components,
-      sourceHash: "sh",
-      baseHash: "bh",
-      issuedAt: "2026-07-04T00:00:00.000Z",
-    });
-    const scoped = [
-      {
-        id: "m1",
-        role: "user",
-        parts: [{ type: "text", text: "edit it" }],
-        metadata: { anchors: { scoped: { anchorId: "widget", envelope } } },
-      },
-    ];
-    const { agent, run } = stubAgent();
-    const { threadIndex } = storeDeps();
-    await handleChat(chatReq({ messages: scoped }), {
-      getAgent: () => agent,
-      hostTools: [],
-      options: {},
-      chatEnabled: true,
-      remixSealer: sealer,
-      threadIndex,
-    });
-    const input = run.mock.calls[0]![0] as {
-      messages: { metadata?: { anchors?: { scoped?: Record<string, unknown> } } }[];
-    };
-    const s = input.messages[0]!.metadata!.anchors!.scoped!;
-    expect(s["envelope"]).toBeUndefined(); // opaque blob never reaches the engine
-    expect((s["pinBase"] as { baseHash: string }).baseHash).toBe("bh");
-  });
-
   it("rejects an empty or malformed messages array with 400", async () => {
     const { agent } = stubAgent();
     const { threadIndex } = storeDeps();

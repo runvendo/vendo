@@ -7,8 +7,8 @@ import type { Principal } from "./principal.js";
  * | Deployment | Implementation |
  * |---|---|
  * | Embedded | in-process against the host backend |
- * | Cloud, interactive | client executor: the call streams to the SDK, the browser fetches the host API on the user's session, the result returns via the ai SDK client-tool round trip |
- * | Cloud, automation | server executor in the worker, authorized by a BrokeredGrant |
+ * | Vendo Cloud, interactive | client executor: the call streams to the SDK, the browser fetches the host API on the user's session, the result returns via the ai SDK client-tool round trip |
+ * | Vendo Cloud, automation | server executor in the worker, authorized by a BrokeredGrant |
  *
  * The runtime selects an executor per tool call; the policy layer has already
  * evaluated the call before it reaches any executor. Non-streaming by design:

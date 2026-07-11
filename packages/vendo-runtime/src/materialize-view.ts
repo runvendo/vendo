@@ -1,7 +1,6 @@
 /**
- * Shared view materialization (remix fast-edits epic): the validate → host-prop
- * check → compile → mint-node pipeline that `render_view` has always run, now
- * also the tail of `edit_view`. Validation runs on the AUTHORED payload (name
+ * Shared view materialization: the validate → host-prop check → compile →
+ * mint-node pipeline used by `render_view`. Validation runs on the authored payload (name
  * and cap checks apply to authored source); compilation replaces each
  * component's source with sandbox-ready ESM before shipping.
  */
@@ -21,8 +20,6 @@ export type MaterializeResult =
 export interface MaterializeOptions {
   /** F1 registry: enables server-side `source:"host"` validation. */
   components?: RegisteredComponent[] | undefined;
-  /** Tag the minted node as a remix candidate for this anchor. */
-  remixAnchorId?: string | undefined;
   mintId: () => string;
 }
 
@@ -58,7 +55,6 @@ export function materializeView(
     id: options.mintId(),
     kind: "generated",
     payload: shipped,
-    ...(options.remixAnchorId ? { remixAnchorId: options.remixAnchorId } : {}),
   };
   return { ok: true, node, authored: validation.payload };
 }

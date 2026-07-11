@@ -1,0 +1,1 @@
+DROP TABLE "vendo"."saved_vendos" CASCADE;

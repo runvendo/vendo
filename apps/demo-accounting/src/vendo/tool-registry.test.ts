@@ -9,12 +9,6 @@ describe("resolveToolDescriptor", () => {
     expect(dangerTier(d!)).toBe("act");
   });
 
-  it("automation-authoring critical tools resolve as critical", () => {
-    const d = resolveToolDescriptor("create_automation");
-    expect(d).toBeDefined();
-    expect(dangerTier(d!)).toBe("critical");
-  });
-
   it("Composio-ingested tools resolve act+unverified (no live schema fetch needed for tier purposes)", () => {
     const d = resolveToolDescriptor("GMAIL_SEND_EMAIL");
     expect(d).toBeDefined();

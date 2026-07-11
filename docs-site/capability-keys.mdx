@@ -67,10 +67,10 @@ The response shape is:
   "integrations": false,
   "voice": false,
   "mcp": false,
-  "storage": true
+  "storage": false
 }
 ```
 
-`storage` is `true` when the assembled handler built durable storage. Passing `storage: false` to the handler makes it `false`.
+`storage` is currently always `false`; it is reserved for the app-format rebuild of saving.
 
 Without `COMPOSIO_API_KEY`, `GET /api/vendo/integrations` returns an empty disabled catalog and connect attempts return 503. Without a chat key or injected model, `POST /api/vendo/chat` returns 503 instead of streaming a provider error.

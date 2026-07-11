@@ -191,7 +191,7 @@ export interface VoiceSessionInit {
    *  conversation isn't amnesiac about what was just typed. */
   context?: string;
   /** Session-scoped tools merged into the driver's set (per-name, session
-   *  wins) — e.g. the shell's open_saved_vendo (spec §4). */
+   *  wins). */
   sessionTools?: VoiceToolDef[];
 }
 

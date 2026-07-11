@@ -1,20 +1,8 @@
 # @vendoai/runtime
 
-Vendo's portable agent runtime (architecture Decision 1): the model->tool
-loop, tool calling, policy, UI generation, and the automations engine, plus
-in-memory implementations of the five frozen seams for tests and embedded use.
-It never imports a database, queue, or HTTP server (enforced by
-`src/dependency-guard.test.ts`). Renamed from `@vendoai/agent` in the
-2026-07-02 runtime carve-out.
+The server-side runtime that powers the composed Vendo host experience. It provides the model-to-tool loop, policy enforcement, generated views, integration ingestion, and the automations engine used by `@vendoai/server` and custom hosts. It does not import a database, queue, or HTTP server.
 
-Built on the Vercel `ai` SDK v6, it implements
-F1's `VendoAgent` interface with a real model->tool loop, per-user Composio
-tool ingestion, and a pluggable guardrail policy. F1's `@vendoai/core` and
-`@vendoai/react` are unchanged: approvals use the ai SDK's native
-`needsApproval`/`addToolApprovalResponse` mechanism, not any custom protocol.
-
-**Server-side only.** Composio tool ingestion uses Node.js internals; do not
-include this package in a browser bundle.
+Do not include this package in a browser bundle. Composio and MCP ingestion use server-side capabilities.
 
 ## `createVendoAgent(config)`
 
@@ -22,110 +10,45 @@ include this package in a browser bundle.
 import { createVendoAgent } from "@vendoai/runtime";
 
 const agent = createVendoAgent({
-  model,           // LanguageModel (ai SDK) — required
-  policy,          // ApprovalPolicy — required
-  instructions,    // string system prompt (optional; a grounded default is used)
-  tools,           // additional in-process ToolSet (optional)
-  composio,        // { config: ComposioConfig; client?: ComposioClient } (optional)
-  policyVersion,   // string mixed into decision-cache keys (optional)
-  maxSteps,        // number, default 8
+  model,        // AI SDK LanguageModel
+  policy,       // ApprovalPolicy applied to every tool
+  instructions, // string or per-run instruction builder
+  tools,        // host-supplied server tools
+  controlTools, // Vendo steering or automation control tools
+  components,   // registered components accepted by render_view
+  composio,     // optional Composio ingestion
+  mcp,          // optional host-declared MCP servers
+  maxSteps,     // defaults to 8
+  onSettled,    // optional full-message persistence hook
 });
 ```
 
-`agent.run(input)` returns the ai SDK `UIMessage` stream, including `data-ui`
-parts for UI render events. Run identity (`runId`, `threadId`, `schemaVersion`)
-is attached as metadata on the `start` chunk.
+`agent.run(input)` returns an AI SDK `UIMessage` stream. UI render events use typed `data-ui` parts, and run identity is attached to the stream metadata.
 
-## Rendering tools
+## Generated views
 
-Two engine-owned tools produce views (both stream a `data-ui` part and run the
-same validate → host-prop-check → compile gates):
+The built-in `render_view` tool accepts a complete `GeneratedPayload`, validates the node graph and host component props, compiles generated component source, and streams the resulting view. `createRequestConnectTool` emits the host-rendered connection affordance used for integration OAuth.
 
-- `render_view` — the model emits a whole `GeneratedPayload` (node tree +
-  component source). Used for novel views and as the fallback when no baseline
-  exists.
-- `edit_view` — the remix fast path. Registered only when the scoped anchor
-  has a non-truncated captured source baseline. The model emits line hunks
-  against the server-held base (`base:"anchor"` for the captured source,
-  `base:"pin"` for the user's current customization); the server applies,
-  gates unresolvable sandbox imports, compiles, and ships the full view. Remix
-  results are paired with a sealed envelope (`data-remix-envelope` part) that
-  carries the authored state through the client for later pin edits — sealing
-  requires key material (`remixSealer` in config; the Next adapter derives it
-  from `VENDO_SEAL_SECRET` or the provider key). See
-  `docs/superpowers/specs/2026-07-04-remix-fast-edits-design.md`.
+## Policy
 
-## Guardrail policy
-
-Every tool call is evaluated by the configured `ApprovalPolicy` before
-execution. The policy returns one of three decisions:
+Every tool call is evaluated by an `ApprovalPolicy` before execution:
 
 | Decision | Effect |
-|----------|--------|
-| `allow`  | Tool executes immediately, no pause. |
-| `approve` | Tool is marked `needsApproval`; the ai SDK pauses the loop for human confirmation. |
-| `deny`   | Tool `execute` returns a `policy_denied` payload; the loop continues fail-closed. |
+|---|---|
+| `allow` | Execute immediately. |
+| `approve` | Pause for human confirmation through the AI SDK approval flow. |
+| `deny` | Return a fail-closed policy error without executing the tool. |
 
-### Composable layers
+The package exports policy composition, annotation policy, natural-language policy, principal rules, permission-grant matching, compiled rules, audit hooks, breakers, and fade-shape helpers.
 
-Combine layers with `composePolicy(...policies)`, which returns the most
-restrictive decision across all layers (severity order: `allow < approve < deny`).
+## Principal and integrations
 
-- `annotationPolicy` — decides based on `ToolDescriptor` annotations
-  (e.g. `risk` level).
-- `naturalLanguagePolicy` — LLM judge: sends tool name, input, and a prompt to
-  a language model and returns its structured decision.
-- `rememberDecisions` — wraps another policy and caches its decision for the
-  lifetime of a run; each `approve` is asked at most once per tool per run.
-- `roleRule` — allow/approve/deny based on the principal's `roles`.
-- `thresholdRule` — allow/approve/deny based on numeric `limits` in the
-  principal.
+Each run receives a `VendoPrincipal` with a required `userId` and optional `roles` and `limits`. The user id scopes connected accounts. Composio ingestion requires an explicit toolkit or tool allowlist. MCP ingestion uses only the host-declared server list. Both paths support injected clients or sources for offline tests.
 
-## Principal
+## Automations
 
-```ts
-interface VendoPrincipal {
-  userId: string;          // scopes Composio connected accounts
-  roles?: string[];        // fed to roleRule
-  limits?: Record<string, number>; // fed to thresholdRule
-}
-```
+The automations barrel exports the DSL schema, expressions, interpreter, principal-scoped engine store, runner, in-process scheduler, host-event ingest helpers, and control tools. Hosts decide which authoring tools to expose.
 
-Pass `principal` on each `RunInput`. A missing or empty `userId` fails
-Composio ingestion closed (no external tools are fetched).
+## Embedded implementations
 
-## Composio
-
-Per-user SaaS tools (Gmail, Slack, and so on) are ingested at the start of
-each run via `ingestComposioTools`. The allowlist (`toolkits` or `tools`) is
-mandatory: if both are empty, nothing is fetched.
-
-```ts
-composio: {
-  config: {
-    apiKey: process.env.COMPOSIO_API_KEY,
-    toolkits: ["gmail", "slack"],   // fetched per-toolkit
-    tools: ["GMAIL_SEND_EMAIL"],    // or specific slugs
-  },
-}
-```
-
-The real adapter wraps `@composio/core@0.4.0` + `@composio/vercel@0.4.0` and
-calls `composio.tools.get(userId, { toolkits } | { tools })`. Because `toolkits`
-and `tools` are mutually exclusive in a single call, the adapter issues one
-request per non-empty dimension and merges the results.
-
-Inject a `ComposioClient` in `composio.client` to swap in a fake for tests.
-
-## Environment variables
-
-| Variable | Required for |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | Live model calls |
-| `COMPOSIO_API_KEY` | Composio tool ingestion |
-| `VENDO_SEAL_SECRET` | Remix pin-envelope sealing (optional; falls back to provider-key derivation) |
-| `VENDO_BENCH` | `=1` logs edit_view apply/validate/compile timings |
-
-The full test suite (86 offline tests) runs without either key. The live
-Composio integration test (`*.live.test.ts`) is skipped unless both keys are
-present.
+For tests and in-process hosts, the package provides in-memory thread, automation, audit, grant, rule, and decision stores, plus an in-process credential broker, executor, scheduler, and in-app channels implementation. Durable persistence belongs in `@vendoai/store` or a host-provided seam implementation.

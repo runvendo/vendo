@@ -36,10 +36,9 @@ const VALID_IDS = new Set(CATALOG.map((c) => c.id));
 const connected = new Set<string>();
 
 /**
- * Composio connected-account id → owner, satisfying `vendo/server`'s widened
- * `ConnectionsStore` (Task 13). The demo runs with `automations: false`, so
- * webhook routing never actually reads this — it exists to satisfy the
- * handler's connections seam, not because the demo fires Composio triggers.
+ * Composio connected-account id → owner, satisfying `vendo/server`'s
+ * `ConnectionsStore` seam. The demo does not consume webhooks, but the
+ * connection flow records ownership when Composio returns an account id.
  */
 const byAccount = new Map<string, { toolkit: string; principal: Principal }>();
 const DEMO_SCOPE: Principal = { tenantId: "vendo-embedded", subject: DEMO_USER_ID };

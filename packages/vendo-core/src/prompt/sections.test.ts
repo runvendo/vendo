@@ -8,7 +8,6 @@ import {
   guardrailSection,
   hostIdentitySection,
   proactivitySection,
-  refreshableViewsSection,
   registerSection,
   showVsSaySection,
   styleSection,
@@ -22,8 +21,6 @@ describe("prompt sections", () => {
       genuiFormatSection(),
       showVsSaySection("chat"),
       showVsSaySection("voice"),
-      refreshableViewsSection("chat"),
-      refreshableViewsSection("voice"),
       connectSection("chat", { toolkits: ["gmail", "slack"] }),
       connectSection("voice"),
       consentSection("chat"),
@@ -69,15 +66,8 @@ describe("prompt sections", () => {
     expect(s).not.toMatch(/anything else\?" is fine/);
   });
 
-  it("voice refreshable views teach the source declaration", () => {
-    const s = refreshableViewsSection("voice");
-    expect(s).toContain("source: { tool, input, rowsPath }");
-    expect(s).toMatch(/raw field names/);
-  });
-
-  it("chat genui + refreshable sections keep the shipped protocol text anchors", () => {
+  it("chat genui keeps the shipped protocol text anchors", () => {
     expect(genuiFormatSection()).toContain("formatVersion: 'vendo-genui/v1'");
-    expect(refreshableViewsSection("chat")).toContain("queries: [{ path:");
   });
 
   it("connect(chat) lists the provided toolkits; connect(voice) is the tools-present rule", () => {

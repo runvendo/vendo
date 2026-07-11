@@ -32,7 +32,7 @@ describe("demoPrincipalAllowed", () => {
     delete process.env.VENDO_DEMO_PUBLIC;
     (process.env as Record<string, string | undefined>).NODE_ENV = "production";
     // The attack the dual review found: client-controlled Host header.
-    expect(demoPrincipalAllowed(req("localhost", "https://deployed.example.com/api/vendo/tick"))).toBe(false);
+    expect(demoPrincipalAllowed(req("localhost", "https://deployed.example.com/api/vendo/chat"))).toBe(false);
   });
 
   it("allows anything with the explicit operator opt-in", () => {

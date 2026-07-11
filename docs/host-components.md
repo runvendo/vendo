@@ -13,7 +13,6 @@ export const sparklineDescriptor = hostComponent(
   "MapleSparkline",                       // PascalCase; primitives' names are rejected
   "Tiny inline trend line. Use next to a stat. `data` is chronological.", // the agent READS this
   z.object({ data: z.array(z.number()).min(2) }),  // JSON-safe props only
-  { version: "1" },                       // optional; bump on BREAKING prop/behavior changes
 );
 
 export const myHostComponents = toHostRegistry([sparklineDescriptor]);
@@ -67,12 +66,7 @@ Pass `[...prewiredComponents, ...myHostComponents]` wherever the registry goes:
 
 - the `VendoProvider`/`VendoStage` `components` prop (validates generated host-node props);
 - the engine's `components` config (`createVendoAgent({ components })`) so `render_view` rejects unknown names and schema-invalid host props server-side, where the model can repair them;
-- the `VendoShellProvider` `components` prop so reopened saved views can detect registry drift (below);
 - your agent's system prompt: list them under a HOST COMPONENTS section with `componentPromptCatalog(myHostComponents)` from `@vendoai/components/descriptors` so the model prefers them and uses exact prop names.
-
-## Versioning & saved vendos
-
-Saved vendos outlive your registry. When a view is saved, the host stamps `name → version` for every host component it uses (`stampHostComponents(node, registry)` from `@vendoai/shell`); the `version` comes from the descriptor's `{ version }` option (unset means `"1"`). On reopen, `useReopenVendo` diffs the stamp against the live registry and returns `drift: { missing, changed }` — renamed/removed components land in `missing`, version-bumped ones in `changed` — so the host can show a "components changed since this was saved" note (`.fl-drift-note`) instead of degrading silently. Bump `version` on breaking prop/behavior changes; pre-versioning records never warn retroactively.
 
 ## Error story
 
@@ -80,7 +74,6 @@ Saved vendos outlive your registry. When a view is saved, the host stamps `name 
 - Schema-invalid props from the model → rejected server-side in `render_view` as a correctable tool error (when the engine gets `components`), then re-validated at genui resolution (contained placeholder) and in the adapter (inline fallback).
 - Unknown component name → a correctable `render_view` error server-side; a visible "Unknown component" notice per node if one still reaches the view.
 - Adapter/render throw → per-node error boundary; siblings render.
-- Registry drift on a saved view → quiet per-view note naming the changed components (see Versioning).
 
 ## Constraints
 

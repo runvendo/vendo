@@ -6,14 +6,13 @@
  *   vendo init [dir]     set up Vendo in a Next.js app (run once)
  *   vendo refresh [dir]  catch up an existing install; offers only what's new
  *   vendo doctor [dir]   check the install (read-only)
- * plus vendo sync (automatic in your build) and vendo publish (ENG-198 stub).
+ * plus vendo sync (automatic in your build).
  */
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runInit } from "./init.js";
 import { runRefresh } from "./refresh.js";
 import { runDoctor } from "./doctor.js";
-import { runPublish } from "./publish.js";
 import { runSync } from "./sync/index.js";
 import { runTelemetryCmd } from "./telemetry-cmd.js";
 import { CLI_VERSION } from "./version.js";
@@ -26,7 +25,7 @@ Setup (you run these):
   init [dir]      Set up Vendo in a Next.js app: extract theme/tools/components into
                   .vendo/ and wire the app (route handler, provider, sandbox assets,
                   prebuild sync). Interactive — prompts for a provider key and lets you
-                  pick components to wrap and widgets to make remixable. Safe to re-run:
+                  pick components to wrap. Safe to re-run:
                   fills missing setup, never overwrites, and keeps an existing
                   component catalog stable.
   refresh [dir]   Catch up an existing install: fill gaps and offer only what's new,
@@ -35,20 +34,17 @@ Setup (you run these):
                   scheduler, telemetry — and report problems with fixes. Read-only.
 
 Runs automatically in your build:
-  sync [dir]      Capture wrapped-component source + rebuild the sandbox environment.
+  sync [dir]      Refresh generated build artifacts.
                   init wires this into your prebuild script; you rarely run it by hand.
-
-Coming with the registry:
-  publish [dir]   Validate and (soon) publish the manifest — stub until ENG-198.
 
 Management:
   telemetry <status|enable|disable>   View or change anonymous usage telemetry (TELEMETRY.md)
 
 Options:
-  --skip-llm   Skip LLM-assisted steps (route scan, component/remix discovery)
+  --skip-llm   Skip LLM-assisted steps (route scan, component discovery)
   --force      Overwrite existing .vendo/ files (init/refresh; warns before overwriting)
   --yes        Non-interactive: no prompts; resolve keys from env / .env.local only;
-               skip the component/remix pickers (source edits stay human-gated)
+               skip the component picker (source edits stay human-gated)
   --local      Pack local vendo + @vendoai packages from a Vendo monorepo into ./vendor
   --version    Print the CLI version
 `;
@@ -109,8 +105,6 @@ export async function main(argv: string[]): Promise<number> {
       return runDoctor({ targetDir: dir });
     case "sync":
       return runSync({ targetDir: dir });
-    case "publish":
-      return runPublish({ targetDir: dir });
     case "telemetry":
       return runTelemetryCmd(rest.find((a) => !a.startsWith("--")), { log: (m) => console.log(m) });
     case "--version":
