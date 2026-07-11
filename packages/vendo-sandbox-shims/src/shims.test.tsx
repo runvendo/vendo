@@ -18,7 +18,6 @@ import { NAVIGATE_ACTION, dispatch, navigate } from "./dispatch";
 afterEach(() => {
   cleanup();
   delete (globalThis as Record<string, unknown>)["__vendoDispatch"];
-  delete (globalThis as Record<string, unknown>)["__vendoAnchorData"];
   delete (globalThis as Record<string, unknown>)["__vendoRouteData"];
 });
 
@@ -221,18 +220,9 @@ describe("next/navigation route channel (window.__vendoRouteData)", () => {
 });
 
 describe("useSWR shim", () => {
-  it("resolves from injected anchor data and NEVER calls the fetcher", () => {
-    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/deadlines": [{ id: "a" }] };
+  it("resolves undefined without data and NEVER calls the fetcher", () => {
     const fetcher = vi.fn();
     const result = useSWR("/api/deadlines", fetcher);
-    expect(result.data).toEqual([{ id: "a" }]);
-    expect(result.isLoading).toBe(false);
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
-  it("is loading (undefined) when the key has no injected data, fetcher still never runs", () => {
-    const fetcher = vi.fn();
-    const result = useSWR("/api/missing", fetcher);
     expect(result.data).toBeUndefined();
     expect(result.isLoading).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
@@ -250,11 +240,10 @@ describe("useSWR shim", () => {
     expect(result.isLoading).toBe(false);
   });
 
-  it("a function key is called to derive the key and resolves its data", () => {
-    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/live": [1, 2] };
+  it("a function key is called to derive the key and resolves undefined without data", () => {
     const result = useSWR(() => "/api/live", vi.fn());
-    expect(result.data).toEqual([1, 2]);
-    expect(result.isLoading).toBe(false);
+    expect(result.data).toBeUndefined();
+    expect(result.isLoading).toBe(true);
   });
 
   it("a function key that returns null is skipped (not loading)", () => {
@@ -309,33 +298,8 @@ describe("swr extra exports", () => {
     await expect(config.mutate("/api/x")).resolves.toBeUndefined();
   });
 
-  it("global mutate writes into the anchor-data cache and resolves", async () => {
-    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = {};
-    await expect(mutate("/api/deadlines", [{ id: "z" }])).resolves.toEqual([{ id: "z" }]);
-    expect(useSWR("/api/deadlines").data).toEqual([{ id: "z" }]);
-  });
-
   it("global mutate with no data is a safe resolved no-op", async () => {
     await expect(mutate("/api/x")).resolves.toBeUndefined();
-  });
-
-  it("global mutate with a key only (revalidate form) resolves the current cached value", async () => {
-    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/x": [1] };
-    await expect(mutate("/api/x")).resolves.toEqual([1]);
-  });
-
-  it("global mutate with a predicate matches cache entries and resolves their values", async () => {
-    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/a": 1, "/api/b": 2, "/other": 3 };
-    const res = (await mutate((key: string) => key.startsWith("/api/"))) as unknown[];
-    expect(res).toEqual(expect.arrayContaining([1, 2]));
-    expect(res).not.toContain(3);
-  });
-
-  it("global mutate with a predicate + data writes matching entries only", async () => {
-    (globalThis as Record<string, unknown>)["__vendoAnchorData"] = { "/api/a": 1, "/api/b": 2 };
-    await mutate((key: string) => key === "/api/a", 99);
-    expect(useSWR("/api/a").data).toBe(99);
-    expect(useSWR("/api/b").data).toBe(2);
   });
 
   it("SWRConfig renders its children (passthrough provider)", () => {

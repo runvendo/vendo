@@ -337,11 +337,8 @@ export const STAGE_RUNTIME_SRC = String.raw`
   // Full render: load bundle, create or reuse root, inject theme.
   async function render(params) {
     currentParams = params;
-    // Anchor data feed for the swr shim (set BEFORE any generated module
-    // evaluates or renders — useSWR reads it synchronously).
-    window.__vendoAnchorData = params.anchorData || {};
     // Read-only route channel for the next/navigation shims (usePathname /
-    // useSearchParams / useParams). Set alongside anchorData, before any render.
+    // useSearchParams / useParams). Set before any render.
     window.__vendoRouteData = params.route || {};
     injectTheme(params.theme || {});
     cachedHost = await loadBundle(params.bundleSource);
@@ -433,12 +430,6 @@ export const STAGE_RUNTIME_SRC = String.raw`
       // Apply state patch.
       if (p.state) {
         currentParams = Object.assign({}, currentParams, { state: p.state });
-      }
-
-      // Refresh the swr shim's anchor data (live context re-patch).
-      if (p.anchorData) {
-        currentParams = Object.assign({}, currentParams, { anchorData: p.anchorData });
-        window.__vendoAnchorData = p.anchorData;
       }
 
       // Refresh the read-only route channel (live re-patch, same lifecycle).

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GlassSkeleton, GlassVeil } from "./GlassSkeleton";
+import { GlassSkeleton } from "./GlassSkeleton";
 
 describe("GlassSkeleton", () => {
   it("renders the glass panel with a pulse-dot status line and the approved grid", () => {
@@ -23,14 +23,5 @@ describe("GlassSkeleton", () => {
   it("takes a custom status label", () => {
     render(<GlassSkeleton label="Refreshing your view…" />);
     expect(screen.getByText("Refreshing your view…")).toBeTruthy();
-  });
-});
-
-describe("GlassVeil", () => {
-  it("renders a decorative shimmer overlay that never blocks the view under it", () => {
-    const { container } = render(<GlassVeil />);
-    const veil = container.querySelector(".fl-glass-veil");
-    expect(veil).toBeTruthy();
-    expect(veil?.getAttribute("aria-hidden")).toBe("true");
   });
 });

@@ -19,16 +19,11 @@ const PKG_ROOT = join(__dirname, "..");
 
 /** Every runtime dependency, consciously reviewed. Keep alphabetical. */
 const ALLOWED_DEPENDENCIES = [
-  "@ai-sdk/anthropic",
   "@ai-sdk/mcp",
   "@ai-sdk/provider",
   "@composio/core",
   "@composio/vercel",
   "@vendoai/core",
-  // Audited pure-JS hashing (remix envelope seal + baseline hashes). Chosen
-  // over node:crypto because the runtime ships to browsers too — node
-  // builtins break browser bundles (example-basic, reviewed 2026-07-04).
-  "@noble/hashes",
   "ai",
   "croner",
   "jsonata",

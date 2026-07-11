@@ -1,4 +1,3 @@
-import type { ActionRequest, ActionResult } from "@vendoai/core";
 export * from "./protocol.js";
 export * from "./bridge.js";
 export { STAGE_RUNTIME_SRC } from "./runtime.js";
@@ -13,15 +12,3 @@ export type StateProjection = Record<string, unknown>;
 
 /** A resolved host/prewired component implementation (framework type kept opaque here). */
 export type ComponentImpl = unknown;
-
-/**
- * The stage capabilities F3a provides and F3b's renderer consumes. Frozen from the
- * F3a spike (spec §7). `subscribe` is provisional — not exercised by the spike.
- */
-export interface StageCapabilities {
-  resolveComponent(name: string, source: "prewired" | "host"): ComponentImpl | undefined;
-  theme: ThemeTokens;
-  getState(): Readonly<StateProjection>;
-  subscribe(cb: () => void): () => void;
-  dispatch(action: ActionRequest): Promise<ActionResult>;
-}

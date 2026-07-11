@@ -34,23 +34,7 @@ const CSP_BASE = [
  * Without `reactRuntimeSrc` the original self-contained bundle path is used
  * unchanged (the bundle ships its own React and sets window.__React).
  */
-/**
- * Furnished sandbox environment (remix-fidelity epic). All sources are STRINGS
- * the host fetched on its own origin — they are blobbed here so the iframe's
- * CSP (`connect-src 'none'`, nonce/blob scripts only) never changes. Static
- * `/vendo/env/*` URLs would be blocked inside the iframe by design.
- */
-export interface StageEnv {
-  /** Import specifier → module SOURCE (e.g. "lucide-react" → vendored ESM). */
-  modules?: Record<string, string>;
-  /** Host stylesheet, already sanitized to zero fetchable URLs by vendo sync. */
-  css?: string;
-  /** @tailwindcss/browser runtime source (blobbed + loaded so arbitrary host
-   *  utility classes compile in-sandbox). */
-  tailwindRuntimeSrc?: string;
-}
-
-export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
+export function buildSrcdoc(reactRuntimeSrc?: string): string {
   const nonce = crypto.randomUUID().replace(/-/g, "");
   // No 'strict-dynamic': it lets trusted scripts dynamically load ANY script
   // URL (allowlists are ignored), which is a data-exfil channel once generated
@@ -67,36 +51,17 @@ export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
     // Embed the shim source as a JSON string literal safe for inline HTML.
     // Escape < so "</script>" cannot appear inside the <script> body.
     const safeJson = safeInline(reactRuntimeSrc);
-    // Env modules: each vendored source becomes its own blob, added to the
-    // import map alongside React. Blob-only — the CSP is untouched.
-    const envModuleEntries = Object.entries(env?.modules ?? {});
-    const envMapSetup = envModuleEntries
-      .map(
-        ([specifier], i) =>
-          `var _e${i}=URL.createObjectURL(new Blob([${safeInline(env!.modules![specifier]!)}],{type:"text/javascript"}));`,
-      )
-      .join("");
-    // Import specifier KEYS are attacker-influenceable strings — harden them
-    // with the SAME `<`-escaping as module bodies (a specifier containing
-    // `</script>` would otherwise break the inline script parse), and assign
-    // into a null-proto object so keys like "__proto__" become real entries
-    // (Codex review). Values are blob-URL variable refs, not strings.
-    const envMapAssign = envModuleEntries
-      .map(([specifier], i) => `_imports[${safeInline(specifier)}]=_e${i};`)
-      .join("");
     reactSetupScript =
       `<script nonce="${nonce}">` +
       `(function(){` +
       `var _s=${safeJson};` +
       `var _u=URL.createObjectURL(new Blob([_s],{type:"text/javascript"}));` +
       `window.__VENDO_REACT_URL=_u;` +
-      envMapSetup +
       `var _imports=Object.create(null);` +
       `_imports["react"]=_u;` +
       `_imports["react-dom"]=_u;` +
       `_imports["react-dom/client"]=_u;` +
       `_imports["react/jsx-runtime"]=_u;` +
-      envMapAssign +
       `var _im=document.createElement('script');` +
       `_im.type='importmap';` +
       `_im.nonce=${safeInline(nonce)};` +
@@ -107,20 +72,6 @@ export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
       `<\/script>`;
   }
 
-  // Host CSS (already sanitized to zero fetchable URLs) + optional Tailwind JIT.
-  // host.css first so its declarations lose to JIT-generated utilities only
-  // where the JIT actually produces them.
-  let envStyleScript = "";
-  if (env?.css) {
-    envStyleScript += `<style data-vendo-host-css>${env.css.replace(/<\/style/gi, "<\\/style")}</style>`;
-  }
-  if (env?.tailwindRuntimeSrc) {
-    envStyleScript +=
-      `<script type="module" nonce="${nonce}">` +
-      `var _t=URL.createObjectURL(new Blob([${safeInline(env.tailwindRuntimeSrc)}],{type:"text/javascript"}));` +
-      `import(_t).finally(function(){URL.revokeObjectURL(_t);});` +
-      `<\/script>`;
-  }
   // Baseline document styles: consume the injected --vendo-* brand vars so
   // bare generated markup starts from the host brand (font, fg color) instead
   // of the UA serif default with an 8px body margin. Fallbacks apply when no
@@ -142,7 +93,6 @@ export function buildSrcdoc(reactRuntimeSrc?: string, env?: StageEnv): string {
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<title>Vendo Stage</title>` +
     baselineStyle +
-    envStyleScript +
     `</head><body>${reactSetupScript}` +
     `<script type="module" nonce="${nonce}">${STAGE_RUNTIME_SRC}<\/script>` +
     `</body></html>`
@@ -175,7 +125,7 @@ const DEFAULT_MAX_STAGE_HEIGHT = 8192;
 
 export function createStage(
   slot: HTMLElement,
-  opts?: { reactSource?: string; maxStageHeight?: number; env?: StageEnv },
+  opts?: { reactSource?: string; maxStageHeight?: number },
 ): {
   iframe: HTMLIFrameElement;
   endpoints: StageEndpoints;
@@ -187,7 +137,7 @@ export function createStage(
   iframe.id = "vendo-stage";
   iframe.title = "Vendo stage";
   iframe.setAttribute("sandbox", "allow-scripts"); // no allow-same-origin → opaque origin
-  iframe.srcdoc = buildSrcdoc(opts?.reactSource, opts?.env);
+  iframe.srcdoc = buildSrcdoc(opts?.reactSource);
   iframe.style.cssText = "width:100%;min-height:1px;border:0;";
   slot.appendChild(iframe);
 
@@ -293,12 +243,8 @@ export interface StageInitPayload {
   tree: UINode;
   /** Tier 2.5: name → ESM component source, loaded as blob modules in-sandbox. */
   generatedComponents?: Record<string, string>;
-  /** The anchor's live data object (payload `data.anchor`): injected as
-   *  `window.__vendoAnchorData` so the swr shim resolves keys from it
-   *  (remix fast-edits — the shim shipped in PR #35 but nothing fed it). */
-  anchorData?: Record<string, unknown>;
   /** The host's real route, injected read-only as `window.__vendoRouteData` for
-   *  the next/navigation shims (parallel to `anchorData`). */
+   *  the next/navigation shims. */
   route?: StageRoute;
   /**
    * Opaque theme blob for the in-sandbox component library (OpenUI). Forwarded
@@ -313,8 +259,6 @@ export interface StageInitPayload {
 export interface StageUpdatePayload {
   theme?: Record<string, string>;
   state?: Record<string, unknown>;
-  /** Refreshed anchor data (live context re-patch) for the swr shim. */
-  anchorData?: Record<string, unknown>;
   /** Refreshed route (live re-patch) for the next/navigation shims. */
   route?: StageRoute;
   /**
@@ -487,10 +431,9 @@ export function connectStage(
     },
 
     update(update) {
-      const payload: { theme?: Record<string, string>; state?: Record<string, unknown>; anchorData?: Record<string, unknown>; route?: StageRoute; replace?: { nodeId: string; node: UINode } } = {};
+      const payload: { theme?: Record<string, string>; state?: Record<string, unknown>; route?: StageRoute; replace?: { nodeId: string; node: UINode } } = {};
       if (update.theme) payload.theme = update.theme;
       if (update.state) payload.state = update.state;
-      if (update.anchorData) payload.anchorData = update.anchorData;
       if (update.route) payload.route = update.route;
       if (update.replace) {
         const { nodeId, node } = update.replace;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isComponentNode, type ComponentNode } from "../ui.js";
+import type { ComponentNode } from "../ui.js";
 import { VENDO_GENUI_VERSION, type GeneratedPayload, type GenNode } from "./format.js";
 import { collectBindings, resolveGeneratedPayload } from "./resolve.js";
 
@@ -10,7 +10,7 @@ const payload = (
 ): GeneratedPayload => ({ formatVersion: VENDO_GENUI_VERSION, root, nodes, data });
 
 const asComponent = (node: ReturnType<typeof resolveGeneratedPayload>): ComponentNode => {
-  if (!isComponentNode(node)) throw new Error("expected a ComponentNode");
+  if (node.kind !== "component") throw new Error("expected a ComponentNode");
   return node;
 };
 
@@ -213,7 +213,7 @@ describe("resolveGeneratedPayload — depth bound (DoS)", () => {
     }).not.toThrow();
     // It must RETURN quickly (bounded work), not hang/OOM.
     expect(Date.now() - start).toBeLessThan(1000);
-    expect(isComponentNode(tree)).toBe(true);
+    expect(tree.kind).toBe("component");
   });
 });
 

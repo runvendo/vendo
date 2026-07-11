@@ -17,5 +17,4 @@ export interface GeneratedNode {
 
 export type UINode = ComponentNode | GeneratedNode;
 
-export const isComponentNode = (n: UINode): n is ComponentNode => n.kind === "component";
 export const isGeneratedNode = (n: UINode): n is GeneratedNode => n.kind === "generated";

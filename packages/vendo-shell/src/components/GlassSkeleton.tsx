@@ -39,11 +39,3 @@ export function GlassSkeleton({ label = "Building your view…" }: GlassSkeleton
     </div>
   );
 }
-
-/**
- * An absolutely-positioned, pointer-transparent shimmer for repaint moments.
- * The parent container must be positioned (`position: relative`).
- */
-export function GlassVeil() {
-  return <div className="fl-glass-veil fl-glass-shimmer" aria-hidden="true" />;
-}

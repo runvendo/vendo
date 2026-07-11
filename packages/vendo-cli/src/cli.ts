@@ -6,14 +6,13 @@
  *   vendo init [dir]     set up Vendo in a Next.js app (run once)
  *   vendo refresh [dir]  catch up an existing install; offers only what's new
  *   vendo doctor [dir]   check the install (read-only)
- * plus vendo sync (automatic in your build) and vendo publish (ENG-198 stub).
+ * plus vendo sync (automatic in your build).
  */
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runInit } from "./init.js";
 import { runRefresh } from "./refresh.js";
 import { runDoctor } from "./doctor.js";
-import { runPublish } from "./publish.js";
 import { runSync } from "./sync/index.js";
 import { runTelemetryCmd } from "./telemetry-cmd.js";
 import { CLI_VERSION } from "./version.js";
@@ -37,9 +36,6 @@ Setup (you run these):
 Runs automatically in your build:
   sync [dir]      Refresh generated build artifacts.
                   init wires this into your prebuild script; you rarely run it by hand.
-
-Coming with the registry:
-  publish [dir]   Validate and (soon) publish the manifest — stub until ENG-198.
 
 Management:
   telemetry <status|enable|disable>   View or change anonymous usage telemetry (TELEMETRY.md)
@@ -109,8 +105,6 @@ export async function main(argv: string[]): Promise<number> {
       return runDoctor({ targetDir: dir });
     case "sync":
       return runSync({ targetDir: dir });
-    case "publish":
-      return runPublish({ targetDir: dir });
     case "telemetry":
       return runTelemetryCmd(rest.find((a) => !a.startsWith("--")), { log: (m) => console.log(m) });
     case "--version":

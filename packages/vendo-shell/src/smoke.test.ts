@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { SHELL_PACKAGE } from "./index";
+import { VendoPage } from "./index";
 
 describe("scaffold", () => {
-  it("exports the package marker", () => {
-    expect(SHELL_PACKAGE).toBe("@vendoai/shell");
+  it("exports the page surface", () => {
+    expect(typeof VendoPage).toBe("function");
   });
 });

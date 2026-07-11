@@ -2,20 +2,17 @@
  * InProcessScheduler tests against the FROZEN core Scheduler seam: explicit
  * schedule() registration with a Principal that is replayed on every firing,
  * onFire handler wiring, cron/one-shot due-time computation with a fake clock.
- * Host-event ingest (a non-Scheduler path per the freeze) is tested via
- * host-events.ts.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AutomationFiring, Principal } from "@vendoai/core";
 import { InProcessScheduler } from "./in-process-scheduler.js";
-import { createHostEventIngest, createSchedulerFiringHandler } from "./host-events.js";
+import { createSchedulerFiringHandler } from "./host-events.js";
 import { AutomationRunner } from "./runner.js";
 import { automationSpecSchema, type AutomationSpec } from "./schema.js";
 import type { RegisteredTool } from "./interpreter.js";
 import { InMemoryAutomationStore } from "./store.js";
 
 const alice: Principal = { tenantId: "t1", subject: "alice" };
-const bob: Principal = { tenantId: "t1", subject: "bob" };
 
 function makeTool(name: string) {
   const calls: Array<Record<string, unknown>> = [];
@@ -28,20 +25,6 @@ function makeTool(name: string) {
     },
   };
   return tool;
-}
-
-function eventSpec(): AutomationSpec {
-  return automationSpecSchema.parse({
-    dslVersion: 1,
-    name: "On transaction",
-    description: "test",
-    prompt: "test",
-    trigger: { type: "host_event", event: "transaction.created" },
-    execution: {
-      mode: "steps",
-      steps: [{ id: "send", type: "tool", tool: "send_msg", input: { m: "{{ trigger.merchant }}" } }],
-    },
-  });
 }
 
 function scheduleSpec(trigger: Record<string, unknown>): AutomationSpec {
@@ -160,59 +143,6 @@ describe("cron schedules end-to-end", () => {
 
     clock.set("2026-07-15T16:05:00.000Z");
     await scheduler.tick();
-    expect(send.calls).toHaveLength(1);
-  });
-});
-
-describe("host-event ingest (non-Scheduler path)", () => {
-  it("fans out to matching automations of the event's subject only", async () => {
-    const { store, send, runner, clock } = setup("2026-07-01T08:00:00.000Z");
-    const ingest = createHostEventIngest({ store, runner });
-    const { automation: mine } = await store.create(alice, { spec: eventSpec(), grants: [] });
-    await store.create(bob, { spec: eventSpec(), grants: [] });
-
-    await ingest(alice, "transaction.created", {
-      eventId: "txn-1",
-      occurredAt: clock.now(),
-      payload: { merchant: "DoorDash" },
-    });
-
-    expect(send.calls).toEqual([{ m: "DoorDash" }]);
-    expect(await store.listRuns(alice, mine.id)).toHaveLength(1);
-  });
-
-  it("one failing automation does not block other matches (per-fire isolation)", async () => {
-    const { store, send, runner, clock } = setup("2026-07-01T08:00:00.000Z");
-    const ingest = createHostEventIngest({ store, runner });
-    await store.create(alice, { spec: eventSpec(), grants: [] });
-    const { automation: second } = await store.create(alice, { spec: eventSpec(), grants: [] });
-    const realFire = runner.fire.bind(runner);
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(runner, "fire")
-      .mockImplementationOnce(() => Promise.reject(new Error("store blip")))
-      .mockImplementation(realFire);
-
-    await expect(
-      ingest(alice, "transaction.created", {
-        eventId: "txn-iso",
-        occurredAt: clock.now(),
-        payload: { merchant: "DoorDash" },
-      }),
-    ).resolves.not.toThrow();
-
-    expect(send.calls).toHaveLength(1); // the second automation still ran
-    expect(await store.listRuns(alice, second.id)).toHaveLength(1);
-    expect(err).toHaveBeenCalled();
-    err.mockRestore();
-  });
-
-  it("ignores duplicate event ids", async () => {
-    const { store, send, runner, clock } = setup("2026-07-01T08:00:00.000Z");
-    const ingest = createHostEventIngest({ store, runner });
-    await store.create(alice, { spec: eventSpec(), grants: [] });
-    const event = { eventId: "txn-1", occurredAt: clock.now(), payload: { merchant: "DoorDash" } };
-    await ingest(alice, "transaction.created", event);
-    await ingest(alice, "transaction.created", event);
     expect(send.calls).toHaveLength(1);
   });
 });

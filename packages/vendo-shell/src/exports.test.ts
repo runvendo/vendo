@@ -9,7 +9,7 @@ describe("public API", () => {
       "MessageList", "Composer", "ApprovalCard", "UINodeView", "Landing",
       "SuggestionChips", "ConnectDock", "ConnectTray", "IntegrationsPicker",
       "ConnectCard", "StreamingText", "ToolCall", "VoiceButton",
-      "themeToStyle", "createLocalIntegrations", "VendoRemix",
+      "themeToStyle", "createLocalIntegrations",
       "VoiceStage", "VoiceBlob", "useVoiceSession", "createScriptedVoiceDriver",
       "voiceSessionMessages", "reduceVoice",
     ];

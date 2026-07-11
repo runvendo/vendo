@@ -4,8 +4,6 @@ export interface RpcError { code: ErrorCode; message: string }
 
 export interface RpcRequest { vendo: true; id: string; method: string; params?: unknown }
 export interface RpcResponse { vendo: true; id: string; result?: unknown; error?: RpcError }
-export type RpcMessage = RpcRequest | RpcResponse;
-
 /** A postMessage-shaped endpoint, so the bridge is testable without a real window. */
 export interface MessageEndpoint {
   postMessage(message: unknown): void;

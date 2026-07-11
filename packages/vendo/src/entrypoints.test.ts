@@ -15,7 +15,6 @@ describe("vendoai/react", () => {
     expect(mod).toHaveProperty("VendoRoot");
     expect(mod).toHaveProperty("useVendoChat");
     expect(mod).toHaveProperty("ApprovalCard");
-    expect(mod).toHaveProperty("VendoRemix");
     expect(mod).not.toHaveProperty("createRunQuery");
     expect(mod).not.toHaveProperty("createLocalStore");
   });

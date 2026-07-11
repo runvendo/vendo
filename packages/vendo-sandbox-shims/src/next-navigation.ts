@@ -10,7 +10,7 @@
 import { navigate } from "./dispatch.js";
 
 /** Read-only route channel the host injects (`window.__vendoRouteData`, set by
- *  the stage runtime parallel to `__vendoAnchorData`). `search` is a raw query
+ *  the stage runtime). `search` is a raw query
  *  string like "?q=1"; `params` is Next's dynamic-route params object. */
 interface RouteDataWindow {
   __vendoRouteData?: { pathname?: string; search?: string; params?: Record<string, string | string[]> };

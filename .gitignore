@@ -10,7 +10,6 @@ dist
 *.log
 
 # misc
-.superpowers/
 corpus/.repos/
 
 # browser-verification artifacts
@@ -18,13 +17,6 @@ corpus/.repos/
 *.png
 packages/vendo-stage/tests/browser/public/components-sandbox.js
 apps/demo-bank/vendo-sandbox/dist/
-
-# Verification screenshots referenced by PR/docs are tracked despite *.png above.
-!docs/superpowers/specs/assets/**/*.png
-!docs/verification/**/*.png
-
-# README media in assets/ is shipped, not a verification artifact.
-!assets/*.png
 
 # Vendo demo runtime state (PGlite) — created by pnpm demo, never committed.
 apps/*/.vendo/data/

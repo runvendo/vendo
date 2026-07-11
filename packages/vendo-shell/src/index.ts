@@ -1,7 +1,5 @@
 import "./styles.css";
 
-export const SHELL_PACKAGE = "@vendoai/shell";
-
 export * from "./theme";
 export * from "./context";
 export * from "./use-vendo-thread";
@@ -48,7 +46,6 @@ export * from "./components/BrandIcon";
 export * from "./components/WaitingList";
 export * from "./components/TrustScreen";
 
-export * from "./remix/VendoRemix";
 export * from "./toasts/VendoToasts";
 export * from "./toasts/toast-queue";
 

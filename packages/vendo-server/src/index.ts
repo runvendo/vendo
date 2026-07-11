@@ -12,8 +12,6 @@
  * this from a client component.
  */
 
-export const VENDO_SERVER_PACKAGE = "@vendoai/server";
-
 export { handleChat, type ChatDeps } from "./chat.js";
 export { handleAction, createApprovalStore, type ActionDeps, type ApprovalStore } from "./action.js";
 export {
