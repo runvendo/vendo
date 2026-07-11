@@ -14,7 +14,9 @@ import { VendoOverlay } from "@vendoai/shell";
 import { VendoRoot } from "./VendoRoot";
 
 const SUGGESTIONS = [
-  "Which clients are still missing documents?",
+  "Show Rivera Landscaping's missing documents as a checklist",
+  "Compare document progress for every client in a table",
+  "Send Marisol Rivera a reminder about the missing W-2, 1099-NEC, and receipts",
 ];
 
 async function resetDemo(): Promise<void> {

@@ -70,8 +70,7 @@ describe("chat prompt migration diff", () => {
       .filter((line) => !INTENDED_REMOVALS.some((re) => re.test(line)));
     expect(lost, `fixture lines lost without an approved removal:\n${lost.join("\n")}`).toEqual([]);
 
-    // The approved additions (spec sections), and guardrails after ALL host
-    // content (the automations block is Maple's last extra).
+    // The approved additions (spec sections), with guardrails last.
     for (const anchor of [
       "TALKING ABOUT WHAT YOU CAN DO",
       "APPROVALS:",
@@ -82,7 +81,7 @@ describe("chat prompt migration diff", () => {
       expect(current).toContain(anchor);
     }
     expect(current.indexOf("NON-NEGOTIABLES")).toBeGreaterThan(
-      current.indexOf("SLACK_SEND_MESSAGE"),
+      current.indexOf("SUGGESTIONS:"),
     );
   });
 });

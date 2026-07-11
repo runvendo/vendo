@@ -21,7 +21,7 @@ function routeFileFor(path: string): string {
 
 /** Every route.ts under src/app/api, as an OpenAPI-style path string.
  *  `/api/vendo/**` is excluded on purpose: those are Vendo's OWN plumbing
- *  (chat stream, stage actions, scheduler tick), not part of the host API
+ *  (chat stream, stage actions, consent, and trust), not part of the host API
  *  contract the agent's tools are derived from — documenting them would hand
  *  the agent its own transport as tools (the ENG-197 fidelity report flags
  *  exactly this failure mode). */

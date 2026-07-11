@@ -14,8 +14,9 @@ import { mapleRealtimeVoiceDriver } from "./voice-realtime";
 import { resetDemo } from "./reset";
 
 const SUGGESTIONS = [
-  "What did I spend money on when I should've been asleep?",
+  "Show my late-night spending as a chart",
   "What was that $87 DoorDash charge?",
+  "Send Jordan Avery $87 for dinner",
 ];
 
 export function VendoLayer() {

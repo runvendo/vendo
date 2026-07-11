@@ -53,8 +53,8 @@ const lateNightView: UINode = {
   },
 };
 
-const refundView: UINode = {
-  id: "voice-refund-receipt",
+const transferView: UINode = {
+  id: "voice-transfer-receipt",
   kind: "generated",
   payload: {
     formatVersion: "vendo-genui/v1",
@@ -66,12 +66,12 @@ const refundView: UINode = {
         component: "KeyValue",
         source: "prewired",
         props: {
-          title: "Transfer back to checking",
+          title: "Transfer to Jordan Avery",
           rows: [
-            { label: "From", value: "Spending buffer" },
-            { label: "To", value: "Checking ···4021" },
+            { label: "From", value: "Maple Checking ···4471" },
+            { label: "To", value: "Jordan Avery" },
             { label: "Amount", value: "$87.00", emphasis: true },
-            { label: "When", value: "Instant" },
+            { label: "Memo", value: "Dinner" },
           ],
         },
       },
@@ -108,7 +108,7 @@ export const mapleVoiceDriver: VoiceDriver = createScriptedVoiceDriver([
   { event: { type: "caption", id: "a1b", role: "assistant", text: "and it looks like most of it lands after mid", final: true, interrupted: true } },
   { event: { type: "status", status: "listening" } },
   { wait: 350 },
-  { say: { id: "u2", role: "user", text: "Okay okay — put me on blast in Slack next time I do that.", wordMs: 130 } },
+  { say: { id: "u2", role: "user", text: "Okay okay — reorder that DoorDash meal for thirty-one eighty-four.", wordMs: 130 } },
   { event: { type: "status", status: "thinking" } },
   { wait: 800 },
 
@@ -117,8 +117,13 @@ export const mapleVoiceDriver: VoiceDriver = createScriptedVoiceDriver([
     event: {
       type: "approval",
       id: "ap1",
-      toolName: "SLACK_SEND_MESSAGE",
-      input: { channel: "#accountability", message: "🌮 Yousef ordered delivery after midnight again." },
+      toolName: "createOrder",
+      input: {
+        merchant: "DoorDash",
+        amountCents: 3184,
+        descriptor: "DOORDASH*ORDER 8743 CA",
+        items: "Dinner order",
+      },
       tier: "act",
     },
   },
@@ -127,7 +132,7 @@ export const mapleVoiceDriver: VoiceDriver = createScriptedVoiceDriver([
     say: {
       id: "a2",
       role: "assistant",
-      text: "I'll post to #accountability whenever a late-night order lands — should I set that up?",
+      text: "A DoorDash order for thirty-one dollars and eighty-four cents — should I place it?",
       wordMs: 140,
     },
   },
@@ -136,22 +141,22 @@ export const mapleVoiceDriver: VoiceDriver = createScriptedVoiceDriver([
   {
     onResolution: {
       id: "ap1",
-      approved: { id: "a3", role: "assistant", text: "Done. Your next midnight snack gets published.", wordMs: 140 },
-      declined: { id: "a3", role: "assistant", text: "Fair enough — no blasting.", wordMs: 140 },
+      approved: { id: "a3", role: "assistant", text: "Order placed.", wordMs: 140 },
+      declined: { id: "a3", role: "assistant", text: "Order canceled.", wordMs: 140 },
     },
   },
   { wait: 500 },
 
   // ---- critical approval: voice announces, only the hand confirms ----
-  { say: { id: "u3", role: "user", text: "And move that eighty-seven dollars back to checking.", wordMs: 135 } },
+  { say: { id: "u3", role: "user", text: "And send Jordan Avery eighty-seven dollars for dinner.", wordMs: 135 } },
   { event: { type: "status", status: "thinking" } },
   { wait: 800 },
   {
     event: {
       type: "approval",
       id: "ap2",
-      toolName: "transfer_funds",
-      input: { from: "Spending buffer", to: "Checking ···4021", amount: "$87.00" },
+      toolName: "transferMoney",
+      input: { amount: 8700, recipient_name: "Jordan Avery", memo: "Dinner" },
       tier: "critical",
     },
   },
@@ -168,11 +173,11 @@ export const mapleVoiceDriver: VoiceDriver = createScriptedVoiceDriver([
   {
     onResolution: {
       id: "ap2",
-      approved: { id: "a5", role: "assistant", text: "Confirmed — eighty-seven dollars back in checking.", wordMs: 140 },
+      approved: { id: "a5", role: "assistant", text: "Confirmed — eighty-seven dollars sent to Jordan Avery.", wordMs: 140 },
       declined: { id: "a5", role: "assistant", text: "Left it where it is.", wordMs: 140 },
     },
   },
-  { event: { type: "view", id: "v2", node: refundView } },
+  { event: { type: "view", id: "v2", node: transferView } },
   // Linger: room to scroll between the two views and feel the focus/blur
   // handoff before the session winds down.
   { wait: 7000 },

@@ -256,8 +256,8 @@ export function proactivitySection(modality: PromptModality): string {
   const shared = [
     "SUGGESTIONS: you may volunteer at most ONE suggestion per turn, and only when it",
     "directly connects to what just happened — a useful follow-up view, a request you have",
-    "now handled repeatedly that could become an automation, or a missing integration",
-    "that blocks a better answer. If the user declines or ignores a suggestion, drop it",
+    "now handled that has a clear next step, or a missing integration that blocks a better",
+    "answer. If the user declines or ignores a suggestion, drop it",
     "for the rest of the session. Never attach a suggestion to a permission request.",
     "Suggesting is not doing — acting on one still goes through the normal approval.",
   ];

@@ -1,13 +1,12 @@
 /**
- * The locality gate for every Vendo route that can drive REAL Composio sends
- * (chat and the scheduler tick). The demo agent acts as the shared, pre-authed
+ * The locality gate for every Vendo route that can drive REAL Composio sends.
+ * The demo agent acts as the shared, pre-authenticated
  * Gmail/Calendar subject, so a reachable deployment must NOT let a stranger
  * drive it.
  *
  * Fail closed on a deployment. Dual-review (PR #27) found two gaps in the
- * original Host-header check: (1) the Host header is client-controlled, so
- * `Host: localhost` spoofed the "local" check; (2) the tick route had no gate
- * at all. This guard fixes both:
+ * original Host-header check: the Host header is client-controlled, so
+ * `Host: localhost` spoofed the "local" check. This guard closes that path:
  *
  *  - `VENDO_DEMO_PUBLIC=1` — explicit operator opt-in, always allowed.
  *  - Otherwise allowed ONLY when NOT a production build AND the request looks

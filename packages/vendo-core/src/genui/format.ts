@@ -17,8 +17,8 @@ export function isPropBinding(v: unknown): v is PropBinding {
 }
 
 /** Declared provenance of a `data` subtree: the tool call that produced it.
- *  Reopening a saved view re-runs these through the normal (policy-governed)
- *  tool path and patches results back in at `path` (ENG-183). */
+ *  The wire field stays reserved while live generated views use the data
+ *  payload directly. */
 export interface DataQuery {
   /** RFC 6901 JSON Pointer into `data`; "" replaces the whole model. */
   path: string;

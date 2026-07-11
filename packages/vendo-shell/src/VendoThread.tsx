@@ -119,7 +119,7 @@ export function VendoThread({
     return () => window.removeEventListener("vendo:integrations-changed", onChange);
   }, [integrations]); // eslint-disable-line react-hooks/exhaustive-deps
   // After each turn completes, re-list — a turn may have connected a tool
-  // server-side (e.g. setting a Slack automation), and the rail should reflect it.
+  // server-side, and the rail should reflect it.
   useEffect(() => {
     if (chat.status === "ready") refresh();
   }, [chat.status]); // eslint-disable-line react-hooks/exhaustive-deps

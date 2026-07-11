@@ -11,15 +11,8 @@
  * same "single-slot cache, rebuilt on demo reset" idea already used for the
  * agent cache in `app/api/vendo/chat/route.ts`.
  *
- * Imports `CADENCE_SCOPE` from `./principal` — deliberately NOT from
- * `./automations` (which also re-exports it), to avoid a module cycle:
- * `policy.ts` (ENG-193 item 2, Task 7) imports `demoStore` from this module,
- * and `automations.ts` imports `demoPolicy` from `policy.ts`. If this module
- * depended on `automations.ts` too, the graph would close a cycle
- * (`policy → store → automations → policy`) that deadlocks mid-initialization
- * (`demoPolicy` would still be undefined when `automations.ts`'s top-level
- * `createAutomationsWorld()` call reads it). `principal.ts` is a
- * dependency-free leaf, so routing through it breaks the cycle.
+ * Imports `CADENCE_SCOPE` from the dependency-free `principal.ts` leaf so the
+ * policy and consent modules share one fixed scope without a module cycle.
  */
 import { createConsentLedger, createFadeTracker, createInMemoryCompiledRuleStore, createInMemoryGrantStore, createInMemoryStore, type ConsentLedger, type FadeTracker, type InMemoryStore } from "@vendoai/runtime";
 import type { CompiledRuleStore, GrantStore, Principal } from "@vendoai/core";

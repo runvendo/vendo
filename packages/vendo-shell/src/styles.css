@@ -245,13 +245,11 @@
 .fl-glass-chart { grid-column: span 3; height: 96px; }
 .fl-glass-row { grid-column: span 3; height: 18px; }
 .fl-glass-row.is-short { width: 72%; }
-/* Repaint veil: the shimmer OVER a stale view (saved-vendo refresh, remix pin
-   edits) instead of a flash — pointer-transparent, content stays readable. */
+/* Repaint veil: shimmer over an updating view instead of a flash —
+   pointer-transparent, content stays readable. */
 .fl-glass-veil { position: absolute; inset: 0; z-index: 4; pointer-events: none;
   border-radius: var(--vendo-radius); }
-/* Library skeleton cards + integrations tray placeholder rows. */
-.fl-flowcard-skel { height: 74px; border: 1px solid var(--vendo-border);
-  border-radius: var(--vendo-radius); }
+/* Integrations tray placeholder rows. */
 .fl-picker-loading .fl-glass-shimmer { height: 46px; border-radius: 11px; }
 
 /* ---------- tool chip (kept quiet; most are hidden in the thread) ---------- */
@@ -597,59 +595,6 @@
    geometry, so the send circle stays inset and concentric with the bar's
    rounded end instead of colliding with the border arc. */
 
-/* ---------- saved-vendo library (ENG-183) ---------- */
-.fl-library { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
-.fl-library-label { font-family: var(--vendo-font); font-weight: 600; font-size: 10.5px; letter-spacing: .05em;
-  text-transform: uppercase; color: color-mix(in srgb, var(--vendo-fg) 46%, transparent);
-  text-align: left; margin-top: 6px; }
-.fl-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
-.fl-flowcard { position: relative; border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
-  background: var(--vendo-glass-strong);
-  -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
-  transition: border-color .14s, transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s; }
-.fl-flowcard:hover { border-color: var(--vendo-border-strong); transform: translateY(-1px);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--vendo-fg) 7%, transparent); }
-.fl-flowcard.is-pinned { border-color: color-mix(in srgb, var(--vendo-accent) 34%, var(--vendo-border)); }
-.fl-flowcard-open { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 13px;
-  border: 0; background: none; text-align: left; cursor: pointer; color: var(--vendo-fg); }
-.fl-flowcard-name { font-size: 13px; font-weight: 560; letter-spacing: -.01em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 18px; }
-.fl-flowcard-prompt { font-size: 11.5px; color: color-mix(in srgb, var(--vendo-fg) 55%, transparent);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fl-flowcard-meta { font-family: var(--vendo-font); font-size: 10.5px;
-  color: color-mix(in srgb, var(--vendo-fg) 42%, transparent); margin-top: 3px; }
-.fl-flowcard-actions { position: absolute; top: 7px; right: 7px; display: flex; gap: 2px;
-  opacity: 0; transition: opacity .12s; }
-.fl-flowcard:hover .fl-flowcard-actions, .fl-flowcard:focus-within .fl-flowcard-actions { opacity: 1; }
-.fl-flowcard-actions button { display: grid; place-items: center; width: 22px; height: 22px;
-  border: 0; border-radius: 6px; background: none; cursor: pointer;
-  color: color-mix(in srgb, var(--vendo-fg) 52%, transparent); }
-.fl-flowcard-actions button:hover { background: color-mix(in srgb, var(--vendo-fg) 8%, transparent);
-  color: var(--vendo-fg); }
-.fl-flowcard-actions button.is-danger:hover { color: #c62f2f; }
-.fl-flowcard.is-pinned .fl-flowcard-actions button[aria-pressed="true"] { color: var(--vendo-accent); opacity: 1; }
-.fl-flowcard-rename { width: 100%; padding: 12px 13px; border: 0; border-radius: var(--vendo-radius);
-  background: none; font: inherit; font-size: 13px; font-weight: 560; color: var(--vendo-fg);
-  outline: 2px solid color-mix(in srgb, var(--vendo-accent) 55%, transparent); outline-offset: -2px; }
-
-/* ---------- undo toast ---------- */
-.fl-toast { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 12px; padding: 9px 14px;
-  border: 1px solid var(--vendo-border-strong); border-radius: 10px;
-  background: var(--vendo-fg); color: var(--vendo-bg); font-size: 12.5px;
-  box-shadow: 0 6px 24px color-mix(in srgb, var(--vendo-fg) 24%, transparent); z-index: 30; }
-.fl-toast-action { border: 0; background: none; padding: 0; font-size: 12.5px; font-weight: 600;
-  color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-
-/* ---------- stale-data note ---------- */
-.fl-stale-note { font-family: var(--vendo-font); font-size: 11px;
-  color: color-mix(in srgb, var(--vendo-fg) 46%, transparent); padding: 6px 2px; }
-
-/* ---------- registry-drift note (ENG-186): same quiet register as the
-   stale note, slightly stronger — it explains a degraded node, not a delay. */
-.fl-drift-note { font-family: var(--vendo-font); font-size: 11px;
-  color: color-mix(in srgb, var(--vendo-fg) 62%, transparent); padding: 6px 2px; }
-
 /* ---------- connection selector (denser, brand-forward) ---------- */
 .fl-picker { border: 1px solid var(--vendo-border); border-radius: var(--vendo-radius);
   background: var(--vendo-glass-strong); -webkit-backdrop-filter: var(--vendo-blur); backdrop-filter: var(--vendo-blur);
@@ -823,14 +768,11 @@
   cursor: pointer; white-space: nowrap; margin-bottom: -1px; transition: color .12s; }
 .fl-tab:hover { color: var(--vendo-fg); }
 .fl-tab[aria-selected="true"] { color: var(--vendo-fg); border-bottom-color: var(--vendo-accent); }
-.fl-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--vendo-ok); flex-shrink: 0; }
 .fl-tab-new { color: var(--vendo-fg-muted); font-size: 16px; line-height: 1; padding: 8px 11px; }
 /* Body region below the tabs — the only thing that scrolls is the inner message list. */
 .fl-page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .fl-page-pane[hidden] { display: none; }
-/* position: relative anchors the glass refresh veil over a reopened view. */
-.fl-saved-pane { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 22px 2px; }
 .fl-slot-empty { border: 1.5px dashed var(--vendo-border-strong); border-radius: var(--vendo-radius);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
   padding: 24px; cursor: pointer; background: var(--vendo-glass-strong); color: var(--vendo-fg-muted);
@@ -933,46 +875,6 @@
 .fl-trust-activity { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
 .fl-trust-activity-row { display: flex; gap: 8px; font-size: 12px; color: var(--vendo-fg-muted); }
 .fl-trust-activity-time { flex-shrink: 0; width: 48px; }
-
-/* ---------- VendoRemix (2026-07-04): wrapper, affordance, pill ---------- */
-.fl-remix { position: relative; }
-.fl-remix-host { min-width: 0; }
-.fl-remix-btn { position: absolute; top: 8px; right: 8px; z-index: 5;
-  width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--vendo-border);
-  background: var(--vendo-surface); color: var(--vendo-accent);
-  font: 600 13px/1 var(--vendo-font); cursor: pointer;
-  opacity: 0; transform: scale(.9); transition: opacity .15s, transform .15s;
-  box-shadow: 0 4px 14px rgba(0,0,0,.10); }
-.fl-remix-btn[data-affordance="always"] { opacity: 1; transform: scale(1); }
-.fl-remix:hover .fl-remix-btn, .fl-remix:focus-within .fl-remix-btn { opacity: 1; transform: scale(1); }
-.fl-remix-btn:hover { background: var(--vendo-accent); color: var(--vendo-accent-fg); }
-.fl-remix-pill { position: absolute; bottom: 8px; right: 8px; z-index: 5;
-  display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px;
-  border-radius: 999px; border: 1px solid var(--vendo-border);
-  background: var(--vendo-surface); color: var(--vendo-fg-muted);
-  font: 500 10.5px/1.4 var(--vendo-font); box-shadow: 0 3px 10px rgba(0,0,0,.08); }
-.fl-remix-pill[data-state="broken"] { color: var(--vendo-danger); border-color: var(--vendo-danger-border); }
-.fl-remix-pill-act { border: 0; background: none; padding: 0; font: 600 10.5px/1.4 var(--vendo-font);
-  color: var(--vendo-accent); cursor: pointer; }
-.fl-remix-pill-act:hover { text-decoration: underline; }
-
-/* ---- scoped-overlay header bar ---- */
-.fl-scope-bar { display: flex; align-items: center; gap: 8px; padding: 9px 56px 9px 16px;
-  border-bottom: 1px solid var(--vendo-border); background: var(--vendo-accent-soft); }
-.fl-scope-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 600 12px/1.3 var(--vendo-font); color: var(--vendo-fg); }
-.fl-scope-clear { margin-left: auto; flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px;
-  display: grid; place-items: center; border: 0; background: transparent; cursor: pointer;
-  color: var(--vendo-fg-muted); font: 600 12px/1 var(--vendo-font); }
-.fl-scope-clear:hover { background: var(--vendo-surface); color: var(--vendo-fg); }
-
-/* ---- remix-candidate apply bar (under a tagged generated view) ---- */
-.fl-applybar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-.fl-apply-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
-  padding: 8px 13px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
-  background: var(--vendo-accent); color: var(--vendo-accent-fg); transition: opacity .14s; }
-.fl-apply-btn:hover { opacity: .88; }
-.fl-applybar-hint { font-size: 11.5px; color: var(--vendo-fg-muted); }
 
 /* ---------- VendoToasts (2026-07-04): automation delivery surface ---------- */
 .fl-toasts { position: fixed; z-index: 2147483100; display: flex; flex-direction: column; gap: 10px;

@@ -74,12 +74,11 @@ describe("opening invariants", () => {
     }
   })
 
-  it("puts at least two clients inside the 3-day deadline window (the automation beat) and staggers the rest within ~11 weeks", () => {
+  it("puts at least two clients inside the 3-day deadline window and staggers the rest within ~11 weeks", () => {
     const days = data.clients
       .map(c => (+new Date(c.filingDeadline) - +anchor) / 86_400_000)
       .sort((a, b) => a - b)
-    // Rivera + Chen: within 3 days AND missing documents, so the demo
-    // automation's "book a call" branch always has real work to do.
+    // Rivera + Chen keep deadline and document-chase views meaningfully urgent.
     expect(days.filter(d => d <= 3.5).length).toBeGreaterThanOrEqual(2)
     expect(days[0]).toBeGreaterThan(0)
     expect(days[days.length - 1]).toBeLessThanOrEqual(77)

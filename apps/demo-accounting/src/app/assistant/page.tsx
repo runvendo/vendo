@@ -5,8 +5,9 @@ import { TrustScreen, VendoThread } from "@vendoai/shell"
 import { VendoRoot } from "@/components/vendo/VendoRoot"
 
 const SUGGESTIONS = [
-  "Which clients are still missing documents?",
-  "Show me everyone within two weeks of their filing deadline",
+  "Show Rivera Landscaping's missing documents as a checklist",
+  "Compare document progress for every client in a table",
+  "Send Marisol Rivera a reminder about the missing W-2, 1099-NEC, and receipts",
 ]
 
 function PageSurface() {
@@ -28,7 +29,7 @@ function PageSurface() {
       <div className="fl-page-body">
         <div className="fl-page-pane">
           <VendoThread
-            greeting="What do you want to build?"
+            greeting="What do you want to see or do?"
             suggestions={SUGGESTIONS}
             heroComposer
           />
