@@ -35,7 +35,7 @@ export const { GET, POST } = createVendoHandler({
 });
 ```
 
-## Connect Flow
+## Connect flow
 
 Customers can connect tools in two places:
 
@@ -44,7 +44,7 @@ Customers can connect tools in two places:
 
 The default Next client opens the Composio OAuth URL in a popup, polls the status endpoint, and marks the toolkit connected once Composio reports the connected account as active. The next agent turn is built from the connected toolkit list.
 
-## Webhook Triggers
+## Webhook triggers
 
 Integration connections also back Composio-triggered automations. For webhook delivery, configure `COMPOSIO_WEBHOOK_SECRET` and point Composio at:
 

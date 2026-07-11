@@ -40,7 +40,7 @@ When you replace the prompt, you are responsible for including the product ident
 
 ## Per-run function
 
-`instructions` can also be a function. The function is evaluated for each run after tools are assembled, and receives the live tool summary.
+`instructions` can also be a function. The handler evaluates the function for each run after assembling tools, and passes it the live tool summary.
 
 ```ts
 export const { GET, POST } = createVendoHandler({

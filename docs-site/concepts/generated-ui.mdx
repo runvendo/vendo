@@ -7,7 +7,7 @@ Vendo renders generated UI through one built-in tool: `render_view`. The tool
 does not stream HTML. It streams a validated Vendo GenUI payload, which the
 host resolves into a `UINode` tree and renders inside the sandboxed stage.
 
-## The `render_view` Payload
+## The `render_view` payload
 
 `render_view` accepts one `GeneratedPayload` with
 `formatVersion: "vendo-genui/v1"`.
@@ -49,7 +49,7 @@ The data stays in the payload. Generated components can transform it while
 rendering, but Vendo does not ask the model to copy large tool results into
 many props.
 
-## Component Sources
+## Component sources
 
 Each node can come from one of three sources:
 
@@ -87,7 +87,7 @@ stage. The code runs only inside the sandbox.
 }
 ```
 
-## The Sandbox Boundary
+## The sandbox boundary
 
 Generated UI renders in `@vendoai/stage`, an iframe created with
 `sandbox="allow-scripts"` and no `allow-same-origin`. The stage document
@@ -109,7 +109,7 @@ Generated components can still ask your app to do something. They call
 `tools/call` request. The host validates the node capability, applies policy,
 and either executes the action, asks for approval, or rejects it.
 
-## The Connect Card Exception
+## The Connect card exception
 
 Integration authorization is deliberately not rendered with `render_view`.
 When the model needs an integration the customer has not connected, it calls

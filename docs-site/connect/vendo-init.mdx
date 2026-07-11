@@ -96,7 +96,7 @@ For init-time LLM steps, the CLI reads the same provider keys as the runtime. It
 
 ## Safe to re-run
 
-`init` and `refresh` share one additive code path, so re-running is safe. Your theme is kept, tools are gap-filled, and only new components are wrapped. Nothing under `.vendo/` is overwritten, and Next.js wiring is idempotent: existing route and root wrapper files are skipped, an already wrapped layout is left alone, and existing sandbox assets are skipped unless `--force` is set.
+`init` and `refresh` share one additive code path, so re-running is safe. Your theme is kept, tools are gap-filled, and only new components are wrapped. Nothing under `.vendo/` is overwritten, and Next.js wiring is idempotent. Existing route and root wrapper files are skipped, an already wrapped layout is left alone, and existing sandbox assets are skipped unless `--force` is set.
 
 <Note>
   **Added an API key later?** Add it to `.env.local` and run `vendo refresh` (or `vendo init` again). Both pick up the key and offer the LLM-assisted steps — tools and components — that ran without a key the first time. Grew your API since install? Same command catches up the new tools and components.

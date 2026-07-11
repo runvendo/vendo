@@ -14,7 +14,7 @@ session, and generated UI renders inside a sandboxed iframe.
   your app.
 </Note>
 
-## Server Process
+## Server process
 
 The server process owns the agent loop and the security decisions. In a Next.js
 App Router app, `vendo init` wires a catch-all route like this:
@@ -44,7 +44,7 @@ The server process:
 - Uses durable storage by default, with embedded PGlite at `.vendo/data` unless
   you pass `storage: false` or configure Postgres with `DATABASE_URL`.
 
-## Customer Browser
+## Customer browser
 
 The browser owns the product surface. `VendoRoot` mounts the overlay, launcher,
 theme provider, integration UI, notification toasts, and the browser-side
@@ -60,7 +60,7 @@ The browser also renders approval cards, Connect cards, activity panels, and
 notification toasts. Trust and Waiting surfaces can be wired through
 the shell seams backed by the handler's trust and parked-action routes.
 
-## Sandboxed Iframe
+## Sandboxed iframe
 
 Generated UI is not mounted directly into your app's DOM. Generated `UINode`
 trees render through `@vendoai/stage` inside an iframe with
@@ -77,7 +77,7 @@ The one host-rendered exception is the Connect card. The agent uses
 `request_connect` when a customer needs to authorize an integration, because
 OAuth popups and host-page events require privileges the sandbox does not have.
 
-## Extension Seams
+## Extension seams
 
 Most customization happens through handler options and `.vendo/` files:
 

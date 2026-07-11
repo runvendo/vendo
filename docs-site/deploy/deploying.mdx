@@ -7,7 +7,7 @@ Vendo's zero-config handler is a local development default. It holds your model 
 
 In production, the default identity fails closed. A request is accepted only when you provide a `principal` resolver or set the explicit escape hatch `VENDO_ALLOW_REMOTE=1`.
 
-## Add A Principal Resolver
+## Add a principal resolver
 
 `principal` is the production gate. It runs for identity-bearing routes such as chat, actions, integrations, threads, and trust routes. Return a principal to allow the request. Return `null` to reject it with `403`.
 
@@ -42,7 +42,7 @@ The required field is `userId`. `roles` and `limits` are optional and can be use
   anything reachable from the internet.
 </Warning>
 
-## Escape Hatch
+## Escape hatch
 
 `VENDO_ALLOW_REMOTE=1` disables the production remote-request block and uses Vendo's default single identity.
 
@@ -52,7 +52,7 @@ Use it only for a trusted, temporary preview. It is not an auth system, and it d
 VENDO_ALLOW_REMOTE=1
 ```
 
-## Single Tenant
+## Single tenant
 
 The embedded Vendo world is single-tenant today.
 
@@ -62,7 +62,7 @@ Chat threads are scoped by the resolved `userId`, but that does not make the res
 
 If you need hard tenant isolation, run separate handler instances per tenant or provide tenant-aware stores and runtime boundaries outside the built-in embedded setup.
 
-## Single Process
+## Single process
 
 Run the handler as one long-lived Node process for the built-in scheduler and embedded world.
 

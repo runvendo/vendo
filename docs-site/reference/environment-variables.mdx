@@ -6,7 +6,7 @@ description: "Runtime, CLI, provider, storage, scheduler, and telemetry variable
 These are the environment variables read by the Vendo packages. Handler options
 win over env where an explicit option exists.
 
-## Model Providers
+## Model providers
 
 | Variable | Effect | Default |
 | --- | --- | --- |
@@ -22,14 +22,14 @@ LLM-assisted init steps still need one provider key or an injected model.
 OpenAI and Google model resolution require the optional provider package when
 that provider is selected.
 
-## Integrations And Webhooks
+## Integrations and webhooks
 
 | Variable | Effect | Default |
 | --- | --- | --- |
 | `COMPOSIO_API_KEY` | Enables integration catalog and connect routes. The Composio client also falls back to this key when no explicit key is passed. | Integrations disabled. |
 | `COMPOSIO_WEBHOOK_SECRET` | Verifies `POST /webhooks/composio` signatures. Missing secret makes the webhook route return `404`. | Webhook ingress disabled. |
 
-## Storage And Scheduler
+## Storage and scheduler
 
 | Variable | Effect | Default |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ If one of the serverless guard variables is present and storage would otherwise
 use the default PGlite file store, boot fails and asks you to set
 `DATABASE_URL`.
 
-## Request Guard And Runtime Mode
+## Request guard and runtime mode
 
 | Variable | Effect | Default |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ use the default PGlite file store, boot fails and asks you to set
 | `DO_NOT_TRACK` | `1` or `true` disables telemetry. | Unset. |
 | `CI` | Any non-empty value except `0` or `false` disables telemetry. | Unset. |
 
-## MCP Header Templates
+## MCP header templates
 
 `.vendo/mcp.json` can reference arbitrary uppercase env vars in header values:
 

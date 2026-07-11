@@ -7,7 +7,7 @@ Vendo collects anonymous, opt-out telemetry from setup and development tooling. 
 
 Telemetry is best effort. Network failures are swallowed and cannot break builds or dev servers.
 
-## When Events Fire
+## When events fire
 
 | Event | When it fires |
 | --- | --- |
@@ -17,7 +17,7 @@ Telemetry is best effort. Network failures are swallowed and cannot break builds
 | `agent_run` | A dev server handles a chat run outside production. |
 | `error_class` | A dev server catches a Vendo boot error outside production. |
 
-## What Is Collected
+## What is collected
 
 Every event includes:
 
@@ -59,7 +59,7 @@ Example payload:
 }
 ```
 
-## What Is Never Collected
+## What is never collected
 
 Vendo product telemetry does not collect:
 
@@ -77,7 +77,7 @@ Vendo product telemetry does not collect:
 
 The anonymous id is a random UUID. It is not derived from your machine, account, project, app, or environment. Deleting `~/.vendo/telemetry.json` rotates it.
 
-## Opt Out
+## Opt out
 
 Any one of these disables product telemetry:
 
@@ -95,7 +95,7 @@ Check the current local setting:
 vendo telemetry status
 ```
 
-## Where Data Goes
+## Where data goes
 
 Product events are sent to PostHog US Cloud with a write-only project key. You can override the destination project with `VENDO_POSTHOG_KEY`.
 

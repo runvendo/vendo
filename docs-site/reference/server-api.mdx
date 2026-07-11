@@ -7,7 +7,7 @@ description: "The framework-agnostic server API and Node bridge"
 `vendoai` package — `vendoai/server` re-exports it. Import it only from server
 code. It reads `.vendo/`, uses provider keys, and owns route handlers.
 
-## Handler Core
+## Handler core
 
 ```ts
 import { createServer } from "node:http";
@@ -33,7 +33,7 @@ createServer(toNodeHandler(handler)).listen(3000);
 | `resetVendoBootRegistry` | Test helper that clears the boot registry. |
 | `startVendoScheduler` | Starts the in-process automation scheduler unless `VENDO_SCHEDULER=external`. |
 
-## Node Bridge
+## Node bridge
 
 `toNodeHandler(handler)` adapts the fetch handler to Node's
 `(IncomingMessage, ServerResponse)` shape. It streams response bodies, converts
@@ -46,7 +46,7 @@ fetch `Request` signal if the client disconnects.
 | `FetchHandler` | `(req: Request) => Promise<Response>`. |
 | `NodeHandler` | `(req: IncomingMessage, res: ServerResponse) => Promise<void>`. |
 
-## Options And Loading
+## Options and loading
 
 | Export | Purpose |
 | --- | --- |
@@ -60,7 +60,7 @@ fetch `Request` signal if the client disconnects.
 | `mcpJsonSchema` | Zod schema for `.vendo/mcp.json`. |
 | `mcpServerArraySchema` | Zod schema for an array of MCP server configs. |
 
-## Capabilities And Models
+## Capabilities and models
 
 | Export | Purpose |
 | --- | --- |
@@ -74,7 +74,7 @@ fetch `Request` signal if the client disconnects.
 | `ModelProvider` | `"anthropic" \| "openai" \| "google"`. |
 | `ResolveModelDeps` | Test seam for dynamic provider imports. |
 
-## Policy, Principal, And Prompt Helpers
+## Policy, principal, and prompt helpers
 
 | Export | Purpose |
 | --- | --- |
@@ -93,7 +93,7 @@ fetch `Request` signal if the client disconnects.
 | `BuildInstructionsInput` | Input type for `buildInstructions`. |
 | `AgentFactoryConfig` | Config type for `createAgentCache`. |
 
-## Stores And Worlds
+## Stores and worlds
 
 | Export | Purpose |
 | --- | --- |
@@ -108,7 +108,7 @@ fetch `Request` signal if the client disconnects.
 | `createApprovalStore` | Creates the short-lived action approval-token store. |
 | `ApprovalStore` | Approval-token store interface. |
 
-## Route Handlers
+## Route handlers
 
 These lower-level exports are what `createVendoFetchHandler` mounts for you.
 Use them only if you are composing your own router.
@@ -127,7 +127,7 @@ Use them only if you are composing your own router.
 | `queryAuditRoute` | Trust audit query route. |
 | `listCriticalToolsRoute` | Trust critical-tools route. |
 
-## Subpath Exports
+## Subpath exports
 
 The package also exposes these server-safe subpaths:
 

@@ -10,7 +10,7 @@ Automations can fire from two server-side paths:
 
 Both paths use the same automation runner and durable store when storage is enabled.
 
-## Boot The Scheduler
+## Boot the scheduler
 
 `vendo init` writes `instrumentation.ts`, or `src/instrumentation.ts` when your App Router lives under `src/app`. The file starts Vendo's scheduler in the Next.js Node.js runtime:
 
@@ -27,7 +27,7 @@ export async function register() {
 
 At boot, Vendo rehydrates enabled schedules from durable storage. Missed fires are skipped. A one-shot schedule whose time passed while the server was down is paused as completed instead of firing late.
 
-## External Scheduler Mode
+## External scheduler mode
 
 Set `VENDO_SCHEDULER=external` to disable the in-process timer:
 
@@ -52,7 +52,7 @@ When `VENDO_TICK_SECRET` is set, a matching bearer token can tick without a user
   single-process and single-tenant.
 </Warning>
 
-## Cron Relay Example
+## Cron relay example
 
 If your cron provider cannot send a custom authorization header, point it at a route in your app and have that route make the authenticated POST.
 
@@ -90,7 +90,7 @@ export default {
 };
 ```
 
-## Composio Webhooks
+## Composio webhooks
 
 Vendo serves a Composio trigger ingress route:
 
@@ -112,6 +112,6 @@ If `COMPOSIO_WEBHOOK_SECRET` is not set, the route returns `404` with `composio 
 
 Webhook routing depends on the connected-account id captured during the OAuth status poll. If a toolkit shows connected but trigger webhooks do not fire, disconnect and reconnect it once so Vendo records the Composio connected-account mapping.
 
-## Local Development
+## Local development
 
 Composio cannot deliver to `localhost`. Use a tunnel to your local server, or test the automation manually from chat while developing.

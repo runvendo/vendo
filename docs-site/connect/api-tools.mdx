@@ -35,7 +35,7 @@ The file is versioned and strict:
 }
 ```
 
-`binding.path` must be host-relative, start with one `/`, and contain no whitespace. It cannot point at another origin. Vendo converts the manifest to host tool definitions in one way: path template fields become path params, every other top-level property becomes a query param, and the special `body` property becomes the JSON request body.
+`binding.path` must be host-relative, start with one `/`, and contain no whitespace. It cannot point at another origin. Vendo converts the manifest to host tool definitions in one way. Path template fields become path params, every other top-level property becomes a query param, and the special `body` property becomes the JSON request body.
 
 ## OpenAPI extraction
 

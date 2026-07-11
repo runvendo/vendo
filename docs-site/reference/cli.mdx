@@ -29,7 +29,7 @@ npx vendo <command> [dir] [options]
 | `--local <dir>` | Packs local `@vendoai` packages from a Vendo monorepo into `./vendor` (development use). |
 | `--version` | Prints the CLI version. |
 
-## What `init` Does
+## What `init` does
 
 `vendo init` runs these phases:
 
@@ -42,7 +42,7 @@ npx vendo <command> [dir] [options]
 7. Writes `.vendo/README.md`.
 8. If the target is a Next.js App Router app, wires the route handler, client root, layout, scheduler instrumentation, `.env.example`, sandbox assets, package dependency, and `prebuild` sync script.
 
-## LLM Resolution
+## LLM resolution
 
 The CLI uses the same provider precedence as the runtime, and each provider has
 a default model:
@@ -59,7 +59,7 @@ installed fails fast with an actionable `npm i` hint.
 `provider/model` or a bare model id. A model id without a provider key is not a
 credential, so assisted steps are skipped unless one provider key is present.
 
-## Tool Extraction
+## Tool extraction
 
 When an OpenAPI file exists, `init` converts each `GET`, `POST`, `PUT`, `PATCH`,
 and `DELETE` operation into a tool entry. `operationId` becomes the tool name
@@ -70,7 +70,7 @@ When no OpenAPI file exists and an LLM is available, `init` scans
 export the method the scan reports. Route-scanned tools are all emitted as
 mutating so they fail closed until you review `.vendo/tools.json` by hand.
 
-## Next.js Wiring
+## Next.js wiring
 
 For a Next.js App Router app with `app/layout.*` or `src/app/layout.*`, `init`
 writes or edits:

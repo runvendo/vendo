@@ -7,7 +7,7 @@ Vendo tools are governed before they execute. Reads can run directly when they
 are marked safe. Mutating or unverified actions pause for approval. Critical
 actions always ask.
 
-## Host API Tools Run In The Browser
+## Host API tools run in the browser
 
 Your app's API surface lives in `.vendo/tools.json`. The server registers those
 tools with the agent so the model can choose them, but the server does not
@@ -26,7 +26,7 @@ The execution path is:
 Only the tool result enters the agent loop. Customer cookies and bearer tokens
 stay in the browser and your app's own auth layer remains the final authority.
 
-## Manifest Annotations
+## Manifest annotations
 
 Every `.vendo/tools.json` entry has required safety annotations:
 
@@ -70,7 +70,7 @@ The route scanner is conservative. Tools inferred from route scans are marked
 `mutating: true` by default, because inferred safety should not auto-run. Relax
 a tool to `mutating: false` only after you review the endpoint.
 
-## Approval Decisions
+## Approval decisions
 
 The policy result is one of three decisions:
 
@@ -84,7 +84,7 @@ sandbox dispatches to `POST /api/vendo/action`; that route issues a single-use
 `approvalToken` when approval is needed and only executes the exact approved
 action and payload when the token is returned.
 
-## Consent Surfaces
+## Consent surfaces
 
 The shell renders the immediate consent surface that matches the risk:
 
@@ -102,7 +102,7 @@ Consent has two wires. The Vercel AI SDK approval response resumes the paused
 tool call. Vendo's consent channel records richer semantics such as yes, no,
 subset, grants, fade decisions, and audit events.
 
-## Deployment Gate
+## Deployment gate
 
 The handler holds model and integration credentials, so production traffic must
 be gated by your app. Pass a `principal` resolver to `createVendoHandler()` and

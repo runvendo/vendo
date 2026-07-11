@@ -10,7 +10,7 @@ under another prefix.
 
 Only `GET` and `POST` are served. Other methods return `404`.
 
-## Auth Posture
+## Auth posture
 
 Most identity-bearing routes use the handler principal guard:
 
@@ -23,7 +23,7 @@ Most identity-bearing routes use the handler principal guard:
 `POST /tick` can also use a bearer secret. `POST /webhooks/composio` uses a
 Composio webhook signature instead of a user principal.
 
-## GET Routes
+## GET routes
 
 | Route | Purpose | Auth posture |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ Composio webhook signature instead of a user principal.
 | `GET /threads` | Lists stored chat threads for the resolved principal. | Principal guard. |
 | `GET /threads/<threadId>` | Returns stored messages for one thread. | Principal guard. |
 
-## POST Routes
+## POST routes
 
 | Route | Purpose | Auth posture |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ Composio webhook signature instead of a user principal.
 | `POST /grants/revoke` | Revokes a standing grant. | Principal guard. |
 | `POST /rules/revoke` | Revokes an always-ask rule. | Principal guard. |
 
-## Not Found
+## Not found
 
 Unknown route tails return JSON `{ "error": "not found" }` with status `404`.
 Boot failures return status `500` with the boot error message.
