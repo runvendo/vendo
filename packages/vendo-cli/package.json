@@ -40,7 +40,7 @@
     "@clack/prompts": "1.6.0",
     "@scarf/scarf": "^1.4.0",
     "ai": "6.0.28",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.1",
     "picocolors": "^1.1.1",
     "sucrase": "^3.35.0",
     "typescript": "^5.9.0",
