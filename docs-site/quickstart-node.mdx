@@ -1,6 +1,6 @@
 ---
 title: "Quickstart: any Node server"
-description: "Mount the framework-agnostic handler on Node, Express, or Hono"
+description: "Mount the framework-agnostic Vendo fetch handler on node:http, Express, or Hono with toNodeHandler, and serve the sandbox runtime from /vendo."
 ---
 
 `vendoai/server` exposes the framework-agnostic handler core. It returns a fetch handler, `(Request) => Promise<Response>`, plus `toNodeHandler()` for Node's `IncomingMessage` and `ServerResponse` shape.
