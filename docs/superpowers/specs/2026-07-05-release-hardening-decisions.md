@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # Release Hardening — Decisions for Yousef
 
 Everything from the hardening effort that needs your call, in one place.

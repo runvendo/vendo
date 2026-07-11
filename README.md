@@ -5,7 +5,7 @@
 
 <p align="center">
   <b>Vendo puts an agent inside your product.</b><br>
-  Customers automate work, build their own views, and connect their tools. You set the guardrails.
+  Customers get live views, connect their tools, and act through your product. You set the guardrails.
 </p>
 
 <p align="center">
@@ -38,16 +38,6 @@ Every capture below is a real agent run in a demo host app, not a mockup.
       <p align="center"><sub><b>Build views.</b> Ask a question, get a live view composed from the host's own components and API.</sub></p>
     </td>
     <td width="50%" valign="top">
-      <img src="assets/remix.gif" alt="A Cadence user hovers the deadlines card, asks for urgency color-coding, and applies the remix in place" width="100%">
-      <p align="center"><sub><b>Remix the UI.</b> Hover a component, describe the change, apply it in place.</sub></p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="assets/automation.gif" alt="A Cadence user asks for a morning document-chase automation and turns it on with per-tool approvals" width="100%">
-      <p align="center"><sub><b>Automate across tools.</b> Plain language in, standing automation out, every tool gated by approval.</sub></p>
-    </td>
-    <td width="50%" valign="top">
       <img src="assets/voice.gif" alt="A Maple voice session: the user asks out loud where their money went and the agent renders the view while talking back" width="100%">
       <p align="center"><sub><b>Talk to it.</b> A live voice session: ask out loud, the agent talks back and renders the view.</sub></p>
     </td>
@@ -70,8 +60,6 @@ outside your permission policy.
 | | |
 |---|---|
 | **Views on demand** | Customers describe what they want to see. The agent composes it from your component catalog and live API data, rendered in your brand. |
-| **Remix** | Any component you wrap becomes customer-editable in place. Changes are scoped to that customer and reversible. |
-| **Automations** | Standing workflows from plain language, run on schedules or triggers, durable across restarts. |
 | **Integrations** | Gmail, Slack, Calendar, and any MCP server, each behind per-tool consent. |
 | **Guardrails** | Generated UI runs in a sandboxed iframe with no network egress. Every mutating action passes your permission policy: consent prompts, approval tokens, judged rules. |
 | **Any provider** | Bring your own key for Anthropic, OpenAI, or Google. Works with any AI SDK provider. |
@@ -102,7 +90,7 @@ Full walkthrough: [docs.vendo.run/quickstart](https://docs.vendo.run/quickstart)
 
 Want to try it before integrating? `pnpm demo` runs Maple, a demo bank with
 Vendo embedded. `pnpm demo:accounting` runs Cadence, an accounting firm app
-with remix, automations, and voice.
+with generated views and voice.
 
 ## How it works
 
@@ -118,7 +106,7 @@ through your permission policy. Deeper docs: [docs.vendo.run](https://docs.vendo
 |---|---|
 | `vendoai` | The public install (interim name; bare `vendo` pending an npm name-dispute): `vendoai/server` (`createVendoHandler`) + `vendoai/react` (`<VendoRoot>`) |
 | `@vendoai/cli` | `vendo init` installs Vendo into a Next.js app; `refresh` catches up, `doctor` checks the install |
-| `@vendoai/core` | Manifest schemas, GenUI format, the five platform seams |
+| `@vendoai/core` | Manifest schemas, GenUI format, and runtime seam contracts |
 | `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |
 | `@vendoai/runtime` | Embedded runtime: tools, automations, MCP client |
 | `@vendoai/react` | React provider + `useVendoChat` |

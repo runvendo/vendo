@@ -1,35 +1,44 @@
 # Runtime seam contracts
 
-The portable runtime (`@vendoai/runtime`, architecture Decision 1) never imports a database, queue, or HTTP server — it depends on five injected seams. Interfaces live in `packages/vendo-core/src/seams/`; embedded (in-memory/in-process) implementations of all five ship in `@vendoai/runtime`'s `embedded` module, and the runtime's dependency-guard test (`packages/vendo-runtime/src/dependency-guard.test.ts`) plus demo-bank keep the embedded guarantee honest in CI.
+`packages/vendo-core/src/seams/` defines ten injectable service interfaces. Six belong to the store family: the `Store` aggregate plus `ThreadStore`, `AutomationStore`, `AuditLog`, `GrantStore`, and `CompiledRuleStore`. The other four are `CredentialBroker`, `Executor`, `Scheduler`, and `Channels`. Callers inject only the services required by the runtime or server path they use.
 
-| Seam | Purpose | Embedded impl | Cloud impl |
-|---|---|---|---|
-| `Store` | threads, saved vendos, automations, audit | host's choice (in-memory/SQLite in CI) | Postgres in apps/cloud |
-| `CredentialBroker` | how a tool call gets user identity | host session, in-process | vouch JWT + RFC 8693 token exchange |
-| `Executor` | where a tool call physically runs | in-process | client executor (browser) / server executor (worker) |
-| `Scheduler` | firing automations when the user is away | none or host cron | pg-boss worker |
-| `Channels` | reaching the user off-thread | in-app only | in-app now; SMS/voice later |
+| Interface | Purpose | Provided implementation |
+|---|---|---|
+| `Store` | Aggregate for threads, automations, audit, grants, and rules | `createInMemoryStore()` in `@vendoai/runtime`; durable thread and automation stores in `@vendoai/store` |
+| `ThreadStore` | Principal-scoped chat threads and message streams | in-memory in `@vendoai/runtime`; PGlite/Postgres in `@vendoai/store` |
+| `AutomationStore` | Principal-scoped automation records and run history | in-memory in `@vendoai/runtime`; PGlite/Postgres in `@vendoai/store` |
+| `AuditLog` | Append and query policy, approval, grant, and automation events | in-memory in `@vendoai/runtime`; host-injected persistence |
+| `GrantStore` | Standing user permission grants | in-memory in `@vendoai/runtime`; host-injected persistence |
+| `CompiledRuleStore` | Compiled always-ask steering rules | in-memory in `@vendoai/runtime`; host-injected persistence |
+| `CredentialBroker` | Authenticate a session and acquire a scoped automation grant | `InProcessCredentialBroker` in `@vendoai/runtime`; host or Vendo Cloud implementation |
+| `Executor` | Run a tool call after policy evaluation | `InProcessExecutor` in `@vendoai/runtime`; host or Vendo Cloud implementation |
+| `Scheduler` | Fire time-based automation triggers | `InProcessScheduler` in `@vendoai/runtime`; host cron or Vendo Cloud implementation |
+| `Channels` | Deliver off-thread messages | `InAppChannels` in `@vendoai/runtime`; host or Vendo Cloud implementation |
 
-Everything is scoped by `Principal` (`tenantId` + `subject` + vouch claims). Timestamps are ISO 8601 strings.
+All principal-scoped operations use `Principal` (`tenantId` + `subject`). Timestamps are ISO 8601 strings.
 
 ## Store
 
-Aggregates one sub-store per concern: `threads` (persisted `VendoUIMessage` streams), `vendos` (saved UI tree + bound tool query + originating prompt), `automations` (records + run history), `audit` (append-only `AuditEvent` union: tool execution, approval, grant exchange, firing — written from day 1; audit UI comes later). The store owns identity and timestamps: `create`/`save` callers never supply `id`, `createdAt`, or `updatedAt`.
+`Store` currently contains `threads`, `automations`, and `audit`, with optional `grants` and `rules`. The store owns record identity and timestamps where its methods create records.
 
-Deferred on purpose: the automation `spec` field was `unknown` until the automations DSL froze; memory has no member yet — adding one later is additive.
+`ThreadStore` persists `VendoUIMessage` streams. `AutomationStore` holds the core automation record and run contract; the runtime extends it with versions, triggers, grants, parked actions, and richer run state. `AuditLog` is append-and-query. `GrantStore` and `CompiledRuleStore` support the trust and steering surfaces.
 
 ## CredentialBroker
 
-Two operations for the two credential lifetimes it owns: `authenticate(credential)` turns the SDK-presented credential into a verified `Principal` at session init; `acquireGrant(request)` exchanges a signed assertion for a short-lived scoped token for one automation run. Interactive host-API calls need nothing from this seam — the browser executes them on the user's existing session (Decision 2).
+`authenticate(credential)` returns a verified `Principal`. `acquireGrant(request)` returns a short-lived scoped token for one automation run. Interactive host API calls use the signed-in user's browser session and do not require a brokered grant.
 
 ## Executor
 
-`execute(call, context) → { ok: true, result } | { ok: false, error }` — one outcome per call, non-streaming, discriminated on `ok` (so a legitimate `undefined` result never mis-narrows as an error). Policy has already evaluated the call before any executor sees it. `context.grant` is present only on server-executed automation runs.
+`execute(call, context)` returns one non-streaming success or error outcome. Policy evaluates the call before it reaches an executor. `context.grant` is present only for server-executed automation runs.
 
 ## Scheduler
 
-Time-based triggers only (`cron` / `at`); the runtime registers one firing handler. `schedule` takes the `Principal` scope, which the scheduler persists and replays on every `AutomationFiring` — the handler needs it to load the record (Store is Principal-scoped) and acquire the brokered grant. Host webhooks and Composio triggers are ingest paths that invoke the same handler directly — they don't pass through the Scheduler.
+The scheduler owns `cron` and `at` triggers. It persists the `Principal` scope with each schedule and replays it in `AutomationFiring`. Host events and Composio webhooks invoke the automation firing path directly instead of passing through `Scheduler`.
 
 ## Channels
 
-Message-shaped `deliver` for `in-app` and `sms`. Realtime voice is a session, not a message — it gets its own contract.
+`deliver(message)` supports message-shaped `in-app` and `sms` delivery. Realtime voice is a session and has a separate contract.
+
+## Direction
+
+Phase 1 is specifying the app artifact as a manifest with optional UI, state, server code, data, files, and a trigger, plus the `core` -> `apps` -> `automations` layering. This document does not define that format or package move.

@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # OSS Corpus Testing Implementation Plan
 
 > **For agentic workers:** Execute task-by-task. Each task is a self-contained

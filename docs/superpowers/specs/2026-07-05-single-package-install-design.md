@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # Single-package install: `vendo`
 
 **Date:** 2026-07-05

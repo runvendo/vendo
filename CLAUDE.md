@@ -6,8 +6,8 @@ generated UI in a sandboxed, brand-native surface.
 
 ## Layout
 
-- `packages/` — the published `@vendoai/*` libraries (core, server, runtime,
-  react, next, shell, components, stage, store, telemetry, cli)
+- `packages/`: the published libraries (vendo, cli, client, components, core,
+  react, runtime, sandbox-shims, server, shell, stage, store, telemetry)
 - `apps/` — demo host apps (demo-bank "Maple", demo-accounting "Cadence")
 - `examples/` — minimal usage examples
 - `docs/` — integration docs

@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # Release Hardening Inventory — 2026-07-05
 
 The triaged issue inventory for the OSS release, judged against

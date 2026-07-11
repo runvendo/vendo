@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # Vendo CLI UX redesign
 
 Date: 2026-07-05. Status: approved by Yousef (this session).

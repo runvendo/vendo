@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # docs.vendo.run homepage + quickstart GIFs
 
 ## Goal

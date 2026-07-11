@@ -9,7 +9,8 @@ import type { Principal } from "./principal.js";
  * | Deployment | Implementation |
  * |---|---|
  * | Embedded | host's choice; in-memory or SQLite in CI (demo-bank) |
- * | Cloud | Postgres in apps/cloud, all access behind this seam |
+ * | Durable self-hosted | PGlite or Postgres through `@vendoai/store` |
+ * | Managed | Vendo Cloud, with all access behind this seam |
  *
  * All operations are scoped by Principal (tenant + subject); embedded
  * implementations may ignore tenantId. Timestamps are ISO 8601 strings.

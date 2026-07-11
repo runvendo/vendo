@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # Release Hardening Bar (draft — pending Yousef's edits)
 
 What "release-ready" means for the OSS surface. Every finding from the hardening audit

@@ -34,28 +34,29 @@ All tables live in a dedicated `vendo` Postgres schema — your app's
 
 ## What persists
 
-With durable storage on, five surfaces are covered end to end:
+The durable schema in `packages/vendo-store/src/schema.ts` contains these
+surfaces:
 
-- **Automations** — the automation, its versions (each version carries its
-  spec and any pre-approved grants), and its run history, all in the
-  `automations` / `automation_versions` / `automation_runs` tables.
-- **Approval decisions** — the ask-once-remember layer's "already decided"
-  memory (`decisions` table), keyed by principal + canonical policy key.
-  Separate from automation grants — a decision remembered in chat does not
-  feed the unattended automations world, which only ever honors grants.
-- **Chat threads** — `threads` + `thread_messages`, upserted by message id so
-  an approval resume replaces parts in place instead of duplicating them.
-- **Saved vendos** — the shell's saved-vendo library, in `saved_vendos`.
-- **Integration connections** — which Composio toolkits are connected (what
-  the agent ingests) and the connected-account → principal map webhook
-  routing depends on, in the `connections` table. `createVendoHandler()`
-  wires `createDrizzleConnectionsStore` in automatically whenever durable
-  storage is configured — no separate opt-in. This is what makes Composio
-  webhooks survive a restart: without it, every connected toolkit forgot it
-  was connected on reboot and every inbound webhook was silently skipped
-  until the user reconnected. Pass your own store via the `connections`
-  option only if you need to own connection state elsewhere (e.g. a demo
-  reset that clears it) — an explicit option always wins over this default.
+- **Automations**: definitions, versions, run history, and parked actions in
+  `automations`, `automation_versions`, `automation_runs`, and
+  `parked_actions`. Each version stores its spec and pre-approved grants.
+- **Approval decisions**: remembered policy decisions in `decisions`, keyed
+  by principal and canonical policy key.
+- **Chat threads**: `threads` and `thread_messages`, with message-id upserts so
+  a resumed approval replaces parts in place.
+- **Integration connections**: connected Composio toolkits and the
+  connected-account-to-principal mapping in `connections`.
+- **Operational metadata**: scheduler heartbeat and future operational flags
+  in `meta`. This table is not for domain data.
+
+`createVendoHandler()` wires the durable thread, automation, decision, and
+connection stores automatically when storage is configured. A host-provided
+`connections` option takes precedence over that default.
+
+Audit events, standing permission grants, and compiled always-ask rules remain
+injectable store interfaces, but `@vendoai/store` does not define standalone
+tables for them today. Without host-provided implementations, those surfaces
+are in-memory and do not survive a restart.
 
 ## Single-writer, single-tenant — read this before deploying
 
@@ -188,18 +189,3 @@ toolkit connected via the fast path — including any toolkit connected before
 this release shipped — has no webhook route until it goes through one fresh
 `authorize()` + poll cycle. Disconnect and reconnect the toolkit once if its
 webhook triggers aren't firing.
-
-## Saved vendos: no localStorage migration in v1
-
-The client picks a saved-vendo store based on whether the server reports
-durable storage (`GET <mount>/capabilities` → `storage: true`): with durable
-storage, it talks to the server (`/vendos` endpoints); without it, it falls
-back to `localStorage`, same as before this release.
-
-There is no migration path from an existing `localStorage` library into the
-server store in v1. Turning on durable storage for an app that already has
-vendos saved in visitors' browsers means the server-side library starts
-empty — those localStorage entries aren't lost, but they also aren't pulled
-forward automatically. `localStorage` remains the fallback whenever
-`storage` is off (or absent), so nothing regresses for installs that don't
-turn on durable storage.

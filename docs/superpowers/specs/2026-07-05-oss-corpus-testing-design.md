@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # OSS Corpus Testing — Design
 
 **Date:** 2026-07-05

@@ -1,3 +1,5 @@
+> Historical session record (frozen). Describes the repo at its date; may not match current code.
+
 # Launch README redesign
 
 **Date:** 2026-07-05 · **Branch:** `yousefh409/readme` · **Status:** approved
