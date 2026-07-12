@@ -39,7 +39,9 @@
     ".next-automations-e2e/dev/types/**/*.ts",
     ".next-automations-e2e/dev/dev/types/**/*.ts",
     ".next/automations-e2e/dev/types/**/*.ts",
-    ".next/automations-e2e/dev/dev/types/**/*.ts"
+    ".next/automations-e2e/dev/dev/types/**/*.ts",
+    ".next/mcp-e2e/dev/types/**/*.ts",
+    ".next/mcp-e2e/dev/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
