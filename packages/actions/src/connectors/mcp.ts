@@ -85,7 +85,7 @@ export function mcpConnector(config: {
   name?: string;
 }): Connector {
   const connectorName = config.name ?? "mcp";
-  const normalizedToRaw = new Map<string, string>();
+  let normalizedToRaw = new Map<string, string>();
   let nextId = 1;
   let sessionId: string | undefined;
   let initialized: Promise<void> | undefined;
@@ -166,7 +166,8 @@ export function mcpConnector(config: {
 
     async descriptors(): Promise<ToolDescriptor[]> {
       await ensureInitialized();
-      normalizedToRaw.clear();
+      // Built fresh and swapped in atomically so a concurrent execute() never sees a half-empty map.
+      const nextNormalizedToRaw = new Map<string, string>();
       const descriptors: ToolDescriptor[] = [];
       let cursor: string | undefined;
       const seenCursors = new Set<string>();
@@ -180,8 +181,8 @@ export function mcpConnector(config: {
         for (const item of result.tools as McpTool[]) {
           if (typeof item.name !== "string" || !item.name) throw new Error("MCP tool is missing its name");
           const name = normalizeToolName(`mcp_${connectorName}`, item.name);
-          if (normalizedToRaw.has(name)) throw new Error(`MCP tool-name collision: ${name}`);
-          normalizedToRaw.set(name, item.name);
+          if (nextNormalizedToRaw.has(name)) throw new Error(`MCP tool-name collision: ${name}`);
+          nextNormalizedToRaw.set(name, item.name);
           const destructive = item.annotations?.destructiveHint === true;
           const readOnly = item.annotations?.readOnlyHint === true;
           descriptors.push({
@@ -201,6 +202,7 @@ export function mcpConnector(config: {
         }
       } while (cursor);
 
+      normalizedToRaw = nextNormalizedToRaw;
       return descriptors;
     },
 

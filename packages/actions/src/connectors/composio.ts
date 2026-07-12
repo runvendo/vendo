@@ -56,7 +56,7 @@ export function composioConnector(config: {
   baseUrl?: string;
 }): Connector {
   const baseUrl = (config.baseUrl ?? "https://backend.composio.dev").replace(/\/$/, "");
-  const normalizedToRaw = new Map<string, string>();
+  let normalizedToRaw = new Map<string, string>();
 
   async function fetchTools(app?: string): Promise<ComposioTool[]> {
     const tools: ComposioTool[] = [];
@@ -93,7 +93,8 @@ export function composioConnector(config: {
     name: "composio",
 
     async descriptors(): Promise<ToolDescriptor[]> {
-      normalizedToRaw.clear();
+      // Built fresh and swapped in atomically so a concurrent execute() never sees a half-empty map.
+      const nextNormalizedToRaw = new Map<string, string>();
       const appFilters = config.apps === undefined ? [undefined] : config.apps;
       const pages = await Promise.all(appFilters.map((app) => fetchTools(app)));
       const descriptors: ToolDescriptor[] = [];
@@ -108,8 +109,8 @@ export function composioConnector(config: {
               : undefined;
         if (!raw || !toolkit) throw new Error("Composio tool is missing its slug or toolkit slug");
         const name = normalizeToolName(toolkit, raw);
-        if (normalizedToRaw.has(name)) throw new Error(`Composio tool-name collision: ${name}`);
-        normalizedToRaw.set(name, raw);
+        if (nextNormalizedToRaw.has(name)) throw new Error(`Composio tool-name collision: ${name}`);
+        nextNormalizedToRaw.set(name, raw);
         descriptors.push({
           name,
           description: typeof item.description === "string" ? item.description : raw,
@@ -121,6 +122,7 @@ export function composioConnector(config: {
         });
       }
 
+      normalizedToRaw = nextNormalizedToRaw;
       return descriptors;
     },
 

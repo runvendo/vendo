@@ -12,7 +12,7 @@ import {
   type ToolOverride,
   type ToolsFile,
 } from "../formats.js";
-import { dedupKey, routeToolFullName, withUniqueNames } from "./common.js";
+import { clearAliasCache, dedupKey, routeToolFullName, withUniqueNames } from "./common.js";
 import { extractOpenApi } from "./openapi.js";
 import { capturePins } from "./pins.js";
 import { scanRoutes } from "./route-scan.js";
@@ -209,6 +209,7 @@ export async function vendoSync(options: {
 }): Promise<SyncReportWithWarnings> {
   const root = path.resolve(options.root);
   const out = path.resolve(options.out ?? path.join(root, ".vendo"));
+  clearAliasCache(); // same-process re-runs (watch mode) must see tsconfig edits
   const warnings: string[] = [];
   const toolsPath = path.join(out, "tools.json");
   const previousFile = await readPrevious(toolsPath, warnings);

@@ -18,6 +18,11 @@ export interface ResolvedSource {
 
 const aliasCache = new Map<string, Promise<TsconfigPathAlias[]>>();
 
+/** Cleared at the start of every sync so a same-process re-run (watch mode) sees tsconfig edits. */
+export function clearAliasCache(): void {
+  aliasCache.clear();
+}
+
 export async function walk(
   root: string,
   keep: (relativePath: string) => boolean,
