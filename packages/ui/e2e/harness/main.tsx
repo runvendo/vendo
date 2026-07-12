@@ -13,7 +13,7 @@ import {
   useVendoTheme,
   type Thread,
   type VendoClient,
-} from "@vendoai/ui";
+} from "../../src/index.js";
 import {
   ActivityPanel,
   ApprovalCard,
@@ -25,14 +25,14 @@ import {
   VendoStage,
   VendoThread,
   type VendoCommand,
-} from "@vendoai/ui/chrome";
-import { AppFrame, TreeView } from "@vendoai/ui/tree";
+} from "../../src/chrome/index.js";
+import { AppFrame, TreeView } from "../../src/tree/index.js";
 import type {
   VoiceDriver,
   VoiceDriverEvent,
   VoiceDriverHandlers,
   VoiceSessionHandle,
-} from "@vendoai/ui/voice";
+} from "../../src/voice/index.js";
 import {
   useEffect,
   useMemo,

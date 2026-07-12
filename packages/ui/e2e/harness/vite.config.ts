@@ -3,7 +3,6 @@ import { defineConfig, type ViteDevServer } from "vite";
 import { createWireServer } from "../../test/wire-server.ts";
 
 const harnessRoot = fileURLToPath(new URL(".", import.meta.url));
-const sourceRoot = fileURLToPath(new URL("../../src/", import.meta.url));
 
 /** 08-ui §4–5 — real-browser harness backed by the exact in-test wire route table. */
 export default defineConfig(async () => {
@@ -13,14 +12,9 @@ export default defineConfig(async () => {
   return {
     root: harnessRoot,
     clearScreen: false,
-    resolve: {
-      alias: [
-        { find: /^@vendoai\/ui\/chrome$/, replacement: `${sourceRoot}chrome/index.ts` },
-        { find: /^@vendoai\/ui\/tree$/, replacement: `${sourceRoot}tree/index.ts` },
-        { find: /^@vendoai\/ui\/voice$/, replacement: `${sourceRoot}voice/index.ts` },
-        { find: /^@vendoai\/ui$/, replacement: `${sourceRoot}index.ts` },
-      ],
-    },
+    // The harness imports the package's source entry files directly (the same
+    // entries the subpath exports point at): a self-import by package name is
+    // not a layering edge the dependency guard can tell apart from a real one.
     server: {
       host: "127.0.0.1",
       port: 4_173,
