@@ -3,7 +3,7 @@ name: Bug report
 about: Something broken in a @vendoai package or demo
 ---
 
-**Package/app affected** (e.g. @vendoai/react, demo-bank):
+**Package/app affected** (e.g. @vendoai/ui, demo-bank):
 
 **What happened**
 

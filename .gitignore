@@ -16,11 +16,5 @@ corpus/.repos/
 .playwright-mcp/
 *.png
 
-# quarry (legacy/) generated artifacts — paths moved in the wave-3 quarry
-legacy/packages/vendo-stage/tests/browser/public/components-sandbox.js
-legacy/packages/vendo-stage/tests/browser/public/host-bundle.js
-legacy/packages/vendo-stage/tests/browser/public/host-bundle-ext.js
-legacy/packages/vendo-stage/tests/browser/public/vendo-react-runtime.js
-
-# Vendo demo runtime state (PGlite) — never committed (demos quarried until wave 7).
-legacy/apps/*/.vendo/data/
+# Vendo demo runtime state (PGlite) — never committed.
+apps/*/.vendo/data/

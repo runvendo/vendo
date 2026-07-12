@@ -11,10 +11,9 @@ pnpm test
 ```
 
 Node 20+, pnpm 9. The repo is a turbo monorepo: `packages/` are the published
-`@vendoai/*` libraries, being rebuilt block by block against the frozen
-contracts in `docs/contracts/` (read `00-overview.md` first). The pre-v0
-packages and demo apps live under `legacy/` — a read-only quarry that new code
-must never import (enforced in `pnpm lint`); the demos return in wave 7.
+`@vendoai/*` libraries, built against the frozen contracts in `docs/contracts/`
+(read `00-overview.md` first; layering is enforced in `pnpm lint`). The demo
+host apps live under `apps/`.
 
 ## Making changes
 

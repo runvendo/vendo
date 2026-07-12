@@ -57,7 +57,7 @@ const LAYERS = {
   "@vendoai/telemetry": [],
 };
 
-/** Retired names that only exist in the quarry / as pre-v0 npm publishes. */
+/** Retired names that only exist as pre-v0 npm publishes. */
 const RETIRED = [
   "@vendoai/cli",
   "@vendoai/client",
