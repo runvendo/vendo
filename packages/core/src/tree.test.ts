@@ -228,3 +228,21 @@ describe("prop binding guards", () => {
     expect(isStateBinding({})).toBe(false);
   });
 });
+
+describe("hostile inputs", () => {
+  it("never throws on inputs with throwing getters", () => {
+    const hostile = Object.defineProperty({}, "formatVersion", {
+      enumerable: true,
+      get() {
+        throw Object.defineProperty(new Error("boom"), "message", {
+          get() {
+            throw new Error("nested boom");
+          },
+        });
+      },
+    });
+    const result = validateTree(hostile);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("provision");
+  });
+});
