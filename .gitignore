@@ -7,7 +7,6 @@ dist
 
 # demo app
 .next/
-.next-automations-e2e/
 *.log
 
 # misc

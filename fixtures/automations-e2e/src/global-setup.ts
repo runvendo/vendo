@@ -51,8 +51,9 @@ export default async function setup(project: TestProject): Promise<() => Promise
   child = spawn(nextBin, ["dev", "-p", String(port)], {
     cwd: fixtureDir,
     // Own dist dir → own dev-server lock; the actions fixture e2e may be
-    // booting the same host app concurrently under turbo.
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", FIXTURE_DIST_DIR: ".next-automations-e2e" },
+    // booting the same host app concurrently under turbo. Nested under .next
+    // so scanners and gitignore rules that already skip .next cover it.
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", FIXTURE_DIST_DIR: ".next/automations-e2e" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   child.stdout.on("data", (chunk) => {

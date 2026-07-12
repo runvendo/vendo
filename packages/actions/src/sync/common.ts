@@ -4,7 +4,11 @@ import { sha256Hex } from "@vendoai/core";
 import type { ExtractedTool, HttpMethod } from "../formats.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
-const SKIP_DIRS = new Set(["node_modules", ".next", ".git", "dist"]);
+// Hidden directories are never route sources; alternate Next dist dirs
+// (e.g. a test consumer's FIXTURE_DIST_DIR) must not leak compiled routes
+// into extraction.
+const SKIP_DIRS = new Set(["node_modules", "dist"]);
+const skipDir = (name: string): boolean => SKIP_DIRS.has(name) || name.startsWith(".");
 
 interface TsconfigPathAlias {
   pattern: string;
@@ -40,7 +44,7 @@ export async function walk(
       if (files.length >= maxFiles) return;
       const full = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) await visit(full);
+        if (!skipDir(entry.name)) await visit(full);
       } else if (keep(path.relative(root, full))) {
         files.push(full);
       }
