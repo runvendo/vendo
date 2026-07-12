@@ -27,11 +27,12 @@ import {
   type VendoCommand,
 } from "../../src/chrome/index.js";
 import { AppFrame, TreeView } from "../../src/tree/index.js";
-import type {
-  VoiceDriver,
-  VoiceDriverEvent,
-  VoiceDriverHandlers,
-  VoiceSessionHandle,
+import {
+  realtimeVoiceDriver,
+  type VoiceDriver,
+  type VoiceDriverEvent,
+  type VoiceDriverHandlers,
+  type VoiceSessionHandle,
 } from "../../src/voice/index.js";
 import {
   useEffect,
@@ -370,6 +371,24 @@ function StageScenario() {
   );
 }
 
+/** LIVE scenario (OPENAI_API_KEY-gated spec): the REAL realtime WebRTC driver.
+ *  The ephemeral client secret arrives in the URL hash — the standing API key
+ *  never reaches the browser, exactly as the driver's getSession() seam intends. */
+function LiveStageScenario() {
+  const driver = useMemo(() => {
+    const clientSecret = decodeURIComponent(globalThis.location.hash.slice(1));
+    return realtimeVoiceDriver({
+      getSession: async () => ({ clientSecret }),
+      instructions: "You are a terse test agent. Say 'ready' and wait.",
+    });
+  }, []);
+  return (
+    <VendoProvider client={baseClient} voice={{ driver }}>
+      <VendoStage />
+    </VendoProvider>
+  );
+}
+
 function AppFrameScenario() {
   const cover = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='320'%3E%3Crect width='640' height='320' fill='%23ede9fe'/%3E%3Crect x='36' y='48' width='380' height='30' rx='8' fill='%238b5cf6'/%3E%3Crect x='36' y='106' width='550' height='18' rx='6' fill='%23c4b5fd'/%3E%3Crect x='36' y='145' width='490' height='18' rx='6' fill='%23ddd6fe'/%3E%3C/svg%3E";
   return (
@@ -393,6 +412,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
     case "/notice": return { title: "Unconfigured policy", content: <NoPolicyNotice /> };
     case "/stage": return { title: "Voice stage", content: <StageScenario />, ownProvider: true };
+    case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };

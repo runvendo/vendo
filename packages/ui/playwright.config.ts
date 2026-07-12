@@ -25,7 +25,21 @@ export default defineConfig({
   },
   projects: [{
     name: "chromium",
-    use: { ...devices["Desktop Chrome"], channel: undefined },
+    use: {
+      ...devices["Desktop Chrome"],
+      channel: undefined,
+      // A synthetic mic + auto-granted permission: the live voice smoke
+      // (e2e/live/, OPENAI_API_KEY-gated) needs real getUserMedia, and the
+      // deterministic suite is unaffected by an unused fake device.
+      launchOptions: {
+        args: [
+          "--use-fake-ui-for-media-stream",
+          "--use-fake-device-for-media-stream",
+          "--autoplay-policy=no-user-gesture-required",
+        ],
+      },
+      permissions: ["microphone"],
+    },
   }],
   webServer: [{
     command: "pnpm exec vite --config e2e/harness/vite.config.ts --host 127.0.0.1 --port 4173",
