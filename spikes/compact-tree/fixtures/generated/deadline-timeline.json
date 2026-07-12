@@ -1,0 +1,663 @@
+{
+  "_provenance": {
+    "origin": "generated",
+    "model": "claude-sonnet-5",
+    "request": "Build a filing-deadline view: a title, three KPI stat cards (Due This Week, Due This Month, Overdue) bound to /summary, and below them a list of the next 8 deadlines from /deadlines, each showing the client name, form type, and due date.",
+    "note": "Fresh vendo-genui/v1 tree from the real model; validated with @vendoai/core.validateTree."
+  },
+  "formatVersion": "vendo-genui/v1",
+  "root": "root",
+  "nodes": [
+    {
+      "id": "root",
+      "component": "Stack",
+      "source": "prewired",
+      "props": {
+        "gap": "lg",
+        "padding": "lg"
+      },
+      "children": [
+        "title",
+        "kpiRow",
+        "divider1",
+        "listTitle",
+        "deadlineList"
+      ]
+    },
+    {
+      "id": "title",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": "Filing Deadlines",
+        "variant": "heading"
+      }
+    },
+    {
+      "id": "kpiRow",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "lg"
+      },
+      "children": [
+        "weekCard",
+        "monthCard",
+        "overdueCard"
+      ]
+    },
+    {
+      "id": "weekCard",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "weekLabel",
+        "weekValue"
+      ]
+    },
+    {
+      "id": "weekLabel",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": "Due This Week",
+        "variant": "label"
+      }
+    },
+    {
+      "id": "weekValue",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/summary/dueThisWeek"
+        },
+        "variant": "value"
+      }
+    },
+    {
+      "id": "monthCard",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "monthLabel",
+        "monthValue"
+      ]
+    },
+    {
+      "id": "monthLabel",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": "Due This Month",
+        "variant": "label"
+      }
+    },
+    {
+      "id": "monthValue",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/summary/dueThisMonth"
+        },
+        "variant": "value"
+      }
+    },
+    {
+      "id": "overdueCard",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "overdueLabel",
+        "overdueValue"
+      ]
+    },
+    {
+      "id": "overdueLabel",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": "Overdue",
+        "variant": "label"
+      }
+    },
+    {
+      "id": "overdueValue",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/summary/overdue"
+        },
+        "variant": "value"
+      }
+    },
+    {
+      "id": "divider1",
+      "component": "Divider",
+      "source": "prewired"
+    },
+    {
+      "id": "listTitle",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": "Next 8 Deadlines",
+        "variant": "subheading"
+      }
+    },
+    {
+      "id": "deadlineList",
+      "component": "Stack",
+      "source": "prewired",
+      "props": {
+        "gap": "sm"
+      },
+      "children": [
+        "d0",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "d6",
+        "d7"
+      ]
+    },
+    {
+      "id": "d0",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d0Row"
+      ]
+    },
+    {
+      "id": "d0Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d0Client",
+        "d0Form",
+        "d0Due"
+      ]
+    },
+    {
+      "id": "d0Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/0/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d0Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/0/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d0Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/0/dueDate"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d1",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d1Row"
+      ]
+    },
+    {
+      "id": "d1Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d1Client",
+        "d1Form",
+        "d1Due"
+      ]
+    },
+    {
+      "id": "d1Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/1/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d1Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/1/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d1Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/1/dueDate"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d2",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d2Row"
+      ]
+    },
+    {
+      "id": "d2Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d2Client",
+        "d2Form",
+        "d2Due"
+      ]
+    },
+    {
+      "id": "d2Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/2/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d2Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/2/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d2Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/2/dueDate"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d3",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d3Row"
+      ]
+    },
+    {
+      "id": "d3Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d3Client",
+        "d3Form",
+        "d3Due"
+      ]
+    },
+    {
+      "id": "d3Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/3/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d3Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/3/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d3Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/3/dueDate"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d4",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d4Row"
+      ]
+    },
+    {
+      "id": "d4Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d4Client",
+        "d4Form",
+        "d4Due"
+      ]
+    },
+    {
+      "id": "d4Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/4/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d4Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/4/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d4Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/4/dueDate"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d5",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d5Row"
+      ]
+    },
+    {
+      "id": "d5Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d5Client",
+        "d5Form",
+        "d5Due"
+      ]
+    },
+    {
+      "id": "d5Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/5/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d5Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/5/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d5Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/5/dueDate"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d6",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d6Row"
+      ]
+    },
+    {
+      "id": "d6Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d6Client",
+        "d6Form",
+        "d6Due"
+      ]
+    },
+    {
+      "id": "d6Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/6/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d6Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/6/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d6Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/6/dueDate"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d7",
+      "component": "Surface",
+      "source": "prewired",
+      "children": [
+        "d7Row"
+      ]
+    },
+    {
+      "id": "d7Row",
+      "component": "Row",
+      "source": "prewired",
+      "props": {
+        "gap": "md"
+      },
+      "children": [
+        "d7Client",
+        "d7Form",
+        "d7Due"
+      ]
+    },
+    {
+      "id": "d7Client",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/7/client"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d7Form",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/7/formType"
+        },
+        "variant": "body"
+      }
+    },
+    {
+      "id": "d7Due",
+      "component": "Text",
+      "source": "prewired",
+      "props": {
+        "text": {
+          "$path": "/deadlines/7/dueDate"
+        },
+        "variant": "body"
+      }
+    }
+  ],
+  "data": {
+    "summary": {
+      "dueThisWeek": 4,
+      "dueThisMonth": 19,
+      "overdue": 2
+    },
+    "deadlines": [
+      {
+        "client": "Acme Corp",
+        "formType": "Form 1120",
+        "dueDate": "2024-06-17"
+      },
+      {
+        "client": "Bright Retail LLC",
+        "formType": "Sales Tax",
+        "dueDate": "2024-06-18"
+      },
+      {
+        "client": "Chen Family Trust",
+        "formType": "Form 1041",
+        "dueDate": "2024-06-19"
+      },
+      {
+        "client": "Delgado & Sons",
+        "formType": "Form 1065",
+        "dueDate": "2024-06-20"
+      },
+      {
+        "client": "Evergreen Landscaping",
+        "formType": "Payroll 941",
+        "dueDate": "2024-06-21"
+      },
+      {
+        "client": "Fairview Dental",
+        "formType": "Form 1120-S",
+        "dueDate": "2024-06-24"
+      },
+      {
+        "client": "Garcia Consulting",
+        "formType": "Form 1040",
+        "dueDate": "2024-06-25"
+      },
+      {
+        "client": "Harbor Logistics",
+        "formType": "Franchise Tax",
+        "dueDate": "2024-06-27"
+      }
+    ]
+  },
+  "queries": [
+    {
+      "path": "/summary",
+      "tool": "host_deadlines_summary"
+    },
+    {
+      "path": "/deadlines",
+      "tool": "host_deadlines_upcoming",
+      "input": {
+        "limit": 8
+      }
+    }
+  ]
+}
