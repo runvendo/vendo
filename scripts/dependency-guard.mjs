@@ -20,6 +20,10 @@
  *
  *   3. HONEST MANIFESTS — every @vendoai/* import in a package's src must be
  *      declared in its package.json (dependencies or peerDependencies).
+ *      devDependencies deliberately do NOT count, while test files ARE scanned:
+ *      a test-only @vendoai/* import must still be a declared, layer-legal
+ *      dependency — devDeps are invisible to consumers and would let layering
+ *      violations hide in tests. (Non-@vendoai devDeps like vitest are fine.)
  *
  * Runs in `pnpm lint` at the root. No dependencies; Node >= 20.
  *
