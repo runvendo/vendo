@@ -103,11 +103,17 @@ export function createAgent(config: AgentConfig): VendoAgent {
             stopWhen: stepCountIs(20),
             maxOutputTokens: config.context?.maxOutputTokens,
           });
-          writer.merge(result.toUIMessageStream({ originalMessages: thread.messages }));
+          writer.merge(result.toUIMessageStream({
+            originalMessages: thread.messages,
+            // Raw provider/model error strings never reach the wire (they can
+            // carry request internals); the error part is a fixed generic message.
+            onError: () => "An error occurred while generating the response.",
+          }));
         },
         onFinish: async ({ messages }) => {
           await threads.persist(thread, messages, input.ctx);
         },
+        onError: () => "An error occurred while generating the response.",
       });
       return createUIMessageStreamResponse({ stream });
     },
