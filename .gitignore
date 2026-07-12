@@ -24,3 +24,6 @@ legacy/packages/vendo-stage/tests/browser/public/vendo-react-runtime.js
 
 # Vendo demo runtime state (PGlite) — never committed (demos quarried until wave 7).
 legacy/apps/*/.vendo/data/
+
+# wave-6 orchestration lane briefs/signals (never committed)
+.lanes/
