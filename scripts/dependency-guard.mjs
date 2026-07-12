@@ -48,6 +48,9 @@ const LAYERS = {
   "@vendoai/guard": ["@vendoai/core"],
   "@vendoai/ui": ["@vendoai/core"],
   "@vendoai/apps": ["@vendoai/core"],
+  // the door (10-mcp): depends on core only; the ui/tree shim arrives as a
+  // prebuilt committed artifact (built by packages/ui/scripts), never an import
+  "@vendoai/mcp": ["@vendoai/core"],
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
   // the umbrella (published as `vendoai`) is the only package allowed to depend on everything
   vendoai: "*",

@@ -2,7 +2,13 @@
   "name": "@vendoai/ui",
   "version": "0.3.0",
   "description": "Headless hooks + optional chrome for Vendo: the client, every surface, the vendo-genui/v1 tree renderer, and the voice stage.",
-  "keywords": ["ai", "agent", "genui", "react", "vendo"],
+  "keywords": [
+    "ai",
+    "agent",
+    "genui",
+    "react",
+    "vendo"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -39,7 +45,9 @@
       "default": "./dist/voice/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build:jail": "node scripts/build-jail-runtime.mjs",
     "prebuild": "pnpm run build:jail",
@@ -48,7 +56,8 @@
     "test": "vitest run --passWithNoTests",
     "pretypecheck": "pnpm run build:jail",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.30",
@@ -62,6 +71,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@playwright/test": "^1.49.0",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",
