@@ -1,6 +1,7 @@
 import type { AppId, Json, Principal } from "@vendoai/core";
 import { overlayFor, registerEphemeralSubject, stateKey } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
+import { requireJson } from "../validate.js";
 
 /** 02-store §3 */
 export function stateStore(store: VendoStore): {
@@ -23,14 +24,15 @@ export function stateStore(store: VendoStore): {
       return result.rows[0]?.["data"] ?? null;
     },
     async put(principal, appId, data) {
+      const parsedData = requireJson(data, "state data");
       if (principal.ephemeral === true) {
-        overlay.states.set(stateKey(principal.subject, appId), { appId, subject: principal.subject, data });
+        overlay.states.set(stateKey(principal.subject, appId), { appId, subject: principal.subject, data: parsedData });
         return;
       }
       await db.query(
         `INSERT INTO vendo_state (app_id, subject, data, updated_at) VALUES ($1, $2, $3::jsonb, $4)
          ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-        [appId, principal.subject, JSON.stringify(data), new Date().toISOString()],
+        [appId, principal.subject, JSON.stringify(parsedData), new Date().toISOString()],
       );
     },
     async delete(principal, appId) {

@@ -24,12 +24,28 @@ for (const backend of backends()) {
       await threadStore(made.store).put(ephemeral, { id: "thr_ephemeral", messages: [{ text: "temporary" }] });
       await grantStore(made.store).create(ephemeral, grant);
       await auditStore(made.store).append(event);
+      const records = made.store.records("app:app_ephemeral:notes");
+      await records.put({ id: "note_a", data: { text: "temporary a" }, refs: { kind: "note" } });
+      await records.put({ id: "note_b", data: { text: "temporary b" }, refs: { kind: "note" } });
+      const blobs = made.store.blobs("app:app_ephemeral:files");
+      await blobs.put("z-last.txt", new Uint8Array([2]), { contentType: "text/plain" });
+      await blobs.put("a-first.txt", new Uint8Array([1]));
 
       expect((await appStore(made.store).get(doc.id))?.doc).toEqual(doc);
       expect(await stateStore(made.store).get(ephemeral, doc.id)).toEqual({ transient: true });
       expect((await threadStore(made.store).get(ephemeral, "thr_ephemeral"))?.messages).toEqual([{ text: "temporary" }]);
       expect(permissionGrantSchema.parse(await grantStore(made.store).get(grant.id))).toEqual(grant);
       expect(auditEventSchema.parse((await auditStore(made.store).query({ principal: ephemeral })).events[0])).toEqual(event);
+      expect((await records.get("note_a"))?.data).toEqual({ text: "temporary a" });
+      const firstPage = await records.list({ refs: { kind: "note" }, limit: 1 });
+      expect(firstPage.records).toHaveLength(1);
+      expect(firstPage.cursor).toBeDefined();
+      const secondPage = await records.list({ refs: { kind: "note" }, limit: 1, cursor: firstPage.cursor });
+      expect(new Set([...firstPage.records, ...secondPage.records].map((record) => record.id)))
+        .toEqual(new Set(["note_a", "note_b"]));
+      expect(secondPage.cursor).toBeUndefined();
+      expect(await blobs.list()).toEqual(["a-first.txt", "z-last.txt"]);
+      expect(await blobs.get("z-last.txt")).toEqual({ bytes: new Uint8Array([2]), contentType: "text/plain" });
     });
 
     it("writes no ephemeral subject rows to any corresponding SQL table", async () => {
@@ -37,6 +53,16 @@ for (const backend of backends()) {
         const rows = await made.sql(`SELECT COUNT(*)::int AS count FROM ${table} WHERE subject = $1`, [ephemeral.subject]);
         expect(Number(rows[0]?.count), table).toBe(0);
       }
+      const records = await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_records WHERE collection = $1",
+        ["app:app_ephemeral:notes"],
+      );
+      expect(Number(records[0]?.count), "vendo_records").toBe(0);
+      const blobs = await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_blobs WHERE namespace = $1",
+        ["app:app_ephemeral:files"],
+      );
+      expect(Number(blobs[0]?.count), "vendo_blobs").toBe(0);
     });
 
     it("does not disturb persistent rows", async () => {
@@ -55,6 +81,8 @@ for (const backend of backends()) {
       expect(await appStore(made.store).get("app_ephemeral")).toBeNull();
       expect(await grantStore(made.store).get("grt_ephemeral")).toBeNull();
       expect(await threadStore(made.store).get(ephemeral, "thr_ephemeral")).toBeNull();
+      expect(await made.store.records("app:app_ephemeral:notes").get("note_a")).toBeNull();
+      expect(await made.store.blobs("app:app_ephemeral:files").get("z-last.txt")).toBeNull();
       expect(await appStore(made.store).get("app_persistent")).not.toBeNull();
       expect(await grantStore(made.store).get("grt_persistent")).not.toBeNull();
     });

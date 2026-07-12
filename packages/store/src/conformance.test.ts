@@ -1,8 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { secretsProviderConformance, storeAdapterConformance } from "@vendoai/core/conformance";
-import { afterAll, beforeAll, describe, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { createStore, envSecrets, secretStore, storeSecrets } from "./index.js";
+
+it("explains how to initialize the store before raw access", async () => {
+  const store = createStore({ dataDir: "memory://raw-before-open" });
+  expect(() => store.raw()).toThrow(
+    new Error("[vendo] store not opened yet — run ensureSchema() or any query first"),
+  );
+  await store.close();
+});
 
 for (const backend of backends()) {
   describe(backend.name, () => {

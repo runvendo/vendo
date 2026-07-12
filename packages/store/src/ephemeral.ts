@@ -1,4 +1,4 @@
-import type { AuditEvent, PermissionGrant } from "@vendoai/core";
+import type { AuditEvent, PermissionGrant, VendoRecord } from "@vendoai/core";
 import type { Db } from "./db.js";
 import type { VendoStore } from "./store.js";
 import type { AppRow, ApprovalRow, EphemeralStateRow, RunRow, ThreadRow } from "./helpers/types.js";
@@ -13,6 +13,8 @@ export interface EphemeralOverlay {
   approvals: Map<string, ApprovalRow>;
   audit: Map<string, AuditEvent>;
   runs: Map<string, RunRow>;
+  records: Map<string, Map<string, VendoRecord>>;
+  blobs: Map<string, Map<string, { bytes: Uint8Array; contentType?: string }>>;
 }
 
 const overlays = new WeakMap<object, EphemeralOverlay>();
@@ -30,6 +32,8 @@ export function overlayFor(store: object): EphemeralOverlay {
       approvals: new Map(),
       audit: new Map(),
       runs: new Map(),
+      records: new Map(),
+      blobs: new Map(),
     };
     overlays.set(store, overlay);
   }
@@ -69,6 +73,8 @@ export function dropOverlay(store: object): void {
     overlay.approvals.clear();
     overlay.audit.clear();
     overlay.runs.clear();
+    overlay.records.clear();
+    overlay.blobs.clear();
   }
   overlays.delete(store);
 }

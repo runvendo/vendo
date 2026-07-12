@@ -28,10 +28,10 @@ export function createStore(config: StoreConfig = {}): VendoStore {
   const db = createDb(config);
   const store: VendoStore = {
     records(collection: string): RecordStore {
-      return createReservedRecordStore(store, db, collection) ?? createRecordStore(db, collection);
+      return createReservedRecordStore(store, db, collection) ?? createRecordStore(store, db, collection);
     },
     blobs(namespace: string): BlobStore {
-      return createBlobStore(db, namespace);
+      return createBlobStore(store, db, namespace);
     },
     async ensureSchema() {
       await migrateSchema(db);

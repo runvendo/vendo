@@ -4,6 +4,7 @@ import { dbFor, type VendoStore } from "../store.js";
 import type { ApprovalRow } from "./types.js";
 import { approvalFromRow, putApprovalRow } from "./rows.js";
 import { text } from "./utils.js";
+import { parseApprovalRequest } from "../validate.js";
 
 /** 02-store §3 */
 export function approvalStore(store: VendoStore): {
@@ -16,24 +17,25 @@ export function approvalStore(store: VendoStore): {
   const overlay = overlayFor(store);
   return {
     async create(request) {
-      const subject = request.ctx.principal.subject;
-      if (request.ctx.principal.ephemeral === true) {
+      const parsedRequest = parseApprovalRequest(request);
+      const subject = parsedRequest.ctx.principal.subject;
+      if (parsedRequest.ctx.principal.ephemeral === true) {
         registerEphemeralSubject(store, subject);
-        overlay.approvals.set(request.id, {
-          id: request.id,
+        overlay.approvals.set(parsedRequest.id, {
+          id: parsedRequest.id,
           subject,
-          request,
+          request: parsedRequest,
           status: "pending",
-          createdAt: request.createdAt,
+          createdAt: parsedRequest.createdAt,
         });
         return;
       }
       await putApprovalRow(db, {
-        id: request.id,
+        id: parsedRequest.id,
         subject,
-        request,
+        request: parsedRequest,
         status: "pending",
-        createdAt: request.createdAt,
+        createdAt: parsedRequest.createdAt,
       }, false);
     },
     async get(id) {

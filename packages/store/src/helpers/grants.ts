@@ -9,6 +9,7 @@ import {
 import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { grantFromRow, putGrantRow } from "./rows.js";
+import { parsePermissionGrant } from "../validate.js";
 
 function active(grant: PermissionGrant, now: string): boolean {
   return grant.revokedAt === undefined && (grant.expiresAt === undefined || grant.expiresAt > now);
@@ -25,15 +26,16 @@ export function grantStore(store: VendoStore): {
   const overlay = overlayFor(store);
   return {
     async create(principal, grant) {
-      if (grant.subject !== principal.subject) {
+      const parsedGrant = parsePermissionGrant(grant);
+      if (parsedGrant.subject !== principal.subject) {
         throw new VendoError("validation", "Grant subject must match principal subject");
       }
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
-        overlay.grants.set(grant.id, grant);
+        overlay.grants.set(parsedGrant.id, parsedGrant);
         return;
       }
-      await putGrantRow(db, grant, false);
+      await putGrantRow(db, parsedGrant, false);
     },
     async get(id) {
       const memory = overlay.grants.get(id);

@@ -1,4 +1,4 @@
-import { VendoError, type IsoDateTime, type Json } from "@vendoai/core";
+import { VendoError, isoDateTimeSchema, type IsoDateTime, type Json } from "@vendoai/core";
 
 export function iso(value: unknown): IsoDateTime {
   if (!(typeof value === "string" || value instanceof Date)) {
@@ -26,17 +26,23 @@ export function encodeCursor(date: IsoDateTime, id: string): string {
 
 export function decodeCursor(value: string): { c: IsoDateTime; i: string } {
   try {
-    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    const decoded = Buffer.from(value, "base64url");
+    if (decoded.toString("base64url") !== value) throw new Error("non-canonical cursor");
+    const parsed = JSON.parse(decoded.toString("utf8")) as unknown;
     if (
       typeof parsed !== "object" || parsed === null
+      || Array.isArray(parsed)
+      || Object.keys(parsed).length !== 2
+      || !Object.prototype.hasOwnProperty.call(parsed, "c")
+      || !Object.prototype.hasOwnProperty.call(parsed, "i")
       || typeof (parsed as { c?: unknown }).c !== "string"
       || typeof (parsed as { i?: unknown }).i !== "string"
     ) throw new Error("invalid cursor");
-    const c = new Date((parsed as { c: string }).c);
-    if (Number.isNaN(c.valueOf())) throw new Error("invalid cursor timestamp");
-    return { c: c.toISOString(), i: (parsed as { i: string }).i };
+    const timestamp = isoDateTimeSchema.safeParse((parsed as { c: string }).c);
+    if (!timestamp.success) throw new Error("invalid cursor timestamp");
+    return { c: timestamp.data, i: (parsed as { i: string }).i };
   } catch {
-    throw new VendoError("validation", "Malformed store cursor");
+    throw new VendoError("validation", "malformed cursor");
   }
 }
 

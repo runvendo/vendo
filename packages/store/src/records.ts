@@ -1,6 +1,8 @@
 import type { RecordQuery, RecordStore, VendoRecord } from "@vendoai/core";
 import type { Db } from "./db.js";
+import { isEphemeralApp, overlayFor } from "./ephemeral.js";
 import { decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
+import type { VendoStore } from "./store.js";
 
 function recordFromRow(row: Record<string, unknown>): VendoRecord {
   const refs = row["refs"] as Record<string, string> | null;
@@ -14,9 +16,22 @@ function recordFromRow(row: Record<string, unknown>): VendoRecord {
 }
 
 /** 01-core §12 */
-export function createRecordStore(db: Db, collection: string): RecordStore {
+export function createRecordStore(store: VendoStore, db: Db, collection: string): RecordStore {
+  const appId = /^app:([^:]+):/.exec(collection)?.[1];
+  const ephemeralRecords = (): Map<string, VendoRecord> => {
+    const records = overlayFor(store).records;
+    let collectionRecords = records.get(collection);
+    if (!collectionRecords) {
+      collectionRecords = new Map();
+      records.set(collection, collectionRecords);
+    }
+    return collectionRecords;
+  };
+  const isEphemeral = async (): Promise<boolean> => appId !== undefined && isEphemeralApp(store, db, appId);
+
   return {
     async get(id) {
+      if (await isEphemeral()) return overlayFor(store).records.get(collection)?.get(id) ?? null;
       const result = await db.query(
         "SELECT id, data, refs, created_at, updated_at FROM vendo_records WHERE collection = $1 AND id = $2",
         [collection, id],
@@ -25,6 +40,19 @@ export function createRecordStore(db: Db, collection: string): RecordStore {
     },
     async put(record) {
       const now = new Date().toISOString();
+      if (await isEphemeral()) {
+        const records = ephemeralRecords();
+        const prior = records.get(record.id);
+        const stored: VendoRecord = {
+          id: record.id,
+          data: record.data,
+          ...(record.refs === undefined ? {} : { refs: record.refs }),
+          createdAt: prior?.createdAt ?? now,
+          updatedAt: now,
+        };
+        records.set(record.id, stored);
+        return stored;
+      }
       const result = await db.query(
         `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at)
          VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $5)
@@ -36,10 +64,30 @@ export function createRecordStore(db: Db, collection: string): RecordStore {
       return recordFromRow(result.rows[0] as Record<string, unknown>);
     },
     async delete(id) {
+      if (await isEphemeral()) {
+        overlayFor(store).records.get(collection)?.delete(id);
+        return;
+      }
       await db.query("DELETE FROM vendo_records WHERE collection = $1 AND id = $2", [collection, id]);
     },
     async list(query: RecordQuery = {}) {
       const limit = pageLimit(query.limit);
+      if (await isEphemeral()) {
+        const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
+        const matching = [...(overlayFor(store).records.get(collection)?.values() ?? [])]
+          .filter((record) => query.ids === undefined || query.ids.includes(record.id))
+          .filter((record) => query.refs === undefined || Object.entries(query.refs)
+            .every(([key, value]) => record.refs?.[key] === value))
+          .filter((record) => cursor === undefined || record.createdAt < cursor.c
+            || (record.createdAt === cursor.c && record.id < cursor.i))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+        const records = matching.slice(0, limit);
+        const last = records.at(-1);
+        return {
+          records,
+          ...(matching.length > limit && last ? { cursor: encodeCursor(last.createdAt, last.id) } : {}),
+        };
+      }
       const clauses = ["collection = $1"];
       const params: unknown[] = [collection];
       if (query.refs !== undefined) {

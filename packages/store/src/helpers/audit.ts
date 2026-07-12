@@ -3,6 +3,7 @@ import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { putAuditRow } from "./rows.js";
 import { decodeCursor, encodeCursor, iso, pageLimit, text } from "./utils.js";
+import { parseAuditEvent } from "../validate.js";
 
 export interface AuditQuery {
   principal?: Principal;
@@ -28,12 +29,13 @@ export function auditStore(store: VendoStore): {
   const overlay = overlayFor(store);
   return {
     async append(event) {
-      if (event.principal.ephemeral === true) {
-        registerEphemeralSubject(store, event.principal.subject);
-        overlay.audit.set(event.id, event);
+      const parsedEvent = parseAuditEvent(event);
+      if (parsedEvent.principal.ephemeral === true) {
+        registerEphemeralSubject(store, parsedEvent.principal.subject);
+        overlay.audit.set(parsedEvent.id, parsedEvent);
         return;
       }
-      await putAuditRow(db, event);
+      await putAuditRow(db, parsedEvent);
     },
     async query(filter) {
       const limit = pageLimit(filter.limit);

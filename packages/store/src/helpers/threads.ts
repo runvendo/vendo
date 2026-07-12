@@ -4,6 +4,7 @@ import { dbFor, type VendoStore } from "../store.js";
 import type { ThreadRow } from "./types.js";
 import { putThreadRow, threadFromRow } from "./rows.js";
 import { iso, text } from "./utils.js";
+import { parseThreadData } from "../validate.js";
 
 /** 02-store §3 */
 export function threadStore(store: VendoStore): {
@@ -16,14 +17,15 @@ export function threadStore(store: VendoStore): {
   const overlay = overlayFor(store);
   return {
     async put(principal, thread) {
+      const parsed = parseThreadData({ subject: principal.subject, messages: thread.messages }, thread.id);
       const now = new Date().toISOString();
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
         const prior = overlay.threads.get(thread.id);
         const row: ThreadRow = {
           id: thread.id,
-          subject: principal.subject,
-          messages: thread.messages,
+          subject: parsed.subject,
+          messages: parsed.messages,
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
         };
@@ -32,8 +34,8 @@ export function threadStore(store: VendoStore): {
       }
       return putThreadRow(db, {
         id: thread.id,
-        subject: principal.subject,
-        messages: thread.messages,
+        subject: parsed.subject,
+        messages: parsed.messages,
       }, now);
     },
     async get(principal, id) {

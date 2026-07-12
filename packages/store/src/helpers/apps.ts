@@ -4,6 +4,7 @@ import { dbFor, type VendoStore } from "../store.js";
 import type { AppRow } from "./types.js";
 import { VendoError } from "@vendoai/core";
 import { appFromRow, putAppRow } from "./rows.js";
+import { parseAppDocument } from "../validate.js";
 
 /** 02-store §3 */
 export function appStore(store: VendoStore): {
@@ -17,26 +18,27 @@ export function appStore(store: VendoStore): {
   const overlay = overlayFor(store);
   return {
     async put(principal, doc, opts = {}) {
+      const parsedDoc = parseAppDocument(doc);
       const now = new Date().toISOString();
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
-        const prior = overlay.apps.get(doc.id);
+        const prior = overlay.apps.get(parsedDoc.id);
         const row: AppRow = {
-          id: doc.id,
+          id: parsedDoc.id,
           subject: principal.subject,
           enabled: opts.enabled ?? prior?.enabled ?? true,
-          doc,
+          doc: parsedDoc,
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
         };
-        overlay.apps.set(doc.id, row);
+        overlay.apps.set(parsedDoc.id, row);
         return row;
       }
       return putAppRow(db, {
-        id: doc.id,
+        id: parsedDoc.id,
         subject: principal.subject,
         enabled: opts.enabled ?? true,
-        doc,
+        doc: parsedDoc,
       }, now);
     },
     async get(id) {

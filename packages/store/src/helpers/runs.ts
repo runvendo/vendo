@@ -4,6 +4,7 @@ import { dbFor, type VendoStore } from "../store.js";
 import type { RunRow } from "./types.js";
 import { putRunRow, runFromRow } from "./rows.js";
 import { decodeCursor, encodeCursor, pageLimit } from "./utils.js";
+import { parseRunData } from "../validate.js";
 
 /** 02-store §3 */
 export function runStore(store: VendoStore): {
@@ -15,11 +16,12 @@ export function runStore(store: VendoStore): {
   const overlay = overlayFor(store);
   return {
     async put(run) {
-      if (await isEphemeralApp(store, db, run.appId)) {
-        overlay.runs.set(run.id, run);
+      const parsedRun: RunRow = { id: run.id, ...parseRunData(run, run.id) };
+      if (await isEphemeralApp(store, db, parsedRun.appId)) {
+        overlay.runs.set(parsedRun.id, parsedRun);
         return;
       }
-      await putRunRow(db, run);
+      await putRunRow(db, parsedRun);
     },
     async get(id) {
       const memory = overlay.runs.get(id);

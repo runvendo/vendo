@@ -74,8 +74,20 @@ for (const backend of backends()) {
     });
 
     it("rejects malformed cursors as validation errors", async () => {
-      await expect(made.store.records("cursor_errors").list({ cursor: "not-a-cursor" }))
-        .rejects.toMatchObject<VendoError>({ code: "validation" });
+      const records = made.store.records("cursor_errors");
+      const encode = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+      const malformed = [
+        "not-a-cursor",
+        encode({ c: "2026", i: "record_1" }),
+        `${encode({ c: "2026-01-02T03:04:05.000Z", i: "record_1" })}!!`,
+        encode({ c: "2026-01-02T03:04:05.000Z", i: "record_1", extra: true }),
+      ];
+      for (const cursor of malformed) {
+        await expect(records.list({ cursor })).rejects.toMatchObject<VendoError>({
+          code: "validation",
+          message: "malformed cursor",
+        });
+      }
     });
   });
 }

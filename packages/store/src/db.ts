@@ -93,6 +93,9 @@ export function createDb(config: StoreConfig = {}): Db {
       driver = undefined;
     },
     raw() {
+      if (!driver) {
+        throw new Error("[vendo] store not opened yet — run ensureSchema() or any query first");
+      }
       return driver;
     },
   };

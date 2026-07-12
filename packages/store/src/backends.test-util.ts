@@ -45,8 +45,7 @@ const pglite: Backend = {
       store: createStore({ dataDir }),
       dataDir,
       async sql(text, params = []) {
-        const raw = result.store.raw() as { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> } | undefined;
-        if (!raw) throw new Error("PGlite is not open; call ensureSchema first");
+        const raw = result.store.raw() as { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> };
         return (await raw.query<Record<string, unknown>>(text, params)).rows;
       },
       async cleanup() {

@@ -27,7 +27,7 @@ For production, pass a Postgres connection string explicitly, for example `creat
 | `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation run records |
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values |
 
-App storage uses `app:<appId>:<name>` by convention. Except for the six reserved names below, collection names remain opaque and use `vendo_records`.
+App storage uses `app:<appId>:<name>` by convention. When the owning app is ephemeral, generic record collections and blob namespaces following that convention stay entirely in the session's in-memory overlay. Except for the six reserved names below, collection names remain opaque and use `vendo_records`; non-`app:`-prefixed collections and namespaces have no principal linkage and therefore keep their normal persistence behavior.
 
 ## Reserved collections (block seam)
 
@@ -44,4 +44,4 @@ Blocks receive core's plain `StoreAdapter`, so these exact `records()` collectio
 
 Reserved writes validate their typed data, require embedded ids to match the record id, and upsert the typed row. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Routed `list({ refs })` accepts only the refs shown above. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
 
-Ephemeral approvals and audit events route automatically from their embedded principal. For grants, threads, apps, and other subject-only writes, call `registerEphemeralSubject(store, subject)` before the first write, unless an earlier principal-bearing ephemeral write already registered that subject. Runs inherit routing from their owning app. Routed and typed helpers share the same in-memory overlays, and `close()` clears them. Blob namespaces remain principal-free and are not routed automatically.
+Ephemeral approvals and audit events route automatically from their embedded principal. For grants, threads, apps, and other subject-only writes, call `registerEphemeralSubject(store, subject)` before the first write, unless an earlier principal-bearing ephemeral write already registered that subject. Runs and `app:<appId>:<name>` record/blob storage inherit routing from their owning app. Routed, typed-helper, and app-convention generic storage share in-memory overlays, and `close()` clears them. Other blob namespaces remain principal-free and are not routed automatically.
