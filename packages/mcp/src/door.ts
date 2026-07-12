@@ -4,6 +4,7 @@ import type {
   Principal,
   RunContext,
   StoreAdapter,
+  ToolDescriptor,
   ToolOutcome,
   ToolRegistry,
 } from "@vendoai/core";
@@ -255,7 +256,7 @@ class Door {
     const descriptors = await this.#config.tools.descriptors();
     if (!descriptors.some((descriptor) => descriptor.name === name)) {
       if (this.#config.apps !== undefined && APP_TOOL_NAMES.has(name)) {
-        return this.#callAppsTool(name, args, ctx);
+        return this.#callAppsTool(name, args, ctx, identity);
       }
       return inBandError(`not-found: Tool ${name} was not found`);
     }
@@ -267,34 +268,66 @@ class Door {
     return mapOutcome(outcome, identity.name);
   }
 
-  async #callAppsTool(name: string, args: Record<string, unknown>, ctx: RunContext): Promise<CallToolResult> {
-    const apps = this.#config.apps;
-    if (apps === undefined) return inBandError("not-found: Apps are not configured");
+  /** The ride-along tools are door tool calls like any other (10-mcp §2:
+   * "every door tool call ... risk labels, grants, approvals, audit, breakers
+   * all apply identically"). They are not in the bound registry, so the door
+   * runs the same decide → (maybe park) → execute → report shape through the
+   * core Guard seam itself; guard.check parks the approval on "ask". The
+   * nested ref execution inside AppsPort.call is additionally guard-bound
+   * inside apps, with its own venue="app" context — two decisions, one per
+   * perimeter, never fewer. */
+  async #callAppsTool(
+    name: string,
+    args: Record<string, unknown>,
+    ctx: RunContext,
+    identity: HostIdentity,
+  ): Promise<CallToolResult> {
+    const descriptor = APP_TOOL_DESCRIPTORS.find((candidate) => candidate.name === name);
+    if (this.#config.apps === undefined || descriptor === undefined) {
+      return inBandError(`not-found: Tool ${name} was not found`);
+    }
+    const call = { id: `mctc_${crypto.randomUUID()}`, tool: name, args: args as Json };
+    const decision = await this.#config.guard.check(call, descriptor, ctx);
+    const outcome: ToolOutcome = decision.action === "block"
+      ? { status: "blocked", reason: decision.reason }
+      : decision.action === "ask"
+        ? { status: "pending-approval", approvalId: decision.approval.id }
+        : await this.#executeAppsTool(name, args, ctx);
+    await this.#config.guard.report({
+      id: `aud_${randomHex(12)}`,
+      at: new Date().toISOString(),
+      kind: "tool-call",
+      principal: ctx.principal,
+      venue: ctx.venue,
+      presence: ctx.presence,
+      tool: name,
+      inputPreview: appToolPreview(name, args),
+      outcome: outcome.status,
+      decidedBy: decision.decidedBy,
+    });
+    return mapOutcome(outcome, identity.name);
+  }
+
+  async #executeAppsTool(name: string, args: Record<string, unknown>, ctx: RunContext): Promise<ToolOutcome> {
+    const apps = this.#config.apps!;
     try {
       if (name === "vendo_apps_list") {
-        const output = await apps.list(ctx);
-        return textResult(output);
+        return { status: "ok", output: await apps.list(ctx) };
       }
       const appId = typeof args.appId === "string" ? args.appId : undefined;
-      if (!appId) return inBandError("validation: appId is required");
+      if (!appId) return { status: "error", error: { code: "validation", message: "appId is required" } };
       if (name === "vendo_apps_open") {
         const opened = await apps.open(appId, ctx);
-        if (opened.kind === "http") return { content: [{ type: "text", text: opened.url }] };
-        return {
-          content: [{ type: "text", text: stringify(opened.payload) }],
-          structuredContent: opened.payload as Record<string, unknown>,
-        };
+        return { status: "ok", output: opened.kind === "http" ? { url: opened.url } : opened.payload };
       }
-      if (name === "vendo_apps_call") {
-        const ref = typeof args.ref === "string" ? args.ref : undefined;
-        if (!ref) return inBandError("validation: ref is required");
-        if (!Object.hasOwn(args, "args")) return inBandError("validation: args is required");
-        const output = await apps.call(appId, ref, args.args as Json, ctx);
-        return textResult(output);
+      const ref = typeof args.ref === "string" ? args.ref : undefined;
+      if (!ref) return { status: "error", error: { code: "validation", message: "ref is required" } };
+      if (!Object.hasOwn(args, "args")) {
+        return { status: "error", error: { code: "validation", message: "args is required" } };
       }
-      return inBandError(`not-found: Tool ${name} was not found`);
+      return { status: "ok", output: await apps.call(appId, ref, args.args as Json, ctx) };
     } catch (error) {
-      return inBandError(`error: ${errorMessage(error)}`);
+      return { status: "error", error: { code: "error", message: errorMessage(error) } };
     }
   }
 
@@ -394,43 +427,58 @@ function notFound(): Response {
   return json({ error: { code: "not-found", message: "Not found" } }, 404);
 }
 
-const APP_TOOL_NAMES = new Set(["vendo_apps_list", "vendo_apps_open", "vendo_apps_call"]);
+/** Door-owned descriptors for the ride-along tools — the shapes guard.check
+ * decides against (risk labels apply identically, 10-mcp §2). */
+const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
+  {
+    name: "vendo_apps_list",
+    description: "List the current user's saved Vendo apps",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    risk: "read",
+  },
+  {
+    name: "vendo_apps_open",
+    description: "Open a saved Vendo app",
+    inputSchema: {
+      type: "object",
+      properties: { appId: { type: "string" } },
+      required: ["appId"],
+      additionalProperties: false,
+    },
+    risk: "read",
+  },
+  {
+    name: "vendo_apps_call",
+    description: "Run an interaction from a saved Vendo app",
+    inputSchema: {
+      type: "object",
+      properties: {
+        appId: { type: "string" },
+        ref: { type: "string" },
+        args: {},
+      },
+      required: ["appId", "ref", "args"],
+      additionalProperties: false,
+    },
+    risk: "write",
+  },
+];
+
+const APP_TOOL_NAMES = new Set(APP_TOOL_DESCRIPTORS.map((descriptor) => descriptor.name));
 
 function appTools(): Tool[] {
   const uiMeta = { ui: { resourceUri: SHIM_URI }, "ui/resourceUri": SHIM_URI };
-  return [
-    {
-      name: "vendo_apps_list",
-      description: "List the current user's saved Vendo apps",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    },
-    {
-      name: "vendo_apps_open",
-      description: "Open a saved Vendo app",
-      inputSchema: {
-        type: "object",
-        properties: { appId: { type: "string" } },
-        required: ["appId"],
-        additionalProperties: false,
-      },
-      _meta: uiMeta,
-    },
-    {
-      name: "vendo_apps_call",
-      description: "Run an interaction from a saved Vendo app",
-      inputSchema: {
-        type: "object",
-        properties: {
-          appId: { type: "string" },
-          ref: { type: "string" },
-          args: {},
-        },
-        required: ["appId", "ref", "args"],
-        additionalProperties: false,
-      },
-      _meta: uiMeta,
-    },
-  ];
+  return APP_TOOL_DESCRIPTORS.map(({ name, description, inputSchema }) => ({
+    name,
+    description,
+    inputSchema: inputSchema as Tool["inputSchema"],
+    ...(name === "vendo_apps_list" ? {} : { _meta: uiMeta }),
+  }));
+}
+
+function appToolPreview(name: string, args: Record<string, unknown>): string {
+  const preview = `${name} ${stringify(args)}`;
+  return preview.length > 500 ? `${preview.slice(0, 499)}…` : preview;
 }
 
 function mapOutcome(outcome: ToolOutcome, productName: string): CallToolResult {

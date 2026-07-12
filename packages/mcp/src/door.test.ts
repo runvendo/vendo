@@ -395,6 +395,56 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("gives vendo_apps_* door tools full guard treatment with venue mcp", async () => {
+    const apps: AppsPort = {
+      async list() { return []; },
+      async open() { return { kind: "tree", payload: { formatVersion: "vendo-genui/v1" } }; },
+      async call() { return { done: true }; },
+    };
+    const decisions: Array<{ tool: string; venue: string; risk: string }> = [];
+    let action: "run" | "block" = "run";
+    const harness = makeHarness({
+      apps,
+      check: async (call, descriptor, ctx) => {
+        decisions.push({ tool: call.tool, venue: ctx.venue, risk: descriptor.risk });
+        return action === "run"
+          ? { action: "run", decidedBy: "default" }
+          : { action: "block", reason: "MCP apps are disabled", decidedBy: "rule" };
+      },
+    });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    await connected.client.callTool({
+      name: "vendo_apps_call",
+      arguments: { appId: "app_1", ref: "host_write", args: {} },
+    });
+    expect(decisions).toEqual([{ tool: "vendo_apps_call", venue: "mcp", risk: "write" }]);
+    const audit = harness.audits.at(-1)!;
+    expect(audit).toMatchObject({
+      kind: "tool-call",
+      tool: "vendo_apps_call",
+      venue: "mcp",
+      presence: "present",
+      outcome: "ok",
+      decidedBy: "default",
+    });
+    expect(audit.inputPreview).toContain("vendo_apps_call");
+
+    action = "block";
+    const blocked = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
+    expect(blocked).toMatchObject({ isError: true, content: [{ text: "MCP apps are disabled" }] });
+    expect(harness.audits.at(-1)).toMatchObject({
+      kind: "tool-call",
+      tool: "vendo_apps_open",
+      venue: "mcp",
+      outcome: "blocked",
+      decidedBy: "rule",
+    });
+    await connected.client.close();
+  });
+
   it("keeps the bound registry verbatim when it already carries a vendo_apps_* tool", async () => {
     const apps: AppsPort = {
       async list() { return []; },
@@ -442,6 +492,7 @@ interface HarnessOptions {
   principal?: () => Principal | null;
   apps?: AppsPort;
   extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>>;
+  check?: Guard["check"];
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -450,7 +501,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const authorizeContexts: Array<{ clientName: string; scopes: string[] }> = [];
   const executions: Array<{ id: string; ctx: Parameters<ToolRegistry["execute"]>[1] }> = [];
   const guard: Guard = {
-    async check() { return { action: "run", decidedBy: "default" }; },
+    check: options.check ?? (async () => ({ action: "run", decidedBy: "default" })),
     async report(event) { audits.push(event); },
     async directions() { return []; },
     onApprovalDecision() { return () => undefined; },
