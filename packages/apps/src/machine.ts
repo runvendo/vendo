@@ -103,6 +103,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
       ? adapter.create({
         env: environment(app, runToken),
         files: {},
+        egress: app.egress,
       })
       : adapter.resume(app.server);
     waking.set(app.id, promise);
@@ -145,7 +146,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     const adapter = requireAdapter();
     const run = await newRun(app, ctx);
     const machine = app.server === undefined
-      ? await adapter.create({ env: environment(app, run.runToken), files: {} })
+      ? await adapter.create({ env: environment(app, run.runToken), files: {}, egress: app.egress })
       : await adapter.resume(app.server);
     return fn({ machine, ...run });
   };

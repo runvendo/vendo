@@ -120,7 +120,12 @@ export class FakeSandboxMachine implements SandboxMachine {
     },
     list: async (dir: string): Promise<string[]> => {
       const prefix = dir === "" || dir === "/" ? "" : `${dir.replace(/\/$/, "")}/`;
-      return [...this.fileContents.keys()].filter((path) => path.startsWith(prefix)).sort();
+      return [...new Set(
+        [...this.fileContents.keys()]
+          .filter((path) => path.startsWith(prefix))
+          .map((path) => path.slice(prefix.length).split("/")[0])
+          .filter((name): name is string => name !== undefined && name !== ""),
+      )].sort();
     },
   };
 

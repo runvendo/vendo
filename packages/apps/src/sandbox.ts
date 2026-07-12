@@ -4,6 +4,11 @@ export interface SandboxAdapter {
   create(spec: {
     env: Record<string, string>;
     files?: Record<string, Uint8Array | string>;
+    /**
+     * 06-apps §4.3 additive adapter flag — provider-native outbound-domain
+     * allowlist. Undefined means unrestricted egress; an empty list denies all egress.
+     */
+    egress?: string[];
   }): Promise<SandboxMachine>;
 
   /** 06-apps §3 — Resume a machine from a provider-prefixed opaque snapshot reference. */

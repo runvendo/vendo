@@ -7,6 +7,7 @@ import {
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { createApps, mintRunToken, verifyRunToken } from "./index.js";
+import { createMachineSessions } from "./machine.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
   bindTools,
@@ -274,6 +275,31 @@ describe("apps execution", () => {
       status: "error",
       error: { code: "validation" },
     });
+  });
+
+  it("passes each app's egress allowlist through fresh machine creation", async () => {
+    const base = fakeSandbox();
+    let createSpec: Parameters<SandboxAdapter["create"]>[0] | undefined;
+    const sandbox: SandboxAdapter = {
+      create: async (spec) => {
+        createSpec = spec;
+        return base.create(spec);
+      },
+      resume: (ref) => base.resume(ref),
+    };
+    const sessions = createMachineSessions({
+      store: memoryStore(),
+      tokenSecret: "machine-test-secret",
+      sandbox,
+    });
+    await sessions.withFork({
+      format: VENDO_APP_FORMAT,
+      id: "app_egress",
+      name: "Egress app",
+      egress: ["api.stripe.com"],
+    }, ctx(), async ({ machine }) => machine.stop());
+
+    expect(createSpec?.egress).toEqual(["api.stripe.com"]);
   });
 
   it("returns not-found for missing and foreign apps", async () => {
