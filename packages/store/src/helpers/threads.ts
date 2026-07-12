@@ -1,5 +1,5 @@
 import type { Json, Principal, ThreadId } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { ThreadRow } from "./types.js";
 import { putThreadRow, threadFromRow } from "./rows.js";
@@ -29,8 +29,8 @@ export function threadStore(store: VendoStore): {
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
         };
-        overlay.threads.set(thread.id, row);
-        return row;
+        overlay.threads.set(thread.id, snapshot(row));
+        return snapshot(row);
       }
       return putThreadRow(db, {
         id: thread.id,
@@ -41,7 +41,7 @@ export function threadStore(store: VendoStore): {
     async get(principal, id) {
       if (principal.ephemeral === true) {
         const row = overlay.threads.get(id);
-        return row?.subject === principal.subject ? row : null;
+        return row?.subject === principal.subject ? snapshot(row) : null;
       }
       const result = await db.query(
         `SELECT id, subject, messages, created_at, updated_at FROM vendo_threads
@@ -55,7 +55,7 @@ export function threadStore(store: VendoStore): {
         return [...overlay.threads.values()]
           .filter((row) => row.subject === principal.subject)
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
-          .map(({ id, createdAt, updatedAt }) => ({ id, createdAt, updatedAt }));
+          .map(({ id, createdAt, updatedAt }) => snapshot({ id, createdAt, updatedAt }));
       }
       const result = await db.query(
         `SELECT id, created_at, updated_at FROM vendo_threads WHERE subject = $1

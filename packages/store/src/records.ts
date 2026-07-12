@@ -1,6 +1,6 @@
 import type { RecordQuery, RecordStore, VendoRecord } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { isEphemeralApp, overlayFor } from "./ephemeral.js";
+import { isEphemeralApp, overlayFor, snapshot } from "./ephemeral.js";
 import { decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import type { VendoStore } from "./store.js";
 
@@ -31,7 +31,10 @@ export function createRecordStore(store: VendoStore, db: Db, collection: string)
 
   return {
     async get(id) {
-      if (await isEphemeral()) return overlayFor(store).records.get(collection)?.get(id) ?? null;
+      if (await isEphemeral()) {
+        const row = overlayFor(store).records.get(collection)?.get(id);
+        return row ? snapshot(row) : null;
+      }
       const result = await db.query(
         "SELECT id, data, refs, created_at, updated_at FROM vendo_records WHERE collection = $1 AND id = $2",
         [collection, id],
@@ -50,8 +53,8 @@ export function createRecordStore(store: VendoStore, db: Db, collection: string)
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
         };
-        records.set(record.id, stored);
-        return stored;
+        records.set(record.id, snapshot(stored));
+        return snapshot(stored);
       }
       const result = await db.query(
         `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at)
@@ -81,7 +84,7 @@ export function createRecordStore(store: VendoStore, db: Db, collection: string)
           .filter((record) => cursor === undefined || record.createdAt < cursor.c
             || (record.createdAt === cursor.c && record.id < cursor.i))
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-        const records = matching.slice(0, limit);
+        const records = matching.slice(0, limit).map(snapshot);
         const last = records.at(-1);
         return {
           records,

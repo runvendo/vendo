@@ -1,6 +1,6 @@
 import type { BlobStore } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { isEphemeralApp, overlayFor } from "./ephemeral.js";
+import { isEphemeralApp, overlayFor, snapshot } from "./ephemeral.js";
 import { text } from "./helpers/utils.js";
 import type { VendoStore } from "./store.js";
 
@@ -25,10 +25,10 @@ export function createBlobStore(store: VendoStore, db: Db, namespace: string): B
   return {
     async put(key, bytes, meta) {
       if (await isEphemeral()) {
-        ephemeralBlobs().set(key, {
-          bytes: new Uint8Array(bytes),
+        ephemeralBlobs().set(key, snapshot({
+          bytes,
           ...(meta?.contentType === undefined ? {} : { contentType: meta.contentType }),
-        });
+        }));
         return;
       }
       await db.query(
@@ -50,7 +50,7 @@ export function createBlobStore(store: VendoStore, db: Db, namespace: string): B
     async get(key) {
       if (await isEphemeral()) {
         const found = overlayFor(store).blobs.get(namespace)?.get(key);
-        return found ? { ...found, bytes: new Uint8Array(found.bytes) } : null;
+        return found ? snapshot(found) : null;
       }
       const result = await db.query(
         "SELECT bytes, content_type FROM vendo_blobs WHERE namespace = $1 AND key = $2",

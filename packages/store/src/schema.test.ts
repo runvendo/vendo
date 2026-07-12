@@ -1,4 +1,7 @@
 import { VendoError } from "@vendoai/core";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
 import { createStore } from "./index.js";
@@ -89,3 +92,24 @@ for (const backend of backends()) {
     });
   });
 }
+
+describe("PGlite open failures", () => {
+  it("retries after a failed open instead of retaining the rejected promise", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vendo-store-open-failure-"));
+    const dataDir = join(dir, "not-a-directory");
+    await writeFile(dataDir, "file");
+    const store = createStore({ dataDir });
+    try {
+      const first = await store.ensureSchema().catch((error: unknown) => error);
+      expect(first).toBeInstanceOf(Error);
+      expect((first as Error).message).toContain(`[vendo] PGlite data directory "${dataDir}" is not writable`);
+
+      const second = await store.ensureSchema().catch((error: unknown) => error);
+      expect(second).toBeInstanceOf(Error);
+      expect((second as Error).message).toBe((first as Error).message);
+    } finally {
+      await store.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

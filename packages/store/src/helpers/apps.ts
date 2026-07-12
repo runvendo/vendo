@@ -1,5 +1,5 @@
 import type { AppDocument, AppId, Principal } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { AppRow } from "./types.js";
 import { VendoError } from "@vendoai/core";
@@ -31,8 +31,8 @@ export function appStore(store: VendoStore): {
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
         };
-        overlay.apps.set(parsedDoc.id, row);
-        return row;
+        overlay.apps.set(parsedDoc.id, snapshot(row));
+        return snapshot(row);
       }
       return putAppRow(db, {
         id: parsedDoc.id,
@@ -43,7 +43,7 @@ export function appStore(store: VendoStore): {
     },
     async get(id) {
       const memory = overlay.apps.get(id);
-      if (memory) return memory;
+      if (memory) return snapshot(memory);
       const result = await db.query(
         "SELECT id, subject, enabled, doc, created_at, updated_at FROM vendo_apps WHERE id = $1",
         [id],
@@ -54,7 +54,8 @@ export function appStore(store: VendoStore): {
       if (principal.ephemeral === true) {
         return [...overlay.apps.values()]
           .filter((row) => row.subject === principal.subject)
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+          .map(snapshot);
       }
       const result = await db.query(
         `SELECT id, subject, enabled, doc, created_at, updated_at FROM vendo_apps
@@ -66,7 +67,7 @@ export function appStore(store: VendoStore): {
     async setEnabled(id, enabled) {
       const memory = overlay.apps.get(id);
       if (memory) {
-        overlay.apps.set(id, { ...memory, enabled, updatedAt: new Date().toISOString() });
+        overlay.apps.set(id, snapshot({ ...memory, enabled, updatedAt: new Date().toISOString() }));
         return;
       }
       const result = await db.query(

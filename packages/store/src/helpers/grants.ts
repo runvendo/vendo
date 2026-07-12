@@ -6,7 +6,7 @@ import {
   type PermissionGrant,
   type Principal,
 } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { grantFromRow, putGrantRow } from "./rows.js";
 import { parsePermissionGrant } from "../validate.js";
@@ -32,14 +32,14 @@ export function grantStore(store: VendoStore): {
       }
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
-        overlay.grants.set(parsedGrant.id, parsedGrant);
+        overlay.grants.set(parsedGrant.id, snapshot(parsedGrant));
         return;
       }
       await putGrantRow(db, parsedGrant, false);
     },
     async get(id) {
       const memory = overlay.grants.get(id);
-      if (memory) return memory;
+      if (memory) return snapshot(memory);
       const result = await db.query("SELECT * FROM vendo_grants WHERE id = $1", [id]);
       return result.rows[0] ? grantFromRow(result.rows[0]) : null;
     },
@@ -51,7 +51,8 @@ export function grantStore(store: VendoStore): {
           .filter((grant) => filter.tool === undefined || grant.tool === filter.tool)
           .filter((grant) => filter.appId === undefined || grant.appId === filter.appId)
           .filter((grant) => filter.includeInactive === true || active(grant, now))
-          .sort((a, b) => a.grantedAt.localeCompare(b.grantedAt) || a.id.localeCompare(b.id));
+          .sort((a, b) => a.grantedAt.localeCompare(b.grantedAt) || a.id.localeCompare(b.id))
+          .map(snapshot);
       }
       const params: unknown[] = [principal.subject];
       const clauses = ["subject = $1"];
@@ -75,7 +76,7 @@ export function grantStore(store: VendoStore): {
     async revoke(id, revokedAt) {
       const memory = overlay.grants.get(id);
       if (memory) {
-        overlay.grants.set(id, { ...memory, revokedAt });
+        overlay.grants.set(id, snapshot({ ...memory, revokedAt }));
         return;
       }
       const result = await db.query(

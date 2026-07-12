@@ -37,6 +37,14 @@ for (const backend of backends()) {
       expect(permissionGrantSchema.parse(await grantStore(made.store).get(grant.id))).toEqual(grant);
       expect(auditEventSchema.parse((await auditStore(made.store).query({ principal: ephemeral })).events[0])).toEqual(event);
       expect((await records.get("note_a"))?.data).toEqual({ text: "temporary a" });
+      const fetchedRecord = await records.get("note_a");
+      (fetchedRecord?.data as { text: string }).text = "mutated after get";
+      expect((await records.get("note_a"))?.data).toEqual({ text: "temporary a" });
+
+      const listedRecord = (await records.list({ ids: ["note_a"] })).records[0];
+      (listedRecord?.data as { text: string }).text = "mutated after list";
+      expect((await records.get("note_a"))?.data).toEqual({ text: "temporary a" });
+
       const firstPage = await records.list({ refs: { kind: "note" }, limit: 1 });
       expect(firstPage.records).toHaveLength(1);
       expect(firstPage.cursor).toBeDefined();
@@ -46,6 +54,21 @@ for (const backend of backends()) {
       expect(secondPage.cursor).toBeUndefined();
       expect(await blobs.list()).toEqual(["a-first.txt", "z-last.txt"]);
       expect(await blobs.get("z-last.txt")).toEqual({ bytes: new Uint8Array([2]), contentType: "text/plain" });
+      const fetchedBlob = await blobs.get("z-last.txt");
+      if (fetchedBlob) fetchedBlob.bytes[0] = 9;
+      expect(await blobs.get("z-last.txt")).toEqual({ bytes: new Uint8Array([2]), contentType: "text/plain" });
+
+      const routedGrants = made.store.records("vendo_grants");
+      const routedGrant = grantFixture("grt_ephemeral_routed_snapshot", {
+        subject: ephemeral.subject,
+        appId: doc.id,
+      });
+      const routedPut = await routedGrants.put({ id: routedGrant.id, data: routedGrant });
+      (routedPut.data as { tool: string }).tool = "mutated after put";
+      expect((await routedGrants.get(routedGrant.id))?.data).toEqual(routedGrant);
+      const routedGet = await routedGrants.get(routedGrant.id);
+      (routedGet?.data as { tool: string }).tool = "mutated after get";
+      expect((await routedGrants.get(routedGrant.id))?.data).toEqual(routedGrant);
     });
 
     it("writes no ephemeral subject rows to any corresponding SQL table", async () => {

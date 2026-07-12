@@ -19,6 +19,10 @@ export interface EphemeralOverlay {
 
 const overlays = new WeakMap<object, EphemeralOverlay>();
 
+export function snapshot<T>(value: T): T {
+  return structuredClone(value);
+}
+
 /** 02-store §4 */
 export function overlayFor(store: object): EphemeralOverlay {
   let overlay = overlays.get(store);

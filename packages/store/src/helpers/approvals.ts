@@ -1,5 +1,5 @@
 import type { ApprovalId, ApprovalRequest, IsoDateTime, Principal } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { ApprovalRow } from "./types.js";
 import { approvalFromRow, putApprovalRow } from "./rows.js";
@@ -21,13 +21,13 @@ export function approvalStore(store: VendoStore): {
       const subject = parsedRequest.ctx.principal.subject;
       if (parsedRequest.ctx.principal.ephemeral === true) {
         registerEphemeralSubject(store, subject);
-        overlay.approvals.set(parsedRequest.id, {
+        overlay.approvals.set(parsedRequest.id, snapshot({
           id: parsedRequest.id,
           subject,
           request: parsedRequest,
           status: "pending",
           createdAt: parsedRequest.createdAt,
-        });
+        }));
         return;
       }
       await putApprovalRow(db, {
@@ -40,7 +40,7 @@ export function approvalStore(store: VendoStore): {
     },
     async get(id) {
       const memory = overlay.approvals.get(id);
-      if (memory) return memory;
+      if (memory) return snapshot(memory);
       const result = await db.query("SELECT * FROM vendo_approvals WHERE id = $1", [id]);
       return result.rows[0] ? approvalFromRow(result.rows[0]) : null;
     },
@@ -49,7 +49,7 @@ export function approvalStore(store: VendoStore): {
         return [...overlay.approvals.values()]
           .filter((row) => row.subject === principal.subject && row.status === "pending")
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-          .map((row) => row.request);
+          .map((row) => snapshot(row.request));
       }
       const result = await db.query(
         `SELECT request FROM vendo_approvals WHERE subject = $1 AND status = 'pending'
@@ -69,7 +69,7 @@ export function approvalStore(store: VendoStore): {
           continue;
         }
         if (row.status === "pending") {
-          overlay.approvals.set(id, { ...row, status, decidedAt });
+          overlay.approvals.set(id, snapshot({ ...row, status, decidedAt }));
           decided.add(id);
         }
       }

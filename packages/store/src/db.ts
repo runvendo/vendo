@@ -70,6 +70,9 @@ export function createDb(config: StoreConfig = {}): Db {
       driver = pglite;
       return pglite;
     })();
+    opening.catch(() => {
+      if (!closed) opening = undefined;
+    });
     return opening;
   };
 

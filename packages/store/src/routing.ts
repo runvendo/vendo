@@ -9,7 +9,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject } from "./ephemeral.js";
+import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot } from "./ephemeral.js";
 import {
   appFromRow,
   approvalFromRow,
@@ -169,7 +169,7 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
     async put(record) {
       requireRecordId(record.id);
       // Reserved collections derive refs from typed columns; caller refs never participate in writes.
-      return config.put(record);
+      return snapshot(await config.put(record));
     },
     async delete(id) {
       requireRecordId(id);
@@ -231,11 +231,11 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "granted_at",
         refs: { subject: "subject", tool: "tool", app_id: "app_id" },
         fromDb: (row) => grantRecord(grantFromRow(row)),
-        overlayRecords: () => [...overlay.grants.values()].map(grantRecord),
+        overlayRecords: () => [...overlay.grants.values()].map((grant) => grantRecord(snapshot(grant))),
         async put(record) {
           const grant = parsePermissionGrant(record.data);
           requireMatchingId(record.id, grant.id, "permission grant id");
-          if (isEphemeralSubject(store, grant.subject)) overlay.grants.set(grant.id, grant);
+          if (isEphemeralSubject(store, grant.subject)) overlay.grants.set(grant.id, snapshot(grant));
           else await putGrantRow(db, grant);
           return grantRecord(grant);
         },
@@ -248,7 +248,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "created_at",
         refs: { subject: "subject", status: "status" },
         fromDb: (row) => approvalRecord(approvalFromRow(row)),
-        overlayRecords: () => [...overlay.approvals.values()].map(approvalRecord),
+        overlayRecords: () => [...overlay.approvals.values()].map((row) => approvalRecord(snapshot(row))),
         async put(record) {
           const data = parseApprovalData(record.data, record.id);
           const row: ApprovalRow = {
@@ -263,7 +263,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           };
           if (data.request.ctx.principal.ephemeral === true) {
             registerEphemeralSubject(store, row.subject);
-            overlay.approvals.set(row.id, row);
+            overlay.approvals.set(row.id, snapshot(row));
           } else {
             await putApprovalRow(db, row);
           }
@@ -278,13 +278,13 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "at",
         refs: { subject: "subject", kind: "kind", app_id: "app_id", tool: "tool" },
         fromDb: (row) => auditRecord(row["event"] as AuditEvent),
-        overlayRecords: () => [...overlay.audit.values()].map(auditRecord),
+        overlayRecords: () => [...overlay.audit.values()].map((event) => auditRecord(snapshot(event))),
         async put(record) {
           const event = parseAuditEvent(record.data);
           requireMatchingId(record.id, event.id, "audit event id");
           if (event.principal.ephemeral === true) {
             registerEphemeralSubject(store, event.principal.subject);
-            overlay.audit.set(event.id, event);
+            overlay.audit.set(event.id, snapshot(event));
           } else {
             await putAuditRow(db, event, true);
           }
@@ -299,7 +299,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "created_at",
         refs: { subject: "subject" },
         fromDb: (row) => threadRecord(threadFromRow(row)),
-        overlayRecords: () => [...overlay.threads.values()].map(threadRecord),
+        overlayRecords: () => [...overlay.threads.values()].map((row) => threadRecord(snapshot(row))),
         async put(record) {
           const data = parseThreadData(record.data, record.id);
           const now = new Date().toISOString();
@@ -313,7 +313,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
               createdAt: prior?.createdAt ?? now,
               updatedAt: now,
             };
-            overlay.threads.set(record.id, row);
+            overlay.threads.set(record.id, snapshot(row));
           } else {
             row = await putThreadRow(db, { id: record.id, ...data }, now);
           }
@@ -328,11 +328,11 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "started_at",
         refs: { app_id: "app_id", status: "status" },
         fromDb: (row) => runRecord(runFromRow(row)),
-        overlayRecords: () => [...overlay.runs.values()].map(runRecord),
+        overlayRecords: () => [...overlay.runs.values()].map((row) => runRecord(snapshot(row))),
         async put(record) {
           const data = parseRunData(record.data, record.id);
           const row: RunRow = { id: record.id, ...data };
-          if (await isEphemeralApp(store, db, data.appId)) overlay.runs.set(row.id, row);
+          if (await isEphemeralApp(store, db, data.appId)) overlay.runs.set(row.id, snapshot(row));
           else await putRunRow(db, row);
           return runRecord(row);
         },
@@ -345,7 +345,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
         cursorColumn: "created_at",
         refs: { subject: "subject" },
         fromDb: (row) => appRecord(appFromRow(row)),
-        overlayRecords: () => [...overlay.apps.values()].map(appRecord),
+        overlayRecords: () => [...overlay.apps.values()].map((row) => appRecord(snapshot(row))),
         async put(record) {
           const data = parseAppData(record.data, record.id);
           const now = new Date().toISOString();
@@ -360,7 +360,7 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
               createdAt: prior?.createdAt ?? now,
               updatedAt: now,
             };
-            overlay.apps.set(record.id, row);
+            overlay.apps.set(record.id, snapshot(row));
           } else {
             row = await putAppRow(db, { id: record.id, ...data }, now);
           }

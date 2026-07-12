@@ -45,3 +45,7 @@ Blocks receive core's plain `StoreAdapter`, so these exact `records()` collectio
 Reserved writes validate their typed data, require embedded ids to match the record id, and upsert the typed row. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Routed `list({ refs })` accepts only the refs shown above. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
 
 Ephemeral approvals and audit events route automatically from their embedded principal. For grants, threads, apps, and other subject-only writes, call `registerEphemeralSubject(store, subject)` before the first write, unless an earlier principal-bearing ephemeral write already registered that subject. Runs and `app:<appId>:<name>` record/blob storage inherit routing from their owning app. Routed, typed-helper, and app-convention generic storage share in-memory overlays, and `close()` clears them. Other blob namespaces remain principal-free and are not routed automatically.
+
+`stateStore.get()` and every principal-bearing helper operation register ephemeral subjects as a side effect. This is by design: the caller's `principal.ephemeral` flag is authoritative, and registration caches it so later subject-only writes (for example, routed grants) stay off disk.
+
+`auditStore.export()` reads only the durable audit log. Ephemeral session events appear in `query()` but are never included in exports, by design.

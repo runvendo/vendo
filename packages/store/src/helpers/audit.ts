@@ -1,5 +1,5 @@
 import type { AppId, AuditEvent, IsoDateTime, Principal } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { putAuditRow } from "./rows.js";
 import { decodeCursor, encodeCursor, iso, pageLimit, text } from "./utils.js";
@@ -32,7 +32,7 @@ export function auditStore(store: VendoStore): {
       const parsedEvent = parseAuditEvent(event);
       if (parsedEvent.principal.ephemeral === true) {
         registerEphemeralSubject(store, parsedEvent.principal.subject);
-        overlay.audit.set(parsedEvent.id, parsedEvent);
+        overlay.audit.set(parsedEvent.id, snapshot(parsedEvent));
         return;
       }
       await putAuditRow(db, parsedEvent);
@@ -49,7 +49,7 @@ export function auditStore(store: VendoStore): {
           .filter((event) => filter.to === undefined || event.at <= filter.to)
           .filter((event) => cursor === undefined || afterDescendingCursor(event, cursor))
           .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
-        const events = matching.slice(0, limit);
+        const events = matching.slice(0, limit).map(snapshot);
         const last = events.at(-1);
         return {
           events,

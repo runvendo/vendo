@@ -1,5 +1,5 @@
 import type { AppId, RunId } from "@vendoai/core";
-import { isEphemeralApp, overlayFor } from "../ephemeral.js";
+import { isEphemeralApp, overlayFor, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { RunRow } from "./types.js";
 import { putRunRow, runFromRow } from "./rows.js";
@@ -18,14 +18,14 @@ export function runStore(store: VendoStore): {
     async put(run) {
       const parsedRun: RunRow = { id: run.id, ...parseRunData(run, run.id) };
       if (await isEphemeralApp(store, db, parsedRun.appId)) {
-        overlay.runs.set(parsedRun.id, parsedRun);
+        overlay.runs.set(parsedRun.id, snapshot(parsedRun));
         return;
       }
       await putRunRow(db, parsedRun);
     },
     async get(id) {
       const memory = overlay.runs.get(id);
-      if (memory) return memory;
+      if (memory) return snapshot(memory);
       const result = await db.query("SELECT * FROM vendo_runs WHERE id = $1", [id]);
       return result.rows[0] ? runFromRow(result.rows[0]) : null;
     },
@@ -60,7 +60,7 @@ export function runStore(store: VendoStore): {
           || (run.startedAt === cursor.c && run.id < cursor.i));
       const runs = [
         ...result.rows.map(runFromRow).filter((run) => !memoryIds.has(run.id)),
-        ...memoryRuns,
+        ...memoryRuns.map(snapshot),
       ].sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id)).slice(0, limit);
       const last = runs.at(-1);
       return {

@@ -1,5 +1,5 @@
 import type { AppId, Json, Principal } from "@vendoai/core";
-import { overlayFor, registerEphemeralSubject, stateKey } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject, snapshot, stateKey } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { requireJson } from "../validate.js";
 
@@ -15,7 +15,8 @@ export function stateStore(store: VendoStore): {
     async get(principal, appId) {
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
-        return overlay.states.get(stateKey(principal.subject, appId))?.data ?? null;
+        const row = overlay.states.get(stateKey(principal.subject, appId));
+        return row ? snapshot(row.data) : null;
       }
       const result = await db.query(
         "SELECT data FROM vendo_state WHERE app_id = $1 AND subject = $2",
@@ -26,7 +27,10 @@ export function stateStore(store: VendoStore): {
     async put(principal, appId, data) {
       const parsedData = requireJson(data, "state data");
       if (principal.ephemeral === true) {
-        overlay.states.set(stateKey(principal.subject, appId), { appId, subject: principal.subject, data: parsedData });
+        overlay.states.set(
+          stateKey(principal.subject, appId),
+          snapshot({ appId, subject: principal.subject, data: parsedData }),
+        );
         return;
       }
       await db.query(
