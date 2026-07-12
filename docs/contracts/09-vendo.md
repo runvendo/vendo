@@ -14,6 +14,15 @@ Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a
 ## 2. The composition
 
 ```ts
+import type { Principal, ActAs, SecretsProvider, Json, RunId } from "@vendoai/core";
+import type { LanguageModel } from "ai";                      // peerDependency (00 conventions)
+import type { VendoStore } from "@vendoai/store";
+import type { VendoAgent } from "@vendoai/agent";
+import type { ActionsRegistry, Connector } from "@vendoai/actions";
+import type { VendoGuard, PolicyConfig, Judge } from "@vendoai/guard";
+import type { AppsRuntime, SandboxAdapter } from "@vendoai/apps";
+import type { AutomationsEngine } from "@vendoai/automations";
+
 export function createVendo(config: {
   model: LanguageModel;                       // the one required thing
   principal: (req: Request) => Promise<Principal | null>;   // host session → principal; null → ephemeral anonymous
