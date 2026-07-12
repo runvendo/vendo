@@ -1,2 +1,20 @@
 /** @vendoai/core — the shapes everything speaks (docs/contracts/01-core.md). */
-export {};
+export * from "./app-document.js";
+export * from "./audit.js";
+export * from "./catalog.js";
+export * from "./descriptor-hash.js";
+export * from "./errors.js";
+export * from "./formats.js";
+export * from "./grants.js";
+export * from "./guard.js";
+export * from "./host-seams.js";
+export * from "./ids.js";
+export * from "./jcs.js";
+export * from "./principal.js";
+export * from "./run-context.js";
+export * from "./sha256.js";
+export * from "./store.js";
+export * from "./stream-parts.js";
+export * from "./tools.js";
+export * from "./tree.js";
+export * from "./triggers.js";

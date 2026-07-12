@@ -1,0 +1,85 @@
+{
+  "format": "vendo/descriptor-hash-vectors@1",
+  "vectors": [
+    {
+      "name": "minimal-read",
+      "descriptor": {
+        "name": "host_invoices_list",
+        "description": "List invoices",
+        "inputSchema": {},
+        "risk": "read"
+      },
+      "canonical": "{\"description\":\"List invoices\",\"inputSchema\":{},\"name\":\"host_invoices_list\",\"risk\":\"read\"}",
+      "hash": "sha256:1e9972d811efcb412923563783b220fcfa38c9cbb6d32a7952b63fc531846f44"
+    },
+    {
+      "name": "critical-write",
+      "descriptor": {
+        "name": "gmail_send",
+        "description": "Send an email",
+        "inputSchema": {
+          "type": "object",
+          "required": ["to", "subject"],
+          "properties": {
+            "to": { "type": "string" },
+            "subject": { "type": "string" }
+          }
+        },
+        "risk": "write",
+        "critical": true
+      },
+      "canonical": "{\"critical\":true,\"description\":\"Send an email\",\"inputSchema\":{\"properties\":{\"subject\":{\"type\":\"string\"},\"to\":{\"type\":\"string\"}},\"required\":[\"to\",\"subject\"],\"type\":\"object\"},\"name\":\"gmail_send\",\"risk\":\"write\"}",
+      "hash": "sha256:6b2f91e9413bc01b84cce7a498b29cdf551ae03471e8a8f39ae51387d254bf1a"
+    },
+    {
+      "name": "unicode",
+      "descriptor": {
+        "name": "vendo_search",
+        "description": "Rechercher café ☕ — 東京",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "q": { "type": "string", "description": "Mot-clé" }
+          }
+        },
+        "risk": "read"
+      },
+      "canonical": "{\"description\":\"Rechercher café ☕ — 東京\",\"inputSchema\":{\"properties\":{\"q\":{\"description\":\"Mot-clé\",\"type\":\"string\"}},\"type\":\"object\"},\"name\":\"vendo_search\",\"risk\":\"read\"}",
+      "hash": "sha256:3a7a102df9a0f0250fca70e1795ad27e704154d6680a4c32b6851f916e42f839"
+    },
+    {
+      "name": "nested-tricky-numbers",
+      "descriptor": {
+        "name": "host_metrics_write",
+        "description": "Store nested metrics",
+        "inputSchema": {
+          "type": "object",
+          "examples": [
+            { "tiny": 1e-7, "boundary": 0.000001, "huge": 1e+30, "integer": 10, "negativeZero": 0 }
+          ],
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": { "type": "number", "enum": [0, 1.5, 1e-7] }
+            }
+          }
+        },
+        "risk": "write"
+      },
+      "canonical": "{\"description\":\"Store nested metrics\",\"inputSchema\":{\"examples\":[{\"boundary\":0.000001,\"huge\":1e+30,\"integer\":10,\"negativeZero\":0,\"tiny\":1e-7}],\"properties\":{\"rows\":{\"items\":{\"enum\":[0,1.5,1e-7],\"type\":\"number\"},\"type\":\"array\"}},\"type\":\"object\"},\"name\":\"host_metrics_write\",\"risk\":\"write\"}",
+      "hash": "sha256:89c44973d68c5714f4d1f7b4d0192e4df4588650024beeda23676f81d14e4a6f"
+    },
+    {
+      "name": "minimal-read-critical-false",
+      "descriptor": {
+        "name": "host_invoices_list",
+        "description": "List invoices",
+        "inputSchema": {},
+        "risk": "read",
+        "critical": false
+      },
+      "canonical": "{\"critical\":false,\"description\":\"List invoices\",\"inputSchema\":{},\"name\":\"host_invoices_list\",\"risk\":\"read\"}",
+      "hash": "sha256:fe4dc28d460ef4fb2b43ce76e8a37fc3adbeb56c46473f3812a10bf6f246c518"
+    }
+  ]
+}
