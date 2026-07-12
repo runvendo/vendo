@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -278,6 +278,95 @@ describe("fixture route execution", () => {
       status: "error",
       error: { code: "validation", message: "away execution requires a captured grant" },
     });
+  });
+
+  it("keeps extraction-disabled routes out of the runtime surface (fail-closed)", async () => {
+    // Real extraction over the real host tree: /api/export-data cannot be classified,
+    // so sync emits it disabled with a note (04 §1). The runtime must never list or
+    // execute it — a route the scanner can't classify is never silently auto-allowed.
+    const root = await mkdtemp(join(tmpdir(), "vendo-actions-failclosed-"));
+    const out = join(root, ".vendo");
+    try {
+      await vendoSync({ root: fixtureDir, out });
+      const written = JSON.parse(await readFile(join(out, "tools.json"), "utf8")) as {
+        tools: Array<{ name: string; disabled?: boolean; note?: string }>;
+      };
+      const unclassified = written.tools.find((tool) => tool.name === "host_export_data_unclassified");
+      expect(unclassified).toMatchObject({ disabled: true });
+      expect(unclassified?.note).toContain("enable only after review");
+
+      const cookie = await loginCookie();
+      const ctx: RunContext = { ...presentBase, requestHeaders: { cookie } };
+      const actions = createActions({ dir: root, baseUrl });
+      const names = (await actions.descriptors()).map((descriptor) => descriptor.name);
+      expect(names).not.toContain("host_export_data_unclassified");
+      // An enabled sibling from the very same extraction is present and runs.
+      expect(names).toContain("host_listInvoices");
+
+      await expect(
+        actions.execute({ id: "fc-1", tool: "host_export_data_unclassified", args: {} }, ctx),
+      ).resolves.toMatchObject({ status: "error", error: { code: "not-found" } });
+      await expect(
+        actions.execute({ id: "fc-2", tool: "host_listInvoices", args: {} }, ctx),
+      ).resolves.toMatchObject({ status: "ok", output: { invoices: expect.any(Array) } });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("forwards present request headers to the real host and never in away mode", async () => {
+    const echoTool: ExtractedTool = {
+      name: "host_echo",
+      description: "Echo request headers",
+      inputSchema: { type: "object" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/fixture/echo", argsIn: "query" },
+    };
+
+    // Present: ctx.requestHeaders (cookie/authorization + a custom header) reach the host.
+    const present: RunContext = {
+      ...presentBase,
+      requestHeaders: { cookie: "fixture_session=user_ada", authorization: "Bearer inbound", "x-present": "forwarded" },
+    };
+    const presentActions = createActions({ tools: [echoTool], baseUrl });
+    const presentEcho = okOutput(
+      await presentActions.execute({ id: "e1", tool: "host_echo", args: { q: "1" } }, present),
+    ) as { headers: Record<string, string>; query: Record<string, string> };
+    expect(presentEcho.headers.cookie).toBe("fixture_session=user_ada");
+    expect(presentEcho.headers.authorization).toBe("Bearer inbound");
+    expect(presentEcho.headers["x-present"]).toBe("forwarded");
+    expect(presentEcho.query).toEqual({ q: "1" });
+
+    // Away: only the host's actAs AuthMaterial.headers ride the request. The inbound
+    // present material must NOT leak onto an away call.
+    const grant: PermissionGrant = {
+      id: "grt_echo",
+      subject: "user_ada",
+      tool: "host_echo",
+      descriptorHash: "sha256:echo",
+      scope: { kind: "tool" },
+      duration: "standing",
+      source: "chat",
+      grantedAt: "2026-07-11T00:00:00.000Z",
+    };
+    const away: ActionsRunContext = {
+      ...presentBase,
+      presence: "away",
+      grant,
+      requestHeaders: { cookie: "fixture_session=POISON", authorization: "Bearer present-leak", "x-present": "leak" },
+    };
+    const awayActions = createActions({
+      tools: [echoTool],
+      baseUrl,
+      actAs: async () => ({ headers: { authorization: "Bearer away-token", "x-actas": "yes" } }),
+    });
+    const awayEcho = okOutput(
+      await awayActions.execute({ id: "e2", tool: "host_echo", args: {} }, away),
+    ) as { headers: Record<string, string> };
+    expect(awayEcho.headers.authorization).toBe("Bearer away-token");
+    expect(awayEcho.headers["x-actas"]).toBe("yes");
+    expect(awayEcho.headers["x-present"]).toBeUndefined();
+    expect(awayEcho.headers.cookie).toBeUndefined();
   });
 
   it("executes OpenAPI bindings using the body-key convention", async () => {

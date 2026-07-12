@@ -1,4 +1,5 @@
 import {
+  VendoError,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
@@ -10,7 +11,7 @@ import {
 } from "@vendoai/core";
 import type { Db } from "./db.js";
 import { createRecordStore, type DedicatedRecordTable } from "./records.js";
-import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot } from "./ephemeral.js";
+import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot, stateKey } from "./ephemeral.js";
 import {
   appFromRow,
   approvalFromRow,
@@ -20,11 +21,13 @@ import {
   putAuditRow,
   putGrantRow,
   putRunRow,
+  putStateRow,
   putThreadRow,
   runFromRow,
+  stateRowFromRow,
   threadFromRow,
 } from "./helpers/rows.js";
-import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./helpers/types.js";
+import type { AppRow, ApprovalRow, EphemeralStateRow, RunRow, ThreadRow } from "./helpers/types.js";
 import { decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
 import type { VendoStore } from "./store.js";
 import {
@@ -35,6 +38,7 @@ import {
   parsePermissionGrant,
   parseRunData,
   parseThreadData,
+  requireJson,
   requireMatchingId,
   requireRecordId,
   type ApprovalData,
@@ -50,6 +54,7 @@ export const RESERVED_COLLECTIONS = [
   "vendo_threads",
   "vendo_runs",
   "vendo_apps",
+  "vendo_state",
 ] as const;
 
 export const DEDICATED_RECORD_COLLECTIONS = ["vendo_mcp_clients", "vendo_mcp_grants"] as const;
@@ -146,6 +151,38 @@ function appRecord(row: AppRow): VendoRecord {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function stateRecord(row: EphemeralStateRow): VendoRecord {
+  return {
+    id: `${row.appId}:${row.subject}`,
+    data: row.data,
+    refs: { app_id: row.appId, subject: row.subject },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * apps writes state through `records("vendo_state")` with id `${appId}:${subject}`.
+ * App ids are `app_...` and never contain a colon, so the first colon splits id into
+ * its app_id and subject (subjects may themselves contain colons).
+ *
+ * The colon-free app-id shape is REQUIRED, not assumed: without it `<appId>:<subject>`
+ * is not uniquely decodable — (app_a:b, c) and (app_a, b:c) would both encode to
+ * "app_a:b:c" and collide on read/write/delete. The apps runtime mints colon-free
+ * ids; this enforces it at the door so a doctored id can never target another row.
+ */
+const APP_ID_SEGMENT = /^app_[^:]*$/;
+
+function splitStateId(id: string): { appId: string; subject: string } {
+  const colon = id.indexOf(":");
+  if (colon === -1) invalid(`vendo_state record id must be "<appId>:<subject>": ${id}`);
+  const appId = id.slice(0, colon);
+  if (!APP_ID_SEGMENT.test(appId)) {
+    invalid(`vendo_state record id must start with a colon-free app id ("app_..."): ${id}`);
+  }
+  return { appId, subject: id.slice(colon + 1) };
 }
 
 function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: string; i: string }): boolean {
@@ -309,6 +346,12 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           let row: ThreadRow;
           if (isEphemeralSubject(store, data.subject)) {
             const prior = overlay.threads.get(record.id);
+            // Mirror the SQL door's cross-subject refusal (03 §5): the bare id is
+            // shared, so a prior overlay row owned by another subject is never
+            // flipped — it is a conflict, same as putThreadRow's guarded upsert.
+            if (prior !== undefined && prior.subject !== data.subject) {
+              throw new VendoError("conflict", `thread ${record.id} belongs to another subject`);
+            }
             row = {
               id: record.id,
               subject: data.subject,
@@ -370,6 +413,45 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           return appRecord(row);
         },
         deleteOverlay: (id) => overlay.apps.delete(id),
+      };
+    case "vendo_state":
+      return {
+        table: collection,
+        // `id` is the generated (app_id || ':' || subject) column — a real,
+        // indexed column, so point lookups and id filters no longer seq-scan.
+        select: "SELECT id, app_id, subject, data, created_at, updated_at FROM vendo_state",
+        // Page on the STABLE created_at (like every other collection), not the
+        // mutable updated_at — a mid-sweep update must never skip an unvisited row.
+        cursorColumn: "created_at",
+        refs: { app_id: "app_id", subject: "subject" },
+        fromDb: (row) => stateRecord(stateRowFromRow(row)),
+        overlayRecords: () => [...overlay.states.values()].map((row) => stateRecord(snapshot(row))),
+        async put(record) {
+          const { appId, subject } = splitStateId(record.id);
+          const data = requireJson(record.data, "state data");
+          const now = new Date().toISOString();
+          // Mirrors vendo_apps/vendo_threads: ephemerality is decided by the subject
+          // registry (the owning app registers the subject before state is written).
+          if (isEphemeralSubject(store, subject)) {
+            const key = stateKey(subject, appId);
+            const prior = overlay.states.get(key);
+            const row: EphemeralStateRow = {
+              appId,
+              subject,
+              data,
+              createdAt: prior?.createdAt ?? now,
+              updatedAt: now,
+            };
+            overlay.states.set(key, snapshot(row));
+            return stateRecord(row);
+          }
+          // Shared persistent write path with stateStore.put (helpers/rows).
+          return stateRecord(await putStateRow(db, { appId, subject, data }, now));
+        },
+        deleteOverlay: (id) => {
+          const { appId, subject } = splitStateId(id);
+          return overlay.states.delete(stateKey(subject, appId));
+        },
       };
   }
 }

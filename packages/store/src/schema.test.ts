@@ -46,6 +46,13 @@ for (const backend of backends()) {
       expect(rows.find((row) => row.key === "boot_id")?.value).toEqual(expect.any(String));
     });
 
+    it("lands a fresh database directly on schema version 2", async () => {
+      // A brand-new DB never runs the v2 backfill's DELETE against real data; it
+      // just records the current version. (beforeAll already ran ensureSchema.)
+      const version = (await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value;
+      expect(version).toBe(2);
+    });
+
     it("keeps boot_id stable across a close and reopen", async () => {
       const before = (await made.sql("SELECT value FROM vendo_meta WHERE key = 'boot_id'"))[0]?.value;
       await made.store.close();
@@ -93,6 +100,36 @@ for (const backend of backends()) {
       }
     });
 
+    it("stores every contracted JSON column as jsonb", async () => {
+      // 02-store §2: "All JSON is jsonb." The table map is public, so the storage type is contract.
+      const jsonbColumns: Array<[string, string]> = [
+        ["vendo_meta", "value"],
+        ["vendo_apps", "doc"],
+        ["vendo_records", "data"],
+        ["vendo_records", "refs"],
+        ["vendo_state", "data"],
+        ["vendo_threads", "messages"],
+        ["vendo_grants", "scope"],
+        ["vendo_approvals", "request"],
+        ["vendo_audit", "event"],
+        ["vendo_runs", "trigger"],
+        ["vendo_runs", "record"],
+        ["vendo_mcp_clients", "data"],
+        ["vendo_mcp_grants", "data"],
+      ];
+      const rows = await made.sql(
+        "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
+      );
+      const typeOf = new Map(rows.map((row) => [`${row.table_name}.${row.column_name}`, String(row.data_type)]));
+      for (const [table, column] of jsonbColumns) {
+        expect(typeOf.get(`${table}.${column}`), `${table}.${column}`).toBe("jsonb");
+      }
+      // vendo_secrets.ciphertext is deliberately text, not jsonb (§4 at-rest encryption).
+      expect(typeOf.get("vendo_secrets.ciphertext")).toBe("text");
+    });
+
+    // Parameterized over vendo_records plus the wave-6 door tables (supersedes a
+    // single-table check): every refs column the host joins on gets a GIN index.
     for (const table of ["vendo_records", "vendo_mcp_clients", "vendo_mcp_grants"] as const) {
       it(`creates a GIN index on ${table}.refs`, async () => {
         const rows = await made.sql(

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectKeyboardReachability, openScenario, tabTo } from "./helpers.js";
+import { expectFocusIndicator, expectKeyboardReachability, openScenario, tabTo } from "./helpers.js";
 
 test("thread is keyboard-complete with visible focus", async ({ page }) => {
   await openScenario(page, "thread");
@@ -60,4 +60,63 @@ test("automation controls are all keyboard reachable and execute by Enter", asyn
   await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Dry run"));
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Dry run for Invoice watcher")).toBeVisible();
+});
+
+test("a running automation is killed by keyboard from run history", async ({ page }) => {
+  await openScenario(page, "automations");
+  await expect(page.getByRole("switch")).toBeVisible();
+  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Run history"));
+  await page.keyboard.press("Enter");
+  const history = page.getByLabel("Run history for Invoice watcher");
+  await expect(history.getByText("running")).toBeVisible();
+  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Stop"));
+  await page.keyboard.press("Enter");
+  await expect(history.getByText("stopped")).toBeVisible();
+});
+
+test("workspace tabs rove with arrows and open an app by keyboard", async ({ page }) => {
+  await openScenario(page, "page");
+  const apps = page.getByRole("tab", { name: "Apps" });
+  await expect(apps).toHaveAttribute("aria-selected", "true");
+  await expectKeyboardReachability(page, 'main[data-scenario="page"]');
+  await apps.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Automations" })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowLeft");
+  await expect(apps).toHaveAttribute("aria-selected", "true");
+  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Open"));
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Invoices app surface").first()).toBeVisible();
+});
+
+test("voice stage starts and stops entirely by keyboard", async ({ page }) => {
+  await openScenario(page, "stage");
+  await expect(page.getByText("Revenue is ready")).toBeVisible();
+  const toggle = page.getByRole("button", { name: "Stop voice" });
+  await toggle.focus();
+  await expectFocusIndicator(page);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Start voice" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Voice: idle");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Stop voice" })).toBeVisible();
+});
+
+test("activity load-more is keyboard reachable and appends a page", async ({ page }) => {
+  await openScenario(page, "activity");
+  const rows = page.locator('main[data-scenario="activity"] tbody tr');
+  await expect(rows).toHaveCount(2);
+  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Load more"));
+  await page.keyboard.press("Enter");
+  await expect(rows).toHaveCount(3);
+});
+
+test("a destructive approval can be denied entirely by keyboard", async ({ page }) => {
+  await openScenario(page, "approval");
+  await expect(page.getByLabel("Real tool inputs")).toContainText("permanent=true");
+  // Reach the disclosure, Approve, and Deny by keyboard; deny with Enter.
+  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Approve"));
+  await tabTo(page, async () => page.evaluate(() => document.activeElement?.textContent?.trim() === "Deny"));
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("approval-recorder")).toHaveText('resolved: {"approve":false}');
 });

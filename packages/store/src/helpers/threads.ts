@@ -1,4 +1,4 @@
-import type { Json, Principal, ThreadId } from "@vendoai/core";
+import { VendoError, type Json, type Principal, type ThreadId } from "@vendoai/core";
 import { overlayFor, registerEphemeralSubject, snapshot } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { ThreadRow } from "./types.js";
@@ -22,6 +22,11 @@ export function threadStore(store: VendoStore): {
       if (principal.ephemeral === true) {
         registerEphemeralSubject(store, principal.subject);
         const prior = overlay.threads.get(thread.id);
+        // Threads never cross subjects (03 §5): refuse an overlay id already owned
+        // by another subject, mirroring putThreadRow's guarded SQL upsert.
+        if (prior !== undefined && prior.subject !== parsed.subject) {
+          throw new VendoError("conflict", `thread ${thread.id} belongs to another subject`);
+        }
         const row: ThreadRow = {
           id: thread.id,
           subject: parsed.subject,
