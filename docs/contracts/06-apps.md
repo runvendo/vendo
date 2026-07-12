@@ -60,7 +60,7 @@ export interface AppsRuntime {
 export interface EditResult { app: AppDocument; version: VersionEntry; issues?: string[] }
 export interface VersionEntry { at: IsoDateTime; intent: string; rung: 1 | 2 | 3 | 4 }
 export type OpenSurface =
-  | { kind: "tree"; tree: Tree; components?: Record<string, string> }          // rungs 1–3: the live tree
+  | { kind: "tree"; tree: UIPayload; components?: Record<string, string> }     // rungs 1–3: the live instant-path payload (v0 format: Tree)
   | { kind: "http"; url: string; cover?: string /* blob key of last screenshot */ }  // rung 4, machine awake
   | { kind: "resuming"; cover?: string }                                       // rung 4, snapshot waking (~1s): dimmed screenshot, non-interactive
 export interface ShareSnapshot { id: string; doc: AppDocument; createdAt: IsoDateTime }        // frozen copy
@@ -123,7 +123,7 @@ The machine IS the server part. No declared entry point; by convention the app l
 
 | Request | Meaning | Response |
 | --- | --- | --- |
-| `POST /fn/<name>` body `{ "args": {...} }` | function call (rungs 2–3) | `200 { "result": ... }` — or a body whose `formatVersion` is `vendo-genui/v1` = a server-computed tree (rung 3) |
+| `POST /fn/<name>` body `{ "args": {...} }` | function call (rungs 2–3) | `200 { "result": ... }` — or a body carrying a registered `formatVersion` = a server-computed UI payload (rung 3; v0: `vendo-genui/v1`) |
 | `POST /trigger` body `{ "trigger": Trigger, "event": {...}, "runId": "run_..." }` | a trigger firing delivered to the app (07 §4) | `200 { "result": ... }` (recorded on the run) |
 | anything else | the served web app — rung 4 only | app-defined |
 

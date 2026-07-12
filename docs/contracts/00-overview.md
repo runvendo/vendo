@@ -67,6 +67,10 @@ Made while drafting — flagged for review, each also marked ⚑ in situ:
 11. **Store's table map is public contract** (the page makes tables host-queryable): names + key columns stable, other columns documented but evolvable within the version train.
 12. **`docs/contracts/seams.md` is superseded** by this set; it describes the pre-v0 world and should be deleted when wave 3 lands.
 
+Resolved with Yousef, round 2 (2026-07-11, during review):
+
+13. **The instant-path UI payload is format-tagged, not tree-forever.** The two planes stay contract (`ui: "tree" | "http"` = instant/jailed vs machine-served); the payload dispatches on `formatVersion`, and v0 registers exactly one format — the tree, `vendo-genui/v1`, unchanged and stored-record compatible. Future formats (compact profile, v2, non-tree) slot in behind the tag. (01 §8)
+
 ## Reading order
 
 01-core defines every shared shape; each block contract then only adds its own API. Read 01 first; 06 (apps) contains the server execution contract and is the largest.

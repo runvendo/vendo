@@ -186,9 +186,18 @@ export interface AuditEvent {
 }
 ```
 
-## 8. The tree (`vendo-genui/v1`)
+## 8. The instant-path UI payload (format-tagged; v0 format: the tree, `vendo-genui/v1`)
 
-⚑ Lives in core (not apps) because ui renders trees and may only import core; the page also lists "apps" among core's typed shapes. The wire format is **pinned** — field names and semantics below match what stored records already contain; the only v0 addition is the `fn:` reference scheme, which is additive.
+The instant path renders a **format-tagged document**, not "the tree" by fiat (Yousef, 2026-07-11 round 2):
+
+```ts
+/** Any instant-path UI payload. Everything past the tag is owned by the format. */
+export interface UIPayload { formatVersion: string; [key: string]: unknown }
+```
+
+Validators, renderers, and edit dialects dispatch on `formatVersion`; v0 registers exactly **one** format — the tree below. A v2, the reserved compact profile, or a future non-tree format slots in behind the tag without touching the app document shape, the wire routes, or `fn:` references. An unregistered tag is a contained failure (render a notice, never break), and a runtime keeps rendering every format it ever registered — stored records stay alive.
+
+⚑ Lives in core (not apps) because ui renders payloads and may only import core; the page also lists "apps" among core's typed shapes. The tree wire format is **pinned** — field names and semantics below match what stored records already contain; the only v0 addition is the `fn:` reference scheme, which is additive.
 
 ```ts
 export interface Tree {
@@ -239,8 +248,8 @@ export interface AppDocument {
   id: AppId;
   name: string;
   description?: string;
-  ui?: "tree" | "http";                          // default "tree"; "http" keeps the last tree as fallback/cover
-  tree?: Omit<Tree, "components">;               // components live one level up, at rest
+  ui?: "tree" | "http";                          // the PLANE: instant/jailed vs machine-served. Default "tree"; "http" keeps the last payload as fallback/cover
+  tree?: UIPayload;                              // the instant-path payload (field name spec-locked); v0 format: Omit<Tree, "components"> — components live one level up, at rest
   components?: Record<string, string>;           // name → ESM React source, compiled in ms, run in the jail
   storage?: Record<string, StorageDecl>;         // named record collections; "state" is reserved (built-in singleton)
   server?: string;                               // sandbox snapshot ref, provider-prefixed: "e2b:snap_x91"
