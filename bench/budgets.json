@@ -1,0 +1,20 @@
+{
+  "toleranceRationale": "Ceilings were seeded from a dev-machine (Apple M4 Pro) measured p95, and per-metric headroom deliberately VARIES: millisecond-scale metrics (tree-render, guard-call) carry ~5-7x; sub-millisecond metrics (tree-validate, store, apps-api, gen-scripted) get absolute floors of 1-8ms, which works out to ~9-250x relative headroom because relative multipliers are meaningless at microsecond scales where a single scheduler blip dwarfs the signal. The gate catches order-of-magnitude regressions (accidental O(n^2), a dropped index, a renderer that stopped memoizing), not jitter. These are provisional dev-machine-derived values: once .github/workflows/perf.yml has produced a few runs on main, recalibrate each ceiling against real CI-runner p95 samples (procedure in bench/README.md). To legitimately raise a budget, open a PR editing this file with the new measured p95 and a one-line justification (what changed and why the higher cost is expected).",
+  "ceilings": {
+    "tree-validate:nodes-10": 1,
+    "tree-validate:nodes-100": 1,
+    "tree-validate:nodes-1000": 3,
+    "tree-validate:nodes-5000": 6,
+    "tree-render:render-10": 4,
+    "tree-render:render-100": 6,
+    "tree-render:render-1000": 40,
+    "tree-render:render-5000": 400,
+    "store:put-pglite": 4,
+    "store:get-pglite": 3,
+    "store:list-pglite": 5,
+    "guard-call:call": 8,
+    "apps-api:open": 3,
+    "apps-api:call": 2,
+    "gen-scripted:create": 3
+  }
+}

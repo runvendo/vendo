@@ -1,0 +1,10 @@
+{
+  "formatVersion": "vendo-genui/v1",
+  "root": "root",
+  "nodes": [
+    { "id": "root", "component": "Stack", "children": ["x", "y"] },
+    { "id": "x", "component": "Stack", "children": ["shared"] },
+    { "id": "y", "component": "Stack", "children": ["shared"] },
+    { "id": "shared", "component": "Text" }
+  ]
+}
