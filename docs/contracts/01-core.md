@@ -71,10 +71,11 @@ export interface ToolDescriptor {
   source: "host" | "connector" | "vendo";
 }
 
-/** Canonical sha-256 fingerprint of a descriptor: SHA-256 over the RFC 8785 (JCS) canonicalization
+/** Canonical descriptor fingerprint, algorithm-prefixed like every other ref in the system
+ *  ("sha256:<hex>", cf. Pin.base and snapshot refs): SHA-256 over the RFC 8785 (JCS) canonicalization
  *  of { name, description, input, risk, critical }, absent optional fields omitted — so independent
- *  implementations always agree. Grants bind to it; drift lapses the grant. */
-export function descriptorHash(d: ToolDescriptor): string;
+ *  implementations always agree, and the algorithm can rotate without a flag-day. */
+export function descriptorHash(d: ToolDescriptor): string;   // "sha256:ab12..."
 
 export interface ToolCall {
   id: string;                   // caller-minted, unique per call
@@ -411,6 +412,8 @@ export type VendoErrorCode =
 
 export class VendoError extends Error { code: VendoErrorCode; detail?: Json; }
 ```
+
+Forward compatibility (normative): clients treat an unknown error code as a generic error, and renderers/consumers ignore unknown stream-part types, unknown `OpenSurface` kinds, and unknown discriminated-union variants they don't recognize — new codes, parts, trigger kinds, and run models are additive within the version train.
 
 ## 16. Vendo stream parts
 

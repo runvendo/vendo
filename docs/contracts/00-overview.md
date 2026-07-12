@@ -81,6 +81,16 @@ Round 3 (dual review — a simplification pass and an industry-standards pass, b
 18. **Standards one-liners**: `descriptorHash` = SHA-256 over RFC 8785 canonical JSON; one wire error envelope + fixed status map; `/fn` responses use an explicit `{ result }` / `{ ui }` key, never body-sniffing; `/tick` takes `Authorization: Bearer` (Vercel cron native); cron evaluates in UTC; wire POSTs require `Content-Type: application/json` (CSRF floor); the refs join example uses GIN-compatible containment.
 19. **Simplification trims** (dead surface deleted): `apply()` + the `TreePatch`/`CodePatch` public types (edit dialects are engine internals; `edit()` is the one entry), the machine's `/trigger` endpoint (firings arrive as declared `fn:` steps), `audit.activity` (= `query({principal})` at the wire route), the separate `directions` config channel (policy data, one channel), `BreakingChange.affects` (contractually always empty), grant sources `judge`/`rule` (nothing mints them), `ToolDescriptor.title`, the umbrella's judge shorthand union, store's `maintenance()`/`auditRetentionDays` (host SQL on host tables), and app-data encryption (kept for `vendo_secrets` only — encrypting app data defeats the host-queryable promise).
 
+## How this set evolves without breaking
+
+Five mechanisms, all already in place — future needs slot in additively, no new abstraction required:
+
+- **Format tags**: every persisted/wire document is self-describing (`vendo/app@1`, `vendo-genui/v1`, `vendo/tools@1`, `vendo/policy@1`); new formats and versions dispatch on the tag (01 §8).
+- **Prefixed refs**: hashes and refs carry their scheme (`sha256:…`, `e2b:…`) — algorithms and providers rotate without flag-days.
+- **Discriminated unions**: trigger kinds, run models, storage kinds, binding kinds, surface kinds, error codes are all tagged unions — new variants are additive, and consumers ignore unknown variants (01 §15).
+- **Seams over implementations**: new sandbox providers, judges, scanners, connectors, secrets sources are new implementations of frozen interfaces, not contract changes.
+- **One version train**: everything ships together, so additive change within the train never needs cross-version negotiation.
+
 ## Wave 3+ ground rules (fresh-start mechanics, same repo)
 
 Approved with the contracts (Yousef, 2026-07-11): the blocks are built as if from a fresh codebase, inside this repo.

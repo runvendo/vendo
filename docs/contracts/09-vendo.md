@@ -52,7 +52,6 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/apps/:id` | GET · DELETE | app · remove |
 | `/apps/:id/open` | GET | `OpenSurface` |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls — 06 §1 `call`) |
-| `/apps/:id/queries` | POST | `{}` → refreshed data model (06 §1 `runQueries`) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
 | `/apps/:id/history` | GET · POST | versions · `{ op: "undo" }` |
 | `/apps/:id/export` | GET | `.vendoapp` bytes |

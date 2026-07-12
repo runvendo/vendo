@@ -36,9 +36,8 @@ export interface AppsRuntime {
   history(appId: AppId): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };      // capped log — runtime UX, not format
 
   // execution
-  open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;
+  open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;   // resolves the tree's queries — refresh = open() again (idempotent)
   call(appId: AppId, ref: string /* "fn:<name>" | tool name */, args: Json, ctx: RunContext): Promise<ToolOutcome>;
-  runQueries(appId: AppId, ctx: RunContext): Promise<Record<string, Json>>;                      // refresh a tree's data model
 
   // interchange (spec §6: copies, never pointers)
   exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;    // .vendoapp; pin permission check — fails, never strips
