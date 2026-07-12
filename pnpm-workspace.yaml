@@ -1,3 +1,5 @@
 packages:
   - "packages/*"
   - "fixtures/*"
+  - "bench"
+  - "spikes/*"
