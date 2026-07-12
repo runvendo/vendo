@@ -62,6 +62,10 @@ const serialize = (value: unknown, stack: Set<object>, position: "top" | "object
           unsupported("canonical JSON requires plain objects and arrays");
         }
         const entries: string[] = [];
+        // Default Array.prototype.sort compares UTF-16 code units — exactly the
+        // property-name ordering RFC 8785 §3.2.3 mandates. (The subtlety is
+        // surrogate pairs: "😀" (D83D DE00) sorts BEFORE "דּ" (FB33) because
+        // comparison is per code UNIT, not code point — covered by the vectors.)
         for (const key of Object.keys(value).sort()) {
           const serialized = serialize((value as Record<string, unknown>)[key], stack, "object");
           if (serialized !== undefined) entries.push(`${JSON.stringify(assertWellFormed(key))}:${serialized}`);

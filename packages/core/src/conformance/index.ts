@@ -62,7 +62,10 @@ const assertParses = <T>(schema: ZodType<T>, value: unknown, message: string): T
 };
 
 const assertDeepEqual = (actual: unknown, expected: unknown, message: string): void => {
-  assert(canonicalJson(actual) === canonicalJson(expected), message);
+  // undefined is not JSON — map it to a sentinel so a null/undefined mismatch
+  // fails with THIS assertion message, not canonicalJson's.
+  const canon = (value: unknown): string => (value === undefined ? "undefined" : canonicalJson(value));
+  assert(canon(actual) === canon(expected), message);
 };
 
 const assertBytesEqual = (actual: Uint8Array, expected: Uint8Array, message: string): void => {
@@ -499,11 +502,12 @@ const copyRecord = (record: VendoRecord & { seq?: number }): VendoRecord => ({
  * unit tests. It is not intended as production persistence.
  *
  * Double-level behavior (NOT contract — the conformance suite does not assert
- * it): `list()` returns records newest-first by `createdAt`, most recent write
- * first on ties. This mirrors the ordering the store block's Postgres adapter
- * is being built with, so block unit tests behave like their integration
- * fixtures. Do not depend on ordering across arbitrary StoreAdapters until the
- * contract pins it.
+ * it): `list()` returns records newest-first by `createdAt`, most recently
+ * CREATED first on ties (updates do not reposition a record, matching a
+ * Postgres `ORDER BY created_at DESC` with a stable tiebreak). This mirrors
+ * the ordering the store block's adapter is being built with, so block unit
+ * tests behave like their integration fixtures. Do not depend on ordering
+ * across arbitrary StoreAdapters until the contract pins it.
  */
 export function memoryStoreAdapter(): StoreAdapter & { ensureSchema(): Promise<void> } {
   const collections = new Map<string, Map<string, VendoRecord & { seq: number }>>();
