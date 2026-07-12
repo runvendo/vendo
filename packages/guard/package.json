@@ -2,7 +2,13 @@
   "name": "@vendoai/guard",
   "version": "0.3.0",
   "description": "Vendo's policy core at one choke point: guard.bind, approvals, grants, audit, Vendo Auto judge, breakers, scanners.",
-  "keywords": ["ai", "agent", "guardrails", "policy", "vendo"],
+  "keywords": [
+    "ai",
+    "agent",
+    "guardrails",
+    "policy",
+    "vendo"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -27,7 +33,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -41,6 +49,7 @@
     "ai": "^5.0.0"
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "^2.0.85",
     "@electric-sql/pglite": "^0.2.0",
     "@types/node": "^22.0.0",
     "ai": "^5.0.0",
