@@ -409,6 +409,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return failedEdit(previous, instruction, repairIssues ?? ["code edit failed validation"]);
     },
 
+    /**
+     * ⚠️ OWNERSHIP IS THE CALLER'S RESPONSIBILITY. The frozen 06 §1 signature
+     * `history(appId)` takes no RunContext, so — unlike create/get/edit/delete/fork/
+     * open/call, which all scope by `ctx.principal.subject` — this handle cannot check
+     * ownership itself. The umbrella wire route (`/apps/:id/history`, 09 §3) MUST resolve
+     * the principal and confirm ownership before exposing `list`/`undo`; that route is the
+     * system's cross-user auth boundary ("the unauthenticated surface is exactly nothing").
+     * Flagged by Codex + Greptile review; closing it inside this block needs a contract
+     * major to add `ctx` here — see the PR's escalation note.
+     */
     history(appId) {
       const surface = history.surface(appId);
       return Object.freeze({
