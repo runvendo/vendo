@@ -20,7 +20,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "getClient",
-        "baseUrl": "http://localhost:3000",
         "method": "GET",
         "path": "/api/clients/{id}"
       }
@@ -36,7 +35,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "getDashboard",
-        "baseUrl": "http://localhost:3000",
         "method": "GET",
         "path": "/api/dashboard"
       }
@@ -57,7 +55,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "listActivity",
-        "baseUrl": "http://localhost:3000",
         "method": "GET",
         "path": "/api/activity"
       }
@@ -81,7 +78,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "listClientDocuments",
-        "baseUrl": "http://localhost:3000",
         "method": "GET",
         "path": "/api/clients/{id}/documents"
       }
@@ -105,7 +101,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "listClientMessages",
-        "baseUrl": "http://localhost:3000",
         "method": "GET",
         "path": "/api/clients/{id}/messages"
       }
@@ -133,7 +128,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "listClients",
-        "baseUrl": "http://localhost:3000",
         "method": "GET",
         "path": "/api/clients"
       }
@@ -149,7 +143,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "listDeadlines",
-        "baseUrl": "http://localhost:3000",
         "method": "GET",
         "path": "/api/deadlines"
       }
@@ -165,7 +158,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "resetDemo",
-        "baseUrl": "http://localhost:3000",
         "method": "POST",
         "path": "/api/demo/reset"
       }
@@ -206,7 +198,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "sendClientMessage",
-        "baseUrl": "http://localhost:3000",
         "method": "POST",
         "path": "/api/clients/{id}/messages"
       }
@@ -261,7 +252,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "setDocumentStatus",
-        "baseUrl": "http://localhost:3000",
         "method": "POST",
         "path": "/api/clients/{id}/documents/{docId}/status"
       }
@@ -311,7 +301,6 @@
       "binding": {
         "kind": "openapi",
         "operationId": "simulateClientUpload",
-        "baseUrl": "http://localhost:3000",
         "method": "POST",
         "path": "/api/demo/simulate/upload"
       }

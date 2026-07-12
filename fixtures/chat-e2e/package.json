@@ -1,0 +1,26 @@
+{
+  "name": "@vendoai-fixtures/chat-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cross-block chat-path e2e harness: real @vendoai/agent + real guard.bind + real store (PGlite), a scripted deterministic LanguageModel, side effects asserted with raw SQL over the vendo_* tables — the integration the layering rule forbids inside packages/agent.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vendoai/agent": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "@vendoai/store": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ai": "^6.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

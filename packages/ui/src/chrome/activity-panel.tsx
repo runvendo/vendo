@@ -18,30 +18,63 @@ export function ActivityPanel() {
 
   return (
     <ChromeRoot>
-      <section className="vendo-stack" aria-labelledby="vendo-activity-heading">
-        <h2 id="vendo-activity-heading">Activity</h2>
-        {error ? <div role="alert" className="vendo-danger">{error}</div> : null}
-        {events.length === 0 ? <p>Nothing has run as you yet</p> : (
-          <div className="vendo-table-wrap">
-            <table className="vendo-table">
-              <caption className="vendo-muted">Actions performed as your account</caption>
-              <thead><tr><th>Time</th><th>Kind</th><th>Tool</th><th>Inputs</th><th>Outcome</th><th>Decided by</th></tr></thead>
-              <tbody>
-                {events.map(event => (
-                  <tr key={event.id}>
-                    <td><time dateTime={event.at}>{event.at}</time></td>
+      <section className="fl-act" aria-labelledby="vendo-activity-heading">
+        <header className="fl-act-head">
+          <span className="fl-act-ic fl-act-tick" aria-hidden="true">✓</span>
+          <h2 id="vendo-activity-heading" className="fl-act-head-lbl" style={{ margin: 0 }}>Activity</h2>
+        </header>
+        {error ? <div role="alert" className="fl-error">{error}</div> : null}
+        {events.length === 0 ? <p className="fl-act-row">Nothing has run as you yet</p> : (
+          <table className="fl-act-body" style={{ borderCollapse: "collapse", display: "block", width: "100%" }}>
+            <caption className="fl-act-now" style={{ padding: "8px 13px", textAlign: "left" }}>Actions performed as your account</caption>
+            <thead style={{ display: "block" }}>
+              <tr
+                className="fl-act-row"
+                style={{
+                  borderBottom: "1px solid var(--vendo-border)",
+                  display: "grid",
+                  gridTemplateColumns: "1.35fr .8fr 1.25fr 1.25fr .8fr 1fr",
+                }}
+              >
+                <th style={{ textAlign: "left" }}>Time</th>
+                <th style={{ textAlign: "left" }}>Kind</th>
+                <th style={{ textAlign: "left" }}>Tool</th>
+                <th style={{ textAlign: "left" }}>Inputs</th>
+                <th style={{ textAlign: "left" }}>Outcome</th>
+                <th style={{ textAlign: "left" }}>Decided by</th>
+              </tr>
+            </thead>
+            <tbody style={{ display: "block" }}>
+              {events.map(event => {
+                const ok = event.outcome === "ok";
+                return (
+                  <tr
+                    className="fl-act-row"
+                    key={event.id}
+                    style={{
+                      borderBottom: "1px solid var(--vendo-border)",
+                      display: "grid",
+                      gridTemplateColumns: "1.35fr .8fr 1.25fr 1.25fr .8fr 1fr",
+                    }}
+                  >
+                    <td className="fl-act-sub" style={{ marginLeft: 0, maxWidth: "none" }}><time dateTime={event.at}>{event.at}</time></td>
                     <td>{event.kind}</td>
-                    <td>{event.tool ?? "—"}</td>
-                    <td>{event.inputPreview ?? "—"}</td>
-                    <td>{event.outcome ?? "—"}</td>
-                    <td>{event.decidedBy ?? "—"}</td>
+                    <td className="fl-act-lbl">{event.tool ?? "—"}</td>
+                    <td className="fl-act-sub" style={{ marginLeft: 0, maxWidth: "none" }}>{event.inputPreview ?? "—"}</td>
+                    <td>
+                      <span className={`fl-act-ic ${ok ? "fl-act-tick" : "fl-act-x"}`} aria-hidden="true">{ok ? "✓" : "✕"}</span>
+                      <span>{event.outcome ?? "—"}</span>
+                    </td>
+                    <td className="fl-act-sub" style={{ marginLeft: 0, maxWidth: "none" }}>{event.decidedBy ?? "—"}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
         )}
-        <div><button type="button" onClick={() => void loadNext()}>Load more</button></div>
+        <div className="fl-act-row">
+          <button className="fl-btn" type="button" onClick={() => void loadNext()}>Load more</button>
+        </div>
       </section>
     </ChromeRoot>
   );

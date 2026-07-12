@@ -417,7 +417,12 @@ describe("apps execution", () => {
     const valid = await runtime.proxy.handler(stateRequest(token as string));
     expect(valid.status).toBe(200);
 
-    const tampered = `${(token as string).slice(0, -1)}${(token as string).endsWith("x") ? "y" : "x"}`;
+    // Mutate a character in the middle of the token (not the trailing base64url char,
+    // whose low bits can be unused so a swap may decode to the same bytes — a flaky no-op tamper).
+    const mid = Math.floor((token as string).length / 2);
+    const orig = (token as string)[mid];
+    const tampered = `${(token as string).slice(0, mid)}${orig === "A" ? "B" : "A"}${(token as string).slice(mid + 1)}`;
+    expect(tampered).not.toBe(token);
     expect((await runtime.proxy.handler(stateRequest(tampered))).status).toBe(401);
 
     vi.useFakeTimers();

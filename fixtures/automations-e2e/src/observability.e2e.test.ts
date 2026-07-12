@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { automationDoc, createStack, ownerCtx, resetFixture } from "./harness.js";
-import { ADA, BOB, approve, tableCount } from "./support.js";
+import { ADA, BOB, approve, enableAndApprove, fixtureInvoices, tableCount } from "./support.js";
 
 describe("run observability and dry-run", () => {
   beforeEach(resetFixture);
@@ -104,6 +104,78 @@ describe("run observability and dry-run", () => {
       expect(postGrant.grantsMissing).toEqual([]);
       expect(await tableCount(stack, "vendo_runs")).toBe(runsBefore);
       expect(await tableCount(stack, "vendo_approvals")).toBe(approvalsBefore);
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("plans an agentic run across the whole bound surface and executes nothing", async () => {
+    const stack = await createStack();
+    try {
+      const appId = "app_observe_agentic_dry";
+      const ctx = ownerCtx(ADA.subject, appId);
+      await stack.putApp(ADA.subject, automationDoc({
+        id: appId,
+        trigger: { on: { kind: "host-event", event: "observe.agent" }, run: { kind: "agentic", prompt: "do the books" } },
+      }));
+      const runsBefore = await tableCount(stack, "vendo_runs");
+      const approvalsBefore = await tableCount(stack, "vendo_approvals");
+      const invoicesBefore = (await fixtureInvoices()).length;
+
+      const plan = await stack.automations.dryRun(appId, ctx);
+      // Without a model seat, agentic capture previews every bound descriptor.
+      expect(plan.steps.map(({ tool }) => tool).sort()).toEqual([
+        "host_invoices_create", "host_invoices_get", "host_invoices_list",
+        "host_invoices_send", "host_invoices_send_critical", "host_invoices_update",
+      ]);
+      expect(plan.steps.every(({ wouldAsk }) => wouldAsk)).toBe(true);
+      // The critical tool always asks, so it is not a "missing grant".
+      expect(plan.grantsMissing.slice().sort()).toEqual([
+        "host_invoices_create", "host_invoices_get", "host_invoices_list",
+        "host_invoices_send", "host_invoices_update",
+      ]);
+      expect(await tableCount(stack, "vendo_runs")).toBe(runsBefore);
+      expect(await tableCount(stack, "vendo_approvals")).toBe(approvalsBefore);
+      expect((await fixtureInvoices()).length).toBe(invoicesBefore);
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("previews a mutating steps pipeline without touching host state, even when granted", async () => {
+    const stack = await createStack();
+    try {
+      const appId = "app_observe_dry_sideeffect";
+      const ctx = ownerCtx(ADA.subject, appId);
+      await stack.putApp(ADA.subject, automationDoc({
+        id: appId,
+        trigger: {
+          on: { kind: "host-event", event: "observe.mutate" },
+          run: {
+            kind: "steps",
+            steps: [
+              {
+                id: "create",
+                tool: "host_invoices_create",
+                args: { customerId: "'cus_ada'", amountCents: "1", memo: "'dry-run-should-not-write'" },
+              },
+              { id: "send", tool: "host_invoices_send", args: { id: "'inv_0003'" } },
+            ],
+          },
+        },
+      }));
+      await enableAndApprove(stack, appId, ctx);
+      const runsBefore = await tableCount(stack, "vendo_runs");
+
+      const plan = await stack.automations.dryRun(appId, ctx, {});
+      expect(plan.steps.map(({ id, wouldAsk }) => ({ id, wouldAsk }))).toEqual([
+        { id: "create", wouldAsk: false },
+        { id: "send", wouldAsk: false },
+      ]);
+      // Nothing ran: no run row, no invoice created, inv_0003 still a draft.
+      expect(await tableCount(stack, "vendo_runs")).toBe(runsBefore);
+      expect((await fixtureInvoices()).some(({ memo }) => memo === "dry-run-should-not-write")).toBe(false);
+      expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.status).toBe("draft");
     } finally {
       await stack.close();
     }

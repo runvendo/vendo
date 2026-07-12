@@ -46,6 +46,34 @@ for (const backend of backends()) {
       expect(await storeSecrets(made.store).get("B_SECRET")).toBeUndefined();
     });
 
+    it("re-encrypts the same value differently each write (GCM nonce)", async () => {
+      // §4 AES-256-GCM: a fresh random nonce per write means ciphertext is non-deterministic,
+      // even for identical plaintext under the same key — no equal-value fingerprinting on disk.
+      await secretStore(made.store).set("NONCE_SECRET", "identical-plaintext");
+      const first = String((await made.sql("SELECT ciphertext FROM vendo_secrets WHERE name = 'NONCE_SECRET'"))[0]?.ciphertext);
+      await secretStore(made.store).set("NONCE_SECRET", "identical-plaintext");
+      const second = String((await made.sql("SELECT ciphertext FROM vendo_secrets WHERE name = 'NONCE_SECRET'"))[0]?.ciphertext);
+      expect(second).not.toBe(first);
+      expect(await storeSecrets(made.store).get("NONCE_SECRET")).toBe("identical-plaintext");
+      await secretStore(made.store).delete("NONCE_SECRET");
+    });
+
+    it("keeps app record data plaintext even when encryption is configured", async () => {
+      // §4: only vendo_secrets.ciphertext is encrypted; app data stays plaintext so the
+      // host-can-query/join promise survives — encrypting it would defeat §2.
+      await made.store.records("app:app_plain:notes").put({
+        id: "plain_note",
+        data: { body: "queryable-cleartext" },
+        refs: { kind: "note" },
+      });
+      const row = (await made.sql("SELECT data FROM vendo_records WHERE id = 'plain_note'"))[0];
+      expect(row?.data).toEqual({ body: "queryable-cleartext" });
+      const matched = await made.sql(
+        "SELECT id FROM vendo_records WHERE data->>'body' = 'queryable-cleartext'",
+      );
+      expect(matched.map((r) => r.id)).toContain("plain_note");
+    });
+
     it("survives close and reopen with the same encryption key", async () => {
       await made.store.close();
       made.store = createStore({ url: made.url, dataDir: made.dataDir, encryption: { key } });

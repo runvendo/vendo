@@ -1,5 +1,6 @@
 import type { AppId, Json, Principal } from "@vendoai/core";
 import { overlayFor, registerEphemeralSubject, snapshot, stateKey } from "../ephemeral.js";
+import { putStateRow } from "./rows.js";
 import { dbFor, type VendoStore } from "../store.js";
 import { requireJson } from "../validate.js";
 
@@ -26,22 +27,32 @@ export function stateStore(store: VendoStore): {
     },
     async put(principal, appId, data) {
       const parsedData = requireJson(data, "state data");
+      const now = new Date().toISOString();
       if (principal.ephemeral === true) {
-        const updatedAt = new Date().toISOString();
+        // Register the subject BEFORE the write (02 §4): otherwise a later seam
+        // write for the same ephemeral subject would decide "not ephemeral" and
+        // INSERT this data durably into vendo_state — a disk leak + read split-brain.
+        registerEphemeralSubject(store, principal.subject);
+        const key = stateKey(principal.subject, appId);
+        const prior = overlay.states.get(key);
         overlay.states.set(
-          stateKey(principal.subject, appId),
-          snapshot({ appId, subject: principal.subject, data: parsedData, updatedAt }),
+          key,
+          snapshot({
+            appId,
+            subject: principal.subject,
+            data: parsedData,
+            createdAt: prior?.createdAt ?? now,
+            updatedAt: now,
+          }),
         );
         return;
       }
-      await db.query(
-        `INSERT INTO vendo_state (app_id, subject, data, updated_at) VALUES ($1, $2, $3::jsonb, $4)
-         ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-        [appId, principal.subject, JSON.stringify(parsedData), new Date().toISOString()],
-      );
+      // Shared write path with the routed seam (helpers/rows putStateRow).
+      await putStateRow(db, { appId, subject: principal.subject, data: parsedData }, now);
     },
     async delete(principal, appId) {
       if (principal.ephemeral === true) {
+        registerEphemeralSubject(store, principal.subject);
         overlay.states.delete(stateKey(principal.subject, appId));
         return;
       }

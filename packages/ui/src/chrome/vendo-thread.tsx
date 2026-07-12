@@ -6,6 +6,7 @@ import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
 import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { Markdown } from "./markdown.js";
 
 function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
@@ -70,15 +71,38 @@ export function VendoThread({ threadId }: { threadId?: string }) {
     void thread.sendMessage({ text });
   };
 
-  const renderPart = (part: UIMessage["parts"][number], key: string) => {
-    if (part.type === "text") return <p key={key}>{part.text}</p>;
+  const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"]) => {
+    if (part.type === "text") {
+      return role === "user"
+        ? <div className="fl-usertext" key={key}>{part.text}</div>
+        : <Markdown key={key} text={part.text} />;
+    }
     if (isToolUIPart(part)) {
       const risk = risks.get(part.toolCallId) ?? "read";
+      const error = part.state === "output-error";
+      const done = part.state === "output-available";
       return (
-        <div className="vendo-tool-receipt" data-vendo-approval={risk} key={key}>
-          <span>Tool: {toolName(part)}</span>
-          <span className="vendo-chip" data-risk={risk}>{risk}</span>
-          <span>{part.state}</span>
+        <div
+          className={`fl-tool ${error ? "fl-tool-error" : done ? "fl-tool-done" : "fl-tool-working"}`}
+          data-vendo-approval={risk}
+          key={key}
+        >
+          {error ? (
+            <span className="fl-tool-icon" aria-hidden="true">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </span>
+          ) : done ? (
+            <span className="fl-tool-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m5 12 4 4L19 6" />
+              </svg>
+            </span>
+          ) : <span className="fl-tool-spinner" aria-hidden="true" />}
+          <span className="fl-tool-label">Tool: {toolName(part)}</span>
+          <span className="fl-tool-detail" data-risk={risk}>{risk}</span>
+          <span className="fl-tool-detail">{part.state}</span>
         </div>
       );
     }
@@ -101,13 +125,18 @@ export function VendoThread({ threadId }: { threadId?: string }) {
 
   return (
     <ChromeRoot>
-      <section className="vendo-thread" aria-label="Vendo conversation">
+      <div className="fl-thread" role="region" aria-label="Vendo conversation">
         {/* role="log" — aria-label is prohibited on a roleless div (WCAG 4.1.2), and a
             streaming message list is exactly what "log" names. */}
-        <div className="vendo-messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-busy={busy}>
+        <div className="fl-msglist" role="log" aria-label="Conversation messages" aria-live="polite" aria-busy={busy}>
           {thread.messages.map(message => (
-            <article className="vendo-message" data-role={message.role} key={message.id} aria-label={`${message.role} message`}>
-              {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`))}
+            <article
+              className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
+              data-role={message.role}
+              key={message.id}
+              aria-label={`${message.role} message`}
+            >
+              {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`, message.role))}
             </article>
           ))}
           {approvals.map(part => {
@@ -140,31 +169,44 @@ export function VendoThread({ threadId }: { threadId?: string }) {
             );
           })}
         </div>
-        <form className="vendo-composer vendo-stack" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
-          <label>
-            <span className="vendo-muted">Message</span>
-            <textarea
-              className="vendo-input"
-              value={draft}
-              disabled={busy}
-              onChange={event => setDraft(event.currentTarget.value)}
-              onKeyDown={event => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  send();
-                }
-              }}
-            />
-          </label>
-          <div className="vendo-row">
-            <button className="vendo-primary" type="submit" disabled={busy || !draft.trim()}>Send</button>
-            {busy ? <button type="button" onClick={() => void thread.stop()}>Stop</button> : null}
-            <span role="status" aria-live="polite" className="vendo-muted">
-              {thread.status === "error" && thread.error ? `error: ${thread.error.message}` : thread.status}
-            </span>
+        <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
+          <div className="fl-composer-row">
+            <label style={{ display: "contents" }}>
+              <span className="fl-sr-only">Message</span>
+              <textarea
+                aria-label="Message"
+                rows={1}
+                value={draft}
+                disabled={busy}
+                onChange={event => setDraft(event.currentTarget.value)}
+                onKeyDown={event => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    send();
+                  }
+                }}
+              />
+            </label>
+            <button className="fl-icon-btn fl-send" type="submit" aria-label="Send" disabled={busy || !draft.trim()}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
+              </svg>
+              <span className="fl-sr-only">Send</span>
+            </button>
+            {busy ? (
+              <button className="fl-icon-btn" type="button" aria-label="Stop" onClick={() => void thread.stop()}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <rect x="6" y="6" width="12" height="12" rx="2.5" />
+                </svg>
+                <span className="fl-sr-only">Stop</span>
+              </button>
+            ) : null}
           </div>
+          <span role="status" aria-live="polite" className="fl-sr-only">
+            {thread.status === "error" && thread.error ? `error: ${thread.error.message}` : thread.status}
+          </span>
         </form>
-      </section>
+      </div>
     </ChromeRoot>
   );
 }

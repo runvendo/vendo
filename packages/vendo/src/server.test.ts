@@ -296,9 +296,9 @@ describe("09 §3 conversational turn against the real composed store", () => {
     expect(raw.trimEnd().endsWith("data: [DONE]")).toBe(true);
 
     // The read-back is the regression: the routed table stores {subject, messages}
-    // under the composite <subject>:<threadId> key; the agent must reconstruct
-    // the thread from the record envelope (this 404ed when it expected its own
-    // full shape inside data).
+    // with id + timestamps on the record envelope; the agent must reconstruct
+    // the thread from the envelope (this 404ed when it expected its own full
+    // shape inside data).
     const fetched = await vendo.handler(request("GET", "/threads/thr_round_trip"));
     expect(fetched.status).toBe(200);
     const thread = await fetched.json() as { id: string; subject: string; messages: Array<{ role: string }> };
@@ -312,6 +312,6 @@ describe("09 §3 conversational turn against the real composed store", () => {
 
     const rows = await store.records("vendo_threads").list({ refs: { subject: principal.subject } });
     expect(rows.records).toHaveLength(1);
-    expect(rows.records[0]?.id).toBe(`${principal.subject}:thr_round_trip`);
+    expect(rows.records[0]?.id).toBe("thr_round_trip");
   });
 });

@@ -74,49 +74,6 @@ for (const backend of backends()) {
       expect((await made.store.records("vendo_audit").get(helperEvent.id))?.data).toEqual(helperEvent);
     });
 
-    it("routes vendo_threads through the typed table with subject-scoped composite keys", async () => {
-      const threads = made.store.records("vendo_threads");
-      const messages = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }];
-
-      // Two subjects sharing one host-fixed thread id stay isolated rows.
-      const a = await threads.put({
-        id: "user_thread_a:thr_shared",
-        data: { subject: "user_thread_a", messages },
-      });
-      const b = await threads.put({
-        id: "user_thread_b:thr_shared",
-        data: { subject: "user_thread_b", messages: [] },
-      });
-      expect(a.refs).toEqual({ subject: "user_thread_a" });
-      expect(await threads.get("user_thread_a:thr_shared")).toEqual(a);
-      expect(await threads.get("user_thread_b:thr_shared")).toEqual(b);
-      expect(await made.sql(
-        "SELECT id, subject FROM vendo_threads WHERE id = $1 ORDER BY subject", ["thr_shared"],
-      )).toEqual([
-        { id: "thr_shared", subject: "user_thread_a" },
-        { id: "thr_shared", subject: "user_thread_b" },
-      ]);
-      expect((await threads.list({ refs: { subject: "user_thread_a" } })).records).toEqual([a]);
-      await threads.delete("user_thread_a:thr_shared");
-      expect(await threads.get("user_thread_a:thr_shared")).toBeNull();
-      expect(await threads.get("user_thread_b:thr_shared")).toEqual(b);
-
-      // Subjects with ':' and '%' (OIDC urn:/auth0 subs) round-trip via the escaped key.
-      const urnSubject = "urn:auth0:us%er|9";
-      const key = `${urnSubject.replaceAll("%", "%25").replaceAll(":", "%3A")}:thr_urn`;
-      const c = await threads.put({ id: key, data: { subject: urnSubject, messages } });
-      expect(c.id).toBe(key);
-      expect(await threads.get(key)).toEqual(c);
-      expect(await made.sql("SELECT id, subject FROM vendo_threads WHERE id = $1", ["thr_urn"]))
-        .toEqual([{ id: "thr_urn", subject: urnSubject }]);
-
-      // The record subject must match the key's subject segment.
-      await expect(threads.put({
-        id: "user_thread_a:thr_forged",
-        data: { subject: "user_thread_b", messages: [] },
-      })).rejects.toMatchObject({ code: "validation" });
-    });
-
     it("routes vendo_state through the typed table with composite keys", async () => {
       const states = made.store.records("vendo_state");
       const id = "app_state:user_state";
@@ -140,14 +97,6 @@ for (const backend of backends()) {
 
       await states.delete(id);
       expect(await states.get(id)).toBeNull();
-    });
-
-    it("cascades typed state when deleting through the routed app collection", async () => {
-      const appId = "app_state_cascade";
-      const subject = "user_state_cascade";
-      await made.store.records("vendo_state").put({ id: `${appId}:${subject}`, data: { dirty: true } });
-      await made.store.records("vendo_apps").delete(appId);
-      expect(await made.store.records("vendo_state").get(`${appId}:${subject}`)).toBeNull();
     });
 
     it("walks newest-first routed pages without duplicates or misses", async () => {

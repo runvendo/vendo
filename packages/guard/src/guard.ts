@@ -213,6 +213,13 @@ function scopeMatches(scope: GrantScope, args: unknown): boolean {
   if (scope.kind === "tool") return true;
   if (scope.kind === "exact") return scope.inputHash === exactInputHash(args);
 
+  // Fail closed on an empty constraints array: `every` over nothing is `true`,
+  // which would silently authorize ANY args — a tool-wide wildcard wearing a
+  // "constrained" label the preview implies is narrow. Mint-time validation
+  // rejects this shape too (#decideApprovals), but a pre-existing or injected
+  // stored grant must never authorize on the strength of zero constraints.
+  if (scope.constraints.length === 0) return false;
+
   return scope.constraints.every((constraint) => {
     const resolved = resolvePointer(args, constraint.path);
     if (!resolved.found) return false;
@@ -264,20 +271,24 @@ function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
 }
 
 function normalizeCodeDecision(decision: GuardDecision): DraftDecision {
+  // The policy-code stage cannot self-attribute its provenance. `policy.code` is
+  // deploy-time host code, not the user's real-time consent, so it must never be
+  // able to return `decidedBy: "grant"` — that label is reserved for an actual
+  // app-bound PermissionGrant and is the ONLY "run" the away-downgrade gate
+  // (05 §6) exempts from parking. Forcing every code decision to "rule" (and
+  // dropping any code-supplied grantId) makes a code-sourced run behave exactly
+  // like a rule-sourced run: away-downgraded to a park, and honestly attributed
+  // in the audit trail. This mirrors how code ERRORS already fail to "rule".
   if (decision.action === "run") {
-    return {
-      action: "run",
-      decidedBy: decision.decidedBy,
-      ...(decision.grantId === undefined ? {} : { grantId: decision.grantId }),
-    };
+    return { action: "run", decidedBy: "rule" };
   }
   if (decision.action === "ask") {
-    return { action: "ask", decidedBy: decision.decidedBy };
+    return { action: "ask", decidedBy: "rule" };
   }
   return {
     action: "block",
     reason: decision.reason,
-    decidedBy: decision.decidedBy,
+    decidedBy: "rule",
   };
 }
 
@@ -961,6 +972,15 @@ class GuardImplementation implements VendoGuard {
         if (decision.approve && decision.remember?.scope.kind === "constrained") {
           // Validate BEFORE any state changes: a rejected remember must not leave
           // the approval half-decided.
+          if (decision.remember.scope.constraints.length === 0) {
+            // An empty constraints array makes `scopeMatches` an
+            // every()-over-nothing → true: a tool-wide wildcard masquerading as
+            // the narrow "constrained" grant the preview implies. Reject it.
+            throw new VendoError(
+              "validation",
+              "A constrained grant must declare at least one constraint",
+            );
+          }
           for (const constraint of decision.remember.scope.constraints) {
             if (
               constraint.op === "matches" &&

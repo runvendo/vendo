@@ -6,14 +6,19 @@
     "version": "1.0.0"
   },
   "servers": [
-    { "url": "http://localhost:3000", "description": "Local demo server" }
+    {
+      "url": "/"
+    }
   ],
   "paths": {
     "/api/dashboard": {
       "get": {
         "operationId": "getDashboard",
         "summary": "Firm-wide dashboard metrics: how many clients are missing documents, documents outstanding vs received, and the nearest filing deadline with its client.",
-        "x-vendo-formats": { "nearestDeadline": "iso-datetime", "filingDeadline": "iso-datetime" },
+        "x-vendo-formats": {
+          "nearestDeadline": "iso-datetime",
+          "filingDeadline": "iso-datetime"
+        },
         "responses": {
           "200": {
             "description": "Dashboard metrics",
@@ -21,7 +26,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "data": { "$ref": "#/components/schemas/DashboardMetrics" } }
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DashboardMetrics"
+                    }
+                  }
                 }
               }
             }
@@ -33,18 +42,27 @@
       "get": {
         "operationId": "listClients",
         "summary": "List the firm's clients with document progress, derived status and assigned staff. Filter to clients still missing documents or search by name.",
-        "x-vendo-formats": { "filingDeadline": "iso-datetime" },
+        "x-vendo-formats": {
+          "filingDeadline": "iso-datetime"
+        },
         "parameters": [
           {
             "name": "filter",
             "in": "query",
-            "schema": { "type": "string", "enum": ["missing_docs"] },
+            "schema": {
+              "type": "string",
+              "enum": [
+                "missing_docs"
+              ]
+            },
             "description": "Set to missing_docs to return only clients with at least one outstanding document"
           },
           {
             "name": "q",
             "in": "query",
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Case-insensitive search on business name or contact name, e.g. 'rivera'"
           }
         ],
@@ -56,7 +74,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/ClientSummary" } }
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ClientSummary"
+                      }
+                    }
                   }
                 }
               }
@@ -69,13 +92,17 @@
       "get": {
         "operationId": "getClient",
         "summary": "Fetch one client with document progress, derived status and assigned staff.",
-        "x-vendo-formats": { "filingDeadline": "iso-datetime" },
+        "x-vendo-formats": {
+          "filingDeadline": "iso-datetime"
+        },
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Client id, e.g. cl_rivera"
           }
         ],
@@ -86,12 +113,25 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "data": { "$ref": "#/components/schemas/ClientSummary" } }
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ClientSummary"
+                    }
+                  }
                 }
               }
             }
           },
-          "404": { "description": "Unknown client", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "404": {
+            "description": "Unknown client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -104,7 +144,9 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Client id"
           }
         ],
@@ -116,13 +158,27 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/DocumentRequest" } }
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DocumentRequest"
+                      }
+                    }
                   }
                 }
               }
             }
           },
-          "404": { "description": "Unknown client", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "404": {
+            "description": "Unknown client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -132,8 +188,24 @@
         "x-vendo-dangerous": true,
         "summary": "Advance a document through its lifecycle: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Client id" },
-          { "name": "docId", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Document request id belonging to that client" }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client id"
+          },
+          {
+            "name": "docId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Document request id belonging to that client"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -141,11 +213,27 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["action"],
+                "required": [
+                  "action"
+                ],
                 "properties": {
-                  "action": { "type": "string", "enum": ["receive", "verify", "reject"], "description": "Lifecycle transition to apply" },
-                  "fileName": { "type": "string", "description": "Uploaded file name (receive only); a plausible default is generated if omitted" },
-                  "reason": { "type": "string", "description": "Why the document was rejected (reject only); shown to the client until they re-upload" }
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "receive",
+                      "verify",
+                      "reject"
+                    ],
+                    "description": "Lifecycle transition to apply"
+                  },
+                  "fileName": {
+                    "type": "string",
+                    "description": "Uploaded file name (receive only); a plausible default is generated if omitted"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Why the document was rejected (reject only); shown to the client until they re-upload"
+                  }
                 }
               }
             }
@@ -158,13 +246,35 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "data": { "$ref": "#/components/schemas/DocumentRequest" } }
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentRequest"
+                    }
+                  }
                 }
               }
             }
           },
-          "400": { "description": "Unknown action or invalid transition for the document's current status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "404": { "description": "Unknown client, or document does not belong to the client", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "400": {
+            "description": "Unknown action or invalid transition for the document's current status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown client, or document does not belong to the client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -173,7 +283,15 @@
         "operationId": "listClientMessages",
         "summary": "Read one client's message thread with the firm, oldest first.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Client id" }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client id"
+          }
         ],
         "responses": {
           "200": {
@@ -183,20 +301,42 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } }
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Message"
+                      }
+                    }
                   }
                 }
               }
             }
           },
-          "404": { "description": "Unknown client", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "404": {
+            "description": "Unknown client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       },
       "post": {
         "operationId": "sendClientMessage",
         "summary": "Send a message to a client as the firm. This is what the firm uses to chase outstanding documents; the client sees it in their portal.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Client id" }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client id"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -204,10 +344,18 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["body"],
+                "required": [
+                  "body"
+                ],
                 "properties": {
-                  "body": { "type": "string", "description": "Message text; must be non-empty" },
-                  "author": { "type": "string", "description": "Staff member sending the message; defaults to the signed-in user, Maya Alvarez" }
+                  "body": {
+                    "type": "string",
+                    "description": "Message text; must be non-empty"
+                  },
+                  "author": {
+                    "type": "string",
+                    "description": "Staff member sending the message; defaults to the signed-in user, Maya Alvarez"
+                  }
                 }
               }
             }
@@ -220,13 +368,35 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "data": { "$ref": "#/components/schemas/Message" } }
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Message"
+                    }
+                  }
                 }
               }
             }
           },
-          "400": { "description": "Empty message body", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "404": { "description": "Unknown client", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "400": {
+            "description": "Empty message body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -234,7 +404,9 @@
       "get": {
         "operationId": "listDeadlines",
         "summary": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline.",
-        "x-vendo-formats": { "filingDeadline": "iso-datetime" },
+        "x-vendo-formats": {
+          "filingDeadline": "iso-datetime"
+        },
         "responses": {
           "200": {
             "description": "Deadline entries, soonest first",
@@ -243,7 +415,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/DeadlineEntry" } }
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DeadlineEntry"
+                      }
+                    }
                   }
                 }
               }
@@ -260,7 +437,9 @@
           {
             "name": "limit",
             "in": "query",
-            "schema": { "type": "number" },
+            "schema": {
+              "type": "number"
+            },
             "description": "Maximum number of events to return; omit for the full feed"
           }
         ],
@@ -272,7 +451,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/ActivityEvent" } }
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ActivityEvent"
+                      }
+                    }
                   }
                 }
               }
@@ -292,7 +476,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "data": { "$ref": "#/components/schemas/DashboardMetrics" } }
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DashboardMetrics"
+                    }
+                  }
                 }
               }
             }
@@ -310,12 +498,32 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["clientId", "docId", "variant"],
+                "required": [
+                  "clientId",
+                  "docId",
+                  "variant"
+                ],
                 "properties": {
-                  "clientId": { "type": "string", "description": "Client doing the uploading, e.g. cl_rivera" },
-                  "docId": { "type": "string", "description": "Document request being fulfilled; must belong to the client and be in status missing" },
-                  "variant": { "type": "string", "enum": ["correct", "wrong"], "description": "correct: plausible right file -> received. wrong: mismatched file -> needs_review with a note" },
-                  "fileName": { "type": "string", "description": "Uploaded file name; a plausible default is generated if omitted" }
+                  "clientId": {
+                    "type": "string",
+                    "description": "Client doing the uploading, e.g. cl_rivera"
+                  },
+                  "docId": {
+                    "type": "string",
+                    "description": "Document request being fulfilled; must belong to the client and be in status missing"
+                  },
+                  "variant": {
+                    "type": "string",
+                    "enum": [
+                      "correct",
+                      "wrong"
+                    ],
+                    "description": "correct: plausible right file -> received. wrong: mismatched file -> needs_review with a note"
+                  },
+                  "fileName": {
+                    "type": "string",
+                    "description": "Uploaded file name; a plausible default is generated if omitted"
+                  }
                 }
               }
             }
@@ -332,8 +540,12 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "document": { "$ref": "#/components/schemas/DocumentRequest" },
-                        "message": { "$ref": "#/components/schemas/Message" }
+                        "document": {
+                          "$ref": "#/components/schemas/DocumentRequest"
+                        },
+                        "message": {
+                          "$ref": "#/components/schemas/Message"
+                        }
                       }
                     }
                   }
@@ -341,8 +553,26 @@
               }
             }
           },
-          "400": { "description": "Missing fields, unknown variant, or the document already has an upload", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "404": { "description": "Unknown client, or document does not belong to the client", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "400": {
+            "description": "Missing fields, unknown variant, or the document already has an upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown client, or document does not belong to the client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -355,8 +585,16 @@
           "error": {
             "type": "object",
             "properties": {
-              "code": { "type": "string", "enum": ["not_found", "bad_request"] },
-              "message": { "type": "string" }
+              "code": {
+                "type": "string",
+                "enum": [
+                  "not_found",
+                  "bad_request"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
             }
           }
         }
@@ -365,47 +603,121 @@
         "type": "object",
         "description": "Document collection progress, rendered as e.g. '3 of 6 received'",
         "properties": {
-          "received": { "type": "number", "description": "Documents no longer missing or rejected" },
-          "total": { "type": "number" }
+          "received": {
+            "type": "number",
+            "description": "Documents no longer missing or rejected"
+          },
+          "total": {
+            "type": "number"
+          }
         }
       },
       "Staff": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "role": { "type": "string" },
-          "initials": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "initials": {
+            "type": "string"
+          }
         }
       },
       "ClientSummary": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "description": "Client id, e.g. cl_rivera" },
-          "businessName": { "type": "string" },
-          "entityType": { "type": "string", "enum": ["s_corp", "sole_prop", "partnership", "c_corp", "individual"] },
-          "contactName": { "type": "string" },
-          "contactEmail": { "type": "string" },
-          "assigneeId": { "type": "string" },
-          "assignee": { "$ref": "#/components/schemas/Staff" },
-          "filingDeadline": { "type": "string", "description": "ISO 8601 filing deadline" },
-          "progress": { "$ref": "#/components/schemas/Progress" },
-          "status": { "type": "string", "enum": ["missing_docs", "in_review", "complete"], "description": "Derived from the client's documents" }
+          "id": {
+            "type": "string",
+            "description": "Client id, e.g. cl_rivera"
+          },
+          "businessName": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string",
+            "enum": [
+              "s_corp",
+              "sole_prop",
+              "partnership",
+              "c_corp",
+              "individual"
+            ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "assigneeId": {
+            "type": "string"
+          },
+          "assignee": {
+            "$ref": "#/components/schemas/Staff"
+          },
+          "filingDeadline": {
+            "type": "string",
+            "description": "ISO 8601 filing deadline"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/Progress"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "missing_docs",
+              "in_review",
+              "complete"
+            ],
+            "description": "Derived from the client's documents"
+          }
         }
       },
       "DocumentRequest": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "description": "Document request id, e.g. doc_rivera_w2" },
-          "clientId": { "type": "string" },
-          "kind": { "type": "string", "description": "What was requested, e.g. W-2, 1099-NEC, Bank statements (2025)" },
-          "status": { "type": "string", "enum": ["missing", "received", "needs_review", "verified", "rejected"], "description": "Lifecycle: missing -> received (or needs_review if the upload looks wrong) -> verified; reject returns it to missing with a note" },
-          "note": { "type": "string", "description": "Rejection or review note shown until the client re-uploads" },
+          "id": {
+            "type": "string",
+            "description": "Document request id, e.g. doc_rivera_w2"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "What was requested, e.g. W-2, 1099-NEC, Bank statements (2025)"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "received",
+              "needs_review",
+              "verified",
+              "rejected"
+            ],
+            "description": "Lifecycle: missing -> received (or needs_review if the upload looks wrong) -> verified; reject returns it to missing with a note"
+          },
+          "note": {
+            "type": "string",
+            "description": "Rejection or review note shown until the client re-uploads"
+          },
           "file": {
             "type": "object",
             "properties": {
-              "name": { "type": "string" },
-              "uploadedAt": { "type": "string", "description": "ISO 8601" }
+              "name": {
+                "type": "string"
+              },
+              "uploadedAt": {
+                "type": "string",
+                "description": "ISO 8601"
+              }
             }
           }
         }
@@ -413,53 +725,114 @@
       "Message": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "clientId": { "type": "string" },
-          "direction": { "type": "string", "enum": ["firm", "client"], "description": "firm: sent by the firm to the client; client: sent by the client" },
-          "author": { "type": "string" },
-          "body": { "type": "string" },
-          "sentAt": { "type": "string", "description": "ISO 8601" }
+          "id": {
+            "type": "string"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "firm",
+              "client"
+            ],
+            "description": "firm: sent by the firm to the client; client: sent by the client"
+          },
+          "author": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          }
         }
       },
       "ActivityEvent": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "type": { "type": "string", "enum": ["upload_received", "document_verified", "document_rejected", "message_sent", "deadline_approaching"] },
-          "clientId": { "type": "string" },
-          "summary": { "type": "string" },
-          "at": { "type": "string", "description": "ISO 8601" }
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "upload_received",
+              "document_verified",
+              "document_rejected",
+              "message_sent",
+              "deadline_approaching"
+            ]
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO 8601"
+          }
         }
       },
       "DashboardMetrics": {
         "type": "object",
         "properties": {
-          "clientsMissingDocs": { "type": "number", "description": "Clients with at least one outstanding document" },
-          "documentsOutstanding": { "type": "number", "description": "Documents still missing or rejected across all clients" },
-          "documentsReceived": { "type": "number" },
-          "documentsTotal": { "type": "number" },
-          "clientsTotal": { "type": "number" },
-          "nearestDeadline": { "type": "string", "description": "ISO 8601 date of the soonest client filing deadline; the dashboard counts down to this" },
+          "clientsMissingDocs": {
+            "type": "number",
+            "description": "Clients with at least one outstanding document"
+          },
+          "documentsOutstanding": {
+            "type": "number",
+            "description": "Documents still missing or rejected across all clients"
+          },
+          "documentsReceived": {
+            "type": "number"
+          },
+          "documentsTotal": {
+            "type": "number"
+          },
+          "clientsTotal": {
+            "type": "number"
+          },
+          "nearestDeadline": {
+            "type": "string",
+            "description": "ISO 8601 date of the soonest client filing deadline; the dashboard counts down to this"
+          },
           "nearestDeadlineClient": {
             "type": "object",
             "description": "The client whose deadline is soonest",
             "properties": {
-              "id": { "type": "string" },
-              "businessName": { "type": "string" },
-              "filingDeadline": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "businessName": {
+                "type": "string"
+              },
+              "filingDeadline": {
+                "type": "string"
+              }
             }
           }
         }
       },
       "DeadlineEntry": {
         "allOf": [
-          { "$ref": "#/components/schemas/ClientSummary" },
+          {
+            "$ref": "#/components/schemas/ClientSummary"
+          },
           {
             "type": "object",
             "properties": {
               "missingDocKinds": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "description": "Kinds of documents still owed, e.g. ['W-2', 'Receipts']; empty when the checklist is complete"
               }
             }
