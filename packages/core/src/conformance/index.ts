@@ -479,24 +479,34 @@ const jsonCopy = <T>(value: T): T => {
   return serialized === undefined ? value : JSON.parse(serialized) as T;
 };
 
-const copyRecord = (record: VendoRecord): VendoRecord => ({
-  ...record,
+const copyRecord = (record: VendoRecord & { seq?: number }): VendoRecord => ({
+  id: record.id,
   data: jsonCopy(record.data),
-  refs: record.refs === undefined ? undefined : { ...record.refs },
+  ...(record.refs === undefined ? {} : { refs: { ...record.refs } }),
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
 });
 
 /**
  * Test double only: a pure in-memory StoreAdapter reference implementation for
  * unit tests. It is not intended as production persistence.
+ *
+ * Double-level behavior (NOT contract — the conformance suite does not assert
+ * it): `list()` returns records newest-first by `createdAt`, most recent write
+ * first on ties. This mirrors the ordering the store block's Postgres adapter
+ * is being built with, so block unit tests behave like their integration
+ * fixtures. Do not depend on ordering across arbitrary StoreAdapters until the
+ * contract pins it.
  */
 export function memoryStoreAdapter(): StoreAdapter & { ensureSchema(): Promise<void> } {
-  const collections = new Map<string, Map<string, VendoRecord>>();
+  const collections = new Map<string, Map<string, VendoRecord & { seq: number }>>();
+  let sequence = 0;
   const namespaces = new Map<string, Map<string, { bytes: Uint8Array; contentType?: string }>>();
 
-  const recordMap = (collection: string): Map<string, VendoRecord> => {
+  const recordMap = (collection: string): Map<string, VendoRecord & { seq: number }> => {
     let records = collections.get(collection);
     if (records === undefined) {
-      records = new Map<string, VendoRecord>();
+      records = new Map<string, VendoRecord & { seq: number }>();
       collections.set(collection, records);
     }
     return records;
@@ -523,12 +533,14 @@ export function memoryStoreAdapter(): StoreAdapter & { ensureSchema(): Promise<v
         async put(input) {
           const previous = records.get(input.id);
           const now = new Date().toISOString();
-          const record: VendoRecord = {
+          sequence += 1;
+          const record: VendoRecord & { seq: number } = {
             id: input.id,
             data: jsonCopy(input.data),
             refs: input.refs === undefined ? undefined : { ...input.refs },
             createdAt: previous?.createdAt ?? now,
             updatedAt: previous !== undefined && previous.updatedAt > now ? previous.updatedAt : now,
+            seq: previous?.seq ?? sequence,
           };
           records.set(record.id, record);
           return copyRecord(record);
@@ -543,7 +555,9 @@ export function memoryStoreAdapter(): StoreAdapter & { ensureSchema(): Promise<v
               ([key, value]) => record.refs?.[key] === value,
             )) return false;
             return true;
-          });
+          }).sort((a, b) => (
+            a.createdAt === b.createdAt ? b.seq - a.seq : (a.createdAt < b.createdAt ? 1 : -1)
+          ));
           const parsedOffset = query.cursor === undefined ? 0 : Number.parseInt(query.cursor, 10);
           const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
           const limit = query.limit === undefined ? filtered.length : Math.max(0, Math.trunc(query.limit));

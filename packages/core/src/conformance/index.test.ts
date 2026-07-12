@@ -139,6 +139,16 @@ describe("StoreAdapter conformance", () => {
     );
     expect(report.failures.every((failure) => failure.name.length > 0)).toBe(true);
   });
+
+  it("memoryStoreAdapter lists newest-first (double-level behavior, not contract)", async () => {
+    const records = memoryStoreAdapter().records("ordering");
+    for (const id of ["first", "second", "third"]) {
+      await records.put({ id, data: { id } });
+    }
+    const listed = await records.list();
+    expect(listed.records.map((record) => record.id)).toEqual(["third", "second", "first"]);
+    expect(listed.records.some((record) => "seq" in record)).toBe(false);
+  });
 });
 
 describe("ToolRegistry conformance", () => {
