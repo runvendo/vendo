@@ -41,8 +41,12 @@
   },
   "files": ["dist"],
   "scripts": {
+    "build:jail": "node scripts/build-jail-runtime.mjs",
+    "prebuild": "pnpm run build:jail",
     "build": "tsc -p tsconfig.json",
+    "pretest": "pnpm run build:jail",
     "test": "vitest run --passWithNoTests",
+    "pretypecheck": "pnpm run build:jail",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:browser": "playwright test"
   },
