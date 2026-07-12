@@ -50,7 +50,9 @@ export function VendoOverlay() {
       </button>
       {open ? (
         <div className="fl-overlay-portal">
-          <div className="fl-overlay-scrim" />
+          {/* Click-outside-to-dismiss: the visible frosted scrim reads as clickable,
+              so honor it (matching the palette). Keyboard users have Esc + the X. */}
+          <div className="fl-overlay-scrim" onMouseDown={close} />
           <div ref={dialog} id="vendo-overlay-dialog" className="fl-overlay-panel" role="dialog" aria-modal="true" aria-label="Vendo assistant" onKeyDown={onKeyDown}>
             <strong className="fl-sr-only">Vendo</strong>
             <button className="fl-overlay-close" type="button" aria-label="Close Vendo" onClick={close}>
