@@ -229,8 +229,21 @@ async function detectPackageManager(
   return { packageManager: "pnpm", installDir: target };
 }
 
+// The umbrella's ai peer is >=6 <7 and init's starter provider is v6-era. A
+// corpus target is a disposable fixture measuring OUR composition, so pin the
+// whole tree to the v6 train — otherwise a target that already declares ai@5
+// (top-level or transitively) collides with the umbrella peer and the harness
+// measures a dependency conflict instead of the init it means to.
+const AI_TRAIN_OVERRIDES: Record<string, string> = {
+  ai: "6.0.28",
+  "@ai-sdk/anthropic": "3.0.12",
+};
+
 function localOverrideMap(tarballs: readonly LocalTarball[]): Record<string, string> {
-  return sortedRecord(Object.fromEntries(tarballs.map((tarball) => [tarball.name, fileSpec(tarball.fileName)])));
+  return sortedRecord({
+    ...Object.fromEntries(tarballs.map((tarball) => [tarball.name, fileSpec(tarball.fileName)])),
+    ...AI_TRAIN_OVERRIDES,
+  });
 }
 
 export function rewritePackageJsonForLocalVendo(
@@ -246,14 +259,16 @@ export function rewritePackageJsonForLocalVendo(
 
   const dependencies = withoutVendoPackages(stringRecord(pkg["dependencies"]));
   for (const name of LOCAL_DIRECT_DEPENDENCIES) dependencies[name] = fileSpec(byName.get(name)!.fileName);
-  // The umbrella's ai peer + init's starter model provider (the @/lib/ai
-  // scaffold) must resolve in the target app, or post-init typecheck/build
-  // regress on modules the quickstart installs. Never downgrade an existing pin.
-  dependencies["ai"] ??= "6.0.28";
-  dependencies["@ai-sdk/anthropic"] ??= "3.0.12";
+  // Force the ai peer + init's starter provider onto the v6 train the umbrella
+  // requires (a target's own ai major is irrelevant — we inject our umbrella).
+  // Overwrite, don't ??=: a target pinning ai@5 would otherwise fight the peer.
+  for (const [name, version] of Object.entries(AI_TRAIN_OVERRIDES)) dependencies[name] = version;
   pkg["dependencies"] = sortedRecord(dependencies);
   for (const field of ["devDependencies", "peerDependencies", "optionalDependencies"] as const) {
+    // Also strip a conflicting ai/@ai-sdk pin from the other sections so one
+    // coherent v6 version wins the install.
     const values = withoutVendoPackages(stringRecord(pkg[field]));
+    for (const name of Object.keys(AI_TRAIN_OVERRIDES)) delete values[name];
     if (Object.keys(values).length > 0 || pkg[field] !== undefined) pkg[field] = sortedRecord(values);
   }
 

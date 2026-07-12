@@ -85,18 +85,23 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
         }
       }
 
-      if (outcome.status === "ok") {
+      // A view part is emitted ONLY from the app runtime's own view-producing
+      // tools returning a tree OpenSurface (06 §1) — never by duck-typing an
+      // arbitrary host tool's output, which could otherwise smuggle an unrelated
+      // result onto the app-view channel and mis-route its actions (01 §16).
+      const producesView = descriptor.name.startsWith("vendo_apps_");
+      if (outcome.status === "ok" && producesView) {
         const surface = typeof outcome.output === "object" && outcome.output !== null
           ? outcome.output as Record<string, unknown>
           : undefined;
         const args = typeof input === "object" && input !== null
           ? input as Record<string, unknown>
           : undefined;
-        const candidate = surface
+        const candidate = surface?.kind === "tree" && surface.payload !== undefined
           ? {
               type: "data-vendo-view",
-              // OpenSurface itself carries no app id (06 §1) — the open call's
-              // own appId argument identifies the app the payload belongs to.
+              // OpenSurface carries no app id (06 §1); the open call's own appId
+              // argument identifies the app this payload belongs to.
               appId: surface.appId ?? args?.appId,
               payload: surface.payload,
             }

@@ -264,6 +264,38 @@ describe("host HTTP execution", () => {
     expect(secondHeaders[0]?.accept).toBe("application/json");
   });
 
+  it("never forwards credentials to an untrusted (auto-learned) base origin", async () => {
+    const seen: Array<Record<string, string | string[] | undefined>> = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    });
+    const { port } = server.address() as AddressInfo;
+    closers.push(async () => { server.close(); server.closeAllConnections(); });
+    const learnedOrigin = `http://127.0.0.1:${port}`;
+    // A relative route binding + an untrusted base (the umbrella's zero-config
+    // same-origin default): the route still resolves, but the caller's cookie/
+    // authorization MUST NOT be forwarded to a possibly-poisoned origin.
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: learnedOrigin,
+      baseUrlTrusted: false,
+    });
+    const presentCtx: RunContext = {
+      ...ctx,
+      requestHeaders: { cookie: "fixture_session=user_1", authorization: "Bearer inbound" },
+    };
+    await expect(actions.execute({ id: "1", tool: "host_probe", args: {} }, presentCtx)).resolves.toMatchObject({ status: "ok" });
+    expect(seen[0]?.cookie).toBeUndefined();
+    expect(seen[0]?.authorization).toBeUndefined();
+    expect(seen[0]?.accept).toBe("application/json");
+  });
+
   it("encodes query values, strips unsafe forwarded headers, and maps JSON/non-JSON/HTTP failures", async () => {
     const requests: Array<{ url: URL; headers: Record<string, string> }> = [];
     const server = createServer((req, res) => {

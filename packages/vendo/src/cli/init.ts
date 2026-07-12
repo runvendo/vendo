@@ -3,9 +3,9 @@ import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { vendoSync } from "@vendoai/actions";
-import { isSafeFontStack, normalizeColor, normalizeRadius, resolveVarRefs } from "./theme-colors.js";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
+import { extractTheme as extractThemeSlots } from "./theme/extract-theme.js";
 import {
   consoleOutput,
   errorClass,
@@ -34,63 +34,30 @@ const DEFAULT_THEME = {
 } as const;
 
 async function extractTheme(root: string): Promise<VendoTheme> {
-  const candidates = [
-    join(root, "app", "globals.css"),
-    join(root, "src", "app", "globals.css"),
-    join(root, "styles", "globals.css"),
-    join(root, "src", "styles", "globals.css"),
-  ];
-  let css = "";
-  for (const candidate of candidates) {
-    const source = await readOptional(candidate);
-    if (source !== null) css += `\n${source}`;
-  }
-  const variables = new Map<string, string>();
-  for (const match of css.matchAll(/--([a-zA-Z0-9_-]+)\s*:\s*([^;}{]+)\s*;/g)) {
-    if (match[1] !== undefined && match[2] !== undefined) variables.set(match[1].toLowerCase(), match[2].trim());
-  }
-  // Theme values are CONCRETE (hex/px/font stacks): a raw host var() reference
-  // is meaningless outside the host page (the jail defines only --vendo-*).
-  const resolved = (names: string[]): string | null => {
-    for (const name of names) {
-      const value = variables.get(name);
-      if (value === undefined) continue;
-      const flat = resolveVarRefs(value, variables);
-      if (flat !== null) return flat;
-    }
-    return null;
-  };
-  const pickColor = (names: string[], fallback: string): string => {
-    const flat = resolved(names);
-    return (flat === null ? null : normalizeColor(flat)) ?? fallback;
-  };
-  const pickRadius = (names: string[], fallback: string): string => {
-    const flat = resolved(names);
-    return (flat === null ? null : normalizeRadius(flat)) ?? fallback;
-  };
-  const pickFont = (names: string[], fallback: string): string => {
-    const flat = resolved(names);
-    return flat !== null && isSafeFontStack(flat) ? flat : fallback;
+  const { slots } = await extractThemeSlots(root);
+  const deriveRadius = (factor: number, fallback: string): string => {
+    const value = slots.radius.match(/^(\d+(?:\.\d+)?)px$/)?.[1];
+    return value === undefined ? fallback : `${Number(value) * factor}px`;
   };
   return {
     colors: {
-      background: pickColor(["background", "color-background", "bg"], DEFAULT_THEME.colors.background),
-      surface: pickColor(["card", "surface", "color-surface"], DEFAULT_THEME.colors.surface),
-      text: pickColor(["foreground", "text", "color-text"], DEFAULT_THEME.colors.text),
-      muted: pickColor(["muted-foreground", "muted", "color-muted"], DEFAULT_THEME.colors.muted),
-      accent: pickColor(["primary", "accent", "color-accent"], DEFAULT_THEME.colors.accent),
-      accentText: pickColor(["primary-foreground", "accent-foreground"], DEFAULT_THEME.colors.accentText),
-      danger: pickColor(["destructive", "danger", "color-danger"], DEFAULT_THEME.colors.danger),
-      border: pickColor(["border", "color-border"], DEFAULT_THEME.colors.border),
+      background: slots.background,
+      surface: slots.surface,
+      text: slots.text,
+      muted: slots.mutedText,
+      accent: slots.accent,
+      accentText: DEFAULT_THEME.colors.accentText,
+      danger: DEFAULT_THEME.colors.danger,
+      border: DEFAULT_THEME.colors.border,
     },
     typography: {
-      fontFamily: pickFont(["font-sans", "font-family"], DEFAULT_THEME.typography.fontFamily),
-      baseSize: pickRadius(["font-size", "text-base"], DEFAULT_THEME.typography.baseSize),
+      fontFamily: slots.fontFamily,
+      baseSize: slots.baseSize,
     },
     radius: {
-      small: pickRadius(["radius-sm"], DEFAULT_THEME.radius.small),
-      medium: pickRadius(["radius", "radius-md"], DEFAULT_THEME.radius.medium),
-      large: pickRadius(["radius-lg"], DEFAULT_THEME.radius.large),
+      small: deriveRadius(0.5, DEFAULT_THEME.radius.small),
+      medium: slots.radius,
+      large: deriveRadius(1.5, DEFAULT_THEME.radius.large),
     },
     density: DEFAULT_THEME.density,
     motion: DEFAULT_THEME.motion,

@@ -56,18 +56,21 @@ describe("agent stream consumed by an ai-SDK client", () => {
         nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
       },
     };
+    // The app runtime's open tool returns an OpenSurface; the view part's appId
+    // comes from the call args (OpenSurface itself carries none).
+    const openSurface = { kind: "tree" as const, payload: view.payload };
     const descriptor: ToolDescriptor = {
-      name: "render_result",
-      description: "Return a rendered app surface.",
-      inputSchema: { type: "object", additionalProperties: false },
+      name: "vendo_apps_open",
+      description: "Open the latest serving surface for a Vendo app.",
+      inputSchema: { type: "object", properties: { appId: { type: "string" } }, required: ["appId"] },
       risk: "read",
     };
     const model = scriptedModel([
-      toolCallTurn("render_result", {}, "call_view"),
+      toolCallTurn("vendo_apps_open", { appId: "app_1" }, "call_view"),
       textTurn("Rendered.", "text_view_done"),
     ]);
-    const guard = testGuard({ render_result: "run" });
-    const tools = boundRegistry({ render_result: { descriptor, execute: async () => view } }, guard);
+    const guard = testGuard({ vendo_apps_open: "run" });
+    const tools = boundRegistry({ vendo_apps_open: { descriptor, execute: async () => openSurface } }, guard);
     const store = memoryStore();
     const agent = createAgent({ model, tools, guard, store });
     const runCtx = ctx();
@@ -86,9 +89,9 @@ describe("agent stream consumed by an ai-SDK client", () => {
     const toolPart = dynamicTool(message, "call_view");
     expect(toolPart).toMatchObject({
       type: "dynamic-tool",
-      toolName: "render_result",
+      toolName: "vendo_apps_open",
       state: "output-available",
-      output: { status: "ok", output: view },
+      output: { status: "ok", output: openSurface },
     });
 
     // Wire form: the ai-SDK data-chunk envelope carries the core part fields

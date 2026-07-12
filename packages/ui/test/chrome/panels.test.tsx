@@ -24,7 +24,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     await waitFor(() => expect(screen.getAllByText("host_invoices_list")).toHaveLength(2));
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     await waitFor(() => expect(screen.getAllByText("host_invoices_list")).toHaveLength(3));
-    expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=aud_2" }));
+    expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
   });
 
   it("toggles, captures missing approvals, previews, expands runs, and stops a running run", async () => {

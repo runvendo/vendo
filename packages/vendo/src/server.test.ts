@@ -180,6 +180,13 @@ describe("09 §3 public wire", () => {
     expect(resolver).not.toHaveBeenCalled();
 
     expect((await vendo.handler(request("POST", "/apps/import", new Uint8Array([1]), { "content-type": "application/octet-stream" }))).status).toBe(200);
+
+    // Import is CSRF-exempt for the JSON floor, so it must reject the CORS-safelisted
+    // types that a cross-origin simple POST could send without a preflight.
+    for (const ct of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data"]) {
+      const rejected = await vendo.handler(request("POST", "/apps/import", new Uint8Array([1]), { "content-type": ct }));
+      expect(rejected.status).toBe(400);
+    }
   });
 
   it("routes webhook verification through automations and rejects without resolving a principal", async () => {

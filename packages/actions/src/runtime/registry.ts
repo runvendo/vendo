@@ -36,6 +36,16 @@ interface RegistryConfig {
   connectors?: Connector[];
   actAs?: ActAs;
   baseUrl?: string;
+  /**
+   * Whether `baseUrl` is an operator-set, trusted origin. Present-request
+   * credentials (cookie/authorization) are forwarded to a route binding's host
+   * ONLY when the base is trusted. An origin auto-derived from an inbound
+   * request (e.g. the umbrella's zero-config same-origin default) is NOT
+   * trusted: a spoofed Host on any early request would otherwise poison the
+   * base and exfiltrate a later user's forwarded credentials. Defaults to true
+   * so an explicitly-passed baseUrl keeps forwarding.
+   */
+  baseUrlTrusted?: boolean;
   fetch?: typeof fetch;
 }
 
@@ -191,12 +201,16 @@ function absoluteHttpUrl(value: string | undefined): URL | undefined {
 function mayForwardPresentHeaders(
   binding: RouteBinding | OpenApiBinding,
   requestUrl: URL,
-  configuredBaseUrl?: string,
+  configuredBaseUrl: string | undefined,
+  baseUrlTrusted: boolean,
 ): boolean {
   const bindingBaseUrl = binding.kind === "openapi" ? absoluteHttpUrl(binding.baseUrl) : undefined;
-  if (!bindingBaseUrl) return true; // The URL was built from the configured host base URL.
+  // A route binding resolves against the configured base; forward the caller's
+  // credentials only when that base is a trusted (operator-set) origin — never
+  // to an origin auto-learned from an inbound request.
+  if (!bindingBaseUrl) return baseUrlTrusted;
   const configured = absoluteHttpUrl(configuredBaseUrl);
-  return configured !== undefined && configured.origin === requestUrl.origin;
+  return baseUrlTrusted && configured !== undefined && configured.origin === requestUrl.origin;
 }
 
 function validationError(source: string, cause: unknown): VendoError {
@@ -267,7 +281,9 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       return error("act-as-error", cause instanceof Error ? cause.message : "away authentication failed");
     }
   } else {
-    headers = mayForwardPresentHeaders(tool.binding, url, config.baseUrl) ? forwardedHeaders(ctx) : {};
+    headers = mayForwardPresentHeaders(tool.binding, url, config.baseUrl, config.baseUrlTrusted ?? true)
+      ? forwardedHeaders(ctx)
+      : {};
   }
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");

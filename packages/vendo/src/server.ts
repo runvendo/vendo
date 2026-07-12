@@ -24,7 +24,6 @@ import {
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createStore, envSecrets, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
-import { createRequire } from "node:module";
 import type { LanguageModel } from "ai";
 
 const VERSION = "0.3.0";
@@ -111,12 +110,15 @@ function environment(name: string): string | undefined {
 }
 
 /** 09 §4 — the .vendo/ files feeding the generation seat, read fail-soft (the
-    composition works without them; on non-Node runtimes they just stay unset). */
+    composition works without them; on non-Node runtimes they just stay unset).
+    Reads `node:fs` through the runtime built-in accessor so this module carries
+    NO static Node import and still loads/bundles for edge/Worker targets. */
 function dotVendoFile(name: string): string | undefined {
   try {
-    const nodeRequire = createRequire(import.meta.url);
-    const { readFileSync } = nodeRequire("node:fs") as typeof import("node:fs");
-    return readFileSync(`.vendo/${name}`, "utf8");
+    const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
+    const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
+    if (fs === undefined) return undefined;
+    return fs.readFileSync(`.vendo/${name}`, "utf8");
   } catch {
     return undefined;
   }
@@ -212,9 +214,11 @@ function createWireHandler(deps: {
   return async (request) => {
     try {
       const url = new URL(request.url);
-      deps.onRequestOrigin?.(url.origin);
       const path = relativePath(url);
       if (path === null) throw new VendoError("not-found", "unknown Vendo route");
+      // Learn the same-origin default only from a request that addresses a real
+      // Vendo route (defense in depth beyond the untrusted-forwarding rule).
+      deps.onRequestOrigin?.(url.origin);
       if (jsonMutationRequired(request, path) && !isJsonRequest(request)) {
         throw new VendoError("validation", "content-type must be application/json");
       }
@@ -300,6 +304,13 @@ function createWireHandler(deps: {
         }
       }
       if (request.method === "POST" && path === "/apps/import") {
+        // The CSRF floor exempts import (binary body), so it must instead require
+        // a non-CORS-safelisted media type — forcing a cross-origin preflight so
+        // a simple credentialed form/text POST cannot silently import (09 §3).
+        const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+        if (contentType !== "application/octet-stream" && contentType !== "application/vnd.vendo.app") {
+          throw new VendoError("validation", "import requires Content-Type: application/octet-stream");
+        }
         const ctx = await context(request, "app");
         return json(await deps.apps.importApp(new Uint8Array(await request.arrayBuffer()), ctx));
       }
@@ -445,14 +456,24 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.policy === undefined ? {} : { policy: config.policy }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
-  // createActions reads baseUrl from this object at execution time; when
-  // VENDO_BASE_URL is unset, the handler fills it in from the first request's
-  // origin so route bindings execute same-origin with zero configuration.
-  const actionsConfig = {
+  // createActions reads baseUrl from this object at execution time. An explicit
+  // VENDO_BASE_URL is a trusted, operator-set origin (credentials forward to it).
+  // When unset, the handler learns the wire's own origin from a validated
+  // request so route bindings execute same-origin with zero configuration — but
+  // that learned origin is UNTRUSTED (baseUrlTrusted:false), so a spoofed Host
+  // can never turn it into a credential-exfiltration target (04 §4).
+  const configuredBaseUrl = environment("VENDO_BASE_URL");
+  const actionsConfig: {
+    dir: string;
+    connectors?: Connector[];
+    actAs?: ActAs;
+    baseUrl?: string;
+    baseUrlTrusted?: boolean;
+  } = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
     ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
-    ...(environment("VENDO_BASE_URL") === undefined ? {} : { baseUrl: environment("VENDO_BASE_URL") }),
+    ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl, baseUrlTrusted: true }),
   };
   const actions = createActions(actionsConfig);
   const boundTools = guard.bind(actions);
@@ -493,8 +514,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     automations,
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
-      // → the wire's own origin, learned from the first request and then fixed.
-      actionsConfig.baseUrl ??= origin;
+      // → the wire's own origin, learned from the first VALIDATED request and
+      // then fixed. Marked untrusted so credentials never forward to it.
+      if (actionsConfig.baseUrl === undefined) {
+        actionsConfig.baseUrl = origin;
+        actionsConfig.baseUrlTrusted = false;
+      }
     },
   });
 

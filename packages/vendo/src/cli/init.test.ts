@@ -130,6 +130,37 @@ describe("vendo init", () => {
     });
   });
 
+  it("extracts light theme tokens through CSS imports and recovers next/font stacks", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "layout.tsx"),
+      'import "./global.css";\n' +
+      'import { Inter as FontSans } from "next/font/google";\n' +
+      'const fontSans = FontSans({ variable: "--font-sans" });\n' +
+      'export default function Layout({ children }) { return <html><body className={`font-sans ${fontSans.variable}`}>{children}</body></html>; }\n');
+    await writeFile(join(root, "app", "global.css"),
+      '@import "./tokens.css";\n' +
+      ':root { --font-body: var(--font-sans); }\n');
+    await writeFile(join(root, "app", "tokens.css"),
+      ':root { --background: #fafafa; --card: #ffffff; --foreground: #171717; ' +
+      '--muted-foreground: #737373; --primary: #2b7fff; --radius: 0.375rem; }\n' +
+      '.dark { --background: #09090b; --card: #18181b; --foreground: #fafafa; ' +
+      '--muted-foreground: #a1a1aa; --primary: #60a5fa; }\n');
+
+    await runInit({ targetDir: root, yes: true, output: output().output });
+
+    expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
+      colors: {
+        background: "#fafafa",
+        surface: "#ffffff",
+        text: "#171717",
+        muted: "#737373",
+        accent: "#2b7fff",
+      },
+      typography: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" },
+      radius: { medium: "6px" },
+    });
+  });
+
   it("emits only init telemetry and respects env opt-out", async () => {
     const root = await fixture();
     const home = await mkdtemp(join(tmpdir(), "vendo-home-"));
