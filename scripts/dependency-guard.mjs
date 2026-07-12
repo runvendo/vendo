@@ -22,10 +22,15 @@
  *      declared in its package.json (dependencies or peerDependencies).
  *
  * Runs in `pnpm lint` at the root. No dependencies; Node >= 20.
+ *
+ * Known residual gaps (accepted): computed dynamic imports (import(`@vendoai/${x}`))
+ * and tsconfig path aliases are invisible to a static text scan; PR review covers
+ * them. The scan may also match import-shaped strings inside comments — a false
+ * positive fails loudly and is fixed by rewording, never by loosening the gate.
  */
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const PACKAGES_DIR = join(ROOT, "packages");
@@ -118,7 +123,16 @@ for (const dir of dirs) {
         errors.push(`${rel}: imports from the quarry ("${spec}").`);
         continue;
       }
-      if (spec.startsWith(".")) continue;
+      if (spec.startsWith(".")) {
+        // A relative import must stay inside its own package — an escape can
+        // reach the quarry or a sibling block without naming either.
+        const resolved = resolve(dirname(file), spec);
+        const packageRoot = join(PACKAGES_DIR, dir) + sep;
+        if (!(resolved + sep).startsWith(packageRoot)) {
+          errors.push(`${rel}: relative import "${spec}" escapes its package directory.`);
+        }
+        continue;
+      }
       const name = spec.startsWith("@")
         ? spec.split("/").slice(0, 2).join("/")
         : spec.split("/")[0];
