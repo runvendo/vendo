@@ -1,6 +1,5 @@
 import { type CSSProperties } from "react";
-import { useVendoTheme } from "../context.js";
-import { themeCssVariables } from "../theme.js";
+import { ChromeRoot } from "../chrome/chrome-root.js";
 import type { VoiceState } from "./driver.js";
 import { useVoice } from "./use-voice.js";
 
@@ -8,11 +7,9 @@ const ACTIVE_STATES = new Set<VoiceState>(["connecting", "listening", "speaking"
 
 /** The accessible, theme-adopting voice surface (08-ui §4). */
 export function VendoStage() {
-  const theme = useVendoTheme();
   const { state, start, stop, transcript } = useVoice();
   const active = ACTIVE_STATES.has(state);
   const rootStyle = {
-    ...themeCssVariables(theme),
     display: "grid",
     gap: "calc(var(--vendo-font-size) * 0.75)",
     padding: "var(--vendo-font-size)",
@@ -24,7 +21,8 @@ export function VendoStage() {
   } as CSSProperties;
 
   return (
-    <section aria-label="Voice" style={rootStyle}>
+    <ChromeRoot>
+      <section aria-label="Voice" style={rootStyle}>
       <button
         type="button"
         aria-pressed={active}
@@ -77,6 +75,7 @@ export function VendoStage() {
           </li>
         ))}
       </ol>
-    </section>
+      </section>
+    </ChromeRoot>
   );
 }

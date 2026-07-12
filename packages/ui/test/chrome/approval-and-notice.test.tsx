@@ -3,7 +3,15 @@ import type { ApprovalRequest } from "@vendoai/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VendoProvider, createVendoClient, type VendoClient } from "../../src/index.js";
-import { ApprovalCard, NoPolicyNotice } from "../../src/chrome/index.js";
+import {
+  ActivityPanel,
+  ApprovalCard,
+  AutomationsPanel,
+  NoPolicyNotice,
+  VendoPage,
+  VendoPalette,
+  VendoStage,
+} from "../../src/chrome/index.js";
 import { createWireServer } from "../wire-server.js";
 
 const approval: ApprovalRequest = {
@@ -90,5 +98,36 @@ describe("ApprovalCard and NoPolicyNotice exports", () => {
     const unreachable = createVendoClient({ baseUrl: "http://127.0.0.1:9/api/vendo" });
     render(<VendoProvider client={unreachable}><NoPolicyNotice /></VendoProvider>);
     await waitFor(() => expect(screen.queryByRole("region", { name: "Vendo is running without a policy" })).toBeNull());
+  });
+
+  it("automatically renders the notice on every standalone chrome surface", async () => {
+    wire.state.posture = "unconfigured";
+    const surfaces = [<ActivityPanel />, <AutomationsPanel />, <VendoPalette />, <VendoStage />];
+
+    for (const surface of surfaces) {
+      render(<VendoProvider client={client}>{surface}</VendoProvider>);
+      expect(await screen.findByRole("region", { name: "Vendo is running without a policy" })).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("renders exactly one automatic notice across nested chrome roots", async () => {
+    wire.state.posture = "unconfigured";
+    render(<VendoProvider client={client}><VendoPage /></VendoProvider>);
+    await waitFor(() => expect(screen.getAllByRole("region", { name: "Vendo is running without a policy" })).toHaveLength(1));
+  });
+
+  it("renders no automatic notice on any chrome surface under rules posture", async () => {
+    render(
+      <VendoProvider client={client}>
+        <ActivityPanel />
+        <AutomationsPanel />
+        <VendoPalette />
+        <VendoStage />
+        <VendoPage />
+      </VendoProvider>,
+    );
+    await waitFor(() => expect(wire.requests.filter(request => request.path === "/status").length).toBeGreaterThanOrEqual(5));
+    expect(screen.queryByRole("region", { name: "Vendo is running without a policy" })).toBeNull();
   });
 });

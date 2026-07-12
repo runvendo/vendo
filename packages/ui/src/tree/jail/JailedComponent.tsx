@@ -107,6 +107,10 @@ export function JailedComponent({
   const srcDoc = useMemo(buildJailSrcdoc, []);
 
   useEffect(() => {
+    setError(undefined);
+  }, [name, source]);
+
+  useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
     const sendRender = () => {

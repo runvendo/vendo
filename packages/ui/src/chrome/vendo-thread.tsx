@@ -6,7 +6,6 @@ import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
 import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { NoPolicyNotice } from "./no-policy-notice.js";
 
 function partData(part: UIMessage["parts"][number]): unknown {
   return "data" in part ? part.data : part;
@@ -71,7 +70,7 @@ export function VendoThread({ threadId }: { threadId?: string }) {
       if (typeof data.appId !== "string" || !data.payload) return null;
       return (
         <PayloadView
-          key={key}
+          key={`${key}-${data.appId}`}
           payload={data.payload}
           components={components}
           onAction={({ action, payload }) => client.apps.call(data.appId!, action, payload ?? {})}
@@ -86,7 +85,6 @@ export function VendoThread({ threadId }: { threadId?: string }) {
   return (
     <ChromeRoot>
       <section className="vendo-thread" aria-label="Vendo conversation">
-        <NoPolicyNotice />
         {/* role="log" — aria-label is prohibited on a roleless div (WCAG 4.1.2), and a
             streaming message list is exactly what "log" names. */}
         <div className="vendo-messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-busy={busy}>

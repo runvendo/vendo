@@ -157,6 +157,7 @@ export async function createWireServer() {
     history: [{ at: NOW, intent: "create", rung: 1 }] satisfies VersionEntry[],
     importBytes: new Uint8Array(),
     statusErrorCode: undefined as string | undefined,
+    failures: [] as Array<{ method: string; path: string; code: string; message: string; status: number }>,
     posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
     threadReplyGate: undefined as Promise<void> | undefined,
   };
@@ -179,6 +180,13 @@ export async function createWireServer() {
       const mutating = method !== "GET" && !binary && !url.pathname.startsWith("/webhooks/") && url.pathname !== "/tick";
       if (mutating && !contentType.toLowerCase().startsWith("application/json")) {
         wireError(response, "validation", "JSON content type required", 400);
+        return;
+      }
+
+      const failureIndex = state.failures.findIndex(failure => failure.method === method && failure.path === url.pathname);
+      if (failureIndex >= 0) {
+        const [failure] = state.failures.splice(failureIndex, 1);
+        wireError(response, failure!.code, failure!.message, failure!.status);
         return;
       }
 

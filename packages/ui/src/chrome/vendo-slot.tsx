@@ -8,7 +8,7 @@ function MountedApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
   const { surface } = useApp(appId);
   if (!surface) return <div role="status" aria-live="polite">Loading app…</div>;
-  return <AppFrame surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 /** 08-ui §4; 06-apps §8 — inline mount that never sacrifices host fallback content. */

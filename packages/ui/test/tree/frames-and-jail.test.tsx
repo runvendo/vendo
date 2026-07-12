@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { VENDO_TREE_FORMAT, type Tree, type ToolOutcome } from "@vendoai/core";
 import { AppFrame, PinMount, TreeView } from "../../src/tree/index.js";
 
@@ -14,11 +14,22 @@ afterEach(() => {
 const ok = async (): Promise<ToolOutcome> => ({ status: "ok", output: null });
 
 describe("AppFrame", () => {
-  it("renders the HTTP app in the contracted sandbox", () => {
+  it("grants same-origin privilege only to a cross-origin machine url", () => {
+    // A genuine machine url is the sandbox provider's — cross-origin to the host
+    // — so it gets allow-same-origin (its own origin, never the host's).
     render(<AppFrame surface={{ kind: "http", url: "https://machine.invalid/app" }} />);
-    const iframe = screen.getByTitle("Vendo app") as HTMLIFrameElement;
-    expect(iframe.getAttribute("src")).toBe("https://machine.invalid/app");
-    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin allow-forms");
+    const cross = screen.getByTitle("Vendo app") as HTMLIFrameElement;
+    const crossTokens = cross.getAttribute("sandbox")!.split(" ");
+    expect(crossTokens).toEqual(expect.arrayContaining(["allow-scripts", "allow-forms", "allow-same-origin"]));
+  });
+
+  it("withholds same-origin privilege from a same-origin machine url (one-security-rule)", () => {
+    // A same-origin url + allow-same-origin would run the app in the HOST origin
+    // with host storage/cookie/API access; it must run opaque instead.
+    render(<AppFrame surface={{ kind: "http", url: `${window.location.origin}/evil` }} />);
+    const same = screen.getByTitle("Vendo app") as HTMLIFrameElement;
+    expect(same.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
+    expect(same.getAttribute("sandbox")).not.toContain("allow-same-origin");
   });
 
   it("renders a dimmed non-interactive resuming cover", () => {
@@ -100,5 +111,30 @@ describe("generated component jail structure", () => {
     expect((globalThis as Record<string, unknown>).__vendoHostExecuted).toBeUndefined();
     expect(document.querySelector("script")).toBeNull();
     expect(evalSpy).not.toHaveBeenCalled();
+  });
+
+  it("recovers from a reported error when generated source changes", async () => {
+    const broken: Tree = {
+      formatVersion: VENDO_TREE_FORMAT,
+      root: "root",
+      nodes: [{ id: "root", component: "Editable", source: "generated" }],
+      components: { Editable: "export default function Editable() { throw new Error('broken') }" },
+    };
+    const fixed: Tree = {
+      ...broken,
+      components: { Editable: "export default function Editable() { return <p>fixed</p> }" },
+    };
+    const view = render(<TreeView tree={broken} components={{}} onAction={ok} />);
+    const iframe = screen.getByTitle("Generated component: Editable") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "error", message: "broken" },
+    }));
+    expect(await screen.findByRole("note", { name: "Generated component error" })).toBeTruthy();
+
+    view.rerender(<TreeView tree={fixed} components={{}} onAction={ok} />);
+    await waitFor(() => expect(screen.getByTitle("Generated component: Editable")).toBeTruthy());
+    expect(screen.queryByRole("note", { name: "Generated component error" })).toBeNull();
   });
 });

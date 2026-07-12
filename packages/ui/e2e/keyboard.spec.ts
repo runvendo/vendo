@@ -31,6 +31,12 @@ test("overlay focus trap and Escape are keyboard-complete", async ({ page }) => 
 test("palette filters and selects with keyboard only", async ({ page }) => {
   await openScenario(page, "palette");
   await expectKeyboardReachability(page, '[role="dialog"]');
+  const combobox = page.getByRole("combobox");
+  await expect(combobox).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(combobox).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(combobox).toBeFocused();
   await page.keyboard.type("Invoices");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowUp");
@@ -40,6 +46,7 @@ test("palette filters and selects with keyboard only", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Vendo command palette" })).toBeHidden();
+  await expect(page.getByTestId("palette-opener")).toBeFocused();
 });
 
 test("automation controls are all keyboard reachable and execute by Enter", async ({ page }) => {

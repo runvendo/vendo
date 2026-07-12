@@ -9,5 +9,18 @@
       article { border: 2px solid #2680c2; border-radius: 12px; background: #f0f8ff; padding: 20px; }
     </style>
   </head>
-  <body><article><strong>Local HTTP app</strong><p>Served entirely by the browser harness.</p></article></body>
+  <body><article><strong>Local HTTP app</strong><p>Served entirely by the browser harness.</p></article>
+    <output id="origin-probe">origin: unknown</output>
+    <script>
+      // If the frame is same-origin-privileged it shares the harness realm; if
+      // opaque (sandbox without allow-same-origin) storage access throws.
+      try {
+        window.localStorage.setItem("vendo-appframe-probe", "1");
+        document.getElementById("origin-probe").textContent =
+          "origin: PRIVILEGED (" + (window.origin || "same") + ")";
+      } catch (e) {
+        document.getElementById("origin-probe").textContent = "origin: OPAQUE (storage denied)";
+      }
+    </script>
+  </body>
 </html>

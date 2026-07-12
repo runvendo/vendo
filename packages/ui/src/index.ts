@@ -3,4 +3,5 @@ export { createVendoClient, type VendoClient, type VendoClientConfig } from "./c
 export { VendoProvider, useVendoTheme } from "./context.js";
 export * from "./hooks/index.js";
 export { defaultVendoTheme, resolveTheme, themeCssVariables } from "./theme.js";
+export { useVoice, type UseVoiceResult } from "./voice/use-voice.js";
 export * from "./wire-types.js";

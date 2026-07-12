@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useApps } from "../hooks/use-apps.js";
 import { ChromeRoot } from "./chrome-root.js";
 
@@ -9,6 +9,8 @@ export interface VendoCommand {
   appId?: string;
 }
 
+const FOCUSABLE = "button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])";
+
 /** 08-ui §4 — global keyboard command palette with an ARIA combobox. */
 export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand): void }) {
   const { apps } = useApps();
@@ -16,6 +18,8 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const commands = useMemo<VendoCommand[]>(() => [
     { id: "new-conversation", label: "New conversation", kind: "new-conversation" },
     ...apps.map(app => ({ id: `open-${app.id}`, label: `Open ${app.name}`, kind: "open-app" as const, appId: app.id })),
@@ -23,16 +27,32 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
   ], [apps]);
   const visible = useMemo(() => commands.filter(command => command.label.toLowerCase().includes(query.toLowerCase())), [commands, query]);
 
+  const restoreFocus = useCallback(() => {
+    queueMicrotask(() => opener.current?.focus());
+  }, []);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    restoreFocus();
+  }, [restoreFocus]);
+
   useEffect(() => {
     const listener = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setOpen(value => !value);
+        setOpen(value => {
+          if (value) {
+            restoreFocus();
+            return false;
+          }
+          opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          return true;
+        });
       }
     };
     globalThis.addEventListener("keydown", listener);
     return () => globalThis.removeEventListener("keydown", listener);
-  }, []);
+  }, [restoreFocus]);
 
   useEffect(() => {
     if (open) {
@@ -46,15 +66,31 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
 
   const select = (command: VendoCommand | undefined) => {
     if (!command) return;
-    setOpen(false);
+    close();
     onCommand?.(command);
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      setOpen(false);
-    } else if (event.key === "ArrowDown") {
+      close();
+      return;
+    }
+    if (event.key === "Tab") {
+      const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+      return;
+    }
+    if (event.key === "ArrowDown") {
       event.preventDefault();
       setActive(index => visible.length ? (index + 1) % visible.length : 0);
     } else if (event.key === "ArrowUp") {
@@ -69,7 +105,15 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
   return (
     <ChromeRoot>
       {open ? (
-        <div className="vendo-palette" role="dialog" aria-modal="true" aria-label="Vendo command palette" onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}>
+        <div
+          ref={dialog}
+          className="vendo-palette"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vendo command palette"
+          onKeyDown={onKeyDown}
+          onMouseDown={event => { if (event.target === event.currentTarget) close(); }}
+        >
           <div className="vendo-dialog">
             <label>
               <span className="vendo-muted">Command</span>
@@ -83,7 +127,6 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
                 aria-activedescendant={visible[active] ? `vendo-command-${visible[active]!.id}` : undefined}
                 value={query}
                 onChange={event => { setQuery(event.currentTarget.value); setActive(0); }}
-                onKeyDown={onKeyDown}
               />
             </label>
             <ul id="vendo-command-list" className="vendo-palette-list" role="listbox">

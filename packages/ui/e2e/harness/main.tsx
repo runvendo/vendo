@@ -327,10 +327,14 @@ function AutoOpen({ selector, children }: { selector: string; children: ReactNod
 
 function OpenPalette() {
   const [command, setCommand] = useState<VendoCommand>();
+  const open = () => globalThis.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
   useEffect(() => {
-    queueMicrotask(() => globalThis.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true })));
+    queueMicrotask(() => {
+      document.querySelector<HTMLElement>("[data-testid=palette-opener]")?.focus();
+      open();
+    });
   }, []);
-  return <><VendoPalette onCommand={setCommand} /><output className="recorder" data-testid="command-recorder">{command ? JSON.stringify(command) : "No command selected"}</output></>;
+  return <><button type="button" data-testid="palette-opener" onClick={open}>Open command palette</button><VendoPalette onCommand={setCommand} /><output className="recorder" data-testid="command-recorder">{command ? JSON.stringify(command) : "No command selected"}</output></>;
 }
 
 function ApprovalScenario() {
@@ -393,7 +397,8 @@ function AppFrameScenario() {
   const cover = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='320'%3E%3Crect width='640' height='320' fill='%23ede9fe'/%3E%3Crect x='36' y='48' width='380' height='30' rx='8' fill='%238b5cf6'/%3E%3Crect x='36' y='106' width='550' height='18' rx='6' fill='%23c4b5fd'/%3E%3Crect x='36' y='145' width='490' height='18' rx='6' fill='%23ddd6fe'/%3E%3C/svg%3E";
   return (
     <div className="appframe-grid">
-      <section aria-label="HTTP app frame"><h2>HTTP</h2><AppFrame surface={{ kind: "http", url: "/frame-target.html" }} /></section>
+      <section aria-label="HTTP app frame same-origin"><h2>HTTP same-origin</h2><AppFrame surface={{ kind: "http", url: "/frame-target.html" }} /></section>
+      <section aria-label="HTTP app frame cross-origin"><h2>HTTP cross-origin</h2><AppFrame surface={{ kind: "http", url: "https://app.example.com/machine" }} /></section>
       <section aria-label="Resuming app frame"><h2>Resuming</h2><AppFrame surface={{ kind: "resuming", cover }} /></section>
     </div>
   );

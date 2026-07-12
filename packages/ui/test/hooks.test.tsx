@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
-import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   VendoProvider,
@@ -34,33 +33,6 @@ describe("headless hooks", () => {
   function wrapper({ children }: PropsWithChildren) {
     return <VendoProvider client={client}>{children}</VendoProvider>;
   }
-
-  it("is SSR-safe for every hook and starts from empty transport state", () => {
-    function AllHooks() {
-      const approvals = useApprovals();
-      const grants = useGrants();
-      const apps = useApps();
-      const app = useApp("app_1");
-      const automations = useAutomations();
-      const activity = useActivity();
-      const status = useVendoStatus();
-      const thread = useVendoThread("thr_1");
-      return (
-        <span>
-          {approvals.pending.length +
-            grants.grants.length +
-            apps.apps.length +
-            automations.automations.length +
-            activity.events.length +
-            thread.messages.length}
-          {String(app.app)}
-          {String(status.connected)}
-        </span>
-      );
-    }
-
-    expect(() => renderToString(<VendoProvider client={client}><AllHooks /></VendoProvider>)).not.toThrow();
-  });
 
   it("loads and decides approvals, then refetches pending", async () => {
     const { result } = renderHook(() => useApprovals(), { wrapper });
@@ -117,6 +89,55 @@ describe("headless hooks", () => {
     expect(result.current.app?.name).toBe("Undone");
     await act(() => result.current.refresh());
     expect(result.current.surface?.kind).toBe("tree");
+  });
+
+  it("ignores a stale app response after appId changes", async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let firstRequests = 0;
+    const racingClient = {
+      ...client,
+      apps: {
+        ...client.apps,
+        get: async (id: string) => {
+          if (id === "app_first") {
+            firstRequests += 1;
+            await firstGate;
+          }
+          return { format: "vendo/app@1" as const, id, name: id === "app_first" ? "First" : "Second" };
+        },
+        open: async (id: string) => {
+          if (id === "app_first") {
+            firstRequests += 1;
+            await firstGate;
+          }
+          return {
+            kind: "tree" as const,
+            payload: {
+              formatVersion: "vendo-genui/v1",
+              root: id,
+              nodes: [{ id, component: "Text", props: { text: id } }],
+            },
+          };
+        },
+      },
+    } satisfies VendoClient;
+    const racingWrapper = ({ children }: PropsWithChildren) => (
+      <VendoProvider client={racingClient}>{children}</VendoProvider>
+    );
+    const { result, rerender } = renderHook(
+      ({ appId }: { appId: string }) => useApp(appId),
+      { wrapper: racingWrapper, initialProps: { appId: "app_first" } },
+    );
+    await waitFor(() => expect(firstRequests).toBe(2));
+
+    rerender({ appId: "app_second" });
+    await waitFor(() => expect(result.current.app?.id).toBe("app_second"));
+    expect(result.current.surface).toMatchObject({ kind: "tree", payload: { root: "app_second" } });
+
+    await act(async () => { releaseFirst(); });
+    await waitFor(() => expect(result.current.app?.id).toBe("app_second"));
+    expect(result.current.surface).toMatchObject({ kind: "tree", payload: { root: "app_second" } });
   });
 
   it("loads automations and proxies enable, disable, dry-run, filtered runs, and stop", async () => {

@@ -14,7 +14,7 @@ const shots = [
   { scenario: "tree", file: "tree", ready: '[data-dangling-node="not-yet-streamed"]' },
   { scenario: "tree-jail", file: "tree-jail", ready: 'iframe[title="Generated component: SecurityProbe"]' },
   { scenario: "tree-themed", file: "tree-themed", ready: '[data-vendo-node-id="host"]' },
-  { scenario: "appframe", file: "appframe", ready: 'iframe[title="Vendo app"]' },
+  { scenario: "appframe", file: "appframe", ready: 'section[aria-label="HTTP app frame same-origin"] iframe' },
 ] as const;
 
 for (const shot of shots) {
@@ -23,7 +23,7 @@ for (const shot of shots) {
     await expect(page.locator(shot.ready).first()).toBeVisible();
     if (shot.scenario === "page") await expect(page.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     if (shot.scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
-    if (shot.scenario === "appframe") await expect(page.frameLocator('iframe[title="Vendo app"]').getByText("Local HTTP app")).toBeVisible();
+    if (shot.scenario === "appframe") await expect(page.frameLocator('section[aria-label="HTTP app frame same-origin"] iframe').getByText("Local HTTP app")).toBeVisible();
     await page.screenshot({ path: screenshotPath(shot.file), fullPage: true, animations: "disabled" });
   });
 }

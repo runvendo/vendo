@@ -1,5 +1,6 @@
 import { useVendoStatus } from "../hooks/use-vendo-status.js";
-import { ChromeRoot } from "./chrome-root.js";
+import { ChromeRoot, useChromeRootPresence } from "./chrome-root.js";
+import { PolicyNoticeBody } from "./policy-notice-body.js";
 
 /**
  * 08-ui §6; 05-guard §1 — loud only in the default posture. `connected` gates
@@ -9,13 +10,11 @@ import { ChromeRoot } from "./chrome-root.js";
  */
 export function NoPolicyNotice() {
   const { posture, connected } = useVendoStatus();
-  if (!connected || posture !== "unconfigured") return null;
+  const nested = useChromeRootPresence();
+  if (!connected || posture !== "unconfigured" || nested) return null;
   return (
-    <ChromeRoot>
-      <section className="vendo-notice" role="region" aria-label="Vendo is running without a policy">
-        <strong>Vendo is running without a policy</strong>
-        <div>Actions use the default approval posture. Configure <code>.vendo/policy.json</code>.</div>
-      </section>
+    <ChromeRoot automaticPolicyNotice={false}>
+      <PolicyNoticeBody />
     </ChromeRoot>
   );
 }

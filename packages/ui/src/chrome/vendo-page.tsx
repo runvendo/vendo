@@ -7,7 +7,6 @@ import type { ThreadSummary } from "../wire-types.js";
 import { ActivityPanel } from "./activity-panel.js";
 import { AutomationsPanel } from "./automations-panel.js";
 import { ChromeRoot } from "./chrome-root.js";
-import { NoPolicyNotice } from "./no-policy-notice.js";
 import { VendoThread } from "./vendo-thread.js";
 
 const TABS = ["chat", "apps", "automations", "activity"] as const;
@@ -45,23 +44,35 @@ function OpenApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
   const { surface } = useApp(appId);
   if (!surface) return <div role="status">Opening app…</div>;
-  return <AppFrame surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
+  return <AppFrame key={appId} surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
 function AppsWorkspace() {
   const { apps, create, fork, remove } = useApps();
   const [selected, setSelected] = useState<string>();
   const [prompt, setPrompt] = useState("");
+  const [error, setError] = useState<string>();
+  const during = async (action: () => Promise<void>) => {
+    setError(undefined);
+    try {
+      await action();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const value = prompt.trim();
     if (!value) return;
-    const app = await create(value);
-    setPrompt("");
-    setSelected(app.id);
+    await during(async () => {
+      const app = await create(value);
+      setPrompt("");
+      setSelected(app.id);
+    });
   };
   return (
     <div className="vendo-stack">
+      {error ? <div role="alert" className="vendo-danger">{error}</div> : null}
       <form className="vendo-row" aria-label="Create app" onSubmit={event => void submit(event)}>
         <label style={{ flex: 1 }}><span className="vendo-muted">Describe a new app</span><input className="vendo-input" value={prompt} onChange={event => setPrompt(event.currentTarget.value)} /></label>
         <button className="vendo-primary" type="submit" disabled={!prompt.trim()}>Create</button>
@@ -73,18 +84,20 @@ function AppsWorkspace() {
             {app.description ? <p>{app.description}</p> : null}
             <div className="vendo-row">
               <button type="button" onClick={() => setSelected(app.id)}>Open</button>
-              <button type="button" onClick={() => void fork(app.id)}>Fork</button>
+              <button type="button" onClick={() => void during(async () => { await fork(app.id); })}>Fork</button>
               <button className="vendo-danger" type="button" onClick={() => {
                 if (globalThis.confirm?.(`Remove ${app.name}?`)) {
-                  void remove(app.id);
-                  if (selected === app.id) setSelected(undefined);
+                  void during(async () => {
+                    await remove(app.id);
+                    if (selected === app.id) setSelected(undefined);
+                  });
                 }
               }}>Remove</button>
             </div>
           </article>
         ))}
       </div>
-      {selected ? <section className="vendo-card" aria-label="Open app"><OpenApp appId={selected} /></section> : null}
+      {selected ? <section className="vendo-card" aria-label="Open app"><OpenApp key={selected} appId={selected} /></section> : null}
     </div>
   );
 }
@@ -109,7 +122,6 @@ export function VendoPage() {
   return (
     <ChromeRoot>
       <main className="vendo-stack" aria-label="Vendo workspace">
-        <NoPolicyNotice />
         <div className="vendo-tabs" role="tablist" aria-label="Workspace sections">
           {TABS.map((item, index) => (
             <button

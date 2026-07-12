@@ -14,11 +14,15 @@ export function AutomationsPanel() {
   const [plans, setPlans] = useState<Record<AppId, RunPlan | undefined>>({});
   const [runs, setRuns] = useState<Record<AppId, RunRecord[] | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string>();
 
   const during = async (key: string, action: () => Promise<void>) => {
+    setError(undefined);
     setBusy(current => ({ ...current, [key]: true }));
     try {
       await action();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(current => ({ ...current, [key]: false }));
     }
@@ -33,6 +37,7 @@ export function AutomationsPanel() {
     <ChromeRoot>
       <section className="vendo-stack" aria-labelledby="vendo-automations-heading">
         <h2 id="vendo-automations-heading">Automations</h2>
+        {error ? <div role="alert" className="vendo-danger">{error}</div> : null}
         {automations.automations.length === 0 ? <p>No automations yet.</p> : null}
         {automations.automations.map(entry => {
           const appId = entry.app.id;

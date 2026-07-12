@@ -18,6 +18,31 @@ const unavailableAction = async (): Promise<ToolOutcome> => ({
   error: { code: "not-implemented", message: "No app action handler was provided." },
 });
 
+/**
+ * The rung-4 machine URL is the sandbox provider's, always cross-origin to the
+ * host page (09 §3), so `allow-same-origin` gives the app ITS OWN provider
+ * origin — needed for the app's storage/cookies/auth, and it can reach nothing
+ * of the host's. But `allow-scripts` + `allow-same-origin` on a SAME-ORIGIN url
+ * would run the framed app in the HOST origin with full access to host storage,
+ * cookies, and same-origin APIs — the app holding host authority, which the one
+ * security rule forbids (06 §9). ui cannot assume the URL is well-formed, so it
+ * grants same-origin ONLY when the resolved origin differs from the host's; a
+ * same-origin or unresolvable url runs opaque (no `allow-same-origin`) and can
+ * touch nothing. A genuine machine surface is unaffected.
+ */
+function httpFrameSandbox(url: string): string {
+  const base = "allow-scripts allow-forms";
+  if (typeof window === "undefined") return base; // SSR: no host origin to compare against
+  try {
+    if (new URL(url, window.location.href).origin !== window.location.origin) {
+      return `${base} allow-same-origin`;
+    }
+  } catch {
+    // Unparseable URL → treat as untrusted, stay opaque.
+  }
+  return base;
+}
+
 /** 08-ui §5; 06-apps §1 — render every app execution plane fail-soft. */
 export function AppFrame({ surface, components = {}, data, onAction = unavailableAction, onStateChange }: AppFrameProps) {
   if (surface.kind === "http") {
@@ -25,7 +50,7 @@ export function AppFrame({ surface, components = {}, data, onAction = unavailabl
       <iframe
         title="Vendo app"
         src={surface.url}
-        sandbox="allow-scripts allow-same-origin allow-forms"
+        sandbox={httpFrameSandbox(surface.url)}
         style={{ width: "100%", minHeight: "var(--vendo-app-frame-height, 320px)", border: 0 }}
       />
     );

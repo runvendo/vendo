@@ -1,6 +1,8 @@
-import { useEffect, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useEffect, type CSSProperties, type ReactNode } from "react";
 import { useVendoTheme } from "../context.js";
+import { useVendoStatus } from "../hooks/use-vendo-status.js";
 import { themeCssVariables } from "../theme.js";
+import { PolicyNoticeBody } from "./policy-notice-body.js";
 
 const CHROME_CSS = `
 .vendo-root,.vendo-root *{box-sizing:border-box}
@@ -60,18 +62,54 @@ function ensureChromeStyles(): void {
   document.head.append(style);
 }
 
-/** 08-ui §4 — shared theme and stylesheet boundary for shipped chrome. */
-export function ChromeRoot({ children, className }: { children: ReactNode; className?: string }) {
+const ChromeRootContext = createContext(false);
+
+export function useChromeRootPresence(): boolean {
+  return useContext(ChromeRootContext);
+}
+
+function AutomaticPolicyNotice() {
+  const { posture, connected } = useVendoStatus();
+  return connected && posture === "unconfigured" ? <PolicyNoticeBody /> : null;
+}
+
+function ChromeBoundary({
+  children,
+  className,
+  automaticPolicyNotice,
+}: {
+  children: ReactNode;
+  className?: string;
+  automaticPolicyNotice: boolean;
+}) {
   const theme = useVendoTheme();
   useEffect(ensureChromeStyles, []);
   return (
-    <div
-      className={["vendo-root", className].filter(Boolean).join(" ")}
-      data-vendo-motion={theme.motion}
-      data-vendo-density={theme.density}
-      style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)" } as CSSProperties}
-    >
-      {children}
-    </div>
+    <ChromeRootContext.Provider value>
+      <div
+        className={["vendo-root", className].filter(Boolean).join(" ")}
+        data-vendo-motion={theme.motion}
+        data-vendo-density={theme.density}
+        style={{ ...themeCssVariables(theme), fontFamily: "var(--vendo-font-family)", fontSize: "var(--vendo-font-size)" } as CSSProperties}
+      >
+        {automaticPolicyNotice ? <AutomaticPolicyNotice /> : null}
+        {children}
+      </div>
+    </ChromeRootContext.Provider>
   );
+}
+
+/** 08-ui §4, §6 — one shared theme/style/notice boundary per chrome surface. */
+export function ChromeRoot({
+  children,
+  className,
+  automaticPolicyNotice = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  automaticPolicyNotice?: boolean;
+}) {
+  const nested = useChromeRootPresence();
+  if (nested) return <>{children}</>;
+  return <ChromeBoundary className={className} automaticPolicyNotice={automaticPolicyNotice}>{children}</ChromeBoundary>;
 }

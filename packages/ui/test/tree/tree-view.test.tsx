@@ -212,6 +212,35 @@ describe("TreeView bindings and outcomes", () => {
     expect(onStateChange).toHaveBeenLastCalledWith({ draft: "saved locally" });
   });
 
+  it("resets $state when the tree root identity changes", async () => {
+    const StateProbe: ComponentType<{ value?: unknown }> = ({ value }) => <output>{String(value)}</output>;
+    const first = tree(
+      [
+        { id: "root-a", component: "Row", children: ["generated-a", "probe-a"] },
+        { id: "generated-a", component: "Editor", source: "generated" },
+        { id: "probe-a", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } },
+      ],
+      "root-a",
+      { Editor: "export default function Editor() { return <div>editor</div> }" },
+    );
+    const second = tree(
+      [{ id: "root-b", component: "StateProbe", source: "host", props: { value: { $state: "draft" } } }],
+      "root-b",
+    );
+    const view = render(<TreeView tree={first} components={{ StateProbe }} onAction={ok} />);
+    const iframe = screen.getByTitle("Generated component: Editor") as HTMLIFrameElement;
+
+    window.dispatchEvent(new MessageEvent("message", {
+      source: iframe.contentWindow,
+      data: { kind: "state-set", key: "draft", value: "belongs to app A" },
+    }));
+    await waitFor(() => expect(screen.getByText("belongs to app A")).toBeTruthy());
+
+    view.rerender(<TreeView tree={second} components={{ StateProbe }} onAction={ok} />);
+    expect(screen.queryByText("belongs to app A")).toBeNull();
+    expect(screen.getByText("undefined")).toBeTruthy();
+  });
+
   it("turns $action props into callbacks and marks pending approval", async () => {
     const ActionButton: ComponentType<{ run?: () => Promise<ToolOutcome> }> = ({ run }) => (
       <button type="button" onClick={() => void run?.()}>Run action</button>
@@ -243,5 +272,29 @@ describe("TreeView bindings and outcomes", () => {
     expect(document.querySelector('[data-vendo-node-id="root"]')?.getAttribute("data-vendo-outcome"))
       .toBe("pending-approval");
     expect(screen.getByRole("note", { name: /action pending approval/i })).toBeTruthy();
+  });
+
+  it("ignores an unknown future ToolOutcome status without throwing a notice", async () => {
+    const ActionButton: ComponentType<{ run?: () => Promise<ToolOutcome> }> = ({ run }) => (
+      <button type="button" onClick={() => void run?.()}>Run future action</button>
+    );
+    const onAction = vi.fn(async () => ({ status: "future-thing" }) as unknown as ToolOutcome);
+
+    render(
+      <TreeView
+        tree={tree([{
+          id: "root",
+          component: "ActionButton",
+          source: "host",
+          props: { run: { $action: "fn:future" } },
+        }])}
+        components={{ ActionButton }}
+        onAction={onAction}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Run future action" }));
+    await waitFor(() => expect(onAction).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("note")).toBeNull();
   });
 });

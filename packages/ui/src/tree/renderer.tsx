@@ -122,11 +122,14 @@ function outcomeNotice(outcome: ToolOutcome | undefined): ReactNode {
   if (outcome.status === "blocked") {
     return <ContainedNotice label="Action blocked" outcome={outcome.status}>{outcome.reason}</ContainedNotice>;
   }
-  return (
-    <ContainedNotice label="Action error" outcome={outcome.status} code={outcome.error.code}>
-      {outcome.error.message}
-    </ContainedNotice>
-  );
+  if (outcome.status === "error") {
+    return (
+      <ContainedNotice label="Action error" outcome={outcome.status} code={outcome.error.code}>
+        {outcome.error.message}
+      </ContainedNotice>
+    );
+  }
+  return null;
 }
 
 interface NodeRendererProps {
@@ -220,7 +223,7 @@ function NodeRenderer(props: NodeRendererProps) {
  * in-jail `vendo.setState(key, value)` bridge; `onStateChange`, when supplied,
  * receives the complete state map after every change for app-state persistence.
  */
-export function TreeView({
+function StatefulTreeView({
   tree,
   components,
   data,
@@ -285,4 +288,9 @@ export function TreeView({
       />
     </NodeErrorBoundary>
   );
+}
+
+/** A new tree identity owns a fresh `$state` and outcome namespace. */
+export function TreeView(props: TreeViewProps) {
+  return <StatefulTreeView key={props.tree.root} {...props} />;
 }
