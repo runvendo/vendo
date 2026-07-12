@@ -1,0 +1,117 @@
+import { VendoError, auditEventSchema, permissionGrantSchema, type Principal } from "@vendoai/core";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { backends, type MadeBackend } from "./backends.test-util.js";
+import { approvalFixture, at, auditFixture, grantFixture } from "./fixtures.test-util.js";
+import { auditStore, grantStore, registerEphemeralSubject } from "./index.js";
+
+for (const backend of backends()) {
+  describe(backend.name, () => {
+    let made: MadeBackend;
+    beforeAll(async () => {
+      made = await backend.make();
+      await made.store.ensureSchema();
+    });
+    afterAll(async () => { if (made) await made.cleanup(); });
+
+    it("routes grants into vendo_grants and synthesizes authoritative refs", async () => {
+      const grant = grantFixture("grt_routed", { subject: "user_route", tool: "host_route", appId: "app_route" });
+      const record = await made.store.records("vendo_grants").put({
+        id: grant.id,
+        data: grant,
+        refs: { subject: "ignored", tool: "ignored" },
+      });
+      expect(permissionGrantSchema.parse(record.data)).toEqual(grant);
+      expect(record.refs).toEqual({ subject: "user_route", tool: "host_route", app_id: "app_route" });
+      expect(await made.sql("SELECT subject, tool, app_id FROM vendo_grants WHERE id = $1", [grant.id]))
+        .toEqual([{ subject: "user_route", tool: "host_route", app_id: "app_route" }]);
+      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_records WHERE id = $1", [grant.id]))[0]?.count)).toBe(0);
+    });
+
+    it("routes and updates approvals with subject and status refs", async () => {
+      const request = approvalFixture("apr_routed", {
+        ctx: { principal: { kind: "user", subject: "user_approval" }, venue: "chat", presence: "present", appId: "app_test" },
+      });
+      const approvals = made.store.records("vendo_approvals");
+      await approvals.put({ id: request.id, data: { request, status: "pending" } });
+      expect(await made.sql("SELECT subject, status FROM vendo_approvals WHERE id = $1", [request.id]))
+        .toEqual([{ subject: "user_approval", status: "pending" }]);
+      expect((await approvals.list({ refs: { subject: "user_approval", status: "pending" } })).records.map((r) => r.id))
+        .toEqual([request.id]);
+
+      const decidedAt = at(45);
+      await approvals.put({ id: request.id, data: { request, status: "approved", decidedAt } });
+      expect((await approvals.get(request.id))?.data).toEqual({ request, status: "approved", decidedAt });
+      expect((await approvals.list({ refs: { status: "approved" } })).records.map((r) => r.id)).toContain(request.id);
+    });
+
+    it("routes audit events and supports refs-filtered lists", async () => {
+      const event = auditFixture("aud_routed", { principal: { kind: "user", subject: "user_route" }, tool: "host_route" });
+      const audit = made.store.records("vendo_audit");
+      await audit.put({ id: event.id, data: event });
+      expect(auditEventSchema.parse((await audit.get(event.id))?.data)).toEqual(event);
+      expect(await made.sql("SELECT subject, kind, tool FROM vendo_audit WHERE id = $1", [event.id]))
+        .toEqual([{ subject: "user_route", kind: "tool-call", tool: "host_route" }]);
+      expect((await audit.list({ refs: { subject: "user_route", kind: "tool-call", tool: "host_route" } })).records.map((r) => r.id))
+        .toContain(event.id);
+    });
+
+    it("rejects malformed routed data, unknown refs, and embedded-id mismatches", async () => {
+      await expect(made.store.records("vendo_grants").put({ id: "grt_bad", data: { id: "grt_bad" } }))
+        .rejects.toMatchObject<VendoError>({ code: "validation" });
+      await expect(made.store.records("vendo_grants").list({ refs: { made_up: "x" } }))
+        .rejects.toMatchObject<VendoError>({ code: "validation" });
+      await expect(made.store.records("vendo_grants").put({ id: "grt_outer", data: grantFixture("grt_inner") }))
+        .rejects.toMatchObject<VendoError>({ code: "validation" });
+    });
+
+    it("keeps routed rows and typed helpers in one shared world", async () => {
+      const routedGrant = grantFixture("grt_world_route", { subject: "user_world" });
+      await made.store.records("vendo_grants").put({ id: routedGrant.id, data: routedGrant });
+      expect(await grantStore(made.store).get(routedGrant.id)).toEqual(routedGrant);
+
+      const helperEvent = auditFixture("aud_world_helper", { principal: { kind: "user", subject: "user_world" } });
+      await auditStore(made.store).append(helperEvent);
+      expect((await made.store.records("vendo_audit").get(helperEvent.id))?.data).toEqual(helperEvent);
+    });
+
+    it("walks newest-first routed pages without duplicates or misses", async () => {
+      const grants = made.store.records("vendo_grants");
+      const ids = Array.from({ length: 15 }, (_, index) => `grt_page_${String(index).padStart(2, "0")}`);
+      for (let index = 0; index < ids.length; index += 1) {
+        const id = ids[index] as string;
+        await grants.put({ id, data: grantFixture(id, { subject: "user_pages", grantedAt: at(index) }) });
+      }
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await grants.list({ refs: { subject: "user_pages" }, limit: 5, cursor });
+        seen.push(...page.records.map((record) => record.id));
+        cursor = page.cursor;
+      } while (cursor !== undefined);
+      expect(seen).toEqual([...ids].reverse());
+      expect(new Set(seen).size).toBe(ids.length);
+    });
+
+    it("leaves near-match collection names in vendo_records", async () => {
+      await made.store.records("vendo_grants_x").put({ id: "ordinary_row", data: { ordinary: true } });
+      expect(await made.sql("SELECT collection, data FROM vendo_records WHERE id = 'ordinary_row'"))
+        .toEqual([{ collection: "vendo_grants_x", data: { ordinary: true } }]);
+    });
+
+    it("keeps principal-aware and registered routed writes ephemeral", async () => {
+      const ephemeral: Principal = { kind: "user", subject: "sess_route", ephemeral: true };
+      const request = approvalFixture("apr_ephemeral_route", {
+        ctx: { principal: ephemeral, venue: "chat", presence: "present" },
+      });
+      await made.store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      expect((await made.store.records("vendo_approvals").get(request.id))?.id).toBe(request.id);
+      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_approvals WHERE id = $1", [request.id]))[0]?.count)).toBe(0);
+
+      registerEphemeralSubject(made.store, ephemeral.subject);
+      const grant = grantFixture("grt_ephemeral_route", { subject: ephemeral.subject });
+      await made.store.records("vendo_grants").put({ id: grant.id, data: grant });
+      expect(await grantStore(made.store).get(grant.id)).toEqual(grant);
+      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_grants WHERE id = $1", [grant.id]))[0]?.count)).toBe(0);
+    });
+  });
+}

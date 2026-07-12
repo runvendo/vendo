@@ -1,0 +1,162 @@
+import type {
+  AppDocument,
+  AuditEvent,
+  PermissionGrant,
+} from "@vendoai/core";
+import type { Db } from "../db.js";
+import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./types.js";
+import { iso, optionalIso, text } from "./utils.js";
+
+export function appFromRow(row: Record<string, unknown>): AppRow {
+  return {
+    id: text(row["id"]),
+    subject: text(row["subject"]),
+    enabled: row["enabled"] === true,
+    doc: row["doc"] as AppDocument,
+    createdAt: iso(row["created_at"]),
+    updatedAt: iso(row["updated_at"]),
+  };
+}
+
+export async function putAppRow(
+  db: Db,
+  input: Pick<AppRow, "id" | "subject" | "enabled" | "doc">,
+  now = new Date().toISOString(),
+): Promise<AppRow> {
+  const result = await db.query(
+    `INSERT INTO vendo_apps (id, subject, enabled, doc, created_at, updated_at)
+     VALUES ($1, $2, $3, $4::jsonb, $5, $5)
+     ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, enabled = EXCLUDED.enabled,
+       doc = EXCLUDED.doc, updated_at = EXCLUDED.updated_at
+     RETURNING id, subject, enabled, doc, created_at, updated_at`,
+    [input.id, input.subject, input.enabled, JSON.stringify(input.doc), now],
+  );
+  return appFromRow(result.rows[0] as Record<string, unknown>);
+}
+
+export function threadFromRow(row: Record<string, unknown>): ThreadRow {
+  return {
+    id: text(row["id"]),
+    subject: text(row["subject"]),
+    messages: row["messages"] as ThreadRow["messages"],
+    createdAt: iso(row["created_at"]),
+    updatedAt: iso(row["updated_at"]),
+  };
+}
+
+export async function putThreadRow(
+  db: Db,
+  input: Pick<ThreadRow, "id" | "subject" | "messages">,
+  now = new Date().toISOString(),
+): Promise<ThreadRow> {
+  const result = await db.query(
+    `INSERT INTO vendo_threads (id, subject, messages, created_at, updated_at)
+     VALUES ($1, $2, $3::jsonb, $4, $4)
+     ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, messages = EXCLUDED.messages,
+       updated_at = EXCLUDED.updated_at
+     RETURNING id, subject, messages, created_at, updated_at`,
+    [input.id, input.subject, JSON.stringify(input.messages), now],
+  );
+  return threadFromRow(result.rows[0] as Record<string, unknown>);
+}
+
+export function grantFromRow(row: Record<string, unknown>): PermissionGrant {
+  const expiresAt = optionalIso(row["expires_at"]);
+  const revokedAt = optionalIso(row["revoked_at"]);
+  return {
+    id: text(row["id"]),
+    subject: text(row["subject"]),
+    tool: text(row["tool"]),
+    descriptorHash: text(row["descriptor_hash"]),
+    scope: row["scope"] as PermissionGrant["scope"],
+    duration: text(row["duration"]) as PermissionGrant["duration"],
+    ...(row["context_key"] == null ? {} : { contextKey: text(row["context_key"]) }),
+    ...(row["app_id"] == null ? {} : { appId: text(row["app_id"]) }),
+    source: text(row["source"]) as PermissionGrant["source"],
+    grantedAt: iso(row["granted_at"]),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    ...(revokedAt === undefined ? {} : { revokedAt }),
+  };
+}
+
+export async function putGrantRow(db: Db, grant: PermissionGrant, upsert = true): Promise<void> {
+  await db.query(
+    `INSERT INTO vendo_grants
+     (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, source, granted_at, expires_at, revoked_at)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
+     ${upsert ? `ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, tool = EXCLUDED.tool,
+       descriptor_hash = EXCLUDED.descriptor_hash, scope = EXCLUDED.scope,
+       duration = EXCLUDED.duration, context_key = EXCLUDED.context_key,
+       app_id = EXCLUDED.app_id, source = EXCLUDED.source, granted_at = EXCLUDED.granted_at,
+       expires_at = EXCLUDED.expires_at, revoked_at = EXCLUDED.revoked_at` : ""}`,
+    [grant.id, grant.subject, grant.tool, grant.descriptorHash, JSON.stringify(grant.scope), grant.duration,
+      grant.contextKey ?? null, grant.appId ?? null, grant.source, grant.grantedAt,
+      grant.expiresAt ?? null, grant.revokedAt ?? null],
+  );
+}
+
+export function approvalFromRow(row: Record<string, unknown>): ApprovalRow {
+  const decidedAt = optionalIso(row["decided_at"]);
+  const consumedAt = optionalIso(row["consumed_at"]);
+  return {
+    id: text(row["id"]),
+    subject: text(row["subject"]),
+    request: row["request"] as ApprovalRow["request"],
+    status: text(row["status"]) as ApprovalRow["status"],
+    ...(decidedAt === undefined ? {} : { decidedAt }),
+    ...(row["session_id"] == null ? {} : { sessionId: text(row["session_id"]) }),
+    ...(consumedAt === undefined ? {} : { consumedAt }),
+    createdAt: iso(row["created_at"]),
+  };
+}
+
+export async function putApprovalRow(db: Db, row: ApprovalRow, upsert = true): Promise<void> {
+  await db.query(
+    `INSERT INTO vendo_approvals
+     (id, subject, request, status, decided_at, session_id, consumed_at, created_at)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
+     ${upsert ? `ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, request = EXCLUDED.request,
+       status = EXCLUDED.status, decided_at = EXCLUDED.decided_at,
+       session_id = EXCLUDED.session_id, consumed_at = EXCLUDED.consumed_at,
+       created_at = EXCLUDED.created_at` : ""}`,
+    [row.id, row.subject, JSON.stringify(row.request), row.status, row.decidedAt ?? null,
+      row.sessionId ?? null, row.consumedAt ?? null, row.createdAt],
+  );
+}
+
+export async function putAuditRow(db: Db, event: AuditEvent, upsert = false): Promise<void> {
+  await db.query(
+    `INSERT INTO vendo_audit (id, at, kind, subject, venue, presence, app_id, tool, event)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+     ${upsert ? `ON CONFLICT (id) DO UPDATE SET at = EXCLUDED.at, kind = EXCLUDED.kind,
+       subject = EXCLUDED.subject, venue = EXCLUDED.venue, presence = EXCLUDED.presence,
+       app_id = EXCLUDED.app_id, tool = EXCLUDED.tool, event = EXCLUDED.event` : ""}`,
+    [event.id, event.at, event.kind, event.principal.subject, event.venue, event.presence,
+      event.appId ?? null, event.tool ?? null, JSON.stringify(event)],
+  );
+}
+
+export function runFromRow(row: Record<string, unknown>): RunRow {
+  const finishedAt = optionalIso(row["finished_at"]);
+  return {
+    id: text(row["id"]),
+    appId: text(row["app_id"]),
+    trigger: row["trigger"] as RunRow["trigger"],
+    status: text(row["status"]) as RunRow["status"],
+    record: row["record"],
+    startedAt: iso(row["started_at"]),
+    ...(finishedAt === undefined ? {} : { finishedAt }),
+  };
+}
+
+export async function putRunRow(db: Db, run: RunRow): Promise<void> {
+  await db.query(
+    `INSERT INTO vendo_runs (id, app_id, trigger, status, record, started_at, finished_at)
+     VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, $6, $7)
+     ON CONFLICT (id) DO UPDATE SET app_id = EXCLUDED.app_id, trigger = EXCLUDED.trigger,
+       status = EXCLUDED.status, record = EXCLUDED.record, started_at = EXCLUDED.started_at,
+       finished_at = EXCLUDED.finished_at`,
+    [run.id, run.appId, JSON.stringify(run.trigger), run.status, JSON.stringify(run.record),
+      run.startedAt, run.finishedAt ?? null],
+  );
+}
