@@ -4,21 +4,21 @@ Vendo is a devtool that lets a company's users customize its product: an
 embedded agent that acts through the host's own API as the user and renders
 generated UI in a sandboxed, brand-native surface.
 
-## Layout
+## Layout (v0 rebuild in progress — waves 3+)
 
-- `packages/`: the published libraries (vendo, cli, client, components, core,
-  react, runtime, sandbox-shims, server, shell, stage, store, telemetry)
-- `apps/` — demo host apps (demo-bank "Maple", demo-accounting "Cadence")
+- `packages/` — the active workspace: new blocks built fresh against the FROZEN
+  contracts in `docs/contracts/` (read `00-overview.md` first), plus `vendo-telemetry`
+  (orthogonal, unchanged)
+- `legacy/` — the pre-v0 packages and demo apps: a **read-only quarry**, out of the
+  workspace, never imported by new packages (enforced by `scripts/dependency-guard.mjs`
+  in `pnpm lint`); deleted wave by wave, gone by wave 7
+- `corpus/` — init-extraction corpus harness; red by design until wave 7
 - `docs/` — integration docs
 
 ## Commands
 
 - `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
-- `pnpm demo` — run the demo-bank host app (env setup: `apps/demo-bank/README.md`)
-- `pnpm demo:accounting` — run the Cadence accounting demo
-- `npx vendo init <dir>` — install Vendo into a Next.js app (interactive; safe to re-run).
-  `vendo refresh` catches up an existing install; `vendo doctor` checks it; `vendo sync`
-  runs in the build.
+- Demo apps are quarried under `legacy/apps/` until wave 7 (`pnpm demo` returns then).
 
 ## Rules
 
