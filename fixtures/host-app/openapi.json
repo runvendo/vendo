@@ -1,0 +1,371 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Seeded Invoice Fixture API",
+    "version": "0.0.0",
+    "description": "Deterministic invoice and customer operations used by Vendo wave-3 extraction and execution tests."
+  },
+  "security": [
+    {
+      "fixtureSession": []
+    }
+  ],
+  "paths": {
+    "/api/invoices": {
+      "get": {
+        "operationId": "listInvoices",
+        "summary": "List invoices",
+        "description": "Returns seeded and newly created invoices, optionally filtered by status or customer.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Only return invoices with this status.",
+            "schema": {
+              "type": "string",
+              "enum": ["draft", "open", "paid"]
+            }
+          },
+          {
+            "name": "customerId",
+            "in": "query",
+            "required": false,
+            "description": "Only return invoices belonging to this customer id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching invoices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["invoices"],
+                  "properties": {
+                    "invoices": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Invoice" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createInvoice",
+        "summary": "Create an invoice",
+        "description": "Creates a deterministic draft invoice for a customer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateInvoiceInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The newly created invoice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["invoice"],
+                  "properties": {
+                    "invoice": { "$ref": "#/components/schemas/Invoice" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/invoices/archive": {
+      "get": {
+        "operationId": "downloadInvoicesArchive",
+        "summary": "Download the invoice archive",
+        "description": "Returns a JSON archive containing all paid invoices.",
+        "responses": {
+          "200": {
+            "description": "The paid invoice archive.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["archive"],
+                  "properties": {
+                    "archive": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Invoice" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/invoices/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The invoice id.",
+          "schema": {
+            "type": "string",
+            "pattern": "^inv_[0-9]{4}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getInvoice",
+        "summary": "Get an invoice",
+        "description": "Returns one invoice by its deterministic id.",
+        "responses": {
+          "200": {
+            "description": "The requested invoice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["invoice"],
+                  "properties": {
+                    "invoice": { "$ref": "#/components/schemas/Invoice" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "updateInvoice",
+        "summary": "Update an invoice",
+        "description": "Updates the supplied mutable invoice fields.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateInvoiceInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated invoice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["invoice"],
+                  "properties": {
+                    "invoice": { "$ref": "#/components/schemas/Invoice" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteInvoice",
+        "summary": "Delete an invoice",
+        "description": "Permanently removes an invoice from the in-memory fixture store.",
+        "responses": {
+          "200": {
+            "description": "Confirmation that the invoice was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["ok"],
+                  "properties": {
+                    "ok": { "type": "boolean", "const": true }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/invoices/{id}/send": {
+      "post": {
+        "operationId": "sendInvoice",
+        "summary": "Send an invoice",
+        "description": "Transitions an invoice to open and records the fixture's fixed sent timestamp.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The invoice id.",
+            "schema": {
+              "type": "string",
+              "pattern": "^inv_[0-9]{4}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The sent invoice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["invoice"],
+                  "properties": {
+                    "invoice": { "$ref": "#/components/schemas/Invoice" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/customers": {
+      "get": {
+        "operationId": "listCustomers",
+        "summary": "List customers",
+        "description": "Returns all three deterministic fixture customers.",
+        "responses": {
+          "200": {
+            "description": "The fixture customers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["customers"],
+                  "properties": {
+                    "customers": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Customer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "fixtureSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "fixture_session"
+      }
+    },
+    "schemas": {
+      "Invoice": {
+        "type": "object",
+        "required": [
+          "id",
+          "customerId",
+          "amountCents",
+          "currency",
+          "status",
+          "memo",
+          "createdAt"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "customerId": { "type": "string" },
+          "amountCents": { "type": "integer", "minimum": 0 },
+          "currency": { "type": "string", "const": "USD" },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "open", "paid"]
+          },
+          "memo": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "sentAt": { "type": "string", "format": "date-time" },
+          "relatedInvoice": { "$ref": "#/components/schemas/Invoice" }
+        }
+      },
+      "Customer": {
+        "type": "object",
+        "required": ["id", "name", "email"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "CreateInvoiceInput": {
+        "type": "object",
+        "required": ["customerId", "amountCents"],
+        "properties": {
+          "customerId": { "type": "string" },
+          "amountCents": { "type": "integer", "minimum": 0 },
+          "currency": { "type": "string", "const": "USD" },
+          "memo": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "UpdateInvoiceInput": {
+        "type": "object",
+        "properties": {
+          "memo": { "type": "string" },
+          "amountCents": { "type": "integer", "minimum": 0 },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "open", "paid"]
+          }
+        },
+        "additionalProperties": false
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "NotFound": {
+        "description": "The invoice does not exist.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    }
+  }
+}
