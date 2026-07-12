@@ -11,11 +11,13 @@ import {
   boundRegistry,
   ctx,
   memoryStore,
+  partOfType,
   readSse,
   scriptedModel,
   testGuard,
   textTurn,
   toolCallTurn,
+  userMessage,
 } from "./test-helpers.js";
 
 // 03-agent §4: "an ai-SDK UI message stream Response (SSE), consumable by
@@ -36,16 +38,6 @@ async function assembleClientMessage(response: Response): Promise<UIMessage> {
   }
   if (last === undefined) throw new Error("client reducer produced no message");
   return last;
-}
-
-const userMessage = (id: string, text: string): UIMessage => ({
-  id,
-  role: "user",
-  parts: [{ type: "text", text }],
-});
-
-function partOfType(message: UIMessage, type: string): Record<string, unknown> | undefined {
-  return message.parts.find((part) => part.type === type) as Record<string, unknown> | undefined;
 }
 
 function dynamicTool(message: UIMessage, toolCallId: string): Record<string, unknown> | undefined {

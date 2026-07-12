@@ -1,4 +1,5 @@
 import {
+  VendoError,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
@@ -19,12 +20,14 @@ import {
   putAuditRow,
   putGrantRow,
   putRunRow,
+  putStateRow,
   putThreadRow,
   runFromRow,
+  stateRowFromRow,
   threadFromRow,
 } from "./helpers/rows.js";
 import type { AppRow, ApprovalRow, EphemeralStateRow, RunRow, ThreadRow } from "./helpers/types.js";
-import { decodeCursor, encodeCursor, iso, pageLimit, text } from "./helpers/utils.js";
+import { decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
 import type { VendoStore } from "./store.js";
 import {
   invalid,
@@ -59,12 +62,6 @@ interface RoutedConfig {
   table: ReservedCollection;
   select: string;
   cursorColumn: string;
-  /**
-   * SQL expression that yields a row's record id. Defaults to the `id` column.
-   * `vendo_state` has no id column — its record id is `${app_id}:${subject}`, so it
-   * routes through the reconstructed expression instead.
-   */
-  idColumn?: string;
   refs: Readonly<Record<string, string>>;
   fromDb(row: Record<string, unknown>): VendoRecord;
   overlayRecords(): VendoRecord[];
@@ -158,8 +155,7 @@ function stateRecord(row: EphemeralStateRow): VendoRecord {
     id: `${row.appId}:${row.subject}`,
     data: row.data,
     refs: { app_id: row.appId, subject: row.subject },
-    // vendo_state carries only updated_at; state has no distinct creation timestamp.
-    createdAt: row.updatedAt,
+    createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
@@ -168,11 +164,22 @@ function stateRecord(row: EphemeralStateRow): VendoRecord {
  * apps writes state through `records("vendo_state")` with id `${appId}:${subject}`.
  * App ids are `app_...` and never contain a colon, so the first colon splits id into
  * its app_id and subject (subjects may themselves contain colons).
+ *
+ * The colon-free app-id shape is REQUIRED, not assumed: without it `<appId>:<subject>`
+ * is not uniquely decodable — (app_a:b, c) and (app_a, b:c) would both encode to
+ * "app_a:b:c" and collide on read/write/delete. The apps runtime mints colon-free
+ * ids; this enforces it at the door so a doctored id can never target another row.
  */
+const APP_ID_SEGMENT = /^app_[^:]*$/;
+
 function splitStateId(id: string): { appId: string; subject: string } {
   const colon = id.indexOf(":");
   if (colon === -1) invalid(`vendo_state record id must be "<appId>:<subject>": ${id}`);
-  return { appId: id.slice(0, colon), subject: id.slice(colon + 1) };
+  const appId = id.slice(0, colon);
+  if (!APP_ID_SEGMENT.test(appId)) {
+    invalid(`vendo_state record id must start with a colon-free app id ("app_..."): ${id}`);
+  }
+  return { appId, subject: id.slice(colon + 1) };
 }
 
 function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: string; i: string }): boolean {
@@ -188,13 +195,12 @@ function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: st
 }
 
 function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
-  const idColumn = config.idColumn ?? "id";
   return {
     async get(id) {
       requireRecordId(id);
       const memory = config.overlayRecords().find((record) => record.id === id);
       if (memory) return memory;
-      const result = await db.query(`${config.select} WHERE ${idColumn} = $1`, [id]);
+      const result = await db.query(`${config.select} WHERE id = $1`, [id]);
       return result.rows[0] ? config.fromDb(result.rows[0]) : null;
     },
     async put(record) {
@@ -205,7 +211,7 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
     async delete(id) {
       requireRecordId(id);
       if (config.deleteOverlay(id)) return;
-      await db.query(`DELETE FROM ${config.table} WHERE ${idColumn} = $1`, [id]);
+      await db.query(`DELETE FROM ${config.table} WHERE id = $1`, [id]);
     },
     async list(query: RecordQuery = {}) {
       const limit = pageLimit(query.limit);
@@ -223,16 +229,16 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
       }
       if (query.ids !== undefined) {
         params.push(query.ids);
-        clauses.push(`${idColumn} = ANY($${params.length}::text[])`);
+        clauses.push(`id = ANY($${params.length}::text[])`);
       }
       if (cursor !== undefined) {
         params.push(cursor.c, cursor.i);
-        clauses.push(`(${config.cursorColumn}, ${idColumn}) < ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(${config.cursorColumn}, id) < ($${params.length - 1}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `${config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
-         ORDER BY ${config.cursorColumn} DESC, ${idColumn} DESC LIMIT $${params.length}`,
+         ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
         params,
       );
       const allMemory = config.overlayRecords();
@@ -337,6 +343,12 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           let row: ThreadRow;
           if (isEphemeralSubject(store, data.subject)) {
             const prior = overlay.threads.get(record.id);
+            // Mirror the SQL door's cross-subject refusal (03 §5): the bare id is
+            // shared, so a prior overlay row owned by another subject is never
+            // flipped — it is a conflict, same as putThreadRow's guarded upsert.
+            if (prior !== undefined && prior.subject !== data.subject) {
+              throw new VendoError("conflict", `thread ${record.id} belongs to another subject`);
+            }
             row = {
               id: record.id,
               subject: data.subject,
@@ -402,35 +414,36 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
     case "vendo_state":
       return {
         table: collection,
-        select: "SELECT app_id, subject, data, updated_at FROM vendo_state",
-        cursorColumn: "updated_at",
-        // No id column: the record id is the reconstructed app_id:subject pair.
-        idColumn: "(app_id || ':' || subject)",
+        // `id` is the generated (app_id || ':' || subject) column — a real,
+        // indexed column, so point lookups and id filters no longer seq-scan.
+        select: "SELECT id, app_id, subject, data, created_at, updated_at FROM vendo_state",
+        // Page on the STABLE created_at (like every other collection), not the
+        // mutable updated_at — a mid-sweep update must never skip an unvisited row.
+        cursorColumn: "created_at",
         refs: { app_id: "app_id", subject: "subject" },
-        fromDb: (row) => stateRecord({
-          appId: text(row["app_id"]),
-          subject: text(row["subject"]),
-          data: row["data"] as Json,
-          updatedAt: iso(row["updated_at"]),
-        }),
+        fromDb: (row) => stateRecord(stateRowFromRow(row)),
         overlayRecords: () => [...overlay.states.values()].map((row) => stateRecord(snapshot(row))),
         async put(record) {
           const { appId, subject } = splitStateId(record.id);
           const data = requireJson(record.data, "state data");
           const now = new Date().toISOString();
-          const row: EphemeralStateRow = { appId, subject, data, updatedAt: now };
           // Mirrors vendo_apps/vendo_threads: ephemerality is decided by the subject
           // registry (the owning app registers the subject before state is written).
           if (isEphemeralSubject(store, subject)) {
-            overlay.states.set(stateKey(subject, appId), snapshot(row));
-          } else {
-            await db.query(
-              `INSERT INTO vendo_state (app_id, subject, data, updated_at) VALUES ($1, $2, $3::jsonb, $4)
-               ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-              [appId, subject, JSON.stringify(data), now],
-            );
+            const key = stateKey(subject, appId);
+            const prior = overlay.states.get(key);
+            const row: EphemeralStateRow = {
+              appId,
+              subject,
+              data,
+              createdAt: prior?.createdAt ?? now,
+              updatedAt: now,
+            };
+            overlay.states.set(key, snapshot(row));
+            return stateRecord(row);
           }
-          return stateRecord(row);
+          // Shared persistent write path with stateStore.put (helpers/rows).
+          return stateRecord(await putStateRow(db, { appId, subject, data }, now));
         },
         deleteOverlay: (id) => {
           const { appId, subject } = splitStateId(id);

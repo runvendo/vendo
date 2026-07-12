@@ -28,6 +28,10 @@ export interface ThreadSummary {
  *  envelope, not from `data`. */
 function threadFromRecord(record: VendoRecord): Thread | null {
   if (!THREAD_ID_PATTERN.test(record.id)) return null;
+  // Timestamps ride the envelope, but a hand-written row (threadStore(store).put
+  // accepts any Json) could still be malformed — validate before trusting them so
+  // one bad row cannot brick the whole listing.
+  if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") return null;
   const data = record.data;
   if (typeof data !== "object" || data === null) return null;
   const candidate = data as { subject?: unknown; messages?: unknown };
@@ -42,11 +46,19 @@ function threadFromRecord(record: VendoRecord): Thread | null {
 }
 
 function titleFor(thread: Thread): string {
+  // Messages come from a Json array (parseThreadData accepts any shape), so a
+  // message may lack an iterable `parts` or carry non-text parts — tolerate both,
+  // skipping rather than throwing.
   for (const message of thread.messages) {
-    if (message.role !== "user") continue;
-    for (const part of message.parts) {
-      if (part.type === "text") {
-        const title = part.text.trim();
+    if (message === null || typeof message !== "object") continue;
+    if ((message as { role?: unknown }).role !== "user") continue;
+    const parts = (message as { parts?: unknown }).parts;
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      if (part !== null && typeof part === "object"
+        && (part as { type?: unknown }).type === "text"
+        && typeof (part as { text?: unknown }).text === "string") {
+        const title = (part as { text: string }).text.trim();
         return title ? title.slice(0, 80) : "New thread";
       }
     }
@@ -71,28 +83,25 @@ export class ThreadRepository {
   constructor(private readonly store?: StoreAdapter) {}
 
   async resolve(id: ThreadId | undefined, ctx: RunContext): Promise<Thread> {
-    if (id !== undefined) {
-      if (!THREAD_ID_PATTERN.test(id)) {
-        throw new VendoError("validation", "threadId is malformed");
-      }
-      const existing = await this.get(id, ctx);
-      if (existing) return existing;
-      // get() is subject-scoped, so a row owned by ANOTHER subject reads as
-      // null here — but vendo_threads is keyed by the bare id and the store's
-      // upsert would let this turn's persist() take over that row (03 §5:
-      // threads.* never crosses subjects). Ownership-BLIND existence check:
-      // an occupied id is refused, never reused. Skipped on the memory paths
-      // (per-subject maps; ephemeral principals never persist), where no
-      // takeover is possible.
-      if (!this.usesMemory(ctx)) {
-        const occupied = await this.store!.records(THREAD_COLLECTION).get(id);
-        if (occupied !== null) {
-          throw new VendoError("conflict", "threadId is already in use");
-        }
-      }
-      return this.create(ctx, id);
+    if (id === undefined) return this.create(ctx);
+    if (!THREAD_ID_PATTERN.test(id)) {
+      throw new VendoError("validation", "threadId is malformed");
     }
-    return this.create(ctx);
+    // Memory paths (no store / ephemeral) use per-subject maps, so ids are private
+    // and no takeover is possible — resolve straight from this subject's map.
+    if (this.usesMemory(ctx)) {
+      return this.subjectMemory(ctx.principal.subject).get(id) ?? this.create(ctx, id);
+    }
+    // ONE ownership-blind read is the friendly fast-path (03 §5). vendo_threads is
+    // keyed by the bare id, so a foreign row reads as non-null here; reusing the id
+    // would let persist() take it over. Free id → create; ours → return; anyone
+    // else's (or unparseable) → conflict. The store's guarded upsert is the real,
+    // atomic guarantee — this only surfaces the conflict early with a clear error.
+    const record = await this.store!.records(THREAD_COLLECTION).get(id);
+    if (record === null) return this.create(ctx, id);
+    const thread = threadFromRecord(record);
+    if (thread !== null && thread.subject === ctx.principal.subject) return thread;
+    throw new VendoError("conflict", "threadId is already in use");
   }
 
   async get(id: ThreadId, ctx: RunContext): Promise<Thread | null> {
@@ -115,10 +124,20 @@ export class ThreadRepository {
     if (this.usesMemory(ctx)) {
       threads = [...this.subjectMemory(ctx.principal.subject).values()];
     } else {
-      const result = await this.store!.records(THREAD_COLLECTION).list({
-        refs: { subject: ctx.principal.subject },
-      });
-      threads = result.records
+      // Follow the cursor to exhaustion (the store pages at 100) — otherwise a
+      // subject's >100th thread, possibly their most recently active, vanishes
+      // (list orders by created_at, we re-sort by updatedAt below).
+      const records: VendoRecord[] = [];
+      let cursor: string | undefined;
+      do {
+        const result = await this.store!.records(THREAD_COLLECTION).list({
+          refs: { subject: ctx.principal.subject },
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        records.push(...result.records);
+        cursor = result.cursor;
+      } while (cursor !== undefined);
+      threads = records
         .map(threadFromRecord)
         .filter((thread): thread is Thread => thread !== null && thread.subject === ctx.principal.subject);
     }

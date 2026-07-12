@@ -1,5 +1,6 @@
 import {
   VENDO_APP_FORMAT,
+  descriptorHash,
   type AppDocument,
   type RunContext,
   type ToolDescriptor,
@@ -183,6 +184,23 @@ describe("tool proxy authority (e2e)", () => {
     const app = await runtime.create({ prompt: "Away worker" }, ctx("user_ada"));
     await seedAppRow(store, { ...app, ui: "http" }, "user_ada");
 
+    // 05 §6: an away run is authorized only by a present-captured, app-bound grant
+    // (`appId` matches the running app). Seed exactly that for host_read so the away
+    // call is legitimately authorized — the frozen rule, not the "ungranted away read
+    // runs" the fixture's away-park gap previously let this test assert. This is the
+    // authorized call whose away RunContext we observe flowing through the proxy.
+    guard.grants.push({
+      id: "grt_away_read",
+      subject: "user_ada",
+      tool: "host_read",
+      descriptorHash: descriptorHash(descriptors[0]!),
+      scope: { kind: "tool" },
+      duration: "standing",
+      appId: app.id,
+      source: "automation",
+      grantedAt: new Date().toISOString(),
+    });
+
     // Open the app while the user is AWAY — the minted run token must carry presence.
     await runtime.open(app.id, ctx("user_ada", "away"));
     await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
@@ -194,13 +212,14 @@ describe("tool proxy authority (e2e)", () => {
       body: JSON.stringify({ args: {} }),
     }));
 
-    // A granted-by-default tool runs and the RunContext reflects the away token scope + app id.
+    // The app-bound grant authorizes the away read; the RunContext reflects the away
+    // token scope + app id (05 §6 — a present-captured app-bound grant runs away).
     expect(await json(await toolCall("host_read"))).toEqual({
       status: "ok",
       output: { tool: "host_read", presence: "away", appId: app.id },
     });
 
-    // Ungranted-but-parked → pending-approval fail-soft outcome (never an exception).
+    // Ungranted away write parks → pending-approval fail-soft outcome (never an exception).
     expect(await json(await toolCall("host_park"))).toMatchObject({ status: "pending-approval", approvalId: expect.any(String) });
 
     // A guard block surfaces as a blocked outcome, not authority.

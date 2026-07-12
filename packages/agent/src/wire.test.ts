@@ -1,5 +1,4 @@
 import { vendoViewPartSchema, type ToolDescriptor } from "@vendoai/core";
-import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
 import {
@@ -10,13 +9,8 @@ import {
   testGuard,
   textTurn,
   toolCallTurn,
+  userMessage,
 } from "./test-helpers.js";
-
-const userMessage = (id: string, text: string): UIMessage => ({
-  id,
-  role: "user",
-  parts: [{ type: "text", text }],
-});
 
 const echoDescriptor: ToolDescriptor = {
   name: "echo",

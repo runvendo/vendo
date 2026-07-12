@@ -6,6 +6,7 @@
  * agent keys reserved vendo_threads rows by the bare thread id and enforces
  * subject scoping on read/delete (the bug this wave fixed in @vendoai/agent).
  */
+import { threadStore } from "@vendoai/store";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createEnv,
@@ -99,5 +100,67 @@ describe("scenario 7: thread persistence + subject scoping", () => {
     expect(JSON.stringify(after[0]!.messages)).not.toContain("Bob's takeover");
     expect(await env.count("vendo_threads", "subject = $1", [BOB])).toBe(0);
     expect(await env.count("vendo_threads")).toBe(1);
+  });
+
+  it("refuses a PERSIST-TIME cross-subject takeover atomically at the store door (B1)", async () => {
+    env = await createEnv();
+    const THR = "thr_persist_race";
+
+    // Ada owns the row on disk (the victim that appears/exists when persist runs,
+    // even if a resolve()-time pre-check had passed for a now-stale view).
+    await threadStore(env.store).put(userCtx(ADA).principal, {
+      id: THR,
+      messages: [{ role: "user", parts: [{ type: "text", text: "Ada's message" }] }],
+    });
+
+    // Bob's persist writing the SAME bare id must be refused by the store's guarded
+    // upsert — the TOCTOU window a resolve()-time check alone cannot close.
+    await expect(
+      threadStore(env.store).put(userCtx(BOB).principal, {
+        id: THR,
+        messages: [{ role: "user", parts: [{ type: "text", text: "Bob's takeover" }] }],
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    // SQL proof: Ada's row is untouched, Bob owns nothing.
+    const rows = await env.sql<{ subject: string; messages: unknown }>(
+      "SELECT subject, messages FROM vendo_threads WHERE id = $1",
+      [THR],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.subject).toBe(ADA);
+    expect(JSON.stringify(rows[0]!.messages)).not.toContain("Bob's takeover");
+    expect(await env.count("vendo_threads", "subject = $1", [BOB])).toBe(0);
+  });
+
+  it("returns ALL of a subject's threads past the store's page cap, most-recently-updated first (M4)", async () => {
+    env = await createEnv();
+    const CARL = "user_carl";
+    const principal = userCtx(CARL).principal;
+    const store = threadStore(env.store);
+
+    // One OLD-created thread, then 120 newer ones (past the 100-row page cap). The
+    // old one is created FIRST, so it sorts last by created_at — on page 2+.
+    await store.put(principal, { id: "thr_oldest", messages: [{ role: "user", parts: [{ type: "text", text: "oldest" }] }] });
+    await new Promise<void>((r) => setTimeout(r, 3));
+    for (let i = 0; i < 120; i += 1) {
+      await store.put(principal, {
+        id: `thr_${String(i).padStart(3, "0")}`,
+        messages: [{ role: "user", parts: [{ type: "text", text: `filler ${i}` }] }],
+      });
+    }
+    // Now TOUCH the oldest thread so it becomes the most recently UPDATED — the
+    // exact "old-created, recently-active" thread the cursor-truncation bug hid.
+    await new Promise<void>((r) => setTimeout(r, 3));
+    await store.put(principal, { id: "thr_oldest", messages: [{ role: "user", parts: [{ type: "text", text: "touched" }] }] });
+
+    const summaries = await env.agentFor(new SpyRegistry([]), scriptedModel([]))
+      .threads.list(userCtx(CARL));
+
+    // All 121 threads come back (nothing truncated at the page boundary)...
+    expect(summaries).toHaveLength(121);
+    // ...and the recently-touched old thread is first (list re-sorts by updatedAt).
+    expect(summaries[0]!.id).toBe("thr_oldest");
+    expect(new Set(summaries.map((s) => s.id)).size).toBe(121);
   });
 });

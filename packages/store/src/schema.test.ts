@@ -38,10 +38,17 @@ for (const backend of backends()) {
     it("stores schema_version and a boot_id in vendo_meta", async () => {
       const rows = await made.sql("SELECT key, value FROM vendo_meta ORDER BY key");
       expect(rows).toEqual(expect.arrayContaining([
-        expect.objectContaining({ key: "schema_version", value: 1 }),
+        expect.objectContaining({ key: "schema_version", value: 2 }),
         expect.objectContaining({ key: "boot_id" }),
       ]));
       expect(rows.find((row) => row.key === "boot_id")?.value).toEqual(expect.any(String));
+    });
+
+    it("lands a fresh database directly on schema version 2", async () => {
+      // A brand-new DB never runs the v2 backfill's DELETE against real data; it
+      // just records the current version. (beforeAll already ran ensureSchema.)
+      const version = (await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value;
+      expect(version).toBe(2);
     });
 
     it("keeps boot_id stable across a close and reopen", async () => {
