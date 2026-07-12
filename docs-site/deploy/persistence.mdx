@@ -1,6 +1,6 @@
 ---
 title: "Persistence"
-description: "Durable by default with embedded PGlite. Point at Postgres when you deploy"
+description: "Choose durable storage: PGlite by default at .vendo/data, hosted Postgres via DATABASE_URL, or in-memory stores for tests and disposable runs."
 ---
 
 Vendo is durable by default. With no `storage` option, the handler opens an embedded PGlite database at `.vendo/data` and runs migrations on first boot.

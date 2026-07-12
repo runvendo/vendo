@@ -1,6 +1,6 @@
 ---
 title: "Deploying safely"
-description: "Gate the handler with your auth before it faces the internet"
+description: "Ship Vendo safely to production: require a principal resolver, understand the VENDO_ALLOW_REMOTE escape hatch, and keep the handler behind your auth."
 ---
 
 Vendo's zero-config handler is a local development default. It holds your model keys, can call server tools you register, and can auto-run read-only work according to policy. Do not expose it to anonymous internet traffic.

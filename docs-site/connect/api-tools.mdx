@@ -1,6 +1,6 @@
 ---
 title: "Tools from your API"
-description: "Turn your OpenAPI spec or routes into agent tools"
+description: "Generate .vendo/tools.json from your OpenAPI spec or App Router routes so the agent can call your API on the signed-in user's session."
 ---
 
 `.vendo/tools.json` is the reviewed API surface Vendo exposes to the agent. The server registers these tools with the model, and the browser executes them against your host API on the signed-in user's session.
