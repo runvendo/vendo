@@ -11,9 +11,12 @@ import { expect, test } from "@playwright/test";
  * Run:  OPENAI_API_KEY=sk-… pnpm --filter @vendoai/ui exec playwright test e2e/live-voice.spec.ts
  * The mic is Chromium's fake device (see playwright.config.ts launchOptions).
  */
+// Gate on a PLAUSIBLE key, not merely a set one: a placeholder slot (".../xxx")
+// would otherwise run and fail at the credential mint instead of skipping.
 const apiKey = process.env.OPENAI_API_KEY;
+const hasRealKey = typeof apiKey === "string" && apiKey.startsWith("sk-");
 
-test.skip(!apiKey, "OPENAI_API_KEY not set — live realtime voice smoke is env-gated");
+test.skip(!hasRealKey, "OPENAI_API_KEY absent or placeholder — live realtime voice smoke is env-gated");
 
 test("live: the realtime driver connects, opens its data channel, and reaches listening", async ({ page }) => {
   test.setTimeout(90_000);
