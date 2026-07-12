@@ -1,79 +1,27 @@
 ---
 title: "Persistence"
-description: "Choose durable storage: PGlite by default at .vendo/data, hosted Postgres via DATABASE_URL, or in-memory stores for tests and disposable runs."
+description: "One Postgres schema, with PGlite at .vendo/data for zero-config development."
 ---
 
-Vendo is durable by default. With no `storage` option, the handler opens an embedded PGlite database at `.vendo/data` and runs migrations on first boot.
-
-Use this default for local development and one long-lived Node process. Use hosted Postgres when the filesystem is ephemeral or Vendo state must live outside the process.
-
-## Storage modes
-
-| Configuration | Behavior |
-| --- | --- |
-| Unset | Uses PGlite at `.vendo/data`. Override the directory with `VENDO_DATA_DIR`. |
-| `DATABASE_URL` | Uses that Postgres connection string. |
-| `storage: { connectionString }` | Uses the explicit Postgres connection string. This wins over `DATABASE_URL`. |
-| `storage: { pglite: { dataDir } }` | Uses PGlite at a specific directory. |
-| `storage: false` | Uses in-memory stores. Nothing survives a restart. |
-
 ```ts
-import { createVendoHandler } from "vendoai/server";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export const { GET, POST } = createVendoHandler({
-  storage: {
-    connectionString: process.env.DATABASE_URL,
-  },
-});
+export function createStore(config?: {
+  url?: string;
+  dataDir?: string;
+  encryption?: { key: string };
+}): VendoStore;
 ```
 
-You can also omit the option and set `DATABASE_URL` in the environment:
+Omit `url` for PGlite. `dataDir` defaults to `.vendo/data`. Set `url` for a
+hosted Postgres database. Both use the same schema and migration path.
 
-```bash
-DATABASE_URL=postgres://user:password@host:5432/db
-```
+The stable public tables are `vendo_meta`, `vendo_apps`, `vendo_records`,
+`vendo_blobs`, `vendo_state`, `vendo_threads`, `vendo_grants`,
+`vendo_approvals`, `vendo_audit`, `vendo_runs`, and `vendo_secrets`.
 
-<Warning>
-  If `NODE_ENV=test` and you leave `storage` unset, Vendo behaves as if
-  `storage: false` was passed. Set storage explicitly if you run a real
-  deployment under a test environment.
-</Warning>
+All structured payloads use `jsonb`. App record refs are GIN-indexed and can be
+joined to host tables with containment queries. Collection names use
+`app:<appId>:<name>`.
 
-## What Persists
-
-With durable storage on, Vendo persists:
-
-- Automations, automation versions, pre-approved grants stored on those versions, and automation run history.
-- Parked automation actions that need a later approval.
-- Approval decisions remembered by the interactive ask-once flow.
-- Chat threads and thread messages.
-- Integration connection state, including the Composio connected-account mapping used by webhook routing.
-- A small operational `meta` table used for the scheduler heartbeat.
-
-Vendo stores these tables in a dedicated Postgres schema named `vendo`. It does not write to your app's `public` schema.
-
-## Migrations
-
-Migrations run automatically by default. For hosted Postgres, Vendo wraps migrations in a Postgres advisory lock so two cold starts do not run the same migration at the same time.
-
-If your team runs schema changes out of band, disable boot migrations:
-
-```ts
-export const { GET, POST } = createVendoHandler({
-  storage: {
-    connectionString: process.env.DATABASE_URL,
-    autoMigrate: false,
-  },
-});
-```
-
-Then run `migrateVendoDatabase(handle)` from `@vendoai/store` in your own migration step.
-
-## Limits
-
-PGlite is file-backed and single-process. On known serverless runtimes such as Vercel, Cloudflare Pages, and Lambda, the default PGlite path fails at boot and tells you to set `DATABASE_URL`.
-
-Durable storage makes Vendo state survive restarts. It does not make the embedded automation world multi-tenant or multi-replica. Run one long-lived process, or provide your own production architecture around the Vendo handler.
+`encryption.key` encrypts secret values in `vendo_secrets` only. App records
+stay queryable. Ephemeral principals use an in-memory overlay and never write
+to disk.

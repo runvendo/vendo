@@ -1,16 +1,22 @@
 ---
 title: "Voice"
-description: "Add realtime voice sessions that share the same tools, approvals, and generated views as chat, with transcripts landing back in the thread."
+description: "The headless voice stage and shipped VendoStage surface."
 ---
 
-Voice is implemented in `@vendoai/shell` as a `VoiceDriver` seam plus the `VoiceStage` UI. A voice session can call the same kind of tools as chat, render views into the stage, and land its transcript and generated views back into the thread when the session closes.
+Voice is a UI entry point:
 
-Set `OPENAI_API_KEY` on your server to make the handler report `voice: true` from `GET /api/vendo/capabilities`.
+| Entry | Contents |
+| --- | --- |
+| `@vendoai/ui/voice` | voice stage driver and surface |
+| `useVoice()` | state, start, stop, and transcript |
+| `<VendoStage />` | shipped voice surface |
 
-<Warning>
-  The default `VendoRoot` does not auto-wire a realtime voice driver yet. The stage package, `@vendoai/stage`, is the generated-UI sandbox and action bridge, not the voice runtime. To ship voice today, wire a `VoiceDriver` into `VendoThread` or `VendoSlot`.
-</Warning>
+`useVoice` drives a WebRTC voice stage session. The shipped surface uses the
+same resolved theme tokens and accessibility requirements as the rest of the
+chrome.
 
-`@vendoai/shell` exports `createRealtimeVoiceDriver`. It expects a `getSession()` function that returns an ephemeral Realtime client secret. Keep your raw `OPENAI_API_KEY` on the server. The browser receives only the ephemeral secret.
+Tool calls initiated from voice still use the composition's normal tool
+registry and guard treatment. Voice does not add a second authority path.
 
-Voice approvals follow the same tier model as chat. Read tools run directly. Act tools show a consent bar and can be approved by voice or by tapping. Critical tools require on-screen confirmation.
+The v0 wire does not define separate voice HTTP routes or provider environment
+variables. Configure the voice driver and its model provider in host code.

@@ -5,7 +5,7 @@
 
 <p align="center">
   <b>Vendo puts an agent inside your product.</b><br>
-  Customers get live views, connect their tools, and act through your product. You set the guardrails.
+  Customers can build views, act through your APIs, and automate work inside your brand and guardrails.
 </p>
 
 <p align="center">
@@ -14,133 +14,59 @@
   <a href="https://docs.vendo.run">Docs</a>
   &nbsp;·&nbsp;
   <a href="https://docs.vendo.run/quickstart">Quickstart</a>
-  &nbsp;·&nbsp;
-  <a href="#see-it-in-action">Demos</a>
-  &nbsp;·&nbsp;
-  <a href="https://vendo.run/pricing">Cloud</a>
 </p>
 
 ```bash
-npm install vendoai
+npm install @vendoai/vendo
 npx vendo init
 ```
 
-<br>
+`@vendoai/vendo` is the default composition. The `vendoai` package is a thin
+alias. Install individual blocks when you want to compose Vendo yourself.
 
-## See it in action
+## What Vendo does
 
-Every capture below is a real agent run in a demo host app, not a mockup.
+- Runs a streaming agent with any AI SDK `LanguageModel`.
+- Extracts your API as tools and executes present calls with the signed-in user's session.
+- Builds user-owned apps from a format-tagged UI document, escalating to a sandboxed server only when needed.
+- Applies policy, approvals, grants, breakers, and audit at one execution choke point.
+- Runs scheduled, host-event, and external-trigger automations with app-bound grants.
+- Ships headless hooks plus optional, theme-driven React chrome.
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="assets/hero.gif" alt="A Maple customer asks where their money went and the agent composes a live spending view" width="100%">
-      <p align="center"><sub><b>Build views.</b> Ask a question, get a live view composed from the host's own components and API.</sub></p>
-    </td>
-    <td width="50%" valign="top">
-      <img src="assets/voice.gif" alt="A Maple voice session: the user asks out loud where their money went and the agent renders the view while talking back" width="100%">
-      <p align="center"><sub><b>Talk to it.</b> A live voice session: ask out loud, the agent talks back and renders the view.</sub></p>
-    </td>
-  </tr>
-</table>
+PGlite at `.vendo/data` is the zero-config store. Production uses the same
+schema on Postgres. Generated components run in an iframe jail with
+`connect-src 'none'`. App machines reach host tools only through the guarded
+tool proxy.
 
-## Why Vendo
+## Packages
 
-Every customer wants your product to be a little different. A rearranged
-dashboard, a missing report, a workflow they repeat by hand every morning.
-Today those wishes die in a feature-request queue. Vendo turns them into
-things customers do themselves, safely, inside your product.
+| Package | One job |
+| --- | --- |
+| `@vendoai/core` | Shared types, schemas, formats, validators, and seams |
+| `@vendoai/store` | Postgres persistence, with PGlite as the default |
+| `@vendoai/agent` | Conversation loop, streaming, tools, and thread context |
+| `@vendoai/actions` | Host API and connector tools executed as the signed-in user |
+| `@vendoai/guard` | Policy, approvals, grants, audit, breakers, and safety |
+| `@vendoai/apps` | App generation, editing, execution, interchange, and sandbox adapters |
+| `@vendoai/automations` | Trigger ingestion, schedules, away runs, and run history |
+| `@vendoai/ui` | Headless React hooks, optional chrome, tree rendering, and voice surfaces |
+| `@vendoai/telemetry` | Anonymous, opt-out build and development telemetry |
+| `@vendoai/vendo` | Default composition, public wire, React entry, and `vendo` bin |
 
-It is not a chatbot bolted onto your app. The agent works through the same
-API and components you already ship, renders in your brand, and never steps
-outside your permission policy.
+## Install flow
 
-## What it does
+`vendo init` scans the host app, interviews you about risk labels, theme, and
+remix candidates, then proposes the handler route and `<VendoRoot>` wiring.
+Every code change is permission-gated and shown as a diff. It writes the
+reviewable `.vendo/` directory and leaves the PGlite data directory ignored.
 
-| | |
-|---|---|
-| **Views on demand** | Customers describe what they want to see. The agent composes it from your component catalog and live API data, rendered in your brand. |
-| **Integrations** | Gmail, Slack, Calendar, and any MCP server, each behind per-tool consent. |
-| **Guardrails** | Generated UI runs in a sandboxed iframe with no network egress. Every mutating action passes your permission policy: consent prompts, approval tokens, judged rules. |
-| **Any provider** | Bring your own key for Anthropic, OpenAI, or Google. Works with any AI SDK provider. |
+Run `vendo doctor` to check wiring and probe `/status`. Run `vendo sync` in
+build and development flows to refresh extracted tools and remix baselines.
 
-## Get started
+Read the [quickstart](https://docs.vendo.run/quickstart) for the complete
+composition and first-turn setup.
 
-1. Install the package, then run the codemod in your Next.js app:
+## License
 
-   ```bash
-   npm install vendoai
-   npx vendo init
-   ```
-
-   The codemod extracts your theme, derives agent tools from your OpenAPI
-   spec, and wires the routes.
-
-2. Add one provider key to `.env.local`: `ANTHROPIC_API_KEY`,
-   `OPENAI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`.
-
-3. Start your dev server. The Vendo surface is live in your product.
-
-<p align="center">
-  <img src="assets/init.gif" alt="vendo init running against a real Next.js app: theme extracted, tools derived from the OpenAPI spec, components wrapped, routes wired" width="100%">
-</p>
-<p align="center"><sub>A real <code>vendo init</code> run: theme extracted from your CSS, 17 agent tools derived from the app's OpenAPI spec, 11 components wrapped for generated UI, routes wired.</sub></p>
-
-Full walkthrough: [docs.vendo.run/quickstart](https://docs.vendo.run/quickstart).
-
-Want to try it before integrating? `pnpm demo` runs Maple, a demo bank with
-Vendo embedded. `pnpm demo:accounting` runs Cadence, an accounting firm app
-with generated views and voice.
-
-## How it works
-
-The agent acts through your product's OpenAPI surface as the signed-in user.
-Generated UI renders in a sandboxed iframe with no network egress, and host
-components render natively from your catalog. Every mutating action flows
-through your permission policy. Deeper docs: [docs.vendo.run](https://docs.vendo.run).
-
-<details>
-<summary><b>Packages</b></summary>
-
-| Package | What it is |
-|---|---|
-| `vendoai` | The public install (interim name; bare `vendo` pending an npm name-dispute): `vendoai/server` (`createVendoHandler`) + `vendoai/react` (`<VendoRoot>`) |
-| `@vendoai/cli` | `vendo init` installs Vendo into a Next.js app; `refresh` catches up, `doctor` checks the install |
-| `@vendoai/core` | Manifest schemas, GenUI format, and runtime seam contracts |
-| `@vendoai/server` | Provider-agnostic agent server (bring any AI SDK provider) |
-| `@vendoai/runtime` | Embedded runtime: tools, automations, MCP client |
-| `@vendoai/react` | React provider + `useVendoChat` |
-| `@vendoai/shell` | The embedded surfaces: tabbed page, overlay, slot |
-| `@vendoai/components` | Brand-themeable component catalog |
-| `@vendoai/stage` | Sandboxed stage runtime and bridge for generated UI |
-| `@vendoai/store` | Durable persistence (PGlite default, Postgres in prod) |
-| `@vendoai/telemetry` | Anonymous, opt-out build/dev telemetry |
-
-</details>
-
-## FAQ
-
-<details>
-<summary><b>Is customer data safe?</b></summary>
-<br>Generated UI runs in a sandboxed iframe with no network egress. The agent acts through your API as the signed-in user, so your existing authorization applies. Nothing leaves your infrastructure except calls to the model provider key you configure.
-</details>
-
-<details>
-<summary><b>Do I need a Vendo account?</b></summary>
-<br>No. Vendo is open source and self-hosted. You bring a provider API key. No signup, no hosted dependency, and no telemetry on end users.
-</details>
-
-<details>
-<summary><b>What does it cost?</b></summary>
-<br>Self-hosting is free: the code is Apache-2.0 and you pay your model provider for the tokens your customers use. A managed cloud with enterprise controls is on the way, see <a href="https://vendo.run/pricing">vendo.run/pricing</a>.
-</details>
-
-<details>
-<summary><b>Which frameworks are supported?</b></summary>
-<br>Next.js App Router today via the <code>vendoai</code> package's ready-made route pair. The agent server is a plain fetch handler underneath (plus a Node adapter for Express/<code>node:http</code>), so other frameworks can wire it manually.
-</details>
-
-<details>
-<summary><b>How does it match my brand?</b></summary>
-<br><code>vendo init</code> extracts design tokens from your app, and generated UI composes your own wrapped components plus a themeable catalog.
-</details>
+Apache-2.0. Cloud-gated sharing, publishing, org overlays, and pinning activate
+with `VENDO_API_KEY`; the open-source blocks remain self-hosted.

@@ -1,55 +1,29 @@
 ---
-title: "Integrations"
-description: "Connect external tools like Gmail, Slack, and Notion through Composio OAuth, then run them under the same approval policy as your own tools."
+title: "Connectors"
+description: "Normalize Composio and remote MCP tools into the same guarded tool registry."
 ---
 
-Vendo uses Composio for external integrations. When a customer connects a toolkit, Vendo can ingest that toolkit's tools for that customer and run them through the same approval policy as your own tools.
-
-Set the key on the server that hosts `createVendoHandler`.
-
-```bash
-COMPOSIO_API_KEY=...
-```
-
-With the key present, `GET /api/vendo/capabilities` reports `integrations: true` and the integrations tray uses `GET|POST /api/vendo/integrations`.
-
-Without the key, integrations stay inert. The capabilities response reports `integrations: false`, the tray has an empty catalog, and `POST /api/vendo/integrations` returns `503` with a message to set `COMPOSIO_API_KEY`.
-
-## Catalog
-
-Vendo ships a default catalog for Gmail, Slack, Notion, GitHub, Google Calendar, Linear, Google Drive, Discord, Google Sheets, Stripe, Jira, Asana, HubSpot, and Airtable.
-
-You can replace the visible catalog with the `integrations` handler option. Each `id` must be the Composio toolkit slug that Vendo should connect.
+The actions block accepts connector implementations:
 
 ```ts
-import { createVendoHandler } from "vendoai/server";
+export interface Connector {
+  name: string;
+  descriptors(): Promise<ToolDescriptor[]>;
+  execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
+}
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export const { GET, POST } = createVendoHandler({
-  integrations: [
-    { id: "gmail", name: "Gmail" },
-    { id: "slack", name: "Slack" },
-  ],
-});
+export function composioConnector(config: { apiKey: string; entityId?: (ctx: RunContext) => string; apps?: string[] }): Connector;
+export function mcpConnector(config: { url: string; headers?: Record<string, string>; name?: string }): Connector;
 ```
 
-## Connect Flow
+Connector names normalize into the provider-safe tool charset, such as
+`gmail_send` and `mcp_server_tool`. Names longer than 64 characters are
+truncated and suffix-hashed.
 
-Customers can connect tools in two places:
+Connector annotations supply risk when available. Otherwise Vendo defaults to
+`write`. Overrides can change the reviewed risk. Connector authentication is
+provider-specific, but every call still crosses the same guard and approval
+path.
 
-- The integrations tray lists the catalog, shows connected status, and lets customers connect or disconnect a toolkit.
-- The agent can call `request_connect` when a request needs a toolkit that is not connected yet. That emits a host-rendered `Connect` card with the toolkit and an optional reason.
-
-The default Next client opens the Composio OAuth URL in a popup, polls the status endpoint, and marks the toolkit connected once Composio reports the connected account as active. The next agent turn is built from the connected toolkit list.
-
-## Webhook Triggers
-
-Integration connections also back Composio-triggered automations. For webhook delivery, configure `COMPOSIO_WEBHOOK_SECRET` and point Composio at:
-
-```text
-POST https://your-host.example.com/api/vendo/webhooks/composio
-```
-
-If `COMPOSIO_WEBHOOK_SECRET` is not set, that route returns `404` so unsigned webhook calls cannot fire automations.
+This connector support is distinct from the deferred MCP venue. V0 does not
+expose an MCP server door into the agent.

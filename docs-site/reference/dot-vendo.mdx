@@ -1,105 +1,21 @@
 ---
 title: "The .vendo directory"
-description: "Every file vendo init writes into .vendo — theme.json, tools.json, component descriptors and impls — and which hand edits are supported."
+description: "The complete host-side directory contract and the writer for each path."
 ---
 
-`.vendo/` is Vendo's reviewable source of truth inside your repo. The server
-loader reads it at runtime. Missing files fall back to safe defaults. Present
-but invalid JSON or schema-invalid files fail loudly at boot.
-
-`vendo init` refuses to overwrite generated `.vendo/` files unless you pass
-`--force`.
-
-## Files Written By `vendo init`
-
-| Path | When written | Hand edits |
+| Path | Written by | Format |
 | --- | --- | --- |
-| `.vendo/README.md` | Every successful init extraction. | Supported. It is documentation for your generated artifacts. |
-| `.vendo/theme.json` | Written by theme extraction when possible. If Next.js wiring runs and the file is absent, a default theme is written so the generated wrapper can import it. | Supported. Keep the schema valid: `version`, literal hex colors, `fontFamily`, `radius`, and optional `mode`. |
-| `.vendo/tools.json` | Written from OpenAPI when a spec is found, from route scanning when an LLM finds tools, or as an empty manifest during Next.js wiring if the file is absent. | Supported. This is the reviewed API surface. Edit tool descriptions, schemas, bindings, events, and safety annotations. |
-| `.vendo/components/<Name>/descriptor.ts` | Written only when LLM component discovery includes a component. | Supported. Keep it exporting a valid `RegisteredComponent` descriptor with `source: "host"`. |
-| `.vendo/components/<Name>/impl.tsx` | Written with each component descriptor. | Supported. Review generated JSX like any other code. The wrapper runs inside the sandbox, but it is still code in your repo. |
-| `.vendo/components/entry.ts` | Written only when one or more component wrappers are written. | Supported. Update it if you add, remove, or rename wrappers by hand. |
-| `.vendo/components/vite.config.mts` | Written only when one or more component wrappers are written. | Supported. Adjust aliases or build settings if your host component bundle needs them. |
+| `tools.json` | sync | `vendo/tools@1` (04) |
+| `overrides.json` | init interview / human | `vendo/overrides@1` (04) |
+| `policy.json` | init / human | `vendo/policy@1` (05) |
+| `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
+| `brief.md` | init | product brief for the system prompt (03 §3) |
+| `design-rules.md` | host, optional | generation-time design rules (06 §5) |
+| `theme.json` | init extraction | `VendoTheme` |
+| `data/` | store | PGlite files (gitignored; init writes the ignore) |
 
-## `theme.json`
+This table is complete. Sync owns generated tool and remix baseline files.
+Human overrides remain separate so extraction never overwrites reviewed risk,
+descriptions, or disabled state.
 
-`theme.json` must match the brand token schema:
-
-```json
-{
-  "version": 1,
-  "accent": "#0A7CFF",
-  "background": "#FFFFFF",
-  "surface": "#F5F7FA",
-  "text": "#111418",
-  "mutedText": "#5B6470",
-  "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-  "radius": 8,
-  "mode": "light"
-}
-```
-
-Use literal values. CSS variables, URLs, and unresolved font references are not
-accepted by the schema.
-
-## `tools.json`
-
-`tools.json` has this top-level shape:
-
-```json
-{
-  "version": 1,
-  "tools": [],
-  "events": []
-}
-```
-
-Each tool includes:
-
-| Field | Behavior |
-| --- | --- |
-| `name` | Tool-call identifier. Must start with a letter and may contain letters, numbers, `_`, and `-`. |
-| `description` | Text the model uses to decide when to call the tool. |
-| `inputSchema` | JSON Schema object for tool input. Path and query params are top-level properties. A JSON request body is the `body` property. |
-| `annotations.mutating` | `false` means read-only. `true` means the policy treats it as a write. |
-| `annotations.dangerous` | `true` marks a tool as destructive or otherwise high risk. |
-| `annotations.idempotent` | Optional hint that repeated calls with the same input are safe. |
-| `binding` | Currently only `{ "type": "http", "method": "...", "path": "..." }`. Paths must be host-relative and may use `{param}` templates. |
-
-OpenAPI extraction can mark read-shaped `GET` operations as non-mutating.
-Route scanning marks every tool mutating by default. Relax route-scanned tools
-only after review.
-
-Events are optional automation triggers. Event names must be dot-namespaced
-lower snake case, for example `invoice.paid`.
-
-## Files Read But Not Written By `init`
-
-| Path | Writer | Hand edits |
-| --- | --- | --- |
-| `.vendo/mcp.json` | You create this file by hand. | Supported. It declares MCP servers. Header values may use `${ENV_VAR}` templates. Missing env values drop that server at boot. |
-
-## `mcp.json`
-
-`mcp.json` is optional and uses this shape:
-
-```json
-{
-  "version": 1,
-  "servers": [
-    {
-      "name": "internal",
-      "url": "https://mcp.example.com/mcp",
-      "headers": {
-        "authorization": "Bearer ${INTERNAL_MCP_TOKEN}"
-      },
-      "tools": ["search"]
-    }
-  ]
-}
-```
-
-Only `http://` and `https://` server URLs are accepted. Server names must use
-letters, digits, `_`, or `-`. Duplicate or prefix-ambiguous server names are
-rejected because MCP tool names are prefixed with the server name.
+`data/` is runtime state, not configuration. Do not commit it.

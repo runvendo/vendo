@@ -1,114 +1,54 @@
 ---
 title: "Tools from your API"
-description: "Generate .vendo/tools.json from your OpenAPI spec or App Router routes so the agent can call your API on the signed-in user's session."
+description: "Extract host routes into provider-safe tools and execute them as the signed-in user."
 ---
 
-`.vendo/tools.json` is the reviewed API surface Vendo exposes to the agent. The server registers these tools with the model, and the browser executes them against your host API on the signed-in user's session.
-
-The file is versioned and strict:
+Vendo sync extracts OpenAPI operations and host routes into
+`.vendo/tools.json`. Extraction runs during build and development so the tool
+surface does not drift.
 
 ```json
 {
-  "version": 1,
+  "format": "vendo/tools@1",
   "tools": [
     {
-      "name": "list_invoices",
-      "description": "List invoices visible to the signed-in user.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "status": { "type": "string" }
-        }
-      },
-      "annotations": {
-        "mutating": false,
-        "dangerous": false
-      },
+      "name": "host_invoices_list",
+      "description": "List invoices",
+      "inputSchema": {},
+      "risk": "read",
       "binding": {
-        "type": "http",
+        "kind": "route",
         "method": "GET",
-        "path": "/api/invoices"
+        "path": "/api/invoices",
+        "argsIn": "query"
       }
     }
-  ],
-  "events": []
+  ]
 }
 ```
 
-`binding.path` must be host-relative, start with one `/`, and contain no whitespace. It cannot point at another origin. Vendo converts the manifest to host tool definitions in one way: path template fields become path params, every other top-level property becomes a query param, and the special `body` property becomes the JSON request body.
+Tool names use letters, numbers, `_`, and `-`, with a maximum of 64
+characters. Use `_` for namespaces. Each descriptor includes JSON Schema input
+and a `read`, `write`, or `destructive` risk label.
 
-## OpenAPI extraction
+Route scans fail closed. A route the extractor cannot classify is emitted as
+disabled with a note.
 
-When `vendo init` finds an OpenAPI or Swagger file, it uses that before any route scan.
-
-The OpenAPI extractor reads `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` operations. It does not extract `HEAD`.
-
-For each operation it writes:
-
-- `name` from `operationId`, converted to snake case. If there is no `operationId`, the name comes from method plus path.
-- `description` from `summary` and `description`, or the HTTP method and path.
-- `inputSchema` with path and query params as top-level properties.
-- `inputSchema.properties.body` for an `application/json` request body.
-- `binding.type: "http"`, uppercase `binding.method`, and the route path.
-
-Local `#/...` references are resolved during extraction. Invalid tool entries are dropped and reported instead of producing an invalid manifest.
-
-## Route scan fallback
-
-If there is no OpenAPI file and an LLM model is available, `vendo init` scans `app/api/**/route.ts` and `app/api/**/route.tsx`.
-
-The route scan asks the model to describe exported `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` handlers, then validates the result against the actual route files. A proposed tool is dropped if its path has no matching route file or its method is not actually exported.
-
-If there is no OpenAPI file and no model key, tool extraction is skipped. On a Next.js app, the wiring step still creates an empty fallback `.vendo/tools.json` so the generated root wrapper can import it.
-
-## Safety annotations
-
-Annotations fail closed. They are required on every manifest tool.
-
-| Field | Meaning |
-| --- | --- |
-| `mutating` | `false` means the tool is read-only and can run without approval under the default policy. |
-| `dangerous` | `true` means the tool is approval-gated even if other hints look safe. |
-| `idempotent` | Optional. Used to mark repeatable writes such as `PUT` and `DELETE`. |
-
-OpenAPI tools are conservative. A `GET` is marked read-only only when the tool name is read-shaped, such as `get`, `list`, `fetch`, `search`, `find`, `read`, `show`, `query`, `describe`, or `count`, and is not destructive. Other operations are marked mutating. `DELETE` and destructive names such as `delete`, `remove`, `destroy`, `cancel`, `reset`, `revoke`, `purge`, or `wipe` are marked dangerous.
-
-Route-scanned tools are always marked `mutating: true`. Non-destructive routes look like this:
+## Durable overrides
 
 ```json
 {
-  "mutating": true,
-  "dangerous": false
-}
-```
-
-`DELETE` routes and destructive names are also marked `dangerous: true`. The fail-closed default is intentional. The scan is model-read code, so it cannot grant auto-run permission.
-
-## Relax by hand
-
-Edit `.vendo/tools.json` when you have reviewed a tool and know it is safe.
-
-For a read-only endpoint that should run without an approval card:
-
-```json
-{
-  "annotations": {
-    "mutating": false,
-    "dangerous": false
+  "format": "vendo/overrides@1",
+  "tools": {
+    "host_invoices_delete": { "risk": "destructive", "critical": true },
+    "host_internal_debug": { "disabled": true }
   }
 }
 ```
 
-For a repeatable write that still needs approval:
+Sync never edits overrides. Overrides win field by field, then Vendo computes
+the descriptor hash. A risk change intentionally lapses old grants.
 
-```json
-{
-  "annotations": {
-    "mutating": true,
-    "dangerous": false,
-    "idempotent": true
-  }
-}
-```
-
-The runtime maps these fields to policy hints. `mutating: false` becomes `readOnlyHint: true`; `dangerous: true` becomes `destructiveHint: true`; unknown or mutating tools pause for user approval under the default policy.
+Present route calls forward the inbound request's cookie and authorization
+headers on a same-origin fetch. Away calls require both an app-bound grant and
+the host's `actAs` seam.

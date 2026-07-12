@@ -1,117 +1,38 @@
 ---
 title: "Scheduler and webhooks"
-description: "Run automations from schedules and Composio webhooks with the in-process scheduler, or drive ticks externally via a cron and bearer secret."
+description: "Drive UTC schedules, host events, and verified external triggers."
 ---
 
-Automations can fire from two server-side paths:
+## Schedules
 
-- The in-process scheduler checks time-based schedules.
-- The Composio webhook route receives external trigger deliveries.
+Long-lived hosts can call `automations.start()`. Serverless hosts schedule:
 
-Both paths use the same automation runner and durable store when storage is enabled.
+```http
+POST /api/vendo/tick
+Authorization: Bearer <secret>
+```
 
-## Boot The Scheduler
+Schedules support exactly one of a five-field `cron`, a duration such as
+`15m`, or a one-shot UTC timestamp. Cron evaluates in UTC. If the host misses a
+window, the next tick fires once and never back-fills.
 
-`vendo init` writes `instrumentation.ts`, or `src/instrumentation.ts` when your App Router lives under `src/app`. The file starts Vendo's scheduler in the Next.js Node.js runtime:
+## Host events
+
+Emit from the host code path that owns the event:
 
 ```ts
-export async function register() {
-  if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { startVendoScheduler } = await import("vendoai/server");
-    startVendoScheduler();
-  }
-}
+await vendo.emit("invoice.paid", invoice, principal);
 ```
 
-`startVendoScheduler()` is idempotent. It starts an unref'd interval that ticks every 60 seconds, so it does not keep the host process alive by itself.
+This runs enabled automations for that principal whose host-event name matches.
 
-At boot, Vendo rehydrates enabled schedules from durable storage. Missed fires are skipped. A one-shot schedule whose time passed while the server was down is paused as completed instead of firing late.
+## External deliveries
 
-## External Scheduler Mode
+Mount `POST /webhooks/:source`. Connector sources use their own signature
+scheme. Self-minted sources sign HMAC-SHA256 over
+`id.timestamp.rawBody`, place signature, timestamp, and delivery id in headers,
+and accept only a five-minute clock window.
 
-Set `VENDO_SCHEDULER=external` to disable the in-process timer:
-
-```bash
-VENDO_SCHEDULER=external
-VENDO_TICK_SECRET=replace-me
-```
-
-Then run one cron job that sends:
-
-```bash
-curl -X POST https://your-app.example.com/api/vendo/tick \
-  -H "Authorization: Bearer $VENDO_TICK_SECRET"
-```
-
-The route is `POST <mount>/tick`. With the default Next.js mount, that is `POST /api/vendo/tick`.
-
-When `VENDO_TICK_SECRET` is set, a matching bearer token can tick without a user principal. A wrong bearer token returns `401` with `invalid tick credential`. If no bearer token is presented, the request falls back to the normal `principal` or remote guard.
-
-<Warning>
-  Run only one external cron for a Vendo world. The embedded runtime is
-  single-process and single-tenant.
-</Warning>
-
-## Cron Relay Example
-
-If your cron provider cannot send a custom authorization header, point it at a route in your app and have that route make the authenticated POST.
-
-```ts
-// app/api/cron/vendo-tick/route.ts
-export async function GET(req: Request) {
-  const origin = new URL(req.url).origin;
-
-  const res = await fetch(`${origin}/api/vendo/tick`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.VENDO_TICK_SECRET}`,
-    },
-  });
-
-  return new Response(null, { status: res.ok ? 200 : 502 });
-}
-```
-
-A scheduled Worker can call the tick route directly:
-
-```ts
-export default {
-  async scheduled(
-    _event: ScheduledEvent,
-    env: { APP_ORIGIN: string; VENDO_TICK_SECRET: string },
-  ) {
-    await fetch(`${env.APP_ORIGIN}/api/vendo/tick`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.VENDO_TICK_SECRET}`,
-      },
-    });
-  },
-};
-```
-
-## Composio Webhooks
-
-Vendo serves a Composio trigger ingress route:
-
-```txt
-POST /api/vendo/webhooks/composio
-```
-
-Set the signing secret from Composio in your deployment:
-
-```bash
-COMPOSIO_WEBHOOK_SECRET=whsec_...
-```
-
-Then configure Composio to send webhooks to your deployed route. If you mounted Vendo somewhere other than `/api/vendo`, use `POST <mount>/webhooks/composio`.
-
-Vendo verifies the raw request body with the `webhook-id`, `webhook-timestamp`, and `webhook-signature` headers. The timestamp must be within five minutes. Missing or invalid signatures return `401`.
-
-If `COMPOSIO_WEBHOOK_SECRET` is not set, the route returns `404` with `composio webhooks are not configured`. It fails closed rather than accepting unsigned requests.
-
-Webhook routing depends on the connected-account id captured during the OAuth status poll. If a toolkit shows connected but trigger webhooks do not fire, disconnect and reconnect it once so Vendo records the Composio connected-account mapping.
-
-## Local Development
-
-Composio cannot deliver to `localhost`. Use a tunnel to your local server, or test the automation manually from chat while developing.
+Vendo rejects unverified deliveries before principal resolution or dispatch.
+Delivery ids are deduplicated, so at-least-once retries do not double-run an
+automation. Secrets never travel in the URL.

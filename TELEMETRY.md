@@ -15,7 +15,7 @@ Every event uses a random anonymous id plus the event properties listed here. Th
 | `agent_run` | `vendoVersion`, `osPlatform`, `nodeVersion` |
 | `error_class` | `vendoVersion`, `osPlatform`, `nodeVersion`, `errorClass` |
 
-`init_completed` fields are all small integers or short enums: `command` is `init` or `refresh`; `componentsOffered`/`componentCount` are the catalog picker's offered/accepted counts; `remixOffered`/`remixWrapped`/`remixSkipped` are the remix picker's anchor counts. `doctor_run` carries the health-check's hard-`failures` count, `warnings` count, and a `wired` bool. No event carries component names, ids, labels, file paths, keys, or any other content — counts and enums only.
+`init_completed` fields are all small integers or short enums: `command` is `init` only; `componentsOffered`/`componentCount` are the catalog picker's offered/accepted counts; `remixOffered`/`remixWrapped`/`remixSkipped` are the remix picker's anchor counts. `doctor_run` carries the health-check's hard-`failures` count, `warnings` count, and a `wired` bool. No event carries component names, ids, labels, file paths, keys, or any other content — counts and enums only.
 
 Example payload:
 
@@ -56,13 +56,13 @@ Vendo creates a random UUID and stores it in `~/.vendo/telemetry.json` with two 
 
 Any one of these disables product telemetry:
 
-- `vendo telemetry disable`
 - `VENDO_TELEMETRY_DISABLED=1`
+- set `"optedOut": true` in `~/.vendo/telemetry.json`
 - `DO_NOT_TRACK=1`
 - CI environments, detected from `CI`
 - Production runtime, when `NODE_ENV=production`
 
-Run `vendo telemetry enable` to clear the local opt-out flag. Scarf also honors `DO_NOT_TRACK`.
+Set `"optedOut": false` in `~/.vendo/telemetry.json` to clear the local opt-out flag. Scarf also honors `DO_NOT_TRACK`.
 
 ## Where Data Goes
 

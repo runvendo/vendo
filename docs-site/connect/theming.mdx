@@ -1,103 +1,23 @@
 ---
 title: "Theming"
-description: "Extract brand tokens into .vendo/theme.json so generated UI and the sandbox stage inherit your accent, surface, text colors, radius, and font."
+description: "The VendoTheme tokens used by every shipped chrome surface."
 ---
 
-Vendo themes generated UI from `.vendo/theme.json`. The file is extracted by `vendo init`, imported by the generated `VendoRoot`, and consumed by both the host shell and the sandbox stage.
+Init extracts `.vendo/theme.json`. The theme has this exact shape:
 
-## Theme tokens
-
-The theme file uses the `BrandTokens` v1 shape:
-
-```json
-{
-  "version": 1,
-  "accent": "#0A7CFF",
-  "background": "#FFFFFF",
-  "surface": "#F5F7FA",
-  "text": "#111418",
-  "mutedText": "#5B6470",
-  "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-  "radius": 8,
-  "mode": "light"
+```ts
+export interface VendoTheme {
+  colors: { background: string; surface: string; text: string; muted: string; accent: string; accentText: string; danger: string; border: string };
+  typography: { fontFamily: string; headingFamily?: string; baseSize: string };
+  radius: { small: string; medium: string; large: string };
+  density: "compact" | "comfortable";
+  motion: "full" | "reduced";
 }
 ```
 
-All color values must be literal hex colors. `fontFamily` must be a resolved font stack string. `radius` can be a non-negative number or a pixel string such as `"12px"`. `mode` is optional and can be `"light"` or `"dark"`.
+Pass partial runtime overrides through `VendoProvider.theme`. Shipped chrome
+derives its colors, typography, radius, density, and motion from these tokens.
+It does not hardcode a Vendo brand.
 
-If `theme.json` is missing, Vendo uses the default brand. If it exists but does not match the schema, the handler fails loudly so you can fix the reviewed file.
-
-## What the extractor does
-
-`vendo init` scans CSS variables from your CSS files and Tailwind config. It maps matching variables into brand slots:
-
-- `accent` from names like `accent`, `primary`, `brand`, or `cta`.
-- `background` from names like `background` or `bg`.
-- `surface` from names like `surface`, `card`, or `panel`.
-- `mutedText` from names like `fg-muted`, `text-muted`, or `muted`.
-- `text` from names like `ink`, `text`, `fg`, or `foreground`.
-- `radius` from a radius variable.
-- `fontFamily` from a resolved font stack.
-
-Unresolved CSS variables are not emitted. Dark-scoped variables are detected, but the generated `theme.json` carries one mode per file today. Edit the file by hand when the automatic mapping is not the brand you want.
-
-## Sandbox CSS variables
-
-Vendo derives CSS variables from the brand tokens and injects them into the host shell and sandbox:
-
-```ts
-import { brandToCssVars } from "@vendoai/components/descriptors";
-
-const vars = brandToCssVars(brand);
-```
-
-The derived variables include:
-
-```css
---vendo-accent
---vendo-bg
---vendo-surface
---vendo-fg
---vendo-fg-muted
---vendo-font
---vendo-radius
---vendo-border
---vendo-skeleton
---vendo-shadow
-```
-
-Use these tokens in generated component code and host component adapters. The sandbox does not inherit your app's CSS variables or loaded fonts.
-
-```tsx
-<div
-  style={{
-    background: "var(--vendo-surface)",
-    color: "var(--vendo-fg)",
-    border: "1px solid var(--vendo-border)",
-    borderRadius: "var(--vendo-radius)",
-  }}
->
-  Branded content
-</div>
-```
-
-## CSS for host components
-
-Host components that rely on app classes need their CSS inside the sandbox. The manual host bundle API supports a `css` option:
-
-```ts
-import { installVendoHost } from "@vendoai/components/sandbox";
-import { hostImpls } from "./impls";
-
-installVendoHost(hostImpls, {
-  css: `
-    .status-pill {
-      display: inline-flex;
-      border-radius: var(--vendo-radius);
-      color: var(--vendo-fg);
-    }
-  `,
-});
-```
-
-The sandbox keeps `connect-src 'none'`, so styles cannot fetch from the network.
+Generation receives the same theme. Optional `.vendo/design-rules.md` adds
+generation-time design rules without changing runtime tokens.
