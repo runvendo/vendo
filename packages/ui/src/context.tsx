@@ -3,6 +3,7 @@ import type { VendoTheme } from "@vendoai/core";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 import { createVendoClient, type VendoClient } from "./client.js";
 import { defaultVendoTheme, resolveTheme } from "./theme.js";
+import type { VoiceDriver } from "./voice/driver.js";
 
 export interface VendoContextValue {
   client: VendoClient;
@@ -10,6 +11,8 @@ export interface VendoContextValue {
   components: Record<string, ComponentType>;
   /** Resolved brand tokens (defaults ⊕ provider overrides). */
   theme: VendoTheme;
+  /** Optional host-provided voice transport (08 §3). */
+  voice?: { driver: VoiceDriver };
 }
 
 const VendoContext = createContext<VendoContextValue | null>(null);
@@ -18,16 +21,18 @@ export function VendoProvider(props: {
   client?: VendoClient;
   components?: Record<string, ComponentType>;
   theme?: Partial<VendoTheme>;
+  voice?: { driver: VoiceDriver };
   children: ReactNode;
 }): ReactNode {
-  const { client, components, theme, children } = props;
+  const { client, components, theme, voice, children } = props;
   const value = useMemo<VendoContextValue>(
     () => ({
       client: client ?? createVendoClient({}),
       components: components ?? {},
       theme: resolveTheme(defaultVendoTheme, theme),
+      voice,
     }),
-    [client, components, theme],
+    [client, components, theme, voice],
   );
   return <VendoContext.Provider value={value}>{children}</VendoContext.Provider>;
 }
