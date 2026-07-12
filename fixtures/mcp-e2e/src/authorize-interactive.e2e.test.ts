@@ -35,11 +35,16 @@ describe("OAuth consent delegation and protocol sad paths", () => {
       expect(mismatch.status).toBe(400);
       expect(await mismatch.json()).toMatchObject({ error: "invalid_request" });
 
-      const authorization = await authorizeCode(stack, registered.body.client_id);
-      const code = new URL(authorization.headers.get("location") ?? "").searchParams.get("code");
-      if (!code) throw new Error("Authorization omitted code");
+      // Each exchange consumes its code on presentation (single-use), so the
+      // bad-PKCE attempt and the good exchange each need a fresh code.
+      const mintCode = async (): Promise<string> => {
+        const authorization = await authorizeCode(stack, registered.body.client_id);
+        const code = new URL(authorization.headers.get("location") ?? "").searchParams.get("code");
+        if (!code) throw new Error("Authorization omitted code");
+        return code;
+      };
       const badPkce = await exchangeCode(stack, {
-        code,
+        code: await mintCode(),
         client_id: registered.body.client_id,
         code_verifier: "x".repeat(43),
       });
@@ -47,7 +52,7 @@ describe("OAuth consent delegation and protocol sad paths", () => {
       expect(await badPkce.json()).toMatchObject({ error: "invalid_grant" });
 
       const exchanged = await exchangeCode(stack, {
-        code,
+        code: await mintCode(),
         client_id: registered.body.client_id,
         code_verifier: VERIFIER,
       });

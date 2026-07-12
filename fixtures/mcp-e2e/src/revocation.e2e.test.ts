@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createStack, resetFixture, SUBJECT } from "./harness.js";
-import { connectWithSdk } from "./support.js";
+import { connectWithSdk, issueTokens, registerClient } from "./support.js";
 
 describe("host revocation kills an MCP session", () => {
   beforeEach(resetFixture);
@@ -24,17 +24,25 @@ describe("host revocation kills an MCP session", () => {
           name: "host_invoices_list",
           arguments: {},
         })).rejects.toThrow();
-        expect(await stack.sql(
-          "SELECT kind, venue FROM vendo_audit WHERE kind = 'door-auth' AND event->'detail'->>'event' = 'revoke'",
-        )).toEqual([{ kind: "door-auth", venue: "mcp" }]);
+        // At least one revoke row lands with venue=mcp. There may be a second:
+        // the SDK client, on the 401, re-runs OAuth and its refresh attempt
+        // hits the now-revoked subject, which correctly revokes the chain too.
+        const revokeRows = await stack.sql(
+          "SELECT DISTINCT venue FROM vendo_audit WHERE kind = 'door-auth' AND event->'detail'->>'event' = 'revoke'",
+        );
+        expect(revokeRows).toEqual([{ venue: "mcp" }]);
 
+        // Un-revoke, then present a FRESH valid token against the OLD session
+        // id: authentication passes, but the session was killed server-side, so
+        // the door answers 404 — proving session death independent of the token.
         stack.revoked.delete(SUBJECT);
-        const token = connected.provider.savedTokens?.access_token;
-        if (!token || !sessionId) throw new Error("SDK session did not retain token and session id");
+        if (!sessionId) throw new Error("SDK session did not retain a session id");
+        const freshClient = await registerClient(stack);
+        const fresh = await issueTokens(stack, freshClient.body.client_id);
         const deadSession = await fetch(stack.endpoint, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${token}`,
+            authorization: `Bearer ${fresh.body.access_token}`,
             "content-type": "application/json",
             "mcp-session-id": sessionId,
             "mcp-protocol-version": "2025-11-25",

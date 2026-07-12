@@ -229,6 +229,11 @@ export class OAuthServer {
     if (!record || !parsed.success || expired(parsed.data.expiresAt)) {
       return oauthJsonError("invalid_grant", "Authorization code is invalid or expired");
     }
+    // The code is single-use the moment it is PRESENTED, not only when it is
+    // redeemed: a stolen code must not survive a failed PKCE/binding attempt
+    // and stay guessable-against for the rest of its TTL.
+    await store.delete(record.id);
+
     const grant = parsed.data;
     if (grant.clientId !== clientId || grant.redirectUri !== redirectUri) {
       return oauthJsonError("invalid_grant", "Authorization code binding mismatch");
@@ -241,7 +246,6 @@ export class OAuthServer {
       return oauthJsonError("invalid_target", "resource does not match the authorization code");
     }
 
-    await store.delete(record.id);
     const tokens = await this.#issueTokens(grant);
     await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "issue");
     return json(publicTokenResponse(tokens), 200, tokenHeaders());
@@ -265,6 +269,13 @@ export class OAuthServer {
       await this.#revokeSubjectClient(grant.subject, grant.clientId);
       await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "revoke");
       return oauthJsonError("invalid_grant", "Refresh token reuse detected");
+    }
+    // 10-mcp §3: principal() is the kill switch. A refresh 30 days later must
+    // not mint a fresh token window for a subject the host has since revoked.
+    if ((await this.#oauth.principal(grant.subject)) === null) {
+      await this.#revokeSubjectClient(grant.subject, grant.clientId);
+      await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "revoke");
+      return oauthJsonError("invalid_grant", "Subject is no longer authorized");
     }
     const requestedResource = form.get("resource");
     if (requestedResource !== null && !sameCanonicalUri(requestedResource, grant.resource)) {
@@ -362,19 +373,68 @@ export class OAuthServer {
 
 const CIMD_MAX_BYTES = 64 * 1024;
 
-/** SSRF floor for the attacker-supplied CIMD URL: https-only, no credentials,
- * no redirects, no IP-literal or loopback/link-local-style hosts, 5s timeout,
- * 64 KB cap. DNS-rebinding-grade egress control stays the host's network
- * policy — the door cannot resolve DNS portably (runs-anywhere). */
+/** True for any IPv4/IPv6 literal that must never be fetched server-side —
+ * loopback, private (RFC 1918), link-local (incl. the cloud-metadata
+ * 169.254.169.254), CGNAT, ULA, and unspecified. */
+function isPrivateAddress(host: string): boolean {
+  const address = host.startsWith("[") ? host.slice(1, -1) : host;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(address);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return (
+      a === 0 || a === 10 || a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) // CGNAT 100.64/10
+    );
+  }
+  const v6 = address.toLowerCase();
+  if (!v6.includes(":")) return false;
+  // Map ::ffff:a.b.c.d back to its v4 rules, then cover ::1, fc00::/7, fe80::/10, ::.
+  const mapped = /(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/.exec(v6);
+  if (mapped) return isPrivateAddress(mapped[1]!);
+  return v6 === "::1" || v6 === "::" || v6.startsWith("fc") || v6.startsWith("fd") ||
+    v6.startsWith("fe8") || v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb");
+}
+
+/** Syntactic SSRF floor for the attacker-supplied CIMD URL: https-only, no
+ * credentials, no redirects, no IP-literal or loopback/link-local-style hosts,
+ * 5s timeout, 64 KB cap. This runs everywhere. */
 function assertPublicCimdHost(url: URL): void {
   const host = url.hostname.toLowerCase();
-  const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-  const isIpv6 = host.startsWith("[") || host.includes(":");
+  const isIpLiteral = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith("[") || host.includes(":");
   if (
-    isIpv4 || isIpv6 || host === "localhost" || host.endsWith(".localhost") ||
-    host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")
+    isIpLiteral || host === "localhost" || host.endsWith(".localhost") ||
+    host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".") ||
+    isPrivateAddress(host)
   ) {
     throw new Error("Client ID Metadata Document host is not a public hostname");
+  }
+}
+
+/** Best-effort DNS-rebinding defense: when a DNS resolver is available (Node),
+ * resolve the CIMD hostname and reject if ANY answer is a private address —
+ * this is what closes the wildcard-DNS bypass (`169-254-169-254.sslip.io`).
+ * On runtimes without node:dns (edge/Bun-without-node-compat) it is a no-op and
+ * the syntactic floor above plus the host's network egress policy stand. */
+async function assertPublicCimdResolution(host: string): Promise<void> {
+  let lookup: ((h: string, opts: { all: true }) => Promise<Array<{ address: string }>>) | undefined;
+  try {
+    const dns = await import("node:dns/promises");
+    lookup = dns.lookup as unknown as typeof lookup;
+  } catch {
+    return; // No resolver here — the syntactic floor already ran.
+  }
+  if (!lookup) return;
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = await lookup(host, { all: true });
+  } catch {
+    throw new Error("Client ID Metadata Document host did not resolve");
+  }
+  if (addresses.some((entry) => isPrivateAddress(entry.address))) {
+    throw new Error("Client ID Metadata Document host resolves to a private address");
   }
 }
 
@@ -408,6 +468,7 @@ async function resolveCimdClient(clientId: string): Promise<ResolvedClient> {
     throw new Error("Client ID Metadata Document client_id must be an HTTPS URL");
   }
   assertPublicCimdHost(url);
+  await assertPublicCimdResolution(url.hostname);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   try {

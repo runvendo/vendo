@@ -20,8 +20,15 @@ const BASE = "https://product.example/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
 
+// The door resolves CIMD hostnames and rejects private answers (SSRF DNS-rebind
+// defense). `.example` is a reserved non-resolving TLD, so mock the resolver;
+// individual tests point it at a private address to exercise the guard.
+const dnsMock = vi.hoisted(() => ({ addresses: [{ address: "93.184.216.34" }] as Array<{ address: string }> }));
+vi.mock("node:dns/promises", () => ({ lookup: async () => dnsMock.addresses }));
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  dnsMock.addresses = [{ address: "93.184.216.34" }];
 });
 
 describe("createMcpDoor routing and OAuth", () => {
@@ -106,6 +113,19 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("refuses a CIMD host that resolves to a private address (DNS-rebind defense)", async () => {
+    const harness = makeHarness();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    // A syntactically-public wildcard-DNS name whose A record is the cloud
+    // metadata IP — the case a purely syntactic check would miss.
+    dnsMock.addresses = [{ address: "169.254.169.254" }];
+    const response = await authorize(harness.door, "https://169-254-169-254.sslip.io/client.json");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_client" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("stray first requests to other paths cannot poison discovery or auth at the real mount", async () => {
     const harness = makeHarness();
     // A scanner probes an unrelated well-known suffix and a random path FIRST.
@@ -176,11 +196,15 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(new URL(wrongResource.headers.get("location")!).searchParams.get("error")).toBe("invalid_target");
     expect(new URL(wrongResource.headers.get("location")!).searchParams.get("state")).toBe("state-1");
 
-    const auth = await authorize(harness.door, registered.body.client_id);
-    const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
+    // A presented code is consumed (single-use, see the dedicated test below),
+    // so each failed exchange below needs its own freshly minted code.
+    const freshCode = async (): Promise<string> => {
+      const auth = await authorize(harness.door, registered.body.client_id);
+      return new URL(auth.headers.get("location")!).searchParams.get("code")!;
+    };
 
     const badPkce = await exchange(harness.door, {
-      code,
+      code: await freshCode(),
       client_id: registered.body.client_id,
       code_verifier: "wrong-verifier",
     });
@@ -188,7 +212,7 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(await badPkce.json()).toMatchObject({ error: "invalid_grant" });
 
     const badTokenResource = await exchange(harness.door, {
-      code,
+      code: await freshCode(),
       client_id: registered.body.client_id,
       code_verifier: VERIFIER,
       resource: "https://other.example/mcp",
@@ -196,9 +220,11 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(await badTokenResource.json()).toMatchObject({ error: "invalid_target" });
 
     const token = await exchange(harness.door, {
-      code,
+      code: await freshCode(),
       client_id: registered.body.client_id,
       code_verifier: VERIFIER,
+      // A trailing slash is the same canonical resource — binding is compared
+      // canonically, not byte-wise.
       resource: `${BASE}/`,
     });
     expect(token.status).toBe(200);
@@ -211,10 +237,13 @@ describe("createMcpDoor routing and OAuth", () => {
     ]);
     expect(harness.audits.at(-1)?.detail).toEqual({ clientId: registered.body.client_id, event: "issue" });
 
+    // Nothing token-shaped is stored in the clear — codes included (an unredeemed
+    // code is live state, so mint one and leave it pending for this assertion).
+    const pendingCode = await freshCode();
     const grants = harness.store.rows("vendo_mcp_grants");
     expect(JSON.stringify(grants)).not.toContain(body.access_token);
     expect(JSON.stringify(grants)).not.toContain(body.refresh_token);
-    expect(JSON.stringify(grants)).not.toContain(code);
+    expect(JSON.stringify(grants)).not.toContain(pendingCode);
   });
 
   it("rejects wrong-resource bearer tokens and rotates refresh tokens with reuse revocation", async () => {
@@ -245,6 +274,53 @@ describe("createMcpDoor routing and OAuth", () => {
       headers: { authorization: `Bearer ${rotated.access_token}` },
     }));
     expect(revoked.status).toBe(401);
+  });
+
+  it("consumes an authorization code the moment it is presented, even on PKCE failure", async () => {
+    const harness = makeHarness();
+    const registration = await register(harness.door);
+    const auth = await authorize(harness.door, registration.body.client_id);
+    const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
+
+    const wrongVerifier = await exchange(harness.door, {
+      code,
+      client_id: registration.body.client_id,
+      code_verifier: `${VERIFIER.slice(0, -1)}X`,
+      resource: BASE,
+    });
+    expect(wrongVerifier.status).toBe(400);
+    expect(await wrongVerifier.json()).toMatchObject({ error: "invalid_grant" });
+
+    // The stolen code is dead: the correct verifier no longer redeems it.
+    const retry = await exchange(harness.door, {
+      code,
+      client_id: registration.body.client_id,
+      code_verifier: VERIFIER,
+      resource: BASE,
+    });
+    expect(retry.status).toBe(400);
+    expect(await retry.json()).toMatchObject({ error: "invalid_grant" });
+  });
+
+  it("sweeps sessions abandoned past the access-token lifetime", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeHarness();
+      const registration = await register(harness.door);
+      const tokens = await issue(harness.door, registration.body.client_id);
+      const connected = await connect(harness.door, tokens.access_token);
+      await connected.client.listTools();
+      const sessionId = connected.transport.sessionId!;
+
+      // The client abandons the session; its token outlives it by a minute.
+      vi.setSystemTime(Date.now() + 61 * 60 * 1000);
+      const revived = await issue(harness.door, registration.body.client_id);
+      const afterSweep = await harness.door.handler(mcpRequest(revived.access_token, sessionId));
+      expect(afterSweep.status).toBe(404);
+      expect(await afterSweep.json()).toMatchObject({ error: { message: "Session not found" } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("resolves HTTPS Client ID Metadata Documents without redirects", async () => {
@@ -343,6 +419,35 @@ describe("createMcpDoor MCP protocol", () => {
     expect(await afterKill.json()).toMatchObject({ error: { message: "Session not found" } });
   });
 
+  it("never serves a session to an ephemeral principal", async () => {
+    const harness = makeHarness({ principal: () => ({ kind: "user", subject: "user_1", ephemeral: true }) });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const response = await harness.door.handler(mcpRequest(tokens.access_token));
+    expect(response.status).toBe(401);
+  });
+
+  it("stops refresh rotation once the subject is revoked, and revokes the chain", async () => {
+    let principal: Principal | null = { kind: "user", subject: "user_1" };
+    const harness = makeHarness({ principal: () => principal });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+
+    principal = null;
+    const refreshed = await harness.door.handler(new Request(`${BASE}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token,
+        client_id: registration.body.client_id,
+      }),
+    }));
+    expect(refreshed.status).toBe(400);
+    expect(await refreshed.json()).toMatchObject({ error: "invalid_grant" });
+    expect(harness.audits.at(-1)?.detail).toEqual({ clientId: registration.body.client_id, event: "revoke" });
+  });
+
   it("adds apps tools metadata and serves the static MCP Apps resource", async () => {
     const app: AppDocument = {
       format: "vendo/app@1",
@@ -367,11 +472,13 @@ describe("createMcpDoor MCP protocol", () => {
     const listed = await connected.client.listTools();
     const open = listed.tools.find((tool) => tool.name === "vendo_apps_open")!;
     const call = listed.tools.find((tool) => tool.name === "vendo_apps_call")!;
+    const list = listed.tools.find((tool) => tool.name === "vendo_apps_list")!;
     expect(open._meta).toEqual({
       ui: { resourceUri: "ui://vendo/tree-shim.html" },
       "ui/resourceUri": "ui://vendo/tree-shim.html",
     });
     expect(call._meta).toEqual(open._meta);
+    expect(list._meta).toEqual(open._meta);
 
     const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: "app_1" } });
     expect(opened.structuredContent).toEqual(app.tree);
@@ -609,16 +716,22 @@ async function connect(door: McpDoor, accessToken: string) {
   return { client, transport };
 }
 
-function mcpRequest(accessToken: string, sessionId: string) {
+function mcpRequest(accessToken: string, sessionId?: string) {
   return new Request(BASE, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
-      "mcp-session-id": sessionId,
+      ...(sessionId === undefined ? {} : { "mcp-session-id": sessionId }),
       "mcp-protocol-version": "2025-11-25",
     },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 99, method: "tools/list", params: {} }),
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 99,
+      ...(sessionId === undefined
+        ? { method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "0" } } }
+        : { method: "tools/list", params: {} }),
+    }),
   });
 }
 

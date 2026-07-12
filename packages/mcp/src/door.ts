@@ -42,7 +42,14 @@ interface SessionState {
   server: Server;
   transport: WebStandardStreamableHTTPServerTransport;
   sessionId?: string;
+  touchedAt: number;
 }
+
+/** A session outlives its access token only for as long as the client keeps
+ * using it (every request re-authenticates). An abandoned session therefore
+ * has no reason to live past the token's own lifetime — sweep it, so the
+ * in-memory maps cannot grow without bound. */
+const SESSION_IDLE_MS = 60 * 60 * 1000;
 
 /** 10-mcp §1. */
 export interface McpDoorConfig {
@@ -135,6 +142,7 @@ class Door {
   async #handleMcp(req: Request, mount: string): Promise<Response> {
     const url = new URL(req.url);
     const resource = resourceUri(url.origin, mount);
+    await this.#sweepIdleSessions();
     const auth = await this.#oauth.authenticate(req);
     if (!auth || !sameCanonicalUri(auth.grant.resource, resource)) {
       return unauthorized(url.origin, mount, req.headers.has("authorization"));
@@ -152,12 +160,19 @@ class Door {
       await this.#oauth.auditRevoke(auth.grant.subject, auth.grant.clientId);
       return unauthorized(url.origin, mount, true);
     }
+    // 10-mcp §2: anonymous/ephemeral principals are never served a session —
+    // the door persists grants and audit and must have a durable subject.
+    if (principal.ephemeral === true) {
+      await this.#killSubject(auth.grant.subject);
+      return unauthorized(url.origin, mount, true);
+    }
     // Only authenticated traffic teaches the server card its mount — an
     // unauthenticated probe to an arbitrary path must not steer discovery.
     this.#cardMount = normalizeMount(mount);
 
     if (requestedSessionId !== undefined) {
       requestedState!.context = mcpContext(principal, requestedSessionId);
+      requestedState!.touchedAt = Date.now();
       return requestedState!.transport.handleRequest(req);
     }
 
@@ -199,6 +214,7 @@ class Door {
       context: mcpContext(principal, `mcpr_${randomHex(16)}`),
       server,
       transport,
+      touchedAt: Date.now(),
     };
     this.#registerHandlers(state, identity);
     await server.connect(transport);
@@ -268,14 +284,16 @@ class Door {
     return mapOutcome(outcome, identity.name);
   }
 
-  /** The ride-along tools are door tool calls like any other (10-mcp §2:
-   * "every door tool call ... risk labels, grants, approvals, audit, breakers
-   * all apply identically"). They are not in the bound registry, so the door
-   * runs the same decide → (maybe park) → execute → report shape through the
-   * core Guard seam itself; guard.check parks the approval on "ask". The
-   * nested ref execution inside AppsPort.call is additionally guard-bound
-   * inside apps, with its own venue="app" context — two decisions, one per
-   * perimeter, never fewer. */
+  /** The ride-along tools are door tool calls like any other (10-mcp §2/§4).
+   * The door holds the core `Guard` seam (check/report) — not `VendoGuard.bind`
+   * (that's already applied to `config.tools`) — so it runs the seam's own
+   * decide → (maybe park) → execute → report here: guard.check parks on "ask",
+   * VendoError codes are preserved, the call is audited. Output scanning is a
+   * bind-internal stage not exposed on the seam, but it still runs where it
+   * matters: the forwarded host-tool ref executes inside AppsPort.call, which
+   * the umbrella guard-BINDS (06 §1), under its own venue="app" context. Two
+   * perimeters, one decision each; the door wrapper only adds Vendo's own
+   * app-list / tree-payload envelope, which carries no host data to scan. */
   async #callAppsTool(
     name: string,
     args: Record<string, unknown>,
@@ -327,7 +345,22 @@ class Door {
       }
       return { status: "ok", output: await apps.call(appId, ref, args.args as Json, ctx) };
     } catch (error) {
-      return { status: "error", error: { code: "error", message: errorMessage(error) } };
+      // Preserve the VendoError taxonomy (e.g. "cloud-required",
+      // "sandbox-unavailable") — 00-overview's "one error taxonomy" convention.
+      return { status: "error", error: { code: errorCode(error), message: errorMessage(error) } };
+    }
+  }
+
+  async #sweepIdleSessions(): Promise<void> {
+    const cutoff = Date.now() - SESSION_IDLE_MS;
+    for (const [id, state] of [...this.#sessions]) {
+      if (state.touchedAt > cutoff) continue;
+      this.#forgetSession(state.subject, id);
+      try {
+        await state.transport.close();
+      } catch {
+        // A transport already closing is exactly the state we want it in.
+      }
     }
   }
 
@@ -467,12 +500,16 @@ const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
 const APP_TOOL_NAMES = new Set(APP_TOOL_DESCRIPTORS.map((descriptor) => descriptor.name));
 
 function appTools(): Tool[] {
+  // 10-mcp §4 names both vendo_apps_list and vendo_apps_open as carrying
+  // _meta.ui.resourceUri; all three ride-along tools advertise the shim so the
+  // host can preload it. A list result isn't a renderable payload — the shim's
+  // format dispatch (core §8) contains that gracefully.
   const uiMeta = { ui: { resourceUri: SHIM_URI }, "ui/resourceUri": SHIM_URI };
   return APP_TOOL_DESCRIPTORS.map(({ name, description, inputSchema }) => ({
     name,
     description,
     inputSchema: inputSchema as Tool["inputSchema"],
-    ...(name === "vendo_apps_list" ? {} : { _meta: uiMeta }),
+    _meta: uiMeta,
   }));
 }
 
@@ -542,6 +579,11 @@ function randomHex(byteLength: number): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+function errorCode(error: unknown): string {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === "string" ? code : "error";
 }
 
 function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
