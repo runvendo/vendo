@@ -127,6 +127,54 @@ describe("away run park and resume", () => {
     }
   });
 
+  it("stops a parked run when the automation is disabled before approval", async () => {
+    const setup = await createParked("disabled");
+    try {
+      await setup.stack.automations.disable(setup.appId, setup.ctx);
+      await setup.stack.guard.approvals.decide(setup.approvalId, { approve: true }, ADA);
+      expect(await waitForRun(setup.stack, setup.runId, setup.ctx, "stopped")).toMatchObject({
+        status: "stopped",
+        summary: "automation disabled before resume",
+      });
+      expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.status).toBe("draft");
+    } finally {
+      await setup.stack.close();
+    }
+  });
+
+  it("resumes one approved critical step and finishes successfully", async () => {
+    const stack = await createStack();
+    try {
+      const appId = "app_park_critical";
+      const ctx = ownerCtx(ADA.subject, appId);
+      await stack.putApp(ADA.subject, automationDoc({
+        id: appId,
+        trigger: {
+          on: { kind: "host-event", event: "invoice.critical" },
+          run: {
+            kind: "steps",
+            steps: [{ id: "send", tool: "host_invoices_send_critical", args: { id: "event.id" } }],
+          },
+        },
+      }));
+      const enabled = await stack.automations.enable(appId, ctx);
+      await approve(stack, enabled.missing);
+      const [runId] = await stack.automations.emit("invoice.critical", { id: "inv_0003" }, ADA);
+      if (!runId) throw new Error("emit did not return a run id");
+      const approval = (await stack.guard.approvals.pending(ADA)).find((request) =>
+        request.call.tool === "host_invoices_send_critical" && request.ctx.appId === appId
+      );
+      if (!approval) throw new Error("critical step did not park");
+
+      await stack.guard.approvals.decide(approval.id, { approve: true }, ADA);
+
+      expect(await waitForRun(stack, runId, ctx, "ok")).toMatchObject({ status: "ok" });
+      expect((await fixtureInvoices()).find(({ id }) => id === "inv_0003")?.status).toBe("open");
+    } finally {
+      await stack.close();
+    }
+  });
+
   it("does not let a standing chat grant authorize an away app run", async () => {
     const stack = await createStack();
     try {
@@ -156,10 +204,15 @@ describe("away run park and resume", () => {
         descriptorHash: descriptorHash(descriptor),
         scope: { kind: "tool" },
         duration: "standing",
+        appId,
         source: "chat",
         grantedAt: "2026-07-12T00:00:00.000Z",
       };
-      await stack.store.records("vendo_grants").put({ id: chatGrant.id, data: chatGrant });
+      await stack.store.records("vendo_grants").put({
+        id: chatGrant.id,
+        data: chatGrant,
+        refs: { subject: ADA.subject, tool: descriptor.name, app_id: appId },
+      });
 
       const ids = await stack.automations.emit("invoice.chat-grant", { id: "inv_0003" }, ADA);
       const id = ids[0];

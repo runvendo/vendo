@@ -32,7 +32,7 @@ describe("decision pipeline conformance", () => {
           if (stage === "grant") {
             await seedGrant(store, {
               descriptor: d,
-              ...(presence === "away" ? { appId: "app_1" } : {}),
+              ...(presence === "away" ? { appId: "app_1", source: "automation" as const } : {}),
             });
           }
 
@@ -92,6 +92,19 @@ describe("decision pipeline conformance", () => {
       }
     }
   }
+
+  it("rejects an app-bound chat grant for away automation authority", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("write", { name: "host_chat_bound" });
+    await seedGrant(store, { descriptor: d, appId: "app_1", source: "chat" });
+    const guard = createGuard({ store });
+
+    await expect(guard.check(
+      call(d.name, {}, "call_chat_bound"),
+      d,
+      context({ venue: "automation", presence: "away", appId: "app_1" }),
+    )).resolves.toMatchObject({ action: "ask", decidedBy: "default" });
+  });
 
   it.each([
     {
@@ -238,7 +251,7 @@ describe("decision pipeline conformance", () => {
     },
     {
       name: "away requires an app-bound matching grant",
-      grant: { appId: "app_1" },
+      grant: { appId: "app_1", source: "automation" as const },
       ctx: { presence: "away" as const, venue: "automation" as const, appId: "app_1" },
       args: {},
       matches: true,
@@ -452,7 +465,7 @@ describe("away authority (05 §6)", () => {
   it("attaches the authorizing grant as ctx.grant for executors (04 §4 ActAs seam)", async () => {
     const store = createMemoryStore();
     const d = descriptor("write");
-    const seeded = await seedGrant(store, { descriptor: d, appId: "app_1" });
+    const seeded = await seedGrant(store, { descriptor: d, appId: "app_1", source: "automation" });
     const guard = createGuard({ store });
     const tools = new FixtureTools([d]);
     const bound = guard.bind(tools);

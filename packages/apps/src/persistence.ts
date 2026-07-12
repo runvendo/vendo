@@ -27,6 +27,13 @@ export interface AppRowData {
   doc: AppDocument;
 }
 
+/** Trigger edits invalidate enable-time capture, cursor, and webhook state. */
+export const enabledAfterDocumentEdit = (
+  previous: AppDocument,
+  next: AppDocument,
+  enabled: boolean,
+): boolean => JSON.stringify(previous.trigger) === JSON.stringify(next.trigger) && enabled;
+
 export const rowFromRecord = (record: VendoRecord): AppRowData => {
   const data = record.data as Partial<AppRowData> | null;
   if (

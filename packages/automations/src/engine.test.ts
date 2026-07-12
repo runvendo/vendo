@@ -197,7 +197,7 @@ describe("automations enable and grant capture", () => {
     expect((await store.records("automations:captures").list()).records).toHaveLength(0);
   });
 
-  it("reuses live app-bound standing grants and preserves schedule cursors, webhook secrets, and disable state", async () => {
+  it("ignores app-bound chat grants and preserves schedule cursors, webhook secrets, and disable state", async () => {
     const schedule = app("app_cursor", {
       on: { kind: "schedule", every: "1h" },
       run: { kind: "steps", steps: [{ id: "read", tool: readTool.name }] },
@@ -215,12 +215,55 @@ describe("automations enable and grant capture", () => {
     const engine = createAutomations({
       apps: appsDouble(), tools: registry([readTool]), guard, store, now: () => NOW,
     });
-    expect((await engine.enable(schedule.id, ctx())).missing).toEqual([]);
+    expect((await engine.enable(schedule.id, ctx())).missing.map(({ call }) => call.tool)).toEqual([readTool.name]);
     const cursor = await store.records("automations:schedule").get(schedule.id);
     expect(cursor?.data).toEqual({ lastFiredAt: NOW.toISOString() });
     await engine.disable(schedule.id, ctx());
     expect((await store.records("vendo_apps").get(schedule.id))?.data).toMatchObject({ enabled: false });
     expect(await store.records("automations:schedule").get(schedule.id)).toEqual(cursor);
+  });
+
+  it("mints next-firing authority for an approved agentic call with no parked continuation", async () => {
+    const doc = app("app_agent_next", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "agentic", prompt: "write later" },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry([writeTool]), guard, store, now: () => NOW,
+    });
+    const request = {
+      id: "apr_agent_next",
+      call: { id: "call_agent_next", tool: writeTool.name, args: { value: 1 } },
+      descriptor: writeTool,
+      inputPreview: "write",
+      ctx: {
+        principal: ctx().principal,
+        venue: "automation" as const,
+        presence: "away" as const,
+        appId: doc.id,
+        trigger: { runId: "run_agent", kind: "host-event" as const },
+      },
+      createdAt: NOW.toISOString(),
+    };
+    await store.records("vendo_approvals").put({
+      id: request.id,
+      data: { request, status: "approved", decidedAt: NOW.toISOString() },
+    });
+
+    guard.decide(request.id, true);
+    await flush();
+
+    expect((await store.records("vendo_grants").list()).records[0]?.data).toMatchObject({
+      subject: "user_a",
+      tool: writeTool.name,
+      appId: doc.id,
+      source: "automation",
+    });
+    expect((await store.records("vendo_approvals").get(request.id))?.data).toMatchObject({
+      consumedAt: NOW.toISOString(),
+    });
+    void engine;
   });
 });
 
@@ -356,6 +399,122 @@ describe("steps execution, parking, and resumption", () => {
       steps: [{ outcome: "blocked", detail: "user declined approval" }],
     });
   });
+
+  it("stops instead of resuming after the automation is disabled", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let calls = 0;
+    const tools = registry([writeTool], async (call, runCtx) => {
+      calls += 1;
+      const request = {
+        id: "apr_disabled",
+        call,
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    const doc = app("app_disabled_resume", {
+      on: { kind: "host-event", event: "go" },
+      run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const [runId] = await engine.emit("go", {}, ctx().principal);
+    await engine.disable(doc.id, ctx());
+    const approval = await store.records("vendo_approvals").get("apr_disabled");
+    await store.records("vendo_approvals").put({
+      id: "apr_disabled",
+      data: { ...(approval?.data as object), status: "approved", decidedAt: NOW.toISOString() },
+    });
+
+    guard.decide("apr_disabled", true);
+    await flush();
+
+    expect(calls).toBe(1);
+    expect(await engine.runs.get(runId!, ctx())).toMatchObject({
+      status: "stopped",
+      summary: "automation disabled before resume",
+    });
+    expect(await store.records("automations:parked").get("apr_disabled")).toBeNull();
+  });
+
+  it("contains oversized forEach fan-out and persisted resume state", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let calls = 0;
+    const tools = registry([writeTool], async (call, runCtx) => {
+      calls += 1;
+      const request = {
+        id: "apr_large_resume",
+        call,
+        descriptor: writeTool,
+        inputPreview: "write",
+        ctx: { principal: runCtx.principal, venue: runCtx.venue, presence: runCtx.presence, appId: runCtx.appId, trigger: runCtx.trigger },
+        createdAt: NOW.toISOString(),
+      };
+      await store.records("vendo_approvals").put({ id: request.id, data: { request, status: "pending" } });
+      return { status: "pending-approval", approvalId: request.id };
+    });
+    const fanout = app("app_fanout_cap", {
+      on: { kind: "host-event", event: "fan" },
+      run: { kind: "steps", steps: [{ id: "fan", tool: writeTool.name, forEach: "event.items" }] },
+    });
+    const resume = app("app_resume_cap", {
+      on: { kind: "host-event", event: "resume" },
+      run: { kind: "steps", steps: [{ id: "write", tool: writeTool.name }] },
+    });
+    await seedApp(store, fanout, "user_a", true);
+    await seedApp(store, resume, "user_a", true);
+    const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+
+    const [fanoutId] = await engine.emit("fan", { items: Array.from({ length: 1001 }, (_, index) => index) }, ctx().principal);
+    expect(await engine.runs.get(fanoutId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "validation", message: "step fan forEach exceeds 1000 items" },
+    });
+    expect(calls).toBe(0);
+
+    const [resumeId] = await engine.emit("resume", { payload: "x".repeat(512 * 1024) }, ctx().principal);
+    expect(await engine.runs.get(resumeId!, ctx())).toMatchObject({
+      status: "error",
+      error: { code: "validation", message: "persisted resume state exceeds 512 KiB" },
+    });
+    expect(await store.records("automations:parked").get("apr_large_resume")).toBeNull();
+  });
+
+  it("keeps a stopped terminal row when a slow deterministic step returns", async () => {
+    const store = memoryStoreAdapter();
+    const guard = new GuardDouble();
+    let release!: () => void;
+    let started!: () => void;
+    const didStart = new Promise<void>((resolve) => { started = resolve; });
+    const apps = appsDouble(async () => {
+      started();
+      await new Promise<void>((resolve) => { release = resolve; });
+      return { status: "ok", output: { late: true } };
+    });
+    const doc = app("app_slow_stop", {
+      on: { kind: "host-event", event: "slow" },
+      run: { kind: "steps", steps: [{ id: "slow", tool: "fn:slow" }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps, tools: registry(), guard, store, now: () => NOW });
+    const controller = createAutomations({ apps, tools: registry(), guard, store, now: () => NOW });
+    const emitted = engine.emit("slow", {}, ctx().principal);
+    await didStart;
+    const running = (await engine.runs.list({ status: "running" }, ctx())).runs[0]!;
+
+    await controller.runs.stop(running.id, ctx());
+    release();
+    await emitted;
+
+    expect(await engine.runs.get(running.id, ctx())).toMatchObject({ status: "stopped", summary: "stopped by user" });
+    expect(guard.audit.map((event) => (event.detail as { status: string }).status)).toEqual(["running", "stopped"]);
+  });
 });
 
 describe("schedule, webhook, and host triggers", () => {
@@ -381,10 +540,11 @@ describe("schedule, webhook, and host triggers", () => {
     }
     const engine = createAutomations({ apps, tools: registry(), guard, store, now: () => NOW });
 
-    expect(await engine.tick()).toHaveLength(3);
+    const [firstTick, secondTick] = await Promise.all([engine.tick(), engine.tick()]);
+    expect(firstTick).toHaveLength(3);
+    expect(secondTick).toEqual([]);
     expect(calls).toHaveLength(3);
     expect((calls[0]?.args as { event: { firedAt: string } }).event.firedAt).toBe(NOW.toISOString());
-    expect(await engine.tick()).toEqual([]);
     expect(calls).toHaveLength(3);
     expect((await store.records("automations:schedule").get("app_at"))?.data).toMatchObject({ firedAt: NOW.toISOString() });
   });
@@ -413,14 +573,14 @@ describe("schedule, webhook, and host triggers", () => {
     const body = JSON.stringify({ answer: 42 });
     const timestamp = String(NOW.getTime() / 1_000);
     const signature = await sign(secret, "delivery_1", timestamp, body);
-    const request = (sig: string, at = timestamp, delivery = "delivery_1") => new Request("https://example.test/api/webhooks/github", {
+    const request = (sig: string, at = timestamp, delivery = "delivery_1", requestBody = body) => new Request("https://example.test/api/webhooks/github", {
       method: "POST",
       headers: {
         "webhook-id": delivery,
         "webhook-timestamp": at,
         "webhook-signature": `v1,${sig}`,
       },
-      body,
+      body: requestBody,
     });
 
     const valid = await engine.webhook(request(signature));
@@ -434,7 +594,35 @@ describe("schedule, webhook, and host triggers", () => {
     const staleTimestamp = String(NOW.getTime() / 1_000 - 301);
     const stale = await engine.webhook(request(await sign(secret, "delivery_stale", staleTimestamp, body), staleTimestamp, "delivery_stale"));
     expect(stale.status).toBe(401);
-    expect(guard.audit.filter((event) => (event.detail as { status?: string }).status === "webhook-rejected")).toHaveLength(2);
+    const invalidJson = "{not-json";
+    const unverifiedInvalid = await engine.webhook(request("AAAA", timestamp, "delivery_invalid_bad", invalidJson));
+    expect(unverifiedInvalid.status).toBe(401);
+    const verifiedInvalid = await engine.webhook(request(
+      await sign(secret, "delivery_invalid_ok", timestamp, invalidJson),
+      timestamp,
+      "delivery_invalid_ok",
+      invalidJson,
+    ));
+    expect(verifiedInvalid.status).toBe(400);
+    const auditsBeforeSize = guard.audit.length;
+    const oversized = await engine.webhook(request(
+      "AAAA",
+      timestamp,
+      "delivery_oversized",
+      "x".repeat(1024 * 1024 + 1),
+    ));
+    expect(oversized.status).toBe(413);
+    expect(guard.audit).toHaveLength(auditsBeforeSize);
+    expect(guard.audit.filter((event) => (event.detail as { status?: string }).status === "webhook-rejected")).toHaveLength(3);
+
+    const concurrentBody = JSON.stringify({ concurrent: true });
+    const concurrentSignature = await sign(secret, "delivery_concurrent", timestamp, concurrentBody);
+    const concurrent = await Promise.all([
+      engine.webhook(request(concurrentSignature, timestamp, "delivery_concurrent", concurrentBody)),
+      engine.webhook(request(concurrentSignature, timestamp, "delivery_concurrent", concurrentBody)),
+    ]);
+    expect(concurrent.map(({ status }) => status)).toEqual([200, 200]);
+    expect((await store.records("vendo_runs").list()).records).toHaveLength(2);
 
     expect(await engine.emit("invoice.paid", { invoice: "inv_1" }, ctx().principal)).toHaveLength(1);
     expect(await engine.emit("invoice.paid", {}, ctx("other").principal)).toEqual([]);

@@ -120,6 +120,26 @@ describe("external webhook verification and dispatch", () => {
     }
   });
 
+  it("rejects unverified invalid JSON as an authentication failure", async () => {
+    const appId = "app_webhook_invalid_json";
+    const { stack, secret } = await externalStack(appId);
+    try {
+      const runsBefore = await tableCount(stack, "vendo_runs");
+      const auditBefore = await tableCount(stack, "vendo_audit");
+      const response = await stack.automations.webhook(signedRequest({
+        secret,
+        id: "delivery_invalid_json",
+        body: "{not-json",
+        signature: "not-a-valid-signature",
+      }));
+      expect(response.status).toBe(401);
+      expect(await tableCount(stack, "vendo_runs")).toBe(runsBefore);
+      expect(await tableCount(stack, "vendo_audit")).toBe(auditBefore + 1);
+    } finally {
+      await stack.close();
+    }
+  });
+
   it("rejects a delivery timestamp outside the five-minute window", async () => {
     const appId = "app_webhook_stale";
     const { stack, secret } = await externalStack(appId);

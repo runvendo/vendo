@@ -258,7 +258,7 @@ function durationMatches(grant: PermissionGrant, ctx: RunContext): boolean {
 
 function presenceMatches(grant: PermissionGrant, ctx: RunContext): boolean {
   if (ctx.presence === "away") {
-    return grant.appId !== undefined && grant.appId === ctx.appId;
+    return grant.appId !== undefined && grant.appId === ctx.appId && grant.source === "automation";
   }
   return grant.appId === undefined || grant.appId === ctx.appId;
 }
@@ -585,16 +585,16 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<DecisionMetadata> {
+    if (await this.#consumeApprovedCall(call, descriptor, ctx)) {
+      return { decision: { action: "run", decidedBy: "grant" } };
+    }
+
     if (descriptor.critical === true) {
       return { decision: { action: "ask", decidedBy: "critical" } };
     }
 
     const scannerDecision = await this.#scanInput(call, ctx);
     if (scannerDecision !== undefined) return scannerDecision;
-
-    if (await this.#consumeApprovedCall(call, descriptor, ctx)) {
-      return { decision: { action: "run", decidedBy: "grant" } };
-    }
 
     const grant = await this.#matchingGrant(call, descriptor, ctx);
     if (grant !== undefined) {

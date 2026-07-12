@@ -68,6 +68,14 @@ export const hostTools = [
     risk: "write",
     binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
   },
+  {
+    name: "host_invoices_send_critical",
+    description: "Send invoice with critical confirmation",
+    inputSchema: { type: "object" },
+    risk: "write",
+    critical: true,
+    binding: { kind: "route", method: "POST", path: "/api/invoices/{id}/send", argsIn: "body" },
+  },
 ] as const;
 
 export async function loginCookie(subject: string): Promise<string> {

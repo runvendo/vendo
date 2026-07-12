@@ -36,7 +36,7 @@ import { createAppHistory } from "./history.js";
 import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener } from "./open.js";
-import { appRecordInput, documentFromRecord, rowFromRecord } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import type { SandboxAdapter } from "./sandbox.js";
@@ -267,8 +267,9 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     };
     await assertCurrent();
     await history.append(app.id, previous, version);
-    // Edits never touch the automations arm/disarm bit — preserve it.
-    const enabled = await assertCurrent();
+    const wasEnabled = await assertCurrent();
+    // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
+    const enabled = enabledAfterDocumentEdit(previous, app, wasEnabled);
     const appRow = appRecordInput(app, subject, enabled);
     await apps.put(appRow);
     return structuredClone(appRow.data.doc);

@@ -2,6 +2,8 @@ import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { createApps, type SandboxAdapter } from "./index.js";
+import { createAppHistory } from "./history.js";
+import { enabledAfterDocumentEdit } from "./persistence.js";
 import {
   basicLanguageModel,
   fakeSandbox,
@@ -41,6 +43,43 @@ const setup = (withModel = true) => {
 };
 
 describe("apps lifecycle", () => {
+  it("disarms changed triggers on edit and undo while preserving unchanged trigger edits", async () => {
+    const store = memoryStore();
+    const original: AppDocument = {
+      format: VENDO_APP_FORMAT,
+      id: "app_trigger_arm",
+      name: "Trigger arm",
+      trigger: {
+        on: { kind: "host-event", event: "invoice.created" },
+        run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
+      },
+    };
+    const renamed = { ...original, name: "Renamed" };
+    const changed: AppDocument = {
+      ...renamed,
+      trigger: {
+        on: { kind: "host-event", event: "invoice.updated" },
+        run: { kind: "steps", steps: [{ id: "read", tool: "host_read" }] },
+      },
+    };
+
+    expect(enabledAfterDocumentEdit(original, renamed, true)).toBe(true);
+    expect(enabledAfterDocumentEdit(original, changed, true)).toBe(false);
+
+    const history = createAppHistory(store);
+    await history.append(original.id, original, {
+      at: "2026-07-12T12:00:00.000Z",
+      intent: "Change trigger",
+      rung: 1,
+    });
+    await seedAppRow(store, changed, "user_ada", true);
+    await history.surface(original.id).undo();
+    expect((await store.records("vendo_apps").get(original.id))?.data).toMatchObject({
+      enabled: false,
+      doc: { trigger: original.trigger },
+    });
+  });
+
   it("round-trips create, get, and newest-first list without leaking across owners", async () => {
     const { runtime } = setup();
     const ada = context("user_ada");

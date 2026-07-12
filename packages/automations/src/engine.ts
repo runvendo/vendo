@@ -43,6 +43,9 @@ const PARKED = "automations:parked";
 const SCHEDULE = "automations:schedule";
 const WEBHOOK = "automations:webhook";
 const DELIVERIES = "automations:deliveries";
+const WEBHOOK_MAX_BYTES = 1024 * 1024;
+const RESUME_MAX_BYTES = 512 * 1024;
+const FOREACH_MAX_ITEMS = 1000;
 
 const appRowSchema = z.object({
   subject: z.string(),
@@ -84,6 +87,7 @@ interface ResumeState {
   approvalId: string;
   iterationItems?: Json[];
   iterationOutputs?: Json[];
+  claimedBy?: string;
 }
 
 interface InternalRunRecord extends RunRecord {
@@ -99,6 +103,7 @@ const resumeSchema = z.object({
   approvalId: z.string(),
   iterationItems: z.array(z.unknown()).optional(),
   iterationOutputs: z.array(z.unknown()).optional(),
+  claimedBy: z.string().optional(),
 });
 
 const baseRunRecordSchema = z.object({
@@ -274,7 +279,7 @@ const decodeBase64 = (value: string, url = false): Uint8Array | null => {
 const verifySignature = async (
   secret: string,
   signature: string,
-  signed: string,
+  signed: Uint8Array,
 ): Promise<boolean> => {
   const keyBytes = decodeBase64(secret, true);
   const signatureBytes = decodeBase64(signature);
@@ -291,11 +296,64 @@ const verifySignature = async (
       "HMAC",
       key,
       signatureBytes,
-      new TextEncoder().encode(signed),
+      signed,
     );
   } catch {
     return false;
   }
+};
+
+const signedWebhookBytes = (deliveryId: string, timestamp: string, raw: Uint8Array): Uint8Array => {
+  const prefix = new TextEncoder().encode(`${deliveryId}.${timestamp}.`);
+  const signed = new Uint8Array(prefix.length + raw.length);
+  signed.set(prefix);
+  signed.set(raw, prefix.length);
+  return signed;
+};
+
+const readLimitedBody = async (request: Request, limit: number): Promise<Uint8Array | null> => {
+  if (request.body === null) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > limit) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+};
+
+const terminalStatus = (status: RunStatus): status is Extract<RunStatus, "ok" | "error" | "stopped"> =>
+  status === "ok" || status === "error" || status === "stopped";
+
+const syncRun = (target: InternalRunRecord, source: InternalRunRecord): void => {
+  delete target.__resume;
+  delete target.finishedAt;
+  delete target.summary;
+  delete target.error;
+  Object.assign(target, clone(source));
+};
+
+const validateForEachItems = (step: Step, value: Json): Json[] => {
+  if (!Array.isArray(value)) throw new Error(`step ${step.id} forEach did not produce an array`);
+  if (value.length > FOREACH_MAX_ITEMS) throw new Error(`step ${step.id} forEach exceeds ${FOREACH_MAX_ITEMS} items`);
+  return value;
 };
 
 export const createAutomationsEngine = (config: AutomationsConfig): AutomationsEngine => {
@@ -304,6 +362,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const stopped = new Set<string>();
   const active = new Set<string>();
   const resuming = new Set<string>();
+  const inFlightDeliveries = new Set<string>();
+  const engineInstanceId = globalThis.crypto.randomUUID();
+  let tickTail: Promise<void> = Promise.resolve();
 
   const appRecord = async (appId: string): Promise<{ record: VendoRecord; row: AppRow } | null> => {
     const record = await config.store.records(APPS).get(appId);
@@ -340,6 +401,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         && grant.tool === descriptor.name
         && grant.descriptorHash === descriptorHash(descriptor)
         && grant.appId === appId
+        && grant.source === "automation"
         && grant.duration === "standing"
         && grant.scope.kind === "tool"
         && grant.revokedAt === undefined
@@ -362,7 +424,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     await config.guard.report(event);
   };
 
-  const writeRun = async (record: InternalRunRecord): Promise<void> => {
+  const writeRun = async (record: InternalRunRecord): Promise<boolean> => {
+    const stored = await config.store.records(RUNS).get(record.id);
+    if (stored !== null) {
+      const current = parseRunRow(stored).record;
+      if (terminalStatus(current.status)) {
+        syncRun(record, current);
+        return false;
+      }
+    }
     await config.store.records(RUNS).put({
       id: record.id,
       data: {
@@ -375,6 +445,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       },
       refs: { app_id: record.appId, status: record.status },
     });
+    return true;
   };
 
   const runContext = (run: InternalRunRecord, subject: string): RunContext => ({
@@ -399,8 +470,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     run.summary = summary;
     if (error === undefined) delete run.error;
     else run.error = error;
-    await writeRun(run);
-    await audit(ctx, status);
+    if (await writeRun(run)) await audit(ctx, status);
   };
 
   const park = async (
@@ -408,10 +478,20 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     ctx: RunContext,
     state: ResumeState,
   ): Promise<void> => {
+    if (new TextEncoder().encode(JSON.stringify(state)).byteLength > RESUME_MAX_BYTES) {
+      await terminal(
+        run,
+        ctx,
+        "error",
+        `stopped at ${run.steps.at(-1)?.id ?? "step"}: persisted resume state exceeds 512 KiB`,
+        { code: "validation", message: "persisted resume state exceeds 512 KiB" },
+      );
+      return;
+    }
     run.status = "pending-approval";
     run.summary = `stopped at ${run.steps.at(-1)?.id ?? "step"}: approval required`;
     run.__resume = clone(state);
-    await writeRun(run);
+    if (!await writeRun(run)) return;
     await config.store.records(PARKED).put({ id: state.approvalId, data: { runId: run.id } });
     await audit(ctx, "pending-approval");
   };
@@ -441,7 +521,15 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       run.status = "stopped";
       return true;
     }
-    if (run.status === "stopped") return true;
+    const stored = await config.store.records(RUNS).get(run.id);
+    if (stored !== null) {
+      const current = parseRunRow(stored).record;
+      if (terminalStatus(current.status)) {
+        syncRun(run, current);
+        return true;
+      }
+    }
+    if (terminalStatus(run.status)) return true;
     return false;
   };
 
@@ -474,8 +562,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           }
           if (step.forEach !== undefined) {
             const evaluated = await evaluate(step.forEach, { event: state.event, steps: state.stepOutputs, item: undefined });
-            if (!Array.isArray(evaluated)) throw new Error(`step ${step.id} forEach did not produce an array`);
-            items = evaluated;
+            items = validateForEachItems(step, evaluated);
           }
         }
       } catch (error) {
@@ -502,6 +589,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         }
         const call: ToolCall = { id: id("call_"), tool: step.tool, args };
         const outcome = await executeCall(app.doc.id, step, call, ctx);
+        if (await finishStoppedIfNeeded(run, ctx)) return;
         appendOutcome(run, step, outcome);
         if (outcome.status === "pending-approval") {
           await park(run, ctx, {
@@ -649,15 +737,46 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }
       const run = parseRunRow(stored).record;
       if (run.status !== "pending-approval" || run.__resume?.approvalId !== approvalId) {
+        if (run.status === "running" && run.__resume?.approvalId === approvalId && run.__resume.claimedBy !== undefined) {
+          return;
+        }
         await config.store.records(PARKED).delete(approvalId);
         return;
       }
+      const approval = await config.store.records(APPROVALS).get(approvalId);
+      if (approval === null) return;
+      const approvalData = approvalRowSchema.parse(approval.data);
+
+      // RecordStore has no CAS. Persist and re-read a unique claim to narrow the
+      // cross-instance race; single-instance deployment remains the v0 contract.
+      const claimedBy = `${engineInstanceId}:${globalThis.crypto.randomUUID()}`;
+      run.status = "running";
+      delete run.summary;
+      run.__resume.claimedBy = claimedBy;
+      if (!await writeRun(run)) return;
+      const claimedRecord = await config.store.records(RUNS).get(runId);
+      if (claimedRecord === null) return;
+      const claimedRun = parseRunRow(claimedRecord).record;
+      if (claimedRun.status !== "running" || claimedRun.__resume?.claimedBy !== claimedBy) return;
+      syncRun(run, claimedRun);
+
       const appFound = await appRecord(run.appId);
-      if (appFound === null || appFound.row.doc.trigger === undefined) {
+      if (appFound === null) {
+        const ctx = runContext(run, approvalData.request.ctx.principal.subject);
+        await terminal(run, ctx, "stopped", "app deleted before resume");
         await config.store.records(PARKED).delete(approvalId);
         return;
       }
       const ctx = runContext(run, appFound.row.subject);
+      if (!appFound.row.enabled || appFound.row.doc.trigger === undefined) {
+        await terminal(run, ctx, "stopped", "automation disabled before resume");
+        await config.store.records(PARKED).delete(approvalId);
+        return;
+      }
+      if (await finishStoppedIfNeeded(run, ctx)) {
+        await config.store.records(PARKED).delete(approvalId);
+        return;
+      }
       await audit(ctx, "running");
       if (!approved) {
         const state = run.__resume;
@@ -676,17 +795,17 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         await config.store.records(PARKED).delete(approvalId);
         return;
       }
-      const approval = await config.store.records(APPROVALS).get(approvalId);
-      if (approval === null) return;
-      const approvalData = approvalRowSchema.parse(approval.data);
       await mintGrant(approvalData.request);
       const state = run.__resume as ResumeState;
       const trigger = validateTrigger(appFound.row.doc.trigger);
       if (trigger.run.kind !== "steps") throw new VendoError("validation", "parked agentic run is invalid");
       const step = trigger.run.steps[state.stepIndex];
       if (step === undefined) throw new VendoError("validation", "parked step is missing");
-      run.status = "running";
       const outcome = await executeCall(run.appId, step, state.call, ctx);
+      if (await finishStoppedIfNeeded(run, ctx)) {
+        await config.store.records(PARKED).delete(approvalId);
+        return;
+      }
       const pending = [...run.steps].reverse().find(
         (entry) => entry.outcome === "pending-approval" && entry.detail === approvalId,
       );
@@ -700,6 +819,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       } else appendOutcome(run, step, outcome);
       if (outcome.status === "pending-approval") {
         state.approvalId = outcome.approvalId;
+        delete state.claimedBy;
         await config.store.records(PARKED).delete(approvalId);
         await park(run, ctx, state);
         return;
@@ -713,7 +833,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (state.iterationItems === undefined) state.stepOutputs[step.id] = outcome.output;
       else (state.iterationOutputs ??= []).push(outcome.output);
       delete run.__resume;
-      await writeRun(run);
+      if (!await writeRun(run)) {
+        await config.store.records(PARKED).delete(approvalId);
+        return;
+      }
       await config.store.records(PARKED).delete(approvalId);
       await continueSteps(appFound.row, trigger, run, ctx, {
         stepIndex: state.iterationItems === undefined ? state.stepIndex + 1 : state.stepIndex,
@@ -745,6 +868,22 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
     if (await config.store.records(PARKED).get(approvalId) !== null) {
       await resumeRun(approvalId, approved);
+      return;
+    }
+    const approval = await config.store.records(APPROVALS).get(approvalId);
+    if (approval === null || !approved) return;
+    const data = approvalRowSchema.parse(approval.data);
+    if (
+      data.status === "approved"
+      && data.consumedAt === undefined
+      && data.request.ctx.venue === "automation"
+      && data.request.ctx.appId !== undefined
+    ) {
+      // AgentRunReport has no continuation token in v0. Approval arms the
+      // app-bound authority for the next agentic firing instead of replaying
+      // and duplicating the completed prefix of an agent run.
+      await mintGrant(data.request);
+      await markConsumed(approval);
     }
   };
 
@@ -836,7 +975,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
   };
 
-  const tick: AutomationsEngine["tick"] = async (providedNow) => {
+  const runTick: AutomationsEngine["tick"] = async (providedNow) => {
     await sweepParked();
     const at = providedNow ?? now();
     const appRecords = await allRecords(config.store.records(APPS));
@@ -881,6 +1020,12 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       }));
     }
     return ids;
+  };
+
+  const tick: AutomationsEngine["tick"] = (providedNow) => {
+    const result = tickTail.then(() => runTick(providedNow));
+    tickTail = result.then(() => undefined, () => undefined);
+    return result;
   };
 
   const start: AutomationsEngine["start"] = (intervalMs = 60_000) => {
@@ -936,18 +1081,18 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       signature: request.headers.get("webhook-signature"),
     });
     if (!headerResult.success) return await rejectWebhook(source, "invalid webhook headers");
-    const raw = await request.text();
-    let body: Json;
-    try {
-      body = JSON.parse(raw) as Json;
-    } catch {
-      return envelope(400, "validation", "webhook body must be valid JSON");
+    const contentLength = request.headers.get("content-length");
+    if (contentLength !== null && /^\d+$/.test(contentLength) && Number(contentLength) > WEBHOOK_MAX_BYTES) {
+      return envelope(413, "validation", "webhook body exceeds 1 MiB");
     }
+    const rawBytes = await readLimitedBody(request, WEBHOOK_MAX_BYTES);
+    if (rawBytes === null) return envelope(413, "validation", "webhook body exceeds 1 MiB");
     const timestampMs = Number(headerResult.data.timestamp) * 1_000;
     if (!Number.isSafeInteger(timestampMs) || Math.abs(now().getTime() - timestampMs) > 300_000) {
       return await rejectWebhook(source, "webhook timestamp is outside the allowed window");
     }
     const signature = headerResult.data.signature.slice(3);
+    const signed = signedWebhookBytes(headerResult.data.id, headerResult.data.timestamp, rawBytes);
     const appRecords = await allRecords(config.store.records(APPS));
     const verified: AppRow[] = [];
     for (const record of appRecords) {
@@ -961,23 +1106,38 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (await verifySignature(
         secret.data.secret,
         signature,
-        `${headerResult.data.id}.${headerResult.data.timestamp}.${raw}`,
+        signed,
       )) verified.push(row);
     }
     if (verified.length === 0) return await rejectWebhook(source, "webhook signature verification failed");
+    let body: Json;
+    try {
+      body = JSON.parse(new TextDecoder().decode(rawBytes)) as Json;
+    } catch {
+      return envelope(400, "validation", "webhook body must be valid JSON");
+    }
     const ids: string[] = [];
     let deduped = 0;
     for (const row of verified) {
       const deliveryKey = `${row.doc.id}:${headerResult.data.id}`;
-      if (await config.store.records(DELIVERIES).get(deliveryKey) !== null) {
+      if (inFlightDeliveries.has(deliveryKey)) {
         deduped += 1;
         continue;
       }
-      await config.store.records(DELIVERIES).put({
-        id: deliveryKey,
-        data: { appId: row.doc.id, deliveryId: headerResult.data.id, receivedAt: iso() },
-      });
-      ids.push(await startRun(row, "external", body));
+      inFlightDeliveries.add(deliveryKey);
+      try {
+        if (await config.store.records(DELIVERIES).get(deliveryKey) !== null) {
+          deduped += 1;
+          continue;
+        }
+        await config.store.records(DELIVERIES).put({
+          id: deliveryKey,
+          data: { appId: row.doc.id, deliveryId: headerResult.data.id, receivedAt: iso() },
+        });
+        ids.push(await startRun(row, "external", body));
+      } finally {
+        inFlightDeliveries.delete(deliveryKey);
+      }
     }
     if (ids.length === 0 && deduped > 0) return Response.json({ deduped: true }, { status: 200 });
     return Response.json({ runIds: ids }, { status: 200 });
@@ -1017,8 +1177,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           await add(step.id, step.tool);
           continue;
         }
-        const items = await evaluate(step.forEach, { event, steps: outputs, item: undefined });
-        if (!Array.isArray(items)) throw new Error(`step ${step.id} forEach did not produce an array`);
+        const items = validateForEachItems(
+          step,
+          await evaluate(step.forEach, { event, steps: outputs, item: undefined }),
+        );
         for (const item of items) {
           await stepArgs(step, event, outputs, item);
           await add(step.id, step.tool);
