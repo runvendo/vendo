@@ -25,10 +25,10 @@ export const vendoErrorCodeSchema = z.enum([
 /** 01-core §15 */
 export class VendoError extends Error {
   /** 01-core §15 */
-  readonly code: VendoErrorCode;
+  code: VendoErrorCode;
 
   /** 01-core §15 */
-  readonly detail?: Json;
+  detail?: Json;
 
   /** 01-core §15 */
   constructor(code: VendoErrorCode, message: string, detail?: Json) {
@@ -36,5 +36,15 @@ export class VendoError extends Error {
     this.name = "VendoError";
     this.code = code;
     this.detail = detail;
+  }
+}
+
+/** Never throws, even for hostile errors with throwing message/toString getters. */
+export function safeErrorMessage(error: unknown): string {
+  try {
+    if (error instanceof Error && typeof error.message === "string") return error.message;
+    return String(error);
+  } catch {
+    return "unknown validation failure";
   }
 }
