@@ -73,6 +73,10 @@ const ADDITIVE_DDL = [
   // fills the column for any direct INSERT that omits it (the table map is public); our
   // own write paths always populate it explicitly.
   "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now()",
+  // ADD COLUMN IF NOT EXISTS SKIPS when the column already exists, so databases that
+  // booted before the DEFAULT was introduced would keep a default-less column forever.
+  // SET DEFAULT is idempotent, so it runs every boot like the rest of this block.
+  "ALTER TABLE vendo_state ALTER COLUMN created_at SET DEFAULT now()",
   "CREATE INDEX IF NOT EXISTS vendo_state_id_idx ON vendo_state (id)",
 ] as const;
 

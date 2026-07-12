@@ -234,6 +234,23 @@ for (const backend of backends()) {
         "SELECT created_at FROM vendo_state WHERE app_id = 'app_direct'",
       ))[0]?.["created_at"]).not.toBeNull();
     });
+
+    it("repairs a pre-existing created_at column that has no default (P1)", async () => {
+      // Databases that booted before the DEFAULT was introduced have the column
+      // WITHOUT a default, and ADD COLUMN IF NOT EXISTS skips entirely when the
+      // column already exists. Simulate that state, then confirm ensureSchema's
+      // explicit SET DEFAULT repairs it on the next boot.
+      await made.sql("ALTER TABLE vendo_state ALTER COLUMN created_at DROP DEFAULT");
+      await made.store.ensureSchema();
+      await made.sql(
+        `INSERT INTO vendo_state (app_id, subject, data, updated_at)
+         VALUES ('app_repair', 'user_repair', $1::jsonb, $2)`,
+        [JSON.stringify({ repaired: true }), "2026-06-02T00:00:00.000Z"],
+      );
+      expect((await made.sql(
+        "SELECT created_at FROM vendo_state WHERE app_id = 'app_repair'",
+      ))[0]?.["created_at"]).not.toBeNull();
+    });
   });
 }
 
