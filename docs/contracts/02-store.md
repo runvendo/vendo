@@ -1,6 +1,6 @@
 # @vendoai/store — persistence under everything
 
-Status: DRAFT (wave 2). One job: implement core's `StoreAdapter` on Postgres. Stay boring: Postgres-only, PGlite zero-config default, same schema on real Postgres in prod. One adapter, no matrix. Depends on core + drivers (`pg`, `@electric-sql/pglite`).
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: implement core's `StoreAdapter` on Postgres. Stay boring: Postgres-only, PGlite zero-config default, same schema on real Postgres in prod. One adapter, no matrix. Depends on core + drivers (`pg`, `@electric-sql/pglite`).
 
 ## 1. Public API
 

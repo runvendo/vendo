@@ -1,6 +1,6 @@
 # @vendoai/apps — the app artifact + the engine that builds and runs them
 
-Status: DRAFT (wave 2). One job: everything Vendo produces and runs is an app (core §9); this block owns the engine that builds them (UI → state → code), the runtime that executes them (tree path + sandbox), the ladder, sharing-as-copy, and pins. Depends on core only; takes an ai-SDK `LanguageModel` for generation. The app-format spec (`docs/superpowers/specs/2026-07-11-app-format-design.md`) is this block's format authority; this contract adds the execution surfaces the spec deferred to wave 2.
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: everything Vendo produces and runs is an app (core §9); this block owns the engine that builds them (UI → state → code), the runtime that executes them (tree path + sandbox), the ladder, sharing-as-copy, and pins. Depends on core only; takes an ai-SDK `LanguageModel` for generation. The app-format spec (`docs/superpowers/specs/2026-07-11-app-format-design.md`) is this block's format authority; this contract adds the execution surfaces the spec deferred to wave 2.
 
 ## 1. Public API
 

@@ -1,6 +1,6 @@
 # @vendoai/automations — apps that run while the user is away
 
-Status: DRAFT (wave 2). One job: fire triggers and execute runs. An automation is an app with a `trigger` (core §11) — creation, editing, versioning, rollback, sharing all ride apps; this block owns trigger ingestion, scheduling, the two run models, and run observability. Depends on core + apps (the one chain). Never imports agent: agentic runs go through the `AgentRunner` seam.
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: fire triggers and execute runs. An automation is an app with a `trigger` (core §11) — creation, editing, versioning, rollback, sharing all ride apps; this block owns trigger ingestion, scheduling, the two run models, and run observability. Depends on core + apps (the one chain). Never imports agent: agentic runs go through the `AgentRunner` seam.
 
 ## 1. Public API
 

@@ -1,6 +1,6 @@
 # @vendoai/core — the shapes everything speaks
 
-Status: DRAFT (wave 2). One job: contracts only — types, zod schemas, format constants, pure validators and hash helpers. No I/O, no behavior. Dependencies: `zod` only. Runs in any JS runtime.
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: contracts only — types, zod schemas, format constants, pure validators and hash helpers. No I/O, no behavior. Dependencies: `zod` only. Runs in any JS runtime.
 
 Everything below is exported from the package root (single entry point). Every type ships a matching zod schema (`<camelCaseName>Schema`) unless marked *type-only*.
 

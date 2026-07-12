@@ -1,6 +1,6 @@
 # @vendoai/agent — the agent loop
 
-Status: DRAFT (wave 2). One job: run the conversation — streaming, tool-calling, context engineering. Nothing else: no tools of its own, no policy, no persistence logic beyond the thread shape. Depends on core + `ai` (Vercel AI SDK ≥ 5) **as a peerDependency** — the host owns the one `ai` install, same singleton rule as React, so the `LanguageModel` a host passes is always assignable (mixed `ai` majors are a documented ai-SDK failure mode). The BYO-LLM seam **is** the ai-SDK `LanguageModel` (Yousef-approved): every provider ships one, and the streaming wire is the ai-SDK UI message stream.
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: run the conversation — streaming, tool-calling, context engineering. Nothing else: no tools of its own, no policy, no persistence logic beyond the thread shape. Depends on core + `ai` (Vercel AI SDK ≥ 5) **as a peerDependency** — the host owns the one `ai` install, same singleton rule as React, so the `LanguageModel` a host passes is always assignable (mixed `ai` majors are a documented ai-SDK failure mode). The BYO-LLM seam **is** the ai-SDK `LanguageModel` (Yousef-approved): every provider ships one, and the streaming wire is the ai-SDK UI message stream.
 
 ## 1. Public API
 

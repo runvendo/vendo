@@ -1,6 +1,6 @@
 # @vendoai/guard — policy, approvals, audit, safety
 
-Status: DRAFT (wave 2). One job: the deterministic policy core at one choke point that binds every path equally — chat, apps, automations, and the future MCP door. Owns approvals, grants, the audit trail, Vendo Auto (the LLM judge), deterministic breakers, the scanner hook, and company directions. Depends on core only (judge takes an ai-SDK `LanguageModel` as config, type-imported).
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: the deterministic policy core at one choke point that binds every path equally — chat, apps, automations, and the future MCP door. Owns approvals, grants, the audit trail, Vendo Auto (the LLM judge), deterministic breakers, the scanner hook, and company directions. Depends on core only (judge takes an ai-SDK `LanguageModel` as config, type-imported).
 
 ## 1. Public API
 

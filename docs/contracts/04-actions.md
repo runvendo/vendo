@@ -1,6 +1,6 @@
 # @vendoai/actions — your API becomes agent tools
 
-Status: DRAFT (wave 2). One job: own ALL tools. Host API, external connectors (Composio, any MCP server), and Vendo capability tools are one tool shape — same risk labels, same guard treatment, same approval UX. Executes as the signed-in user when present; through the host's `actAs` when away. Depends on core only.
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: own ALL tools. Host API, external connectors (Composio, any MCP server), and Vendo capability tools are one tool shape — same risk labels, same guard treatment, same approval UX. Executes as the signed-in user when present; through the host's `actAs` when away. Depends on core only.
 
 Two halves: sync (a build step) and runtime.
 

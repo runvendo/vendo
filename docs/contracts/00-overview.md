@@ -1,6 +1,6 @@
 # Vendo v0 Contracts — Overview
 
-Status: DRAFT — wave 2 of the v0 campaign, awaiting Yousef's review. Nothing ports or builds until this set is approved and frozen.
+Status: FROZEN — the wave-2 gate passed (Yousef, 2026-07-11) after five review rounds. Wave 3+ builds against exactly this set; changes now require a major.
 Sources of truth: the "Open-Source Full Stack Agentic Interface" Notion page and `docs/superpowers/specs/2026-07-11-app-format-design.md`. Every contract here is derived fresh from those two documents; old code proves nothing, except where the app-format spec explicitly pins compatibility (the `vendo-genui/v1` wire format and the grant machinery).
 
 ## The v0 cut
