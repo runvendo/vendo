@@ -205,6 +205,52 @@ for (const backend of backends()) {
         "SELECT COUNT(*)::int AS count FROM vendo_state WHERE subject = 'user'",
       ))[0]?.["count"])).toBe(0);
     });
+
+    it("rejects a state id with an empty subject or empty app segment (P2)", async () => {
+      // "app_demo:" has an empty subject — a routed put would create a state row that
+      // belongs to no principal. "app_:x" has an empty app segment (a degenerate id
+      // the apps runtime never mints). Both are refused at the door.
+      const state = made.store.records("vendo_state");
+      await expect(state.put({ id: "app_demo:", data: { orphan: true } }))
+        .rejects.toMatchObject<VendoError>({ code: "validation" });
+      await expect(state.put({ id: "app_:x", data: { degenerate: true } }))
+        .rejects.toMatchObject<VendoError>({ code: "validation" });
+      // Nothing landed for either doctored id.
+      expect(Number((await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_state WHERE app_id IN ('app_demo', 'app_')",
+      ))[0]?.["count"])).toBe(0);
+    });
+
+    it("gives created_at a non-null default for a direct INSERT that omits it (Devin)", async () => {
+      // The table map is public: a host can INSERT into vendo_state directly. created_at
+      // is the pagination cursor, so a NULL there would break paging — the column
+      // DEFAULTs to now().
+      await made.sql(
+        `INSERT INTO vendo_state (app_id, subject, data, updated_at)
+         VALUES ('app_direct', 'user_direct', $1::jsonb, $2)`,
+        [JSON.stringify({ direct: true }), "2026-06-01T00:00:00.000Z"],
+      );
+      expect((await made.sql(
+        "SELECT created_at FROM vendo_state WHERE app_id = 'app_direct'",
+      ))[0]?.["created_at"]).not.toBeNull();
+    });
+
+    it("repairs a pre-existing created_at column that has no default (P1)", async () => {
+      // Databases that booted before the DEFAULT was introduced have the column
+      // WITHOUT a default, and ADD COLUMN IF NOT EXISTS skips entirely when the
+      // column already exists. Simulate that state, then confirm ensureSchema's
+      // explicit SET DEFAULT repairs it on the next boot.
+      await made.sql("ALTER TABLE vendo_state ALTER COLUMN created_at DROP DEFAULT");
+      await made.store.ensureSchema();
+      await made.sql(
+        `INSERT INTO vendo_state (app_id, subject, data, updated_at)
+         VALUES ('app_repair', 'user_repair', $1::jsonb, $2)`,
+        [JSON.stringify({ repaired: true }), "2026-06-02T00:00:00.000Z"],
+      );
+      expect((await made.sql(
+        "SELECT created_at FROM vendo_state WHERE app_id = 'app_repair'",
+      ))[0]?.["created_at"]).not.toBeNull();
+    });
   });
 }
 
@@ -330,6 +376,27 @@ for (const backend of backends()) {
       // ...and it was NOT misrouted into the dedicated table.
       expect(Number((await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_state WHERE app_id = 'colonless_legacy'",
+      ))[0]?.["count"])).toBe(0);
+    });
+
+    it("leaves an empty-subject legacy row ('app_demo:') in vendo_records — never relocated (P2)", async () => {
+      // The predicate requires a non-empty subject after the colon, so a legacy row
+      // whose id would split to an empty subject is NOT relocated into a principal-less
+      // dedicated row — it survives untouched in vendo_records.
+      await made.sql(
+        `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at)
+         VALUES ('vendo_state', $1, $2::jsonb, NULL, $3, $3)`,
+        ["app_demo:", JSON.stringify({ orphan: true }), "2026-01-02T03:04:05.000Z"],
+      );
+      await downgradeToV1();
+      await made.store.ensureSchema();
+
+      expect(await made.sql(
+        "SELECT id, data FROM vendo_records WHERE collection = 'vendo_state' AND id = 'app_demo:'",
+      )).toEqual([{ id: "app_demo:", data: { orphan: true } }]);
+      // ...and no principal-less row was created in the dedicated table.
+      expect(Number((await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_state WHERE app_id = 'app_demo'",
       ))[0]?.["count"])).toBe(0);
     });
 
