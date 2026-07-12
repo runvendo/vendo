@@ -8,11 +8,8 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
-    "corpus": "pnpm --filter @vendoai/corpus-harness corpus",
-    "demo": "pnpm --filter demo-bank dev",
-    "demo:accounting": "pnpm --filter demo-accounting dev",
-    "composio:connect": "node scripts/composio-connect.mjs"
+    "lint": "node scripts/dependency-guard.mjs && turbo run lint",
+    "deps:guard": "node scripts/dependency-guard.mjs"
   },
   "devDependencies": {
     "turbo": "^2.1.0",

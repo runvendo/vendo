@@ -1,9 +1,10 @@
 name: Corpus Nightly
 
 on:
-  schedule:
-    # 08:00 UTC daily (after most upstream activity settles)
-    - cron: "0 8 * * *"
+  # Schedule disabled during waves 3-6: the corpus harness is out of the active
+  # workspace (red by design) until wave 7 rebuilds it against the new packages.
+  # schedule:
+  #   - cron: "0 8 * * *"
   workflow_dispatch:
     inputs:
       repos:
