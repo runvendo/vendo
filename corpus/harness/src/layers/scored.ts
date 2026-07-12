@@ -111,20 +111,25 @@ function actualInventory(tool: ExtractedTool): ExpectedToolInventory {
   };
 }
 
-function runtimeToolName(expectedName: string): string {
-  return expectedName.startsWith("host_") ? expectedName : `host_${expectedName}`;
-}
-
-function runtimeInventory(item: ExpectedToolInventory): ExpectedToolInventory {
-  return { ...item, name: runtimeToolName(item.name) };
-}
-
+// A tool's IDENTITY for scoring is its endpoint (method + path) and its
+// read/write classification — NOT its name. Tool names are a deterministic,
+// contract-defined value (01-core §15: provider-safe `host_<path>` slugs),
+// while the checked-in expectations carry the pre-freeze OpenAPI-operationId
+// names (`getAdminTeams`). Keying on the endpoint is the "adapted names" the
+// v0 corpus requires, and still catches every real extraction defect: a missed
+// endpoint drops recall, a mis-classified read/write breaks the key.
 function inventoryKey(item: ExpectedToolInventory): string {
-  return `${item.name}\t${item.method}\t${item.path}\t${item.readOrWrite}`;
+  return `${item.method}\t${item.path}\t${item.readOrWrite}`;
+}
+
+/** The endpoint identity (method + path) used to join an expectation to the
+    actual tool independent of the renamed slug. */
+function endpointKey(method: string, path: string): string {
+  return `${method}\t${path}`;
 }
 
 function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
-  const expectedInventories = expected.tools.map(runtimeInventory);
+  const expectedInventories = expected.tools;
   const expectedKeys = new Set(expectedInventories.map(inventoryKey));
   const actualInventories = actualTools.map(actualInventory);
   const actualKeys = actualInventories.map(inventoryKey);
@@ -165,8 +170,16 @@ function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
 }
 
 function scoreAnnotations(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
-  const byName = new Map(actualTools.map((tool) => [tool.name, tool]));
-  const matched = expected.annotations.filter((annotation) => expectedAnnotationMatches(annotation, byName.get(runtimeToolName(annotation.name)))).length;
+  // Names changed by contract (§15), so join by endpoint: the annotation's name
+  // resolves to an expected tool's (method,path) within the expectations, and
+  // that endpoint finds the actual tool.
+  const expectedByName = new Map(expected.tools.map((tool) => [tool.name, tool]));
+  const actualByEndpoint = new Map(actualTools.map((tool) => [endpointKey(tool.binding.method, tool.binding.path), tool]));
+  const resolveActual = (annotationName: string): ExtractedTool | undefined => {
+    const endpoint = expectedByName.get(annotationName);
+    return endpoint ? actualByEndpoint.get(endpointKey(endpoint.method, endpoint.path)) : undefined;
+  };
+  const matched = expected.annotations.filter((annotation) => expectedAnnotationMatches(annotation, resolveActual(annotation.name))).length;
   const annotationScore = expected.annotations.length === 0 ? 1 : matched / expected.annotations.length;
   const unsafe = actualTools.filter(isUnsafeAutoAllowed);
 
