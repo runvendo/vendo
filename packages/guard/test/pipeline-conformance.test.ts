@@ -168,6 +168,30 @@ describe("decision pipeline conformance", () => {
       matches: false,
     },
     {
+      name: "constrained matches rejects nested-quantifier patterns even within length bounds (ReDoS)",
+      grant: {
+        scope: {
+          kind: "constrained" as const,
+          constraints: [{ path: "/memo", op: "matches" as const, value: "^(a+)+$" }],
+        },
+      },
+      ctx: {},
+      args: { memo: `${"a".repeat(64)}b` },
+      matches: false,
+    },
+    {
+      name: "constrained matches rejects backreference patterns (ReDoS)",
+      grant: {
+        scope: {
+          kind: "constrained" as const,
+          constraints: [{ path: "/memo", op: "matches" as const, value: "^(a*)b\\1$" }],
+        },
+      },
+      ctx: {},
+      args: { memo: "ab" },
+      matches: false,
+    },
+    {
       name: "constrained matches rejects oversized input values (ReDoS bound)",
       grant: {
         scope: {
@@ -343,6 +367,27 @@ describe("decision pipeline conformance", () => {
       action: "run",
       decidedBy: "default",
     });
+  });
+
+  it("sweeps idle breaker state: a run idle over an hour restarts its write budget", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const guard = createGuard({
+      store: createMemoryStore(),
+      breakers: { maxWritesPerRun: 1, maxCallsPerMinute: 100 },
+    });
+    const write = descriptor("write");
+    const run = context({ trigger: { runId: "run_sweep", kind: "schedule" } });
+
+    await expect(guard.check(call(write.name, {}, "w1"), write, run)).resolves.toMatchObject({ action: "run" });
+    await expect(guard.check(call(write.name, {}, "w2"), write, run)).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "breaker",
+    });
+
+    // 61 idle minutes later the counter has been swept (documented bounded-memory trade-off).
+    vi.setSystemTime(new Date("2026-01-01T01:01:00.001Z"));
+    await expect(guard.check(call(write.name, {}, "w3"), write, run)).resolves.toMatchObject({ action: "run" });
   });
 
   it("write breaker counts write and destructive runs per trigger run key", async () => {

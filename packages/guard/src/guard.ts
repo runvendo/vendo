@@ -160,6 +160,22 @@ function auditData(record: VendoRecord): AuditEvent {
   return record.data as AuditEvent;
 }
 
+/**
+ * Rejects `matches` constraint patterns that can backtrack catastrophically:
+ * oversize patterns, backreferences, and a quantifier applied to a group that
+ * itself contains a quantifier (the classic exponential shape). The check is
+ * deliberately fail-safe — odd-but-safe patterns may be rejected; rewrite them.
+ * Enforced at grant-mint time (loud validation error) AND match time (fails
+ * the constraint) so pre-existing stored grants can't smuggle one in.
+ */
+function isUnsafeMatchPattern(pattern: string): boolean {
+  if (pattern.length > 256) return true;
+  if (/\\[1-9]/.test(pattern)) return true;
+  return /\((?:[^()\\]|\\.)*(?:[*+]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.)*\)(?:[*+?]|\{\d+(?:,\d*)?\})/.test(
+    pattern,
+  );
+}
+
 function resolvePointer(value: unknown, pointer: string): { found: boolean; value?: unknown } {
   if (pointer === "") return { found: true, value };
   if (!pointer.startsWith("/")) return { found: false };
@@ -202,9 +218,11 @@ function scopeMatches(scope: GrantScope, args: unknown): boolean {
         if (typeof resolved.value !== "string" || typeof constraint.value !== "string") {
           return false;
         }
-        // ReDoS bound: an adversarial pattern or oversized input fails the
-        // constraint instead of stalling the guard process.
-        if (constraint.value.length > 256 || resolved.value.length > 4096) return false;
+        // ReDoS bounds: an adversarial pattern or oversized input fails the
+        // constraint instead of stalling the guard process. Length caps alone
+        // don't stop catastrophic backtracking ("^(a+)+$" is 8 chars), so
+        // exponential-blowup shapes are rejected outright.
+        if (isUnsafeMatchPattern(constraint.value) || resolved.value.length > 1024) return false;
         try {
           return new RegExp(constraint.value).test(resolved.value);
         } catch {
@@ -266,7 +284,8 @@ class GuardImplementation implements VendoGuard {
   readonly #maxCallsPerMinute: number;
   readonly #maxWritesPerRun: number;
   readonly #callWindows = new Map<string, number[]>();
-  readonly #writeCounts = new Map<string, number>();
+  readonly #writeCounts = new Map<string, { count: number; touchedAt: number }>();
+  #lastSweepAt = 0;
   readonly #approvalCallbacks = new Set<(id: ApprovalId, approved: boolean) => void>();
 
   readonly approvals = {
@@ -435,13 +454,13 @@ class GuardImplementation implements VendoGuard {
     if (draft.action === "run") {
       const write = descriptor.risk === "write" || descriptor.risk === "destructive";
       const runKey = ctx.trigger?.runId ?? ctx.sessionId;
-      const writes = this.#writeCounts.get(runKey) ?? 0;
+      const writes = this.#writeCounts.get(runKey)?.count ?? 0;
       const writesTripped = write && writes >= this.#maxWritesPerRun;
 
       if (callsTripped || writesTripped) {
         draft = { action: "ask", decidedBy: "breaker" };
       } else if (write) {
-        this.#writeCounts.set(runKey, writes + 1);
+        this.#writeCounts.set(runKey, { count: writes + 1, touchedAt: Date.now() });
       }
     }
 
@@ -501,12 +520,35 @@ class GuardImplementation implements VendoGuard {
   #recordCall(subject: string): boolean {
     const at = Date.now();
     const cutoff = at - 60_000;
+    this.#sweepBreakerState(at);
     const active = (this.#callWindows.get(subject) ?? []).filter(
       (timestamp) => timestamp > cutoff,
     );
     active.push(at);
     this.#callWindows.set(subject, active);
     return active.length > this.#maxCallsPerMinute;
+  }
+
+  /**
+   * Bounds the in-memory breaker maps (they would otherwise grow one entry per
+   * subject / run key for process lifetime). Runs at most once per minute,
+   * piggybacked on check traffic. Consequence, documented: a run idle longer
+   * than 60 minutes restarts its write budget — the deterministic backstop
+   * favors bounded memory over counting across hour-long gaps.
+   */
+  #sweepBreakerState(at: number): void {
+    if (at - this.#lastSweepAt < 60_000) return;
+    this.#lastSweepAt = at;
+    const windowCutoff = at - 60_000;
+    for (const [subject, timestamps] of this.#callWindows) {
+      if (!timestamps.some((timestamp) => timestamp > windowCutoff)) {
+        this.#callWindows.delete(subject);
+      }
+    }
+    const writeCutoff = at - 60 * 60_000;
+    for (const [runKey, entry] of this.#writeCounts) {
+      if (entry.touchedAt <= writeCutoff) this.#writeCounts.delete(runKey);
+    }
   }
 
   async #pipeline(
@@ -836,6 +878,21 @@ class GuardImplementation implements VendoGuard {
       }
       if (data.status !== "pending") {
         throw new VendoError("conflict", `Approval ${id} has already been decided`);
+      }
+      if (decision.approve && decision.remember?.scope.kind === "constrained") {
+        // Validate BEFORE any state changes: a rejected remember must not leave
+        // the approval half-decided.
+        for (const constraint of decision.remember.scope.constraints) {
+          if (
+            constraint.op === "matches" &&
+            (typeof constraint.value !== "string" || isUnsafeMatchPattern(constraint.value))
+          ) {
+            throw new VendoError(
+              "validation",
+              `Grant constraint pattern for ${constraint.path} is not a safe regular expression`,
+            );
+          }
+        }
       }
 
       const decidedAt = now();
