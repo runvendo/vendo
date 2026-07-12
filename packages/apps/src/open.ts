@@ -104,8 +104,15 @@ export const createAppOpener = (
       : { kind: "resuming", cover: bytesToDataUri(cover.bytes, cover.contentType) };
   }
 
-  if (app.tree === undefined || app.tree.formatVersion !== VENDO_TREE_FORMAT) {
-    throw new VendoError("validation", "tree app has no registered ui payload");
+  if (app.tree === undefined) {
+    throw new VendoError("validation", "tree app has no ui payload");
+  }
+  // 01-core §8 — an unregistered format tag is a contained failure: the payload passes
+  // through untouched (no query resolution) and the renderer shows the notice.
+  if (app.tree.formatVersion !== VENDO_TREE_FORMAT) {
+    return app.components === undefined
+      ? { kind: "tree", payload: structuredClone(app.tree) }
+      : { kind: "tree", payload: structuredClone(app.tree), components: structuredClone(app.components) };
   }
   const validation = validateTree({ ...app.tree, components: app.components });
   if (!validation.ok) throw new VendoError("validation", validation.error.message);

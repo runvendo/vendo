@@ -39,26 +39,19 @@ const ctx: RunContext = {
   sessionId: "session_live_engine",
 };
 
-type ModelFactory = (options: { apiKey: string }) => LanguageModel | Promise<LanguageModel>;
-
 describe.skipIf(!process.env.ANTHROPIC_API_KEY)("generation engine live LLM", () => {
-  it.skipIf(!process.env.VENDO_LIVE_MODEL_MODULE)(
-    "builds a small catalog-aware dashboard with a host-provided model factory",
+  it(
+    "builds a small catalog-aware dashboard with a live Anthropic model",
+    { timeout: 120_000 },
     async () => {
-      const moduleName = process.env.VENDO_LIVE_MODEL_MODULE;
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (moduleName === undefined || apiKey === undefined) throw new Error("live model environment is incomplete");
-      const loaded = await import(moduleName) as { default?: ModelFactory; createModel?: ModelFactory };
-      const factory = loaded.createModel ?? loaded.default;
-      if (factory === undefined) {
-        throw new Error("VENDO_LIVE_MODEL_MODULE must export createModel or a default model factory");
-      }
+      const { createAnthropic } = await import("@ai-sdk/anthropic");
+      const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const runtime = createApps({
         store: memoryStore(),
         guard: guardFixture(),
         tools,
         catalog,
-        model: await factory({ apiKey }),
+        model: anthropic("claude-sonnet-5") as LanguageModel,
       });
 
       const app = await runtime.create({

@@ -6,8 +6,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, mintRunToken, verifyRunToken } from "./index.js";
-import { createMachineSessions } from "./machine.js";
+import { createApps } from "./index.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
   bindTools,
@@ -15,6 +14,7 @@ import {
   fakeSandbox,
   guardFixture,
   memoryStore,
+  scriptedLanguageModel,
   type MachineApp,
 } from "./testing/index.js";
 
@@ -287,17 +287,29 @@ describe("apps execution", () => {
       },
       resume: (ref) => base.resume(ref),
     };
-    const sessions = createMachineSessions({
-      store: memoryStore(),
-      tokenSecret: "machine-test-secret",
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: emptyTools,
       sandbox,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "export const value = 1;" }] }),
+      ),
     });
-    await sessions.withFork({
-      format: VENDO_APP_FORMAT,
+    await store.records("vendo_apps").put({
       id: "app_egress",
-      name: "Egress app",
-      egress: ["api.stripe.com"],
-    }, ctx(), async ({ machine }) => machine.stop());
+      data: {
+        format: VENDO_APP_FORMAT,
+        id: "app_egress",
+        name: "Egress app",
+        egress: ["api.stripe.com"],
+      },
+      refs: { subject: "user_ada" },
+    });
+
+    await runtime.edit("app_egress", "Add a server", ctx());
 
     expect(createSpec?.egress).toEqual(["api.stripe.com"]);
   });
@@ -310,20 +322,44 @@ describe("apps execution", () => {
     await expect(runtime.call(app.id, "host_ok", {}, ctx("user_other"))).rejects.toMatchObject({ code: "not-found" });
   });
 
-  it("verifies signed run tokens and rejects tampering and expiry", async () => {
-    const key = crypto.getRandomValues(new Uint8Array(32));
-    const payload = {
-      appId: "app_token",
-      subject: "user_ada",
-      runId: "run_token",
-      presence: "away" as const,
-      expiresAt: Date.now() + 60_000,
-    };
-    const token = await mintRunToken(key, payload);
-    await expect(verifyRunToken(key, token)).resolves.toEqual(payload);
-    const replacement = token.endsWith("x") ? "y" : "x";
-    await expect(verifyRunToken(key, `${token.slice(0, -1)}${replacement}`)).resolves.toBeNull();
-    const expired = await mintRunToken(key, { ...payload, expiresAt: Date.now() - 1 });
-    await expect(verifyRunToken(key, expired)).resolves.toBeNull();
+  it("rejects tampered and expired run tokens at the proxy", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: emptyTools,
+      sandbox,
+      proxyUrl: "https://proxy.test",
+      catalog: [],
+      model,
+    });
+    const app = await runtime.create({ prompt: "Token app" }, ctx());
+    await store.records("vendo_apps").put({
+      id: app.id,
+      data: { ...app, ui: "http" },
+      refs: { subject: "user_ada" },
+    });
+    await runtime.open(app.id, ctx());
+    await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
+    const token = [...sandbox.machines.values()].at(-1)?.env.VENDO_RUN_TOKEN;
+    expect(token).toBeTypeOf("string");
+
+    const stateRequest = (bearer: string): Request => new Request("https://proxy.test/state", {
+      headers: { authorization: `Bearer ${bearer}` },
+    });
+    const valid = await runtime.proxy.handler(stateRequest(token as string));
+    expect(valid.status).toBe(200);
+
+    const tampered = `${(token as string).slice(0, -1)}${(token as string).endsWith("x") ? "y" : "x"}`;
+    expect((await runtime.proxy.handler(stateRequest(tampered))).status).toBe(401);
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.now() + 16 * 60 * 1_000);
+      expect((await runtime.proxy.handler(stateRequest(token as string))).status).toBe(401);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
