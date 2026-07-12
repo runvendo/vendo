@@ -1,0 +1,380 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "get_account",
+      "description": "Retrieves a single account by its ID. Returns the account object if found, or a 404 error if not found.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The account ID to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "formats": {
+        "balance": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/accounts/{id}",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_account_transactions",
+      "description": "Retrieves all transactions associated with a specific account ID. Returns a list of transactions for that account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The account ID whose transactions to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "formats": {
+        "amount": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/accounts/{id}/transactions",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_accounts",
+      "description": "Returns a list of all accounts in the system. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "balance": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/accounts",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_card_transactions",
+      "description": "Retrieves all transactions associated with a specific card ID. Returns a list of transactions for that card.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The card ID whose transactions to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "formats": {
+        "amount": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/cards/{id}/transactions",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_cards",
+      "description": "Returns a list of all cards in the system. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/cards",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_goals",
+      "description": "Returns a list of all financial goals. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "target": "cents",
+        "saved": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/goals",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_budgets",
+      "description": "Returns budget insight data for all categories. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "limit": "cents",
+        "spent": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/insights/budgets",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_cashflow",
+      "description": "Returns cashflow insight data (income vs. expenses over time). No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "in": "cents",
+        "out": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/insights/cashflow",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_recurring",
+      "description": "Returns data on recurring transactions and subscriptions. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "amount": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/insights/recurring",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_spending_by_category",
+      "description": "Returns spending broken down by category. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "amount": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/insights/spending",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_notifications",
+      "description": "Returns a list of all notifications for the user. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/notifications",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "create_order",
+      "description": "Places a late-night delivery order, appending a new transaction to the store.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "description": "Request body should conform to PlaceOrderInput as defined by the orders server module."
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/orders",
+        "argsIn": "body"
+      }
+    },
+    {
+      "name": "list_payees",
+      "description": "Returns a list of all payees available for payments. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/payees",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_scheduled_payments",
+      "description": "Returns a list of all scheduled payments. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "amount": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/payments/scheduled",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_profile",
+      "description": "Returns the current user's profile information. No input parameters required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "netWorth": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/profile",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_transaction",
+      "description": "Retrieves a single transaction by its ID. Returns the transaction object if found, or a 404 error if not found.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The transaction ID to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "formats": {
+        "amount": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/transactions/{id}",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_transactions",
+      "description": "Returns a paginated, filterable list of transactions. Supports filtering by search text, category, accountId, status, date range (from/to), amount range (min/max), sorting, and cursor-based pagination via limit and cursor.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text search filter."
+          },
+          "category": {
+            "type": "string",
+            "description": "Filter by transaction category."
+          },
+          "accountId": {
+            "type": "string",
+            "description": "Filter by account ID."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by transaction status."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start date filter (ISO date string)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End date filter (ISO date string)."
+          },
+          "min": {
+            "type": "number",
+            "description": "Minimum transaction amount filter."
+          },
+          "max": {
+            "type": "number",
+            "description": "Maximum transaction amount filter."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order for results."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor for fetching the next page."
+          }
+        }
+      },
+      "formats": {
+        "amount": "cents"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/transactions",
+        "argsIn": "query"
+      }
+    }
+  ]
+}

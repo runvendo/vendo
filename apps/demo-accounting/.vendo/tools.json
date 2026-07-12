@@ -1,0 +1,258 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "get_dashboard",
+      "description": "Firm-wide dashboard metrics: how many clients are missing documents, documents outstanding vs received, and the nearest filing deadline with its client.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "nearestDeadline": "iso-datetime",
+        "filingDeadline": "iso-datetime"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/dashboard",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_clients",
+      "description": "List the firm's clients with document progress, derived status and assigned staff. Filter to clients still missing documents or search by name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "missing_docs"
+            ],
+            "description": "Set to missing_docs to return only clients with at least one outstanding document"
+          },
+          "q": {
+            "type": "string",
+            "description": "Case-insensitive search on business name or contact name, e.g. 'rivera'"
+          }
+        }
+      },
+      "formats": {
+        "filingDeadline": "iso-datetime"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/clients",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "get_client",
+      "description": "Fetch one client with document progress, derived status and assigned staff.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id, e.g. cl_rivera"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "formats": {
+        "filingDeadline": "iso-datetime"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/clients/{id}",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_client_documents",
+      "description": "List one client's requested tax documents (their checklist) with per-document status, uploaded file and any rejection note.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/clients/{id}/documents",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "set_document_status",
+      "description": "Advance a document through its lifecycle: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          },
+          "docId": {
+            "type": "string",
+            "description": "Document request id belonging to that client"
+          },
+          "body": {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "receive",
+                  "verify",
+                  "reject"
+                ],
+                "description": "Lifecycle transition to apply"
+              },
+              "fileName": {
+                "type": "string",
+                "description": "Uploaded file name (receive only); a plausible default is generated if omitted"
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why the document was rejected (reject only); shown to the client until they re-upload"
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "docId",
+          "body"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/clients/{id}/documents/{docId}/status",
+        "argsIn": "body"
+      }
+    },
+    {
+      "name": "list_client_messages",
+      "description": "Read one client's message thread with the firm, oldest first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/clients/{id}/messages",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "send_client_message",
+      "description": "Send a message to a client as the firm. This is what the firm uses to chase outstanding documents; the client sees it in their portal.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          },
+          "body": {
+            "type": "object",
+            "required": [
+              "body"
+            ],
+            "properties": {
+              "body": {
+                "type": "string",
+                "description": "Message text; must be non-empty"
+              },
+              "author": {
+                "type": "string",
+                "description": "Staff member sending the message; defaults to the signed-in user, Maya Alvarez"
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/clients/{id}/messages",
+        "argsIn": "body"
+      }
+    },
+    {
+      "name": "list_deadlines",
+      "description": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "formats": {
+        "filingDeadline": "iso-datetime"
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/deadlines",
+        "argsIn": "query"
+      }
+    },
+    {
+      "name": "list_activity",
+      "description": "Firm-wide activity feed, newest first: uploads received, documents verified or rejected, messages sent, deadlines approaching.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of events to return; omit for the full feed"
+          }
+        }
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "route",
+        "method": "GET",
+        "path": "/api/activity",
+        "argsIn": "query"
+      }
+    }
+  ]
+}
