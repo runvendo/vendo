@@ -12,7 +12,14 @@ const chromeScenarios = [
   "automations",
   "notice",
   "stage",
+  "slot",
 ] as const;
+
+// Audit the SETTLED state: the ported design has entrance animations (fade/rise)
+// that briefly composite text at <1 opacity — a transient state axe would flag as
+// low-contrast. Reduced motion (which the chrome CSS freezes to full opacity) is
+// both the stable thing to audit and the exact state vestibular users get.
+test.use({ reducedMotion: "reduce" });
 
 for (const scenario of chromeScenarios) {
   test(`${scenario} has zero WCAG 2.1 A/AA axe violations`, async ({ page }) => {
@@ -25,6 +32,12 @@ for (const scenario of chromeScenarios) {
     if (scenario === "automations") await expect(page.getByRole("switch")).toBeVisible();
     if (scenario === "notice") await expect(page.getByRole("region", { name: "Vendo is running without a policy" })).toBeVisible();
     if (scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
+    if (scenario === "slot") await expect(page.getByText("Invoices app surface")).toBeVisible();
+
+    // Audit the fully-settled state: entrance animations (fade/rise) briefly hold
+    // elements at <1 opacity, which composites text/fills lighter. Wait for every
+    // running animation to finish so axe sees the resting colors, not a transient frame.
+    await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished.catch(() => undefined))));
 
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

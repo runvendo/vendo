@@ -1,8 +1,8 @@
 import { auditEventSchema, permissionGrantSchema, type Principal } from "@vendoai/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { backends, type MadeBackend } from "./backends.test-util.js";
-import { appFixture, at, auditFixture, grantFixture, persistentPrincipal } from "./fixtures.test-util.js";
-import { appStore, auditStore, createStore, grantStore, stateStore, threadStore } from "./index.js";
+import { appFixture, approvalFixture, at, auditFixture, grantFixture, persistentPrincipal } from "./fixtures.test-util.js";
+import { appStore, approvalStore, auditStore, createStore, grantStore, runStore, stateStore, threadStore } from "./index.js";
 
 for (const backend of backends()) {
   describe(backend.name, () => {
@@ -24,6 +24,19 @@ for (const backend of backends()) {
       await threadStore(made.store).put(ephemeral, { id: "thr_ephemeral", messages: [{ text: "temporary" }] });
       await grantStore(made.store).create(ephemeral, grant);
       await auditStore(made.store).append(event);
+      const approval = approvalFixture("apr_ephemeral", {
+        ctx: { principal: ephemeral, venue: "chat", presence: "present", appId: doc.id },
+      });
+      await approvalStore(made.store).create(approval);
+      // Runs carry no subject column — they inherit ephemerality from their (ephemeral) owning app.
+      await runStore(made.store).put({
+        id: "run_ephemeral",
+        appId: doc.id,
+        trigger: { kind: "schedule" },
+        status: "running",
+        record: { transient: true },
+        startedAt: at(50),
+      });
       const records = made.store.records("app:app_ephemeral:notes");
       await records.put({ id: "note_a", data: { text: "temporary a" }, refs: { kind: "note" } });
       await records.put({ id: "note_b", data: { text: "temporary b" }, refs: { kind: "note" } });
@@ -36,6 +49,8 @@ for (const backend of backends()) {
       expect((await threadStore(made.store).get(ephemeral, "thr_ephemeral"))?.messages).toEqual([{ text: "temporary" }]);
       expect(permissionGrantSchema.parse(await grantStore(made.store).get(grant.id))).toEqual(grant);
       expect(auditEventSchema.parse((await auditStore(made.store).query({ principal: ephemeral })).events[0])).toEqual(event);
+      expect((await approvalStore(made.store).pending(ephemeral)).map((request) => request.id)).toEqual(["apr_ephemeral"]);
+      expect(await runStore(made.store).get("run_ephemeral")).toMatchObject({ appId: doc.id, status: "running" });
       expect((await records.get("note_a"))?.data).toEqual({ text: "temporary a" });
       const fetchedRecord = await records.get("note_a");
       (fetchedRecord?.data as { text: string }).text = "mutated after get";
@@ -72,10 +87,15 @@ for (const backend of backends()) {
     });
 
     it("writes no ephemeral subject rows to any corresponding SQL table", async () => {
-      for (const table of ["vendo_apps", "vendo_state", "vendo_threads", "vendo_grants", "vendo_audit"]) {
+      for (const table of ["vendo_apps", "vendo_state", "vendo_threads", "vendo_grants", "vendo_audit", "vendo_approvals"]) {
         const rows = await made.sql(`SELECT COUNT(*)::int AS count FROM ${table} WHERE subject = $1`, [ephemeral.subject]);
         expect(Number(rows[0]?.count), table).toBe(0);
       }
+      const runs = await made.sql(
+        "SELECT COUNT(*)::int AS count FROM vendo_runs WHERE app_id = $1",
+        ["app_ephemeral"],
+      );
+      expect(Number(runs[0]?.count), "vendo_runs").toBe(0);
       const records = await made.sql(
         "SELECT COUNT(*)::int AS count FROM vendo_records WHERE collection = $1",
         ["app:app_ephemeral:notes"],
@@ -106,6 +126,8 @@ for (const backend of backends()) {
       expect(await threadStore(made.store).get(ephemeral, "thr_ephemeral")).toBeNull();
       expect(await made.store.records("app:app_ephemeral:notes").get("note_a")).toBeNull();
       expect(await made.store.blobs("app:app_ephemeral:files").get("z-last.txt")).toBeNull();
+      expect(await runStore(made.store).get("run_ephemeral")).toBeNull();
+      expect(await approvalStore(made.store).get("apr_ephemeral")).toBeNull();
       expect(await appStore(made.store).get("app_persistent")).not.toBeNull();
       expect(await grantStore(made.store).get("grt_persistent")).not.toBeNull();
     });

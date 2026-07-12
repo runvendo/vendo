@@ -9,13 +9,8 @@ import {
   scriptedModel,
   testGuard,
   textTurn,
+  userMessage,
 } from "./test-helpers.js";
-
-const userMessage = (id: string, text: string): UIMessage => ({
-  id,
-  role: "user",
-  parts: [{ type: "text", text }],
-});
 
 function assistantText(messages: UIMessage[]): string {
   return messages
@@ -76,7 +71,7 @@ describe("agent threads", () => {
     expect(Date.parse(secondThread!.updatedAt)).toBeGreaterThan(Date.parse(firstThread!.updatedAt));
   });
 
-  it("isolates get, list, delete, and colliding stream ids by principal subject", async () => {
+  it("isolates get, list, and delete by principal subject — one subject never reads or deletes another's thread", async () => {
     const store = memoryStore();
     const guard = testGuard({});
     const tools = boundRegistry({}, guard);
@@ -94,36 +89,82 @@ describe("agent threads", () => {
       principal: { kind: "user", subject: "u2" },
       sessionId: "s2",
     });
-    const threadId = "thr_private";
+    // Reserved vendo_threads rows are keyed by the bare thread id (02 §2 — `id`
+    // is the primary key), so each thread is one row; subjects own distinct
+    // ids. Isolation (03 §5) is enforced by subject checks on read/delete.
+    const u1ThreadId = "thr_private_u1";
+    const u2ThreadId = "thr_private_u2";
 
-    const response = await agent.stream({
-      threadId,
+    await readSse(await agent.stream({
+      threadId: u1ThreadId,
       message: userMessage("user_private", "Private question"),
       ctx: u1,
-    });
-    await readSse(response);
+    }));
 
-    expect(await agent.threads.get(threadId, u2)).toBeNull();
+    // u2 cannot see u1's thread by id or in its own listing.
+    expect(await agent.threads.get(u1ThreadId, u2)).toBeNull();
     expect(await agent.threads.list(u2)).toEqual([]);
 
-    const u1Before = await agent.threads.get(threadId, u1);
-    const foreignResponse = await agent.stream({
-      threadId,
+    const u1Before = await agent.threads.get(u1ThreadId, u1);
+    await readSse(await agent.stream({
+      threadId: u2ThreadId,
       message: userMessage("user_independent", "Independent question"),
       ctx: u2,
-    });
-    await readSse(foreignResponse);
+    }));
 
-    const u1After = await agent.threads.get(threadId, u1);
-    const u2Thread = await agent.threads.get(threadId, u2);
-    expect(u1After).toEqual(u1Before);
-    expect(u2Thread).toMatchObject({ id: threadId, subject: "u2" });
+    // u2's own thread is independent; u1's is untouched and still private to u1.
+    const u2Thread = await agent.threads.get(u2ThreadId, u2);
+    expect(u2Thread).toMatchObject({ id: u2ThreadId, subject: "u2" });
     expect(assistantText(u2Thread!.messages)).toContain("Independent reply.");
+    expect(await agent.threads.get(u2ThreadId, u1)).toBeNull();
+    expect(await agent.threads.get(u1ThreadId, u1)).toEqual(u1Before);
+    expect(await agent.threads.list(u1)).toHaveLength(1);
     expect(await agent.threads.list(u2)).toHaveLength(1);
 
-    await agent.threads.delete(threadId, u2);
-    expect(await agent.threads.get(threadId, u1)).not.toBeNull();
+    // A foreign-subject delete is a no-op: u2 cannot delete u1's thread.
+    await agent.threads.delete(u1ThreadId, u2);
+    expect(await agent.threads.get(u1ThreadId, u1)).not.toBeNull();
     expect(await agent.threads.list(u1)).toHaveLength(1);
+  });
+
+  it("refuses to reuse another subject's persisted thread id (conflict, no takeover)", async () => {
+    const store = memoryStore();
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const agent = createAgent({
+      model: scriptedModel([textTurn("Owned reply.", "text_owned")]),
+      tools,
+      guard,
+      store,
+    });
+    const u1 = ctx();
+    const u2 = ctx({
+      principal: { kind: "user", subject: "u2" },
+      sessionId: "s2",
+    });
+    const threadId = "thr_owned_by_u1";
+
+    await readSse(await agent.stream({
+      threadId,
+      message: userMessage("user_owned", "Mine"),
+      ctx: u1,
+    }));
+
+    // u2 streaming to u1's id must be refused outright: get() reads the
+    // foreign row as null, but silently reusing the id would let persist()'s
+    // bare-id upsert take over u1's row (03 §5).
+    await expect(agent.stream({
+      threadId,
+      message: userMessage("user_takeover", "Take over"),
+      ctx: u2,
+    })).rejects.toMatchObject({ code: "conflict" });
+
+    // u1's thread is intact — same subject, same messages — and u2 owns nothing.
+    const intact = await agent.threads.get(threadId, u1);
+    expect(intact).toMatchObject({ id: threadId, subject: "u1" });
+    expect(intact!.messages.some((message) => message.id === "user_owned")).toBe(true);
+    expect(intact!.messages.some((message) => message.id === "user_takeover")).toBe(false);
+    expect(await agent.threads.list(u2)).toEqual([]);
   });
 
   it("keeps ephemeral principal threads in session memory even when a store is configured", async () => {
@@ -158,5 +199,82 @@ describe("agent threads", () => {
     expect(await agent.threads.list(ephemeralCtx)).toEqual([
       expect.objectContaining({ id: threadId, title: "Temporary question" }),
     ]);
+  });
+
+  it("skips a malformed thread row instead of bricking the whole listing (M5)", async () => {
+    const store = memoryStore();
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const agent = createAgent({
+      model: scriptedModel([textTurn("Good reply.", "text_good")]),
+      tools,
+      guard,
+      store,
+    });
+    const runCtx = ctx();
+
+    // A well-formed thread for the subject.
+    await readSse(await agent.stream({
+      threadId: "thr_good",
+      message: userMessage("user_good", "Good question"),
+      ctx: runCtx,
+    }));
+
+    // Junk-MESSAGES row for the SAME subject, written straight through the store
+    // seam: a message with no `parts` and a non-object message. This is a valid
+    // Thread whose messages yield no title — titleFor must TOLERATE it (fall back
+    // to "New thread") rather than throwing and bricking the whole listing.
+    await store.records("vendo_threads").put({
+      id: "thr_junk_msgs",
+      data: { subject: "u1", messages: [{ role: "user" }, "not-a-message"] },
+      refs: { subject: "u1" },
+    });
+    // Truly-unparseable row (messages is not even an array): threadFromRecord must
+    // SKIP it (return null) so it never reaches titleFor.
+    await store.records("vendo_threads").put({
+      id: "thr_unparseable",
+      data: { subject: "u1", messages: "nope" },
+      refs: { subject: "u1" },
+    });
+
+    // No throw; the good thread keeps its title, the junk-messages thread lists
+    // with the fallback title, the unparseable row is dropped.
+    const summaries = await agent.threads.list(runCtx);
+    expect(summaries.map((s) => s.id).sort()).toEqual(["thr_good", "thr_junk_msgs"]);
+    expect(summaries.find((s) => s.id === "thr_good")).toMatchObject({ title: "Good question" });
+    expect(summaries.find((s) => s.id === "thr_junk_msgs")).toMatchObject({ title: "New thread" });
+  });
+
+  it("lets two subjects privately use the same thread id in MEMORY mode (no store)", async () => {
+    // With no store, threads live in per-subject maps: the same id is two distinct
+    // private threads — no conflict, no leak. This pins the intentional divergence
+    // from the store path (where the bare-id row forces cross-subject refusal).
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const agent = createAgent({
+      model: scriptedModel([
+        textTurn("Alice reply.", "text_alice"),
+        textTurn("Bob reply.", "text_bob"),
+      ]),
+      tools,
+      guard,
+      // no store
+    });
+    const alice = ctx({ principal: { kind: "user", subject: "alice" }, sessionId: "sa" });
+    const bob = ctx({ principal: { kind: "user", subject: "bob" }, sessionId: "sb" });
+    const sharedId = "thr_shared_id";
+
+    await readSse(await agent.stream({ threadId: sharedId, message: userMessage("m_a", "Hi from Alice"), ctx: alice }));
+    // Bob reusing the SAME id does NOT conflict and does NOT see Alice's thread.
+    await readSse(await agent.stream({ threadId: sharedId, message: userMessage("m_b", "Hi from Bob"), ctx: bob }));
+
+    const aliceThread = await agent.threads.get(sharedId, alice);
+    const bobThread = await agent.threads.get(sharedId, bob);
+    expect(assistantText(aliceThread!.messages)).toContain("Alice reply.");
+    expect(assistantText(aliceThread!.messages)).not.toContain("Bob reply.");
+    expect(assistantText(bobThread!.messages)).toContain("Bob reply.");
+    expect(assistantText(bobThread!.messages)).not.toContain("Alice reply.");
+    expect(aliceThread!.messages.some((m) => m.id === "m_b")).toBe(false);
+    expect(bobThread!.messages.some((m) => m.id === "m_a")).toBe(false);
   });
 });

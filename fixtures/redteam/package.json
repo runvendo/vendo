@@ -1,0 +1,29 @@
+{
+  "name": "@vendoai/redteam-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Red-team mini-umbrella harness: composes the REAL blocks (store + guard + actions + apps + automations) around the fixture host app so adversarial e2e suites can attack the composed system.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^3.0.12",
+    "@types/node": "^22.0.0",
+    "@vendoai/actions": "workspace:*",
+    "@vendoai/agent": "workspace:*",
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/automations": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "ai": "^6.0.0",
+    "fflate": "^0.8.2",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

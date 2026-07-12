@@ -107,19 +107,20 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
       {open ? (
         <div
           ref={dialog}
-          className="vendo-palette"
+          className="fl-overlay-scrim"
           role="dialog"
           aria-modal="true"
           aria-label="Vendo command palette"
           onKeyDown={onKeyDown}
           onMouseDown={event => { if (event.target === event.currentTarget) close(); }}
+          style={{ display: "grid", padding: 18, placeItems: "center" }}
         >
-          <div className="vendo-dialog">
+          <div className="fl-picker" style={{ alignSelf: "center", maxWidth: 560 }}>
             <label>
-              <span className="vendo-muted">Command</span>
+              <span className="fl-picker-group" style={{ display: "block", margin: "0 2px 9px" }}>Command</span>
               <input
                 ref={input}
-                className="vendo-input"
+                className="fl-picker-search"
                 role="combobox"
                 aria-expanded="true"
                 aria-controls="vendo-command-list"
@@ -129,19 +130,46 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
                 onChange={event => { setQuery(event.currentTarget.value); setActive(0); }}
               />
             </label>
-            <ul id="vendo-command-list" className="vendo-palette-list" role="listbox">
+            <ul
+              id="vendo-command-list"
+              className="fl-picker-grid"
+              role="listbox"
+              style={{ gridTemplateColumns: "1fr", listStyle: "none", marginTop: 8 }}
+            >
               {visible.map((command, index) => (
                 <li
                   id={`vendo-command-${command.id}`}
-                  className="vendo-option"
+                  className="fl-picker-item"
                   role="option"
                   aria-selected={index === active}
                   key={command.id}
                   onMouseDown={event => event.preventDefault()}
                   onClick={() => select(command)}
-                >{command.label}</li>
+                  style={index === active ? { background: "var(--vendo-accent-soft)", borderColor: "var(--vendo-border-strong)" } : undefined}
+                >
+                  <span className="fl-picker-ic" aria-hidden="true">
+                    {command.kind === "new-conversation" ? (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    ) : command.kind === "open-app" ? (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect width="7" height="7" x="3" y="3" rx="1" />
+                        <rect width="7" height="7" x="14" y="3" rx="1" />
+                        <rect width="7" height="7" x="3" y="14" rx="1" />
+                        <rect width="7" height="7" x="14" y="14" rx="1" />
+                      </svg>
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 3v18h18" />
+                        <path d="m7 16 4-5 4 3 4-7" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="fl-picker-nm">{command.label}</span>
+                </li>
               ))}
-              {visible.length === 0 ? <li className="vendo-muted">No matching commands</li> : null}
+              {visible.length === 0 ? <li className="fl-auto-sub">No matching commands</li> : null}
             </ul>
           </div>
         </div>
