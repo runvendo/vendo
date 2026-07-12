@@ -56,8 +56,10 @@ export function secretStore(store: VendoStore): {
       await db.query("DELETE FROM vendo_secrets WHERE name = $1", [name]);
     },
     async list() {
-      const result = await db.query("SELECT name FROM vendo_secrets ORDER BY name ASC");
-      return result.rows.map((row) => text(row["name"]));
+      const result = await db.query("SELECT name FROM vendo_secrets");
+      // Sort in JS: SQL ORDER BY is collation-dependent (PGlite ships C,
+      // hosted Postgres usually a locale) — one deterministic order everywhere.
+      return result.rows.map((row) => text(row["name"])).sort();
     },
   };
 }

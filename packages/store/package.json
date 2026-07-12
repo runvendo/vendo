@@ -30,7 +30,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "tsc -p tsconfig.json && vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

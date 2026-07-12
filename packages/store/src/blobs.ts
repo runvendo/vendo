@@ -15,7 +15,15 @@ export function createBlobStore(db: Db, namespace: string): BlobStore {
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (namespace, key) DO UPDATE
          SET bytes = EXCLUDED.bytes, content_type = EXCLUDED.content_type`,
-        [namespace, key, bytes, meta?.contentType ?? null, new Date().toISOString()],
+        [
+          namespace,
+          key,
+          // node-postgres only recognizes Buffer as bytea; a plain Uint8Array
+          // would be serialized as JSON. PGlite accepts Buffer (a Uint8Array).
+          Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+          meta?.contentType ?? null,
+          new Date().toISOString(),
+        ],
       );
     },
     async get(key) {
@@ -29,7 +37,9 @@ export function createBlobStore(db: Db, namespace: string): BlobStore {
       if (!(bytes instanceof Uint8Array)) throw new Error("Expected database bytea");
       const contentType = row["content_type"];
       return {
-        bytes,
+        // Normalize to a plain Uint8Array so both drivers return one shape
+        // (pg hands back Buffer, PGlite hands back Uint8Array).
+        bytes: new Uint8Array(bytes),
         ...(typeof contentType === "string" ? { contentType } : {}),
       };
     },
@@ -38,10 +48,12 @@ export function createBlobStore(db: Db, namespace: string): BlobStore {
     },
     async list(prefix = "") {
       const result = await db.query(
-        "SELECT key FROM vendo_blobs WHERE namespace = $1 AND key LIKE $2 ESCAPE '\\' ORDER BY key ASC",
+        "SELECT key FROM vendo_blobs WHERE namespace = $1 AND key LIKE $2 ESCAPE '\\'",
         [namespace, `${escapeLike(prefix)}%`],
       );
-      return result.rows.map((row) => text(row["key"]));
+      // Sort in JS: SQL ORDER BY is collation-dependent (PGlite ships C,
+      // hosted Postgres usually a locale) — one deterministic order everywhere.
+      return result.rows.map((row) => text(row["key"])).sort();
     },
   };
 }
