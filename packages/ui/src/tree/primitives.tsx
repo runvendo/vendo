@@ -91,7 +91,7 @@ export function Text(props: PropsWithChildren<{
 export function Skeleton(props: { width?: string | number; height?: string | number }) {
   return (
     <span
-      className="fl-glass-shimmer"
+      className="fl-glass fl-glass-shimmer"
       data-primitive="Skeleton"
       aria-hidden="true"
       style={{

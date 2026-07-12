@@ -1,11 +1,12 @@
 import type { ApprovalRequest, Json, RiskLabel, ToolOutcome, VendoViewPart } from "@vendoai/core";
 import { isToolUIPart, type UIMessage } from "ai";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
 import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { FluidThinking } from "./fluid-thinking.js";
 import { Markdown } from "./markdown.js";
 
 function partData(part: UIMessage["parts"][number]): unknown {
@@ -30,6 +31,21 @@ function toolName(part: Extract<UIMessage["parts"][number], { toolCallId: string
   return part.type === "dynamic-tool" && "toolName" in part ? part.toolName : part.type.replace(/^tool-/, "");
 }
 
+/** A picked File → an ai-SDK FileUIPart (data URL) so it can ride the turn. */
+function fileToPart(file: File): Promise<{ type: "file"; mediaType: string; filename: string; url: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("file read failed"));
+    reader.onload = () => resolve({
+      type: "file",
+      mediaType: file.type || "application/octet-stream",
+      filename: file.name,
+      url: String(reader.result),
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
 function preview(input: unknown): string {
   if (typeof input === "string") return input;
   try {
@@ -39,26 +55,113 @@ function preview(input: unknown): string {
   }
 }
 
+export interface VendoThreadProps {
+  threadId?: string;
+  /** Landing headline shown above the composer while the thread is empty. */
+  greeting?: string;
+  /** Starter prompts shown as chips on the empty landing; clicking sends one. */
+  suggestions?: string[];
+  /** Show a mic affordance in the composer that launches the host's voice surface. */
+  onVoice?: () => void;
+}
+
 /** 08-ui §4 — conversation chrome over the headless thread transport. */
-export function VendoThread({ threadId }: { threadId?: string }) {
+export function VendoThread({
+  threadId,
+  greeting = "What can I help you build?",
+  suggestions = [],
+  onVoice,
+}: VendoThreadProps) {
   const { client, components } = useVendoContext();
   const thread = useVendoThread(threadId);
   const [draft, setDraft] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
   const busy = thread.status === "submitted" || thread.status === "streaming";
+  const landing = thread.messages.length === 0;
+  const activeAssistant = thread.messages.at(-1)?.role === "assistant" ? thread.messages.at(-1) : undefined;
+  const assistantHasVisibleText = activeAssistant?.parts.some(
+    part => part.type === "text" && part.text.trim().length > 0,
+  ) ?? false;
+  const working = busy && !assistantHasVisibleText;
 
-  const send = () => {
-    const text = draft.trim();
-    if (!text || busy) return;
+  const send = (override?: string) => {
+    const text = (override ?? draft).trim();
+    if ((!text && files.length === 0) || busy) return;
+    const pending = files;
     setDraft("");
-    void thread.sendMessage({ text });
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
+    void (async () => {
+      const parts = await Promise.all(pending.map(fileToPart));
+      void thread.sendMessage(parts.length > 0 ? { text, files: parts } : { text });
+    })();
   };
+
+  const composer = (
+    <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
+      {files.length > 0 ? (
+        <div className="fl-att-chips">
+          {files.map((file, i) => (
+            <span className="fl-att-file" key={`${file.name}-${i}`}>
+              <span className="fl-att-name">{file.name}</span>
+              <button type="button" className="fl-att-rm fl-att-rm-file" aria-label={`Remove ${file.name}`}
+                onClick={() => setFiles(current => current.filter((_, j) => j !== i))}>×</button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div className="fl-composer-row">
+        <input ref={fileRef} type="file" multiple hidden aria-hidden="true"
+          onChange={event => { if (event.target.files) setFiles(current => [...current, ...Array.from(event.target.files!)]); }} />
+        <button type="button" className="fl-icon-btn fl-attach" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
+        <label style={{ display: "contents" }}>
+          <span className="fl-sr-only">Message</span>
+          <textarea
+            aria-label="Message"
+            placeholder="Ask anything"
+            rows={1}
+            value={draft}
+            disabled={busy}
+            onChange={event => setDraft(event.currentTarget.value)}
+            onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
+          />
+        </label>
+        {onVoice ? (
+          <button type="button" className="fl-icon-btn" aria-label="Start voice" onClick={onVoice}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 19v3" />
+            </svg>
+          </button>
+        ) : null}
+        {busy ? (
+          <button className="fl-icon-btn" type="button" aria-label="Stop" onClick={() => void thread.stop()}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
+            <span className="fl-sr-only">Stop</span>
+          </button>
+        ) : (
+          <button className="fl-icon-btn fl-send" type="submit" aria-label="Send" disabled={!draft.trim() && files.length === 0}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
+            </svg>
+            <span className="fl-sr-only">Send</span>
+          </button>
+        )}
+      </div>
+      <span role="status" aria-live="polite" className="fl-sr-only">{thread.status}</span>
+    </form>
+  );
 
   const renderPart = (part: UIMessage["parts"][number], key: string, role: UIMessage["role"]) => {
     if (part.type === "text") {
       return role === "user"
         ? <div className="fl-usertext" key={key}>{part.text}</div>
-        : <Markdown key={key} text={part.text} />;
+        : <Markdown key={key} text={part.text} streaming={part.state === "streaming"} />;
     }
     if (isToolUIPart(part)) {
       const risk = risks.get(part.toolCallId) ?? "read";
@@ -106,6 +209,26 @@ export function VendoThread({ threadId }: { threadId?: string }) {
 
   const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
 
+  if (landing) {
+    return (
+      <ChromeRoot>
+        <div className="fl-thread" role="region" aria-label="Vendo conversation">
+          <div className="fl-landing">
+            <h1 className="fl-greet">{greeting}</h1>
+            <div className="fl-landing-composer">{composer}</div>
+            {suggestions.length > 0 ? (
+              <div className="fl-chips">
+                {suggestions.map((text, i) => (
+                  <button type="button" className="fl-chip" key={`${i}-${text}`} onClick={() => send(text)}>{text}</button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </ChromeRoot>
+    );
+  }
+
   return (
     <ChromeRoot>
       <div className="fl-thread" role="region" aria-label="Vendo conversation">
@@ -142,42 +265,9 @@ export function VendoThread({ threadId }: { threadId?: string }) {
               />
             );
           })}
+          {working ? <FluidThinking label="Working" /> : null}
         </div>
-        <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
-          <div className="fl-composer-row">
-            <label style={{ display: "contents" }}>
-              <span className="fl-sr-only">Message</span>
-              <textarea
-                aria-label="Message"
-                rows={1}
-                value={draft}
-                disabled={busy}
-                onChange={event => setDraft(event.currentTarget.value)}
-                onKeyDown={event => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    send();
-                  }
-                }}
-              />
-            </label>
-            <button className="fl-icon-btn fl-send" type="submit" aria-label="Send" disabled={busy || !draft.trim()}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
-              </svg>
-              <span className="fl-sr-only">Send</span>
-            </button>
-            {busy ? (
-              <button className="fl-icon-btn" type="button" aria-label="Stop" onClick={() => void thread.stop()}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <rect x="6" y="6" width="12" height="12" rx="2.5" />
-                </svg>
-                <span className="fl-sr-only">Stop</span>
-              </button>
-            ) : null}
-          </div>
-          <span role="status" aria-live="polite" className="fl-sr-only">{thread.status}</span>
-        </form>
+        {composer}
       </div>
     </ChromeRoot>
   );
