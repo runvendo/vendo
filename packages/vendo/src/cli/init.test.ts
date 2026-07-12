@@ -161,6 +161,18 @@ describe("vendo init", () => {
     });
   });
 
+  it("wraps a layout that returns bare children (no JSX slot) with VendoRoot", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "import type { ReactNode } from \"react\";\n" +
+      "export default function RootLayout({ children }: { children: ReactNode }) {\n" +
+      "    return children;\n}\n");
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
+    expect(layout).toContain("import { VendoRoot } from \"@vendoai/vendo/react\";");
+    expect(layout).toContain("return <VendoRoot>{children}</VendoRoot>;");
+  });
+
   it("emits only init telemetry and respects env opt-out", async () => {
     const root = await fixture();
     const home = await mkdtemp(join(tmpdir(), "vendo-home-"));

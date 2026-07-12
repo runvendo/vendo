@@ -181,15 +181,23 @@ function defaultLayoutSource(): string {
 
 function wireLayout(source: string): string | null {
   if (source.includes("<VendoRoot") || source.includes("from \"@vendoai/vendo/react\"")) return source;
-  const childMatches = source.match(/\{children\}/g)?.length ?? 0;
-  if (childMatches !== 1) return null;
-  const directive = source.match(/^(["']use (?:client|server)["'];?\s*)/);
   const importLine = `import { VendoRoot } from "@vendoai/vendo/react";\n`;
+  const directive = source.match(/^(["']use (?:client|server)["'];?\s*)/);
   const prefix = directive?.[1] ?? "";
-  const withImport = prefix.length === 0
-    ? `${importLine}${source}`
-    : `${prefix}${importLine}${source.slice(prefix.length)}`;
-  return withImport.replace("{children}", "<VendoRoot>{children}</VendoRoot>");
+  const withImport = (body: string): string =>
+    prefix.length === 0 ? `${importLine}${body}` : `${prefix}${importLine}${body.slice(prefix.length)}`;
+
+  const childMatches = source.match(/\{children\}/g)?.length ?? 0;
+  if (childMatches === 1) {
+    return withImport(source).replace("{children}", "<VendoRoot>{children}</VendoRoot>");
+  }
+  // A layout that returns the bare `children` (a valid Next pattern, e.g.
+  // `return children;`) has no {children} JSX slot to wrap — rewrite the return.
+  const bareReturn = /(\breturn\s*\(?\s*)children(\s*\)?\s*;)/;
+  if (childMatches === 0 && bareReturn.test(source)) {
+    return withImport(source).replace(bareReturn, "$1<VendoRoot>{children}</VendoRoot>$2");
+  }
+  return null;
 }
 
 function diff(path: string, before: string | null, after: string): string {
