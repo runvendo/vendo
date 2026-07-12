@@ -58,6 +58,16 @@ export const DDL = [
   `CREATE TABLE IF NOT EXISTS vendo_secrets (
     name text PRIMARY KEY, ciphertext text NOT NULL, created_at timestamptz NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS vendo_mcp_clients (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_clients_refs_idx ON vendo_mcp_clients USING GIN (refs jsonb_path_ops)",
+  `CREATE TABLE IF NOT EXISTS vendo_mcp_grants (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_refs_idx ON vendo_mcp_grants USING GIN (refs jsonb_path_ops)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2

@@ -9,7 +9,7 @@ import type { ToolOutcome } from "./tools.js";
 export interface AuditEvent {
   id: string;
   at: IsoDateTime;
-  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share";
+  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth";
   principal: Principal;
   venue: RunContext["venue"];
   presence: RunContext["presence"];
@@ -26,7 +26,7 @@ export interface AuditEvent {
 export const auditEventSchema = z.object({
   id: z.string().regex(/^aud_.+$/),
   at: isoDateTimeSchema,
-  kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share"]),
+  kind: z.enum(["tool-call", "approval", "policy-decision", "run", "app-lifecycle", "share", "door-auth"]),
   principal: principalSchema,
   venue: z.enum(["chat", "app", "automation", "mcp"]),
   presence: z.enum(["present", "away"]),

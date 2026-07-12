@@ -56,7 +56,9 @@
     "test": "vitest run --passWithNoTests",
     "pretypecheck": "pnpm run build:jail",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:mcp-shim": "playwright test --config e2e/mcp-shim.config.ts",
+    "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.30",
@@ -72,6 +74,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@playwright/test": "^1.49.0",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",

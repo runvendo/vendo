@@ -18,6 +18,8 @@ const CONTRACT_COLUMNS: Record<string, string[]> = {
   vendo_audit: ["id", "at", "kind", "subject", "venue", "presence", "app_id", "tool", "event"],
   vendo_runs: ["id", "app_id", "trigger", "status", "record", "started_at", "finished_at"],
   vendo_secrets: ["name", "ciphertext", "created_at"],
+  vendo_mcp_clients: ["id", "data", "refs", "created_at", "updated_at"],
+  vendo_mcp_grants: ["id", "data", "refs", "created_at", "updated_at"],
 };
 
 for (const backend of backends()) {
@@ -62,7 +64,25 @@ for (const backend of backends()) {
       expect(after).toBe(before);
     });
 
-    it("creates all 11 contract tables with every contracted key column", async () => {
+    it("migrates a version 1 database to the additive door tables", async () => {
+      await made.sql("DROP TABLE vendo_mcp_clients, vendo_mcp_grants");
+      await made.sql("UPDATE vendo_meta SET value = '1'::jsonb WHERE key = 'schema_version'");
+
+      await made.store.ensureSchema();
+
+      expect((await made.sql("SELECT value FROM vendo_meta WHERE key = 'schema_version'"))[0]?.value).toBe(2);
+      const rows = await made.sql(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN ('vendo_mcp_clients', 'vendo_mcp_grants')
+         ORDER BY table_name`,
+      );
+      expect(rows).toEqual([
+        { table_name: "vendo_mcp_clients" },
+        { table_name: "vendo_mcp_grants" },
+      ]);
+    });
+
+    it("creates all 13 contract tables with every contracted key column", async () => {
       const rows = await made.sql(
         "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
       );
@@ -73,7 +93,7 @@ for (const backend of backends()) {
         columns.add(String(row.column_name));
         actual.set(table, columns);
       }
-      expect(actual.size).toBe(11);
+      expect(actual.size).toBe(13);
       for (const [table, columns] of Object.entries(CONTRACT_COLUMNS)) {
         expect(actual.has(table), table).toBe(true);
         for (const column of columns) expect(actual.get(table)?.has(column), `${table}.${column}`).toBe(true);
@@ -94,6 +114,8 @@ for (const backend of backends()) {
         ["vendo_audit", "event"],
         ["vendo_runs", "trigger"],
         ["vendo_runs", "record"],
+        ["vendo_mcp_clients", "data"],
+        ["vendo_mcp_grants", "data"],
       ];
       const rows = await made.sql(
         "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
@@ -106,12 +128,17 @@ for (const backend of backends()) {
       expect(typeOf.get("vendo_secrets.ciphertext")).toBe("text");
     });
 
-    it("creates a GIN index on vendo_records.refs", async () => {
-      const rows = await made.sql(
-        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'vendo_records'",
-      );
-      expect(rows.some((row) => /USING gin \(refs/.test(String(row.indexdef)))).toBe(true);
-    });
+    // Parameterized over vendo_records plus the wave-6 door tables (supersedes a
+    // single-table check): every refs column the host joins on gets a GIN index.
+    for (const table of ["vendo_records", "vendo_mcp_clients", "vendo_mcp_grants"] as const) {
+      it(`creates a GIN index on ${table}.refs`, async () => {
+        const rows = await made.sql(
+          "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = $1",
+          [table],
+        );
+        expect(rows.some((row) => /USING gin \(refs/.test(String(row.indexdef)))).toBe(true);
+      });
+    }
 
     it("rejects a future schema version as a conflict", async () => {
       await made.sql("UPDATE vendo_meta SET value = '999'::jsonb WHERE key = 'schema_version'");
