@@ -22,12 +22,16 @@ export const EVENT_ALLOWLIST: Record<EventName, ReadonlySet<string>> = {
     "provider",
     "llmSkipped",
     "keyPrompt",
-    // Which command drove the run — "init" vs "refresh" (refresh delegates to
-    // runInit, so both emit init_completed; this field is how they're told apart).
+    // Which command drove the run (always "init" since the bin's only writer
+    // is init; kept so historical rows stay distinguishable).
     "command",
     // Catalog picker: offered = componentsOffered, accepted = componentCount.
     "componentsOffered",
     "componentCount",
+    // Remix picker anchor counts (TELEMETRY.md table).
+    "remixOffered",
+    "remixWrapped",
+    "remixSkipped",
     "toolCount",
     "durationMs",
   ]),

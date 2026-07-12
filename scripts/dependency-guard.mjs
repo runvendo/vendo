@@ -49,8 +49,10 @@ const LAYERS = {
   "@vendoai/ui": ["@vendoai/core"],
   "@vendoai/apps": ["@vendoai/core"],
   "@vendoai/automations": ["@vendoai/core", "@vendoai/apps"],
-  // the umbrella (published as `vendoai`) is the only package allowed to depend on everything
-  vendoai: "*",
+  // the canonical umbrella is the only package allowed to depend on every block
+  "@vendoai/vendo": "*",
+  // the unscoped compatibility package is a thin alias of the canonical umbrella
+  vendoai: ["@vendoai/vendo"],
   // orthogonal to the campaign (00-overview: "stays as-is"); no vendo deps
   "@vendoai/telemetry": [],
 };
@@ -99,7 +101,10 @@ for (const dir of dirs) {
   }
 
   const isAllowed = (name) =>
-    allowed === "*" ? Object.hasOwn(LAYERS, name) && name !== pkg.name : allowed.includes(name);
+    // a self-reference is not a cross-block edge (Node subpath self-resolution,
+    // and the umbrella CLI's generated wiring snippets name their own package)
+    name === pkg.name ||
+    (allowed === "*" ? Object.hasOwn(LAYERS, name) : allowed.includes(name));
 
   // 1 + 2 on the manifest
   const declared = {
@@ -157,7 +162,7 @@ for (const dir of dirs) {
       } else if (name.startsWith("@vendoai/") || name === "vendoai") {
         if (!isAllowed(name)) {
           errors.push(`${rel}: import of "${name}" violates the layering rule.`);
-        } else if (!(name in declared)) {
+        } else if (!(name in declared) && name !== pkg.name) {
           errors.push(`${rel}: imports "${name}" without declaring it in package.json.`);
         }
       }

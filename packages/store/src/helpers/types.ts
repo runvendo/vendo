@@ -56,4 +56,5 @@ export interface EphemeralStateRow {
   appId: AppId;
   subject: string;
   data: Json;
+  updatedAt: IsoDateTime;
 }

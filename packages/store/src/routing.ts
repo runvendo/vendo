@@ -9,7 +9,14 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
-import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot } from "./ephemeral.js";
+import {
+  isEphemeralApp,
+  isEphemeralSubject,
+  overlayFor,
+  registerEphemeralSubject,
+  snapshot,
+  stateKey,
+} from "./ephemeral.js";
 import {
   appFromRow,
   approvalFromRow,
@@ -23,8 +30,8 @@ import {
   runFromRow,
   threadFromRow,
 } from "./helpers/rows.js";
-import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./helpers/types.js";
-import { decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
+import type { AppRow, ApprovalRow, EphemeralStateRow, RunRow, ThreadRow } from "./helpers/types.js";
+import { decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
 import type { VendoStore } from "./store.js";
 import {
   invalid,
@@ -34,6 +41,7 @@ import {
   parsePermissionGrant,
   parseRunData,
   parseThreadData,
+  requireJson,
   requireMatchingId,
   requireRecordId,
   type ApprovalData,
@@ -49,6 +57,7 @@ export const RESERVED_COLLECTIONS = [
   "vendo_threads",
   "vendo_runs",
   "vendo_apps",
+  "vendo_state",
 ] as const;
 
 export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
@@ -56,12 +65,14 @@ export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
 interface RoutedConfig {
   table: ReservedCollection;
   select: string;
+  idExpression?: string;
   cursorColumn: string;
   refs: Readonly<Record<string, string>>;
   fromDb(row: Record<string, unknown>): VendoRecord;
   overlayRecords(): VendoRecord[];
   put(record: { id: string; data: Json; refs?: Record<string, string> }): Promise<VendoRecord>;
   deleteOverlay(id: string): boolean;
+  deleteRecord?(id: string): Promise<void>;
 }
 
 function refs(values: Record<string, string | undefined>): Record<string, string> {
@@ -145,6 +156,35 @@ function appRecord(row: AppRow): VendoRecord {
   };
 }
 
+function stateRecord(row: EphemeralStateRow): VendoRecord {
+  return {
+    id: `${row.appId}:${row.subject}`,
+    data: row.data,
+    refs: { app_id: row.appId, subject: row.subject },
+    createdAt: row.updatedAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function stateFromRow(row: Record<string, unknown>): EphemeralStateRow {
+  return {
+    appId: text(row["app_id"]),
+    subject: text(row["subject"]),
+    data: row["data"],
+    updatedAt: iso(row["updated_at"]),
+  };
+}
+
+function parseStateKey(id: string): { appId: string; subject: string } {
+  const separator = id.indexOf(":");
+  const appId = separator < 0 ? "" : id.slice(0, separator);
+  const subject = separator < 0 ? "" : id.slice(separator + 1);
+  if (!/^app_.+/.test(appId) || subject.length === 0) {
+    invalid("vendo_state id must be the composite key <app_id>:<subject>");
+  }
+  return { appId, subject };
+}
+
 function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: string; i: string }): boolean {
   if (query.ids !== undefined && !query.ids.includes(record.id)) return false;
   if (query.refs !== undefined) {
@@ -158,12 +198,13 @@ function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: st
 }
 
 function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
+  const idExpression = config.idExpression ?? "id";
   return {
     async get(id) {
       requireRecordId(id);
       const memory = config.overlayRecords().find((record) => record.id === id);
       if (memory) return memory;
-      const result = await db.query(`${config.select} WHERE id = $1`, [id]);
+      const result = await db.query(`${config.select} WHERE ${idExpression} = $1`, [id]);
       return result.rows[0] ? config.fromDb(result.rows[0]) : null;
     },
     async put(record) {
@@ -173,8 +214,12 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
     },
     async delete(id) {
       requireRecordId(id);
+      if (config.deleteRecord !== undefined) {
+        await config.deleteRecord(id);
+        return;
+      }
       if (config.deleteOverlay(id)) return;
-      await db.query(`DELETE FROM ${config.table} WHERE id = $1`, [id]);
+      await db.query(`DELETE FROM ${config.table} WHERE ${idExpression} = $1`, [id]);
     },
     async list(query: RecordQuery = {}) {
       const limit = pageLimit(query.limit);
@@ -192,16 +237,16 @@ function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
       }
       if (query.ids !== undefined) {
         params.push(query.ids);
-        clauses.push(`id = ANY($${params.length}::text[])`);
+        clauses.push(`${idExpression} = ANY($${params.length}::text[])`);
       }
       if (cursor !== undefined) {
         params.push(cursor.c, cursor.i);
-        clauses.push(`(${config.cursorColumn}, id) < ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(${config.cursorColumn}, ${idExpression}) < ($${params.length - 1}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `${config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
-         ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
+         ORDER BY ${config.cursorColumn} DESC, ${idExpression} DESC LIMIT $${params.length}`,
         params,
       );
       const allMemory = config.overlayRecords();
@@ -367,6 +412,46 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
           return appRecord(row);
         },
         deleteOverlay: (id) => overlay.apps.delete(id),
+        async deleteRecord(id) {
+          if (overlay.apps.delete(id)) {
+            for (const [key, row] of overlay.states) {
+              if (row.appId === id) overlay.states.delete(key);
+            }
+            return;
+          }
+          await db.query("DELETE FROM vendo_state WHERE app_id = $1", [id]);
+          await db.query("DELETE FROM vendo_apps WHERE id = $1", [id]);
+        },
+      };
+    case "vendo_state":
+      return {
+        table: collection,
+        select: "SELECT app_id || ':' || subject AS id, app_id, subject, data, updated_at FROM vendo_state",
+        idExpression: "(app_id || ':' || subject)",
+        cursorColumn: "updated_at",
+        refs: { app_id: "app_id", subject: "subject" },
+        fromDb: (row) => stateRecord(stateFromRow(row)),
+        overlayRecords: () => [...overlay.states.values()].map((row) => stateRecord(snapshot(row))),
+        async put(record) {
+          const { appId, subject } = parseStateKey(record.id);
+          const data = requireJson(record.data, "state data");
+          const updatedAt = new Date().toISOString();
+          const row: EphemeralStateRow = { appId, subject, data, updatedAt };
+          if (isEphemeralSubject(store, subject)) {
+            overlay.states.set(stateKey(subject, appId), snapshot(row));
+          } else {
+            await db.query(
+              `INSERT INTO vendo_state (app_id, subject, data, updated_at) VALUES ($1, $2, $3::jsonb, $4)
+               ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
+              [appId, subject, jsonParam(data), updatedAt],
+            );
+          }
+          return stateRecord(row);
+        },
+        deleteOverlay: (id) => {
+          const { appId, subject } = parseStateKey(id);
+          return overlay.states.delete(stateKey(subject, appId));
+        },
       };
   }
 }

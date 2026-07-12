@@ -27,9 +27,10 @@ export function stateStore(store: VendoStore): {
     async put(principal, appId, data) {
       const parsedData = requireJson(data, "state data");
       if (principal.ephemeral === true) {
+        const updatedAt = new Date().toISOString();
         overlay.states.set(
           stateKey(principal.subject, appId),
-          snapshot({ appId, subject: principal.subject, data: parsedData }),
+          snapshot({ appId, subject: principal.subject, data: parsedData, updatedAt }),
         );
         return;
       }
