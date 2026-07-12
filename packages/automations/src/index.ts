@@ -6,7 +6,6 @@
  * Depends on core + apps only (the one chain); agentic runs go through the
  * core `AgentRunner` seam — this package never imports the agent.
  */
-import { VendoError } from "@vendoai/core";
 import type {
   AgentRunner,
   ApprovalRequest,
@@ -25,6 +24,7 @@ import type {
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
 import { z } from "zod";
+import { createAutomationsEngine } from "./engine.js";
 
 /** 07 §1 — createAutomations config. */
 export interface AutomationsConfig {
@@ -125,7 +125,7 @@ export const runPlanSchema = z.object({
   grantsMissing: z.array(z.string()),
 });
 
-/** 07 §1 — the engine. Implementation lands with the wave-4 build. */
-export function createAutomations(_config: AutomationsConfig): AutomationsEngine {
-  throw new VendoError("not-implemented", "@vendoai/automations is being built in wave 4");
+/** 07 §1 — the engine. */
+export function createAutomations(config: AutomationsConfig): AutomationsEngine {
+  return createAutomationsEngine(config);
 }

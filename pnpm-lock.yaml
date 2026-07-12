@@ -23,6 +23,40 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
 
+  fixtures/automations-e2e:
+    dependencies:
+      '@vendoai/actions':
+        specifier: workspace:*
+        version: link:../../packages/actions
+      '@vendoai/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../../packages/apps
+      '@vendoai/automations':
+        specifier: workspace:*
+        version: link:../../packages/automations
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@vendoai/guard':
+        specifier: workspace:*
+        version: link:../../packages/guard
+      '@vendoai/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
   fixtures/host-app:
     dependencies:
       next:
@@ -116,6 +150,34 @@ importers:
       modal:
         specifier: ~0.9.0
         version: 0.9.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
+  packages/automations:
+    dependencies:
+      '@vendoai/apps':
+        specifier: workspace:*
+        version: link:../apps
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../core
+      croner:
+        specifier: ^9.0.0
+        version: 9.1.0
+      jsonata:
+        specifier: ^2.0.5
+        version: 2.2.1
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -1077,6 +1139,10 @@ packages:
   compare-versions@6.1.1:
     resolution: {integrity: sha512-4hm4VPpIecmlg59CHXnRDnqGplJFrbLG4aFEl5vl6cK1u76ws3LLvX7ikFnTDl5vo39sjWD6AaDPYodJp/NNHg==}
 
+  croner@9.1.0:
+    resolution: {integrity: sha512-p9nwwR4qyT5W996vBZhdvBCnMhicY5ytZkR4D1Xj0wuTDEiMnjwR57Q3RXYY/s0EpX6Ay3vgIcfaR+ewGHsi+g==}
+    engines: {node: '>=18.0'}
+
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
@@ -1200,6 +1266,10 @@ packages:
 
   json-schema@0.4.0:
     resolution: {integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==}
+
+  jsonata@2.2.1:
+    resolution: {integrity: sha512-xd1uwUrKeIcJbsWhaoS3qAX4Ea8m0Mw0G5nlnAQvPT7TbZ5qaPdzBVTQia9KfyuyQm+nenfyjvzUDTRYHsC2sw==}
+    engines: {node: '>= 8'}
 
   lightningcss-android-arm64@1.32.0:
     resolution: {integrity: sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg==}
@@ -2419,6 +2489,8 @@ snapshots:
 
   compare-versions@6.1.1: {}
 
+  croner@9.1.0: {}
+
   cross-spawn@7.0.6:
     dependencies:
       path-key: 3.1.1
@@ -2582,6 +2654,8 @@ snapshots:
     optional: true
 
   json-schema@0.4.0: {}
+
+  jsonata@2.2.1: {}
 
   lightningcss-android-arm64@1.32.0:
     optional: true

@@ -412,8 +412,11 @@ class GuardImplementation implements VendoGuard {
             approvalId: decision.approval.id,
           };
         } else {
+          const grant = await this.#grantForExecution(decision, call, descriptor, ctx);
+          const executeCtx =
+            grant === undefined ? ctx : ({ ...ctx, grant } as RunContext & { grant: PermissionGrant });
           try {
-            outcome = await tools.execute(call, ctx);
+            outcome = await tools.execute(call, executeCtx);
           } catch (error) {
             outcome = {
               status: "error",
@@ -469,6 +472,13 @@ class GuardImplementation implements VendoGuard {
     const callsTripped = this.#recordCall(ctx.principal.subject);
     const metadata = await this.#pipeline(call, descriptor, ctx);
     let draft = metadata.decision;
+
+    // 05 §6: away runs hold only grants captured while present and bound to the
+    // running app — a would-be "run" that is not grant-authorized (rule, code,
+    // judge, or the default posture) parks instead of running.
+    if (ctx.presence === "away" && draft.action === "run" && draft.decidedBy !== "grant") {
+      draft = { action: "ask", decidedBy: "default" };
+    }
 
     if (draft.action === "run") {
       const write = descriptor.risk === "write" || descriptor.risk === "destructive";
@@ -778,6 +788,25 @@ class GuardImplementation implements VendoGuard {
     );
   }
 
+  /** The grant that authorized a "run", re-attached for executors that need it
+   *  (actions resolves ActAs against ctx.grant on away calls — 04 §4). Approval
+   *  replays carry no grantId; away replays re-match, because deciding a parked
+   *  automation approval mints the app-bound grant first (07 §3). */
+  async #grantForExecution(
+    decision: GuardDecision,
+    call: ToolCall,
+    descriptor: ToolDescriptor,
+    ctx: RunContext,
+  ): Promise<PermissionGrant | undefined> {
+    if (decision.action !== "run") return undefined;
+    if (decision.grantId !== undefined) {
+      const record = await this.#store.records(GRANTS_COLLECTION).get(decision.grantId);
+      return record === null ? undefined : (record.data as PermissionGrant);
+    }
+    if (ctx.presence !== "away") return undefined;
+    return this.#matchingGrant(call, descriptor, ctx);
+  }
+
   async #consumeApprovedCall(
     call: ToolCall,
     descriptor: ToolDescriptor,
@@ -997,9 +1026,12 @@ class GuardImplementation implements VendoGuard {
 
       // Fire callbacks OUTSIDE the lock: a subscriber may re-enter the guard
       // (e.g. re-execute the resumed call), which would deadlock on the lock.
+      // A returned thenable is awaited so decide() resolves only after
+      // resumption work lands — fire-and-forget subscribers would otherwise
+      // race the caller (e.g. a store closing under in-flight writes).
       for (const callback of this.#approvalCallbacks) {
         try {
-          callback(id, decision.approve);
+          await (callback(id, decision.approve) as void | Promise<void>);
         } catch {
           // Approval persistence must not be rolled back by an in-process subscriber.
         }

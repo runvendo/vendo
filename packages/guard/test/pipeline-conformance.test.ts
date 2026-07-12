@@ -3,7 +3,7 @@ import type { GuardDecision, RiskLabel, RunContext, ToolDescriptor } from "@vend
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
-import { alice, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
+import { FixtureTools, alice, call, context, descriptor, seedGrant } from "./fixtures/tools.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -80,7 +80,12 @@ describe("decision pipeline conformance", () => {
             rule: { action: "block", decidedBy: "rule" },
             code: { action: "block", decidedBy: "rule" },
             judge: { action: "block", decidedBy: "judge" },
-            default: { action: "run", decidedBy: "default" },
+            // 05 §6: away holds only app-bound grants — the default posture
+            // auto-runs present calls but parks away ones.
+            default:
+              presence === "away"
+                ? { action: "ask", decidedBy: "default" }
+                : { action: "run", decidedBy: "default" },
           }[stage];
           expect(decision).toMatchObject(expected);
         });
@@ -412,6 +417,53 @@ describe("decision pipeline conformance", () => {
     ).resolves.toMatchObject({ action: "ask", decidedBy: "breaker" });
     await expect(guard.check(call(write.name, {}, "write_2"), write, runTwo)).resolves.toMatchObject({
       action: "run",
+    });
+  });
+});
+
+describe("away authority (05 §6)", () => {
+  const awayCtx = () => context({ presence: "away", venue: "automation", appId: "app_1" });
+
+  it("parks an unconfigured away call instead of default-running it", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("write");
+    const guard = createGuard({ store });
+    await expect(guard.check(call(d.name, {}), d, awayCtx())).resolves.toMatchObject({
+      action: "ask",
+      decidedBy: "default",
+    });
+    // The same unconfigured guard still auto-runs the present call.
+    await expect(guard.check(call(d.name, {}), d, context())).resolves.toMatchObject({
+      action: "run",
+      decidedBy: "default",
+    });
+  });
+
+  it("parks an away call even when a rule says run", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("read");
+    const guard = createGuard({
+      store,
+      policy: { rules: [{ match: { risk: "read" }, action: "run" }] },
+    });
+    await expect(guard.check(call(d.name, {}), d, awayCtx())).resolves.toMatchObject({ action: "ask" });
+  });
+
+  it("attaches the authorizing grant as ctx.grant for executors (04 §4 ActAs seam)", async () => {
+    const store = createMemoryStore();
+    const d = descriptor("write");
+    const seeded = await seedGrant(store, { descriptor: d, appId: "app_1" });
+    const guard = createGuard({ store });
+    const tools = new FixtureTools([d]);
+    const bound = guard.bind(tools);
+
+    await expect(bound.execute(call(d.name, {}), awayCtx())).resolves.toMatchObject({ status: "ok" });
+    const execution = tools.executions[0];
+    if (!execution) throw new Error("expected the granted call to execute");
+    expect((execution.ctx as { grant?: { id: string } }).grant).toMatchObject({
+      id: seeded.id,
+      tool: d.name,
+      appId: "app_1",
     });
   });
 });
