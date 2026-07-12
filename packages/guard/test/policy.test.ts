@@ -134,6 +134,26 @@ describe("policy files, rules, directions, and code", () => {
     await expect(noPolicyGuard.check(call(read.name), read, context())).resolves.toMatchObject({ action: "run" });
   });
 
+  it("uses inline rules and directions without loading a configured file", async () => {
+    // A malformed file that inline config makes irrelevant must never abort:
+    // inline wins with no merge, so the file is not even read.
+    const malformed = await policyFile({ format: "vendo/policy@999", rules: "nope" });
+    const guard = createGuard({
+      store: createMemoryStore(),
+      policy: {
+        file: malformed,
+        rules: [{ match: { tool: "host_read" }, action: "block", note: "inline wins" }],
+        directions: ["inline only"],
+      },
+    });
+    const read = descriptor("read");
+    await expect(guard.check(call(read.name), read, context())).resolves.toMatchObject({
+      action: "block",
+      decidedBy: "rule",
+    });
+    await expect(guard.directions(context())).resolves.toEqual(["inline only"]);
+  });
+
   it("lets code decide or pass through and fails closed when code throws", async () => {
     const read = descriptor("read");
     const decided = createGuard({

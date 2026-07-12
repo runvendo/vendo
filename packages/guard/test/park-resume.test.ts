@@ -3,7 +3,7 @@ import type { ApprovalId } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createPGliteStore, type PGliteStore } from "./fixtures/pglite-store.js";
-import { alice, bob, call, context, FixtureTools } from "./fixtures/tools.js";
+import { alice, bob, call, context, descriptor, FixtureTools } from "./fixtures/tools.js";
 
 const stores: PGliteStore[] = [];
 
@@ -202,6 +202,101 @@ describe("approval park and resume over the real SQL mapping", () => {
       expect(row.scope.inputHash).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(row.scope.inputPreview).toContain("host_destructive");
     }
+  });
+
+  it("never resumes an approval in a different context (present-approved, away-replayed)", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({
+      store: sqlStore,
+      policy: { rules: [{ match: {}, action: "ask" }] },
+    });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const presentCtx = context({ venue: "chat", presence: "present" });
+    const c = call("host_destructive", { invoiceId: "inv_ctx" }, "call_ctx");
+
+    const parked = await bound.execute(c, presentCtx);
+    if (parked.status !== "pending-approval") throw new Error("expected parked call");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // Same call + subject, but now away in an automation: must not consume the
+    // present-context approval — away execution needs app-bound authority.
+    const awayCtx = context({ venue: "automation", presence: "away", appId: "app_1", trigger: { runId: "run_ctx", kind: "schedule" } });
+    await expect(bound.execute(c, awayCtx)).resolves.toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(0);
+
+    // The genuine present resume still runs once.
+    await expect(bound.execute(c, presentCtx)).resolves.toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("never resumes when the tool's descriptor changed after parking (read→destructive)", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({
+      store: sqlStore,
+      policy: { rules: [{ match: {}, action: "ask" }] },
+    });
+    const readDesc = descriptor("read", { name: "host_flip" });
+    const destructiveDesc = descriptor("destructive", { name: "host_flip" });
+    const tools = new FixtureTools([readDesc]);
+    const bound = guard.bind(tools);
+    const c = call("host_flip", { q: 1 }, "call_flip");
+
+    const parked = await bound.execute(c, context());
+    if (parked.status !== "pending-approval") throw new Error("expected parked call");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // Registry now serves the same name as a destructive tool: the frozen
+    // descriptor no longer matches, so the approval must not authorize it.
+    const flipped = new FixtureTools([destructiveDesc]);
+    const flippedBound = guard.bind(flipped);
+    await expect(flippedBound.execute(c, context())).resolves.toMatchObject({ status: "pending-approval" });
+    expect(flipped.executions).toHaveLength(0);
+  });
+
+  it("consumes a single-use approval exactly once under concurrent resume", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({
+      store: sqlStore,
+      policy: { rules: [{ match: {}, action: "ask" }] },
+    });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const c = call("host_destructive", { invoiceId: "inv_race" }, "call_race");
+
+    const parked = await bound.execute(c, context());
+    if (parked.status !== "pending-approval") throw new Error("expected parked call");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // Fire two resumes concurrently: exactly one must run, one must re-park.
+    const [a, b] = await Promise.all([bound.execute(c, context()), bound.execute(c, context())]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual(["ok", "pending-approval"]);
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("serializes concurrent approve+deny on one approval to a single decision", async () => {
+    const sqlStore = await store();
+    const guard = createGuard(guardedConfig(sqlStore));
+    const bound = guard.bind(new FixtureTools());
+    const parked = await bound.execute(call("host_destructive", { n: 1 }, "call_ad"), context());
+    if (parked.status !== "pending-approval") throw new Error("expected parked call");
+
+    const results = await Promise.allSettled([
+      guard.approvals.decide(parked.approvalId, { approve: true, remember: { scope: { kind: "tool" }, duration: "standing" } }, alice),
+      guard.approvals.decide(parked.approvalId, { approve: false }, alice),
+    ]);
+    // Exactly one wins; the other conflicts.
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+
+    const rows = await sqlStore.query<{ status: string }>("SELECT status FROM vendo_approvals WHERE id = $1", [parked.approvalId]);
+    expect(rows.rows).toHaveLength(1);
+    expect(["approved", "denied"]).toContain(rows.rows[0]?.status);
+    // If deny won, there is no grant; if approve won, exactly one — never a
+    // live grant orphaned by a denial.
+    const grants = await sqlStore.query<{ id: string }>("SELECT id FROM vendo_grants");
+    expect(grants.rows.length).toBe(rows.rows[0]?.status === "approved" ? 1 : 0);
   });
 
   it("refuses to mint grants whose matches constraints are unsafe regexes", async () => {

@@ -125,6 +125,21 @@ describe("audit persistence, query, and export", () => {
     expect(lines.map((line) => JSON.parse(line).id)).toEqual(["aud_in_2", "aud_in_1"]);
   });
 
+  it("treats equivalent UTC bounds as the same instant regardless of ISO precision", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({ store: sqlStore });
+    await guard.report(auditEvent({ id: "aud_boundary", at: "2026-01-01T00:00:00.000Z" }));
+
+    // Bound written without milliseconds: string compare would drop the event,
+    // instant compare keeps it.
+    const inclusive = await guard.audit.query({
+      principal: alice,
+      from: "2026-01-01T00:00:00Z",
+      to: "2026-01-01T00:00:00Z",
+    });
+    expect(inclusive.events.map((event) => event.id)).toEqual(["aud_boundary"]);
+  });
+
   it("does not special-case ephemeral principals", async () => {
     const sqlStore = await store();
     const ephemeral = { kind: "user" as const, subject: "anon_1", ephemeral: true };

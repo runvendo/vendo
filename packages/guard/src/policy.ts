@@ -73,14 +73,17 @@ export class PolicyResolver {
 
   async rules(): Promise<PolicyRule[]> {
     if (!this.#config) return [];
-    const file = await this.#file();
-    return this.#config.rules ?? file?.rules ?? [];
+    // Inline wins with no merge (00-overview decision 19): when inline rules are
+    // set the file is irrelevant, so don't load it — a malformed or missing file
+    // must never abort an otherwise-valid inline-only configuration.
+    if (this.#config.rules !== undefined) return this.#config.rules;
+    return (await this.#file())?.rules ?? [];
   }
 
   async directions(): Promise<string[]> {
     if (!this.#config) return [];
-    const file = await this.#file();
-    return this.#config.directions ?? file?.directions ?? [];
+    if (this.#config.directions !== undefined) return this.#config.directions;
+    return (await this.#file())?.directions ?? [];
   }
 
   async #file(): Promise<PolicyFile | undefined> {
