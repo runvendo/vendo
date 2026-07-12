@@ -58,11 +58,13 @@ function validateConfig(config: AgentConfig): void {
   }
 }
 
+// System-role messages are rejected: the system prompt is assembled server-side
+// (03 §3); accepting one from the client would be a prompt-injection channel.
 function validateMessage(message: UIMessage | undefined): asserts message is UIMessage {
   if (!message
     || typeof message.id !== "string"
     || message.id.length === 0
-    || !["system", "user", "assistant"].includes(message.role)
+    || !["user", "assistant"].includes(message.role)
     || !Array.isArray(message.parts)) {
     throw new VendoError("validation", "stream requires a valid message");
   }
