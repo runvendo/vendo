@@ -363,7 +363,11 @@ export async function createWireServer() {
       }
       if (method === "GET" && url.pathname === "/status") {
         if (state.statusErrorCode) return wireError(response, state.statusErrorCode, "Status failed", 501);
-        return json(response, { posture: state.posture, version: "0.3.0", blocks: { guard: true } });
+        // A client may force a posture via header (harness: one surface shows the
+        // no-policy notice while the rest render as a configured host).
+        const forced = request.headers["x-vendo-force-posture"];
+        const posture = typeof forced === "string" ? forced : state.posture;
+        return json(response, { posture, version: "0.3.0", blocks: { guard: true } });
       }
       if (method === "POST" && url.pathname === "/tick") return json(response, []);
       if (method === "POST" && url.pathname.startsWith("/webhooks/")) return json(response, { accepted: true });

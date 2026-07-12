@@ -63,6 +63,8 @@
   "dependencies": {
     "@ai-sdk/react": "^3.0.30",
     "@vendoai/core": "workspace:*",
+    "fluidkit": "*",
+    "motion": "^11.11.0",
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
     "sucrase": "^3.35.0"

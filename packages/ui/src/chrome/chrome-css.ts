@@ -37,6 +37,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
   --vendo-warn-bg: color-mix(in srgb, #f0b429 12%, var(--vendo-surface));
   --vendo-warn-border: color-mix(in srgb, #f0b429 32%, var(--vendo-border));
   color: var(--vendo-fg);
+  background: var(--vendo-bg);
   font-family: var(--vendo-font);
   font-size: var(--vendo-font-size, 15px);
   letter-spacing: -.011em;

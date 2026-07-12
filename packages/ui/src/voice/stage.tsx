@@ -1,6 +1,7 @@
 import { ChromeRoot } from "../chrome/chrome-root.js";
 import type { VoiceState } from "./driver.js";
 import { useVoice } from "./use-voice.js";
+import { VoiceBlob, type VoiceBlobState } from "./voice-blob.js";
 
 const ACTIVE_STATES = new Set<VoiceState>(["connecting", "listening", "speaking"]);
 
@@ -8,7 +9,12 @@ const ACTIVE_STATES = new Set<VoiceState>(["connecting", "listening", "speaking"
 export function VendoStage() {
   const { state, start, stop, transcript } = useVoice();
   const active = ACTIVE_STATES.has(state);
-  const blobState = state === "error" ? "error" : state === "idle" || state === "unavailable" ? "muted" : state;
+  const blobState: VoiceBlobState =
+    state === "unavailable"
+      ? "muted"
+      : state === "idle"
+        ? "connecting"
+        : state;
 
   return (
     <ChromeRoot>
@@ -17,15 +23,11 @@ export function VendoStage() {
         className={`fl-voice-stage${state === "speaking" ? " is-speaking" : ""}`}
         data-state={state}
       >
-        <div className="fl-voice-canvas">
+        <div className={`fl-voice-canvas${transcript.length > 0 ? " has-views" : ""}`}>
           <div className="fl-voice-lift" aria-hidden="true" />
           <div className="fl-voice-head">
-            <div
-              className={`fl-voice-blob is-${blobState}`}
-              style={{ width: 96, height: 96 }}
-              aria-hidden="true"
-            >
-              <span className="fl-voice-disc" />
+            <div className={`fl-voice-blob${state === "listening" ? " fl-approval-listening" : ""}`}>
+              <VoiceBlob state={blobState} />
             </div>
             <div className="fl-voice-status" role="status" aria-live="polite">
               Voice: {state}
