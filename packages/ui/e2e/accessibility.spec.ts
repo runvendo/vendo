@@ -12,6 +12,7 @@ const chromeScenarios = [
   "automations",
   "notice",
   "stage",
+  "slot",
 ] as const;
 
 for (const scenario of chromeScenarios) {
@@ -25,6 +26,7 @@ for (const scenario of chromeScenarios) {
     if (scenario === "automations") await expect(page.getByRole("switch")).toBeVisible();
     if (scenario === "notice") await expect(page.getByRole("region", { name: "Vendo is running without a policy" })).toBeVisible();
     if (scenario === "stage") await expect(page.getByText("Revenue is ready")).toBeVisible();
+    if (scenario === "slot") await expect(page.getByText("Invoices app surface")).toBeVisible();
 
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

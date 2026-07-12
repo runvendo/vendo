@@ -73,6 +73,32 @@ for (const backend of backends()) {
       }
     });
 
+    it("stores every contracted JSON column as jsonb", async () => {
+      // 02-store §2: "All JSON is jsonb." The table map is public, so the storage type is contract.
+      const jsonbColumns: Array<[string, string]> = [
+        ["vendo_meta", "value"],
+        ["vendo_apps", "doc"],
+        ["vendo_records", "data"],
+        ["vendo_records", "refs"],
+        ["vendo_state", "data"],
+        ["vendo_threads", "messages"],
+        ["vendo_grants", "scope"],
+        ["vendo_approvals", "request"],
+        ["vendo_audit", "event"],
+        ["vendo_runs", "trigger"],
+        ["vendo_runs", "record"],
+      ];
+      const rows = await made.sql(
+        "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'vendo_%'",
+      );
+      const typeOf = new Map(rows.map((row) => [`${row.table_name}.${row.column_name}`, String(row.data_type)]));
+      for (const [table, column] of jsonbColumns) {
+        expect(typeOf.get(`${table}.${column}`), `${table}.${column}`).toBe("jsonb");
+      }
+      // vendo_secrets.ciphertext is deliberately text, not jsonb (§4 at-rest encryption).
+      expect(typeOf.get("vendo_secrets.ciphertext")).toBe("text");
+    });
+
     it("creates a GIN index on vendo_records.refs", async () => {
       const rows = await made.sql(
         "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'vendo_records'",

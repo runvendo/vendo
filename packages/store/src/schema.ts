@@ -65,6 +65,19 @@ const ADDITIVE_DDL = [
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS consumed_at timestamptz",
 ] as const;
 
+// Before `vendo_state` was a reserved collection, apps' state singleton landed in
+// vendo_records (collection 'vendo_state', id `${app_id}:${subject}`). Relocate any such
+// rows into the dedicated table so hosts can query them and the app-delete cascade reaches
+// them. Idempotent + forward-only: after the move no matching vendo_records rows remain.
+// App ids never contain ':', so the first colon splits id into app_id + subject.
+const DATA_BACKFILL = [
+  `INSERT INTO vendo_state (app_id, subject, data, updated_at)
+   SELECT split_part(id, ':', 1), substring(id FROM position(':' IN id) + 1), data, updated_at
+   FROM vendo_records WHERE collection = 'vendo_state' AND position(':' IN id) > 0
+   ON CONFLICT (app_id, subject) DO NOTHING`,
+  "DELETE FROM vendo_records WHERE collection = 'vendo_state'",
+] as const;
+
 type Query = Db["query"];
 
 async function migrate(query: Query): Promise<void> {
@@ -88,6 +101,7 @@ async function migrate(query: Query): Promise<void> {
   }
   // Schema v1 has not shipped; keep same-version development databases compatible.
   for (const statement of ADDITIVE_DDL) await query(statement);
+  for (const statement of DATA_BACKFILL) await query(statement);
   await query(
     `INSERT INTO vendo_meta (key, value) VALUES ('boot_id', $1::jsonb)
      ON CONFLICT (key) DO NOTHING`,

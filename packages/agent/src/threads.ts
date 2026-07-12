@@ -1,4 +1,4 @@
-import { VendoError, type IsoDateTime, type RunContext, type StoreAdapter, type ThreadId } from "@vendoai/core";
+import { VendoError, type IsoDateTime, type RunContext, type StoreAdapter, type ThreadId, type VendoRecord } from "@vendoai/core";
 import type { UIMessage } from "ai";
 import { mintThreadId } from "./ids.js";
 
@@ -21,15 +21,24 @@ export interface ThreadSummary {
   updatedAt: IsoDateTime;
 }
 
-function isThread(value: unknown): value is Thread {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<Thread>;
-  return typeof candidate.id === "string"
-    && THREAD_ID_PATTERN.test(candidate.id)
-    && typeof candidate.subject === "string"
-    && Array.isArray(candidate.messages)
-    && typeof candidate.createdAt === "string"
-    && typeof candidate.updatedAt === "string";
+/** Reconstruct a Thread from a store record. The store seam (core §12) carries
+ *  the id + timestamps on the VendoRecord envelope and the reserved
+ *  vendo_threads routing projects `data` down to `{ subject, messages }` (02
+ *  §2) — so the whole Thread is never inside `data`. Read it back from the
+ *  envelope, not from `data`. */
+function threadFromRecord(record: VendoRecord): Thread | null {
+  if (!THREAD_ID_PATTERN.test(record.id)) return null;
+  const data = record.data;
+  if (typeof data !== "object" || data === null) return null;
+  const candidate = data as { subject?: unknown; messages?: unknown };
+  if (typeof candidate.subject !== "string" || !Array.isArray(candidate.messages)) return null;
+  return {
+    id: record.id,
+    subject: candidate.subject,
+    messages: candidate.messages as UIMessage[],
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
 }
 
 function titleFor(thread: Thread): string {
@@ -49,8 +58,10 @@ function toSummary(thread: Thread): ThreadSummary {
   return { id: thread.id, title: titleFor(thread), updatedAt: thread.updatedAt };
 }
 
-function recordId(subject: string, threadId: ThreadId): string {
-  return `${encodeURIComponent(subject)}:${threadId}`;
+/** Serialize to plain JSON so the value satisfies the store seam's `Json` type
+ *  (drops explicit `undefined`-valued props that JSON.stringify would omit). */
+function toPlainJson(messages: UIMessage[]): UIMessage[] {
+  return JSON.parse(JSON.stringify(messages)) as UIMessage[];
 }
 
 /** 03-agent §5 */
@@ -66,6 +77,19 @@ export class ThreadRepository {
       }
       const existing = await this.get(id, ctx);
       if (existing) return existing;
+      // get() is subject-scoped, so a row owned by ANOTHER subject reads as
+      // null here — but vendo_threads is keyed by the bare id and the store's
+      // upsert would let this turn's persist() take over that row (03 §5:
+      // threads.* never crosses subjects). Ownership-BLIND existence check:
+      // an occupied id is refused, never reused. Skipped on the memory paths
+      // (per-subject maps; ephemeral principals never persist), where no
+      // takeover is possible.
+      if (!this.usesMemory(ctx)) {
+        const occupied = await this.store!.records(THREAD_COLLECTION).get(id);
+        if (occupied !== null) {
+          throw new VendoError("conflict", "threadId is already in use");
+        }
+      }
       return this.create(ctx, id);
     }
     return this.create(ctx);
@@ -76,12 +100,14 @@ export class ThreadRepository {
     if (this.usesMemory(ctx)) {
       return this.subjectMemory(ctx.principal.subject).get(id) ?? null;
     }
-    const record = await this.store!.records(THREAD_COLLECTION)
-      .get(recordId(ctx.principal.subject, id));
-    if (!record || !isThread(record.data) || record.data.subject !== ctx.principal.subject) {
-      return null;
-    }
-    return record.data;
+    // Reserved vendo_threads rows are keyed by the bare thread id (02 §2:
+    // `id` is the thread id). Subject scoping is enforced here, on read, by
+    // checking the row's subject — never returning another subject's thread.
+    const record = await this.store!.records(THREAD_COLLECTION).get(id);
+    if (!record) return null;
+    const thread = threadFromRecord(record);
+    if (!thread || thread.subject !== ctx.principal.subject) return null;
+    return thread;
   }
 
   async list(ctx: RunContext): Promise<ThreadSummary[]> {
@@ -93,8 +119,8 @@ export class ThreadRepository {
         refs: { subject: ctx.principal.subject },
       });
       threads = result.records
-        .map((record) => record.data)
-        .filter((data): data is Thread => isThread(data) && data.subject === ctx.principal.subject);
+        .map(threadFromRecord)
+        .filter((thread): thread is Thread => thread !== null && thread.subject === ctx.principal.subject);
     }
     return threads
       .map(toSummary)
@@ -107,14 +133,22 @@ export class ThreadRepository {
       this.subjectMemory(ctx.principal.subject).delete(id);
       return;
     }
-    await this.store!.records(THREAD_COLLECTION)
-      .delete(recordId(ctx.principal.subject, id));
+    // The bare id is shared across subjects; delete only after confirming the
+    // row belongs to this subject (get() returns null otherwise), so one
+    // subject can never delete another's thread (03 §5).
+    const existing = await this.get(id, ctx);
+    if (existing === null) return;
+    await this.store!.records(THREAD_COLLECTION).delete(id);
   }
 
   async persist(thread: Thread, messages: UIMessage[], ctx: RunContext): Promise<void> {
     const updated: Thread = {
       ...thread,
-      messages,
+      // ai-SDK UIMessages carry explicit `undefined`-valued optional props on
+      // tool parts (e.g. an approval-requested part with no output yet). The
+      // store seam is typed `Json` and rejects `undefined` values, so serialize
+      // to plain JSON — dropping absent-anyway keys — before it crosses.
+      messages: toPlainJson(messages),
       updatedAt: new Date().toISOString(),
     };
     if (this.usesMemory(ctx)) {
@@ -122,7 +156,7 @@ export class ThreadRepository {
       return;
     }
     await this.store!.records(THREAD_COLLECTION).put({
-      id: recordId(updated.subject, updated.id),
+      id: updated.id,
       data: updated,
       refs: { subject: updated.subject },
     });

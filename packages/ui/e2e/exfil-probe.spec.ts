@@ -22,6 +22,11 @@ test("no exfiltration channel out of the jail: navigation, beacon, image", async
   const jail = jailFrame(page, "SecurityProbe");
   await expect(jail.getByRole("heading", { name: "Rendered generated props" })).toBeVisible();
 
+  // Every network-capable API a generated component could reach for, one by one.
+  await jail.getByRole("button", { name: "Probe xhr" }).click();
+  await expect(jail.locator("#xhr-status")).toHaveText("xhr: FAILURE (CSP)");
+  await jail.getByRole("button", { name: "Probe socket" }).click();
+  await expect(jail.locator("#socket-status")).toHaveText("socket: FAILURE (CSP)");
   await jail.getByRole("button", { name: "Probe beacon" }).click();
   await jail.getByRole("button", { name: "Probe image" }).click();
   await expect(jail.locator("#image-status")).toHaveText("image: FAILURE (CSP)");

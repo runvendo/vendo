@@ -26,17 +26,18 @@ export function stateStore(store: VendoStore): {
     },
     async put(principal, appId, data) {
       const parsedData = requireJson(data, "state data");
+      const now = new Date().toISOString();
       if (principal.ephemeral === true) {
         overlay.states.set(
           stateKey(principal.subject, appId),
-          snapshot({ appId, subject: principal.subject, data: parsedData }),
+          snapshot({ appId, subject: principal.subject, data: parsedData, updatedAt: now }),
         );
         return;
       }
       await db.query(
         `INSERT INTO vendo_state (app_id, subject, data, updated_at) VALUES ($1, $2, $3::jsonb, $4)
          ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-        [appId, principal.subject, JSON.stringify(parsedData), new Date().toISOString()],
+        [appId, principal.subject, JSON.stringify(parsedData), now],
       );
     },
     async delete(principal, appId) {

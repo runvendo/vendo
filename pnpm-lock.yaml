@@ -63,6 +63,34 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
 
+  fixtures/chat-e2e:
+    dependencies:
+      '@vendoai/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@vendoai/guard':
+        specifier: workspace:*
+        version: link:../../packages/guard
+      '@vendoai/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      ai:
+        specifier: ^6.0.0
+        version: 6.0.28(zod@3.25.76)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
   fixtures/host-app:
     dependencies:
       next:
