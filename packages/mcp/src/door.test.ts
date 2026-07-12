@@ -87,6 +87,25 @@ describe("createMcpDoor routing and OAuth", () => {
     );
   });
 
+  it("refuses CIMD client ids pointing at non-public hosts without fetching them", async () => {
+    const harness = makeHarness();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    for (const clientId of [
+      "https://127.0.0.1/client.json",
+      "https://10.0.0.8/client.json",
+      "https://[::1]/client.json",
+      "https://localhost/client.json",
+      "https://intranet/client.json",
+      "https://admin.internal/client.json",
+    ]) {
+      const response = await authorize(harness.door, clientId);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "invalid_client" });
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("stray first requests to other paths cannot poison discovery or auth at the real mount", async () => {
     const harness = makeHarness();
     // A scanner probes an unrelated well-known suffix and a random path FIRST.

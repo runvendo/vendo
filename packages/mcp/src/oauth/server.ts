@@ -360,11 +360,54 @@ export class OAuthServer {
   }
 }
 
+const CIMD_MAX_BYTES = 64 * 1024;
+
+/** SSRF floor for the attacker-supplied CIMD URL: https-only, no credentials,
+ * no redirects, no IP-literal or loopback/link-local-style hosts, 5s timeout,
+ * 64 KB cap. DNS-rebinding-grade egress control stays the host's network
+ * policy — the door cannot resolve DNS portably (runs-anywhere). */
+function assertPublicCimdHost(url: URL): void {
+  const host = url.hostname.toLowerCase();
+  const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  const isIpv6 = host.startsWith("[") || host.includes(":");
+  if (
+    isIpv4 || isIpv6 || host === "localhost" || host.endsWith(".localhost") ||
+    host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")
+  ) {
+    throw new Error("Client ID Metadata Document host is not a public hostname");
+  }
+}
+
+async function readCappedJson(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Client ID Metadata Document had no body");
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > CIMD_MAX_BYTES) {
+      await reader.cancel();
+      throw new Error("Client ID Metadata Document is too large");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 async function resolveCimdClient(clientId: string): Promise<ResolvedClient> {
   const url = new URL(clientId);
   if (url.protocol !== "https:" || url.username || url.password || url.hash) {
     throw new Error("Client ID Metadata Document client_id must be an HTTPS URL");
   }
+  assertPublicCimdHost(url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   try {
@@ -376,7 +419,7 @@ async function resolveCimdClient(clientId: string): Promise<ResolvedClient> {
     if (!response.ok || !contentType(response).includes("application/json")) {
       throw new Error("Client ID Metadata Document did not return JSON");
     }
-    const parsed = cimdClientSchema.safeParse(await response.json());
+    const parsed = cimdClientSchema.safeParse(await readCappedJson(response));
     if (!parsed.success || parsed.data.client_id !== clientId || !parsed.data.redirect_uris.every(validRedirectUri)) {
       throw new Error("Invalid Client ID Metadata Document");
     }
