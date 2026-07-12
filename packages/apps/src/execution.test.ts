@@ -14,6 +14,7 @@ import {
   fakeSandbox,
   guardFixture,
   memoryStore,
+  seedAppRow,
   scriptedLanguageModel,
   type MachineApp,
 } from "./testing/index.js";
@@ -39,7 +40,7 @@ const putApp = async (
   app: AppDocument,
   subject = "user_ada",
 ): Promise<void> => {
-  await store.records("vendo_apps").put({ id: app.id, data: app, refs: { subject } });
+  await seedAppRow(store, app, subject);
 };
 
 const emptyTools: ToolRegistry = {
@@ -367,16 +368,16 @@ describe("apps execution", () => {
         JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "export const value = 1;" }] }),
       ),
     });
-    await store.records("vendo_apps").put({
-      id: "app_egress",
-      data: {
+    await seedAppRow(
+      store,
+      {
         format: VENDO_APP_FORMAT,
         id: "app_egress",
         name: "Egress app",
         egress: ["api.stripe.com"],
       },
-      refs: { subject: "user_ada" },
-    });
+      "user_ada",
+    );
 
     await runtime.edit("app_egress", "Add a server", ctx());
 
@@ -404,11 +405,7 @@ describe("apps execution", () => {
       model,
     });
     const app = await runtime.create({ prompt: "Token app" }, ctx());
-    await store.records("vendo_apps").put({
-      id: app.id,
-      data: { ...app, ui: "http" },
-      refs: { subject: "user_ada" },
-    });
+    await seedAppRow(store, { ...app, ui: "http" }, "user_ada");
     await runtime.open(app.id, ctx());
     await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
     const token = [...sandbox.machines.values()].at(-1)?.env.VENDO_RUN_TOKEN;

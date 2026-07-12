@@ -1,0 +1,55 @@
+{
+  "name": "@vendoai/automations",
+  "version": "0.3.0",
+  "description": "Apps that run on triggers while the user is away: trigger ingestion, scheduling, the two run models, and run observability.",
+  "keywords": [
+    "ai",
+    "agent",
+    "automations",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/automations"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "croner": "^9.0.0",
+    "jsonata": "^2.0.5",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

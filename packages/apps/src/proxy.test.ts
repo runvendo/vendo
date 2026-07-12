@@ -1,7 +1,14 @@
 import type { RunContext, ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { createApps } from "./index.js";
-import { basicLanguageModel, bindTools, fakeSandbox, guardFixture, memoryStore } from "./testing/index.js";
+import {
+  basicLanguageModel,
+  bindTools,
+  fakeSandbox,
+  guardFixture,
+  memoryStore,
+  seedAppRow,
+} from "./testing/index.js";
 
 const model = basicLanguageModel();
 const ctx: RunContext = {
@@ -40,11 +47,7 @@ describe("machine tool proxy", () => {
       model,
     });
     const app = await runtime.create({ prompt: "Machine app" }, ctx);
-    await store.records("vendo_apps").put({
-      id: app.id,
-      data: { ...app, ui: "http", secrets: ["API_KEY"] },
-      refs: { subject: ctx.principal.subject },
-    });
+    await seedAppRow(store, { ...app, ui: "http", secrets: ["API_KEY"] }, ctx.principal.subject);
 
     await expect(runtime.open(app.id, ctx)).resolves.toMatchObject({ kind: "resuming" });
     await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
@@ -141,11 +144,7 @@ describe("machine tool proxy", () => {
       model,
     });
     const app = await runtime.create({ prompt: "Bounded state" }, ctx);
-    await store.records("vendo_apps").put({
-      id: app.id,
-      data: { ...app, ui: "http" },
-      refs: { subject: ctx.principal.subject },
-    });
+    await seedAppRow(store, { ...app, ui: "http" }, ctx.principal.subject);
     await runtime.open(app.id, ctx);
     await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
     const token = [...sandbox.machines.values()].at(-1)?.env.VENDO_RUN_TOKEN;
@@ -175,11 +174,11 @@ describe("machine tool proxy", () => {
       model,
     });
     const app = await runtime.create({ prompt: "Secret app" }, ctx);
-    await store.records("vendo_apps").put({
-      id: app.id,
-      data: { ...app, ui: "http", secrets: ["STRIPE_KEY", "OTHER_KEY"] },
-      refs: { subject: ctx.principal.subject },
-    });
+    await seedAppRow(
+      store,
+      { ...app, ui: "http", secrets: ["STRIPE_KEY", "OTHER_KEY"] },
+      ctx.principal.subject,
+    );
 
     await runtime.open(app.id, ctx);
     await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));

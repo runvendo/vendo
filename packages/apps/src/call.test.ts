@@ -1,7 +1,7 @@
 import { VENDO_APP_FORMAT, type RunContext, type ToolRegistry } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import { createApps } from "./index.js";
-import { fakeSandbox, guardFixture, memoryStore } from "./testing/index.js";
+import { fakeSandbox, guardFixture, memoryStore, seedAppRow } from "./testing/index.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_call" },
@@ -27,11 +27,11 @@ describe("machine calls through createApps", () => {
     const seed = await sandbox.create({ env: {} });
     const server = await seed.snapshot();
     const store = memoryStore();
-    await store.records("vendo_apps").put({
-      id: "app_call",
-      data: { format: VENDO_APP_FORMAT, id: "app_call", name: "Call app", server },
-      refs: { subject: ctx.principal.subject },
-    });
+    await seedAppRow(
+      store,
+      { format: VENDO_APP_FORMAT, id: "app_call", name: "Call app", server },
+      ctx.principal.subject,
+    );
     const runtime = createApps({ store, guard: guardFixture(), tools, sandbox, catalog: [] });
 
     await expect(runtime.call("app_call", "fn:missing", {}, ctx)).resolves.toEqual({

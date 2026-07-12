@@ -26,6 +26,65 @@ function guardedConfig(sqlStore: PGliteStore) {
 }
 
 describe("approval park and resume over the real SQL mapping", () => {
+  it("runs one approved critical replay and parks the second identical replay", async () => {
+    const sqlStore = await store();
+    const guard = createGuard(guardedConfig(sqlStore));
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const ctx = context({
+      venue: "automation",
+      presence: "away",
+      appId: "app_critical",
+      trigger: { runId: "run_critical", kind: "host-event" },
+    });
+    const critical = call("host_critical", { invoiceId: "inv_critical" }, "call_critical");
+
+    const parked = await bound.execute(critical, ctx);
+    expect(parked).toMatchObject({ status: "pending-approval" });
+    if (parked.status !== "pending-approval") throw new Error("expected critical call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    await expect(bound.execute(critical, ctx)).resolves.toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+    await expect(bound.execute(critical, ctx)).resolves.toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("still scans an approved replay, and a scanner block burns the approval (fails closed)", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({
+      store: sqlStore,
+      policy: { rules: [{ match: { risk: "destructive" as const }, action: "ask" as const }] },
+      scanners: [{
+        name: "deny-replay",
+        on: "input",
+        scan: async () => ({ verdict: "block" as const, findings: ["blocked input"] }),
+      }],
+    });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+    const ctx = context({
+      venue: "automation",
+      presence: "away",
+      appId: "app_scan",
+      trigger: { runId: "run_scan", kind: "host-event" },
+    });
+    const critical = call("host_critical", { invoiceId: "inv_scan" }, "call_scan");
+
+    // The critical ask parks at stage 1, before scanners ever see the call —
+    // which is exactly why the approved replay must still be scanned.
+    const parked = await bound.execute(critical, ctx);
+    if (parked.status !== "pending-approval") throw new Error("expected critical call to park");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // Replay: consumed at the critical stage, then blocked by the scanner —
+    // nothing executes, and the burned approval cannot authorize a retry.
+    await expect(bound.execute(critical, ctx)).resolves.toMatchObject({ status: "blocked" });
+    expect(tools.executions).toHaveLength(0);
+    await expect(bound.execute(critical, ctx)).resolves.toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(0);
+  });
+
   it("parks, approves, resumes the exact call once, then consumes that approval", async () => {
     const sqlStore = await store();
     const guard = createGuard(guardedConfig(sqlStore));
