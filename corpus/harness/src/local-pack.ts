@@ -246,6 +246,11 @@ export function rewritePackageJsonForLocalVendo(
 
   const dependencies = withoutVendoPackages(stringRecord(pkg["dependencies"]));
   for (const name of LOCAL_DIRECT_DEPENDENCIES) dependencies[name] = fileSpec(byName.get(name)!.fileName);
+  // The umbrella's ai peer + init's starter model provider (the @/lib/ai
+  // scaffold) must resolve in the target app, or post-init typecheck/build
+  // regress on modules the quickstart installs. Never downgrade an existing pin.
+  dependencies["ai"] ??= "6.0.28";
+  dependencies["@ai-sdk/anthropic"] ??= "3.0.12";
   pkg["dependencies"] = sortedRecord(dependencies);
   for (const field of ["devDependencies", "peerDependencies", "optionalDependencies"] as const) {
     const values = withoutVendoPackages(stringRecord(pkg[field]));

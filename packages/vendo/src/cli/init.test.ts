@@ -111,14 +111,22 @@ describe("vendo init", () => {
       .toEqual({ format: "vendo/overrides@1", tools: { host_invoices_send: { critical: true } } });
   });
 
-  it("extracts host CSS variables into the Vendo theme", async () => {
+  it("extracts host CSS variables into the Vendo theme as concrete values", async () => {
     const root = await fixture();
+    // hex, shadcn hsl triple behind a var() chain, oklch, rem radius — all
+    // resolve to concrete hex/px (the jail knows no host custom properties).
     await writeFile(join(root, "app", "globals.css"),
-      ":root { --background: #fafafa; --foreground: #101010; --primary: #7c3aed; --radius: 10px; }\n");
+      ":root { --background: #fafafa; --brand-hue: 262 83% 58%; --primary: hsl(var(--brand-hue)); " +
+      "--foreground: oklch(0.205 0 0); --card: 0 0% 100%; --radius: 0.625rem; }\n");
     await runInit({ targetDir: root, yes: true, output: output().output });
     expect(JSON.parse(await readFile(join(root, ".vendo", "theme.json"), "utf8"))).toMatchObject({
-      colors: { background: "var(--background)", text: "var(--foreground)", accent: "var(--primary)" },
-      radius: { medium: "var(--radius)" },
+      colors: {
+        background: "#fafafa",
+        accent: "#7c3bed",
+        text: "#171717",
+        surface: "#ffffff",
+      },
+      radius: { medium: "10px" },
     });
   });
 
