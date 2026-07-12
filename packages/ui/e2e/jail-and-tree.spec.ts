@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openScenario } from "./helpers.js";
+import { jailFrame, openScenario } from "./helpers.js";
 
 test("generated components stay in the opaque-origin CSP jail and actions cross only the bridge", async ({ page }) => {
   const escapedRequests: string[] = [];
@@ -12,7 +12,7 @@ test("generated components stay in the opaque-origin CSP jail and actions cross 
   await openScenario(page, "tree-jail");
   const iframe = page.locator('iframe[title="Generated component: SecurityProbe"]');
   await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
-  const jail = page.frameLocator('iframe[title="Generated component: SecurityProbe"]');
+  const jail = jailFrame(page, "SecurityProbe");
   await expect(jail.getByRole("heading", { name: "Rendered generated props" })).toBeVisible();
 
   await jail.getByRole("button", { name: "Probe fetch" }).click();

