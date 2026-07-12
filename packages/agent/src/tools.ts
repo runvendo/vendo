@@ -25,6 +25,7 @@ export interface ToolBridgeOptions {
   guard?: Guard;
   writer?: UIMessageStreamWriter<UIMessage>;
   toolOutputCap?: number;
+  gate?: (call: ToolCall) => ToolOutcome | undefined;
   onCall?: (call: ToolCall) => (outcome: ToolOutcome) => void;
 }
 
@@ -33,22 +34,12 @@ function writePart(writer: UIMessageStreamWriter<UIMessage> | undefined, part: V
   writer.write(part as never);
 }
 
-function executionError(error: unknown): ToolOutcome {
-  let message = "Tool execution failed";
-  if (error instanceof Error) message = error.message;
-  else if (typeof error === "string") message = error;
-  else {
-    try {
-      message = String(error);
-    } catch {
-      // Keep the fallback when even coercion is hostile.
-    }
-  }
+function executionError(): ToolOutcome {
   return {
     status: "error",
     error: {
       code: "execution",
-      message,
+      message: "Tool execution failed.",
     },
   };
 }
@@ -58,8 +49,8 @@ function capOutcome(outcome: ToolOutcome, cap: number | undefined): ToolOutcome 
   let serialized: string | undefined;
   try {
     serialized = JSON.stringify(outcome.output);
-  } catch (error) {
-    return executionError(error);
+  } catch {
+    return executionError();
   }
   if (serialized === undefined || serialized.length <= cap) return outcome;
   return {
@@ -81,11 +72,13 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
     const execute = async (input: unknown, { toolCallId }: { toolCallId: string }): Promise<ToolOutcome> => {
       const call: ToolCall = { id: toolCallId, tool: descriptor.name, args: input };
       const finishCall = options.onCall?.(call);
-      let outcome: ToolOutcome;
-      try {
-        outcome = await options.registry.execute(call, options.ctx);
-      } catch (error) {
-        outcome = executionError(error);
+      let outcome = options.gate?.(call);
+      if (outcome === undefined) {
+        try {
+          outcome = await options.registry.execute(call, options.ctx);
+        } catch {
+          outcome = executionError();
+        }
       }
 
       if (outcome.status === "ok") {

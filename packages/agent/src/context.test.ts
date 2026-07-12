@@ -1,4 +1,4 @@
-import type { ToolDescriptor } from "@vendoai/core";
+import type { ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "./index.js";
@@ -71,5 +71,65 @@ describe("context engineering", () => {
       .split("\n\n")
       .filter((block) => block.startsWith("data: {") && (JSON.parse(block.slice(6)) as { type?: string }).type === "error");
     expect(errorFrames.length).toBeGreaterThan(0);
+  });
+
+  it("masks a thrown registry error on the wire and in subsequent model context", async () => {
+    const model = scriptedModel([
+      toolCallTurn(descriptor.name, {}, "call_secret"),
+      textTurn("Recovered safely.", "text_after_secret"),
+    ]);
+    const guard = testGuard({ [descriptor.name]: "run" });
+    const tools: ToolRegistry = {
+      async descriptors() {
+        return [descriptor];
+      },
+      async execute() {
+        throw new Error("SECRET_GUARD_DB_URL");
+      },
+    };
+    const agent = createAgent({ model, tools, guard });
+
+    const response = await agent.stream({
+      threadId: "thr_registry_error",
+      message: { id: "user_registry_error", role: "user", parts: [{ type: "text", text: "Dump it" }] },
+      ctx: ctx(),
+    });
+    const { rawFrames, parts } = await readSse(response);
+
+    expect(rawFrames.join("")).not.toContain("SECRET_GUARD_DB_URL");
+    expect(JSON.stringify(model.prompts)).not.toContain("SECRET_GUARD_DB_URL");
+    expect(parts.find((part) => part.type === "tool-output-available")).toMatchObject({
+      toolCallId: "call_secret",
+      output: {
+        status: "error",
+        error: { code: "execution", message: "Tool execution failed." },
+      },
+    });
+    expect(JSON.stringify(model.prompts[1])).toContain("Tool execution failed.");
+  });
+
+  it("fails chat and runner turns closed when guard directions fail", async () => {
+    const model = scriptedModel([]);
+    const guard = testGuard({});
+    guard.directions = async () => {
+      throw new Error("directions unavailable");
+    };
+    const tools = boundRegistry({}, guard);
+    const agent = createAgent({ model, tools, guard });
+
+    await expect(agent.stream({
+      threadId: "thr_directions_error",
+      message: { id: "user_directions_error", role: "user", parts: [{ type: "text", text: "Hi" }] },
+      ctx: ctx(),
+    })).rejects.toThrow("directions unavailable");
+
+    const report = await agent.asRunner()(
+      { prompt: "Run without directions", tools },
+      ctx({ venue: "automation", presence: "away" }),
+    );
+    expect(report.status).toBe("error");
+    expect(report.toolCalls).toEqual([]);
+    expect(model.doStreamCalls).toEqual([]);
+    expect(model.doGenerateCalls).toEqual([]);
   });
 });

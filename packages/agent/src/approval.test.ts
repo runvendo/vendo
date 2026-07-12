@@ -153,6 +153,18 @@ describe("agent approval round trip", () => {
     });
     expect(parts.some((part) => part.type === "text-delta" && part.delta === "Approval handled.")).toBe(true);
     expect(parts.at(-1)).toEqual({ type: "finish", finishReason: "stop" });
+
+    const persisted = await agent.threads.get(threadId, ctx());
+    expect(persisted).not.toBeNull();
+    expect(persisted!.messages).toHaveLength(2);
+    expect(new Set(persisted!.messages.map((message) => message.id)).size).toBe(2);
+    const persistedAssistant = persisted!.messages.find((message) => message.role === "assistant");
+    expect(persistedAssistant).toBeDefined();
+    expect(persistedAssistant!.parts.find((part) =>
+      part.type === "dynamic-tool" && part.toolCallId === toolCallId)).toMatchObject({
+      state: "output-available",
+      output: { status: "ok", output: { echoed: "hello" } },
+    });
   });
 
   it("turns a denied approval into the SDK denied output and still completes a model turn", async () => {

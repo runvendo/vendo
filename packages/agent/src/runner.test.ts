@@ -62,10 +62,11 @@ describe("headless AgentRunner", () => {
     expect(tools.invocations.automation_echo).toBe(0);
   });
 
-  it("stops at maxToolCalls without recording calls beyond the budget", async () => {
+  it("gates parallel tool calls before execution when maxToolCalls is exhausted", async () => {
+    const firstCall = toolCallTurn(descriptor.name, { value: "one" }, "call_budget_1");
+    const secondCall = toolCallTurn(descriptor.name, { value: "two" }, "call_budget_2");
     const model = scriptedModel([
-      toolCallTurn(descriptor.name, { value: "one" }, "call_budget_1"),
-      toolCallTurn(descriptor.name, { value: "two" }, "call_budget_2"),
+      [...firstCall.slice(0, -1), ...secondCall],
     ]);
     const guard = testGuard({ [descriptor.name]: "run" });
     const tools = boundRegistry({
@@ -82,12 +83,38 @@ describe("headless AgentRunner", () => {
     );
 
     expect(report.status).toBe("stopped");
-    expect(report.toolCalls).toHaveLength(1);
-    expect(report.toolCalls[0]).toEqual({
-      call: { id: "call_budget_1", tool: descriptor.name, args: { value: "one" } },
-      outcome: "ok",
-    });
+    expect(report.toolCalls).toEqual([
+      {
+        call: { id: "call_budget_1", tool: descriptor.name, args: { value: "one" } },
+        outcome: "ok",
+      },
+      {
+        call: { id: "call_budget_2", tool: descriptor.name, args: { value: "two" } },
+        outcome: "error",
+      },
+    ]);
     expect(tools.invocations.automation_echo).toBe(1);
+  });
+
+  it("passes maxOutputTokens to the runner model call", async () => {
+    const model = scriptedModel([textTurn("Bounded output.", "text_bounded")]);
+    const guard = testGuard({});
+    const tools = boundRegistry({}, guard);
+    const agent = createAgent({
+      model,
+      tools,
+      guard,
+      context: { maxOutputTokens: 256 },
+    });
+
+    const report = await agent.asRunner()(
+      { prompt: "Keep this short", tools },
+      awayCtx,
+    );
+
+    expect(report.status).toBe("ok");
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(model.doGenerateCalls[0]?.maxOutputTokens).toBe(256);
   });
 
   it("reports exactly one run audit event", async () => {

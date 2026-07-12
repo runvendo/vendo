@@ -56,5 +56,32 @@ describe("abandoned approval", () => {
     expect(errors).toEqual([]);
     expect(parts.some((part) => part.type === "text-delta" && part.delta === "Moving on.")).toBe(true);
     expect(tools.invocations.send_echo).toBe(0);
+
+    const secondPrompt = model.prompts[1]!;
+    const assistantToolCallIds = secondPrompt.flatMap((message) =>
+      message.role === "assistant" && Array.isArray(message.content)
+        ? message.content
+          .filter((part) => part.type === "tool-call")
+          .map((part) => part.toolCallId)
+        : []);
+    const toolResultIds = secondPrompt.flatMap((message) =>
+      message.role === "tool" && Array.isArray(message.content)
+        ? message.content
+          .filter((part) => part.type === "tool-result")
+          .map((part) => part.toolCallId)
+        : []);
+    expect(assistantToolCallIds.length).toBeGreaterThan(0);
+    expect(assistantToolCallIds.every((id) => toolResultIds.includes(id))).toBe(true);
+    expect(secondPrompt.every((message) => message.content.length > 0)).toBe(true);
+
+    const stored = await agent.threads.get(threadId, ctx());
+    const abandoned = stored?.messages
+      .flatMap((message) => message.parts)
+      .find((part) => part.type === "dynamic-tool" && part.toolCallId === "call_abandoned");
+    expect(abandoned).toMatchObject({
+      state: "approval-responded",
+      approval: { approved: false, reason: "abandoned" },
+    });
+    expect(guard.pending()).toHaveLength(1);
   });
 });

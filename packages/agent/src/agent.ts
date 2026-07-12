@@ -11,6 +11,7 @@ import {
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
+  isToolUIPart,
   stepCountIs,
   streamText,
   type LanguageModel,
@@ -73,6 +74,42 @@ function upsertMessage(messages: UIMessage[], message: UIMessage): void {
   else messages[index] = message;
 }
 
+function abandonPendingApprovals(messages: UIMessage[]): void {
+  for (const message of messages) {
+    message.parts = message.parts.map((part) => {
+      if (!isToolUIPart(part) || part.state !== "approval-requested") return part;
+      return {
+        ...part,
+        state: "approval-responded",
+        approval: {
+          id: part.approval.id,
+          approved: false,
+          reason: "abandoned",
+        },
+      };
+    });
+  }
+}
+
+function providerHistory(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    parts: message.parts.map((part) => {
+      if (!isToolUIPart(part)
+        || part.state !== "approval-responded"
+        || part.approval.approved !== false
+        || part.approval.reason !== "abandoned") {
+        return part;
+      }
+      return {
+        ...part,
+        state: "output-denied",
+        approval: { ...part.approval, approved: false },
+      };
+    }),
+  }));
+}
+
 /** 03-agent §1 */
 export function createAgent(config: AgentConfig): VendoAgent {
   validateConfig(config);
@@ -82,6 +119,10 @@ export function createAgent(config: AgentConfig): VendoAgent {
     async stream(input) {
       validateMessage(input?.message);
       const thread = await threads.resolve(input.threadId, input.ctx);
+      if (input.message.role === "user"
+        && !thread.messages.some((message) => message.id === input.message.id)) {
+        abandonPendingApprovals(thread.messages);
+      }
       upsertMessage(thread.messages, input.message);
       const system = await assembleSystemPrompt(config.guard, input.ctx, config.system);
 
@@ -95,10 +136,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
             writer,
             toolOutputCap: config.context?.toolOutputCap,
           });
+          const modelMessages = (await convertToModelMessages(providerHistory(thread.messages)))
+            .filter((message) => message.content.length > 0);
           const result = streamText({
             model: config.model,
             system,
-            messages: await convertToModelMessages(thread.messages),
+            messages: modelMessages,
             tools,
             stopWhen: stepCountIs(20),
             maxOutputTokens: config.context?.maxOutputTokens,

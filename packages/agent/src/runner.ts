@@ -23,7 +23,7 @@ export interface RunnerConfig {
   model: LanguageModel;
   guard: Guard;
   system?: { product?: string; instructions?: string };
-  context?: { toolOutputCap?: number };
+  context?: { maxOutputTokens?: number; toolOutputCap?: number };
 }
 
 interface RecordedCall {
@@ -49,6 +49,8 @@ export function createRunner(config: RunnerConfig): AgentRunner {
 
     const awayCtx: RunContext = { ...ctx, presence: "away" };
     const recorded: RecordedCall[] = [];
+    let startedCalls = 0;
+    let refusedCall = false;
     let report: AgentRunReport;
 
     try {
@@ -57,6 +59,20 @@ export function createRunner(config: RunnerConfig): AgentRunner {
         registry: task.tools,
         ctx: awayCtx,
         toolOutputCap: config.context?.toolOutputCap,
+        gate: () => {
+          if (startedCalls >= cap) {
+            refusedCall = true;
+            return {
+              status: "error",
+              error: {
+                code: "budget-exhausted",
+                message: "Tool-call budget exhausted",
+              },
+            };
+          }
+          startedCalls += 1;
+          return undefined;
+        },
         onCall: (call) => {
           const entry: RecordedCall = { call, outcome: "error" };
           recorded.push(entry);
@@ -73,8 +89,9 @@ export function createRunner(config: RunnerConfig): AgentRunner {
         prompt: task.prompt,
         tools,
         stopWhen: [stepCountIs(cap), toolCallCap],
+        maxOutputTokens: config.context?.maxOutputTokens,
       });
-      const status = result.finishReason === "tool-calls" && recorded.length >= cap
+      const status = refusedCall || (result.finishReason === "tool-calls" && recorded.length >= cap)
         ? "stopped"
         : "ok";
       report = {

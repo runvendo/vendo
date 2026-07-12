@@ -49,6 +49,10 @@ function toSummary(thread: Thread): ThreadSummary {
   return { id: thread.id, title: titleFor(thread), updatedAt: thread.updatedAt };
 }
 
+function recordId(subject: string, threadId: ThreadId): string {
+  return `${encodeURIComponent(subject)}:${threadId}`;
+}
+
 /** 03-agent §5 */
 export class ThreadRepository {
   readonly #memory = new Map<string, Map<ThreadId, Thread>>();
@@ -62,10 +66,6 @@ export class ThreadRepository {
       }
       const existing = await this.get(id, ctx);
       if (existing) return existing;
-      if (!this.usesMemory(ctx)) {
-        const occupied = await this.store!.records(THREAD_COLLECTION).get(id);
-        if (occupied) throw new VendoError("not-found", "thread not found");
-      }
       return this.create(ctx, id);
     }
     return this.create(ctx);
@@ -76,7 +76,8 @@ export class ThreadRepository {
     if (this.usesMemory(ctx)) {
       return this.subjectMemory(ctx.principal.subject).get(id) ?? null;
     }
-    const record = await this.store!.records(THREAD_COLLECTION).get(id);
+    const record = await this.store!.records(THREAD_COLLECTION)
+      .get(recordId(ctx.principal.subject, id));
     if (!record || !isThread(record.data) || record.data.subject !== ctx.principal.subject) {
       return null;
     }
@@ -106,8 +107,8 @@ export class ThreadRepository {
       this.subjectMemory(ctx.principal.subject).delete(id);
       return;
     }
-    const thread = await this.get(id, ctx);
-    if (thread) await this.store!.records(THREAD_COLLECTION).delete(id);
+    await this.store!.records(THREAD_COLLECTION)
+      .delete(recordId(ctx.principal.subject, id));
   }
 
   async persist(thread: Thread, messages: UIMessage[], ctx: RunContext): Promise<void> {
@@ -121,7 +122,7 @@ export class ThreadRepository {
       return;
     }
     await this.store!.records(THREAD_COLLECTION).put({
-      id: updated.id,
+      id: recordId(updated.subject, updated.id),
       data: updated,
       refs: { subject: updated.subject },
     });

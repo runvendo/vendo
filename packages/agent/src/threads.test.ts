@@ -76,12 +76,15 @@ describe("agent threads", () => {
     expect(Date.parse(secondThread!.updatedAt)).toBeGreaterThan(Date.parse(firstThread!.updatedAt));
   });
 
-  it("isolates get, list, and delete by principal subject", async () => {
+  it("isolates get, list, delete, and colliding stream ids by principal subject", async () => {
     const store = memoryStore();
     const guard = testGuard({});
     const tools = boundRegistry({}, guard);
     const agent = createAgent({
-      model: scriptedModel([textTurn("Private reply.", "text_private")]),
+      model: scriptedModel([
+        textTurn("Private reply.", "text_private"),
+        textTurn("Independent reply.", "text_independent"),
+      ]),
       tools,
       guard,
       store,
@@ -102,6 +105,22 @@ describe("agent threads", () => {
 
     expect(await agent.threads.get(threadId, u2)).toBeNull();
     expect(await agent.threads.list(u2)).toEqual([]);
+
+    const u1Before = await agent.threads.get(threadId, u1);
+    const foreignResponse = await agent.stream({
+      threadId,
+      message: userMessage("user_independent", "Independent question"),
+      ctx: u2,
+    });
+    await readSse(foreignResponse);
+
+    const u1After = await agent.threads.get(threadId, u1);
+    const u2Thread = await agent.threads.get(threadId, u2);
+    expect(u1After).toEqual(u1Before);
+    expect(u2Thread).toMatchObject({ id: threadId, subject: "u2" });
+    expect(assistantText(u2Thread!.messages)).toContain("Independent reply.");
+    expect(await agent.threads.list(u2)).toHaveLength(1);
+
     await agent.threads.delete(threadId, u2);
     expect(await agent.threads.get(threadId, u1)).not.toBeNull();
     expect(await agent.threads.list(u1)).toHaveLength(1);

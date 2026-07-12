@@ -10,7 +10,7 @@ Never claim a tool ran unless its result confirms that it did.
 Never invent tool outputs, records, or side effects.
 For away runs, clearly state what completed and what was left pending.`;
 
-/** 03-agent §3 */
+/** 03-agent §3: company directions are mandatory policy context and fail closed. */
 export async function assembleSystemPrompt(
   guard: Guard,
   ctx: RunContext,
@@ -20,15 +20,11 @@ export async function assembleSystemPrompt(
   const product = system?.product?.trim();
   if (product) sections.push(`Product\n${product}`);
 
-  try {
-    const directions = (await guard.directions(ctx))
-      .map((direction) => direction.trim())
-      .filter(Boolean);
-    if (directions.length > 0) {
-      sections.push(`Directions\n${directions.map((direction) => `- ${direction}`).join("\n")}`);
-    }
-  } catch {
-    // Guard directions are fail-soft context, not an execution gate.
+  const directions = (await guard.directions(ctx))
+    .map((direction) => direction.trim())
+    .filter(Boolean);
+  if (directions.length > 0) {
+    sections.push(`Directions\n${directions.map((direction) => `- ${direction}`).join("\n")}`);
   }
 
   // 03-agent §3 item 4: v0 has no catalog/theme config; the umbrella folds it into system.instructions.
