@@ -30,10 +30,26 @@ function ChatWorkspace() {
     return () => { active = false; };
   }, [client]);
   return (
-    <div className="vendo-page-grid">
-      <nav className="vendo-card vendo-stack" aria-label="Conversations">
-        <button type="button" className="vendo-primary" onClick={() => setSelected(undefined)}>New conversation</button>
-        {threads.map(thread => <button type="button" aria-current={selected === thread.id ? "page" : undefined} key={thread.id} onClick={() => setSelected(thread.id)}>{thread.title}</button>)}
+    <div
+      className="fl-page-pane"
+      style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(180px, 240px) minmax(0, 1fr)", padding: 14 }}
+    >
+      <nav
+        className="fl-picker"
+        aria-label="Conversations"
+        style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 8, maxHeight: "none", maxWidth: "none", padding: 12 }}
+      >
+        <button type="button" className="fl-btn fl-btn-primary" onClick={() => setSelected(undefined)}>New conversation</button>
+        {threads.map(thread => (
+          <button
+            type="button"
+            className={`fl-btn${selected === thread.id ? " fl-btn-primary" : ""}`}
+            aria-current={selected === thread.id ? "page" : undefined}
+            key={thread.id}
+            onClick={() => setSelected(thread.id)}
+            style={{ justifyContent: "flex-start", textAlign: "left" }}
+          >{thread.title}</button>
+        ))}
       </nav>
       <VendoThread threadId={selected} />
     </div>
@@ -71,21 +87,36 @@ function AppsWorkspace() {
     });
   };
   return (
-    <div className="vendo-stack">
-      {error ? <div role="alert" className="vendo-danger">{error}</div> : null}
-      <form className="vendo-row" aria-label="Create app" onSubmit={event => void submit(event)}>
-        <label style={{ flex: 1 }}><span className="vendo-muted">Describe a new app</span><input className="vendo-input" value={prompt} onChange={event => setPrompt(event.currentTarget.value)} /></label>
-        <button className="vendo-primary" type="submit" disabled={!prompt.trim()}>Create</button>
+    <div className="fl-page-pane" style={{ gap: 14, overflowY: "auto", padding: 14 }}>
+      {error ? <div role="alert" className="fl-error">{error}</div> : null}
+      <form className="fl-picker-toprow" aria-label="Create app" onSubmit={event => void submit(event)}>
+        <label style={{ flex: 1 }}>
+          <span className="fl-picker-group" style={{ display: "block", margin: "0 2px 7px" }}>Describe a new app</span>
+          <input className="fl-picker-search" value={prompt} onChange={event => setPrompt(event.currentTarget.value)} />
+        </label>
+        <button className="fl-btn fl-btn-primary" type="submit" disabled={!prompt.trim()}>Create</button>
       </form>
-      <div className="vendo-app-grid">
+      <div className="fl-picker-grid">
         {apps.map(app => (
-          <article className="vendo-card vendo-stack" key={app.id}>
-            <strong>{app.name}</strong>
-            {app.description ? <p>{app.description}</p> : null}
-            <div className="vendo-row">
-              <button type="button" onClick={() => setSelected(app.id)}>Open</button>
-              <button type="button" onClick={() => void during(async () => { await fork(app.id); })}>Fork</button>
-              <button className="vendo-danger" type="button" onClick={() => {
+          <article className="fl-automation" key={app.id}>
+            <div className="fl-auto-head">
+              <span className="fl-auto-ic" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect width="7" height="7" x="3" y="3" rx="1" />
+                  <rect width="7" height="7" x="14" y="3" rx="1" />
+                  <rect width="7" height="7" x="3" y="14" rx="1" />
+                  <rect width="7" height="7" x="14" y="14" rx="1" />
+                </svg>
+              </span>
+              <div>
+                <strong className="fl-auto-title">{app.name}</strong>
+                {app.description ? <p className="fl-auto-sub" style={{ marginBottom: 0 }}>{app.description}</p> : null}
+              </div>
+            </div>
+            <div className="fl-auto-flow" style={{ gap: 8 }}>
+              <button className="fl-btn fl-btn-primary" type="button" onClick={() => setSelected(app.id)}>Open</button>
+              <button className="fl-btn" type="button" onClick={() => void during(async () => { await fork(app.id); })}>Fork</button>
+              <button className="fl-btn fl-btn-ceremony" type="button" onClick={() => {
                 if (globalThis.confirm?.(`Remove ${app.name}?`)) {
                   void during(async () => {
                     await remove(app.id);
@@ -97,7 +128,7 @@ function AppsWorkspace() {
           </article>
         ))}
       </div>
-      {selected ? <section className="vendo-card" aria-label="Open app"><OpenApp key={selected} appId={selected} /></section> : null}
+      {selected ? <section className="fl-glass" aria-label="Open app"><OpenApp key={selected} appId={selected} /></section> : null}
     </div>
   );
 }
@@ -121,12 +152,12 @@ export function VendoPage() {
 
   return (
     <ChromeRoot>
-      <main className="vendo-stack" aria-label="Vendo workspace">
-        <div className="vendo-tabs" role="tablist" aria-label="Workspace sections">
+      <main className="fl-page" aria-label="Vendo workspace">
+        <div className="fl-tabbar" role="tablist" aria-label="Workspace sections">
           {TABS.map((item, index) => (
             <button
               ref={node => { tabRefs.current[index] = node; }}
-              className="vendo-tab"
+              className="fl-tab"
               id={`vendo-tab-${item}`}
               type="button"
               role="tab"
@@ -139,12 +170,14 @@ export function VendoPage() {
             >{title(item)}</button>
           ))}
         </div>
-        <section className="vendo-tabpanel" id={`vendo-panel-${tab}`} role="tabpanel" aria-labelledby={`vendo-tab-${tab}`}>
-          {tab === "chat" ? <ChatWorkspace /> : null}
-          {tab === "apps" ? <AppsWorkspace /> : null}
-          {tab === "automations" ? <AutomationsPanel /> : null}
-          {tab === "activity" ? <ActivityPanel /> : null}
-        </section>
+        <div className="fl-page-body">
+          <section className="fl-page-pane" id={`vendo-panel-${tab}`} role="tabpanel" aria-labelledby={`vendo-tab-${tab}`}>
+            {tab === "chat" ? <ChatWorkspace /> : null}
+            {tab === "apps" ? <AppsWorkspace /> : null}
+            {tab === "automations" ? <AutomationsPanel /> : null}
+            {tab === "activity" ? <ActivityPanel /> : null}
+          </section>
+        </div>
       </main>
     </ChromeRoot>
   );

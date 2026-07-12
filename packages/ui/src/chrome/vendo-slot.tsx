@@ -7,7 +7,7 @@ import { ChromeRoot } from "./chrome-root.js";
 function MountedApp({ appId }: { appId: string }) {
   const { client, components } = useVendoContext();
   const { surface } = useApp(appId);
-  if (!surface) return <div role="status" aria-live="polite">Loading app…</div>;
+  if (!surface) return <div className="fl-slot-empty" role="status" aria-live="polite">Loading app…</div>;
   return <AppFrame key={appId} surface={surface} components={components} onAction={({ action, payload }) => client.apps.call(appId, action, payload ?? {})} />;
 }
 
@@ -17,8 +17,10 @@ export function VendoSlot({ id, appId, children }: { id: string; appId?: string;
   const Fallback = () => <>{children}</>;
   return (
     <ChromeRoot>
-      <div data-vendo-slot={id}>
-        <PinMount slot={id} fallback={Fallback}><MountedApp appId={appId} /></PinMount>
+      <div className="fl-slot" data-vendo-slot={id}>
+        <div className="fl-slot-filled">
+          <PinMount slot={id} fallback={Fallback}><MountedApp appId={appId} /></PinMount>
+        </div>
       </div>
     </ChromeRoot>
   );
