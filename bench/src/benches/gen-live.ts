@@ -12,6 +12,32 @@ const TRIALS = 3;
 const PROMPT = "Build a simple dashboard that lists three recent invoices with their totals.";
 
 /**
+ * Gate on the metric this suite exists to produce: when a keyed run yields no
+ * create-total case (primary create() failed and the fallback failed or was
+ * not attempted), return the Error to throw so the runner exits nonzero
+ * instead of reporting a quietly incomplete success. Pure — unit-tested
+ * without a key. Successful stream measurements are folded into the message
+ * so the run is not a total information loss.
+ */
+export function missingCreateTotalError(
+  cases: readonly CaseResult[],
+  notes: readonly string[],
+): Error | undefined {
+  if (cases.some((c) => c.name.startsWith("create-total"))) return undefined;
+  const streamContext = cases
+    .filter((c) => c.name.startsWith("stream-"))
+    .map((c) => `${c.name}: p50=${c.p50.toFixed(0)}ms p95=${c.p95.toFixed(0)}ms (n=${c.samples})`);
+  const lines = [
+    "gen-live produced no create-total metric — every create() attempt failed:",
+    ...notes.map((note) => `  - ${note}`),
+    ...(streamContext.length > 0
+      ? ["successful stream measurements before the failure:", ...streamContext.map((s) => `  - ${s}`)]
+      : []),
+  ];
+  return new Error(lines.join("\n"));
+}
+
+/**
  * Live generation latency (ANTHROPIC_API_KEY required; never in CI).
  *
  * Honesty notes baked into the metrics:
@@ -98,6 +124,12 @@ export const genLiveSuite: Suite = {
         notes.push(`create() on ${createModelId} also failed: ${fallback.error}`);
       }
     }
+
+    // A keyed run that measured no create-total is a failure, not a quiet
+    // success — throw so the runner exits nonzero (its catch writes the
+    // failure step summary).
+    const missing = missingCreateTotalError(cases, notes);
+    if (missing !== undefined) throw missing;
 
     return { suite: "gen-live", kind: "live", cases, notes };
   },
