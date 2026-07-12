@@ -1,0 +1,81 @@
+{
+  "name": "@vendoai/apps",
+  "version": "0.3.0",
+  "description": "The Vendo app artifact, build engine, sandbox seam, and runtime.",
+  "keywords": [
+    "ai",
+    "agent",
+    "apps",
+    "vendo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runvendo/vendo.git",
+    "directory": "packages/apps"
+  },
+  "homepage": "https://vendo.run",
+  "bugs": "https://github.com/runvendo/vendo/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./e2b": {
+      "types": "./dist/e2b/index.d.ts",
+      "default": "./dist/e2b/index.js"
+    },
+    "./modal": {
+      "types": "./dist/modal/index.d.ts",
+      "default": "./dist/modal/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vendoai/core": "workspace:*",
+    "fflate": "^0.8.2",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "ai": "^4.0.0 || ^5.0.0",
+    "e2b": "^2.32.0",
+    "modal": "~0.9.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    },
+    "e2b": {
+      "optional": true
+    },
+    "modal": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^2.0.85",
+    "@types/node": "^22.0.0",
+    "ai": "^5.0.0",
+    "e2b": "^2.32.0",
+    "modal": "~0.9.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,76 @@
+import type { LanguageModel } from "ai";
+
+export interface ScriptedModelCall {
+  prompt: Array<{
+    role: string;
+    content: string | Array<{ type?: string; text?: string }>;
+  }>;
+}
+
+export type ScriptedModelResponse = string | ((
+  call: ScriptedModelCall,
+  index: number,
+) => string | Promise<string>);
+
+const responseText = (
+  response: ScriptedModelResponse,
+  call: ScriptedModelCall,
+  index: number,
+): string | Promise<string> => typeof response === "function" ? response(call, index) : response;
+
+/** Deterministic LanguageModelV2 equivalent for AI SDK generateText e2e tests. */
+export const scriptedLanguageModel = (...responses: ScriptedModelResponse[]): LanguageModel => {
+  let calls = 0;
+  const model = {
+    specificationVersion: "v2" as const,
+    provider: "vendo-scripted",
+    modelId: "vendo-scripted-v1",
+    supportedUrls: {},
+    async doGenerate(call: ScriptedModelCall) {
+      const response = responses[Math.min(calls, responses.length - 1)];
+      if (response === undefined) throw new Error("Scripted language model has no response");
+      const text = await responseText(response, call, calls);
+      calls += 1;
+      return {
+        content: [{ type: "text" as const, text }],
+        finishReason: "stop" as const,
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
+    },
+    async doStream() {
+      throw new Error("Scripted language model does not stream");
+    },
+  };
+  return model as unknown as LanguageModel;
+};
+
+const textOf = (call: ScriptedModelCall): string => call.prompt.map((message) => {
+  if (typeof message.content === "string") return message.content;
+  return message.content.map((part) => part.text ?? "").join("");
+}).join("\n");
+
+const markedValue = (text: string, marker: string): string => {
+  const start = text.lastIndexOf(marker);
+  if (start === -1) return "Untitled app";
+  const value = text.slice(start + marker.length).split("\n")[0]?.trim() ?? "";
+  return value.slice(0, 60) || "Untitled app";
+};
+
+/** Compatibility fixture for lifecycle/execution suites that only need valid generation. */
+export const basicLanguageModel = (): LanguageModel => scriptedLanguageModel((call) => {
+  const prompt = textOf(call);
+  if (prompt.includes("TASK: EDIT_TREE")) {
+    const instruction = markedValue(prompt, "INSTRUCTION: ");
+    return JSON.stringify({ ops: [{ op: "set-name", name: instruction }] });
+  }
+  const name = markedValue(prompt, "USER_REQUEST: ");
+  return JSON.stringify({
+    name,
+    description: `${name} generated app`,
+    tree: {
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [{ id: "root", component: "Text", source: "prewired", props: { text: name } }],
+    },
+  });
+});
