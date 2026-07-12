@@ -6,14 +6,14 @@ Status: DRAFT (wave 2). One job: fire triggers and execute runs. An automation i
 
 ```ts
 import type {
-  RunContext, AppId, AppDocument, RunId, ToolSet, ToolOutcome, AgentRunner, StoreAdapter,
+  RunContext, AppId, AppDocument, RunId, ToolRegistry, ToolOutcome, AgentRunner, StoreAdapter,
   Guard, Trigger, TriggerSource, ApprovalRequest, Principal, Json, IsoDateTime,
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
 
 export function createAutomations(config: {
   apps: AppsRuntime;
-  tools: ToolSet;                 // ALREADY guard-bound by the umbrella (05 §2)
+  tools: ToolRegistry;                 // ALREADY guard-bound by the umbrella (05 §2)
   guard: Guard;                   // core seam: run audit events + approval resumption (onApprovalDecision)
   store: StoreAdapter;
   runner?: AgentRunner;           // absent → agentic runs unavailable, steps still work
@@ -54,7 +54,7 @@ Away runs hold only grants captured while the user was present **and bound to th
 
 ## 4. Run models
 
-**Steps** (deterministic, auditable, cheap, no LLM at runtime): sequential; each step's `args` values are JSONata expressions evaluated against `{ event, steps: { <id>: <output> }, item }`; `if` skips, `forEach` fans out binding `item`. A step's `tool` may be an `fn:` reference — delivered as `POST /fn/<name>` to the app's machine (06 §4) — or a tool name through the guard-bound set. First hard failure stops the run (`status: "error"`); a `pending-approval` outcome parks the run (`status: "waiting-approval"`) and resumes on decision (core §6 `onApprovalDecision`).
+**Steps** (deterministic, auditable, cheap, no LLM at runtime): sequential; each step's `args` values are JSONata expressions evaluated against `{ event, steps: { <id>: <output> }, item }`; `if` skips, `forEach` fans out binding `item`. A step's `tool` may be an `fn:` reference — delivered as `POST /fn/<name>` to the app's machine (06 §4) — or a tool name through the guard-bound set. First hard failure stops the run (`status: "error"`); a `pending-approval` outcome parks the run (`status: "pending-approval"`) and resumes on decision (core §6 `onApprovalDecision`).
 
 **Agentic** (fuzzy work within pre-approved grants): `runner({ prompt, tools, budget }, ctx)` with `presence: "away"` — reasoning happens, authority doesn't change: the same grants gate every call. `budget.maxToolCalls` defaults to 50.
 
@@ -63,7 +63,7 @@ The machine is reached only through the `fn:` steps the run model declares — t
 ## 5. Observability
 
 ```ts
-export type RunStatus = "running" | "ok" | "error" | "stopped" | "waiting-approval";
+export type RunStatus = "running" | "ok" | "error" | "stopped" | "pending-approval";
 
 export interface RunRecord {
   id: RunId; appId: AppId;

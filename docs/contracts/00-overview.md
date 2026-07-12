@@ -31,7 +31,7 @@ vendo (umbrella) → depends on everything (the only package allowed to)
 
 (Arrows on the first line read "builds on", left to right — i.e. automations imports apps imports core; nothing imports in the other direction.)
 
-Cross-block communication happens exclusively through seams defined in core (`Guard`, `StoreAdapter`, `ActAs`, `SecretsProvider`, `AgentRunner`, `ToolSet`). A block never imports a sibling; the umbrella wires implementations into seams. Two consequences worth naming:
+Cross-block communication happens exclusively through seams defined in core (`Guard`, `StoreAdapter`, `ActAs`, `SecretsProvider`, `AgentRunner`, `ToolRegistry`). A block never imports a sibling; the umbrella wires implementations into seams. Two consequences worth naming:
 
 - `automations` never imports `agent`. Agentic runs go through the `AgentRunner` seam (core); the umbrella passes the agent's implementation in.
 - `ui` never imports `apps`. The browser talks to the server over the umbrella's wire routes (09); types come from core.
@@ -59,7 +59,7 @@ Resolved with Yousef (2026-07-11 dialogs):
 Made while drafting — flagged for review, each also marked ⚑ in situ:
 
 5. **All shapes live in core, including the app document and the tree** (the page puts "tools, principals, apps, grants" under core's typed-end-to-end bullet; the apps *block* owns engine/runtime/spec doc). Required by layering: ui renders trees but may only import core.
-6. **The guard choke point is `guard.bind(tools)`** — the only sanctioned path from a `ToolSet` to execution, used identically by chat, apps, automations, and the future MCP door. (05 §2)
+6. **The guard choke point is `guard.bind(tools)`** — the only sanctioned path from a `ToolRegistry` to execution, used identically by chat, apps, automations, and the future MCP door. (05 §2)
 7. **`SandboxAdapter` lives in apps** (its only consumer), with e2b and Modal adapters in-box as subpaths (`@vendoai/apps/e2b`, `/modal`) — BYO key, per the page.
 8. **Secrets are handles, substituted at the egress boundary** — app code never sees values (page: "never readable by app code"); the machine's egress proxy swaps handle tokens for real values on allowlisted domains. (06 §4.3)
 9. **The umbrella owns the `vendo` bin** (init/doctor/sync); no separate published CLI package.
@@ -79,13 +79,18 @@ Round 3 (dual review — a simplification pass and an industry-standards pass, b
 16. **Webhook signing meets the Stripe/Svix bar**: HMAC-SHA256 over `id.timestamp.rawBody`, ±5-minute window, delivery-id dedupe; secrets never travel in URLs. (09 §3)
 17. **No tenant axis** ⚠️ new: `tenantId` deleted from principals, grants, and every table — `subject` is the one partition key; multi-tenant hosts scope by joining through it, like their own tables. Re-adding a column later is additive; carrying it "just in case" was not. (02 §4)
 18. **Standards one-liners**: `descriptorHash` = SHA-256 over RFC 8785 canonical JSON; one wire error envelope + fixed status map; `/fn` responses use an explicit `{ result }` / `{ ui }` key, never body-sniffing; `/tick` takes `Authorization: Bearer` (Vercel cron native); cron evaluates in UTC; wire POSTs require `Content-Type: application/json` (CSRF floor); the refs join example uses GIN-compatible containment.
+Round 4 (field audits — a naming pass and an every-field-must-have-a-consumer pass, both applied 2026-07-11):
+
+20. **Naming unifications**: `ToolDescriptor.inputSchema` (MCP/Anthropic name; disambiguates from `TreeQuery.input`, and the key is baked into the `descriptorHash` preimage); `ToolRegistry` (our `ToolSet` collided with ai-SDK's different-shaped export); one parked state `"pending-approval"` (was also `waiting-approval`); `VendoApprovalPart`/`data-vendo-approval` (was "consent" — the set says approval everywhere); `inputPreview` unified (was also `argsPreview`); `vendo_apps.subject` (was the one `owner_subject` exception); `addToolApprovalResponse` (the exact ai-SDK name); `payload` for fields typed `UIPayload` (a field named `tree` would lie the day a second format registers; `AppDocument.tree` alone stays, spec-locked); `POST /threads` (collection stays plural); `AppsRuntime.delete` (was `remove`; matches threads + stores + HTTP DELETE — hooks keep `remove` because `delete` can't be destructured). Spec-locked and exempt: `AppDocument.format` vs the tree's pinned `formatVersion` (split documented as permanent), `Pin.base`.
+21. **Field cuts** (no contracted consumer): `VENDO_APP_ID` env var (the run token carries it), error code `grant-required` (nothing throws it — the situation IS the `pending-approval` outcome), `ApprovalRequest.expiresAt` (no expiry machinery), `TriggerRef.appId` (always equals `RunContext.appId`), `AuthMaterial` reduced to `{ headers }` (token/expiry had no reader), `AppSource` + the `source` column (written, never read; provenance = `forkedFrom`), `OpenSurface` http-variant `cover` (the spec says the loading cover is the kept tree), `ToolDescriptor.source` (provenance = the name prefix), `RegisteredComponent.source` (prewired = the reserved-name set). Kept with its missing rule added instead of cut: `PermissionGrant.contextKey` — session/task grants now normatively match only when `contextKey` equals the current context (05 §2 step 3).
+
 19. **Simplification trims** (dead surface deleted): `apply()` + the `TreePatch`/`CodePatch` public types (edit dialects are engine internals; `edit()` is the one entry), the machine's `/trigger` endpoint (firings arrive as declared `fn:` steps), `audit.activity` (= `query({principal})` at the wire route), the separate `directions` config channel (policy data, one channel), `BreakingChange.affects` (contractually always empty), grant sources `judge`/`rule` (nothing mints them), `ToolDescriptor.title`, the umbrella's judge shorthand union, store's `maintenance()`/`auditRetentionDays` (host SQL on host tables), and app-data encryption (kept for `vendo_secrets` only — encrypting app data defeats the host-queryable promise).
 
 ## How this set evolves without breaking
 
 Five mechanisms, all already in place — future needs slot in additively, no new abstraction required:
 
-- **Format tags**: every persisted/wire document is self-describing (`vendo/app@1`, `vendo-genui/v1`, `vendo/tools@1`, `vendo/policy@1`); new formats and versions dispatch on the tag (01 §8).
+- **Format tags**: every persisted/wire document is self-describing (`vendo/app@1`, `vendo-genui/v1`, `vendo/tools@1`, `vendo/policy@1`); new formats and versions dispatch on the tag (01 §8). The tag key is `format` on every document except the pinned tree wire, which keeps its historical `formatVersion` — that split is permanent, not an accident.
 - **Prefixed refs**: hashes and refs carry their scheme (`sha256:…`, `e2b:…`) — algorithms and providers rotate without flag-days.
 - **Discriminated unions**: trigger kinds, run models, storage kinds, binding kinds, surface kinds, error codes are all tagged unions — new variants are additive, and consumers ignore unknown variants (01 §15).
 - **Seams over implementations**: new sandbox providers, judges, scanners, connectors, secrets sources are new implementations of frozen interfaces, not contract changes.

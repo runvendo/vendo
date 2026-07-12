@@ -24,7 +24,7 @@ export function createVendo(config: {
   policy?: PolicyConfig;
   judge?: Judge;                              // e.g. vendoAutoJudge({ model }) — one import, no shorthand union
   secrets?: SecretsProvider;                  // default envSecrets()
-  telemetry?: boolean;
+  telemetry?: boolean;                        // wires @vendoai/telemetry (out of campaign scope, "stays as-is") — the one consumer outside this set
 }): Vendo;
 
 export interface Vendo {
@@ -35,7 +35,7 @@ export interface Vendo {
 }
 ```
 
-Wiring (normative): `actions.add(apps.agentTools())`; every `ToolSet` handed to agent, apps, and automations is `guard.bind(...)`ed here — blocks never see an unbound registry. `nextVendoHandler(vendo)` adapts the fetch handler to a Next.js route module; the handler shape itself is framework-agnostic (page: framework-agnostic, any JS runtime).
+Wiring (normative): `actions.add(apps.agentTools())`; every `ToolRegistry` handed to agent, apps, and automations is `guard.bind(...)`ed here — blocks never see an unbound registry. `nextVendoHandler(vendo)` adapts the fetch handler to a Next.js route module; the handler shape itself is framework-agnostic (page: framework-agnostic, any JS runtime).
 
 ## 3. The wire (public contract — ui speaks exactly this)
 
@@ -43,13 +43,13 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/thread` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE) |
+| `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE) — one conversational turn |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
 | `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
 | `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
-| `/apps/:id` | GET · DELETE | app · remove |
+| `/apps/:id` | GET · DELETE | app · delete |
 | `/apps/:id/open` | GET | `OpenSurface` |
 | `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls — 06 §1 `call`) |
 | `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
@@ -69,7 +69,7 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 
 **Webhook verification (normative)**: `/webhooks/:source` never dispatches unverified deliveries. Each source registers a verification at wiring time: the connector's own signature scheme (e.g. Composio's signed headers), or — for self-minted subscriptions — the industry-standard signing scheme (Stripe/Svix/GitHub school): HMAC-SHA256 over `id.timestamp.rawBody` with the secret minted at enable, delivered as signature + timestamp + delivery-id headers, verified within a ±5-minute window. **The secret itself never travels in a URL** (URLs leak via logs and proxies). Deliveries are deduped by delivery id, so at-least-once retries never double-fire an automation. Verification failure → `401`, no principal resolution, no run, one audit event. The unauthenticated surface of the wire is exactly: nothing.
 
-**Errors (normative)**: every non-2xx wire response is the one envelope the set already has (06 §4.1): `{ "error": { "code": VendoErrorCode, "message": string } }`, with the fixed status map `validation`→400, `not-found`→404, `blocked`/`grant-required`→403, `conflict`→409, `cloud-required`→402, `sandbox-unavailable`/`not-implemented`→501.
+**Errors (normative)**: every non-2xx wire response is the one envelope the set already has (06 §4.1): `{ "error": { "code": VendoErrorCode, "message": string } }`, with the fixed status map `validation`→400, `not-found`→404, `blocked`→403, `conflict`→409, `cloud-required`→402, `sandbox-unavailable`/`not-implemented`→501.
 
 **CSRF (normative)**: the wire is cookie-authenticated (`principal(req)` reads the host session), so the handler rejects state-changing requests whose `Content-Type` is not `application/json` (forcing a CORS preflight cross-origin) — the OWASP-recommended minimum for embedded surfaces where hosts relax `SameSite`. Exceptions, listed exhaustively: `/apps/import` (binary body) and `/webhooks/:source` / `/tick` (non-cookie auth above).
 

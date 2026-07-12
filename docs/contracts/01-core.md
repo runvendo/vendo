@@ -51,7 +51,7 @@ export interface RunContext {
   requestHeaders?: Record<string, string>; // present-mode: the inbound host request's auth material (04 §4)
 }
 
-export interface TriggerRef { appId: AppId; runId: RunId; kind: TriggerSource["kind"]; }
+export interface TriggerRef { runId: RunId; kind: TriggerSource["kind"]; }   // the app is RunContext.appId — never duplicated here
 ```
 
 ## 4. Tools
@@ -65,15 +65,15 @@ export interface ToolDescriptor {
   name: string;                 // matches /^[a-zA-Z0-9_-]{1,64}$/ — the charset OpenAI, Anthropic, and MCP all enforce.
                                 // Namespaced by underscore: "host_invoices_list", "gmail_send", "vendo_apps_create"
   description: string;
-  input: JsonSchema;
+  inputSchema: JsonSchema;      // the MCP/Anthropic field name; "input" would collide with TreeQuery.input (values)
   risk: RiskLabel;
   critical?: boolean;           // always asks the running user; no grant, rule, or judge may suppress
-  source: "host" | "connector" | "vendo";
 }
+// provenance is carried by the name prefix (host_*, <connector>_*, vendo_*) — no separate source field
 
 /** Canonical descriptor fingerprint, algorithm-prefixed like every other ref in the system
  *  ("sha256:<hex>", cf. Pin.base and snapshot refs): SHA-256 over the RFC 8785 (JCS) canonicalization
- *  of { name, description, input, risk, critical }, absent optional fields omitted — so independent
+ *  of { name, description, inputSchema, risk, critical }, absent optional fields omitted — so independent
  *  implementations always agree, and the algorithm can rotate without a flag-day. */
 export function descriptorHash(d: ToolDescriptor): string;   // "sha256:ab12..."
 
@@ -90,13 +90,13 @@ export type ToolOutcome =
   | { status: "blocked"; reason: string };
 
 /** The executable tool surface a block hands around. */
-export interface ToolSet {
+export interface ToolRegistry {
   descriptors(): Promise<ToolDescriptor[]>;
   execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome>;
 }
 ```
 
-Execution discipline (normative): nothing calls `ToolSet.execute` directly except a guard binding (05 §2). Chat, app functions, automations, and the future MCP door all reach tools through `guard.bind`.
+Execution discipline (normative): nothing calls `ToolRegistry.execute` directly except a guard binding (05 §2). Chat, app functions, automations, and the future MCP door all reach tools through `guard.bind`.
 
 ## 5. Grants and approvals
 
@@ -134,8 +134,8 @@ export interface ApprovalRequest {
   inputPreview: string;         // human-readable real inputs (the one-security-rule: ask with the real inputs)
   ctx: { principal: Principal; venue: RunContext["venue"]; presence: RunContext["presence"]; appId?: AppId; trigger?: TriggerRef };
   createdAt: IsoDateTime;
-  expiresAt?: IsoDateTime;
 }
+// approvals queue until decided — no expiry machinery in v0
 
 export interface ApprovalDecision {
   approve: boolean;
@@ -178,7 +178,7 @@ export interface AuditEvent {
   appId?: AppId;
   trigger?: TriggerRef;
   tool?: string;
-  argsPreview?: string;          // human-readable, PII-conscious preview — never raw secrets
+  inputPreview?: string;          // human-readable, PII-conscious preview — never raw secrets
   outcome?: ToolOutcome["status"];
   decidedBy?: GuardDecision["decidedBy"];
   detail?: Json;
@@ -277,12 +277,7 @@ export function validateAppDocument(input: unknown): { ok: true; app: AppDocumen
 
 ## 10. Ownership — no installs, just apps
 
-Every user has their own app; there is no separate install object (Yousef, 2026-07-11 round 2). The app row a user owns (store 02 §2: `owner_subject`, `source`, `enabled` columns) IS their copy — their data and their grants key off its `AppId`. The one-security-rule anchor survives intact: sharing, publishing, and import hand over a **copy**, and the runtime always mints a **fresh `AppId`** for the recipient — an id found inside an artifact is never trusted — so artifacts and exports still carry zero authority. (Same property the app-format spec §4 words as "grants and data belong to each user's install"; one concept fewer.)
-
-```ts
-/** How this user came to own the app — ownership metadata (a store column, not a document field). */
-export type AppSource = "created" | "imported" | "shared" | "published";
-```
+Every user has their own app; there is no separate install object (Yousef, 2026-07-11 round 2). The app row a user owns (store 02 §2: `subject`, `enabled` columns) IS their copy — their data and their grants key off its `AppId`. The one-security-rule anchor survives intact: sharing, publishing, and import hand over a **copy**, and the runtime always mints a **fresh `AppId`** for the recipient — an id found inside an artifact is never trusted — so artifacts and exports still carry zero authority. (Same property the app-format spec §4 words as "grants and data belong to each user's install"; one concept fewer. Provenance lives in the document itself when it matters: `forkedFrom`.)
 
 ## 11. Triggers and run models (shapes only — semantics in 07)
 
@@ -352,7 +347,7 @@ export interface StoreAdapter {
  *  cleanly unavailable and the agent says so. */
 export type ActAs = (principal: Principal, grant: PermissionGrant) => Promise<AuthMaterial | null>;
 
-export interface AuthMaterial { headers?: Record<string, string>; token?: string; expiresAt?: IsoDateTime; }
+export interface AuthMaterial { headers: Record<string, string>; }   // one channel — a bearer token is headers.Authorization; caching/expiry is the host's business
 
 /** Secret values by name. Default implementation reads env (02 §1). App code never sees values (06 §4.3). */
 export interface SecretsProvider { get(name: string): Promise<string | undefined>; }
@@ -360,7 +355,7 @@ export interface SecretsProvider { get(name: string): Promise<string | undefined
 /** Agentic execution seam — how automations run an agent without importing it.
  *  agent exports an implementation (03 §1 `asRunner`); the umbrella wires it. */
 export type AgentRunner = (
-  task: { prompt: string; tools: ToolSet; budget?: { maxToolCalls?: number } },
+  task: { prompt: string; tools: ToolRegistry; budget?: { maxToolCalls?: number } },
   ctx: RunContext,
 ) => Promise<AgentRunReport>;
 
@@ -381,9 +376,9 @@ export interface RegisteredComponent {
   name: string;                    // PascalCase, unique
   description: string;             // what the generator reads
   propsSchema: StandardSchema;     // type-only (not zod-serializable)
-  source: "host" | "prewired";
   remixable?: boolean;             // opt-in: source captured at sync, eligible for pins
 }
+// the catalog holds host registrations; prewired primitives are the fixed reserved-name set (§8), not entries
 
 export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 
@@ -402,8 +397,7 @@ export interface VendoTheme {
 ```ts
 export type VendoErrorCode =
   | "validation"          // malformed document / tree / call
-  | "blocked"             // guard said no
-  | "grant-required"      // away call without a captured grant (fail-soft; pairs with pending-approval)
+  | "blocked"             // guard said no (away-ungranted is not an error — it's the pending-approval OUTCOME)
   | "not-implemented"     // optional seam absent (e.g. actAs)
   | "sandbox-unavailable" // no SandboxAdapter configured / machine unreachable
   | "cloud-required"      // feature is Cloud-gated and no VENDO_API_KEY
@@ -420,6 +414,6 @@ Forward compatibility (normative): clients treat an unknown error code as a gene
 Typed `data-*` parts riding the ai-SDK UI message stream (03 §4). Live here — not in agent — because ui renders them and may only import core.
 
 ```ts
-export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; tree: UIPayload }                       // a rendered app surface in-thread
-export interface VendoConsentPart { type: "data-vendo-consent"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
+export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; payload: UIPayload }                    // a rendered app surface in-thread
+export interface VendoApprovalPart { type: "data-vendo-approval"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
 ```

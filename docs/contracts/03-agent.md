@@ -6,11 +6,11 @@ Status: DRAFT (wave 2). One job: run the conversation — streaming, tool-callin
 
 ```ts
 import type { LanguageModel, UIMessage } from "ai";
-import type { ToolSet, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId, IsoDateTime } from "@vendoai/core";
+import type { ToolRegistry, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId, IsoDateTime } from "@vendoai/core";
 
 export function createAgent(config: {
   model: LanguageModel;                    // BYO: Anthropic, OpenAI, Google, Ollama, local — anything with an ai-SDK model
-  tools: ToolSet;                          // from actions (already guard-bound by the umbrella, 05 §2)
+  tools: ToolRegistry;                          // from actions (already guard-bound by the umbrella, 05 §2)
   guard: Guard;                            // directions + reporting; the agent never bypasses the binding
   store?: StoreAdapter;                    // thread persistence; omitted → in-memory threads
   system?: {
@@ -41,7 +41,7 @@ export interface VendoAgent {
 
 ## 2. Loop semantics (normative)
 
-- Every tool call goes through the guard-bound `ToolSet`. A `pending-approval` outcome surfaces as the ai-SDK native approval flow (`needsApproval` / `addToolApprovalResponse`); the turn pauses, the approval decision resumes it.
+- Every tool call goes through the guard-bound `ToolRegistry`. A `pending-approval` outcome surfaces as the ai-SDK native approval flow (`needsApproval` / `addToolApprovalResponse`); the turn pauses, the approval decision resumes it.
 - `blocked` outcomes are told to the model (it should explain and adapt), never silently swallowed.
 - Away tasks (`asRunner()`) run the same loop with `presence: "away"`: no interactive approvals — a `pending-approval` outcome is recorded, the step fails soft, and the run report says so.
 - The loop is venue-agnostic: chat, app editing, and automations all reuse it; venue arrives via `RunContext` and is stamped on every audit event by guard.
@@ -52,7 +52,7 @@ Assembled fresh each turn, in this order: (1) Vendo's own operating prompt (owne
 
 ## 4. Wire protocol
 
-The stream is the standard ai-SDK UI message stream plus the Vendo data parts (`VendoViewPart`, `VendoConsentPart` — typed in core §16, since ui renders them and imports only core).
+The stream is the standard ai-SDK UI message stream plus the Vendo data parts (`VendoViewPart`, `VendoApprovalPart` — typed in core §16, since ui renders them and imports only core).
 
 ## 5. Thread shape (persisted via store)
 

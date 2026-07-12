@@ -6,7 +6,7 @@ Status: DRAFT (wave 2). One job: the deterministic policy core at one choke poin
 
 ```ts
 import type {
-  Guard, GuardDecision, ToolSet, ToolCall, ToolDescriptor, StoreAdapter, RunContext, Principal, RiskLabel,
+  Guard, GuardDecision, ToolRegistry, ToolCall, ToolDescriptor, StoreAdapter, RunContext, Principal, RiskLabel,
   AuditEvent, PermissionGrant, GrantId, ApprovalRequest, ApprovalDecision, ApprovalId, AppId, IsoDateTime,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
@@ -20,7 +20,7 @@ export function createGuard(config: {
 }): VendoGuard;
 
 export interface VendoGuard extends Guard {
-  bind(tools: ToolSet): ToolSet;           // THE choke point (see §2)
+  bind(tools: ToolRegistry): ToolRegistry;           // THE choke point (see §2)
 
   approvals: {
     pending(principal: Principal): Promise<ApprovalRequest[]>;
@@ -45,13 +45,13 @@ export interface VendoGuard extends Guard {
 
 ## 2. The choke point: `guard.bind(tools)` ⚑
 
-The one sanctioned path from a `ToolSet` to execution. `bind` wraps every `execute` with: decide → (maybe park) → execute → report. Chat (03), app function/tool proxying (06 §4), automation steps (07 §4), and the future MCP door all receive **bound** tool sets from the umbrella; nothing else in the system calls `ToolSet.execute`. This is how "binds every path equally" is made structural instead of aspirational.
+The one sanctioned path from a `ToolRegistry` to execution. `bind` wraps every `execute` with: decide → (maybe park) → execute → report. Chat (03), app function/tool proxying (06 §4), automation steps (07 §4), and the future MCP door all receive **bound** tool sets from the umbrella; nothing else in the system calls `ToolRegistry.execute`. This is how "binds every path equally" is made structural instead of aspirational.
 
 Decision pipeline (normative order):
 
 1. **Critical** — `descriptor.critical` → `ask`, unsuppressible by grant, rule, or judge.
 2. **Scanners (input)** — a `block` finding blocks with the finding recorded.
-3. **Grant match** — an unrevoked, unexpired grant with matching `descriptorHash` and scope → `run`.
+3. **Grant match** — an unrevoked, unexpired grant with matching `descriptorHash` and scope → `run`. `session`/`task` grants match only when their `contextKey` equals the current `ctx.sessionId` (task grants: the task's id) — that binding is what the durations mean.
 4. **Policy rules** — first matching rule in the data file → its action.
 5. **Code escape hatch** — if configured, may override with a decision or pass.
 6. **Judge** — if configured, decides `run | ask | block` with rationale. Judge errors/timeouts fail closed to `ask`.

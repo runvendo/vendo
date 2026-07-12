@@ -6,7 +6,7 @@ Status: DRAFT (wave 2). One job: everything Vendo produces and runs is an app (c
 
 ```ts
 import type {
-  StoreAdapter, Guard, RunContext, AppDocument, AppId, ToolSet, ToolOutcome,
+  StoreAdapter, Guard, RunContext, AppDocument, AppId, ToolRegistry, ToolOutcome,
   ComponentCatalog, VendoTheme, SecretsProvider, Tree, UIPayload, Json, IsoDateTime,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";   // type-only: generation seam
@@ -14,7 +14,7 @@ import type { LanguageModel } from "ai";   // type-only: generation seam
 export function createApps(config: {
   store: StoreAdapter;
   guard: Guard;                         // core seam: lifecycle audit (report), approval resumption (onApprovalDecision)
-  tools: ToolSet;                       // ALREADY guard-bound by the umbrella (05 §2) — trees and machines call host tools through it
+  tools: ToolRegistry;                       // ALREADY guard-bound by the umbrella (05 §2) — trees and machines call host tools through it
   sandbox?: SandboxAdapter;             // absent → rungs 2–4 unavailable (VendoError "sandbox-unavailable"); rung 1 fully works
   model?: LanguageModel;                // generation engine; absent → create/edit unavailable, run-only
   catalog: ComponentCatalog;
@@ -28,7 +28,7 @@ export interface AppsRuntime {
   create(input: { prompt: string }, ctx: RunContext): Promise<AppDocument>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
   list(ctx: RunContext): Promise<AppDocument[]>;
-  remove(appId: AppId, ctx: RunContext): Promise<void>;
+  delete(appId: AppId, ctx: RunContext): Promise<void>;   // matches threads.delete + the store seam + HTTP DELETE
   fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;                                     // own copy, fresh id, forkedFrom set
 
   // the edit loop
@@ -49,7 +49,7 @@ export interface AppsRuntime {
 
   /** Vendo capability tools (vendo_apps_create, vendo_apps_edit, vendo_apps_open) for the agent loop —
    *  registered into actions by the umbrella, guard-treated like everything else. */
-  agentTools(): ToolSet;
+  agentTools(): ToolRegistry;
 }
 ```
 
@@ -57,8 +57,8 @@ export interface AppsRuntime {
 export interface EditResult { app: AppDocument; version: VersionEntry; issues?: string[] }
 export interface VersionEntry { at: IsoDateTime; intent: string; rung: 1 | 2 | 3 | 4 }
 export type OpenSurface =
-  | { kind: "tree"; tree: UIPayload; components?: Record<string, string> }     // rungs 1–3: the live instant-path payload (v0 format: Tree)
-  | { kind: "http"; url: string; cover?: string /* blob key of last screenshot */ }  // rung 4, machine awake
+  | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }  // rungs 1–3: the live instant-path payload (v0 format: Tree)
+  | { kind: "http"; url: string }                                              // rung 4, machine awake (loading cover = the kept tree, per the spec)
   | { kind: "resuming"; cover?: string }                                       // rung 4, snapshot waking (~1s): dimmed screenshot, non-interactive
 export interface ShareSnapshot { id: string; doc: AppDocument; createdAt: IsoDateTime }        // frozen copy
 export interface PublishRecord { id: string; appId: AppId; version: string; createdAt: IsoDateTime }
@@ -120,7 +120,6 @@ The machine IS the server part. No declared entry point; by convention the app l
 | `PORT` | where the app must listen |
 | `VENDO_PROXY_URL` | the runtime's tool proxy for this run (§4.4) |
 | `VENDO_RUN_TOKEN` | bearer token scoping this run: `{ appId, principal, runId, presence }` — minted per run, short-lived |
-| `VENDO_APP_ID` | the running user's app |
 | declared secret names | **handles**, not values (§4.3) |
 
 ### 4.3 Secrets ⚑ — handles, substituted at egress

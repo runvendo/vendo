@@ -40,9 +40,8 @@ Launch extraction tier: **OpenAPI + route-scan** (corpus-proven). tRPC/GraphQL/s
       // ToolDescriptor fields (core §4) ...
       "name": "host_invoices_list",
       "description": "List invoices",
-      "input": { /* JSON Schema */ },
+      "inputSchema": { /* JSON Schema */ },
       "risk": "read",
-      "source": "host",
       // plus the execution binding:
       "binding": { "kind": "route", "method": "GET", "path": "/api/invoices", "argsIn": "query" }
       // | { "kind": "openapi", "operationId": "listInvoices", "baseUrl": "..." }
@@ -71,7 +70,7 @@ Merge rule: descriptor = extracted ∪ overrides, overrides win field-wise; `des
 ## 2. Runtime
 
 ```ts
-import type { ToolSet, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome } from "@vendoai/core";
+import type { ToolRegistry, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome } from "@vendoai/core";
 
 export function createActions(config: {
   dir?: string;                          // read .vendo/{tools,overrides}.json; or:
@@ -82,9 +81,9 @@ export function createActions(config: {
   fetch?: typeof fetch;
 }): ActionsRegistry;
 
-export interface ActionsRegistry extends ToolSet {
+export interface ActionsRegistry extends ToolRegistry {
   /** Register Vendo capability tools (apps hands its create/edit tools in via the umbrella). */
-  add(tools: ToolSet): void;
+  add(tools: ToolRegistry): void;
 }
 ```
 

@@ -34,7 +34,7 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | Table | Key columns (stable) | Holds |
 | --- | --- | --- |
 | `vendo_meta` | `key, value` | schema version, boot id |
-| `vendo_apps` | `id, owner_subject, source, enabled, doc, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
+| `vendo_apps` | `id, subject, enabled, doc, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
 | `vendo_records` | `collection, id, data, refs, created_at, updated_at` | app data collections; `refs` GIN-indexed for host joins |
 | `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | `files` storage kind, exports, screenshots |
 | `vendo_state` | `app_id, subject, data, updated_at` | the built-in per-user-per-app `state` singleton |
