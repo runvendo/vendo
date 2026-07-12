@@ -17,7 +17,9 @@ export default defineConfig(async () => {
     // not a layering edge the dependency guard can tell apart from a real one.
     server: {
       host: "127.0.0.1",
-      port: 4_173,
+      // Ephemeral by default so parallel lanes never collide; playwright.config
+      // reserves a free port and passes it via env + the CLI --port flag.
+      port: Number(process.env.VENDO_HARNESS_PORT) || 4_173,
       strictPort: true,
       proxy: {
         "/api/vendo": {

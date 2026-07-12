@@ -11,6 +11,7 @@ import type {
   ToolOutcome,
   ToolRegistry,
 } from "@vendoai/core";
+import type { UIMessage } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { expect } from "vitest";
 
@@ -262,4 +263,14 @@ export function ctx(overrides: Partial<RunContext> = {}): RunContext {
     sessionId: "s1",
     ...overrides,
   };
+}
+
+/** A minimal single-text-part user UIMessage — the shape every suite feeds stream(). */
+export function userMessage(id: string, text: string): UIMessage {
+  return { id, role: "user", parts: [{ type: "text", text }] };
+}
+
+/** The first assembled UIMessage part of a given type (e.g. "data-vendo-view"). */
+export function partOfType(message: UIMessage, type: string): Record<string, unknown> | undefined {
+  return message.parts.find((part) => part.type === type) as Record<string, unknown> | undefined;
 }

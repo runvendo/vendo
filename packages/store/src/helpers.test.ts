@@ -84,6 +84,33 @@ for (const backend of backends()) {
       expect((await grants.list(persistentPrincipal)).map((grant) => grant.id)).toEqual([]);
     });
 
+    it("round-trips every grant scope variant plus contextKey and expiresAt 1:1", async () => {
+      const grants = grantStore(made.store);
+      const exact = grantFixture("grt_exact", {
+        scope: { kind: "exact", inputHash: "sha256:abc", inputPreview: "Pay invoice inv_1" },
+        duration: "session",
+        contextKey: "sess_ctx_1",
+        expiresAt: at(59),
+      });
+      const constrained = grantFixture("grt_constrained", {
+        scope: { kind: "constrained", constraints: [{ path: "/amount", op: "lte", value: 100 }] },
+        duration: "task",
+        contextKey: "task_ctx_1",
+      });
+      await grants.create(persistentPrincipal, exact);
+      await grants.create(persistentPrincipal, constrained);
+      // Typed-helper read is byte-for-byte the core shape (scope union, contextKey, expiresAt all preserved).
+      expect(permissionGrantSchema.parse(await grants.get("grt_exact"))).toEqual(exact);
+      expect(permissionGrantSchema.parse(await grants.get("grt_constrained"))).toEqual(constrained);
+      // The same rows read back identically through the routed vendo_grants collection.
+      const routed = made.store.records("vendo_grants");
+      expect(permissionGrantSchema.parse((await routed.get("grt_exact"))?.data)).toEqual(exact);
+      expect(permissionGrantSchema.parse((await routed.get("grt_constrained"))?.data)).toEqual(constrained);
+      // Authoritative columns are derived from the grant, not the caller.
+      expect(await made.sql("SELECT scope, duration, context_key FROM vendo_grants WHERE id = 'grt_exact'"))
+        .toEqual([{ scope: exact.scope, duration: "session", context_key: "sess_ctx_1" }]);
+    });
+
     it("decides only pending approvals, supports batches, and orders pending oldest-first", async () => {
       const approvals = approvalStore(made.store);
       const first = approvalFixture("apr_first", { createdAt: at(1) });

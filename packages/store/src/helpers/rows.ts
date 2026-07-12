@@ -1,10 +1,12 @@
-import type {
-  AppDocument,
-  AuditEvent,
-  PermissionGrant,
+import {
+  VendoError,
+  type AppDocument,
+  type AuditEvent,
+  type Json,
+  type PermissionGrant,
 } from "@vendoai/core";
 import type { Db } from "../db.js";
-import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./types.js";
+import type { AppRow, ApprovalRow, EphemeralStateRow, RunRow, ThreadRow } from "./types.js";
 import { iso, optionalIso, text } from "./utils.js";
 
 export function appFromRow(row: Record<string, unknown>): AppRow {
@@ -49,15 +51,55 @@ export async function putThreadRow(
   input: Pick<ThreadRow, "id" | "subject" | "messages">,
   now = new Date().toISOString(),
 ): Promise<ThreadRow> {
+  // Threads never cross subjects (03 §5). vendo_threads is keyed by the bare id,
+  // so the upsert is guarded ATOMICALLY: on conflict it updates ONLY when the
+  // existing row already belongs to EXCLUDED.subject — otherwise the WHERE fails,
+  // no row is written, RETURNING is empty, and we refuse the cross-subject flip.
+  // This closes the TOCTOU window that a resolve()-time pre-check alone cannot
+  // (a foreign row can appear during a long streaming turn, before persist runs).
   const result = await db.query(
     `INSERT INTO vendo_threads (id, subject, messages, created_at, updated_at)
      VALUES ($1, $2, $3::jsonb, $4, $4)
-     ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, messages = EXCLUDED.messages,
-       updated_at = EXCLUDED.updated_at
+     ON CONFLICT (id) DO UPDATE SET messages = EXCLUDED.messages, updated_at = EXCLUDED.updated_at
+       WHERE vendo_threads.subject = EXCLUDED.subject
      RETURNING id, subject, messages, created_at, updated_at`,
     [input.id, input.subject, JSON.stringify(input.messages), now],
   );
-  return threadFromRow(result.rows[0] as Record<string, unknown>);
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new VendoError("conflict", `thread ${input.id} belongs to another subject`);
+  }
+  return threadFromRow(row as Record<string, unknown>);
+}
+
+export function stateRowFromRow(row: Record<string, unknown>): EphemeralStateRow {
+  return {
+    appId: text(row["app_id"]),
+    subject: text(row["subject"]),
+    data: row["data"] as Json,
+    createdAt: iso(row["created_at"]),
+    updatedAt: iso(row["updated_at"]),
+  };
+}
+
+/** The single persistent write path for vendo_state, shared by stateStore.put and
+ *  the routed records("vendo_state").put so the two doors never drift. Writes
+ *  created_at once on insert and PRESERVES it on conflict (only data + updated_at
+ *  change), so the seam's createdAt is stable across puts. Never writes the
+ *  generated `id` column. */
+export async function putStateRow(
+  db: Db,
+  input: { appId: string; subject: string; data: Json },
+  now = new Date().toISOString(),
+): Promise<EphemeralStateRow> {
+  const result = await db.query(
+    `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
+     VALUES ($1, $2, $3::jsonb, $4, $4)
+     ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
+     RETURNING app_id, subject, data, created_at, updated_at`,
+    [input.appId, input.subject, JSON.stringify(input.data), now],
+  );
+  return stateRowFromRow(result.rows[0] as Record<string, unknown>);
 }
 
 export function grantFromRow(row: Record<string, unknown>): PermissionGrant {

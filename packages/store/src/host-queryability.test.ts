@@ -31,6 +31,21 @@ for (const backend of backends()) {
       ]);
     });
 
+    it("plans the refs containment join through the GIN index", async () => {
+      // Enough rows that the planner prefers the index over a seq scan.
+      const bulk = made.store.records("app:app_plan:expenses");
+      for (let index = 0; index < 60; index += 1) {
+        await made.sql("INSERT INTO invoices(id, total) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING", [`plan_inv_${index}`, index]);
+        await bulk.put({ id: `plan_expense_${index}`, data: { n: index }, refs: { invoice_id: `plan_inv_${index}` } });
+      }
+      const plan = (await made.sql(
+        "EXPLAIN SELECT i.id FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)",
+      )).map((row) => String(row["QUERY PLAN"])).join("\n");
+      // The exact §2 containment join is a valid plan that reaches vendo_records through its refs GIN index.
+      expect(plan).toMatch(/Index Scan/);
+      expect(plan).toMatch(/refs @> jsonb_build_object\('invoice_id'/);
+    });
+
     it("joins from the vendo side while scoping collection", async () => {
       await made.store.records("app:app_other:expenses").put({
         id: "other_expense",

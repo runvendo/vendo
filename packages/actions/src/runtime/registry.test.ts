@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VENDO_OVERRIDES_FORMAT,
   VENDO_TOOLS_FORMAT,
+  descriptorHash,
   toolOutcomeSchema,
   type RunContext,
   type ToolDescriptor,
@@ -173,6 +174,31 @@ describe("createActions registry", () => {
       status: "error",
       error: { code: "connector-error", message: "provider down" },
     });
+  });
+
+  it("exposes a descriptorHash computed post-merge so an override lapses old grants", async () => {
+    // 04 §1 merge rule: descriptorHash is computed over the MERGED descriptor.
+    // An overrides.json risk bump must change the hash the runtime exposes, which is
+    // exactly the drift that lapses a grant bound to the pre-override descriptor.
+    const base = routeTool("host_invoices_delete", { risk: "write" });
+    const root = await tempVendo(
+      { format: VENDO_TOOLS_FORMAT, tools: [base] },
+      { format: VENDO_OVERRIDES_FORMAT, tools: { host_invoices_delete: { risk: "destructive", critical: true } } },
+    );
+    const actions = createActions({ dir: root, baseUrl: "http://stub" });
+    const [descriptor] = await actions.descriptors();
+    expect(descriptor).toMatchObject({ name: "host_invoices_delete", risk: "destructive", critical: true });
+
+    const merged: ToolDescriptor = {
+      name: "host_invoices_delete",
+      description: "host_invoices_delete",
+      inputSchema: { type: "object" },
+      risk: "destructive",
+      critical: true,
+    };
+    const preMerge: ToolDescriptor = { name: "host_invoices_delete", description: "host_invoices_delete", inputSchema: { type: "object" }, risk: "write" };
+    expect(descriptorHash(descriptor!)).toBe(descriptorHash(merged));
+    expect(descriptorHash(descriptor!)).not.toBe(descriptorHash(preMerge));
   });
 
   it("supports add after the first lazy load without re-describing cached sources", async () => {
