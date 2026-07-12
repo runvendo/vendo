@@ -50,7 +50,7 @@ describe("vendo init", () => {
     expect(await tree(root)).toEqual(before);
     const plan = JSON.parse(sink.logs.join("\n")) as { questions: unknown[]; codeChanges: Array<{ diff: string }> };
     expect(plan.questions).toHaveLength(3);
-    expect(plan.codeChanges).toHaveLength(2);
+    expect(plan.codeChanges).toHaveLength(3); // route + layout + starter model module
     expect(plan.codeChanges[0]?.diff).toContain("@vendoai/vendo/server");
   });
 
@@ -81,7 +81,7 @@ describe("vendo init", () => {
     const sink = output();
     const confirm = vi.fn().mockResolvedValue(false);
     expect(await runInit({ targetDir: root, confirm, output: sink.output })).toBe(0);
-    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm).toHaveBeenCalledTimes(3); // route + layout + starter model module
     expect(sink.logs.join("\n")).toContain("Proposed code change");
     expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).not.toContain("VendoRoot");
     await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))

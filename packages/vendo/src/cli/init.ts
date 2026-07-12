@@ -145,6 +145,22 @@ function routeSource(modelImport: string): string {
     `export const { GET, POST, DELETE } = nextVendoHandler(vendo);\n`;
 }
 
+function defaultModelSource(): string {
+  return `import { createAnthropic } from "@ai-sdk/anthropic";\n\n` +
+    `// vendo init starter: swap for any ai-SDK provider (BYO-LLM, 09 §2).\n` +
+    `const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY });\n` +
+    `export const model = anthropic("claude-sonnet-4-6");\n`;
+}
+
+/** Resolve an `@/`-style model import to a candidate file the scaffold owns.
+    Anything else (a package, a relative path) is the host's own module. */
+function modelModuleCandidate(root: string, appDir: string, modelImport: string): string | null {
+  if (!modelImport.startsWith("@/")) return null;
+  // Mirror the Next `@/*` alias: rooted at src/ when the app directory lives there.
+  const aliasRoot = appDir.endsWith(join("src", "app")) ? join(root, "src") : root;
+  return join(aliasRoot, `${modelImport.slice(2)}.ts`);
+}
+
 function defaultLayoutSource(): string {
   return `import { VendoRoot } from "@vendoai/vendo/react";\n` +
     `import type { ReactNode } from "react";\n\n` +
@@ -185,12 +201,21 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
   const layout = join(app, "layout.tsx");
   const routeBefore = await readOptional(route);
   const layoutBefore = await readOptional(layout);
-  const routeAfter = routeBefore ?? routeSource(options.modelImport ?? "@/lib/ai");
+  const modelImport = options.modelImport ?? "@/lib/ai";
+  const routeAfter = routeBefore ?? routeSource(modelImport);
   const layoutAfter = layoutBefore === null ? defaultLayoutSource() : wireLayout(layoutBefore);
   const changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> = [];
   if (routeBefore === null) {
     const path = relative(root, route);
     changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
+    // A fresh app has no model module yet: scaffold the BYO-LLM seat (one env
+    // key = working agent) instead of wiring an import that cannot resolve.
+    const modelModule = modelModuleCandidate(root, app, modelImport);
+    if (modelModule !== null && !(await exists(modelModule)) && !(await exists(modelModule.replace(/\.ts$/, ".js")))) {
+      const modelPath = relative(root, modelModule);
+      const modelAfter = defaultModelSource();
+      changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
+    }
   }
   if (layoutAfter !== null && layoutAfter !== layoutBefore) {
     const path = relative(root, layout);
@@ -350,6 +375,9 @@ export async function runInit(options: InitOptions): Promise<number> {
       toolCount,
       durationMs: Date.now() - started,
     });
+    if (changes.some((change) => change.after === defaultModelSource() && change.before === null)) {
+      output.log("Wrote a starter model module: install its provider (`npm install ai @ai-sdk/anthropic`) and set ANTHROPIC_API_KEY.");
+    }
     output.log("Vendo initialized. Run `vendo doctor` to verify the live composition.");
     return 0;
   } catch (error) {
