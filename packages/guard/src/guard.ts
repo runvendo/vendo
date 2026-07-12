@@ -202,6 +202,9 @@ function scopeMatches(scope: GrantScope, args: unknown): boolean {
         if (typeof resolved.value !== "string" || typeof constraint.value !== "string") {
           return false;
         }
+        // ReDoS bound: an adversarial pattern or oversized input fails the
+        // constraint instead of stalling the guard process.
+        if (constraint.value.length > 256 || resolved.value.length > 4096) return false;
         try {
           return new RegExp(constraint.value).test(resolved.value);
         } catch {
@@ -244,17 +247,14 @@ function normalizeCodeDecision(decision: GuardDecision): DraftDecision {
 
 function normalizeRememberedScope(scope: GrantScope, request: ApprovalRequest): GrantScope {
   if (scope.kind !== "exact") return cloneJson(scope);
-  const partial = scope as Partial<Extract<GrantScope, { kind: "exact" }>> & { kind: "exact" };
+  // Always derive exact scopes from the approved request itself: honoring a
+  // caller-supplied inputHash/inputPreview would let a wire caller mint a grant
+  // whose preview lies about what it authorizes (the one-security-rule says the
+  // user approved THESE inputs, so the grant is bound to exactly these inputs).
   return {
     kind: "exact",
-    inputHash:
-      typeof partial.inputHash === "string"
-        ? partial.inputHash
-        : exactInputHash(request.call.args),
-    inputPreview:
-      typeof partial.inputPreview === "string"
-        ? partial.inputPreview
-        : inputPreview(request.call),
+    inputHash: exactInputHash(request.call.args),
+    inputPreview: inputPreview(request.call),
   };
 }
 
@@ -724,11 +724,16 @@ class GuardImplementation implements VendoGuard {
     });
     for (const record of records) {
       const data = approvalData(record);
+      // The resumed call must be byte-identical to what the user approved:
+      // call ids are caller-minted, so id alone would let a different tool or
+      // different args ride an unrelated approval (authorization bypass).
       if (
         data.status !== "approved" ||
         data.consumedAt !== undefined ||
         data.request.ctx.principal.subject !== ctx.principal.subject ||
-        data.request.call.id !== call.id
+        data.request.call.id !== call.id ||
+        data.request.call.tool !== call.tool ||
+        exactInputHash(data.request.call.args) !== exactInputHash(call.args)
       ) {
         continue;
       }

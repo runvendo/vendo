@@ -156,6 +156,30 @@ describe("decision pipeline conformance", () => {
       matches: false,
     },
     {
+      name: "constrained matches rejects oversized patterns (ReDoS bound)",
+      grant: {
+        scope: {
+          kind: "constrained" as const,
+          constraints: [{ path: "/memo", op: "matches" as const, value: `^${"(a+)+".repeat(60)}$` }],
+        },
+      },
+      ctx: {},
+      args: { memo: "aaaa" },
+      matches: false,
+    },
+    {
+      name: "constrained matches rejects oversized input values (ReDoS bound)",
+      grant: {
+        scope: {
+          kind: "constrained" as const,
+          constraints: [{ path: "/memo", op: "matches" as const, value: "^a+$" }],
+        },
+      },
+      ctx: {},
+      args: { memo: "a".repeat(5000) },
+      matches: false,
+    },
+    {
       name: "session duration matches sessionId",
       grant: { duration: "session" as const, contextKey: "session_1" },
       ctx: { sessionId: "session_1" },

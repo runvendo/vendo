@@ -1,3 +1,4 @@
+import { canonicalJson, sha256Hex } from "@vendoai/core";
 import type { ApprovalId } from "@vendoai/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
@@ -74,6 +75,67 @@ describe("approval park and resume over the real SQL mapping", () => {
     });
     expect(tools.executions).toHaveLength(1);
     unsubscribe();
+  });
+
+  it("never resumes a call whose tool or args differ from the approved request", async () => {
+    const sqlStore = await store();
+    const guard = createGuard({
+      store: sqlStore,
+      policy: { rules: [{ match: {}, action: "ask" }] },
+    });
+    const tools = new FixtureTools();
+    const bound = guard.bind(tools);
+
+    const parked = await bound.execute(call("host_destructive", { invoiceId: "inv_1" }, "call_replay"), context());
+    if (parked.status !== "pending-approval") throw new Error("expected parked call");
+    await guard.approvals.decide(parked.approvalId, { approve: true }, alice);
+
+    // Same caller-minted call id, different args: must re-park, not run.
+    await expect(
+      bound.execute(call("host_destructive", { invoiceId: "inv_999" }, "call_replay"), context()),
+    ).resolves.toMatchObject({ status: "pending-approval" });
+    // Same id, different tool: must re-park, not run.
+    await expect(
+      bound.execute(call("host_write", { invoiceId: "inv_1" }, "call_replay"), context()),
+    ).resolves.toMatchObject({ status: "pending-approval" });
+    expect(tools.executions).toHaveLength(0);
+
+    // The genuine call still resumes exactly once.
+    await expect(
+      bound.execute(call("host_destructive", { invoiceId: "inv_1" }, "call_replay"), context()),
+    ).resolves.toMatchObject({ status: "ok" });
+    expect(tools.executions).toHaveLength(1);
+  });
+
+  it("ignores forged inputHash/inputPreview on remembered exact scopes", async () => {
+    const sqlStore = await store();
+    const guard = createGuard(guardedConfig(sqlStore));
+    const bound = guard.bind(new FixtureTools());
+    const parked = await bound.execute(call("host_destructive", { invoiceId: "inv_real" }, "call_forge"), context());
+    if (parked.status !== "pending-approval") throw new Error("expected parked call");
+
+    await guard.approvals.decide(
+      parked.approvalId,
+      {
+        approve: true,
+        remember: {
+          scope: {
+            kind: "exact",
+            inputHash: "sha256:forged-covers-something-else",
+            inputPreview: "host_destructive {\"invoiceId\":\"innocent\"}",
+          },
+          duration: "standing",
+        },
+      },
+      alice,
+    );
+
+    const [grant] = await guard.grants.list(alice);
+    expect(grant?.scope).toEqual({
+      kind: "exact",
+      inputHash: `sha256:${sha256Hex(canonicalJson({ invoiceId: "inv_real" }))}`,
+      inputPreview: 'host_destructive {"invoiceId":"inv_real"}',
+    });
   });
 
   it("mints an app-bound standing grant and routes it into vendo_grants", async () => {
