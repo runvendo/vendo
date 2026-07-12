@@ -4,7 +4,7 @@ import type { Db } from "./db.js";
 import { withSchemaLock } from "./db.js";
 
 /** 02-store §4 */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** 02-store §2 */
 export const DDL = [
@@ -58,6 +58,16 @@ export const DDL = [
   `CREATE TABLE IF NOT EXISTS vendo_secrets (
     name text PRIMARY KEY, ciphertext text NOT NULL, created_at timestamptz NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS vendo_mcp_clients (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_clients_refs_idx ON vendo_mcp_clients USING GIN (refs jsonb_path_ops)",
+  `CREATE TABLE IF NOT EXISTS vendo_mcp_grants (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_refs_idx ON vendo_mcp_grants USING GIN (refs jsonb_path_ops)",
 ] as const;
 
 const ADDITIVE_DDL = [
@@ -86,7 +96,7 @@ async function migrate(query: Query): Promise<void> {
       [JSON.stringify(SCHEMA_VERSION)],
     );
   }
-  // Schema v1 has not shipped; keep same-version development databases compatible.
+  // Same-version development databases may still lack additive columns.
   for (const statement of ADDITIVE_DDL) await query(statement);
   await query(
     `INSERT INTO vendo_meta (key, value) VALUES ('boot_id', $1::jsonb)

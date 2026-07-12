@@ -9,6 +9,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
+import { createRecordStore, type DedicatedRecordTable } from "./records.js";
 import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot } from "./ephemeral.js";
 import {
   appFromRow,
@@ -50,6 +51,8 @@ export const RESERVED_COLLECTIONS = [
   "vendo_runs",
   "vendo_apps",
 ] as const;
+
+export const DEDICATED_RECORD_COLLECTIONS = ["vendo_mcp_clients", "vendo_mcp_grants"] as const;
 
 export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
 
@@ -376,6 +379,9 @@ export function createReservedRecordStore(
   db: Db,
   collection: string,
 ): RecordStore | undefined {
+  if ((DEDICATED_RECORD_COLLECTIONS as readonly string[]).includes(collection)) {
+    return createRecordStore(store, db, collection, collection as DedicatedRecordTable);
+  }
   if (!(RESERVED_COLLECTIONS as readonly string[]).includes(collection)) return undefined;
   return createTableRecordStore(db, configFor(store, db, collection as ReservedCollection));
 }
