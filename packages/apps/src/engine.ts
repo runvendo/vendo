@@ -97,7 +97,10 @@ TREE CONTRACT:
 - tree.formatVersion is "vendo-genui/v1" and tree contains root, nodes, optional data and queries.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_CHARS} characters per generated component, ${TREE_MAX_TOTAL_COMPONENT_CHARS} total generated-component characters.
 - Reserved prewired primitive names: ${RESERVED_COMPONENT_NAMES.join(", ")}.
+- Every node is exactly {id, component, source, props?, children?}. "component" is a REQUIRED non-empty string on EVERY node, including layout containers — use a prewired primitive (e.g. Stack, Row, Grid) as the component for containers; children is an array of node ids. Never emit a node without a component.
+- "nodes" is a FLAT array of every node; nesting is expressed only through "children" id references, never by inlining child objects. "root" is the id of the top node.
 - A node source is "prewired", "host", or "generated". Generated names are PascalCase, non-reserved, and require a top-level components[name] ESM React source.
+- Minimal valid shape: {"name":"X","tree":{"formatVersion":"vendo-genui/v1","root":"r","nodes":[{"id":"r","component":"Stack","source":"prewired","children":["t"]},{"id":"t","component":"Text","source":"prewired","props":{"text":"Hi"}}]}}.
 - Prefer a host component whenever it covers the need. Matching the host brand is a hard goal.
 - Prop bindings are exactly {"$path":"/json/pointer"} and {"$state":"clientStateKey"}.
 - Queries are {path, tool, input?}; path is an RFC 6901 JSON Pointer. Actions embedded in props are {action,payload?}.
