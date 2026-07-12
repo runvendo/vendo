@@ -8,7 +8,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import { z } from "zod";
-import { appRecordInput, documentFromRecord, validateDocument } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord, validateDocument } from "./persistence.js";
 import type { VersionEntry } from "./runtime.js";
 
 const HISTORY_LIMIT = 50;
@@ -141,11 +141,10 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
           const latest = (await ordered(appId)).at(-1);
           if (latest === undefined) throw new VendoError("conflict", "nothing to undo");
           const snapshot = snapshotFromRecord(latest, appId);
-          const subject = appRow.refs?.subject;
-          if (subject === undefined) {
-            throw new VendoError("validation", `invalid app ownership for ${appId}`, { appId });
-          }
-          await store.records("vendo_apps").put(appRecordInput(snapshot.doc, subject));
+          const row = rowFromRecord(appRow);
+          // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
+          const enabled = enabledAfterDocumentEdit(row.doc, snapshot.doc, row.enabled);
+          await store.records("vendo_apps").put(appRecordInput(snapshot.doc, row.subject, enabled));
           await collection(appId).delete(latest.id);
           return structuredClone(snapshot.doc);
         },

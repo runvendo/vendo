@@ -35,7 +35,11 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     ".next/dev/types/**/*.ts",
-    ".next/dev/dev/types/**/*.ts"
+    ".next/dev/dev/types/**/*.ts",
+    ".next-automations-e2e/dev/types/**/*.ts",
+    ".next-automations-e2e/dev/dev/types/**/*.ts",
+    ".next/automations-e2e/dev/types/**/*.ts",
+    ".next/automations-e2e/dev/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

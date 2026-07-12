@@ -36,7 +36,7 @@ import { createAppHistory } from "./history.js";
 import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener } from "./open.js";
-import { appRecordInput, documentFromRecord } from "./persistence.js";
+import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import type { SandboxAdapter } from "./sandbox.js";
@@ -255,20 +255,24 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
     // check and the put remains — closing it fully needs a store-level revision column
     // (a store-block follow-up). This catches the common edit-vs-undo / double-edit races.
-    const assertCurrent = async (): Promise<void> => {
+    const assertCurrent = async (): Promise<boolean> => {
       const current = await apps.get(previous.id);
-      if (current === null
-        || current.refs?.subject !== subject
-        || JSON.stringify(documentFromRecord(current)) !== JSON.stringify(previous)) {
+      const row = current === null ? null : rowFromRecord(current);
+      if (row === null
+        || row.subject !== subject
+        || JSON.stringify(row.doc) !== JSON.stringify(previous)) {
         throw new VendoError("conflict", `app changed during edit: ${previous.id}`);
       }
+      return row.enabled;
     };
     await assertCurrent();
-    const appRow = appRecordInput(app, subject);
     await history.append(app.id, previous, version);
-    await assertCurrent();
+    const wasEnabled = await assertCurrent();
+    // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
+    const enabled = enabledAfterDocumentEdit(previous, app, wasEnabled);
+    const appRow = appRecordInput(app, subject, enabled);
     await apps.put(appRow);
-    return structuredClone(appRow.data);
+    return structuredClone(appRow.data.doc);
   };
 
   const reportLifecycle = async (

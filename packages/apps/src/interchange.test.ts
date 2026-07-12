@@ -7,6 +7,7 @@ import {
   fakeSandbox,
   guardFixture,
   memoryStore,
+  seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
 
@@ -147,11 +148,11 @@ describe(".vendoapp interchange through createApps", () => {
     expect(imported).not.toHaveProperty("grants");
     expect(imported).not.toHaveProperty("data");
 
-    await store.records("vendo_apps").put({
-      id: imported.id,
-      data: { ...imported, permissions: ["admin"], caches: { secret: true } },
-      refs: { subject: ctx.principal.subject },
-    });
+    await seedAppRow(
+      store,
+      { ...imported, permissions: ["admin"], caches: { secret: true } } as AppDocument,
+      ctx.principal.subject,
+    );
     const archive = unzipSync(await runtime.exportApp(imported.id, ctx));
     const exported = JSON.parse(decoder.decode(archive["app.json"])) as Record<string, unknown>;
     expect(exported).not.toHaveProperty("permissions");
