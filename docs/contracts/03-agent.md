@@ -1,12 +1,12 @@
 # @vendoai/agent — the agent loop
 
-Status: DRAFT (wave 2). One job: run the conversation — streaming, tool-calling, context engineering. Nothing else: no tools of its own, no policy, no persistence logic beyond the thread shape. Depends on core + `ai` (Vercel AI SDK ≥ 5) — the BYO-LLM seam **is** the ai-SDK `LanguageModel` (Yousef-approved): every provider ships one, and the streaming wire is the ai-SDK UI message stream.
+Status: DRAFT (wave 2). One job: run the conversation — streaming, tool-calling, context engineering. Nothing else: no tools of its own, no policy, no persistence logic beyond the thread shape. Depends on core + `ai` (Vercel AI SDK ≥ 5) **as a peerDependency** — the host owns the one `ai` install, same singleton rule as React, so the `LanguageModel` a host passes is always assignable (mixed `ai` majors are a documented ai-SDK failure mode). The BYO-LLM seam **is** the ai-SDK `LanguageModel` (Yousef-approved): every provider ships one, and the streaming wire is the ai-SDK UI message stream.
 
 ## 1. Public API
 
 ```ts
 import type { LanguageModel, UIMessage } from "ai";
-import type { ToolSet, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId, AppId, Tree, RiskLabel, ApprovalId, IsoDateTime } from "@vendoai/core";
+import type { ToolSet, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId, IsoDateTime } from "@vendoai/core";
 
 export function createAgent(config: {
   model: LanguageModel;                    // BYO: Anthropic, OpenAI, Google, Ollama, local — anything with an ai-SDK model
@@ -52,17 +52,12 @@ Assembled fresh each turn, in this order: (1) Vendo's own operating prompt (owne
 
 ## 4. Wire protocol
 
-The stream is the standard ai-SDK UI message stream plus Vendo data parts (typed in this package, re-exported by ui):
-
-```ts
-export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; tree: Tree }        // a rendered app surface in-thread
-export interface VendoConsentPart { type: "data-vendo-consent"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
-```
+The stream is the standard ai-SDK UI message stream plus the Vendo data parts (`VendoViewPart`, `VendoConsentPart` — typed in core §16, since ui renders them and imports only core).
 
 ## 5. Thread shape (persisted via store)
 
 ```ts
-export interface Thread { id: ThreadId; subject: string; tenantId: string; messages: UIMessage[]; createdAt: IsoDateTime; updatedAt: IsoDateTime; }
+export interface Thread { id: ThreadId; subject: string; messages: UIMessage[]; createdAt: IsoDateTime; updatedAt: IsoDateTime; }
 export interface ThreadSummary { id: ThreadId; title: string; updatedAt: IsoDateTime; }
 ```
 

@@ -42,7 +42,7 @@ Cross-block communication happens exclusively through seams defined in core (`Gu
 - **Ids** are plain strings with stable prefixes: `app_`, `grt_` (grant), `apr_` (approval), `run_`, `thr_` (thread), `aud_` (audit).
 - **Timestamps** are ISO-8601 strings, UTC.
 - **Errors**: one `VendoError` taxonomy in core; fail-soft states (`pending-approval`) are *outcomes*, not exceptions.
-- **Runs anywhere**: core, agent, actions, guard, automations, apps make no platform assumptions beyond fetch + WebCrypto (Node ≥ 20, edge, Bun). store is the only block allowed a driver dependency (pg / PGlite). ui is the only block with a React peer.
+- **Runs anywhere**: core, agent, actions, guard, automations, apps make no platform assumptions beyond fetch + WebCrypto (Node ≥ 20, edge, Bun). store is the only block allowed a driver dependency (pg / PGlite). ui is the only block with a React peer; `ai` is a **peerDependency** wherever the `LanguageModel` seam appears (agent, guard, apps) — the host owns the one install, same singleton rule as React.
 - **One version train**: all `@vendoai/*` release together; core is semver-sacred — its shapes freeze at this review and breaking changes require a major.
 - **Identity optional**: no host principal resolver → an ephemeral session-scoped principal; everything works, nothing persists past the session.
 - **Cloud line**: contracts define the *shapes* for cloud-gated features (sharing, publishing, org overlay, pinning) because OSS types are the interface cloud implements against. OSS implementations of those surfaces throw `VendoError('cloud-required')` unless `VENDO_API_KEY` lights them up. Everything else is complete in OSS.
@@ -51,7 +51,7 @@ Cross-block communication happens exclusively through seams defined in core (`Gu
 
 Resolved with Yousef (2026-07-11 dialogs):
 
-1. **Server execution protocol = plain HTTP paths.** The machine is just a web server on `$PORT`: `POST /fn/<name>`, `POST /trigger`, everything else is the rung-4 app. Context via env + headers. (06 §4)
+1. **Server execution protocol = plain HTTP paths.** The machine is just a web server on `$PORT`: `POST /fn/<name>`, everything else is the rung-4 app. Context via env + headers. (06 §4; the originally-reserved separate `/trigger` path was trimmed in decision 19 — firings arrive as `fn:` steps.)
 2. **Tree → server function references = `fn:` URI scheme.** `fn:<name>` is valid anywhere a tree binds a data source or an action; no new top-level tree field. (01 §8, 06 §4)
 3. **BYO-LLM seam = the ai-SDK `LanguageModel`.** The agent (and every LLM-consuming seat: judge, generation engine) accepts a Vercel AI SDK model; every provider ships one. (03)
 4. **Deterministic pipelines = minimal steps + JSONata.** Ordered tool-call steps with JSONata for arg mapping, `if`, `forEach`. (07 §4)
@@ -72,6 +72,14 @@ Resolved with Yousef, round 2 (2026-07-11, during review):
 13. **The instant-path UI payload is format-tagged, not tree-forever.** The two planes stay contract (`ui: "tree" | "http"` = instant/jailed vs machine-served); the payload dispatches on `formatVersion`, and v0 registers exactly one format — the tree, `vendo-genui/v1`, unchanged and stored-record compatible. Future formats (compact profile, v2, non-tree) slot in behind the tag. (01 §8)
 
 14. **No installs — every user has an app.** The install object is deleted; the user-owned app row is the one concept. Data and grants key off the owner's `AppId`; sharing/publishing/import hand over a copy with a **freshly minted id** (ids inside artifacts are never trusted), so artifacts still carry zero authority — the same security property as the spec's "install records", one concept fewer. (01 §10)
+
+Round 3 (dual review — a simplification pass and an industry-standards pass, both applied 2026-07-11):
+
+15. **Tool names are provider-safe**: `/^[a-zA-Z0-9_-]{1,64}$/` with `_` as the namespace separator (`host_invoices_list`). Dot-paths are rejected outright by both OpenAI and Anthropic tool-name validation; a rename shim would break `descriptorHash`-bound grants. (01 §4)
+16. **Webhook signing meets the Stripe/Svix bar**: HMAC-SHA256 over `id.timestamp.rawBody`, ±5-minute window, delivery-id dedupe; secrets never travel in URLs. (09 §3)
+17. **No tenant axis** ⚠️ new: `tenantId` deleted from principals, grants, and every table — `subject` is the one partition key; multi-tenant hosts scope by joining through it, like their own tables. Re-adding a column later is additive; carrying it "just in case" was not. (02 §4)
+18. **Standards one-liners**: `descriptorHash` = SHA-256 over RFC 8785 canonical JSON; one wire error envelope + fixed status map; `/fn` responses use an explicit `{ result }` / `{ ui }` key, never body-sniffing; `/tick` takes `Authorization: Bearer` (Vercel cron native); cron evaluates in UTC; wire POSTs require `Content-Type: application/json` (CSRF floor); the refs join example uses GIN-compatible containment.
+19. **Simplification trims** (dead surface deleted): `apply()` + the `TreePatch`/`CodePatch` public types (edit dialects are engine internals; `edit()` is the one entry), the machine's `/trigger` endpoint (firings arrive as declared `fn:` steps), `audit.activity` (= `query({principal})` at the wire route), the separate `directions` config channel (policy data, one channel), `BreakingChange.affects` (contractually always empty), grant sources `judge`/`rule` (nothing mints them), `ToolDescriptor.title`, the umbrella's judge shorthand union, store's `maintenance()`/`auditRetentionDays` (host SQL on host tables), and app-data encryption (kept for `vendo_secrets` only — encrypting app data defeats the host-queryable promise).
 
 ## Wave 3+ ground rules (fresh-start mechanics, same repo)
 

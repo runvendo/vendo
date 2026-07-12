@@ -31,7 +31,6 @@ Who the agent is acting as. Host-minted; the host resolves its own session to a 
 export interface Principal {
   kind: "user";              // "org" reserved (Cloud)
   subject: string;           // host's stable user id — or a generated session id when anonymous
-  tenantId?: string;         // host-defined partition; default "default"
   display?: string;          // for approval UIs and audit
   ephemeral?: boolean;       // anonymous mode: session-scoped, nothing persists past the session
 }
@@ -63,17 +62,18 @@ The one tool shape. Host API, connectors, and Vendo's own capabilities all speak
 export type RiskLabel = "read" | "write" | "destructive";
 
 export interface ToolDescriptor {
-  name: string;                 // namespaced dot-path: "host.invoices.list", "gmail.send", "vendo.apps.create"
+  name: string;                 // matches /^[a-zA-Z0-9_-]{1,64}$/ — the charset OpenAI, Anthropic, and MCP all enforce.
+                                // Namespaced by underscore: "host_invoices_list", "gmail_send", "vendo_apps_create"
   description: string;
   input: JsonSchema;
   risk: RiskLabel;
   critical?: boolean;           // always asks the running user; no grant, rule, or judge may suppress
   source: "host" | "connector" | "vendo";
-  title?: string;
 }
 
-/** Canonical sha-256 fingerprint of a descriptor (name + description + input + risk + critical).
- *  Grants bind to it; drift lapses the grant. */
+/** Canonical sha-256 fingerprint of a descriptor: SHA-256 over the RFC 8785 (JCS) canonicalization
+ *  of { name, description, input, risk, critical }, absent optional fields omitted — so independent
+ *  implementations always agree. Grants bind to it; drift lapses the grant. */
 export function descriptorHash(d: ToolDescriptor): string;
 
 export interface ToolCall {
@@ -113,7 +113,6 @@ export type GrantDuration = "standing" | "session" | "task";
 
 export interface PermissionGrant {
   id: GrantId;
-  tenantId: string;
   subject: string;              // principal subject — grants are per-user, always
   tool: string;
   descriptorHash: string;       // drift lapses the grant
@@ -121,7 +120,7 @@ export interface PermissionGrant {
   duration: GrantDuration;
   contextKey?: string;          // binds session/task grants to their context
   appId?: AppId;        // set when granted to a specific app (incl. automation pre-approval)
-  source: "chat" | "judge" | "rule" | "batch" | "automation";
+  source: "chat" | "batch" | "automation";   // the only mint points: ApprovalDecision.remember (chat/batch) and automation enable-capture
   grantedAt: IsoDateTime;
   expiresAt?: IsoDateTime;
   revokedAt?: IsoDateTime;
@@ -411,4 +410,13 @@ export type VendoErrorCode =
   | "conflict";
 
 export class VendoError extends Error { code: VendoErrorCode; detail?: Json; }
+```
+
+## 16. Vendo stream parts
+
+Typed `data-*` parts riding the ai-SDK UI message stream (03 §4). Live here — not in agent — because ui renders them and may only import core.
+
+```ts
+export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; tree: UIPayload }                       // a rendered app surface in-thread
+export interface VendoConsentPart { type: "data-vendo-consent"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
 ```

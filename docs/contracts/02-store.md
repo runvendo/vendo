@@ -12,15 +12,12 @@ export function createStore(config?: {
   url?: string;
   /** PGlite directory; default ".vendo/data". Ignored when url is set. */
   dataDir?: string;
-  /** At-rest encryption for app data + secrets. Omitted → plaintext (documented, not a silent default). */
+  /** At-rest encryption for stored secret values (vendo_secrets). Omitted → storeSecrets unavailable. */
   encryption?: { key: string };            // 32-byte key, base64; AES-256-GCM
-  /** Audit retention: prune vendo_audit rows older than N days on ensureSchema()/maintenance(). Default: keep forever. */
-  auditRetentionDays?: number;
 }): VendoStore;
 
 export interface VendoStore extends StoreAdapter {
   ensureSchema(): Promise<void>;   // idempotent migration to this version's schema (vendo_meta.schema_version)
-  maintenance(): Promise<void>;    // retention pruning, vacuum-adjacent housekeeping
   close(): Promise<void>;
   raw(): unknown;                  // the underlying pg/PGlite client — host escape hatch, not covered by semver
 }
@@ -37,18 +34,18 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | Table | Key columns (stable) | Holds |
 | --- | --- | --- |
 | `vendo_meta` | `key, value` | schema version, boot id |
-| `vendo_apps` | `id, tenant_id, owner_subject, source, enabled, doc, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
-| `vendo_records` | `collection, id, tenant_id, data, refs, created_at, updated_at` | app data collections; `refs` GIN-indexed for host joins |
+| `vendo_apps` | `id, owner_subject, source, enabled, doc, created_at, updated_at` | each user's app: document (core §9) + ownership (core §10) — no installs table; the app row IS the user's copy |
+| `vendo_records` | `collection, id, data, refs, created_at, updated_at` | app data collections; `refs` GIN-indexed for host joins |
 | `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | `files` storage kind, exports, screenshots |
 | `vendo_state` | `app_id, subject, data, updated_at` | the built-in per-user-per-app `state` singleton |
-| `vendo_threads` | `id, tenant_id, subject, messages, created_at, updated_at` | conversation threads (03 §5) |
-| `vendo_grants` | `id, tenant_id, subject, tool, descriptor_hash, scope, duration, app_id, source, granted_at, revoked_at, expires_at` | permission grants (core §5) |
-| `vendo_approvals` | `id, tenant_id, subject, request, status, decided_at, created_at` | approval queue (05 §1) |
-| `vendo_audit` | `id, at, kind, tenant_id, subject, venue, presence, app_id, tool, event` | append-only audit log (core §7) |
-| `vendo_runs` | `id, app_id, tenant_id, trigger, status, record, started_at, finished_at` | automation run records (07 §5) |
-| `vendo_secrets` | `name, tenant_id, ciphertext, created_at` | optional encrypted secret values (`storeSecrets`) |
+| `vendo_threads` | `id, subject, messages, created_at, updated_at` | conversation threads (03 §5) |
+| `vendo_grants` | `id, subject, tool, descriptor_hash, scope, duration, app_id, source, granted_at, revoked_at, expires_at` | permission grants (core §5) |
+| `vendo_approvals` | `id, subject, request, status, decided_at, created_at` | approval queue (05 §1) |
+| `vendo_audit` | `id, at, kind, subject, venue, presence, app_id, tool, event` | append-only audit log (core §7) |
+| `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation run records (07 §5) |
+| `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values (`storeSecrets`) |
 
-Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs->>'invoice_id' = i.id`.
+Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)` (containment, so the GIN index is actually used).
 
 ## 3. Collection naming convention
 
@@ -63,7 +60,7 @@ The adapter treats collection names as opaque. Callers compose them; the convent
 
 - **PGlite default**: no `url` → embedded Postgres at `.vendo/data`; kill-the-server durability applies (fsync on write).
 - **Same schema everywhere**: one DDL, no dialect switches. `ensureSchema()` is the only migration entry point, keyed by `vendo_meta.schema_version`, forward-only within the version train.
-- **Encryption at rest**: when `encryption.key` is set, `vendo_records.data`, `vendo_state.data`, and `vendo_secrets.ciphertext` are AES-256-GCM encrypted. `refs` stay plaintext (they exist to be joined). Key rotation: out of v0 scope, flagged.
-- **Tenancy**: every row carries `tenant_id`; single-tenant hosts never see it (default "default").
+- **Encryption at rest**: `encryption.key` encrypts `vendo_secrets.ciphertext` only (AES-256-GCM). App data stays plaintext by design — encrypting it would defeat the page's host-can-query/join promise; at-rest encryption of the database is the host's disk/DB layer. Key rotation: out of v0 scope.
+- **No tenant axis**: `subject` is the one partition key — the host's stable user id. Multi-tenant hosts scope the same way they scope their own tables: by joining through `subject` and refs.
 - **Ephemeral principals** (`ephemeral: true`) never touch disk: adapter-level in-memory overlay for their rows, dropped at session end.
-- **Retention**: per-org retention policies are Cloud; OSS gets `auditRetentionDays` only.
+- **Retention**: per-org retention policies are Cloud. OSS retention is host SQL (`DELETE FROM vendo_audit WHERE at < ...` on their own cron) — the table map is public precisely so this works.

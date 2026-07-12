@@ -17,7 +17,6 @@ export function createGuard(config: {
   judge?: Judge;                           // Vendo Auto; absent → rules/defaults only
   breakers?: { maxCallsPerMinute?: number; maxWritesPerRun?: number };   // defaults: 60, 20
   scanners?: Scanner[];
-  directions?: string[];                   // host-written steering, merged with policy-file directions
 }): VendoGuard;
 
 export interface VendoGuard extends Guard {
@@ -37,9 +36,8 @@ export interface VendoGuard extends Guard {
   audit: {
     query(filter: { principal?: Principal; appId?: AppId; kind?: AuditEvent["kind"]; from?: IsoDateTime; to?: IsoDateTime; cursor?: string; limit?: number }): Promise<{ events: AuditEvent[]; cursor?: string }>;
     export(filter?: { from?: IsoDateTime; to?: IsoDateTime }): AsyncIterable<string>;   // NDJSON lines, SIEM-friendly
-    /** User-facing transparency: "what has the agent done as me". Self-scoped, always permitted. */
-    activity(principal: Principal, cursor?: string): Promise<{ events: AuditEvent[]; cursor?: string }>;
   };
+  // user-facing "what has the agent done as me" = query({ principal }) self-scoped at the wire route (09 §3) — not a second method
 
   status(): { posture: "unconfigured" | "rules" | "judge" | "rules+judge" };  // "unconfigured" backs the loud no-policy notice (08 §6)
 }
@@ -74,9 +72,9 @@ Deploy-only in OSS (ships with the host's code); console hot-edit is Cloud.
   "format": "vendo/policy@1",
   "directions": [ "Never advise on tax matters; refer to an accountant." ],
   "rules": [
-    { "match": { "tool": "host.invoices.delete" },              "action": "ask" },
+    { "match": { "tool": "host_invoices_delete" },              "action": "ask" },
     { "match": { "risk": "destructive" },                        "action": "ask" },
-    { "match": { "tool": "gmail.*", "presence": "away" },        "action": "ask", "note": "no unattended email" },
+    { "match": { "tool": "gmail_*", "presence": "away" },        "action": "ask", "note": "no unattended email" },
     { "match": { "venue": "mcp" },                               "action": "block" },
     { "match": { "risk": "read" },                               "action": "run" }
   ]
@@ -85,7 +83,8 @@ Deploy-only in OSS (ships with the host's code); console hot-edit is Cloud.
 
 ```ts
 export interface PolicyRule { match: { tool?: string /* glob */; risk?: RiskLabel; venue?: RunContext["venue"]; presence?: RunContext["presence"] }; action: "run" | "ask" | "block"; note?: string; }
-export type PolicyConfig = { file?: string /* default ".vendo/policy.json" */; rules?: PolicyRule[]; code?: PolicyFn };
+export type PolicyConfig = { file?: string /* default ".vendo/policy.json" */; rules?: PolicyRule[]; directions?: string[]; code?: PolicyFn };
+// directions are policy data — one channel (the file, or inline here), no merge rule
 export type PolicyFn = (call: ToolCall, descriptor: ToolDescriptor, ctx: RunContext) => GuardDecision | undefined;  // undefined = pass to next stage
 ```
 
@@ -123,6 +122,6 @@ Adapter surface for LLM Guard-style content scanners (prompt injection on inputs
 ## 6. One-security-rule consequences (restated as guard requirements)
 
 - An approval shows the **real inputs** (`inputPreview`) at the moment of the call — a shared app's hidden or dormant calls can do nothing without the running user seeing them.
-- Approvals and grants never transfer between users; grants key off `(tenantId, subject, tool)` plus optional `appId` — never artifact contents (import mints fresh app ids, core §10).
+- Approvals and grants never transfer between users; grants key off `(subject, tool)` plus optional `appId` — never artifact contents (import mints fresh app ids, core §10).
 - Away runs hold only grants captured while the user was present **and bound to the running app** (`appId` match, 07 §3); chat-minted grants never authorize away execution. Everything else parks as `pending-approval`.
 - Artifacts and exports carry zero authority; there is no tools/permissions field anywhere in the app format.

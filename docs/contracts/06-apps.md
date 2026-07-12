@@ -7,7 +7,7 @@ Status: DRAFT (wave 2). One job: everything Vendo produces and runs is an app (c
 ```ts
 import type {
   StoreAdapter, Guard, RunContext, AppDocument, AppId, ToolSet, ToolOutcome,
-  ComponentCatalog, VendoTheme, SecretsProvider, Tree, TreeNode, TreeQuery, UIPayload, Json, IsoDateTime,
+  ComponentCatalog, VendoTheme, SecretsProvider, Tree, UIPayload, Json, IsoDateTime,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";   // type-only: generation seam
 
@@ -31,9 +31,8 @@ export interface AppsRuntime {
   remove(appId: AppId, ctx: RunContext): Promise<void>;
   fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;                                     // own copy, fresh id, forkedFrom set
 
-  // the edit loop — one loop, two dialects
-  edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;                 // conversational
-  apply(appId: AppId, patch: TreePatch | CodePatch, ctx: RunContext): Promise<EditResult>;       // structured (the engine's own path)
+  // the edit loop
+  edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;                 // the one public edit entry
   history(appId: AppId): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };      // capped log — runtime UX, not format
 
   // execution
@@ -49,7 +48,7 @@ export interface AppsRuntime {
   share(appId: AppId, ctx: RunContext): Promise<ShareSnapshot>;
   publish(appId: AppId, ctx: RunContext): Promise<PublishRecord>;
 
-  /** Vendo capability tools (vendo.apps.create, vendo.apps.edit, vendo.apps.open) for the agent loop —
+  /** Vendo capability tools (vendo_apps_create, vendo_apps_edit, vendo_apps_open) for the agent loop —
    *  registered into actions by the umbrella, guard-treated like everything else. */
   agentTools(): ToolSet;
 }
@@ -75,19 +74,7 @@ export interface PublishRecord { id: string; appId: AppId; version: string; crea
 
 The agent escalates; the user never picks a tier. **Invisible graduation** requirements on this runtime: `open()` always answers from last state (live tree, or cover screenshot while resuming); the tree renderer ships as a library in served-app scaffolds so the first served version renders the identical tree; the previous rung keeps serving while the next builds (escalation happens in a fork of the machine/document, swapped on success).
 
-Edit dialects: **tree edits** are structured ops validated against the catalog — a completed tree cannot ship broken; **code edits** are text hunks, syntax-checked, contained by error boundaries.
-
-```ts
-export type TreePatch = Array<
-  | { op: "set-prop"; nodeId: string; prop: string; value: Json }
-  | { op: "insert-node"; node: TreeNode; parent: string; index?: number }
-  | { op: "remove-node"; nodeId: string }
-  | { op: "move-node"; nodeId: string; parent: string; index?: number }
-  | { op: "set-data"; path: string; value: Json }
-  | { op: "set-query"; query: TreeQuery }
->;
-export interface CodePatch { file: string; hunks: Array<{ find: string; replace: string }> }   // component source or machine files
-```
+Edit dialects are **engine internals**, not public API (`edit()` is the one entry): tree edits are structured ops validated against the catalog — a completed tree cannot ship broken; code edits are text hunks, syntax-checked, contained by error boundaries.
 
 ## 3. Sandbox adapter seam ⚑ (lives here; e2b + Modal adapters in-box)
 
@@ -122,11 +109,10 @@ The machine IS the server part. No declared entry point; by convention the app l
 
 | Request | Meaning | Response |
 | --- | --- | --- |
-| `POST /fn/<name>` body `{ "args": {...} }` | function call (rungs 2–3) | `200 { "result": ... }` — or a body carrying a registered `formatVersion` = a server-computed UI payload (rung 3; v0: `vendo-genui/v1`) |
-| `POST /trigger` body `{ "trigger": Trigger, "event": {...}, "runId": "run_..." }` | a trigger firing delivered to the app (07 §4) | `200 { "result": ... }` (recorded on the run) |
+| `POST /fn/<name>` body `{ "args": {...} }` | function call (rungs 2–3) | `200 { "result": ... }` — or `200 { "ui": <UIPayload> }` for a server-computed surface (rung 3). One explicit key, never body-sniffing |
 | anything else | the served web app — rung 4 only | app-defined |
 
-`fn:` resolution: a tree's `fn:<name>` reference (core §8) resolves to `POST /fn/<name>` on this app's machine, args from the query/action. Function errors are `{ "error": { "code", "message" } }` with appropriate HTTP status; the renderer contains them (error boundary / stale data notice), never breaks the surface.
+`/fn/<name>` is the machine's only reserved surface — trigger firings also arrive as the `fn:` steps the automation's run model declares (07 §4), with the event in `args`; there is no separate trigger endpoint. `fn:` resolution: a tree's `fn:<name>` reference (core §8) resolves to `POST /fn/<name>` on this app's machine, args from the query/action. Function errors are `{ "error": { "code", "message" } }` with appropriate HTTP status; the renderer contains them (error boundary / stale data notice), never breaks the surface.
 
 ### 4.2 Run environment (injected at machine create/resume)
 

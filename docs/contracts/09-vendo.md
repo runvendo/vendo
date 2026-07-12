@@ -22,7 +22,7 @@ export function createVendo(config: {
   connectors?: Connector[];
   actAs?: ActAs;
   policy?: PolicyConfig;
-  judge?: Judge | { model: LanguageModel };   // shorthand builds vendoAutoJudge
+  judge?: Judge;                              // e.g. vendoAutoJudge({ model }) — one import, no shorthand union
   secrets?: SecretsProvider;                  // default envSecrets()
   telemetry?: boolean;
 }): Vendo;
@@ -63,12 +63,16 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/automations/:id/dry-run` | POST | `RunPlan` |
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |
-| `/tick` | POST | scheduler tick (serverless cron target; requires shared-secret header `x-vendo-tick-key`) |
+| `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>` — what Vercel cron sends natively) |
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) — verified, see below |
-| `/activity` | GET | `AuditEvent[]` (self-scoped) |
+| `/activity` | GET | `AuditEvent[]` — `guard.audit.query({ principal })` self-scoped at this route |
 | `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe) |
 
-**Webhook verification (normative)**: `/webhooks/:source` never dispatches unverified deliveries. Each source registers a verification at wiring time — connector signature check (e.g. Composio HMAC headers) or a per-subscription secret minted when the automation is enabled and carried in the delivery URL/header. Verification failure → `401`, no principal resolution, no run, one audit event. The unauthenticated surface of the wire is exactly: nothing.
+**Webhook verification (normative)**: `/webhooks/:source` never dispatches unverified deliveries. Each source registers a verification at wiring time: the connector's own signature scheme (e.g. Composio's signed headers), or — for self-minted subscriptions — the industry-standard signing scheme (Stripe/Svix/GitHub school): HMAC-SHA256 over `id.timestamp.rawBody` with the secret minted at enable, delivered as signature + timestamp + delivery-id headers, verified within a ±5-minute window. **The secret itself never travels in a URL** (URLs leak via logs and proxies). Deliveries are deduped by delivery id, so at-least-once retries never double-fire an automation. Verification failure → `401`, no principal resolution, no run, one audit event. The unauthenticated surface of the wire is exactly: nothing.
+
+**Errors (normative)**: every non-2xx wire response is the one envelope the set already has (06 §4.1): `{ "error": { "code": VendoErrorCode, "message": string } }`, with the fixed status map `validation`→400, `not-found`→404, `blocked`/`grant-required`→403, `conflict`→409, `cloud-required`→402, `sandbox-unavailable`/`not-implemented`→501.
+
+**CSRF (normative)**: the wire is cookie-authenticated (`principal(req)` reads the host session), so the handler rejects state-changing requests whose `Content-Type` is not `application/json` (forcing a CORS preflight cross-origin) — the OWASP-recommended minimum for embedded surfaces where hosts relax `SameSite`. Exceptions, listed exhaustively: `/apps/import` (binary body) and `/webhooks/:source` / `/tick` (non-cookie auth above).
 
 Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"` carries the sandbox provider's URL directly; the iframe talks to the machine, the machine talks back only through `VENDO_PROXY_URL` (06 §4.4).
 

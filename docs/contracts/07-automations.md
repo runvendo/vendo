@@ -44,9 +44,9 @@ export interface AutomationsEngine {
 
 ## 2. Triggers (semantics for core §11 shapes)
 
-- **`schedule`** — exactly one of `cron` (5-field), `every` (duration: `"15m"`, `"1d"`), `at` (one-shot). Evaluated by `tick`; a missed window (host asleep) fires once on the next tick, never back-fills.
+- **`schedule`** — exactly one of `cron` (5-field, evaluated in UTC), `every` (duration: `"15m"`, `"1d"`), `at` (one-shot). Evaluated by `tick`; a missed window (host asleep) fires once on the next tick, never back-fills.
 - **`host-event`** — the honest one-seam cost: the host calls `engine.emit(event, payload, principal)` in its own code path (or points a webhook at the umbrella's `/webhooks/host` route). Fires every enabled automation of that principal whose `trigger.on.event` matches.
-- **`external`** — connector deliveries (Composio webhooks, plain webhooks) arrive at `webhook(req)`; `config` carries connector-specific subscription detail, including its verification material (connector signature or the per-subscription secret minted at enable — 09 §3). Unverified deliveries are rejected before any dispatch. Delivery → principal resolution comes from the app row (an automation always runs as its owner).
+- **`external`** — connector deliveries (Composio webhooks, plain webhooks) arrive at `webhook(req)`; `config` carries connector-specific subscription detail, including its verification material (the connector's own signature scheme, or the HMAC secret minted at enable — signing rules in 09 §3). Unverified deliveries are rejected before any dispatch; deliveries are deduped by delivery id so at-least-once retries never double-fire. Delivery → principal resolution comes from the app row (an automation always runs as its owner).
 
 ## 3. Away identity and grant capture
 
@@ -58,7 +58,7 @@ Away runs hold only grants captured while the user was present **and bound to th
 
 **Agentic** (fuzzy work within pre-approved grants): `runner({ prompt, tools, budget }, ctx)` with `presence: "away"` — reasoning happens, authority doesn't change: the same grants gate every call. `budget.maxToolCalls` defaults to 50.
 
-Apps with a `server` may also receive the raw firing (`POST /trigger`, 06 §4.1) when the run model is `steps` containing an `fn:` step or when the trigger's app declares no steps at all — ⚑ v0 rule: `RunModel` is required; "just wake my machine" is expressed as a single-step `steps` pipeline calling `fn:main`.
+The machine is reached only through the `fn:` steps the run model declares — there is no separate trigger endpoint (06 §4.1). ⚑ v0 rule: `RunModel` is required; "just wake my machine" is a single-step `steps` pipeline calling `fn:main` with the event as its args.
 
 ## 5. Observability
 

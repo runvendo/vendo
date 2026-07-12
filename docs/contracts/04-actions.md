@@ -24,9 +24,8 @@ export interface SyncReport {
 export interface BreakingChange {
   tool: string;
   change: "removed" | "input-narrowed" | "renamed";
-  /** Blast radius: which saved apps/automations reference this tool (requires a store; empty without one). */
-  affects: Array<{ appId: AppId; appName: string }>;
 }
+// Blast radius ("which saved apps reference this tool") is a runtime query over vendo_apps, not a build-step concern.
 ```
 
 Launch extraction tier: **OpenAPI + route-scan** (corpus-proven). tRPC/GraphQL/server actions next — new extractors change no format below. Extraction is fail-closed: a route the scanner can't classify is emitted `disabled: true` with a note, never silently auto-allowed.
@@ -39,7 +38,7 @@ Launch extraction tier: **OpenAPI + route-scan** (corpus-proven). tRPC/GraphQL/s
   "tools": [
     {
       // ToolDescriptor fields (core §4) ...
-      "name": "host.invoices.list",
+      "name": "host_invoices_list",
       "description": "List invoices",
       "input": { /* JSON Schema */ },
       "risk": "read",
@@ -60,9 +59,9 @@ Re-extraction never touches it; answers from the init interview land here.
 {
   "format": "vendo/overrides@1",
   "tools": {
-    "host.invoices.delete": { "risk": "destructive", "critical": true },
-    "host.internal.debug": { "disabled": true },
-    "host.invoices.send": { "description": "Send an invoice email to the customer" }
+    "host_invoices_delete": { "risk": "destructive", "critical": true },
+    "host_internal_debug": { "disabled": true },
+    "host_invoices_send": { "description": "Send an invoice email to the customer" }
   }
 }
 ```
@@ -72,7 +71,7 @@ Merge rule: descriptor = extracted ∪ overrides, overrides win field-wise; `des
 ## 2. Runtime
 
 ```ts
-import type { ToolSet, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome, AppId } from "@vendoai/core";
+import type { ToolSet, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome } from "@vendoai/core";
 
 export function createActions(config: {
   dir?: string;                          // read .vendo/{tools,overrides}.json; or:
@@ -98,7 +97,7 @@ export function composioConnector(config: { apiKey: string; entityId?: (ctx: Run
 export function mcpConnector(config: { url: string; headers?: Record<string, string>; name?: string }): Connector;
 ```
 
-Normalization rules: connector tool names are prefixed (`gmail.send`, `mcp.<server>.<tool>`); risk labels come from connector annotations when present, else default **`write`** (conservative), overridable in `overrides.json`; MCP tools are re-described through the same descriptor shape so guard sees no difference.
+Normalization rules: connector tool names are underscore-prefixed inside the provider-safe charset (core §4): `gmail_send`, `mcp_<server>_<tool>` (truncated + suffix-hashed past 64 chars); risk labels come from connector annotations when present, else default **`write`** (conservative), overridable in `overrides.json`; MCP tools are re-described through the same descriptor shape so guard sees no difference.
 
 ## 4. Execution semantics (normative)
 
