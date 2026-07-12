@@ -20,6 +20,12 @@ import { createAgentTools } from "./agent-tools.js";
 import { createAppData } from "./app-data.js";
 import { createAppCaller } from "./call.js";
 import {
+  publish,
+  share,
+  type PublishRecord,
+  type ShareSnapshot,
+} from "./cloud.js";
+import {
   instructionRequiresServer,
   modelEngine,
   type CodeFileEdit,
@@ -27,6 +33,7 @@ import {
   type GenerationEngine,
 } from "./engine.js";
 import { createAppHistory } from "./history.js";
+import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener } from "./open.js";
 import { appRecordInput, documentFromRecord } from "./persistence.js";
@@ -69,21 +76,6 @@ export type OpenSurface =
   | { kind: "tree"; payload: UIPayload; components?: Record<string, string> }
   | { kind: "http"; url: string }
   | { kind: "resuming"; cover?: string };
-
-/** 06-apps §1 */
-export interface ShareSnapshot {
-  id: string;
-  doc: AppDocument;
-  createdAt: IsoDateTime;
-}
-
-/** 06-apps §1 */
-export interface PublishRecord {
-  id: string;
-  appId: AppId;
-  version: string;
-  createdAt: IsoDateTime;
-}
 
 /** Plan decision 3 — handler mounted by the umbrella at the configured proxy URL. */
 export interface AppsProxy {
@@ -166,6 +158,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     if (app === null) throw new VendoError("not-found", `app not found: ${appId}`);
     return app;
   };
+
+  const interchange = createAppInterchange({
+    store: config.store,
+    guard: config.guard,
+    sandbox: config.sandbox,
+    pinBaselines: config.pinBaselines,
+    requireOwned,
+  });
 
   const caller = createAppCaller(machines, config.tools);
   const opener = createAppOpener(machines, caller, config.store);
@@ -387,24 +387,20 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return caller.call(app, ref, args, ctx, await machines.mintRun(app, ctx));
     },
 
-    // Lane E
-    async exportApp(_appId, _ctx) {
-      throw new VendoError("not-implemented", "export is implemented in Lane E");
+    async exportApp(appId, ctx) {
+      return interchange.exportApp(appId, ctx);
     },
 
-    // Lane E
-    async importApp(_source, _ctx) {
-      throw new VendoError("not-implemented", "import is implemented in Lane E");
+    async importApp(source, ctx) {
+      return interchange.importApp(source, ctx);
     },
 
-    // Lane E
-    async share(_appId, _ctx) {
-      throw new VendoError("not-implemented", "share is implemented in Lane E");
+    async share(appId, ctx) {
+      return share(appId, ctx);
     },
 
-    // Lane E
-    async publish(_appId, _ctx) {
-      throw new VendoError("not-implemented", "publish is implemented in Lane E");
+    async publish(appId, ctx) {
+      return publish(appId, ctx);
     },
 
     agentTools() {
