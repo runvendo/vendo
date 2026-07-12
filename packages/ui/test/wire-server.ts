@@ -29,7 +29,11 @@ function app(id: string, name: string, automation = false): AppDocument {
     id,
     name,
     ui: "tree",
-    tree: { formatVersion: "vendo-genui/v1", root: "root", nodes: [{ id: "root", component: "Text" }] },
+    tree: {
+      formatVersion: "vendo-genui/v1",
+      root: "root",
+      nodes: [{ id: "root", component: "Text", props: { text: `${name} app surface` } }],
+    },
     ...(automation
       ? { trigger: { on: { kind: "host-event" as const, event: "invoice.created" }, run: { kind: "steps" as const, steps: [] } } }
       : {}),
@@ -153,6 +157,8 @@ export async function createWireServer() {
     history: [{ at: NOW, intent: "create", rung: 1 }] satisfies VersionEntry[],
     importBytes: new Uint8Array(),
     statusErrorCode: undefined as string | undefined,
+    posture: "rules" as "unconfigured" | "rules" | "judge" | "rules+judge",
+    threadReplyGate: undefined as Promise<void> | undefined,
   };
   const requests: RecordedRequest[] = [];
   let closed = false;
@@ -181,7 +187,7 @@ export async function createWireServer() {
         const chunks = createUIMessageStream<UIMessage>({
           originalMessages: [input.message],
           generateId: () => "msg_assistant",
-          execute: ({ writer }) => {
+          execute: async ({ writer }) => {
             writer.write({
               type: "tool-input-available",
               toolCallId: "call_stream",
@@ -194,6 +200,7 @@ export async function createWireServer() {
               type: "data-vendo-approval",
               data: { toolCallId: "call_stream", risk: "write", approvalId: "apr_stream" },
             } as UIMessageChunk);
+            await state.threadReplyGate;
             writer.write({ type: "text-start", id: "text_1" });
             writer.write({ type: "text-delta", id: "text_1", delta: "Turn complete" });
             writer.write({ type: "text-end", id: "text_1" });
@@ -348,7 +355,7 @@ export async function createWireServer() {
       }
       if (method === "GET" && url.pathname === "/status") {
         if (state.statusErrorCode) return wireError(response, state.statusErrorCode, "Status failed", 501);
-        return json(response, { posture: "rules", version: "0.3.0", blocks: { guard: true } });
+        return json(response, { posture: state.posture, version: "0.3.0", blocks: { guard: true } });
       }
       if (method === "POST" && url.pathname === "/tick") return json(response, []);
       if (method === "POST" && url.pathname.startsWith("/webhooks/")) return json(response, { accepted: true });
