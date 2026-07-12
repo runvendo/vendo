@@ -47,6 +47,8 @@ export function ActivityPanel() {
             <tbody style={{ display: "block" }}>
               {events.map(event => {
                 const ok = event.outcome === "ok";
+                const running = event.outcome === undefined;
+                const pending = event.outcome === "pending-approval";
                 return (
                   <tr
                     className="fl-act-row"
@@ -62,7 +64,11 @@ export function ActivityPanel() {
                     <td className="fl-act-lbl">{event.tool ?? "—"}</td>
                     <td className="fl-act-sub" style={{ marginLeft: 0, maxWidth: "none" }}>{event.inputPreview ?? "—"}</td>
                     <td>
-                      <span className={`fl-act-ic ${ok ? "fl-act-tick" : "fl-act-x"}`} aria-hidden="true">{ok ? "✓" : "✕"}</span>
+                      <span className="fl-act-ic" aria-hidden="true">
+                        {running ? <span className="fl-act-pulse" />
+                          : pending ? <span className="fl-act-spin" />
+                          : <span className={ok ? "fl-act-tick" : "fl-act-x"}>{ok ? "✓" : "✕"}</span>}
+                      </span>
                       <span>{event.outcome ?? "—"}</span>
                     </td>
                     <td className="fl-act-sub" style={{ marginLeft: 0, maxWidth: "none" }}>{event.decidedBy ?? "—"}</td>

@@ -50,9 +50,9 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
 
   return (
     <ChromeRoot>
-      <article className={`fl-approval${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${approval.descriptor.name}`}>
+      <article className={`fl-approval fl-item-in${critical ? " fl-approval--ceremony" : ""}`} aria-label={`Approval for ${approval.descriptor.name}`}>
         <div className="fl-approval-head">
-          <div className="fl-approval-ic" aria-hidden="true">
+          <span className="fl-approval-ic" aria-hidden="true">
             <svg
               width="15"
               height="15"
@@ -65,8 +65,8 @@ export function ApprovalCard({ approval, onDecide, allowRemember = true }: Appro
             >
               <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
             </svg>
-          </div>
-          <div>
+          </span>
+          <div className="fl-approval-heading">
             <div className="fl-approval-eyebrow">{critical ? "CRITICAL" : "REQUESTED"}</div>
             <div className="fl-approval-title">{approval.descriptor.name}</div>
           </div>

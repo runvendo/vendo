@@ -405,17 +405,85 @@ function AppFrameScenario() {
 }
 
 const baseClient = createVendoClient({ baseUrl: "/api/vendo" });
+const unconfiguredClient = createVendoClient({ baseUrl: "/api/vendo", headers: { "x-vendo-force-posture": "unconfigured" } });
+
+// A Maple-brand host theme (graphite accent, warm cream canvas) — the same
+// brand the old shell adopted, so the landing reads like the real product.
+const mapleTheme: Partial<VendoTheme> = {
+  colors: {
+    background: "#f3ede2", surface: "#fffdf9", text: "#14151a", muted: "#8a8b92",
+    accent: "#1b1c22", accentText: "#ffffff", danger: "#b0392b", border: "rgba(20,21,26,.10)",
+  },
+  typography: { fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif", baseSize: "15px" },
+  radius: { small: "8px", medium: "12px", large: "20px" }, density: "comfortable", motion: "full",
+};
+
+/** A minimal Maple host shell (sidebar + top bar + Chat tab) so a Vendo surface
+ *  renders in a realistic host context, matching the wave-2 shell's demos. */
+function MapleFrame({ children }: { children: ReactNode }) {
+  const navItem = (label: string, active = false) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, fontSize: 14,
+      color: active ? "#14151a" : "#5b5c63", background: active ? "rgba(20,21,26,.05)" : "transparent", fontWeight: active ? 600 : 500 }}>
+      <span style={{ width: 16, height: 16, borderRadius: 4, background: "currentColor", opacity: .55 }} />{label}
+    </div>
+  );
+  const topBtn = (label: string, dark = false) => (
+    <button style={{ padding: "8px 14px", borderRadius: 10, fontSize: 13.5, fontWeight: 600, cursor: "pointer",
+      border: dark ? "0" : "1px solid rgba(20,21,26,.12)", background: dark ? "#14151a" : "#fff", color: dark ? "#fff" : "#14151a" }}>{label}</button>
+  );
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "216px 1fr", height: "100%", background: "#fff", color: "#14151a",
+      fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" }}>
+      <aside style={{ borderRight: "1px solid rgba(20,21,26,.08)", padding: "16px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 8px 16px", fontWeight: 700, fontSize: 18 }}>
+          <span style={{ width: 26, height: 26, borderRadius: 8, background: "#14151a", color: "#fff", display: "grid", placeItems: "center", fontSize: 13 }}>◈</span>Maple
+        </div>
+        {navItem("Home")}{navItem("Accounts")}{navItem("Transactions")}{navItem("Cards")}{navItem("Payments")}{navItem("Insights")}{navItem("Ask Maple", true)}
+        <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 4 }}>{navItem("Activity")}{navItem("Settings")}</div>
+      </aside>
+      <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 22px", borderBottom: "1px solid rgba(20,21,26,.08)" }}>
+          <strong style={{ fontSize: 16 }}>Ask Maple</strong>
+          <div style={{ flex: 1, maxWidth: 320, display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 10, border: "1px solid rgba(20,21,26,.12)", color: "#8a8b92", fontSize: 13 }}>Search…<span style={{ marginLeft: "auto", fontSize: 11, border: "1px solid rgba(20,21,26,.12)", borderRadius: 5, padding: "1px 5px" }}>⌘K</span></div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>{topBtn("Send", true)}{topBtn("Request")}{topBtn("Move money")}</div>
+        </header>
+        <div style={{ padding: "0 22px", borderBottom: "1px solid rgba(20,21,26,.08)", display: "flex", gap: 16, fontSize: 13.5 }}>
+          <span style={{ padding: "12px 2px", borderBottom: "2px solid #14151a", fontWeight: 600 }}>Chat</span>
+          <span style={{ padding: "12px 2px", color: "#8a8b92" }}>+</span>
+        </div>
+        <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+const MAPLE_SUGGESTIONS = [
+  "What did I spend money on when I should've been asleep?",
+  "What was that $87 DoorDash charge?",
+  "Put me on blast in Slack when I order late-night delivery",
+];
+
+function LandingScenario() {
+  return (
+    <VendoProvider client={baseClient} components={components} theme={mapleTheme}>
+      <MapleFrame>
+        <VendoThread greeting="What do you want to build?" suggestions={MAPLE_SUGGESTIONS} onVoice={() => undefined} />
+      </MapleFrame>
+    </VendoProvider>
+  );
+}
 
 function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme>; content: ReactNode; ownProvider?: boolean } {
   switch (pathname) {
     case "/thread": return { title: "Thread — dark theme", theme: darkTheme, content: <VendoThread threadId="thr_1" /> };
+    case "/thread-landing": return { title: "Landing (Maple host)", content: <LandingScenario />, ownProvider: true };
     case "/overlay": return { title: "Overlay", content: <AutoOpen selector='button[aria-controls="vendo-overlay-dialog"]'><VendoOverlay /></AutoOpen> };
     case "/page": return { title: "Workspace — Apps tab", content: <AutoOpen selector='[role="tab"][aria-controls="vendo-panel-apps"]'><VendoPage /></AutoOpen> };
     case "/palette": return { title: "Command palette", content: <OpenPalette /> };
     case "/approval": return { title: "Destructive approval", content: <ApprovalScenario /> };
     case "/activity": return { title: "Activity", content: <ActivityPanel /> };
     case "/automations": return { title: "Automations", content: <AutomationsPanel /> };
-    case "/notice": return { title: "Unconfigured policy", content: <NoPolicyNotice /> };
+    case "/notice": return { title: "Unconfigured policy", ownProvider: true, content: (<VendoProvider client={unconfiguredClient} components={components}><NoPolicyNotice /></VendoProvider>) };
     case "/stage": return { title: "Voice stage", content: <StageScenario />, ownProvider: true };
     case "/stage-live": return { title: "Voice stage (live)", content: <LiveStageScenario />, ownProvider: true };
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
@@ -439,6 +507,11 @@ function Harness() {
         {current.content}
       </VendoProvider>
     );
+  // Full-bleed host-frame scenarios (the Maple frame IS the host chrome) render
+  // edge-to-edge, not as a card on the harness canvas.
+  if (globalThis.location.pathname === "/thread-landing") {
+    return <div data-scenario="thread-landing" style={{ position: "fixed", inset: 0 }}>{content}</div>;
+  }
   return (
     <main className={`harness-shell${globalThis.location.pathname === "/thread" ? " harness-dark" : ""}`} data-scenario={globalThis.location.pathname.slice(1)}>
       <h1 className="harness-heading">{current.title}</h1>
