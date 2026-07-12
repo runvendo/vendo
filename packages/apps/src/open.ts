@@ -126,8 +126,11 @@ export const createAppOpener = (
   }
   const validation = validateTree({ ...app.tree, components: app.components });
   if (!validation.ok) throw new VendoError("validation", validation.error.message);
+  // Keep components INSIDE the wire payload: Tree.components is the wire-level
+  // field (01 §8, "lifted to the app document at rest") and the renderer compiles
+  // generated components from payload.components. The OpenSurface sibling stays
+  // for 06 §1 shape fidelity.
   const tree: Tree = structuredClone(validation.tree);
-  delete tree.components;
   const data: Record<string, Json> = structuredClone(tree.data ?? {});
 
   for (const query of tree.queries ?? []) {

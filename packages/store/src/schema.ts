@@ -28,8 +28,9 @@ export const DDL = [
     updated_at timestamptz NOT NULL, PRIMARY KEY (app_id, subject)
   )`,
   `CREATE TABLE IF NOT EXISTS vendo_threads (
-    id text PRIMARY KEY, subject text NOT NULL, messages jsonb NOT NULL,
-    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+    id text NOT NULL, subject text NOT NULL, messages jsonb NOT NULL,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL,
+    PRIMARY KEY (subject, id)
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_threads_subject_idx ON vendo_threads (subject)",
   `CREATE TABLE IF NOT EXISTS vendo_grants (

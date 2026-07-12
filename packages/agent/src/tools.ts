@@ -31,7 +31,11 @@ export interface ToolBridgeOptions {
 
 function writePart(writer: UIMessageStreamWriter<UIMessage> | undefined, part: VendoPart): void {
   if (!writer) return;
-  writer.write(part as never);
+  // The ai-SDK UI message stream requires custom data chunks to carry their
+  // payload under `data` ({ type: "data-*", data }); the stock client's chunk
+  // schema hard-rejects the flat form. The core part fields ride inside data.
+  const { type, ...data } = part;
+  writer.write({ type, data } as never);
 }
 
 function executionError(): ToolOutcome {
@@ -85,8 +89,17 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
         const surface = typeof outcome.output === "object" && outcome.output !== null
           ? outcome.output as Record<string, unknown>
           : undefined;
+        const args = typeof input === "object" && input !== null
+          ? input as Record<string, unknown>
+          : undefined;
         const candidate = surface
-          ? { type: "data-vendo-view", appId: surface.appId, payload: surface.payload }
+          ? {
+              type: "data-vendo-view",
+              // OpenSurface itself carries no app id (06 §1) — the open call's
+              // own appId argument identifies the app the payload belongs to.
+              appId: surface.appId ?? args?.appId,
+              payload: surface.payload,
+            }
           : null;
         const view = vendoViewPartSchema.safeParse(candidate);
         if (view.success) writePart(options.writer, view.data);

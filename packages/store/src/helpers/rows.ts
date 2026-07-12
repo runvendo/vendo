@@ -52,7 +52,7 @@ export async function putThreadRow(
   const result = await db.query(
     `INSERT INTO vendo_threads (id, subject, messages, created_at, updated_at)
      VALUES ($1, $2, $3::jsonb, $4, $4)
-     ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, messages = EXCLUDED.messages,
+     ON CONFLICT (subject, id) DO UPDATE SET messages = EXCLUDED.messages,
        updated_at = EXCLUDED.updated_at
      RETURNING id, subject, messages, created_at, updated_at`,
     [input.id, input.subject, JSON.stringify(input.messages), now],

@@ -6,7 +6,7 @@ import { VendoRoot } from "./VendoRoot";
 export function VendoCard() {
   return (
     <section aria-label="Custom view" className="space-y-2">
-      <VendoRoot threadId="cadence-slot">
+      <VendoRoot threadId="thr_cadence_slot">
         <VendoSlot id="home-dashboard">
           <a className="block rounded-xl border border-dashed border-line p-6 text-sm text-ink-soft" href="/assistant">
             Design a view with Vendo

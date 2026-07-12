@@ -47,3 +47,9 @@ export function useVendoContext(): VendoContextValue {
 export function useVendoTheme(): VendoTheme {
   return useVendoContext().theme;
 }
+
+/** Like useVendoTheme, but provider-optional: surfaces that also work standalone
+    (TreeView) fall back to the default brand tokens. */
+export function useVendoThemeOrDefault(): VendoTheme {
+  return useContext(VendoContext)?.theme ?? defaultVendoTheme;
+}

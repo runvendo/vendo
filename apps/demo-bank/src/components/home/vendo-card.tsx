@@ -6,7 +6,7 @@ import { VendoRoot } from "@/components/vendo/VendoRoot";
 export function VendoCard() {
   return (
     <section aria-label="Custom view" className="space-y-2">
-      <VendoRoot threadId="maple-slot">
+      <VendoRoot threadId="thr_maple_slot">
         <VendoSlot id="home-dashboard">
           <a className="block rounded-xl border border-dashed border-border p-6 text-sm text-muted" href="/vendo">
             Design a view with Maple

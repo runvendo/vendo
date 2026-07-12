@@ -21,7 +21,7 @@ function PageSurface() {
       </div>
       <div className="fl-page-body">
         <div className="fl-page-pane">
-          <VendoThread threadId="cadence-demo" />
+          <VendoThread threadId="thr_cadence_demo" />
         </div>
       </div>
       {activityOpen ? (

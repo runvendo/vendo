@@ -90,6 +90,8 @@ export interface JailedComponentProps {
   name: string;
   source: string;
   props: Record<string, unknown>;
+  /** Host brand tokens as `--vendo-*` custom properties, applied to the jail root. */
+  themeVars?: Record<string, string>;
   onAction(action: string, payload?: Json): Promise<ToolOutcome>;
   onStateSet(key: string, value: Json): void;
 }
@@ -99,6 +101,7 @@ export function JailedComponent({
   name,
   source,
   props,
+  themeVars,
   onAction,
   onStateSet,
 }: JailedComponentProps) {
@@ -114,7 +117,7 @@ export function JailedComponent({
     const iframe = iframeRef.current;
     if (!iframe) return;
     const sendRender = () => {
-      iframe.contentWindow?.postMessage({ vendo: true, kind: "render", source, props }, "*");
+      iframe.contentWindow?.postMessage({ vendo: true, kind: "render", source, props, ...(themeVars === undefined ? {} : { themeVars }) }, "*");
     };
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframe.contentWindow) return;
@@ -158,7 +161,7 @@ export function JailedComponent({
       window.removeEventListener("message", handleMessage);
       iframe.removeEventListener("load", sendRender);
     };
-  }, [onAction, onStateSet, props, source]);
+  }, [onAction, onStateSet, props, source, themeVars]);
 
   if (error) {
     return <ContainedNotice label="Generated component error">{`${name}: ${error}`}</ContainedNotice>;

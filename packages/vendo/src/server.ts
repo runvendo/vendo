@@ -10,6 +10,7 @@ import {
   VendoError,
   approvalDecisionSchema,
   principalSchema,
+  vendoThemeSchema,
   type ActAs,
   type ApprovalDecision,
   type Json,
@@ -18,10 +19,12 @@ import {
   type RunId,
   type SecretsProvider,
   type VendoErrorCode,
+  type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createStore, envSecrets, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
+import { createRequire } from "node:module";
 import type { LanguageModel } from "ai";
 
 const VERSION = "0.3.0";
@@ -107,6 +110,29 @@ function environment(name: string): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** 09 §4 — the .vendo/ files feeding the generation seat, read fail-soft (the
+    composition works without them; on non-Node runtimes they just stay unset). */
+function dotVendoFile(name: string): string | undefined {
+  try {
+    const nodeRequire = createRequire(import.meta.url);
+    const { readFileSync } = nodeRequire("node:fs") as typeof import("node:fs");
+    return readFileSync(`.vendo/${name}`, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function dotVendoTheme(): VendoTheme | undefined {
+  const raw = dotVendoFile("theme.json");
+  if (raw === undefined) return undefined;
+  try {
+    const parsed = vendoThemeSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function relativePath(url: URL): string | null {
   if (url.pathname === BASE_PATH) return "/";
   if (!url.pathname.startsWith(`${BASE_PATH}/`)) return null;
@@ -160,6 +186,7 @@ function createWireHandler(deps: {
   guard: VendoGuard;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  onRequestOrigin?: (origin: string) => void;
 }): (request: Request) => Promise<Response> {
   const context = async (request: Request, venue: RunContext["venue"]): Promise<RunContext> => {
     const resolved = await deps.principal(request);
@@ -185,6 +212,7 @@ function createWireHandler(deps: {
   return async (request) => {
     try {
       const url = new URL(request.url);
+      deps.onRequestOrigin?.(url.origin);
       const path = relativePath(url);
       if (path === null) throw new VendoError("not-found", "unknown Vendo route");
       if (jsonMutationRequired(request, path) && !isJsonRequest(request)) {
@@ -414,19 +442,27 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.policy === undefined ? {} : { policy: config.policy }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
-  const actions = createActions({
+  // createActions reads baseUrl from this object at execution time; when
+  // VENDO_BASE_URL is unset, the handler fills it in from the first request's
+  // origin so route bindings execute same-origin with zero configuration.
+  const actionsConfig = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
     ...(config.actAs === undefined ? {} : { actAs: config.actAs }),
     ...(environment("VENDO_BASE_URL") === undefined ? {} : { baseUrl: environment("VENDO_BASE_URL") }),
-  });
+  };
+  const actions = createActions(actionsConfig);
   const boundTools = guard.bind(actions);
+  const theme = dotVendoTheme();
+  const designRules = dotVendoFile("design-rules.md");
   const apps = createApps({
     store,
     guard,
     tools: boundTools,
     model: config.model,
     catalog: [],
+    ...(theme === undefined ? {} : { theme }),
+    ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
     ...(config.sandbox === undefined ? {} : { sandbox: config.sandbox }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
@@ -452,6 +488,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     apps,
     automations,
+    onRequestOrigin: (origin) => {
+      // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
+      // → the wire's own origin, learned from the first request and then fixed.
+      actionsConfig.baseUrl ??= origin;
+    },
   });
 
   return {

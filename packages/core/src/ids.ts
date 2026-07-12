@@ -44,3 +44,18 @@ export const isoDateTimeSchema = z.string().datetime() satisfies z.ZodType<IsoDa
 
 /** 01-core §1 */
 export const jsonSchemaSchema = z.record(z.unknown()) satisfies z.ZodType<JsonSchema>;
+
+/**
+ * Composite record-key convention for per-subject rows behind `StoreAdapter.records()`
+ * (threads: `<subject>:<threadId>`). The subject segment is escaped so the split on
+ * the first `:` is unambiguous for any subject (OIDC subs like `urn:...`/`auth0|x`),
+ * and the escaping is SQL-mirrorable: replace(replace(col,'%','%25'),':','%3A').
+ */
+export function encodeKeySegment(value: string): string {
+  return value.replaceAll("%", "%25").replaceAll(":", "%3A");
+}
+
+/** Inverse of {@link encodeKeySegment}. */
+export function decodeKeySegment(value: string): string {
+  return value.replaceAll("%3A", ":").replaceAll("%25", "%");
+}

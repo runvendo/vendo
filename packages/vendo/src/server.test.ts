@@ -254,3 +254,64 @@ describe("09 §2 composition", () => {
     expect(apps).toEqual([]);
   });
 });
+
+describe("09 §3 conversational turn against the real composed store", () => {
+  it("streams a turn, persists the thread through the routed vendo_threads table, and reads it back", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-turn-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "t1" },
+            { type: "text-delta", id: "t1", delta: "All done." },
+            { type: "text-end", id: "t1" },
+            {
+              type: "finish",
+              usage: {
+                inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 0, text: 0, reasoning: 0 },
+              },
+              finishReason: { unified: "stop", raw: undefined },
+            },
+          ],
+        }),
+      }),
+    });
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+    });
+
+    const turn = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_round_trip",
+      message: { id: "m1", role: "user", parts: [{ type: "text", text: "Say done." }] },
+    }));
+    expect(turn.status).toBe(200);
+    const raw = await turn.text();
+    expect(raw).toContain("All done.");
+    expect(raw.trimEnd().endsWith("data: [DONE]")).toBe(true);
+
+    // The read-back is the regression: the routed table stores {subject, messages}
+    // under the composite <subject>:<threadId> key; the agent must reconstruct
+    // the thread from the record envelope (this 404ed when it expected its own
+    // full shape inside data).
+    const fetched = await vendo.handler(request("GET", "/threads/thr_round_trip"));
+    expect(fetched.status).toBe(200);
+    const thread = await fetched.json() as { id: string; subject: string; messages: Array<{ role: string }> };
+    expect(thread.id).toBe("thr_round_trip");
+    expect(thread.subject).toBe(principal.subject);
+    expect(thread.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+
+    const listed = await vendo.handler(request("GET", "/threads"));
+    const summaries = await listed.json() as Array<{ id: string; title: string }>;
+    expect(summaries).toEqual([expect.objectContaining({ id: "thr_round_trip", title: "Say done." })]);
+
+    const rows = await store.records("vendo_threads").list({ refs: { subject: principal.subject } });
+    expect(rows.records).toHaveLength(1);
+    expect(rows.records[0]?.id).toBe(`${principal.subject}:thr_round_trip`);
+  });
+});

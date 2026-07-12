@@ -16,7 +16,7 @@ export default function VendoTabPage() {
       }}
     >
       <VendoRoot>
-        <VendoThread threadId="maple-demo" />
+        <VendoThread threadId="thr_maple_demo" />
         <VendoStage />
       </VendoRoot>
     </div>

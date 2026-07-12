@@ -1,4 +1,6 @@
 import {
+  decodeKeySegment,
+  encodeKeySegment,
   type AppDocument,
   type ApprovalRequest,
   type AuditEvent,
@@ -126,13 +128,28 @@ function auditRecord(event: AuditEvent): VendoRecord {
 function threadRecord(row: ThreadRow): VendoRecord {
   const data: ThreadData = { subject: row.subject, messages: row.messages };
   return {
-    id: row.id,
+    id: `${encodeKeySegment(row.subject)}:${row.id}`,
     data,
     refs: { subject: row.subject },
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
+
+/** The composite record key for a per-subject thread row: `<subject>:<threadId>`
+    with core's key-segment escaping, mirrored in SQL by THREAD_ID_EXPRESSION. */
+function parseThreadRecordKey(id: string): { subject: string; threadId: string } {
+  const separator = id.indexOf(":");
+  if (separator <= 0 || separator === id.length - 1) {
+    invalid("thread record id must be <subject>:<threadId>");
+  }
+  return {
+    subject: decodeKeySegment(id.slice(0, separator)),
+    threadId: id.slice(separator + 1),
+  };
+}
+
+const THREAD_ID_EXPRESSION = "(replace(replace(subject, '%', '%25'), ':', '%3A') || ':' || id)";
 
 function runRecord(row: RunRow): VendoRecord {
   const { id, ...data } = row;
@@ -341,26 +358,31 @@ function configFor(store: VendoStore, db: Db, collection: ReservedCollection): R
       return {
         table: collection,
         select: "SELECT * FROM vendo_threads",
+        idExpression: THREAD_ID_EXPRESSION,
         cursorColumn: "created_at",
         refs: { subject: "subject" },
         fromDb: (row) => threadRecord(threadFromRow(row)),
         overlayRecords: () => [...overlay.threads.values()].map((row) => threadRecord(snapshot(row))),
         async put(record) {
-          const data = parseThreadData(record.data, record.id);
+          const { subject, threadId } = parseThreadRecordKey(record.id);
+          const data = parseThreadData(record.data, threadId);
+          if (data.subject !== subject) {
+            invalid("thread record subject must match the record key");
+          }
           const now = new Date().toISOString();
           let row: ThreadRow;
-          if (isEphemeralSubject(store, data.subject)) {
+          if (isEphemeralSubject(store, subject)) {
             const prior = overlay.threads.get(record.id);
             row = {
-              id: record.id,
-              subject: data.subject,
+              id: threadId,
+              subject,
               messages: data.messages,
               createdAt: prior?.createdAt ?? now,
               updatedAt: now,
             };
             overlay.threads.set(record.id, snapshot(row));
           } else {
-            row = await putThreadRow(db, { id: record.id, ...data }, now);
+            row = await putThreadRow(db, { id: threadId, ...data }, now);
           }
           return threadRecord(row);
         },
