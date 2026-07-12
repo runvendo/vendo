@@ -2,11 +2,13 @@ import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  manifestThemeSchema,
-  toolsManifestSchema,
-  type ManifestTool,
-  type ToolsManifest,
+  vendoThemeSchema,
 } from "@vendoai/core";
+import {
+  toolsFileSchema,
+  type ExtractedTool,
+  type ToolsFile,
+} from "@vendoai/actions";
 import type { ZodError } from "zod";
 
 export type StructuralCheckId =
@@ -85,7 +87,6 @@ const CHECK_ORDER: StructuralCheckId[] = [
   "tools.fail-closed",
 ];
 
-const NEXT_CONFIG_FILES = ["next.config.ts", "next.config.mjs", "next.config.js"] as const;
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const DESTRUCTIVE_NAME = /(^|_)(delete|remove|destroy|cancel|close|reset|revoke|purge|wipe)(_|$)/;
 
@@ -139,16 +140,7 @@ async function findAppRouter(repoDir: string): Promise<AppRouterInfo | null> {
 }
 
 function routeRel(info: AppRouterInfo): string {
-  return path.posix.join(info.appDirRel, "api/vendo/[...path]", info.ts ? "route.ts" : "route.js");
-}
-
-function rootRel(info: AppRouterInfo): string {
-  return path.posix.join(info.appDirRel, info.ts ? "vendo-root.tsx" : "vendo-root.jsx");
-}
-
-function instrumentationRel(info: AppRouterInfo): string {
-  const dir = info.appDirRel === "app" ? "." : "src";
-  return path.posix.join(dir, info.ts ? "instrumentation.ts" : "instrumentation.js");
+  return path.posix.join(info.appDirRel, "api/vendo/[...vendo]", info.ts ? "route.ts" : "route.js");
 }
 
 function commandPassed(snapshot: StructuralCommandSnapshot): boolean {
@@ -177,16 +169,16 @@ async function readText(repoDir: string, rel: string): Promise<string | null> {
 async function defaultExpectedFiles(repoDir: string): Promise<{ files: string[]; app: AppRouterInfo | null }> {
   const app = await findAppRouter(repoDir);
   const files = [
-    ".vendo/README.md",
-    ".vendo/theme.json",
     ".vendo/tools.json",
-    ".env.example",
-    "public/vendo/react-runtime.js",
-    "public/vendo/components-sandbox.js",
+    ".vendo/overrides.json",
+    ".vendo/policy.json",
+    ".vendo/brief.md",
+    ".vendo/theme.json",
+    ".vendo/data/.gitignore",
   ];
 
   if (app) {
-    files.push(routeRel(app), rootRel(app), instrumentationRel(app));
+    files.push(routeRel(app), app.layoutRel);
   }
 
   return { files, app };
@@ -213,26 +205,18 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
     if (!await exists(path.join(ctx.repoDir, rel))) missing.push(rel);
   }
 
-  if (!ctx.expectedFiles && !await hasNextConfig(ctx.repoDir)) {
-    missing.push(NEXT_CONFIG_FILES.join(" or "));
-  }
-
   const wiringProblems: string[] = [];
   if (!ctx.expectedFiles) {
     if (!app) {
       wiringProblems.push("no App Router root layout found at app/layout.* or src/app/layout.*");
     } else {
       const layout = await readText(ctx.repoDir, app.layoutRel);
-      const root = await readText(ctx.repoDir, rootRel(app));
       const route = await readText(ctx.repoDir, routeRel(app));
-      if (layout && (!layout.includes("AppVendoRoot") || !layout.includes("<AppVendoRoot"))) {
-        wiringProblems.push(`${app.layoutRel} does not wrap children with AppVendoRoot`);
+      if (layout && (!layout.includes("@vendoai/vendo/react") || !layout.includes("<VendoRoot"))) {
+        wiringProblems.push(`${app.layoutRel} does not wrap children with @vendoai/vendo/react VendoRoot`);
       }
-      if (root && (!root.includes("VendoRoot") || !root.includes(".vendo/theme.json") || !root.includes(".vendo/tools.json"))) {
-        wiringProblems.push(`${rootRel(app)} does not import VendoRoot with generated theme/tools`);
-      }
-      if (route && !route.includes("createVendoHandler")) {
-        wiringProblems.push(`${routeRel(app)} does not call createVendoHandler()`);
+      if (route && (!route.includes("createVendo") || !route.includes("nextVendoHandler"))) {
+        wiringProblems.push(`${routeRel(app)} does not compose createVendo() with nextVendoHandler()`);
       }
     }
   }
@@ -241,7 +225,7 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
     return {
       id: "files.expected",
       pass: true,
-      detail: `found ${required.length} generated files plus Next config/provider wiring`,
+      detail: `found ${required.length} generated files plus v0 Next route/provider wiring`,
     };
   }
 
@@ -250,13 +234,6 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
     pass: false,
     detail: [...missing.map((rel) => `missing ${rel}`), ...wiringProblems].join("; "),
   };
-}
-
-async function hasNextConfig(repoDir: string): Promise<boolean> {
-  for (const rel of NEXT_CONFIG_FILES) {
-    if (await exists(path.join(repoDir, rel))) return true;
-  }
-  return false;
 }
 
 async function readJsonFile(repoDir: string, rel: string): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
@@ -284,10 +261,10 @@ function zodSummary(error: ZodError): string {
     .join("; ");
 }
 
-async function parseToolsManifest(repoDir: string): Promise<{ ok: true; manifest: ToolsManifest } | { ok: false; error: string }> {
+async function parseToolsManifest(repoDir: string): Promise<{ ok: true; manifest: ToolsFile } | { ok: false; error: string }> {
   const tools = await readJsonFile(repoDir, ".vendo/tools.json");
   if (!tools.ok) return { ok: false, error: tools.error };
-  const parsed = toolsManifestSchema.safeParse(tools.value);
+  const parsed = toolsFileSchema.safeParse(tools.value);
   if (!parsed.success) {
     return { ok: false, error: `.vendo/tools.json schema error: ${zodSummary(parsed.error)}` };
   }
@@ -300,7 +277,7 @@ async function checkConfigSchema(ctx: StructuralLayerContext): Promise<Structura
   if (!theme.ok) {
     failures.push(theme.error);
   } else {
-    const parsed = manifestThemeSchema.safeParse(theme.value);
+    const parsed = vendoThemeSchema.safeParse(theme.value);
     if (!parsed.success) failures.push(`.vendo/theme.json schema error: ${zodSummary(parsed.error)}`);
   }
 
@@ -391,10 +368,10 @@ async function checkIdempotency(ctx: StructuralLayerContext): Promise<Structural
   return { id: "init.idempotent", pass: false, detail: pieces.join("; ") };
 }
 
-function isUnsafeAutoAllowed(tool: ManifestTool): boolean {
-  const method = tool.binding.type === "http" ? tool.binding.method : "";
-  if (WRITE_METHODS.has(method) && !tool.annotations.mutating) return true;
-  if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && !tool.annotations.dangerous) return true;
+function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
+  const method = tool.binding.method;
+  if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
+  if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && tool.risk !== "destructive") return true;
   return false;
 }
 

@@ -3787,8 +3787,7 @@
     {
       "name": "deleteAdminLinksBan",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getAdminLinksCount",
@@ -3863,8 +3862,7 @@
     {
       "name": "deleteAdminPartnersTrusted",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getAdminPayouts",
@@ -3904,8 +3902,7 @@
     {
       "name": "deleteAdminProgramsProgramId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getAdminProgramsSales",
@@ -4050,8 +4047,7 @@
     {
       "name": "deleteBountiesBountyId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getBountiesBountyIdSubmissions",
@@ -4121,8 +4117,7 @@
     {
       "name": "deleteCampaignsCampaignId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postCampaignsCampaignIdDuplicate",
@@ -4807,8 +4802,7 @@
     {
       "name": "deleteCustomersId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getCustomersIdActivity",
@@ -4853,8 +4847,7 @@
     {
       "name": "deleteDashboardsId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getDiscountCodes",
@@ -4869,8 +4862,7 @@
     {
       "name": "deleteDiscountCodesDiscountCodeId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getDocsGuidesGuide",
@@ -4900,8 +4892,7 @@
     {
       "name": "deleteDomainsDomain",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postDomainsDomainPrimary",
@@ -4971,8 +4962,7 @@
     {
       "name": "deleteE2eBountiesBountyId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "patchE2eEnrollments",
@@ -4992,8 +4982,7 @@
     {
       "name": "deleteE2eNotificationEmails",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postE2ePartnersPendingProgramApplication",
@@ -5033,8 +5022,7 @@
     {
       "name": "deleteEmailDomainsDomain",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getEmailDomainsDomainVerify",
@@ -5144,8 +5132,7 @@
     {
       "name": "deleteFoldersFolderId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getFoldersFolderIdDashboard",
@@ -5225,8 +5212,7 @@
     {
       "name": "deleteGroupsGroupIdOrSlug",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postGroupsGroupIdOrSlugDefault",
@@ -5251,8 +5237,7 @@
     {
       "name": "deleteGroupsGroupIdOrSlugDefaultLinksDefaultLinkId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postGroupsGroupIdOrSlugPartners",
@@ -5292,8 +5277,7 @@
     {
       "name": "deleteIntegrationsUninstall",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getIntercomCallback",
@@ -5338,8 +5322,7 @@
     {
       "name": "putLinksLinkId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchLinksLinkId",
@@ -5349,8 +5332,7 @@
     {
       "name": "deleteLinksLinkId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getLinksLinkIdDashboard",
@@ -5375,8 +5357,7 @@
     {
       "name": "deleteLinksBulk",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getLinksCount",
@@ -5421,8 +5402,7 @@
     {
       "name": "putLinksUpsert",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "getLogs",
@@ -5542,8 +5522,7 @@
     {
       "name": "deleteOauthAppsAppId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postOauthAuthorize",
@@ -5608,8 +5587,7 @@
     {
       "name": "deletePartnerProfileInvites",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postPartnerProfileInvitesAccept",
@@ -5669,8 +5647,7 @@
     {
       "name": "deletePartnerProfilePostbacksPostbackId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getPartnerProfilePostbacksPostbackIdEvents",
@@ -5790,8 +5767,7 @@
     {
       "name": "deletePartnerProfileProgramsProgramIdLinksLinkId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getPartnerProfileProgramsProgramIdReferrals",
@@ -5856,8 +5832,7 @@
     {
       "name": "deletePartnerProfileUsers",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getPartners",
@@ -5972,8 +5947,7 @@
     {
       "name": "putPartnersLinksUpsert",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "getPartnersPlatformsCallback",
@@ -6083,8 +6057,7 @@
     {
       "name": "putProjectsSlug",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchProjectsSlug",
@@ -6094,8 +6067,7 @@
     {
       "name": "deleteProjectsSlug",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getProjectsSlugDomains",
@@ -6120,8 +6092,7 @@
     {
       "name": "deleteProjectsSlugDomainsDomain",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getProjectsSlugDomainsDomainVerify",
@@ -6156,8 +6127,7 @@
     {
       "name": "putProjectsSlugLinksLinkId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchProjectsSlugLinksLinkId",
@@ -6167,8 +6137,7 @@
     {
       "name": "deleteProjectsSlugLinksLinkId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postProjectsSlugLinksBulk",
@@ -6183,8 +6152,7 @@
     {
       "name": "deleteProjectsSlugLinksBulk",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getProjectsSlugLinksCount",
@@ -6214,8 +6182,7 @@
     {
       "name": "putProjectsSlugTagsId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchProjectsSlugTagsId",
@@ -6225,8 +6192,7 @@
     {
       "name": "deleteProjectsSlugTagsId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getProviders",
@@ -6271,14 +6237,12 @@
     {
       "name": "putScimV20Directory",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteScimV20Directory",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "patchShopifyIntegrationCallback",
@@ -6363,8 +6327,7 @@
     {
       "name": "putTagsId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchTagsId",
@@ -6374,8 +6337,7 @@
     {
       "name": "deleteTagsId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getTagsCount",
@@ -6405,8 +6367,7 @@
     {
       "name": "deleteTokensId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postTokensEmbedReferrals",
@@ -6471,8 +6432,7 @@
     {
       "name": "putUser",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchUser",
@@ -6482,8 +6442,7 @@
     {
       "name": "deleteUser",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getUserNotificationPreferences",
@@ -6518,8 +6477,7 @@
     {
       "name": "deleteUserTokens",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getUtm",
@@ -6539,8 +6497,7 @@
     {
       "name": "deleteUtmId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postVeriffWebhook",
@@ -6570,8 +6527,7 @@
     {
       "name": "deleteWebhooksWebhookId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getWebhooksWebhookIdEvents",
@@ -6621,8 +6577,7 @@
     {
       "name": "putWorkspacesIdOrSlug",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchWorkspacesIdOrSlug",
@@ -6632,8 +6587,7 @@
     {
       "name": "deleteWorkspacesIdOrSlug",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postWorkspacesIdOrSlugBillingActivatePaidPlan",
@@ -6678,8 +6632,7 @@
     {
       "name": "deleteWorkspacesIdOrSlugBillingPaymentMethods",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postWorkspacesIdOrSlugBillingUpgrade",
@@ -6724,8 +6677,7 @@
     {
       "name": "putWorkspacesIdOrSlugImportRebrandly",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "getWorkspacesIdOrSlugImportShort",
@@ -6740,8 +6692,7 @@
     {
       "name": "putWorkspacesIdOrSlugImportShort",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "getWorkspacesIdOrSlugInvites",
@@ -6761,8 +6712,7 @@
     {
       "name": "deleteWorkspacesIdOrSlugInvites",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postWorkspacesIdOrSlugInvitesAccept",
@@ -6797,8 +6747,7 @@
     {
       "name": "deleteWorkspacesIdOrSlugSaml",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getWorkspacesIdOrSlugScim",
@@ -6813,8 +6762,7 @@
     {
       "name": "deleteWorkspacesIdOrSlugScim",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postWorkspacesIdOrSlugSitemapsImport",
@@ -6849,8 +6797,7 @@
     {
       "name": "deleteWorkspacesIdOrSlugUsers",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     }
   ],
   "components": []

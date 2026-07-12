@@ -6,7 +6,7 @@ import {
   type LocalPackRunner,
   type LocalVendoInstallSummary,
   type WorkspacePackage,
-} from "../../../packages/vendo-cli/src/local-pack.js";
+} from "./local-pack.js";
 import { resolveAppRoot } from "./app-root.js";
 import { normalizePostInjectionInstallCommand } from "./install-command.js";
 import type { ManifestEntry } from "./manifest.js";
@@ -23,12 +23,10 @@ export interface InjectCommandResult {
 
 export interface LocalVendoInjectResult extends LocalVendoInstallSummary {
   repoDir: string;
-  initArgs: string[];
 }
 
 export interface LocalVendoInjector {
   inject(repo: InjectRepo): Promise<LocalVendoInjectResult>;
-  initArgs(): string[];
 }
 
 export interface CreateLocalVendoInjectorOptions {
@@ -194,7 +192,7 @@ function installCommandSource(repo: InjectRepo, summary: LocalVendoInstallSummar
 
 async function tarballFileForPackage(vendorDir: string, name: string): Promise<string> {
   const entries = await readdir(vendorDir);
-  const prefix = name === "fluidkit" ? "fluidkit" : packageTarballPrefix(name);
+  const prefix = packageTarballPrefix(name);
   const tarballPattern = new RegExp(`^${escapeRegExp(prefix)}-\\d.*\\.tgz$`);
   const matches = entries.filter((entry) => tarballPattern.test(entry)).sort();
   if (matches.length !== 1) {
@@ -204,7 +202,7 @@ async function tarballFileForPackage(vendorDir: string, name: string): Promise<s
 }
 
 function tarballOverrideVersions(name: string, fileName: string): string[] {
-  const prefix = name === "fluidkit" ? "fluidkit" : packageTarballPrefix(name);
+  const prefix = packageTarballPrefix(name);
   const suffix = fileName.slice(prefix.length + 1, -".tgz".length);
   const version = suffix.match(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/)?.[0];
   if (!version) return [];
@@ -246,7 +244,7 @@ function mergePnpmWorkspaceYamlOverrides(source: string, overrides: Record<strin
 
 async function localPnpmOverrideMap(summary: LocalVendoInstallSummary): Promise<Record<string, string>> {
   const overrides: Record<string, string> = {};
-  for (const name of [...summary.packages, "fluidkit"]) {
+  for (const name of summary.packages) {
     const fileName = await tarballFileForPackage(summary.vendorDir, name);
     const spec = fileSpecRelativeTo(summary.installDir ?? summary.vendorDir, summary.vendorDir, fileName);
     overrides[name] = spec;
@@ -334,10 +332,6 @@ async function assertLocalVendoResolution(repoDir: string, summary: LocalVendoIn
   }
 }
 
-export function localVendoInitArgs(workspaceRoot: string): string[] {
-  return ["--local", path.resolve(workspaceRoot)];
-}
-
 export function createLocalVendoInjector(options: CreateLocalVendoInjectorOptions = {}): LocalVendoInjector {
   const context = options.context ?? createRunContext();
   const workspaceRoot = path.resolve(options.workspaceRoot ?? process.cwd());
@@ -369,9 +363,6 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
   };
 
   return {
-    initArgs(): string[] {
-      return localVendoInitArgs(workspaceRoot);
-    },
     async inject(repo: InjectRepo): Promise<LocalVendoInjectResult> {
       const checkoutDir = context.repoDir(repo.name);
       const repoDir = resolveAppRoot(repo, checkoutDir);
@@ -411,7 +402,6 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
       return {
         ...installSummary,
         repoDir,
-        initArgs: localVendoInitArgs(workspaceRoot),
       };
     },
   };

@@ -13,7 +13,7 @@ const skateshopInstructions = [
 ].join("\n");
 
 const skateshopTools = {
-  version: 1,
+  format: "vendo/tools@1",
   tools: [
     {
       name: "list_skateshop_catalog_products",
@@ -28,8 +28,8 @@ const skateshopTools = {
         },
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/corpus/products" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/corpus/products", argsIn: "query" },
     },
     {
       name: "search_skateshop_products",
@@ -44,8 +44,8 @@ const skateshopTools = {
         },
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/corpus/products" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/corpus/products", argsIn: "query" },
     },
     {
       name: "add_skateshop_item_to_cart",
@@ -66,8 +66,8 @@ const skateshopTools = {
         required: ["body"],
         additionalProperties: false,
       },
-      annotations: { mutating: true, dangerous: false },
-      binding: { type: "http", method: "POST", path: "/api/corpus/cart" },
+      risk: "write",
+      binding: { kind: "route", method: "POST", path: "/api/corpus/cart", argsIn: "body" },
     },
     {
       name: "place_skateshop_order",
@@ -90,8 +90,8 @@ const skateshopTools = {
         required: ["body"],
         additionalProperties: false,
       },
-      annotations: { mutating: true, dangerous: false },
-      binding: { type: "http", method: "POST", path: "/api/corpus/orders" },
+      risk: "write",
+      binding: { kind: "route", method: "POST", path: "/api/corpus/orders", argsIn: "body" },
     },
     {
       name: "get_skateshop_checkout_defaults",
@@ -102,11 +102,10 @@ const skateshopTools = {
         properties: {},
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/corpus/checkout-defaults" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/corpus/checkout-defaults", argsIn: "query" },
     },
   ],
-  events: [],
 };
 
 const skateshopCorpusLibSource = `import { db } from "@/db"

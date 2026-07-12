@@ -779,8 +779,7 @@
     {
       "name": "deleteAvailabilityCalendar",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getAvatarUuid",
@@ -805,8 +804,7 @@
     {
       "name": "deleteCancel",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postCronBookingReminder",

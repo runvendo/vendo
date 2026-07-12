@@ -44,7 +44,7 @@ describe("repo expectations format", () => {
       ],
       annotations: [
         { name: "listInvoices", mutating: false, dangerous: false },
-        { name: "createInvoice", mutating: true, dangerous: false, idempotent: false },
+        { name: "createInvoice", mutating: true, dangerous: false },
       ],
       components: [
         {

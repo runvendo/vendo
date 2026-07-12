@@ -1234,8 +1234,7 @@
     {
       "name": "putAuthAll",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchAuthAll",
@@ -1245,8 +1244,7 @@
     {
       "name": "deleteAuthAll",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postAutomationJobsExecute",
@@ -1286,8 +1284,7 @@
     {
       "name": "deleteChatsChatId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postClean",
@@ -2112,14 +2109,12 @@
     {
       "name": "putV1RulesId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV1RulesId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV1StatsByPeriod",

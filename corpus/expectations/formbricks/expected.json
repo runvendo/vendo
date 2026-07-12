@@ -785,8 +785,7 @@
     {
       "name": "putEnvoyAuthPath",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchEnvoyAuthPath",
@@ -796,8 +795,7 @@
     {
       "name": "deleteEnvoyAuthPath",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getGoogleSheet",
@@ -827,8 +825,7 @@
     {
       "name": "putTraefikAuthPath",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "patchTraefikAuthPath",
@@ -838,8 +835,7 @@
     {
       "name": "deleteTraefikAuthPath",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postUnifyFeedbackSourcesCsvImport",
@@ -869,8 +865,7 @@
     {
       "name": "putV1ClientWorkspaceIdResponsesResponseId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "postV1ClientWorkspaceIdStorage",
@@ -940,14 +935,12 @@
     {
       "name": "putV1ManagementActionClassesActionClassId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV1ManagementActionClassesActionClassId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV1ManagementContactAttributeKeys",
@@ -967,14 +960,12 @@
     {
       "name": "putV1ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV1ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV1ManagementContactAttributes",
@@ -994,8 +985,7 @@
     {
       "name": "deleteV1ManagementContactsContactId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV1ManagementMe",
@@ -1020,14 +1010,12 @@
     {
       "name": "putV1ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV1ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postV1ManagementStorage",
@@ -1052,14 +1040,12 @@
     {
       "name": "putV1ManagementSurveysSurveyId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV1ManagementSurveysSurveyId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV1ManagementSurveysSurveyIdSingleUseIds",
@@ -1084,8 +1070,7 @@
     {
       "name": "deleteV1WebhooksWebhookId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postV2ClientWorkspaceIdDisplays",
@@ -1105,8 +1090,7 @@
     {
       "name": "putV2ClientWorkspaceIdResponsesResponseId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "postV2ClientWorkspaceIdStorage",
@@ -1141,14 +1125,12 @@
     {
       "name": "putV2ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV2ManagementContactAttributeKeysContactAttributeKeyId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postV2ManagementContacts",
@@ -1158,8 +1140,7 @@
     {
       "name": "putV2ManagementContactsBulk",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "getV2ManagementResponses",
@@ -1179,14 +1160,12 @@
     {
       "name": "putV2ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV2ManagementResponsesResponseId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV2ManagementSurveysSurveyIdContactLinksContactsContactId",
@@ -1216,14 +1195,12 @@
     {
       "name": "putV2ManagementWebhooksWebhookId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV2ManagementWebhooksWebhookId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV2Me",
@@ -1248,14 +1225,12 @@
     {
       "name": "putV2OrganizationsOrganizationIdTeamsTeamId",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV2OrganizationsOrganizationIdTeamsTeamId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV2OrganizationsOrganizationIdUsers",
@@ -1285,14 +1260,12 @@
     {
       "name": "putV2OrganizationsOrganizationIdWorkspaceTeams",
       "mutating": true,
-      "dangerous": false,
-      "idempotent": true
+      "dangerous": false
     },
     {
       "name": "deleteV2OrganizationsOrganizationIdWorkspaceTeams",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "getV2Roles",
@@ -1342,8 +1315,7 @@
     {
       "name": "deleteV3SurveysSurveyId",
       "mutating": true,
-      "dangerous": true,
-      "idempotent": true
+      "dangerous": true
     },
     {
       "name": "postV3SurveysGenerate",

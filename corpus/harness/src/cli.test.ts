@@ -124,16 +124,26 @@ describe("runCli run", () => {
       createInjector: (options) => {
         injectorOptions.push(options);
         return {
-          initArgs: () => ["--local", "/workspace/vendo"],
           async inject(entry) {
             events.push(`inject:${entry.name}`);
             return {
               repoDir: context.repoDir(entry.name),
               packageManager: "pnpm",
-              packages: ["@vendoai/core", "@vendoai/next", "@vendoai/shell"],
+              packages: [
+                "@vendoai/actions",
+                "@vendoai/agent",
+                "@vendoai/apps",
+                "@vendoai/automations",
+                "@vendoai/core",
+                "@vendoai/guard",
+                "@vendoai/store",
+                "@vendoai/telemetry",
+                "@vendoai/ui",
+                "@vendoai/vendo",
+                "vendoai",
+              ],
               vendorDir: path.join(context.repoDir(entry.name), "vendor"),
               installCommand: "pnpm install",
-              initArgs: ["--local", "/workspace/vendo"],
             };
           },
         };
@@ -185,8 +195,6 @@ describe("runCli run", () => {
       "layer1:repo-one",
     ]);
     expect(initOptions).toHaveLength(2);
-    expect(initOptions.every((options) => options.skipLlm === false)).toBe(true);
-    expect(initOptions.every((options) => options.localVendoDir === "/workspace/vendo")).toBe(true);
     expect(initOptions.map((options) => options.artifactPrefix)).toEqual(["init.first", "init.second"]);
     expect(injectorOptions).toEqual([{ context, workspaceRoot }]);
     expect(structuralContexts[0]).toMatchObject({
@@ -244,7 +252,6 @@ describe("runCli run", () => {
         };
       },
       createInjector: () => ({
-        initArgs: () => ["--local", "/workspace/vendo"],
         async inject(entry) {
           events.push(`inject:${entry.name}:${entry.appDir}`);
           return {
@@ -253,7 +260,6 @@ describe("runCli run", () => {
             packages: [],
             vendorDir: path.join(appRoot, "vendor"),
             installCommand: "pnpm install",
-            initArgs: ["--local", "/workspace/vendo"],
           };
         },
       }),
@@ -306,11 +312,11 @@ describe("runCli run", () => {
     expect(scoredContexts[0]?.repoDir).toBe(appRoot);
   });
 
-  it("uses --skip-llm when requested and can print JSON", async () => {
+  it("can print JSON while using the v0 non-interactive init invocation", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repo = manifestEntry("repo-json");
-    const skipLlmValues: Array<boolean | undefined> = [];
+    let initCount = 0;
     const stdout: string[] = [];
     const deps: CorpusCliDependencies = {
       now: () => new Date("2026-07-05T12:00:00.000Z"),
@@ -328,7 +334,6 @@ describe("runCli run", () => {
         logs: { stdout: "bootstrap.stdout.log", stderr: "bootstrap.stderr.log" },
       }),
       createInjector: () => ({
-        initArgs: () => ["--local", "/workspace/vendo"],
         async inject(entry) {
           return {
             repoDir: context.repoDir(entry.name),
@@ -336,17 +341,16 @@ describe("runCli run", () => {
             packages: [],
             vendorDir: path.join(context.repoDir(entry.name), "vendor"),
             installCommand: "pnpm install",
-            initArgs: ["--local", "/workspace/vendo"],
           };
         },
       }),
       commandRunner: async () => ({ code: 0, signal: null, stdout: "ok", stderr: "" }),
       runInit: async (entry, options) => {
-        skipLlmValues.push(options?.skipLlm);
+        initCount += 1;
         const logsDir = context.logsDir(entry.name);
         await mkdir(logsDir, { recursive: true });
-        const log = path.join(logsDir, `init-${skipLlmValues.length}.log`);
-        const diff = path.join(logsDir, `init-${skipLlmValues.length}.diff`);
+        const log = path.join(logsDir, `init-${initCount}.log`);
+        const diff = path.join(logsDir, `init-${initCount}.diff`);
         await writeFile(log, "ok");
         await writeFile(diff, "");
         return makeInitResult(context.repoDir(entry.name), log, diff);
@@ -354,10 +358,10 @@ describe("runCli run", () => {
       runStructuralLayer: async () => [{ id: "init.exit", pass: true, detail: "ok" }],
     };
 
-    const exitCode = await runCli(["run", "repo-json", "--layer", "1", "--skip-llm", "--json"], deps);
+    const exitCode = await runCli(["run", "repo-json", "--layer", "1", "--json"], deps);
 
     expect(exitCode).toBe(0);
-    expect(skipLlmValues).toEqual([true, true]);
+    expect(initCount).toBe(2);
     expect(JSON.parse(stdout.join("\n"))).toMatchObject({
       strict: false,
       repos: [{ repo: "repo-json", layers: [{ status: "pass" }] }],
@@ -395,7 +399,6 @@ describe("runCli run", () => {
         };
       },
       createInjector: () => ({
-        initArgs: () => ["--local", "/workspace/vendo"],
         async inject(entry) {
           events.push(`inject:${entry.name}`);
           return {
@@ -404,7 +407,6 @@ describe("runCli run", () => {
             packages: [],
             vendorDir: path.join(context.repoDir(entry.name), "vendor"),
             installCommand: "pnpm install",
-            initArgs: ["--local", "/workspace/vendo"],
           };
         },
       }),
@@ -510,7 +512,6 @@ describe("runCli run", () => {
         };
       },
       createInjector: () => ({
-        initArgs: () => ["--local", "/workspace/vendo"],
         async inject(entry) {
           events.push(`inject:${entry.name}`);
           return {
@@ -519,7 +520,6 @@ describe("runCli run", () => {
             packages: [],
             vendorDir: path.join(context.repoDir(entry.name), "vendor"),
             installCommand: "pnpm install",
-            initArgs: ["--local", "/workspace/vendo"],
           };
         },
       }),
@@ -633,7 +633,6 @@ describe("runCli run", () => {
           };
         },
         createInjector: () => ({
-          initArgs: () => ["--local", "/workspace/vendo"],
           async inject(entry) {
             events.push(`inject:${entry.name}`);
             return {
@@ -642,7 +641,6 @@ describe("runCli run", () => {
               packages: [],
               vendorDir: path.join(context.repoDir(entry.name), "vendor"),
               installCommand: "pnpm install",
-              initArgs: ["--local", "/workspace/vendo"],
             };
           },
         }),
@@ -720,7 +718,6 @@ describe("runCli boot", () => {
         };
       },
       createInjector: () => ({
-        initArgs: () => ["--local", "/workspace/vendo"],
         async inject(entry) {
           events.push(`inject:${entry.name}`);
           return {
@@ -729,12 +726,11 @@ describe("runCli boot", () => {
             packages: [],
             vendorDir: path.join(context.repoDir(entry.name), "vendor"),
             installCommand: "pnpm install",
-            initArgs: ["--local", "/workspace/vendo"],
           };
         },
       }),
       runInit: async (entry, options) => {
-        events.push(`init:${entry.name}:${options?.skipLlm}`);
+        events.push(`init:${entry.name}`);
         return makeInitResult(context.repoDir(entry.name), "init.log", "init.diff");
       },
       bootRepo: async (entry, options) => {
@@ -750,7 +746,7 @@ describe("runCli boot", () => {
       "clone:repo-boot",
       "bootstrap:repo-boot",
       "inject:repo-boot",
-      "init:repo-boot:false",
+      "init:repo-boot",
       "boot:repo-boot",
       "wait",
       "boot:teardown",

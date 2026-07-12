@@ -66,8 +66,8 @@ const usage = `Usage:
   pnpm corpus --help
   pnpm corpus validate
   pnpm corpus list
-  pnpm corpus run [repo...] --layer <1|2|3> [--json] [--strict] [--skip-llm]
-  pnpm corpus boot <repo> [--skip-llm] [--timeout-ms <ms>]
+  pnpm corpus run [repo...] --layer <1|2|3> [--json] [--strict]
+  pnpm corpus boot <repo> [--timeout-ms <ms>]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
@@ -128,12 +128,10 @@ interface RunCommandOptions {
   layer: 1 | 2 | 3;
   json: boolean;
   strict: boolean;
-  skipLlm: boolean;
 }
 
 interface BootCommandOptions {
   repoName: string;
-  skipLlm: boolean;
   timeoutMs?: number;
 }
 
@@ -175,7 +173,6 @@ function parseRunArgs(args: readonly string[]): RunCommandOptions {
   let layer: 1 | 2 | 3 = 1;
   let json = false;
   let strict = false;
-  let skipLlm = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -189,8 +186,6 @@ function parseRunArgs(args: readonly string[]): RunCommandOptions {
       json = true;
     } else if (arg === "--strict") {
       strict = true;
-    } else if (arg === "--skip-llm") {
-      skipLlm = true;
     } else if (arg === "--help" || arg === "-h") {
       throw new Error(usage);
     } else if (arg.startsWith("-")) {
@@ -200,7 +195,7 @@ function parseRunArgs(args: readonly string[]): RunCommandOptions {
     }
   }
 
-  return { repoNames, layer, json, strict, skipLlm };
+  return { repoNames, layer, json, strict };
 }
 
 function parsePositiveInt(value: string | undefined, label: string): number {
@@ -213,15 +208,12 @@ function parsePositiveInt(value: string | undefined, label: string): number {
 
 function parseBootArgs(args: readonly string[]): BootCommandOptions {
   const repoNames: string[] = [];
-  let skipLlm = false;
   let timeoutMs: number | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (!arg) continue;
-    if (arg === "--skip-llm") {
-      skipLlm = true;
-    } else if (arg === "--timeout-ms") {
+    if (arg === "--timeout-ms") {
       timeoutMs = parsePositiveInt(args[index + 1], "--timeout-ms");
       index += 1;
     } else if (arg.startsWith("--timeout-ms=")) {
@@ -239,7 +231,7 @@ function parseBootArgs(args: readonly string[]): BootCommandOptions {
     throw new Error(`boot expects exactly one repo name; got ${repoNames.length}`);
   }
 
-  return { repoName: repoNames[0] ?? "", skipLlm, timeoutMs };
+  return { repoName: repoNames[0] ?? "", timeoutMs };
 }
 
 function selectedRepos(manifest: CorpusManifest, names: readonly string[]): ManifestEntry[] {
@@ -274,15 +266,6 @@ function artifactPaths(artifacts: InitStepArtifacts): string[] {
 function bootHandleLogPaths(handle: BootHandle): string[] {
   return [handle.logPaths.server, handle.logPaths.seed, handle.logPaths.database]
     .filter((value): value is string => Boolean(value));
-}
-
-function localVendoDirFromInitArgs(args: readonly string[]): string | undefined {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--local") return args[index + 1];
-    if (arg?.startsWith("--local=")) return arg.slice("--local=".length);
-  }
-  return undefined;
 }
 
 function failureLayer(
@@ -466,7 +449,6 @@ async function runRepoThroughLayerOne(
     logPaths.push(bootstrap.logs.stdout, bootstrap.logs.stderr);
 
     const injectResult = await injector.inject(repo);
-    const localVendoDir = localVendoDirFromInitArgs(injectResult.initArgs.length > 0 ? injectResult.initArgs : injector.initArgs());
     const typecheckCommand = repo.bootstrap.typecheckCommand ?? await detectTypecheckCommand(appRoot);
     const buildCommand = repo.bootstrap.buildCommand;
     const baselineCommands = createLoggedCommandRunner(context.logsDir(repo.name), "baseline", deps.commandRunner);
@@ -482,8 +464,6 @@ async function runRepoThroughLayerOne(
     const initOptions: RunVendoInitStepOptions = {
       context,
       env: deps.env,
-      localVendoDir,
-      skipLlm: options.skipLlm ? true : false,
     };
     const firstInit = await deps.runInit(repo, { ...initOptions, artifactPrefix: "init.first" });
     logPaths.push(...artifactPaths(firstInit.artifacts));
@@ -627,12 +607,9 @@ async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): 
   await deps.bootstrapRepo(repo, { context, env: deps.env });
 
   const injectResult = await injector.inject(repo);
-  const localVendoDir = localVendoDirFromInitArgs(injectResult.initArgs.length > 0 ? injectResult.initArgs : injector.initArgs());
   const init = await deps.runInit(repo, {
     context,
     env: deps.env,
-    localVendoDir,
-    skipLlm: options.skipLlm ? true : false,
     artifactPrefix: "boot.init",
   });
   if (init.exitCode !== 0) {
