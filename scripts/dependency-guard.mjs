@@ -20,6 +20,10 @@
  *
  *   3. HONEST MANIFESTS — every @vendoai/* import in a package's src must be
  *      declared in its package.json (dependencies or peerDependencies).
+ *      devDependencies deliberately do NOT count, while test files ARE scanned:
+ *      a test-only @vendoai/* import must still be a declared, layer-legal
+ *      dependency — devDeps are invisible to consumers and would let layering
+ *      violations hide in tests. (Non-@vendoai devDeps like vitest are fine.)
  *
  * Runs in `pnpm lint` at the root. No dependencies; Node >= 20.
  *
@@ -95,7 +99,7 @@ for (const dir of dirs) {
   }
 
   const isAllowed = (name) =>
-    allowed === "*" ? name in LAYERS && name !== pkg.name : allowed.includes(name);
+    allowed === "*" ? Object.hasOwn(LAYERS, name) && name !== pkg.name : allowed.includes(name);
 
   // 1 + 2 on the manifest
   const declared = {
@@ -103,13 +107,25 @@ for (const dir of dirs) {
     ...pkg.peerDependencies,
     ...pkg.optionalDependencies,
   };
-  for (const dep of Object.keys(declared)) {
+  for (const [dep, version] of Object.entries(declared)) {
     if (RETIRED.includes(dep)) {
       errors.push(`${pkg.name}: depends on retired quarry package "${dep}".`);
-    } else if ((dep.startsWith("@vendoai/") || dep === "vendoai") && !isAllowed(dep)) {
-      errors.push(
-        `${pkg.name}: dependency "${dep}" violates the layering rule (allowed: ${allowed === "*" ? "any block" : allowed.join(", ") || "none"}).`,
-      );
+    } else if (dep.startsWith("@vendoai/") || dep === "vendoai") {
+      if (!isAllowed(dep)) {
+        errors.push(
+          `${pkg.name}: dependency "${dep}" violates the layering rule (allowed: ${allowed === "*" ? "any block" : allowed.join(", ") || "none"}).`,
+        );
+      } else if (!String(version).startsWith("workspace:")) {
+        // A registry range like "^0.2.0" would silently resolve to the OLD npm
+        // publish instead of the workspace package — the quarry through the
+        // back door. Every @vendoai/* edge must use the workspace: protocol
+        // (pnpm rewrites it to a real range on publish). No peer exemption:
+        // no @vendoai/* peer exists today, and a future one should be a
+        // conscious edit here, not a silent pass.
+        errors.push(
+          `${pkg.name}: dependency "${dep}" must use the workspace: protocol (got "${version}") — a registry range resolves to pre-v0 npm publishes.`,
+        );
+      }
     }
   }
 
