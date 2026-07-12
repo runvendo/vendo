@@ -1,0 +1,22 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "paths": {
+      "@vendoai/ui": ["../src/index.ts"],
+      "@vendoai/ui/chrome": ["../src/chrome/index.ts"],
+      "@vendoai/ui/tree": ["../src/tree/index.ts"],
+      "@vendoai/ui/voice": ["../src/voice/index.ts"]
+    },
+    "rootDir": "..",
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"],
+  "exclude": ["./harness/vite.config.ts"]
+}

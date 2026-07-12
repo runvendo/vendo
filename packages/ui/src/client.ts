@@ -1,0 +1,102 @@
+/**
+ * createVendoClient — typed fetch/SSE bindings for every wire route (09 §3).
+ * Exposed for non-React consumers; every hook rides this.
+ *
+ * The interface is the coordination artifact between lanes; the
+ * implementation lives in client-impl.ts (lane A).
+ */
+import type {
+  AppDocument,
+  AppId,
+  ApprovalDecision,
+  ApprovalId,
+  ApprovalRequest,
+  AuditEvent,
+  GrantId,
+  Json,
+  PermissionGrant,
+  RunId,
+  ThreadId,
+  ToolOutcome,
+} from "@vendoai/core";
+import type { UIMessage } from "ai";
+import type {
+  AutomationEntry,
+  EditResult,
+  EnableResult,
+  OpenSurface,
+  RunPlan,
+  RunRecord,
+  RunStatus,
+  Thread,
+  ThreadSummary,
+  VendoStatus,
+  VersionEntry,
+} from "./wire-types.js";
+
+export interface VendoClientConfig {
+  /** Wire mount point. Default "/api/vendo". */
+  baseUrl?: string;
+  headers?: Record<string, string>;
+}
+
+export interface VendoClient {
+  readonly baseUrl: string;
+  readonly headers: Record<string, string>;
+
+  threads: {
+    /** POST /threads — one conversational turn; the ai-SDK UI message stream (SSE) Response. */
+    stream(input: { threadId?: ThreadId; message: UIMessage }): Promise<Response>;
+    list(): Promise<ThreadSummary[]>;
+    get(id: ThreadId): Promise<Thread>;
+    delete(id: ThreadId): Promise<void>;
+  };
+
+  approvals: {
+    pending(): Promise<ApprovalRequest[]>;
+    /** Batch-capable: POST /approvals/decide { ids, decision }. */
+    decide(ids: ApprovalId | ApprovalId[], decision: ApprovalDecision): Promise<void>;
+  };
+
+  grants: {
+    list(): Promise<PermissionGrant[]>;
+    revoke(id: GrantId): Promise<void>;
+  };
+
+  apps: {
+    list(): Promise<AppDocument[]>;
+    create(input: { prompt: string }): Promise<AppDocument>;
+    get(id: AppId): Promise<AppDocument>;
+    delete(id: AppId): Promise<void>;
+    open(id: AppId): Promise<OpenSurface>;
+    call(id: AppId, ref: string, args: Json): Promise<ToolOutcome>;
+    edit(id: AppId, instruction: string): Promise<EditResult>;
+    history(id: AppId): Promise<VersionEntry[]>;
+    undo(id: AppId): Promise<AppDocument>;
+    exportApp(id: AppId): Promise<Uint8Array>;
+    importApp(bytes: Uint8Array): Promise<AppDocument>;
+    fork(id: AppId): Promise<AppDocument>;
+  };
+
+  automations: {
+    list(): Promise<AutomationEntry[]>;
+    enable(id: AppId): Promise<EnableResult>;
+    disable(id: AppId): Promise<void>;
+    dryRun(id: AppId): Promise<RunPlan>;
+  };
+
+  runs: {
+    list(filter?: { appId?: AppId; status?: RunStatus; cursor?: string }): Promise<{ runs: RunRecord[]; cursor?: string }>;
+    get(id: RunId): Promise<RunRecord>;
+    stop(id: RunId): Promise<void>;
+  };
+
+  activity: {
+    /** GET /activity — self-scoped audit events; cursor = the id of the last seen event. */
+    list(params?: { cursor?: string; limit?: number }): Promise<AuditEvent[]>;
+  };
+
+  status(): Promise<VendoStatus>;
+}
+
+export { createVendoClient } from "./client-impl.js";
