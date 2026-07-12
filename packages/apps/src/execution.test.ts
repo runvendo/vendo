@@ -6,17 +6,18 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, mintRunToken, verifyRunToken, type AppsConfig } from "./index.js";
+import { createApps, mintRunToken, verifyRunToken } from "./index.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import {
   bindTools,
+  basicLanguageModel,
   fakeSandbox,
   guardFixture,
   memoryStore,
   type MachineApp,
 } from "./testing/index.js";
 
-const model = {} as NonNullable<AppsConfig["model"]>;
+const model = basicLanguageModel();
 const decoder = new TextDecoder();
 
 const ctx = (subject = "user_ada", presence: RunContext["presence"] = "present"): RunContext => ({

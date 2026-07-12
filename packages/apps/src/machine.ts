@@ -45,6 +45,10 @@ export interface MachineSessions {
     fn: (run: MachineRun) => Promise<T>,
   ): Promise<T>;
   withMachine<T>(app: AppDocument, ctx: RunContext, fn: (run: MachineRun) => Promise<T>): Promise<T>;
+  /** 06-apps §2 — isolated edit/graduation machine; never enters the live cache before validation. */
+  withFork<T>(app: AppDocument, ctx: RunContext, fn: (run: MachineRun) => Promise<T>): Promise<T>;
+  /** 06-apps §2 — atomically make a validated edit fork the live machine. */
+  replace(appId: string, machine: SandboxMachine): Promise<void>;
   snapshot(app: AppDocument, ctx: RunContext, machine: SandboxMachine): Promise<AppDocument>;
 }
 
@@ -74,6 +78,20 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     };
   };
 
+  const environment = (app: AppDocument, runToken: string): Record<string, string> => {
+    const nonce = randomHex(4);
+    const secretEnv = Object.fromEntries((app.secrets ?? []).map((name) => [
+      name,
+      `vendo-secret:${name}:${nonce}`,
+    ]));
+    return {
+      ...secretEnv,
+      PORT,
+      ...(config.proxyUrl === undefined ? {} : { VENDO_PROXY_URL: config.proxyUrl }),
+      VENDO_RUN_TOKEN: runToken,
+    };
+  };
+
   const start = async (app: AppDocument, ctx: RunContext, runToken: string): Promise<SandboxMachine> => {
     const adapter = requireAdapter();
     const existing = live.get(app.id);
@@ -81,19 +99,9 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     const pending = waking.get(app.id);
     if (pending !== undefined) return pending;
 
-    const nonce = randomHex(4);
-    const secretEnv = Object.fromEntries((app.secrets ?? []).map((name) => [
-      name,
-      `vendo-secret:${name}:${nonce}`,
-    ]));
     const promise = app.server === undefined
       ? adapter.create({
-        env: {
-          ...secretEnv,
-          PORT,
-          ...(config.proxyUrl === undefined ? {} : { VENDO_PROXY_URL: config.proxyUrl }),
-          VENDO_RUN_TOKEN: runToken,
-        },
+        env: environment(app, runToken),
         files: {},
       })
       : adapter.resume(app.server);
@@ -129,6 +137,19 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     return fn({ machine, ...authorization });
   };
 
+  const withFork = async <T>(
+    app: AppDocument,
+    ctx: RunContext,
+    fn: (run: MachineRun) => Promise<T>,
+  ): Promise<T> => {
+    const adapter = requireAdapter();
+    const run = await newRun(app, ctx);
+    const machine = app.server === undefined
+      ? await adapter.create({ env: environment(app, run.runToken), files: {} })
+      : await adapter.resume(app.server);
+    return fn({ machine, ...run });
+  };
+
   return {
     available: () => config.sandbox !== undefined,
     peek: (appId) => live.get(appId),
@@ -150,6 +171,12 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     },
     withAuthorization,
     withMachine,
+    withFork,
+    async replace(appId, machine) {
+      const previous = live.get(appId);
+      live.set(appId, machine);
+      if (previous !== undefined && previous !== machine) await previous.stop().catch(() => undefined);
+    },
     async snapshot(app, ctx, machine) {
       if (machine.screenshot !== undefined) {
         const cover = await machine.screenshot();

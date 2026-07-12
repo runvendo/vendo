@@ -1,9 +1,9 @@
 import type { RunContext, ToolDescriptor, ToolRegistry } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
-import { createApps, type AppsConfig } from "./index.js";
-import { bindTools, fakeSandbox, guardFixture, memoryStore } from "./testing/index.js";
+import { createApps } from "./index.js";
+import { basicLanguageModel, bindTools, fakeSandbox, guardFixture, memoryStore } from "./testing/index.js";
 
-const model = {} as NonNullable<AppsConfig["model"]>;
+const model = basicLanguageModel();
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_ada" },
   venue: "chat",

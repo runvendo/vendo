@@ -1,0 +1,278 @@
+import {
+  validateTree,
+  type AppDocument,
+  type ComponentCatalog,
+  type RunContext,
+  type ToolRegistry,
+} from "@vendoai/core";
+import { describe, expect, it } from "vitest";
+import { createApps } from "./index.js";
+import type { SandboxAdapter } from "./sandbox.js";
+import {
+  fakeSandbox,
+  guardFixture,
+  memoryStore,
+  scriptedLanguageModel,
+} from "./testing/index.js";
+
+const ctx: RunContext = {
+  principal: { kind: "user", subject: "user_engine" },
+  venue: "chat",
+  presence: "present",
+  sessionId: "session_engine",
+};
+
+const tools: ToolRegistry = {
+  async descriptors() { return []; },
+  async execute() { return { status: "error", error: { code: "not-found", message: "missing" } }; },
+};
+
+const catalog: ComponentCatalog = [{
+  name: "MetricCard",
+  description: "A branded card for a label, value, and trend.",
+  propsSchema: { "~standard": { validate: (value: unknown) => value } },
+}];
+
+const validCreate = (name = "Revenue dashboard") => JSON.stringify({
+  name,
+  description: "Shows the revenue headline.",
+  tree: {
+    formatVersion: "vendo-genui/v1",
+    root: "metric",
+    nodes: [{
+      id: "metric",
+      component: "MetricCard",
+      source: "host",
+      props: { label: "Revenue", value: "$42k" },
+    }],
+  },
+});
+
+const invalidCreate = JSON.stringify({
+  name: "Broken",
+  tree: {
+    formatVersion: "vendo-genui/v1",
+    root: "missing",
+    nodes: [{ id: "root", component: "MetricCard", source: "host" }],
+  },
+});
+
+const putApp = async (
+  store: ReturnType<typeof memoryStore>,
+  app: AppDocument,
+): Promise<void> => {
+  await store.records("vendo_apps").put({
+    id: app.id,
+    data: app,
+    refs: { subject: ctx.principal.subject },
+  });
+};
+
+describe("generation engine through createApps", () => {
+  it("creates a validated rung-1 document with a catalog host component", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(validCreate()),
+      designRules: "Use concise labels and the accent color for positive trends.",
+    });
+
+    const app = await runtime.create({ prompt: "Build a revenue dashboard" }, ctx);
+
+    expect(app.name).toBe("Revenue dashboard");
+    expect(app.server).toBeUndefined();
+    expect(app.tree).toMatchObject({
+      nodes: [{ component: "MetricCard", source: "host" }],
+    });
+    expect(validateTree({ ...app.tree, components: app.components }).ok).toBe(true);
+  });
+
+  it("repairs one invalid create and rejects two invalid attempts without persisting", async () => {
+    const repairedStore = memoryStore();
+    const repaired = createApps({
+      store: repairedStore,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(invalidCreate, validCreate("Repaired")),
+    });
+    await expect(repaired.create({ prompt: "Repair me" }, ctx)).resolves.toMatchObject({ name: "Repaired" });
+
+    const failedStore = memoryStore();
+    const failed = createApps({
+      store: failedStore,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(invalidCreate, invalidCreate),
+    });
+    await expect(failed.create({ prompt: "Still broken" }, ctx)).rejects.toMatchObject({
+      code: "validation",
+      detail: expect.arrayContaining([expect.stringContaining("root")]),
+    });
+    await expect(failed.list(ctx)).resolves.toEqual([]);
+  });
+
+  it("applies tree ops, records rung 1, and undo restores the previous document", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ ops: [{ op: "set-prop", nodeId: "metric", prop: "value", value: "$84k" }] }),
+      ),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Double the displayed revenue", ctx);
+
+    expect(result.app.tree).toMatchObject({ nodes: [{ props: { value: "$84k" } }] });
+    expect(result.version.rung).toBe(1);
+    expect(await runtime.history(original.id).list()).toEqual([result.version]);
+    await expect(runtime.history(original.id).undo()).resolves.toEqual(original);
+  });
+
+  it("contains twice-broken tree ops and leaves the original document untouched", async () => {
+    const store = memoryStore();
+    const brokenOps = JSON.stringify({
+      ops: [{ op: "set-prop", nodeId: "missing", prop: "value", value: 1 }],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(validCreate(), brokenOps, brokenOps),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Break the missing card", ctx);
+
+    expect(result.app).toEqual(original);
+    expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("missing") ]));
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+    expect(await runtime.history(original.id).list()).toEqual([]);
+  });
+
+  it("edits server files in a fork, syntax-checks, and rotates the snapshot", async () => {
+    const sandbox = fakeSandbox();
+    const seed = await sandbox.create({ env: {}, files: { "/app/server.js": "export const value = 1;" } });
+    const server = await seed.snapshot();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "export const value = 2;" }] }),
+      ),
+    });
+    const created = await runtime.create({ prompt: "Dashboard" }, ctx);
+    const original = { ...created, server };
+    await putApp(store, original);
+
+    const result = await runtime.edit(created.id, "Change the server code", ctx);
+    const editedMachine = [...sandbox.machines.values()].at(-1);
+
+    expect(new TextDecoder().decode(await editedMachine?.files.read("/app/server.js"))).toBe("export const value = 2;");
+    expect(editedMachine?.commands).toContainEqual({ cmd: "node --check '/app/server.js'", opts: { cwd: "/app", timeoutMs: 10_000 } });
+    expect(result.app.server).not.toBe(server);
+    expect(result.version.rung).toBeGreaterThanOrEqual(2);
+  });
+
+  it("discards a syntax-error code fork and leaves the document and prior machine untouched", async () => {
+    const base = fakeSandbox();
+    const seed = await base.create({ env: {}, files: { "/app/server.js": "export const value = 1;" } });
+    const server = await seed.snapshot();
+    const sandbox: SandboxAdapter = {
+      create: (spec) => base.create(spec),
+      async resume(ref) {
+        const machine = await base.resume(ref);
+        machine.programExec({ code: 1, stdout: "", stderr: "SyntaxError: Unexpected token" });
+        return machine;
+      },
+    };
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        JSON.stringify({ rung: 2, files: [{ path: "/app/server.js", content: "export const = ;" }] }),
+      ),
+    });
+    const created = await runtime.create({ prompt: "Dashboard" }, ctx);
+    const original = { ...created, server };
+    await putApp(store, original);
+
+    const result = await runtime.edit(created.id, "Change the server code", ctx);
+
+    expect(result.app).toEqual(original);
+    expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("SyntaxError") ]));
+    expect(new TextDecoder().decode(await seed.files.read("/app/server.js"))).toBe("export const value = 1;");
+    expect(await runtime.get(created.id, ctx)).toEqual(original);
+  });
+
+  it("graduates a rung-1 app only after the fork snapshots and preserves its tree", async () => {
+    const sandbox = fakeSandbox();
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    const model = scriptedLanguageModel(
+      validCreate(),
+      async () => {
+        started();
+        await gate;
+        return JSON.stringify({
+          rung: 2,
+          files: [{ path: "/app/server.js", content: "export const state = new Map();" }],
+        });
+      },
+    );
+    const store = memoryStore();
+    const runtime = createApps({ store, guard: guardFixture(), tools, sandbox, catalog, model });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const editing = runtime.edit(original.id, "Build a server-computed view", ctx);
+    await startedPromise;
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+    release();
+    const result = await editing;
+
+    expect(result.app.server).toMatch(/^fake:snap_/);
+    expect(result.app.tree).toEqual(original.tree);
+    expect(result.version.rung).toBe(3);
+    expect(await runtime.get(original.id, ctx)).toEqual(result.app);
+  });
+
+  it("returns a contained issue when an edit requires an unavailable sandbox", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(validCreate()),
+    });
+    const original = await runtime.create({ prompt: "Dashboard" }, ctx);
+
+    const result = await runtime.edit(original.id, "Persist mutations in server state", ctx);
+
+    expect(result.app).toEqual(original);
+    expect(result.issues).toContain("sandbox-unavailable: this edit requires server execution");
+    expect(await runtime.history(original.id).list()).toEqual([]);
+  });
+});

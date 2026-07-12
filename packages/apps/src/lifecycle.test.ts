@@ -1,8 +1,8 @@
 import type { RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createApps, type AppsConfig } from "./index.js";
-import { guardFixture, memoryStore } from "./testing/index.js";
+import { createApps } from "./index.js";
+import { basicLanguageModel, guardFixture, memoryStore } from "./testing/index.js";
 
 const tools: ToolRegistry = {
   async descriptors() {
@@ -12,8 +12,6 @@ const tools: ToolRegistry = {
     return { status: "error", error: { code: "not-found", message: "No fixture tools" } };
   },
 };
-
-const model = {} as NonNullable<AppsConfig["model"]>;
 
 const context = (subject: string): RunContext => ({
   principal: { kind: "user", subject },
@@ -30,7 +28,7 @@ const setup = (withModel = true) => {
     guard,
     tools,
     catalog: [],
-    model: withModel ? model : undefined,
+    model: withModel ? basicLanguageModel() : undefined,
   });
   return { store, guard, runtime };
 };

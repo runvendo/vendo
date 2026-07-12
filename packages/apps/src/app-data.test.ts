@@ -1,8 +1,8 @@
 import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
-import { createApps, type AppsConfig } from "./index.js";
-import { guardFixture, memoryStore } from "./testing/index.js";
+import { createApps } from "./index.js";
+import { basicLanguageModel, guardFixture, memoryStore } from "./testing/index.js";
 
 const tools: ToolRegistry = {
   async descriptors() {
@@ -20,7 +20,7 @@ const ctx: RunContext = {
   sessionId: "session_ada",
 };
 
-const model = {} as NonNullable<AppsConfig["model"]>;
+const model = basicLanguageModel();
 
 describe("app data persistence", () => {
   it("deletes declared records, state, file collections, and the app blob namespace", async () => {

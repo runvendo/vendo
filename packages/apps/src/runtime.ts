@@ -16,9 +16,16 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
+import { createAgentTools } from "./agent-tools.js";
 import { createAppData } from "./app-data.js";
 import { createAppCaller } from "./call.js";
-import { stubEngine, type GenerationDependencies, type GenerationEngine } from "./engine.js";
+import {
+  instructionRequiresServer,
+  modelEngine,
+  type CodeFileEdit,
+  type GenerationDependencies,
+  type GenerationEngine,
+} from "./engine.js";
 import { createAppHistory } from "./history.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener } from "./open.js";
@@ -26,6 +33,7 @@ import { appRecordInput, documentFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import type { SandboxAdapter } from "./sandbox.js";
+import type { SandboxMachine } from "./sandbox.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
 export interface AppsConfig {
@@ -135,7 +143,7 @@ const generationDependencies = (
 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
 export const createApps = (config: AppsConfig): AppsRuntime => {
-  const engine: GenerationEngine = stubEngine;
+  const engine: GenerationEngine = modelEngine;
   const apps = config.store.records("vendo_apps");
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
@@ -167,6 +175,78 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     data,
     owns: async (appId, subject) => await owned(appId, subject) !== null,
   });
+
+  const failedEdit = (
+    app: AppDocument,
+    instruction: string,
+    issues: string[],
+  ): EditResult => ({
+    app: structuredClone(app),
+    version: {
+      at: new Date().toISOString(),
+      intent: instruction,
+      rung: rungFor(app),
+    },
+    issues: [...issues],
+  });
+
+  const syntaxCheck = async (
+    machine: SandboxMachine,
+    file: CodeFileEdit,
+  ): Promise<string | undefined> => {
+    if (!/\.[cm]?[jt]s$/i.test(file.path)) return undefined;
+    const result = await machine.exec(`node --check '${file.path}'`, { cwd: "/app", timeoutMs: 10_000 });
+    if (result.code === 0) return undefined;
+    const detail = result.stderr.trim() || result.stdout.trim() || `node --check exited ${result.code}`;
+    return `${file.path}: ${detail}`;
+  };
+
+  const applyCodeFiles = async (
+    app: AppDocument,
+    files: CodeFileEdit[],
+    ctx: RunContext,
+  ): Promise<{ machine?: SandboxMachine; server?: string; issues: string[] }> => {
+    try {
+      return await machines.withFork(
+        app,
+        ctx,
+        async ({ machine }) => {
+          try {
+            for (const file of files) await machine.files.write(file.path, file.content);
+            const issues: string[] = [];
+            for (const file of files) {
+              const issue = await syntaxCheck(machine, file);
+              if (issue !== undefined) issues.push(issue);
+            }
+            if (issues.length > 0) {
+              await machine.stop().catch(() => undefined);
+              return { issues };
+            }
+            return { machine, server: await machine.snapshot(), issues: [] };
+          } catch (error) {
+            await machine.stop().catch(() => undefined);
+            return { issues: [error instanceof Error ? error.message : "machine edit failed"] };
+          }
+        },
+      );
+    } catch (error) {
+      return {
+        issues: [error instanceof Error ? error.message : "sandbox machine unavailable"],
+      };
+    }
+  };
+
+  const persistEdit = async (
+    previous: AppDocument,
+    app: AppDocument,
+    version: VersionEntry,
+    subject: string,
+  ): Promise<AppDocument> => {
+    const appRow = appRecordInput(app, subject);
+    await history.append(app.id, previous, version);
+    await apps.put(appRow);
+    return structuredClone(appRow.data);
+  };
 
   const reportLifecycle = async (
     operation: "create" | "delete" | "fork",
@@ -240,20 +320,58 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         throw new VendoError("not-implemented", "generation requires a model");
       }
       const previous = await requireOwned(appId, ctx.principal.subject);
-      const generated = await engine.edit(
-        { app: structuredClone(previous), instruction },
-        generationDependencies(config, config.model),
-      );
-      const app: AppDocument = { ...generated, id: appId };
-      const version: VersionEntry = {
-        at: new Date().toISOString(),
-        intent: instruction,
-        rung: rungFor(app),
-      };
-      const appRow = appRecordInput(app, ctx.principal.subject);
-      await history.append(appId, previous, version);
-      await apps.put(appRow);
-      return { app: structuredClone(appRow.data), version: { ...version } };
+      if (instructionRequiresServer(previous, instruction) && !machines.available()) {
+        return failedEdit(previous, instruction, [
+          "sandbox-unavailable: this edit requires server execution",
+        ]);
+      }
+
+      let repairIssues: string[] | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const generated = await engine.edit(
+          {
+            app: structuredClone(previous),
+            instruction,
+            ...(repairIssues === undefined ? {} : { repairIssues }),
+          },
+          generationDependencies(config, config.model),
+        );
+        if (generated.kind === "failure") return failedEdit(previous, instruction, generated.issues);
+
+        if (generated.kind === "document") {
+          const app: AppDocument = { ...generated.document, id: appId };
+          const version: VersionEntry = {
+            at: new Date().toISOString(),
+            intent: instruction,
+            rung: 1,
+          };
+          return {
+            app: await persistEdit(previous, app, version, ctx.principal.subject),
+            version: { ...version },
+          };
+        }
+
+        const applied = await applyCodeFiles(previous, generated.files, ctx);
+        if (applied.machine === undefined || applied.server === undefined) {
+          repairIssues = applied.issues;
+          continue;
+        }
+        const app: AppDocument = { ...structuredClone(previous), server: applied.server };
+        const version: VersionEntry = {
+          at: new Date().toISOString(),
+          intent: instruction,
+          rung: generated.rung,
+        };
+        try {
+          const persisted = await persistEdit(previous, app, version, ctx.principal.subject);
+          await machines.replace(appId, applied.machine);
+          return { app: persisted, version: { ...version } };
+        } catch (error) {
+          await applied.machine.stop().catch(() => undefined);
+          throw error;
+        }
+      }
+      return failedEdit(previous, instruction, repairIssues ?? ["code edit failed validation"]);
     },
 
     history(appId) {
@@ -289,9 +407,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       throw new VendoError("not-implemented", "publish is implemented in Lane E");
     },
 
-    // Lane D
     agentTools() {
-      throw new VendoError("not-implemented", "agent tools are implemented in Lane D");
+      return createAgentTools(runtime);
     },
 
     proxy,
