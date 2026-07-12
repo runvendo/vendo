@@ -95,7 +95,7 @@ for (const dir of dirs) {
   }
 
   const isAllowed = (name) =>
-    allowed === "*" ? name in LAYERS && name !== pkg.name : allowed.includes(name);
+    allowed === "*" ? Object.hasOwn(LAYERS, name) && name !== pkg.name : allowed.includes(name);
 
   // 1 + 2 on the manifest
   const declared = {

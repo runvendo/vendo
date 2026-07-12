@@ -51,7 +51,14 @@ export interface AppDocument {
   forkedFrom?: AppId;
 }
 
-/** 01-core §9 */
+/**
+ * 01-core §9 — structural shape only. Like every core schema, this parses the
+ * SHAPE (passthrough for forward compatibility); the cross-field business
+ * rules (component limits, fn:-requires-server, reserved `state` collection,
+ * ref/pin formats, non-empty names) live in {@link validateAppDocument}, which
+ * is the normative gate. A `parse()` alone can accept a semantically invalid
+ * document.
+ */
 export const appDocumentSchema = z.object({
   format: z.literal(VENDO_APP_FORMAT),
   id: appIdSchema,

@@ -91,7 +91,12 @@ export interface Tree {
   components?: Record<string, string>;
 }
 
-/** 01-core §8 */
+/**
+ * 01-core §8 — structural shape only (the types+zod pairing convention).
+ * The pinned wire rules (caps, reserved names, root/id integrity, fn: syntax)
+ * live in {@link validateTree}, which is the normative validator; this schema
+ * alone accepts trees validateTree rejects.
+ */
 export const treeSchema = z.object({
   formatVersion: z.literal(VENDO_TREE_FORMAT),
   root: z.string(),
