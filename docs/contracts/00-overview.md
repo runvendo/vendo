@@ -39,7 +39,7 @@ Cross-block communication happens exclusively through seams defined in core (`Gu
 ## Conventions (all packages)
 
 - **Types + zod, end to end.** Every wire-crossing or persisted shape ships a TS type and a zod schema named `<camelCaseName>Schema` (e.g. `AppDocument` / `appDocumentSchema`). Tool *inputs* are JSON Schema (interop with LLM APIs and MCP), produced from zod where authored in TS.
-- **Ids** are plain strings with stable prefixes: `app_`, `ins_` (install), `grt_` (grant), `apr_` (approval), `run_`, `thr_` (thread), `aud_` (audit).
+- **Ids** are plain strings with stable prefixes: `app_`, `grt_` (grant), `apr_` (approval), `run_`, `thr_` (thread), `aud_` (audit).
 - **Timestamps** are ISO-8601 strings, UTC.
 - **Errors**: one `VendoError` taxonomy in core; fail-soft states (`pending-approval`) are *outcomes*, not exceptions.
 - **Runs anywhere**: core, agent, actions, guard, automations, apps make no platform assumptions beyond fetch + WebCrypto (Node ≥ 20, edge, Bun). store is the only block allowed a driver dependency (pg / PGlite). ui is the only block with a React peer.
@@ -70,6 +70,8 @@ Made while drafting — flagged for review, each also marked ⚑ in situ:
 Resolved with Yousef, round 2 (2026-07-11, during review):
 
 13. **The instant-path UI payload is format-tagged, not tree-forever.** The two planes stay contract (`ui: "tree" | "http"` = instant/jailed vs machine-served); the payload dispatches on `formatVersion`, and v0 registers exactly one format — the tree, `vendo-genui/v1`, unchanged and stored-record compatible. Future formats (compact profile, v2, non-tree) slot in behind the tag. (01 §8)
+
+14. **No installs — every user has an app.** The install object is deleted; the user-owned app row is the one concept. Data and grants key off the owner's `AppId`; sharing/publishing/import hand over a copy with a **freshly minted id** (ids inside artifacts are never trusted), so artifacts still carry zero authority — the same security property as the spec's "install records", one concept fewer. (01 §10)
 
 ## Reading order
 

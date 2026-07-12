@@ -6,7 +6,7 @@ Status: DRAFT (wave 2). One job: run the conversation — streaming, tool-callin
 
 ```ts
 import type { LanguageModel, UIMessage } from "ai";
-import type { ToolSet, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId, InstallId, Tree, RiskLabel, ApprovalId, IsoDateTime } from "@vendoai/core";
+import type { ToolSet, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId, AppId, Tree, RiskLabel, ApprovalId, IsoDateTime } from "@vendoai/core";
 
 export function createAgent(config: {
   model: LanguageModel;                    // BYO: Anthropic, OpenAI, Google, Ollama, local — anything with an ai-SDK model
@@ -55,7 +55,7 @@ Assembled fresh each turn, in this order: (1) Vendo's own operating prompt (owne
 The stream is the standard ai-SDK UI message stream plus Vendo data parts (typed in this package, re-exported by ui):
 
 ```ts
-export interface VendoViewPart { type: "data-vendo-view"; installId: InstallId; tree: Tree }        // a rendered app surface in-thread
+export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; tree: Tree }        // a rendered app surface in-thread
 export interface VendoConsentPart { type: "data-vendo-consent"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
 ```
 

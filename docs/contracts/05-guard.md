@@ -7,7 +7,7 @@ Status: DRAFT (wave 2). One job: the deterministic policy core at one choke poin
 ```ts
 import type {
   Guard, GuardDecision, ToolSet, ToolCall, ToolDescriptor, StoreAdapter, RunContext, Principal, RiskLabel,
-  AuditEvent, PermissionGrant, GrantId, ApprovalRequest, ApprovalDecision, ApprovalId, InstallId, IsoDateTime,
+  AuditEvent, PermissionGrant, GrantId, ApprovalRequest, ApprovalDecision, ApprovalId, AppId, IsoDateTime,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 
@@ -35,7 +35,7 @@ export interface VendoGuard extends Guard {
   };
 
   audit: {
-    query(filter: { principal?: Principal; installId?: InstallId; kind?: AuditEvent["kind"]; from?: IsoDateTime; to?: IsoDateTime; cursor?: string; limit?: number }): Promise<{ events: AuditEvent[]; cursor?: string }>;
+    query(filter: { principal?: Principal; appId?: AppId; kind?: AuditEvent["kind"]; from?: IsoDateTime; to?: IsoDateTime; cursor?: string; limit?: number }): Promise<{ events: AuditEvent[]; cursor?: string }>;
     export(filter?: { from?: IsoDateTime; to?: IsoDateTime }): AsyncIterable<string>;   // NDJSON lines, SIEM-friendly
     /** User-facing transparency: "what has the agent done as me". Self-scoped, always permitted. */
     activity(principal: Principal, cursor?: string): Promise<{ events: AuditEvent[]; cursor?: string }>;
@@ -123,6 +123,6 @@ Adapter surface for LLM Guard-style content scanners (prompt injection on inputs
 ## 6. One-security-rule consequences (restated as guard requirements)
 
 - An approval shows the **real inputs** (`inputPreview`) at the moment of the call — a shared app's hidden or dormant calls can do nothing without the running user seeing them.
-- Approvals and grants never transfer between users; grants key off `(tenantId, subject, tool)` plus optional `installId` — never artifact contents.
-- Away runs hold only grants captured while the user was present **and bound to the running install** (`installId` match, 07 §3); chat-minted grants never authorize away execution. Everything else parks as `pending-approval`.
+- Approvals and grants never transfer between users; grants key off `(tenantId, subject, tool)` plus optional `appId` — never artifact contents (import mints fresh app ids, core §10).
+- Away runs hold only grants captured while the user was present **and bound to the running app** (`appId` match, 07 §3); chat-minted grants never authorize away execution. Everything else parks as `pending-approval`.
 - Artifacts and exports carry zero authority; there is no tools/permissions field anywhere in the app format.

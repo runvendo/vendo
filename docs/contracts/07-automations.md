@@ -6,7 +6,7 @@ Status: DRAFT (wave 2). One job: fire triggers and execute runs. An automation i
 
 ```ts
 import type {
-  RunContext, InstallId, InstallRecord, RunId, ToolSet, ToolOutcome, AgentRunner, StoreAdapter,
+  RunContext, AppId, AppDocument, RunId, ToolSet, ToolOutcome, AgentRunner, StoreAdapter,
   Guard, Trigger, TriggerSource, ApprovalRequest, Principal, Json, IsoDateTime,
 } from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
@@ -21,10 +21,10 @@ export function createAutomations(config: {
 }): AutomationsEngine;
 
 export interface AutomationsEngine {
-  /** Arm/disarm an installed app's trigger. Enabling runs the grant-capture flow (§3). */
-  enable(installId: InstallId, ctx: RunContext): Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
-  disable(installId: InstallId, ctx: RunContext): Promise<void>;
-  list(ctx: RunContext): Promise<Array<{ install: InstallRecord; trigger: Trigger; enabled: boolean }>>;
+  /** Arm/disarm an app's trigger. Enabling runs the grant-capture flow (§3). */
+  enable(appId: AppId, ctx: RunContext): Promise<{ enabled: boolean; missing: ApprovalRequest[] }>;
+  disable(appId: AppId, ctx: RunContext): Promise<void>;
+  list(ctx: RunContext): Promise<Array<{ app: AppDocument; enabled: boolean }>>;   // the user's apps with a trigger
 
   // trigger ingestion — three kinds
   tick(now?: Date): Promise<RunId[]>;                                   // schedules: call on a timer or from a serverless cron
@@ -35,10 +35,10 @@ export interface AutomationsEngine {
   // runs
   runs: {
     get(id: RunId, ctx: RunContext): Promise<RunRecord | null>;
-    list(filter: { installId?: InstallId; status?: RunStatus; cursor?: string }, ctx: RunContext): Promise<{ runs: RunRecord[]; cursor?: string }>;
+    list(filter: { appId?: AppId; status?: RunStatus; cursor?: string }, ctx: RunContext): Promise<{ runs: RunRecord[]; cursor?: string }>;
     stop(id: RunId, ctx: RunContext): Promise<void>;                    // kill switch: best-effort cancel, marks "stopped"
   };
-  dryRun(installId: InstallId, ctx: RunContext, event?: Json): Promise<RunPlan>;   // preview: what would run, nothing executes
+  dryRun(appId: AppId, ctx: RunContext, event?: Json): Promise<RunPlan>;   // preview: what would run, nothing executes
 }
 ```
 
@@ -46,11 +46,11 @@ export interface AutomationsEngine {
 
 - **`schedule`** — exactly one of `cron` (5-field), `every` (duration: `"15m"`, `"1d"`), `at` (one-shot). Evaluated by `tick`; a missed window (host asleep) fires once on the next tick, never back-fills.
 - **`host-event`** — the honest one-seam cost: the host calls `engine.emit(event, payload, principal)` in its own code path (or points a webhook at the umbrella's `/webhooks/host` route). Fires every enabled automation of that principal whose `trigger.on.event` matches.
-- **`external`** — connector deliveries (Composio webhooks, plain webhooks) arrive at `webhook(req)`; `config` carries connector-specific subscription detail, including its verification material (connector signature or the per-subscription secret minted at enable — 09 §3). Unverified deliveries are rejected before any dispatch. Delivery → principal resolution comes from the install (an automation always runs as its installing user).
+- **`external`** — connector deliveries (Composio webhooks, plain webhooks) arrive at `webhook(req)`; `config` carries connector-specific subscription detail, including its verification material (connector signature or the per-subscription secret minted at enable — 09 §3). Unverified deliveries are rejected before any dispatch. Delivery → principal resolution comes from the app row (an automation always runs as its owner).
 
 ## 3. Away identity and grant capture
 
-Away runs hold only grants captured while the user was present **and bound to this install** — the only authority (one security rule: grants belong to each user's install). `enable()` is the capture moment: it computes the tool surface the run model references (steps: static analysis of `steps[].tool`; agentic: the tools the prompt plausibly needs, model-proposed and shown to the user), previews it with scopes, and the approvals minted there become grants with `source: "automation"`, `installId` = this install, `duration: "standing"`. At run time every call goes through the guard binding with `presence: "away"`, and **only grants whose `installId` matches this install can authorize it** — a standing grant the user minted in chat, or for another automation, never transfers. Anything unauthorized parks `pending-approval`, the step fails soft, and the run record says so; approvals decided from a parked run mint install-bound grants the same way. Revoking a grant silently disarms nothing — the next run simply parks and the user sees it.
+Away runs hold only grants captured while the user was present **and bound to this app** — the only authority (one security rule: grants belong to each user's own app). `enable()` is the capture moment: it computes the tool surface the run model references (steps: static analysis of `steps[].tool`; agentic: the tools the prompt plausibly needs, model-proposed and shown to the user), previews it with scopes, and the approvals minted there become grants with `source: "automation"`, `appId` = this app, `duration: "standing"`. At run time every call goes through the guard binding with `presence: "away"`, and **only grants whose `appId` matches this app can authorize it** — a standing grant the user minted in chat, or for another automation, never transfers. Anything unauthorized parks `pending-approval`, the step fails soft, and the run record says so; approvals decided from a parked run mint app-bound grants the same way. Revoking a grant silently disarms nothing — the next run simply parks and the user sees it.
 
 ## 4. Run models
 
@@ -66,7 +66,7 @@ Apps with a `server` may also receive the raw firing (`POST /trigger`, 06 §4.1)
 export type RunStatus = "running" | "ok" | "error" | "stopped" | "waiting-approval";
 
 export interface RunRecord {
-  id: RunId; installId: InstallId;
+  id: RunId; appId: AppId;
   trigger: { kind: TriggerSource["kind"]; event?: string };
   status: RunStatus;
   startedAt: IsoDateTime; finishedAt?: IsoDateTime;

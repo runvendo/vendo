@@ -14,7 +14,6 @@ export const VENDO_OVERRIDES_FORMAT = "vendo/overrides@1";
 export const VENDO_POLICY_FORMAT = "vendo/policy@1";
 
 export type AppId = string;      // "app_..."
-export type InstallId = string;  // "ins_..."
 export type GrantId = string;    // "grt_..."
 export type ApprovalId = string; // "apr_..."
 export type RunId = string;      // "run_..."
@@ -48,12 +47,12 @@ export interface RunContext {
   venue: "chat" | "app" | "automation" | "mcp";   // mcp reserved for the deferred door
   presence: "present" | "away";
   sessionId: string;
-  installId?: InstallId;        // set when running inside an app
+  appId?: AppId;        // set when running inside an app
   trigger?: TriggerRef;         // set when fired by a trigger
   requestHeaders?: Record<string, string>; // present-mode: the inbound host request's auth material (04 §4)
 }
 
-export interface TriggerRef { installId: InstallId; runId: RunId; kind: TriggerSource["kind"]; }
+export interface TriggerRef { appId: AppId; runId: RunId; kind: TriggerSource["kind"]; }
 ```
 
 ## 4. Tools
@@ -100,7 +99,7 @@ Execution discipline (normative): nothing calls `ToolSet.execute` directly excep
 
 ## 5. Grants and approvals
 
-The grant machinery the app-format spec pins ("exact or constrained scopes, critical tools always ask"). A grant records that this principal said yes to this kind of action within these bounds. Grants and app data belong to each user's **install**, never to the artifact; approvals never transfer between users.
+The grant machinery the app-format spec pins ("exact or constrained scopes, critical tools always ask"). A grant records that this principal said yes to this kind of action within these bounds. Grants and app data belong to each user's **own app**, never to the artifact (§10); approvals never transfer between users.
 
 ```ts
 export interface GrantConstraint { path: string; op: "eq" | "lte" | "gte" | "matches"; value: string | number | boolean; }
@@ -121,7 +120,7 @@ export interface PermissionGrant {
   scope: GrantScope;
   duration: GrantDuration;
   contextKey?: string;          // binds session/task grants to their context
-  installId?: InstallId;        // set when granted to an app install (incl. automation pre-approval)
+  appId?: AppId;        // set when granted to a specific app (incl. automation pre-approval)
   source: "chat" | "judge" | "rule" | "batch" | "automation";
   grantedAt: IsoDateTime;
   expiresAt?: IsoDateTime;
@@ -133,7 +132,7 @@ export interface ApprovalRequest {
   call: ToolCall;
   descriptor: ToolDescriptor;   // frozen at ask time — what the user actually approved
   inputPreview: string;         // human-readable real inputs (the one-security-rule: ask with the real inputs)
-  ctx: { principal: Principal; venue: RunContext["venue"]; presence: RunContext["presence"]; installId?: InstallId; trigger?: TriggerRef };
+  ctx: { principal: Principal; venue: RunContext["venue"]; presence: RunContext["presence"]; appId?: AppId; trigger?: TriggerRef };
   createdAt: IsoDateTime;
   expiresAt?: IsoDateTime;
 }
@@ -176,7 +175,7 @@ export interface AuditEvent {
   principal: Principal;
   venue: RunContext["venue"];
   presence: RunContext["presence"];
-  installId?: InstallId;
+  appId?: AppId;
   trigger?: TriggerRef;
   tool?: string;
   argsPreview?: string;          // human-readable, PII-conscious preview — never raw secrets
@@ -276,20 +275,13 @@ export function validateAppDocument(input: unknown): { ok: true; app: AppDocumen
 
 `.vendoapp` export = this document plus the app's directory pulled from the snapshot (no data, no caches, no grants, no snapshots) — semantics in 06 §7.
 
-## 10. Installs
+## 10. Ownership — no installs, just apps
 
-The one-security-rule anchor: grants and data key off host-minted install records, never artifact contents.
+Every user has their own app; there is no separate install object (Yousef, 2026-07-11 round 2). The app row a user owns (store 02 §2: `owner_subject`, `source`, `enabled` columns) IS their copy — their data and their grants key off its `AppId`. The one-security-rule anchor survives intact: sharing, publishing, and import hand over a **copy**, and the runtime always mints a **fresh `AppId`** for the recipient — an id found inside an artifact is never trusted — so artifacts and exports still carry zero authority. (Same property the app-format spec §4 words as "grants and data belong to each user's install"; one concept fewer.)
 
 ```ts
-export interface InstallRecord {
-  id: InstallId;
-  appId: AppId;
-  principal: Principal;          // the owner; an app always executes as its user, never its author
-  installedAt: IsoDateTime;
-  source: "created" | "imported" | "shared" | "published";
-  forkedFrom?: AppId;
-  enabled?: boolean;             // automations: trigger armed
-}
+/** How this user came to own the app — ownership metadata (a store column, not a document field). */
+export type AppSource = "created" | "imported" | "shared" | "published";
 ```
 
 ## 11. Triggers and run models (shapes only — semantics in 07)

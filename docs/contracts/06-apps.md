@@ -6,8 +6,8 @@ Status: DRAFT (wave 2). One job: everything Vendo produces and runs is an app (c
 
 ```ts
 import type {
-  StoreAdapter, Guard, RunContext, AppDocument, AppId, InstallRecord, InstallId, ToolSet, ToolOutcome,
-  ComponentCatalog, VendoTheme, SecretsProvider, Tree, TreeNode, TreeQuery, Json, IsoDateTime,
+  StoreAdapter, Guard, RunContext, AppDocument, AppId, ToolSet, ToolOutcome,
+  ComponentCatalog, VendoTheme, SecretsProvider, Tree, TreeNode, TreeQuery, UIPayload, Json, IsoDateTime,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";   // type-only: generation seam
 
@@ -24,31 +24,30 @@ export function createApps(config: {
 }): AppsRuntime;
 
 export interface AppsRuntime {
-  // lifecycle
-  create(input: { prompt: string }, ctx: RunContext): Promise<{ install: InstallRecord; app: AppDocument }>;
-  install(doc: AppDocument, ctx: RunContext, source?: InstallRecord["source"]): Promise<InstallRecord>;  // fresh install: empty data, no grants
-  get(installId: InstallId, ctx: RunContext): Promise<{ install: InstallRecord; app: AppDocument } | null>;
-  list(ctx: RunContext): Promise<Array<{ install: InstallRecord; app: AppDocument }>>;
-  remove(installId: InstallId, ctx: RunContext): Promise<void>;
-  fork(installId: InstallId, ctx: RunContext): Promise<InstallRecord>;                                   // forkedFrom set; own copy
+  // lifecycle — every user has their own apps (core §10); ctx.principal scopes everything
+  create(input: { prompt: string }, ctx: RunContext): Promise<AppDocument>;
+  get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
+  list(ctx: RunContext): Promise<AppDocument[]>;
+  remove(appId: AppId, ctx: RunContext): Promise<void>;
+  fork(appId: AppId, ctx: RunContext): Promise<AppDocument>;                                     // own copy, fresh id, forkedFrom set
 
   // the edit loop — one loop, two dialects
-  edit(installId: InstallId, instruction: string, ctx: RunContext): Promise<EditResult>;                 // conversational
-  apply(installId: InstallId, patch: TreePatch | CodePatch, ctx: RunContext): Promise<EditResult>;       // structured (the engine's own path)
-  history(installId: InstallId): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };      // capped log — runtime UX, not format
+  edit(appId: AppId, instruction: string, ctx: RunContext): Promise<EditResult>;                 // conversational
+  apply(appId: AppId, patch: TreePatch | CodePatch, ctx: RunContext): Promise<EditResult>;       // structured (the engine's own path)
+  history(appId: AppId): { list(): Promise<VersionEntry[]>; undo(): Promise<AppDocument> };      // capped log — runtime UX, not format
 
   // execution
-  open(installId: InstallId, ctx: RunContext): Promise<OpenSurface>;
-  call(installId: InstallId, ref: string /* "fn:<name>" | tool name */, args: Json, ctx: RunContext): Promise<ToolOutcome>;
-  runQueries(installId: InstallId, ctx: RunContext): Promise<Record<string, Json>>;                      // refresh a tree's data model
+  open(appId: AppId, ctx: RunContext): Promise<OpenSurface>;
+  call(appId: AppId, ref: string /* "fn:<name>" | tool name */, args: Json, ctx: RunContext): Promise<ToolOutcome>;
+  runQueries(appId: AppId, ctx: RunContext): Promise<Record<string, Json>>;                      // refresh a tree's data model
 
   // interchange (spec §6: copies, never pointers)
-  exportApp(installId: InstallId, ctx: RunContext): Promise<Uint8Array>;    // .vendoapp; pin permission check — fails, never strips
-  importApp(bytes: Uint8Array, ctx: RunContext): Promise<InstallRecord>;
+  exportApp(appId: AppId, ctx: RunContext): Promise<Uint8Array>;    // .vendoapp; pin permission check — fails, never strips
+  importApp(source: Uint8Array | AppDocument, ctx: RunContext): Promise<AppDocument>;   // hands over a copy: fresh AppId minted, empty data, no grants
 
   // ☁️ Cloud shapes (impl throws "cloud-required" without VENDO_API_KEY)
-  share(installId: InstallId, ctx: RunContext): Promise<ShareSnapshot>;
-  publish(installId: InstallId, ctx: RunContext): Promise<PublishRecord>;
+  share(appId: AppId, ctx: RunContext): Promise<ShareSnapshot>;
+  publish(appId: AppId, ctx: RunContext): Promise<PublishRecord>;
 
   /** Vendo capability tools (vendo.apps.create, vendo.apps.edit, vendo.apps.open) for the agent loop —
    *  registered into actions by the umbrella, guard-treated like everything else. */
@@ -135,8 +134,8 @@ The machine IS the server part. No declared entry point; by convention the app l
 | --- | --- |
 | `PORT` | where the app must listen |
 | `VENDO_PROXY_URL` | the runtime's tool proxy for this run (§4.4) |
-| `VENDO_RUN_TOKEN` | bearer token scoping this run: `{ installId, principal, runId, presence }` — minted per run, short-lived |
-| `VENDO_INSTALL_ID` | this install |
+| `VENDO_RUN_TOKEN` | bearer token scoping this run: `{ appId, principal, runId, presence }` — minted per run, short-lived |
+| `VENDO_APP_ID` | the running user's app |
 | declared secret names | **handles**, not values (§4.3) |
 
 ### 4.3 Secrets ⚑ — handles, substituted at egress
@@ -161,12 +160,12 @@ The proxy resolves the token to its `RunContext` and calls the guard-bound regis
 
 ## 6. App data
 
-`storage` declarations (core §9) map to store collections `app:<installId>:<name>` — per install, per the one security rule (data belongs to the user's install, never the artifact). `state` is the built-in singleton: one free-form record per user per app, zero declaration, read/written via `vendo.state` get/set on the tool proxy and the tree's `$state` bindings persistence hook. `refs` typed as `host.<entity>` make records joinable onto host tables (02 §2). `kind: "files"` collections land in the blob store.
+`storage` declarations (core §9) map to store collections `app:<appId>:<name>` — per user's app, per the one security rule (data belongs to the user's own copy, never the artifact). `state` is the built-in singleton: one free-form record per user per app, zero declaration, read/written via `vendo.state` get/set on the tool proxy and the tree's `$state` bindings persistence hook. `refs` typed as `host.<entity>` make records joinable onto host tables (02 §2). `kind: "files"` collections land in the blob store.
 
 ## 7. Interchange (spec §6)
 
 - `exportApp` → `.vendoapp` zip: `app.json` (the document) + `app/` (the machine's app directory, pulled from the snapshot, when one exists). No data, no caches, no grants, no snapshots. Pins: host-derived source exports only with host permission (`remixable` components carry an exportable flag in the captured baseline); a forbidden pin **fails the export** — never silently strips.
-- `importApp` → validate document, fresh install (empty data, no grants), spin a fresh machine from `app/` if present (create → write files → snapshot → set `server`).
+- `importApp` → validate document, mint a **fresh `AppId`** for the recipient's copy (ids inside artifacts are never trusted — core §10), empty data, no grants; spin a fresh machine from `app/` if present (create → write files → snapshot → set `server`).
 - `share`/`publish` (Cloud): both hand over a **copy**; publishing routes it through the org registry with admin-approved capability expansions. Shapes here, machinery in the cloud repo.
 
 ## 8. Pins (spec §5)
@@ -175,7 +174,7 @@ A pin is an edit of the host's actual component source, mounted in the product a
 
 ```ts
 export interface PinBaseline { slot: string; source: string; hash: string; exportable: boolean; capturedAt: IsoDateTime }   // .vendo/remixable/<slot>.json, captured by sync (04 §1)
-export interface PinShipRequest { installId: InstallId; slot: string; baseHash: string; diff: string /* unified */ }
+export interface PinShipRequest { appId: AppId; slot: string; baseHash: string; diff: string /* unified */ }
 export interface PinApproval { slot: string; baseHash: string; approvedHash: string; approvedBy: string; at: IsoDateTime }
 ```
 

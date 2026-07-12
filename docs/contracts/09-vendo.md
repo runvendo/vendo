@@ -48,19 +48,19 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/approvals` | GET | pending `ApprovalRequest[]` |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
 | `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
-| `/apps` | GET · POST | list · `{ prompt }` → `{ install, app }` |
-| `/apps/:install` | GET · DELETE | app · remove |
-| `/apps/:install/open` | GET | `OpenSurface` |
-| `/apps/:install/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls — 06 §1 `call`) |
-| `/apps/:install/queries` | POST | `{}` → refreshed data model (06 §1 `runQueries`) |
-| `/apps/:install/edit` | POST | `{ instruction }` → `EditResult` |
-| `/apps/:install/history` | GET · POST | versions · `{ op: "undo" }` |
-| `/apps/:install/export` | GET | `.vendoapp` bytes |
-| `/apps/import` | POST | bytes → `{ install }` |
-| `/apps/:install/fork` | POST | → `{ install }` |
+| `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
+| `/apps/:id` | GET · DELETE | app · remove |
+| `/apps/:id/open` | GET | `OpenSurface` |
+| `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls — 06 §1 `call`) |
+| `/apps/:id/queries` | POST | `{}` → refreshed data model (06 §1 `runQueries`) |
+| `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
+| `/apps/:id/history` | GET · POST | versions · `{ op: "undo" }` |
+| `/apps/:id/export` | GET | `.vendoapp` bytes |
+| `/apps/import` | POST | bytes → `AppDocument` (fresh id minted) |
+| `/apps/:id/fork` | POST | → `AppDocument` |
 | `/automations` | GET | list |
-| `/automations/:install/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
-| `/automations/:install/dry-run` | POST | `RunPlan` |
+| `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
+| `/automations/:id/dry-run` | POST | `RunPlan` |
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |
 | `/tick` | POST | scheduler tick (serverless cron target; requires shared-secret header `x-vendo-tick-key`) |

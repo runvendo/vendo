@@ -25,7 +25,7 @@ export interface BreakingChange {
   tool: string;
   change: "removed" | "input-narrowed" | "renamed";
   /** Blast radius: which saved apps/automations reference this tool (requires a store; empty without one). */
-  affects: Array<{ installId: InstallId; appName: string }>;
+  affects: Array<{ appId: AppId; appName: string }>;
 }
 ```
 
@@ -72,7 +72,7 @@ Merge rule: descriptor = extracted ∪ overrides, overrides win field-wise; `des
 ## 2. Runtime
 
 ```ts
-import type { ToolSet, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome, InstallId } from "@vendoai/core";
+import type { ToolSet, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome, AppId } from "@vendoai/core";
 
 export function createActions(config: {
   dir?: string;                          // read .vendo/{tools,overrides}.json; or:
