@@ -400,11 +400,14 @@ function createWireHandler(deps: {
         if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
           throw new VendoError("validation", "activity limit must be a positive integer");
         }
-        return json(await deps.guard.audit.query({
+        const activity = await deps.guard.audit.query({
           principal: ctx.principal,
           ...(url.searchParams.get("cursor") === null ? {} : { cursor: url.searchParams.get("cursor")! }),
           ...(limit === undefined ? {} : { limit }),
-        }));
+        });
+        // 09 §3: the wire returns AuditEvent[] — the block's {events,cursor}
+        // envelope stays internal (the client pages by last event id).
+        return json(activity.events);
       }
       if (request.method === "GET" && path === "/status") {
         await context(request, "chat");
