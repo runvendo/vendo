@@ -276,6 +276,29 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(revoked.status).toBe(401);
   });
 
+  it("does not fork on concurrent refresh of the same token (in-process lock)", async () => {
+    const harness = makeHarness();
+    const client = await register(harness.door);
+    const first = await issue(harness.door, client.body.client_id);
+
+    // Two simultaneous rotations of the same refresh token: the lock serializes
+    // them, so exactly one succeeds and the other sees it already rotated.
+    const [a, b] = await Promise.all([
+      refresh(harness.door, first.refresh_token, client.body.client_id),
+      refresh(harness.door, first.refresh_token, client.body.client_id),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([200, 400]);
+
+    const winner = a.status === 200 ? a : b;
+    const rotated = await winner.json() as TokenResponse;
+    // Reuse of the original now revokes the chain, including the one successor.
+    const reuse = await refresh(harness.door, first.refresh_token, client.body.client_id);
+    expect(reuse.status).toBe(400);
+    const successorReuse = await refresh(harness.door, rotated.refresh_token, client.body.client_id);
+    expect(successorReuse.status).toBe(400);
+  });
+
   it("consumes an authorization code the moment it is presented, even on PKCE failure", async () => {
     const harness = makeHarness();
     const registration = await register(harness.door);

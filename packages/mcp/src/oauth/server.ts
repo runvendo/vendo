@@ -90,11 +90,32 @@ export class OAuthServer {
   readonly #oauth: HostOAuthAdapter;
   readonly #store: StoreAdapter;
   readonly #guard: Guard;
+  /** Serializes read-check-write on a single code/refresh token so two
+   * concurrent redemptions of the SAME secret cannot both pass the "unused"
+   * check and both mint tokens (the store exposes no atomic claim). In-process
+   * only — a multi-instance deployment still needs a shared store lock or
+   * sticky routing; documented in the README. */
+  readonly #tokenLocks = new Map<string, Promise<void>>();
 
   constructor(config: OAuthServerConfig) {
     this.#oauth = config.oauth;
     this.#store = config.store;
     this.#guard = config.guard;
+  }
+
+  async #withTokenLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.#tokenLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const mine = new Promise<void>((resolve) => (release = resolve));
+    const chained = prior.then(() => mine);
+    this.#tokenLocks.set(key, chained);
+    await prior;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (this.#tokenLocks.get(key) === chained) this.#tokenLocks.delete(key);
+    }
   }
 
   async register(req: Request): Promise<Response> {
@@ -184,8 +205,16 @@ export class OAuthServer {
     }
     const form = new URLSearchParams(await req.text());
     const grantType = form.get("grant_type");
-    if (grantType === "authorization_code") return this.#exchangeCode(form);
-    if (grantType === "refresh_token") return this.#rotateRefresh(form);
+    if (grantType === "authorization_code") {
+      const code = form.get("code");
+      if (!code) return oauthJsonError("invalid_request", "code is required");
+      return this.#withTokenLock(`code:${await sha256Hex(code)}`, () => this.#exchangeCode(form));
+    }
+    if (grantType === "refresh_token") {
+      const refreshToken = form.get("refresh_token");
+      if (!refreshToken) return oauthJsonError("invalid_request", "refresh_token is required");
+      return this.#withTokenLock(`refresh:${await sha256Hex(refreshToken)}`, () => this.#rotateRefresh(form));
+    }
     return oauthJsonError("unsupported_grant_type", "Unsupported grant_type");
   }
 
