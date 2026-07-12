@@ -73,6 +73,14 @@ Resolved with Yousef, round 2 (2026-07-11, during review):
 
 14. **No installs — every user has an app.** The install object is deleted; the user-owned app row is the one concept. Data and grants key off the owner's `AppId`; sharing/publishing/import hand over a copy with a **freshly minted id** (ids inside artifacts are never trusted), so artifacts still carry zero authority — the same security property as the spec's "install records", one concept fewer. (01 §10)
 
+## Wave 3+ ground rules (fresh-start mechanics, same repo)
+
+Approved with the contracts (Yousef, 2026-07-11): the blocks are built as if from a fresh codebase, inside this repo.
+
+1. **Every block is a brand-new package directory**, scaffolded empty from its contract doc. Nothing starts as a copy of an old package.
+2. **The dependency-guard CI gate forbids new packages from importing old ones.** Old packages are a read-only quarry: code transplants into a new block only when it satisfies the frozen contract, and arrives in the diff as an addition.
+3. **Old packages are deleted in the same wave their replacement goes green.** The quarry shrinks to zero by wave 7; old and new never ship together.
+
 ## Reading order
 
 01-core defines every shared shape; each block contract then only adds its own API. Read 01 first; 06 (apps) contains the server execution contract and is the largest.
