@@ -54,4 +54,18 @@ describe("canonicalJson", () => {
       }
     },
   );
+
+  it("rejects lone surrogates in strings and keys (RFC 8785 well-formedness)", () => {
+    expect(() => canonicalJson("broken \ud800 surrogate")).toThrow(VendoError);
+    expect(() => canonicalJson("tail \udfff")).toThrow(VendoError);
+    expect(() => canonicalJson({ ["k\ud800"]: 1 })).toThrow(VendoError);
+    expect(canonicalJson("paired 😀 fine")).toBe("\"paired 😀 fine\"");
+  });
+
+  it("rejects non-plain objects instead of silently mis-serializing them", () => {
+    for (const value of [new Date(0), new Map(), /x/, new Uint8Array([1])]) {
+      expect(() => canonicalJson(value)).toThrow(VendoError);
+    }
+    expect(canonicalJson(Object.create(null, { a: { value: 1, enumerable: true } }))).toBe("{\"a\":1}");
+  });
 });
