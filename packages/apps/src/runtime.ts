@@ -251,6 +251,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     version: VersionEntry,
     subject: string,
   ): Promise<AppDocument> => {
+    // Best-effort optimistic concurrency. The core StoreAdapter seam (01-core §12) has
+    // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
+    // check and the put remains — closing it fully needs a store-level revision column
+    // (a store-block follow-up). This catches the common edit-vs-undo / double-edit races.
     const assertCurrent = async (): Promise<void> => {
       const current = await apps.get(previous.id);
       if (current === null
@@ -423,7 +427,10 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async call(appId, ref, args, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
-      return caller.call(app, ref, args, ctx, await machines.mintRun(app, ctx));
+      // Only fn: refs reach the machine and need a run token; a host-tool ref goes
+      // straight to the guard-bound registry, so don't pay for HMAC signing there.
+      // The fn: path mints its own token via machines.withMachine when none is passed.
+      return caller.call(app, ref, args, ctx);
     },
 
     async exportApp(appId, ctx) {

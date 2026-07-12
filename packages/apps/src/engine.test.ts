@@ -253,6 +253,32 @@ describe("generation engine through createApps", () => {
     expect(result.version.rung).toBe(2);
   });
 
+  it("honors a model-declared rung 3 on a code edit with a generic instruction", async () => {
+    const sandbox = fakeSandbox();
+    const seed = await sandbox.create({ env: {}, files: { "/app/server.js": "export const value = 1;" } });
+    const server = await seed.snapshot();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(
+        validCreate(),
+        // rung 3 declared by the model; the instruction text does NOT match the
+        // server-computed heuristic, so the old code recorded rung 2.
+        JSON.stringify({ rung: 3, files: [{ path: "/app/server.js", content: "export const value = 3;" }] }),
+      ),
+    });
+    const created = await runtime.create({ prompt: "Dashboard" }, ctx);
+    await putApp(store, { ...created, server });
+
+    const result = await runtime.edit(created.id, "Update the backend", ctx);
+
+    expect(result.version.rung).toBe(3);
+  });
+
   it("evicts a snapshotted code-edit machine before the next fn call", async () => {
     const base = fakeSandbox();
     const seed = await base.create({ env: {} });

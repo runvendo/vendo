@@ -407,17 +407,25 @@ const codePlanFrom = (
     if (file.content.length > TREE_MAX_TOTAL_COMPONENT_CHARS) issues.push(`file "${file.path}" is too large`);
     files.push({ path: file.path, content: file.content });
   }
+  // Rung is the capability level actually reached, so either signal that indicates a
+  // higher rung wins: the model's own declaration of what it built (previously validated
+  // then discarded — Devin) OR the instruction heuristic. The rung-4 graduation guard
+  // applies to the effective rung either way.
   const policyRung = app.ui === "http" || FULL_WEB_APP_INSTRUCTION.test(instruction)
     ? 4
     : SERVER_COMPUTED_INSTRUCTION.test(instruction) ? 3 : 2;
-  const requested = value.rung ?? policyRung;
-  if (requested !== 2 && requested !== 3 && requested !== 4) issues.push("code edit rung must be 2, 3, or 4");
-  if (policyRung === 4 && app.ui !== "http") {
+  const declaredRaw = value.rung;
+  const declared = declaredRaw === 2 || declaredRaw === 3 || declaredRaw === 4 ? declaredRaw : undefined;
+  if (declaredRaw !== undefined && declared === undefined) {
+    issues.push("code edit rung must be 2, 3, or 4");
+  }
+  const rung = (declared !== undefined && declared > policyRung ? declared : policyRung) as 2 | 3 | 4;
+  if (rung === 4 && app.ui !== "http") {
     issues.push("v0 cannot graduate a tree app to rung 4; use rung 2 or 3");
   }
   return issues.length > 0
     ? { issues }
-    : { files, rung: policyRung, issues: [] };
+    : { files, rung, issues: [] };
 };
 
 const repairPrompt = (issues: string[]): string =>
