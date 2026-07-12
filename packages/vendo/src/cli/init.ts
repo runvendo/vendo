@@ -138,11 +138,37 @@ function defaultModelSource(): string {
 
 /** Resolve an `@/`-style model import to a candidate file the scaffold owns.
     Anything else (a package, a relative path) is the host's own module. */
-function modelModuleCandidate(root: string, appDir: string, modelImport: string): string | null {
+async function modelModuleCandidate(root: string, appDir: string, modelImport: string): Promise<string | null> {
   if (!modelImport.startsWith("@/")) return null;
-  // Mirror the Next `@/*` alias: rooted at src/ when the app directory lives there.
-  const aliasRoot = appDir.endsWith(join("src", "app")) ? join(root, "src") : root;
-  return join(aliasRoot, `${modelImport.slice(2)}.ts`);
+  const suffix = `${modelImport.slice(2)}.ts`;
+  // Honor the project's actual alias if tsconfig/jsconfig declares one for `@/*`
+  // — guessing src/ vs root would scaffold the file where TypeScript won't
+  // resolve the generated import. Fall back to the Next convention only when no
+  // config maps it (the alias root follows the app dir: src/app → src, else root).
+  const mapped = await tsconfigAliasRoot(root);
+  const aliasRoot = mapped ?? (appDir.endsWith(join("src", "app")) ? join(root, "src") : root);
+  return join(aliasRoot, suffix);
+}
+
+/** Resolve the `baseUrl`-relative directory that `@/*` maps to in the nearest
+    tsconfig/jsconfig (following one `extends`); null when unmapped. */
+async function tsconfigAliasRoot(root: string): Promise<string | null> {
+  for (const file of ["tsconfig.json", "jsconfig.json"]) {
+    const raw = await readOptional(join(root, file));
+    if (raw === null) continue;
+    try {
+      const config = JSON.parse(raw) as {
+        compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> };
+      };
+      const target = config.compilerOptions?.paths?.["@/*"]?.[0];
+      if (typeof target !== "string" || !target.endsWith("/*")) continue;
+      const baseUrl = config.compilerOptions?.baseUrl ?? ".";
+      return join(root, baseUrl, target.slice(0, -2));
+    } catch {
+      // Malformed config — fall through to the convention.
+    }
+  }
+  return null;
 }
 
 function defaultLayoutSource(): string {
@@ -194,7 +220,7 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
     changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
     // A fresh app has no model module yet: scaffold the BYO-LLM seat (one env
     // key = working agent) instead of wiring an import that cannot resolve.
-    const modelModule = modelModuleCandidate(root, app, modelImport);
+    const modelModule = await modelModuleCandidate(root, app, modelImport);
     if (modelModule !== null && !(await exists(modelModule)) && !(await exists(modelModule.replace(/\.ts$/, ".js")))) {
       const modelPath = relative(root, modelModule);
       const modelAfter = defaultModelSource();
