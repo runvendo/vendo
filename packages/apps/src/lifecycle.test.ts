@@ -7,6 +7,7 @@ import {
   fakeSandbox,
   guardFixture,
   memoryStore,
+  seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
 
@@ -108,11 +109,7 @@ describe("apps lifecycle", () => {
       name: "Server source",
       server,
     };
-    await store.records("vendo_apps").put({
-      id: source.id,
-      data: source,
-      refs: { subject: "user_ada" },
-    });
+    await seedAppRow(store, source, "user_ada");
 
     const fork = await runtime.fork(source.id, context("user_ada"));
 
@@ -125,11 +122,7 @@ describe("apps lifecycle", () => {
     expect(new TextDecoder().decode(await sourceMachine.files.read("/app/value.txt"))).toBe("source");
 
     const noAdapterStore = memoryStore();
-    await noAdapterStore.records("vendo_apps").put({
-      id: source.id,
-      data: source,
-      refs: { subject: "user_ada" },
-    });
+    await seedAppRow(noAdapterStore, source, "user_ada");
     const withoutAdapter = createApps({
       store: noAdapterStore,
       guard: guardFixture(),
@@ -223,7 +216,7 @@ describe("apps lifecycle", () => {
         nodes: [{ id: "root", component: "Text" }],
       },
     };
-    await store.records("vendo_apps").put({ id: app.id, data: app, refs: { subject: "user_ada" } });
+    await seedAppRow(store, app, "user_ada");
     const uuid = vi.spyOn(globalThis.crypto, "randomUUID")
       .mockReturnValueOnce("ffffffff-ffff-4fff-8fff-ffffffffffff")
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000000");
@@ -265,7 +258,7 @@ describe("apps lifecycle", () => {
     };
     const store = memoryStore();
     const app: AppDocument = { format: VENDO_APP_FORMAT, id: "app_undo_server", name: "Undo server", server };
-    await store.records("vendo_apps").put({ id: app.id, data: app, refs: { subject: "user_ada" } });
+    await seedAppRow(store, app, "user_ada");
     const runtime = createApps({
       store,
       guard: guardFixture(),
@@ -304,7 +297,11 @@ describe("apps lifecycle", () => {
     const appId = "app_invalid";
     await store.records("vendo_apps").put({
       id: appId,
-      data: { format: VENDO_APP_FORMAT, id: appId, name: "", ui: "tree" },
+      data: {
+        subject: "user_ada",
+        enabled: false,
+        doc: { format: VENDO_APP_FORMAT, id: appId, name: "", ui: "tree" },
+      },
       refs: { subject: "user_ada" },
     });
 
@@ -321,7 +318,11 @@ describe("apps lifecycle", () => {
     const edited = await runtime.edit(valid.id, "Edited", ctx);
     await store.records("vendo_apps").put({
       id: "app_corrupt",
-      data: { format: VENDO_APP_FORMAT, id: "app_corrupt", name: "" },
+      data: {
+        subject: ctx.principal.subject,
+        enabled: false,
+        doc: { format: VENDO_APP_FORMAT, id: "app_corrupt", name: "" },
+      },
       refs: { subject: ctx.principal.subject },
     });
     await store.records(`vendo:app-history:${valid.id}`).put({

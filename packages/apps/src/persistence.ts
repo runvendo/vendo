@@ -17,20 +17,48 @@ export const validateDocument = (input: unknown, appId: AppId): AppDocument => {
   return structuredClone(result.app);
 };
 
+/** The vendo_apps row shape (02-store §2: id, subject, enabled, doc). The
+ *  store's reserved records("vendo_apps") routing speaks exactly this — the
+ *  document alone is NOT the row; ownership and the automations arm/disarm
+ *  bit ride beside it. */
+export interface AppRowData {
+  subject: string;
+  enabled: boolean;
+  doc: AppDocument;
+}
+
+export const rowFromRecord = (record: VendoRecord): AppRowData => {
+  const data = record.data as Partial<AppRowData> | null;
+  if (
+    data === null || typeof data !== "object"
+    || typeof data.subject !== "string"
+    || typeof data.enabled !== "boolean"
+    || data.doc === undefined
+  ) {
+    throw new VendoError("validation", `invalid app row for ${record.id}`, { appId: record.id });
+  }
+  return {
+    subject: data.subject,
+    enabled: data.enabled,
+    doc: validateDocument(data.doc, record.id),
+  };
+};
+
 export const documentFromRecord = (record: VendoRecord): AppDocument =>
-  validateDocument(record.data, record.id);
+  rowFromRecord(record).doc;
 
 export interface AppRecordWrite {
   id: AppId;
-  data: AppDocument;
+  data: AppRowData;
   refs: { subject: string };
 }
 
 export const appRecordInput = (
   app: AppDocument,
   subject: string,
+  enabled = false,
 ): AppRecordWrite => ({
   id: app.id,
-  data: validateDocument(app, app.id),
+  data: { subject, enabled, doc: validateDocument(app, app.id) },
   refs: { subject },
 });

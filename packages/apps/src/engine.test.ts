@@ -12,6 +12,7 @@ import {
   fakeSandbox,
   guardFixture,
   memoryStore,
+  seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
 
@@ -61,11 +62,7 @@ const putApp = async (
   store: ReturnType<typeof memoryStore>,
   app: AppDocument,
 ): Promise<void> => {
-  await store.records("vendo_apps").put({
-    id: app.id,
-    data: app,
-    refs: { subject: ctx.principal.subject },
-  });
+  await seedAppRow(store, app, ctx.principal.subject);
 };
 
 describe("generation engine through createApps", () => {

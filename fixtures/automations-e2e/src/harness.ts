@@ -24,7 +24,7 @@ import type {
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createGuard, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createActions } from "@vendoai/actions";
-import { createApps, type AppsRuntime } from "@vendoai/apps";
+import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
 import { createAutomations, type AutomationsEngine } from "@vendoai/automations";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
@@ -110,8 +110,12 @@ export interface Stack {
 
 export interface StackOptions {
   runner?: AgentRunner;
+  /** Build the runner from the stack's own parts — the live leg builds
+   *  agent.asRunner() over the same guard + bound registry. Wins over runner. */
+  runnerFrom?: (parts: { guard: VendoGuard; bound: ToolRegistry; store: VendoStore }) => AgentRunner;
   now?: () => Date;
   policy?: PolicyConfig;
+  sandbox?: SandboxAdapter;
 }
 
 export async function createStack(options: StackOptions = {}): Promise<Stack> {
@@ -125,13 +129,22 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     actAs: fixtureActAs,
   });
   const bound = guard.bind(actions);
-  const apps = createApps({ store, guard, tools: bound, catalog: [] });
+  const apps = createApps({
+    store,
+    guard,
+    tools: bound,
+    catalog: [],
+    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+  });
+  const runner = options.runnerFrom === undefined
+    ? options.runner
+    : options.runnerFrom({ guard, bound, store });
   const automations = createAutomations({
     apps,
     tools: bound,
     guard,
     store,
-    ...(options.runner === undefined ? {} : { runner: options.runner }),
+    ...(runner === undefined ? {} : { runner }),
     ...(options.now === undefined ? {} : { now: options.now }),
   });
 
