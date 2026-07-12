@@ -61,7 +61,10 @@ export function AutomationsPanel() {
                   className="fl-auto-toggle"
                   type="button"
                   role="switch"
-                  aria-label={entry.enabled ? "Enabled" : "Disabled"}
+                  // Name identifies WHICH automation (aria-checked carries the on/off
+                  // state) so screen readers and role/name tests can tell two same-state
+                  // toggles apart and never flip the wrong app.
+                  aria-label={`Enable ${entry.app.name}`}
                   aria-checked={entry.enabled}
                   disabled={busy[`toggle-${appId}`]}
                   style={{
