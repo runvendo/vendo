@@ -48,6 +48,39 @@ const emptyTools: ToolRegistry = {
 };
 
 describe("apps execution", () => {
+  it("never lets a query path reach Object.prototype", async () => {
+    const rawTools: ToolRegistry = {
+      async descriptors() {
+        return [{ name: "host_ok", description: "Returns data", inputSchema: { type: "object" }, risk: "read" }];
+      },
+      async execute() { return { status: "ok", output: "POLLUTED" }; },
+    };
+    const guard = guardFixture();
+    const store = memoryStore();
+    const runtime = createApps({ store, guard, tools: bindTools(guard, rawTools), catalog: [], model });
+    const created = await runtime.create({ prompt: "Hostile" }, ctx());
+    // An app document is untrusted input: model-written, or imported from a .vendoapp artifact.
+    await putApp(store, {
+      ...created,
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text" }],
+        queries: [
+          { path: "/__proto__/polluted", tool: "host_ok" },
+          { path: "/constructor/prototype/polluted", tool: "host_ok" },
+        ],
+      },
+    });
+
+    const surface = await runtime.open(created.id, ctx());
+
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype).not.toHaveProperty("polluted");
+    if (surface.kind !== "tree") throw new Error("Expected tree surface");
+    expect(surface.payload.data).toEqual({});
+  });
+
   it("calls fn refs through the machine and contains envelope violations", async () => {
     const sandbox = fakeSandbox();
     const machineApp: MachineApp = (request) => {

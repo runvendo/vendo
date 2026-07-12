@@ -16,12 +16,18 @@ import type { OpenSurface } from "./runtime.js";
 const isObject = (value: unknown): value is Record<string, Json> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+// Query paths come from the app document — model-written or imported from an untrusted
+// .vendoapp artifact — so a pointer segment that names a prototype key must never resolve.
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 const decodePointer = (pointer: string): string[] | null => {
   if (pointer === "") return [];
   if (!pointer.startsWith("/")) return null;
   const encoded = pointer.slice(1).split("/");
   if (encoded.some((part) => /~(?![01])/u.test(part))) return null;
-  return encoded.map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"));
+  const parts = encoded.map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"));
+  if (parts.some((part) => UNSAFE_KEYS.has(part))) return null;
+  return parts;
 };
 
 type JsonContainer = Record<string, Json> | Json[];
