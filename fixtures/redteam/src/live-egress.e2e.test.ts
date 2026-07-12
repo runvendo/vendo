@@ -18,8 +18,10 @@
  *   (4) the app only ever sees the handle string, never a real secret value, and
  *       whatever leaves toward the allowed host is that handle verbatim,
  *   (5) a raw-IP probe to a non-allowlisted public IP is BLOCKED.
- * The allowlisted control path (2, example.com) is a soft-skip on flakiness; a
- * SUCCESSFUL non-allowlisted egress is ALWAYS a hard P0 failure.
+ * The allowlisted control path (2, example.com) is a HARD assert: the machine
+ * MUST reach the one permitted host, otherwise the deny-side proofs above would
+ * be a vacuous pass on a deny-all/dead network. A SUCCESSFUL non-allowlisted
+ * egress is ALWAYS a hard P0 failure.
  *
  * Probes run through `node` (guaranteed present in the e2b base image, as the
  * apps live-e2b example relies on) rather than curl, so the suite does not depend
@@ -220,26 +222,30 @@ describe.skipIf(!plausible)("live e2b egress: exfil is blocked and secrets never
         expect(reached(echoed), "echo endpoint should answer").toBe(true);
         expect(echoed.body).toBe(`leak=${SECRET_HANDLE}`);
 
-        // ── (2) Allowlisted control (SOFT): example.com should be reachable. A
-        //        blocked control does NOT fail the suite — the security asserts
-        //        above stand on their own — but we surface it loudly. ──
+        // ── (2) Allowlisted control (HARD): example.com MUST be reachable. ──
+        // This is a HARD assert, not a soft-skip, and that is load-bearing: it is
+        // the ONLY thing that proves the allowlist can ALLOW its one permitted
+        // host. Without it, a deny-all misconfiguration (or a dead network) would
+        // make every deny-side assertion (1/3/5) pass VACUOUSLY — everything
+        // reached===false — and the suite would falsely report "allowlist
+        // enforced" while having proven only "everything is blocked." A complete
+        // allowlist proof needs BOTH sides: deny the forbidden AND allow the
+        // permitted. The suite is live-only (E2B_API_KEY + real network), so a
+        // hard control assert is appropriate. We retry generously to absorb
+        // genuine transient flakiness, then assert reachability at the end.
+        let control: ProbeResult | undefined;
         let controlOk = false;
-        for (let attempt = 0; attempt < 4 && !controlOk; attempt += 1) {
-          const control = await probe(machine, { url: ALLOWED_URL, follow: true });
+        for (let attempt = 0; attempt < 5 && !controlOk; attempt += 1) {
+          control = await probe(machine, { url: ALLOWED_URL, follow: true });
           controlOk = reached(control);
           if (!controlOk) await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-        if (!controlOk) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[live-egress] SOFT-SKIP control: allowlisted ${ALLOWED_URL} was not reachable in this ` +
-              `environment. Blocked-egress assertions (1/3/4/5) still hold. If EVERYTHING is blocked, ` +
-              `re-run in a network that can reach ${ALLOWED_HOST} to confirm the allow path is honored.`,
-          );
-        } else {
-          // eslint-disable-next-line no-console
-          console.log(`[live-egress] control OK: reached ${ALLOWED_URL} through the allowlist.`);
-        }
+        expect(
+          controlOk,
+          `allowlisted control ${ALLOWED_URL} was NOT reachable after retries — the allowlist did not ` +
+            `ALLOW its one permitted host, so the deny-side assertions (1/3/5) are a vacuous pass on a ` +
+            `dead/deny-all network. Last probe: ${JSON.stringify(control)}`,
+        ).toBe(true);
       } finally {
         // Never leak a live machine.
         await machine.stop().catch(() => undefined);
