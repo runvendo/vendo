@@ -36,6 +36,8 @@ export interface ApprovalRow {
   request: ApprovalRequest;
   status: "pending" | "approved" | "denied";
   decidedAt?: IsoDateTime;
+  sessionId?: string;
+  consumedAt?: IsoDateTime;
   createdAt: IsoDateTime;
 }
 

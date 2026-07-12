@@ -1,6 +1,7 @@
 import type { AppId, AuditEvent, IsoDateTime, Principal } from "@vendoai/core";
-import { overlayFor } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
+import { putAuditRow } from "./rows.js";
 import { decodeCursor, encodeCursor, iso, pageLimit, text } from "./utils.js";
 
 export interface AuditQuery {
@@ -28,15 +29,11 @@ export function auditStore(store: VendoStore): {
   return {
     async append(event) {
       if (event.principal.ephemeral === true) {
+        registerEphemeralSubject(store, event.principal.subject);
         overlay.audit.set(event.id, event);
         return;
       }
-      await db.query(
-        `INSERT INTO vendo_audit (id, at, kind, subject, venue, presence, app_id, tool, event)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
-        [event.id, event.at, event.kind, event.principal.subject, event.venue, event.presence,
-          event.appId ?? null, event.tool ?? null, JSON.stringify(event)],
-      );
+      await putAuditRow(db, event);
     },
     async query(filter) {
       const limit = pageLimit(filter.limit);

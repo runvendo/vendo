@@ -40,7 +40,8 @@ export const DDL = [
   "CREATE INDEX IF NOT EXISTS vendo_grants_subject_tool_idx ON vendo_grants (subject, tool)",
   `CREATE TABLE IF NOT EXISTS vendo_approvals (
     id text PRIMARY KEY, subject text NOT NULL, request jsonb NOT NULL,
-    status text NOT NULL DEFAULT 'pending', decided_at timestamptz, created_at timestamptz NOT NULL
+    status text NOT NULL DEFAULT 'pending', decided_at timestamptz, session_id text,
+    consumed_at timestamptz, created_at timestamptz NOT NULL
   )`,
   "CREATE INDEX IF NOT EXISTS vendo_approvals_subject_status_idx ON vendo_approvals (subject, status)",
   `CREATE TABLE IF NOT EXISTS vendo_audit (
@@ -57,6 +58,11 @@ export const DDL = [
   `CREATE TABLE IF NOT EXISTS vendo_secrets (
     name text PRIMARY KEY, ciphertext text NOT NULL, created_at timestamptz NOT NULL
   )`,
+] as const;
+
+const ADDITIVE_DDL = [
+  "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS session_id text",
+  "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS consumed_at timestamptz",
 ] as const;
 
 type Query = Db["query"];
@@ -80,6 +86,8 @@ async function migrate(query: Query): Promise<void> {
       [JSON.stringify(SCHEMA_VERSION)],
     );
   }
+  // Schema v1 has not shipped; keep same-version development databases compatible.
+  for (const statement of ADDITIVE_DDL) await query(statement);
   await query(
     `INSERT INTO vendo_meta (key, value) VALUES ('boot_id', $1::jsonb)
      ON CONFLICT (key) DO NOTHING`,

@@ -22,9 +22,26 @@ For production, pass a Postgres connection string explicitly, for example `creat
 | `vendo_state` | `app_id, subject, data, updated_at` | built-in per-user-per-app state singleton |
 | `vendo_threads` | `id, subject, messages, created_at, updated_at` | conversation threads |
 | `vendo_grants` | `id, subject, tool, descriptor_hash, scope, duration, app_id, source, granted_at, revoked_at, expires_at` | permission grants |
-| `vendo_approvals` | `id, subject, request, status, decided_at, created_at` | approval queue |
+| `vendo_approvals` | `id, subject, request, status, decided_at, session_id, consumed_at, created_at` | approval queue |
 | `vendo_audit` | `id, at, kind, subject, venue, presence, app_id, tool, event` | append-only audit log |
 | `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation run records |
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values |
 
-Collection names are opaque to the adapter. App storage uses `app:<appId>:<name>` by convention. The principal-free `records()` and `blobs()` seams do not route ephemeral data; consuming blocks are responsible for that routing.
+App storage uses `app:<appId>:<name>` by convention. Except for the six reserved names below, collection names remain opaque and use `vendo_records`.
+
+## Reserved collections (block seam)
+
+Blocks receive core's plain `StoreAdapter`, so these exact `records()` collection names route to their typed tables:
+
+| Collection | Primary key | Data | Synthesized refs | Record timestamps |
+| --- | --- | --- | --- | --- |
+| `vendo_grants` | grant id | `PermissionGrant` | `subject`, `tool`, optional `app_id` | `grantedAt` / `revokedAt ?? grantedAt` |
+| `vendo_approvals` | approval id | `{ request, status, decidedAt?, sessionId?, consumedAt? }` | `subject`, `status` | `request.createdAt` / `consumedAt ?? decidedAt ?? request.createdAt` |
+| `vendo_audit` | audit event id | `AuditEvent` | `subject`, `kind`, optional `app_id`, optional `tool` | `at` / `at` |
+| `vendo_threads` | thread id | `{ subject, messages }` | `subject` | table `created_at` / `updated_at` |
+| `vendo_runs` | run id | `{ appId, trigger, status, record, startedAt, finishedAt? }` | `app_id`, `status` | `startedAt` / `finishedAt ?? startedAt` |
+| `vendo_apps` | app id | `{ subject, enabled, doc }` | `subject` | table `created_at` / `updated_at` |
+
+Reserved writes validate their typed data, require embedded ids to match the record id, and upsert the typed row. The data is authoritative: caller-supplied `refs` are ignored on write and synthesized from typed columns on read. Routed `list({ refs })` accepts only the refs shown above. Generic and routed record lists are uniformly newest-first by `(createdAt, id)`.
+
+Ephemeral approvals and audit events route automatically from their embedded principal. For grants, threads, apps, and other subject-only writes, call `registerEphemeralSubject(store, subject)` before the first write, unless an earlier principal-bearing ephemeral write already registered that subject. Runs inherit routing from their owning app. Routed and typed helpers share the same in-memory overlays, and `close()` clears them. Blob namespaces remain principal-free and are not routed automatically.

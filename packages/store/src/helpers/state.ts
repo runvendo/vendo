@@ -1,5 +1,5 @@
 import type { AppId, Json, Principal } from "@vendoai/core";
-import { overlayFor, stateKey } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject, stateKey } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 
 /** 02-store §3 */
@@ -13,6 +13,7 @@ export function stateStore(store: VendoStore): {
   return {
     async get(principal, appId) {
       if (principal.ephemeral === true) {
+        registerEphemeralSubject(store, principal.subject);
         return overlay.states.get(stateKey(principal.subject, appId))?.data ?? null;
       }
       const result = await db.query(

@@ -1,20 +1,9 @@
 import type { AppId, RunId } from "@vendoai/core";
+import { isEphemeralApp, overlayFor } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { RunRow } from "./types.js";
-import { decodeCursor, encodeCursor, iso, optionalIso, pageLimit, text } from "./utils.js";
-
-function fromRow(row: Record<string, unknown>): RunRow {
-  const finishedAt = optionalIso(row["finished_at"]);
-  return {
-    id: text(row["id"]),
-    appId: text(row["app_id"]),
-    trigger: row["trigger"] as RunRow["trigger"],
-    status: text(row["status"]) as RunRow["status"],
-    record: row["record"],
-    startedAt: iso(row["started_at"]),
-    ...(finishedAt === undefined ? {} : { finishedAt }),
-  };
-}
+import { putRunRow, runFromRow } from "./rows.js";
+import { decodeCursor, encodeCursor, pageLimit } from "./utils.js";
 
 /** 02-store §3 */
 export function runStore(store: VendoStore): {
@@ -23,24 +12,24 @@ export function runStore(store: VendoStore): {
   list(filter: { appId?: AppId; status?: RunRow["status"]; limit?: number; cursor?: string }): Promise<{ runs: RunRow[]; cursor?: string }>;
 } {
   const db = dbFor(store);
+  const overlay = overlayFor(store);
   return {
     async put(run) {
-      await db.query(
-        `INSERT INTO vendo_runs (id, app_id, trigger, status, record, started_at, finished_at)
-         VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, $6, $7)
-         ON CONFLICT (id) DO UPDATE SET app_id = EXCLUDED.app_id, trigger = EXCLUDED.trigger,
-           status = EXCLUDED.status, record = EXCLUDED.record, started_at = EXCLUDED.started_at,
-           finished_at = EXCLUDED.finished_at`,
-        [run.id, run.appId, JSON.stringify(run.trigger), run.status, JSON.stringify(run.record),
-          run.startedAt, run.finishedAt ?? null],
-      );
+      if (await isEphemeralApp(store, db, run.appId)) {
+        overlay.runs.set(run.id, run);
+        return;
+      }
+      await putRunRow(db, run);
     },
     async get(id) {
+      const memory = overlay.runs.get(id);
+      if (memory) return memory;
       const result = await db.query("SELECT * FROM vendo_runs WHERE id = $1", [id]);
-      return result.rows[0] ? fromRow(result.rows[0]) : null;
+      return result.rows[0] ? runFromRow(result.rows[0]) : null;
     },
     async list(filter) {
       const limit = pageLimit(filter.limit);
+      const cursor = filter.cursor === undefined ? undefined : decodeCursor(filter.cursor);
       const params: unknown[] = [];
       const clauses: string[] = [];
       if (filter.appId !== undefined) {
@@ -52,8 +41,7 @@ export function runStore(store: VendoStore): {
         clauses.push(`status = $${params.length}`);
       }
       if (filter.cursor !== undefined) {
-        const cursor = decodeCursor(filter.cursor);
-        params.push(cursor.c, cursor.i);
+        params.push(cursor?.c, cursor?.i);
         clauses.push(`(started_at, id) < ($${params.length - 1}, $${params.length})`);
       }
       params.push(limit + 1);
@@ -62,11 +50,22 @@ export function runStore(store: VendoStore): {
          ORDER BY started_at DESC, id DESC LIMIT $${params.length}`,
         params,
       );
-      const runs = result.rows.slice(0, limit).map(fromRow);
+      const memoryIds = new Set(overlay.runs.keys());
+      const memoryRuns = [...overlay.runs.values()]
+        .filter((run) => filter.appId === undefined || run.appId === filter.appId)
+        .filter((run) => filter.status === undefined || run.status === filter.status)
+        .filter((run) => cursor === undefined || run.startedAt < cursor.c
+          || (run.startedAt === cursor.c && run.id < cursor.i));
+      const runs = [
+        ...result.rows.map(runFromRow).filter((run) => !memoryIds.has(run.id)),
+        ...memoryRuns,
+      ].sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id)).slice(0, limit);
       const last = runs.at(-1);
       return {
         runs,
-        ...(result.rows.length > limit && last ? { cursor: encodeCursor(last.startedAt, last.id) } : {}),
+        ...((result.rows.length > limit || memoryRuns.length + result.rows.length > limit) && last
+          ? { cursor: encodeCursor(last.startedAt, last.id) }
+          : {}),
       };
     },
   };

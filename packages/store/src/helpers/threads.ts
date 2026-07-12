@@ -1,18 +1,9 @@
 import type { Json, Principal, ThreadId } from "@vendoai/core";
-import { overlayFor } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { ThreadRow } from "./types.js";
+import { putThreadRow, threadFromRow } from "./rows.js";
 import { iso, text } from "./utils.js";
-
-function fromRow(row: Record<string, unknown>): ThreadRow {
-  return {
-    id: text(row["id"]),
-    subject: text(row["subject"]),
-    messages: row["messages"] as Json[],
-    createdAt: iso(row["created_at"]),
-    updatedAt: iso(row["updated_at"]),
-  };
-}
 
 /** 02-store §3 */
 export function threadStore(store: VendoStore): {
@@ -27,6 +18,7 @@ export function threadStore(store: VendoStore): {
     async put(principal, thread) {
       const now = new Date().toISOString();
       if (principal.ephemeral === true) {
+        registerEphemeralSubject(store, principal.subject);
         const prior = overlay.threads.get(thread.id);
         const row: ThreadRow = {
           id: thread.id,
@@ -38,15 +30,11 @@ export function threadStore(store: VendoStore): {
         overlay.threads.set(thread.id, row);
         return row;
       }
-      const result = await db.query(
-        `INSERT INTO vendo_threads (id, subject, messages, created_at, updated_at)
-         VALUES ($1, $2, $3::jsonb, $4, $4)
-         ON CONFLICT (id) DO UPDATE SET subject = EXCLUDED.subject, messages = EXCLUDED.messages,
-           updated_at = EXCLUDED.updated_at
-         RETURNING id, subject, messages, created_at, updated_at`,
-        [thread.id, principal.subject, JSON.stringify(thread.messages), now],
-      );
-      return fromRow(result.rows[0] as Record<string, unknown>);
+      return putThreadRow(db, {
+        id: thread.id,
+        subject: principal.subject,
+        messages: thread.messages,
+      }, now);
     },
     async get(principal, id) {
       if (principal.ephemeral === true) {
@@ -58,7 +46,7 @@ export function threadStore(store: VendoStore): {
          WHERE id = $1 AND subject = $2`,
         [id, principal.subject],
       );
-      return result.rows[0] ? fromRow(result.rows[0]) : null;
+      return result.rows[0] ? threadFromRow(result.rows[0]) : null;
     },
     async list(principal) {
       if (principal.ephemeral === true) {

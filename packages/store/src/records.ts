@@ -53,12 +53,12 @@ export function createRecordStore(db: Db, collection: string): RecordStore {
       if (query.cursor !== undefined) {
         const cursor = decodeCursor(query.cursor);
         params.push(cursor.c, cursor.i);
-        clauses.push(`(created_at, id) > ($${params.length - 1}, $${params.length})`);
+        clauses.push(`(created_at, id) < ($${params.length - 1}, $${params.length})`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `SELECT id, data, refs, created_at, updated_at FROM vendo_records
-         WHERE ${clauses.join(" AND ")} ORDER BY created_at ASC, id ASC LIMIT $${params.length}`,
+         WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
         params,
       );
       const rows = result.rows.slice(0, limit).map(recordFromRow);

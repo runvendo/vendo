@@ -4,6 +4,7 @@ import { dropEncryptionKey, setEncryptionKey, validateEncryptionKey } from "./cr
 import { createDb, type Db, type StoreConfig } from "./db.js";
 import { dropOverlay } from "./ephemeral.js";
 import { createRecordStore } from "./records.js";
+import { createReservedRecordStore } from "./routing.js";
 import { ensureSchema as migrateSchema } from "./schema.js";
 
 /** 02-store §1 */
@@ -27,7 +28,7 @@ export function createStore(config: StoreConfig = {}): VendoStore {
   const db = createDb(config);
   const store: VendoStore = {
     records(collection: string): RecordStore {
-      return createRecordStore(db, collection);
+      return createReservedRecordStore(store, db, collection) ?? createRecordStore(db, collection);
     },
     blobs(namespace: string): BlobStore {
       return createBlobStore(db, namespace);

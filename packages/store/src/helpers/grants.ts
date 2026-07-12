@@ -6,26 +6,9 @@ import {
   type PermissionGrant,
   type Principal,
 } from "@vendoai/core";
-import { overlayFor } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
-import { iso, optionalIso, text } from "./utils.js";
-
-function fromRow(row: Record<string, unknown>): PermissionGrant {
-  return {
-    id: text(row["id"]),
-    subject: text(row["subject"]),
-    tool: text(row["tool"]),
-    descriptorHash: text(row["descriptor_hash"]),
-    scope: row["scope"] as PermissionGrant["scope"],
-    duration: text(row["duration"]) as PermissionGrant["duration"],
-    ...(row["context_key"] == null ? {} : { contextKey: text(row["context_key"]) }),
-    ...(row["app_id"] == null ? {} : { appId: text(row["app_id"]) }),
-    source: text(row["source"]) as PermissionGrant["source"],
-    grantedAt: iso(row["granted_at"]),
-    ...(optionalIso(row["expires_at"]) ? { expiresAt: optionalIso(row["expires_at"]) } : {}),
-    ...(optionalIso(row["revoked_at"]) ? { revokedAt: optionalIso(row["revoked_at"]) } : {}),
-  };
-}
+import { grantFromRow, putGrantRow } from "./rows.js";
 
 function active(grant: PermissionGrant, now: string): boolean {
   return grant.revokedAt === undefined && (grant.expiresAt === undefined || grant.expiresAt > now);
@@ -46,23 +29,17 @@ export function grantStore(store: VendoStore): {
         throw new VendoError("validation", "Grant subject must match principal subject");
       }
       if (principal.ephemeral === true) {
+        registerEphemeralSubject(store, principal.subject);
         overlay.grants.set(grant.id, grant);
         return;
       }
-      await db.query(
-        `INSERT INTO vendo_grants
-         (id, subject, tool, descriptor_hash, scope, duration, context_key, app_id, source, granted_at, expires_at, revoked_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)`,
-        [grant.id, grant.subject, grant.tool, grant.descriptorHash, JSON.stringify(grant.scope), grant.duration,
-          grant.contextKey ?? null, grant.appId ?? null, grant.source, grant.grantedAt,
-          grant.expiresAt ?? null, grant.revokedAt ?? null],
-      );
+      await putGrantRow(db, grant, false);
     },
     async get(id) {
       const memory = overlay.grants.get(id);
       if (memory) return memory;
       const result = await db.query("SELECT * FROM vendo_grants WHERE id = $1", [id]);
-      return result.rows[0] ? fromRow(result.rows[0]) : null;
+      return result.rows[0] ? grantFromRow(result.rows[0]) : null;
     },
     async list(principal, filter = {}) {
       if (principal.ephemeral === true) {
@@ -91,7 +68,7 @@ export function grantStore(store: VendoStore): {
         `SELECT * FROM vendo_grants WHERE ${clauses.join(" AND ")} ORDER BY granted_at ASC, id ASC`,
         params,
       );
-      return result.rows.map(fromRow);
+      return result.rows.map(grantFromRow);
     },
     async revoke(id, revokedAt) {
       const memory = overlay.grants.get(id);

@@ -1,20 +1,9 @@
 import type { ApprovalId, ApprovalRequest, IsoDateTime, Principal } from "@vendoai/core";
-import { overlayFor } from "../ephemeral.js";
+import { overlayFor, registerEphemeralSubject } from "../ephemeral.js";
 import { dbFor, type VendoStore } from "../store.js";
 import type { ApprovalRow } from "./types.js";
-import { iso, optionalIso, text } from "./utils.js";
-
-function fromRow(row: Record<string, unknown>): ApprovalRow {
-  const decidedAt = optionalIso(row["decided_at"]);
-  return {
-    id: text(row["id"]),
-    subject: text(row["subject"]),
-    request: row["request"] as ApprovalRequest,
-    status: text(row["status"]) as ApprovalRow["status"],
-    ...(decidedAt === undefined ? {} : { decidedAt }),
-    createdAt: iso(row["created_at"]),
-  };
-}
+import { approvalFromRow, putApprovalRow } from "./rows.js";
+import { text } from "./utils.js";
 
 /** 02-store §3 */
 export function approvalStore(store: VendoStore): {
@@ -29,6 +18,7 @@ export function approvalStore(store: VendoStore): {
     async create(request) {
       const subject = request.ctx.principal.subject;
       if (request.ctx.principal.ephemeral === true) {
+        registerEphemeralSubject(store, subject);
         overlay.approvals.set(request.id, {
           id: request.id,
           subject,
@@ -38,17 +28,19 @@ export function approvalStore(store: VendoStore): {
         });
         return;
       }
-      await db.query(
-        `INSERT INTO vendo_approvals (id, subject, request, status, decided_at, created_at)
-         VALUES ($1, $2, $3::jsonb, 'pending', NULL, $4)`,
-        [request.id, subject, JSON.stringify(request), request.createdAt],
-      );
+      await putApprovalRow(db, {
+        id: request.id,
+        subject,
+        request,
+        status: "pending",
+        createdAt: request.createdAt,
+      }, false);
     },
     async get(id) {
       const memory = overlay.approvals.get(id);
       if (memory) return memory;
       const result = await db.query("SELECT * FROM vendo_approvals WHERE id = $1", [id]);
-      return result.rows[0] ? fromRow(result.rows[0]) : null;
+      return result.rows[0] ? approvalFromRow(result.rows[0]) : null;
     },
     async pending(principal) {
       if (principal.ephemeral === true) {

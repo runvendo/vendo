@@ -1,0 +1,515 @@
+import {
+  VendoError,
+  appDocumentSchema,
+  appIdSchema,
+  approvalRequestSchema,
+  auditEventSchema,
+  isoDateTimeSchema,
+  permissionGrantSchema,
+  runIdSchema,
+  threadIdSchema,
+  type AppDocument,
+  type ApprovalRequest,
+  type AuditEvent,
+  type Json,
+  type PermissionGrant,
+  type RecordQuery,
+  type RecordStore,
+  type VendoRecord,
+} from "@vendoai/core";
+import type { Db } from "./db.js";
+import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject } from "./ephemeral.js";
+import {
+  appFromRow,
+  approvalFromRow,
+  grantFromRow,
+  putAppRow,
+  putApprovalRow,
+  putAuditRow,
+  putGrantRow,
+  putRunRow,
+  putThreadRow,
+  runFromRow,
+  threadFromRow,
+} from "./helpers/rows.js";
+import type { AppRow, ApprovalRow, RunRow, ThreadRow } from "./helpers/types.js";
+import { decodeCursor, encodeCursor, pageLimit } from "./helpers/utils.js";
+import type { VendoStore } from "./store.js";
+
+export const RESERVED_COLLECTIONS = [
+  "vendo_grants",
+  "vendo_approvals",
+  "vendo_audit",
+  "vendo_threads",
+  "vendo_runs",
+  "vendo_apps",
+] as const;
+
+export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
+
+interface ApprovalData {
+  request: ApprovalRequest;
+  status: ApprovalRow["status"];
+  decidedAt?: string;
+  sessionId?: string;
+  consumedAt?: string;
+}
+
+type ThreadData = Pick<ThreadRow, "subject" | "messages">;
+type RunData = Omit<RunRow, "id">;
+type AppData = Pick<AppRow, "subject" | "enabled" | "doc">;
+
+interface RoutedConfig {
+  table: ReservedCollection;
+  select: string;
+  cursorColumn: string;
+  refs: Readonly<Record<string, string>>;
+  fromDb(row: Record<string, unknown>): VendoRecord;
+  overlayRecords(): VendoRecord[];
+  put(record: { id: string; data: Json; refs?: Record<string, string> }): Promise<VendoRecord>;
+  deleteOverlay(id: string): boolean;
+}
+
+function invalid(message: string): never {
+  throw new VendoError("validation", message);
+}
+
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalid(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function parseSchema<T>(
+  schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: Array<{ message: string }> } } },
+  value: unknown,
+  label: string,
+): T {
+  const result = schema.safeParse(value);
+  if (!result.success) invalid(`${label}: ${result.error.issues[0]?.message ?? "invalid value"}`);
+  return result.data;
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") invalid(`${label} must be a string`);
+  return value;
+}
+
+function optionalDate(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  return parseSchema(isoDateTimeSchema, value, label);
+}
+
+function isJson(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return false;
+    seen.add(value);
+    const valid = value.every((entry) => isJson(entry, seen));
+    seen.delete(value);
+    return valid;
+  }
+  if (typeof value === "object") {
+    if (seen.has(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return false;
+    seen.add(value);
+    const valid = Object.values(value as Record<string, unknown>).every((entry) => isJson(entry, seen));
+    seen.delete(value);
+    return valid;
+  }
+  return false;
+}
+
+function requireJson(value: unknown, label: string): Json {
+  if (!isJson(value)) invalid(`${label} must be JSON-serializable`);
+  return value;
+}
+
+function requireRecordId(id: unknown): string {
+  if (typeof id !== "string") invalid("record id must be a string");
+  return id;
+}
+
+function requireMatchingId(recordId: string, embeddedId: string, label: string): void {
+  if (embeddedId !== recordId) invalid(`${label} must equal record id`);
+}
+
+function refs(values: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
+}
+
+function grantRecord(grant: PermissionGrant): VendoRecord {
+  return {
+    id: grant.id,
+    data: grant,
+    refs: refs({ subject: grant.subject, tool: grant.tool, app_id: grant.appId }),
+    createdAt: grant.grantedAt,
+    updatedAt: grant.revokedAt ?? grant.grantedAt,
+  };
+}
+
+function approvalRecord(row: ApprovalRow): VendoRecord {
+  const data: ApprovalData = {
+    request: row.request,
+    status: row.status,
+    ...(row.decidedAt === undefined ? {} : { decidedAt: row.decidedAt }),
+    ...(row.sessionId === undefined ? {} : { sessionId: row.sessionId }),
+    ...(row.consumedAt === undefined ? {} : { consumedAt: row.consumedAt }),
+  };
+  return {
+    id: row.id,
+    data,
+    refs: { subject: row.subject, status: row.status },
+    createdAt: row.request.createdAt,
+    updatedAt: row.consumedAt ?? row.decidedAt ?? row.request.createdAt,
+  };
+}
+
+function auditRecord(event: AuditEvent): VendoRecord {
+  return {
+    id: event.id,
+    data: event,
+    refs: refs({
+      subject: event.principal.subject,
+      kind: event.kind,
+      app_id: event.appId,
+      tool: event.tool,
+    }),
+    createdAt: event.at,
+    updatedAt: event.at,
+  };
+}
+
+function threadRecord(row: ThreadRow): VendoRecord {
+  const data: ThreadData = { subject: row.subject, messages: row.messages };
+  return {
+    id: row.id,
+    data,
+    refs: { subject: row.subject },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function runRecord(row: RunRow): VendoRecord {
+  const { id, ...data } = row;
+  return {
+    id,
+    data,
+    refs: { app_id: row.appId, status: row.status },
+    createdAt: row.startedAt,
+    updatedAt: row.finishedAt ?? row.startedAt,
+  };
+}
+
+function appRecord(row: AppRow): VendoRecord {
+  const data: AppData = { subject: row.subject, enabled: row.enabled, doc: row.doc };
+  return {
+    id: row.id,
+    data,
+    refs: { subject: row.subject },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function parseApprovalData(value: unknown, id: string): ApprovalData {
+  const input = object(value, "approval data");
+  const request = parseSchema(approvalRequestSchema, input["request"], "approval request");
+  requireMatchingId(id, request.id, "approval request id");
+  const status = input["status"];
+  if (status !== "pending" && status !== "approved" && status !== "denied") {
+    invalid("approval status must be pending, approved, or denied");
+  }
+  const decidedAt = optionalDate(input["decidedAt"], "approval decidedAt");
+  const sessionId = optionalString(input["sessionId"], "approval sessionId");
+  const consumedAt = optionalDate(input["consumedAt"], "approval consumedAt");
+  return {
+    request,
+    status,
+    ...(decidedAt === undefined ? {} : { decidedAt }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(consumedAt === undefined ? {} : { consumedAt }),
+  };
+}
+
+function parseThreadData(value: unknown, id: string): ThreadData {
+  parseSchema(threadIdSchema, id, "thread id");
+  const input = object(value, "thread data");
+  if (typeof input["subject"] !== "string") invalid("thread subject must be a string");
+  if (!Array.isArray(input["messages"])) invalid("thread messages must be an array");
+  const messages = input["messages"].map((message, index) => requireJson(message, `thread message ${index}`));
+  return { subject: input["subject"], messages };
+}
+
+function parseRunData(value: unknown, id: string): RunData {
+  parseSchema(runIdSchema, id, "run id");
+  const input = object(value, "run data");
+  const appId = parseSchema(appIdSchema, input["appId"], "run appId");
+  const triggerInput = object(input["trigger"], "run trigger");
+  const kind = triggerInput["kind"];
+  if (kind !== "schedule" && kind !== "host-event" && kind !== "external") {
+    invalid("run trigger kind is invalid");
+  }
+  const event = optionalString(triggerInput["event"], "run trigger event");
+  const trigger: RunRow["trigger"] = { kind, ...(event === undefined ? {} : { event }) };
+  const status = input["status"];
+  if (status !== "running" && status !== "ok" && status !== "error"
+    && status !== "stopped" && status !== "pending-approval") {
+    invalid("run status is invalid");
+  }
+  const record = requireJson(input["record"], "run record");
+  const startedAt = parseSchema(isoDateTimeSchema, input["startedAt"], "run startedAt");
+  const finishedAt = optionalDate(input["finishedAt"], "run finishedAt");
+  return { appId, trigger, status, record, startedAt, ...(finishedAt === undefined ? {} : { finishedAt }) };
+}
+
+function parseAppData(value: unknown, id: string): AppData {
+  const input = object(value, "app data");
+  if (typeof input["subject"] !== "string") invalid("app subject must be a string");
+  if (typeof input["enabled"] !== "boolean") invalid("app enabled must be a boolean");
+  const doc = parseSchema(appDocumentSchema, input["doc"], "app document");
+  requireMatchingId(id, doc.id, "app document id");
+  return { subject: input["subject"], enabled: input["enabled"], doc };
+}
+
+function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: string; i: string }): boolean {
+  if (query.ids !== undefined && !query.ids.includes(record.id)) return false;
+  if (query.refs !== undefined) {
+    for (const [key, value] of Object.entries(query.refs)) {
+      if (record.refs?.[key] !== value) return false;
+    }
+  }
+  return cursor === undefined
+    || record.createdAt < cursor.c
+    || (record.createdAt === cursor.c && record.id < cursor.i);
+}
+
+function createTableRecordStore(db: Db, config: RoutedConfig): RecordStore {
+  return {
+    async get(id) {
+      requireRecordId(id);
+      const memory = config.overlayRecords().find((record) => record.id === id);
+      if (memory) return memory;
+      const result = await db.query(`${config.select} WHERE id = $1`, [id]);
+      return result.rows[0] ? config.fromDb(result.rows[0]) : null;
+    },
+    async put(record) {
+      requireRecordId(record.id);
+      // Reserved collections derive refs from typed columns; caller refs never participate in writes.
+      return config.put(record);
+    },
+    async delete(id) {
+      requireRecordId(id);
+      if (config.deleteOverlay(id)) return;
+      await db.query(`DELETE FROM ${config.table} WHERE id = $1`, [id]);
+    },
+    async list(query: RecordQuery = {}) {
+      const limit = pageLimit(query.limit);
+      if (query.refs !== undefined) {
+        for (const key of Object.keys(query.refs)) {
+          if (config.refs[key] === undefined) invalid(`Unknown ${config.table} ref key: ${key}`);
+        }
+      }
+      const cursor = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
+      const params: unknown[] = [];
+      const clauses: string[] = [];
+      for (const [key, value] of Object.entries(query.refs ?? {})) {
+        params.push(value);
+        clauses.push(`${config.refs[key]} = $${params.length}`);
+      }
+      if (query.ids !== undefined) {
+        params.push(query.ids);
+        clauses.push(`id = ANY($${params.length}::text[])`);
+      }
+      if (cursor !== undefined) {
+        params.push(cursor.c, cursor.i);
+        clauses.push(`(${config.cursorColumn}, id) < ($${params.length - 1}, $${params.length})`);
+      }
+      params.push(limit + 1);
+      const result = await db.query(
+        `${config.select}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""}
+         ORDER BY ${config.cursorColumn} DESC, id DESC LIMIT $${params.length}`,
+        params,
+      );
+      const allMemory = config.overlayRecords();
+      const memoryIds = new Set(allMemory.map((record) => record.id));
+      const records = [
+        ...result.rows.map(config.fromDb).filter((record) => !memoryIds.has(record.id)),
+        ...allMemory.filter((record) => matchesRecord(record, query, cursor)),
+      ].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const page = records.slice(0, limit);
+      const last = page.at(-1);
+      const hasMore = records.length > limit || result.rows.length > limit;
+      return {
+        records: page,
+        ...(hasMore && last ? { cursor: encodeCursor(last.createdAt, last.id) } : {}),
+      };
+    },
+  };
+}
+
+function configFor(store: VendoStore, db: Db, collection: ReservedCollection): RoutedConfig {
+  const overlay = overlayFor(store);
+  switch (collection) {
+    case "vendo_grants":
+      return {
+        table: collection,
+        select: "SELECT * FROM vendo_grants",
+        cursorColumn: "granted_at",
+        refs: { subject: "subject", tool: "tool", app_id: "app_id" },
+        fromDb: (row) => grantRecord(grantFromRow(row)),
+        overlayRecords: () => [...overlay.grants.values()].map(grantRecord),
+        async put(record) {
+          const grant = parseSchema(permissionGrantSchema, record.data, "permission grant");
+          requireMatchingId(record.id, grant.id, "permission grant id");
+          if (isEphemeralSubject(store, grant.subject)) overlay.grants.set(grant.id, grant);
+          else await putGrantRow(db, grant);
+          return grantRecord(grant);
+        },
+        deleteOverlay: (id) => overlay.grants.delete(id),
+      };
+    case "vendo_approvals":
+      return {
+        table: collection,
+        select: "SELECT * FROM vendo_approvals",
+        cursorColumn: "created_at",
+        refs: { subject: "subject", status: "status" },
+        fromDb: (row) => approvalRecord(approvalFromRow(row)),
+        overlayRecords: () => [...overlay.approvals.values()].map(approvalRecord),
+        async put(record) {
+          const data = parseApprovalData(record.data, record.id);
+          const row: ApprovalRow = {
+            id: data.request.id,
+            subject: data.request.ctx.principal.subject,
+            request: data.request,
+            status: data.status,
+            ...(data.decidedAt === undefined ? {} : { decidedAt: data.decidedAt }),
+            ...(data.sessionId === undefined ? {} : { sessionId: data.sessionId }),
+            ...(data.consumedAt === undefined ? {} : { consumedAt: data.consumedAt }),
+            createdAt: data.request.createdAt,
+          };
+          if (data.request.ctx.principal.ephemeral === true) {
+            registerEphemeralSubject(store, row.subject);
+            overlay.approvals.set(row.id, row);
+          } else {
+            await putApprovalRow(db, row);
+          }
+          return approvalRecord(row);
+        },
+        deleteOverlay: (id) => overlay.approvals.delete(id),
+      };
+    case "vendo_audit":
+      return {
+        table: collection,
+        select: "SELECT * FROM vendo_audit",
+        cursorColumn: "at",
+        refs: { subject: "subject", kind: "kind", app_id: "app_id", tool: "tool" },
+        fromDb: (row) => auditRecord(row["event"] as AuditEvent),
+        overlayRecords: () => [...overlay.audit.values()].map(auditRecord),
+        async put(record) {
+          const event = parseSchema(auditEventSchema, record.data, "audit event");
+          requireMatchingId(record.id, event.id, "audit event id");
+          if (event.principal.ephemeral === true) {
+            registerEphemeralSubject(store, event.principal.subject);
+            overlay.audit.set(event.id, event);
+          } else {
+            await putAuditRow(db, event, true);
+          }
+          return auditRecord(event);
+        },
+        deleteOverlay: (id) => overlay.audit.delete(id),
+      };
+    case "vendo_threads":
+      return {
+        table: collection,
+        select: "SELECT * FROM vendo_threads",
+        cursorColumn: "created_at",
+        refs: { subject: "subject" },
+        fromDb: (row) => threadRecord(threadFromRow(row)),
+        overlayRecords: () => [...overlay.threads.values()].map(threadRecord),
+        async put(record) {
+          const data = parseThreadData(record.data, record.id);
+          const now = new Date().toISOString();
+          let row: ThreadRow;
+          if (isEphemeralSubject(store, data.subject)) {
+            const prior = overlay.threads.get(record.id);
+            row = {
+              id: record.id,
+              subject: data.subject,
+              messages: data.messages,
+              createdAt: prior?.createdAt ?? now,
+              updatedAt: now,
+            };
+            overlay.threads.set(record.id, row);
+          } else {
+            row = await putThreadRow(db, { id: record.id, ...data }, now);
+          }
+          return threadRecord(row);
+        },
+        deleteOverlay: (id) => overlay.threads.delete(id),
+      };
+    case "vendo_runs":
+      return {
+        table: collection,
+        select: "SELECT * FROM vendo_runs",
+        cursorColumn: "started_at",
+        refs: { app_id: "app_id", status: "status" },
+        fromDb: (row) => runRecord(runFromRow(row)),
+        overlayRecords: () => [...overlay.runs.values()].map(runRecord),
+        async put(record) {
+          const data = parseRunData(record.data, record.id);
+          const row: RunRow = { id: record.id, ...data };
+          if (await isEphemeralApp(store, db, data.appId)) overlay.runs.set(row.id, row);
+          else await putRunRow(db, row);
+          return runRecord(row);
+        },
+        deleteOverlay: (id) => overlay.runs.delete(id),
+      };
+    case "vendo_apps":
+      return {
+        table: collection,
+        select: "SELECT * FROM vendo_apps",
+        cursorColumn: "created_at",
+        refs: { subject: "subject" },
+        fromDb: (row) => appRecord(appFromRow(row)),
+        overlayRecords: () => [...overlay.apps.values()].map(appRecord),
+        async put(record) {
+          const data = parseAppData(record.data, record.id);
+          const now = new Date().toISOString();
+          let row: AppRow;
+          if (isEphemeralSubject(store, data.subject)) {
+            const prior = overlay.apps.get(record.id);
+            row = {
+              id: record.id,
+              subject: data.subject,
+              enabled: data.enabled,
+              doc: data.doc,
+              createdAt: prior?.createdAt ?? now,
+              updatedAt: now,
+            };
+            overlay.apps.set(record.id, row);
+          } else {
+            row = await putAppRow(db, { id: record.id, ...data }, now);
+          }
+          return appRecord(row);
+        },
+        deleteOverlay: (id) => overlay.apps.delete(id),
+      };
+  }
+}
+
+export function createReservedRecordStore(
+  store: VendoStore,
+  db: Db,
+  collection: string,
+): RecordStore | undefined {
+  if (!(RESERVED_COLLECTIONS as readonly string[]).includes(collection)) return undefined;
+  return createTableRecordStore(db, configFor(store, db, collection as ReservedCollection));
+}
