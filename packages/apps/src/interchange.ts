@@ -16,6 +16,25 @@ import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const APP_ROOT = "/app";
+const ARCHIVE_MAX_ENTRIES = 4_096;
+const ARCHIVE_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+const ARCHIVE_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
+const APP_DOCUMENT_FIELDS = [
+  "format",
+  "id",
+  "name",
+  "description",
+  "ui",
+  "tree",
+  "components",
+  "storage",
+  "server",
+  "trigger",
+  "egress",
+  "secrets",
+  "pins",
+  "forkedFrom",
+] as const;
 const EXCLUDED_DIRECTORY_NAMES = new Set([
   ".cache",
   ".git",
@@ -46,24 +65,26 @@ const validateImportedDocument = (input: unknown): AppDocument => {
   return structuredClone(result.app);
 };
 
-const withoutExportIdentity = (app: AppDocument): Omit<AppDocument, "id"> => {
-  const exported = structuredClone(app) as AppDocument;
-  const record = exported as unknown as Record<string, unknown>;
-  delete record.id;
-  delete record.server;
-  // Export lineage describes the author's copy, not the recipient's new copy.
-  delete record.forkedFrom;
-  return record as unknown as Omit<AppDocument, "id">;
+const allowedDocumentFields = (
+  input: unknown,
+  omitted: ReadonlySet<string>,
+): Record<string, unknown> => {
+  if (!isRecord(input)) return {};
+  const copy: Record<string, unknown> = {};
+  for (const field of APP_DOCUMENT_FIELDS) {
+    if (!omitted.has(field) && Object.prototype.hasOwnProperty.call(input, field)) {
+      copy[field] = structuredClone(input[field]);
+    }
+  }
+  return copy;
 };
 
+const withoutExportIdentity = (app: AppDocument): Omit<AppDocument, "id"> =>
+  allowedDocumentFields(app, new Set(["id", "server", "forkedFrom"])) as Omit<AppDocument, "id">;
+
 const withFreshIdentity = (input: unknown, id: AppId): Record<string, unknown> => {
-  const copy: Record<string, unknown> = isRecord(input)
-    ? structuredClone(input)
-    : { artifact: structuredClone(input) };
+  const copy = allowedDocumentFields(input, new Set(["id", "server", "forkedFrom"]));
   copy.id = id;
-  // Snapshot references and exporter lineage never cross the interchange boundary.
-  delete copy.server;
-  delete copy.forkedFrom;
   return copy;
 };
 
@@ -131,7 +152,27 @@ const archiveMachinePath = (entry: string): string => {
 
 const parseArchive = (source: Uint8Array): ParsedArchive => {
   try {
-    const archive = unzipSync(source);
+    let entryCount = 0;
+    let declaredBytes = 0;
+    const archive = unzipSync(source, {
+      filter(entry) {
+        entryCount += 1;
+        declaredBytes += entry.originalSize;
+        if (entryCount > ARCHIVE_MAX_ENTRIES
+          || entry.originalSize > ARCHIVE_MAX_ENTRY_BYTES
+          || declaredBytes > ARCHIVE_MAX_TOTAL_BYTES) {
+          throw validationError("app archive exceeds size limits");
+        }
+        return true;
+      },
+    });
+    let inflatedBytes = 0;
+    for (const bytes of Object.values(archive)) {
+      inflatedBytes += bytes.byteLength;
+      if (bytes.byteLength > ARCHIVE_MAX_ENTRY_BYTES || inflatedBytes > ARCHIVE_MAX_TOTAL_BYTES) {
+        throw validationError("app archive exceeds size limits");
+      }
+    }
     const appJson = archive["app.json"];
     if (appJson === undefined) throw validationError("invalid .vendoapp: app.json is missing");
     const files: Record<string, Uint8Array> = {};
@@ -235,7 +276,7 @@ export const createAppInterchange = (
       if (parsed.hasAppDirectory && dependencies.sandbox !== undefined) {
         // A temporary non-authoritative ref lets core validate fn: surfaces before provisioning.
         validateImportedDocument({ ...candidate, server: "import:pending" });
-        const machine = await dependencies.sandbox.create({ env: {}, files: parsed.files });
+        const machine = await dependencies.sandbox.create({ env: { PORT: "8080" }, files: parsed.files });
         try {
           imported = validateImportedDocument({ ...candidate, server: await machine.snapshot() });
           appDirectory = "rebuilt";

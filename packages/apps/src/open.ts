@@ -44,7 +44,7 @@ const child = (target: JsonContainer, part: string): Json | undefined => {
 const assignChild = (target: JsonContainer, part: string, value: Json): boolean => {
   if (Array.isArray(target)) {
     const index = arrayIndex(part);
-    if (index === null) return false;
+    if (index === null || !Number.isSafeInteger(index) || index > target.length) return false;
     target[index] = value;
     return true;
   }
@@ -57,7 +57,11 @@ const setQueryData = (data: Record<string, Json>, pointer: string, value: Json):
   if (parts === null) return false;
   if (parts.length === 0) {
     if (!isObject(value)) return false;
-    Object.assign(data, structuredClone(value));
+    const replacement = structuredClone(value);
+    for (const key of Object.keys(data)) delete data[key];
+    for (const [key, item] of Object.entries(replacement)) {
+      if (!UNSAFE_KEYS.has(key)) data[key] = item;
+    }
     return true;
   }
   let target: JsonContainer = data;

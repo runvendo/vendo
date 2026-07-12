@@ -22,6 +22,7 @@ const versionEntrySchema = z.object({
 interface HistorySnapshot {
   doc: AppDocument;
   entry: VersionEntry;
+  seq: number;
 }
 
 const allRecords = async (records: RecordStore): Promise<VendoRecord[]> => {
@@ -47,11 +48,25 @@ const snapshotFromRecord = (record: VendoRecord, appId: AppId): HistorySnapshot 
       reason: parsedEntry.error.issues[0]?.message ?? "invalid version entry",
     });
   }
-  return { doc: validateDocument(data.doc, appId), entry: parsedEntry.data };
+  const seq = data.seq === undefined ? 0 : data.seq;
+  if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) {
+    throw new VendoError("validation", `invalid history entry for ${appId}`, {
+      appId,
+      reason: "invalid history sequence",
+    });
+  }
+  return { doc: validateDocument(data.doc, appId), entry: parsedEntry.data, seq };
+};
+
+const sequenceFromRecord = (record: VendoRecord): number => {
+  if (typeof record.data !== "object" || record.data === null || Array.isArray(record.data)) return 0;
+  const seq = (record.data as Record<string, unknown>).seq;
+  return typeof seq === "number" && Number.isSafeInteger(seq) && seq >= 0 ? seq : 0;
 };
 
 export interface AppHistoryAccess {
   append(appId: AppId, doc: AppDocument, entry: VersionEntry): Promise<void>;
+  documents(appId: AppId): Promise<AppDocument[]>;
   clear(appId: AppId): Promise<void>;
   surface(appId: AppId): {
     list(): Promise<VersionEntry[]>;
@@ -63,21 +78,39 @@ export interface AppHistoryAccess {
 export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
   const collection = (appId: AppId): RecordStore => store.records(`vendo:app-history:${appId}`);
   const ordered = async (appId: AppId): Promise<VendoRecord[]> => (await allRecords(collection(appId)))
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt)
+      || sequenceFromRecord(left) - sequenceFromRecord(right)
+      || left.id.localeCompare(right.id));
 
   return {
     async append(appId, doc, entry) {
       const validated = validateDocument(doc, appId);
       const parsedEntry = versionEntrySchema.parse(entry);
       const records = collection(appId);
+      const existing = await allRecords(records);
+      const seq = existing.reduce(
+        (highest, record) => Math.max(highest, sequenceFromRecord(record)),
+        0,
+      ) + 1;
       await records.put({
         id: `ver_${crypto.randomUUID()}`,
-        data: { doc: validated, entry: parsedEntry },
+        data: { doc: validated, entry: parsedEntry, seq },
       });
       const entries = await ordered(appId);
       for (const expired of entries.slice(0, Math.max(0, entries.length - HISTORY_LIMIT))) {
         await records.delete(expired.id);
       }
+    },
+    async documents(appId) {
+      const documents: AppDocument[] = [];
+      for (const record of await ordered(appId)) {
+        try {
+          documents.push(snapshotFromRecord(record, appId).doc);
+        } catch {
+          // Invalid history cannot be restored or surfaced as app data declarations.
+        }
+      }
+      return documents;
     },
     async clear(appId) {
       const records = collection(appId);
@@ -89,9 +122,15 @@ export const createAppHistory = (store: StoreAdapter): AppHistoryAccess => {
           const appRow = await store.records("vendo_apps").get(appId);
           if (appRow === null) throw new VendoError("not-found", `app not found: ${appId}`);
           documentFromRecord(appRow);
-          return (await ordered(appId))
-            .reverse()
-            .map((record) => snapshotFromRecord(record, appId).entry);
+          const entries: VersionEntry[] = [];
+          for (const record of (await ordered(appId)).reverse()) {
+            try {
+              entries.push(snapshotFromRecord(record, appId).entry);
+            } catch {
+              // One corrupt snapshot must not hide the remaining valid history.
+            }
+          }
+          return entries;
         },
         // history(appId) has no ctx in the frozen contract. The HTTP/wire layer must enforce
         // ownership before exposing this app-id-scoped surface; undo still verifies the app row.

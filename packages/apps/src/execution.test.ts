@@ -81,6 +81,48 @@ describe("apps execution", () => {
     expect(surface.payload.data).toEqual({});
   });
 
+  it("caps array query indices and safely replaces the whole data model", async () => {
+    const replacement = JSON.parse(
+      '{"fresh":true,"arr":[],"__proto__":{"polluted":true},"constructor":{"polluted":true}}',
+    ) as Record<string, unknown>;
+    const rawTools: ToolRegistry = {
+      async descriptors() {
+        return [
+          { name: "host_replace", description: "Replace data", inputSchema: { type: "object" }, risk: "read" },
+          { name: "host_sparse", description: "Write sparse data", inputSchema: { type: "object" }, risk: "read" },
+        ];
+      },
+      async execute(call) {
+        return { status: "ok", output: call.tool === "host_replace" ? replacement : "too-far" };
+      },
+    };
+    const guard = guardFixture();
+    const store = memoryStore();
+    const runtime = createApps({ store, guard, tools: bindTools(guard, rawTools), catalog: [], model });
+    const created = await runtime.create({ prompt: "Bounded data" }, ctx());
+    await putApp(store, {
+      ...created,
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text" }],
+        data: { stale: true, arr: ["old"] },
+        queries: [
+          { path: "", tool: "host_replace" },
+          { path: "/arr/999999999", tool: "host_sparse" },
+        ],
+      },
+    });
+
+    const surface = await runtime.open(created.id, ctx());
+
+    if (surface.kind !== "tree") throw new Error("Expected tree surface");
+    expect(surface.payload.data).toEqual({ fresh: true, arr: [] });
+    expect((surface.payload.data as { arr: unknown[] }).arr).toHaveLength(0);
+    expect(Object.getPrototypeOf(surface.payload.data as object)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it("calls fn refs through the machine and contains envelope violations", async () => {
     const sandbox = fakeSandbox();
     const machineApp: MachineApp = (request) => {
@@ -219,7 +261,7 @@ describe("apps execution", () => {
     expect(surface).toMatchObject({ kind: "tree", payload: { data: { retained: true } } });
   });
 
-  it("serves rung 4 after background resume and returns the persisted cover while waking", async () => {
+  it("serves rung 4 after background resume without inventing a cover", async () => {
     const base = fakeSandbox();
     const seed = await base.create({ env: {} });
     const server = await seed.snapshot();
@@ -239,13 +281,7 @@ describe("apps execution", () => {
     const runtime = createApps({ store, guard: guardFixture(), tools: emptyTools, sandbox: delayed, catalog: [], model });
     const created = await runtime.create({ prompt: "HTTP app" }, ctx());
     await putApp(store, { ...created, ui: "http", server });
-    const cover = new Uint8Array([137, 80, 78, 71]);
-    await store.blobs(`app:${created.id}`).put("cover.png", cover, { contentType: "image/png" });
-
-    await expect(runtime.open(created.id, ctx())).resolves.toEqual({
-      kind: "resuming",
-      cover: `data:image/png;base64,${globalThis.btoa(String.fromCharCode(...cover))}`,
-    });
+    await expect(runtime.open(created.id, ctx())).resolves.toEqual({ kind: "resuming" });
     await startedPromise;
     release();
     await Promise.resolve();

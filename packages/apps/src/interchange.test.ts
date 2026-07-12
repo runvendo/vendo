@@ -2,7 +2,7 @@ import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, validateAppDocument } from "@vendoai/core";
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { createApps } from "./index.js";
+import { createApps, type SandboxAdapter } from "./index.js";
 import {
   fakeSandbox,
   guardFixture,
@@ -102,6 +102,7 @@ describe(".vendoapp interchange through createApps", () => {
     expect(guard.grants.some((grant) => grant.appId === copy.id)).toBe(false);
 
     const rebuilt = [...sandbox.machines.values()].at(-1)!;
+    expect(rebuilt.env.PORT).toBe("8080");
     expect(decoder.decode(await rebuilt.files.read("/app/server.js"))).toBe("export const ready = true;");
     expect(rebuilt.fileContents.has("/app/node_modules/cache/index.js")).toBe(false);
     expect(guard.audit.filter((event) => event.detail?.operation === "export")).toHaveLength(1);
@@ -132,6 +133,31 @@ describe(".vendoapp interchange through createApps", () => {
     expect(exported.storage).toEqual(edited.app.storage);
   });
 
+  it("drops unknown authority and data fields on both import and export", async () => {
+    const store = memoryStore();
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [] });
+    const ctx = context("user_ada");
+    const artifact = {
+      ...document(),
+      grants: [{ tool: "host_pay" }],
+      data: { private: true },
+    } as AppDocument & { grants: unknown; data: unknown };
+
+    const imported = await runtime.importApp(artifact, ctx);
+    expect(imported).not.toHaveProperty("grants");
+    expect(imported).not.toHaveProperty("data");
+
+    await store.records("vendo_apps").put({
+      id: imported.id,
+      data: { ...imported, permissions: ["admin"], caches: { secret: true } },
+      refs: { subject: ctx.principal.subject },
+    });
+    const archive = unzipSync(await runtime.exportApp(imported.id, ctx));
+    const exported = JSON.parse(decoder.decode(archive["app.json"])) as Record<string, unknown>;
+    expect(exported).not.toHaveProperty("permissions");
+    expect(exported).not.toHaveProperty("caches");
+  });
+
   it("fails export for forbidden or missing pin baselines and preserves allowed pins", async () => {
     const ctx = context("user_ada");
     const pin = { slot: "invoice-card", base: "sha256:x" };
@@ -140,6 +166,13 @@ describe(".vendoapp interchange through createApps", () => {
       {
         baselines: [{
           slot: "invoice-card", source: "source", hash: "sha256:x", exportable: false,
+          capturedAt: "2026-07-11T12:00:00.000Z",
+        }],
+        allowed: false,
+      },
+      {
+        baselines: [{
+          slot: "invoice-card", source: "source", hash: "sha256:different", exportable: true,
           capturedAt: "2026-07-11T12:00:00.000Z",
         }],
         allowed: false,
@@ -195,6 +228,46 @@ describe(".vendoapp interchange through createApps", () => {
     await expect(runtime.importApp(new Uint8Array([1, 2, 3]), context("user_ada"))).rejects.toMatchObject({
       code: "validation",
     });
+  });
+
+  it("rejects an archive entry whose inflated bytes exceed the resource cap", async () => {
+    const runtime = createApps({
+      store: memoryStore(), guard: guardFixture(), tools, catalog: [],
+    });
+    const { id: _id, ...exported } = document();
+    const archive = zipSync({
+      "app.json": encoder.encode(JSON.stringify(exported)),
+      "app/oversized.bin": new Uint8Array(16 * 1024 * 1024 + 1),
+    }, { level: 6 });
+
+    await expect(runtime.importApp(archive, context("user_ada"))).rejects.toMatchObject({
+      code: "validation",
+      message: "app archive exceeds size limits",
+    });
+  });
+
+  it("creates imported app directories with the conventional PORT environment", async () => {
+    const base = fakeSandbox();
+    let createSpec: Parameters<SandboxAdapter["create"]>[0] | undefined;
+    const sandbox: SandboxAdapter = {
+      async create(spec) {
+        createSpec = spec;
+        return base.create(spec);
+      },
+      resume: (ref) => base.resume(ref),
+    };
+    const runtime = createApps({
+      store: memoryStore(), guard: guardFixture(), tools, sandbox, catalog: [],
+    });
+    const { id: _id, ...exported } = document();
+    const archive = zipSync({
+      "app.json": encoder.encode(JSON.stringify(exported)),
+      "app/server.js": encoder.encode("export const ready = true;"),
+    });
+
+    await runtime.importApp(archive, context("user_ada"));
+
+    expect(createSpec?.env).toEqual({ PORT: "8080" });
   });
 
   it("fails rather than stripping fn surfaces when app files cannot be rebuilt", async () => {

@@ -117,9 +117,12 @@ const allRecords = async (
   return records;
 };
 
-const rungFor = (app: AppDocument): VersionEntry["rung"] => {
+const rungFor = (
+  app: AppDocument,
+  declared?: VersionEntry["rung"],
+): VersionEntry["rung"] => {
   if (app.ui === "http") return 4;
-  if (app.server !== undefined) return 2;
+  if (app.server !== undefined) return declared === 3 ? 3 : 2;
   return 1;
 };
 
@@ -143,7 +146,6 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const machines = createMachineSessions({
     sandbox: config.sandbox,
     proxyUrl: config.proxyUrl,
-    store: config.store,
     tokenSecret,
   });
 
@@ -205,7 +207,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     app: AppDocument,
     files: CodeFileEdit[],
     ctx: RunContext,
-  ): Promise<{ machine?: SandboxMachine; server?: string; issues: string[] }> => {
+  ): Promise<{ server?: string; issues: string[] }> => {
     try {
       return await machines.withFork(
         app,
@@ -219,13 +221,20 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
               if (issue !== undefined) issues.push(issue);
             }
             if (issues.length > 0) {
-              await machine.stop().catch(() => undefined);
               return { issues };
             }
-            return { machine, server: await machine.snapshot(), issues: [] };
+            const server = await machine.snapshot();
+            if (app.ui === "http" && machine.screenshot !== undefined) {
+              const cover = await machine.screenshot();
+              await config.store.blobs(`app:${app.id}`).put("cover.png", cover, {
+                contentType: "image/png",
+              });
+            }
+            return { server, issues: [] };
           } catch (error) {
-            await machine.stop().catch(() => undefined);
             return { issues: [error instanceof Error ? error.message : "machine edit failed"] };
+          } finally {
+            await machine.stop().catch(() => undefined);
           }
         },
       );
@@ -242,8 +251,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     version: VersionEntry,
     subject: string,
   ): Promise<AppDocument> => {
+    const assertCurrent = async (): Promise<void> => {
+      const current = await apps.get(previous.id);
+      if (current === null
+        || current.refs?.subject !== subject
+        || JSON.stringify(documentFromRecord(current)) !== JSON.stringify(previous)) {
+        throw new VendoError("conflict", `app changed during edit: ${previous.id}`);
+      }
+    };
+    await assertCurrent();
     const appRow = appRecordInput(app, subject);
     await history.append(app.id, previous, version);
+    await assertCurrent();
     await apps.put(appRow);
     return structuredClone(appRow.data);
   };
@@ -289,15 +308,22 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async list(ctx) {
       const records = await allRecords(config.store, { subject: ctx.principal.subject });
-      return records
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
-        .map(documentFromRecord);
+      const documents: AppDocument[] = [];
+      for (const record of records
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))) {
+        try {
+          documents.push(documentFromRecord(record));
+        } catch {
+          // Corrupt rows cannot be surfaced, but must not hide valid owned apps.
+        }
+      }
+      return documents;
     },
 
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
       await machines.stop(appId);
-      await data.clear(app, ctx.principal.subject);
+      await data.clear(app, ctx.principal.subject, await history.documents(appId));
       await history.clear(appId);
       await apps.delete(appId);
       await reportLifecycle("delete", appId, ctx);
@@ -310,6 +336,16 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
+      if (source.server !== undefined && config.sandbox !== undefined) {
+        const machine = await config.sandbox.resume(source.server);
+        try {
+          fork.server = await machine.snapshot();
+        } finally {
+          await machine.stop().catch(() => undefined);
+        }
+      } else {
+        delete fork.server;
+      }
       await apps.put(appRecordInput(fork, ctx.principal.subject));
       await reportLifecycle("fork", fork.id, ctx, { sourceAppId: source.id });
       return structuredClone(fork);
@@ -343,7 +379,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           const version: VersionEntry = {
             at: new Date().toISOString(),
             intent: instruction,
-            rung: 1,
+            rung: rungFor(app, generated.rung),
           };
           return {
             app: await persistEdit(previous, app, version, ctx.principal.subject),
@@ -352,7 +388,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         }
 
         const applied = await applyCodeFiles(previous, generated.files, ctx);
-        if (applied.machine === undefined || applied.server === undefined) {
+        if (applied.server === undefined) {
           repairIssues = applied.issues;
           continue;
         }
@@ -360,22 +396,25 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         const version: VersionEntry = {
           at: new Date().toISOString(),
           intent: instruction,
-          rung: generated.rung,
+          rung: rungFor(app, generated.rung),
         };
-        try {
-          const persisted = await persistEdit(previous, app, version, ctx.principal.subject);
-          await machines.replace(appId, applied.machine);
-          return { app: persisted, version: { ...version } };
-        } catch (error) {
-          await applied.machine.stop().catch(() => undefined);
-          throw error;
-        }
+        const persisted = await persistEdit(previous, app, version, ctx.principal.subject);
+        await machines.evict(appId);
+        return { app: persisted, version: { ...version } };
       }
       return failedEdit(previous, instruction, repairIssues ?? ["code edit failed validation"]);
     },
 
     history(appId) {
-      return history.surface(appId);
+      const surface = history.surface(appId);
+      return Object.freeze({
+        list: () => surface.list(),
+        undo: async () => {
+          const restored = await surface.undo();
+          await machines.evict(appId);
+          return restored;
+        },
+      });
     },
 
     async open(appId, ctx) {

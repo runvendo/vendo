@@ -44,7 +44,7 @@ const clearBlobs = async (blobs: BlobStore): Promise<void> => {
 export interface AppDataAccess {
   getState(appId: AppId, subject: string): Promise<Json | null>;
   setState(appId: AppId, subject: string, data: Json): Promise<void>;
-  clear(app: AppDocument, subject: string): Promise<void>;
+  clear(app: AppDocument, subject: string, historical?: readonly AppDocument[]): Promise<void>;
 }
 
 /** 06-apps §6 — private app-data API consumed by lifecycle and later execution lanes. */
@@ -60,8 +60,15 @@ export const createAppData = (store: StoreAdapter): AppDataAccess => ({
       refs: { subject, app_id: appId },
     });
   },
-  async clear(app, subject) {
-    for (const [name, declaration] of Object.entries(app.storage ?? {})) {
+  async clear(app, subject, historical = []) {
+    const declarations = new Map<string, StorageDecl>();
+    for (const document of [...historical, app]) {
+      for (const [name, declaration] of Object.entries(document.storage ?? {})) {
+        declarations.set(`${name}:${declaration.kind ?? "records"}`, declaration);
+      }
+    }
+    for (const [key, declaration] of declarations) {
+      const name = key.slice(0, key.lastIndexOf(":"));
       const storage = resolveAppStorage(store, app.id, name, declaration);
       if (storage.kind === "records") await clearRecords(storage.records);
       else await clearBlobs(storage.blobs);

@@ -57,6 +57,38 @@ describe("app data persistence", () => {
     expect(await store.blobs(`app:${created.id}`).list()).toEqual([]);
   });
 
+  it("deletes collections declared only by a historical app version", async () => {
+    const store = memoryStore();
+    const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });
+    const created = await runtime.create({ prompt: "Renamed storage" }, ctx);
+    const oldVersion: AppDocument = {
+      ...created,
+      storage: { old_notes: { about: "Old notes" } },
+    };
+    await store.records("vendo_apps").put({
+      id: created.id,
+      data: oldVersion,
+      refs: { subject: ctx.principal.subject },
+    });
+    await runtime.edit(created.id, "Record the old storage version", ctx);
+    const current: AppDocument = {
+      ...(await runtime.get(created.id, ctx))!,
+      storage: { new_notes: { about: "New notes" } },
+    };
+    await store.records("vendo_apps").put({
+      id: created.id,
+      data: current,
+      refs: { subject: ctx.principal.subject },
+    });
+    await store.records(`app:${created.id}:old_notes`).put({ id: "old_1", data: { body: "old" } });
+    await store.records(`app:${created.id}:new_notes`).put({ id: "new_1", data: { body: "new" } });
+
+    await runtime.delete(created.id, ctx);
+
+    expect(await store.records(`app:${created.id}:old_notes`).list()).toEqual({ records: [] });
+    expect(await store.records(`app:${created.id}:new_notes`).list()).toEqual({ records: [] });
+  });
+
   it("round-trips the illustrative spec document after correcting its tree and trigger shapes", async () => {
     const store = memoryStore();
     const runtime = createApps({ store, guard: guardFixture(), tools, catalog: [], model });

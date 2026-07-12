@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  createApps,
   publishRecordSchema,
   shareSnapshotSchema,
-} from "./cloud.js";
-import { createApps } from "./index.js";
+} from "./index.js";
 import { guardFixture, memoryStore } from "./testing/index.js";
 
 const ctx = {

@@ -1,5 +1,4 @@
-import { VendoError, type AppDocument, type RunContext, type StoreAdapter } from "@vendoai/core";
-import { appRecordInput } from "./persistence.js";
+import { VendoError, type AppDocument, type RunContext } from "@vendoai/core";
 import { mintRunToken, type RunTokenSecret } from "./run-token.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
@@ -26,7 +25,6 @@ export interface MachineRun extends MachineAuthorization {
 export interface MachineSessionsConfig {
   sandbox?: SandboxAdapter;
   proxyUrl?: string;
-  store: StoreAdapter;
   tokenSecret: RunTokenSecret;
 }
 
@@ -38,6 +36,8 @@ export interface MachineSessions {
   mintRun(app: AppDocument, ctx: RunContext): Promise<MachineAuthorization>;
   wake(app: AppDocument, ctx: RunContext, authorization: MachineAuthorization): void;
   stop(appId: string): Promise<void>;
+  /** 06-apps §2 — remove a cached machine, including one whose resume is still pending. */
+  evict(appId: string): Promise<void>;
   withAuthorization<T>(
     app: AppDocument,
     ctx: RunContext,
@@ -47,9 +47,6 @@ export interface MachineSessions {
   withMachine<T>(app: AppDocument, ctx: RunContext, fn: (run: MachineRun) => Promise<T>): Promise<T>;
   /** 06-apps §2 — isolated edit/graduation machine; never enters the live cache before validation. */
   withFork<T>(app: AppDocument, ctx: RunContext, fn: (run: MachineRun) => Promise<T>): Promise<T>;
-  /** 06-apps §2 — atomically make a validated edit fork the live machine. */
-  replace(appId: string, machine: SandboxMachine): Promise<void>;
-  snapshot(app: AppDocument, ctx: RunContext, machine: SandboxMachine): Promise<AppDocument>;
 }
 
 /** 06-apps §4.2 and block-plan decision 5. */
@@ -151,6 +148,14 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     return fn({ machine, ...run });
   };
 
+  const evict = async (appId: string): Promise<void> => {
+    const pending = waking.get(appId);
+    if (pending !== undefined) await pending.catch(() => undefined);
+    const machine = live.get(appId);
+    live.delete(appId);
+    if (machine !== undefined) await machine.stop().catch(() => undefined);
+  };
+
   return {
     available: () => config.sandbox !== undefined,
     peek: (appId) => live.get(appId),
@@ -159,34 +164,14 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     wake(app, ctx, authorization) {
       if (live.has(app.id) || waking.has(app.id)) return;
       requireAdapter();
-      void Promise.resolve()
-        .then(() => start(app, ctx, authorization.runToken))
-        .catch(() => undefined);
+      void start(app, ctx, authorization.runToken).catch(() => undefined);
     },
     async stop(appId) {
-      const pending = waking.get(appId);
-      if (pending !== undefined) await pending.catch(() => undefined);
-      const machine = live.get(appId);
-      live.delete(appId);
-      if (machine !== undefined) await machine.stop();
+      await evict(appId);
     },
+    evict,
     withAuthorization,
     withMachine,
     withFork,
-    async replace(appId, machine) {
-      const previous = live.get(appId);
-      live.set(appId, machine);
-      if (previous !== undefined && previous !== machine) await previous.stop().catch(() => undefined);
-    },
-    async snapshot(app, ctx, machine) {
-      if (machine.screenshot !== undefined) {
-        const cover = await machine.screenshot();
-        await config.store.blobs(`app:${app.id}`).put("cover.png", cover, { contentType: "image/png" });
-      }
-      const updated = { ...structuredClone(app), server: await machine.snapshot() };
-      await config.store.records("vendo_apps").put(appRecordInput(updated, ctx.principal.subject));
-      live.set(app.id, machine);
-      return updated;
-    },
   };
 };

@@ -86,11 +86,14 @@ export const assertPinsExportable = (
 ): void => {
   for (const pin of pins) {
     const baseline = baselines.find((candidate) => candidate.slot === pin.slot);
-    if (baseline?.exportable === true) continue;
+    if (baseline?.hash === pin.base && baseline.exportable === true) continue;
+    const reason = baseline === undefined
+      ? "missing-baseline"
+      : baseline.hash !== pin.base ? "baseline-hash-mismatch" : "baseline-forbids-export";
     throw new VendoError("blocked", `pin ${pin.slot} is not exportable`, {
       slot: pin.slot,
       base: pin.base,
-      reason: baseline === undefined ? "missing-baseline" : "baseline-forbids-export",
+      reason,
     });
   }
 };

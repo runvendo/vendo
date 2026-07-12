@@ -160,6 +160,42 @@ describe("generation engine through createApps", () => {
     expect(await runtime.history(original.id).list()).toEqual([]);
   });
 
+  it("rejects moving a node under its own descendant without changing the document", async () => {
+    const store = memoryStore();
+    const moveCycle = JSON.stringify({
+      ops: [{ op: "move-node", nodeId: "section", parentId: "leaf" }],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(moveCycle, moveCycle),
+    });
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_cycle",
+      name: "Cycle guard",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [
+          { id: "root", component: "Text", children: ["section"] },
+          { id: "section", component: "Text", children: ["leaf"] },
+          { id: "leaf", component: "Text" },
+        ],
+      },
+    };
+    await putApp(store, original);
+
+    const result = await runtime.edit(original.id, "Move the section", ctx);
+
+    expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("descendant")]));
+    expect(result.app).toEqual(original);
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+  });
+
   it("edits server files in a fork, syntax-checks, and rotates the snapshot", async () => {
     const sandbox = fakeSandbox();
     const seed = await sandbox.create({ env: {}, files: { "/app/server.js": "export const value = 1;" } });
@@ -186,7 +222,154 @@ describe("generation engine through createApps", () => {
     expect(new TextDecoder().decode(await editedMachine?.files.read("/app/server.js"))).toBe("export const value = 2;");
     expect(editedMachine?.commands).toContainEqual({ cmd: "node --check '/app/server.js'", opts: { cwd: "/app", timeoutMs: 10_000 } });
     expect(result.app.server).not.toBe(server);
-    expect(result.version.rung).toBeGreaterThanOrEqual(2);
+    expect(result.version.rung).toBe(2);
+  });
+
+  it("records a tree edit on a server-backed app as rung 2", async () => {
+    const store = memoryStore();
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_server_tree",
+      name: "Server tree",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text" }],
+      },
+      server: "fake:snap_existing",
+    };
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(JSON.stringify({ ops: [{ op: "set-name", name: "Renamed" }] })),
+    });
+
+    const result = await runtime.edit(original.id, "Rename the title", ctx);
+
+    expect(result.version.rung).toBe(2);
+  });
+
+  it("evicts a snapshotted code-edit machine before the next fn call", async () => {
+    const base = fakeSandbox();
+    const seed = await base.create({ env: {} });
+    const server = await seed.snapshot();
+    const sandbox: SandboxAdapter = {
+      create: (spec) => base.create(spec),
+      async resume(ref) {
+        const machine = await base.resume(ref);
+        const snapshot = machine.snapshot.bind(machine);
+        machine.snapshot = async () => {
+          const nextRef = await snapshot();
+          machine.stopped = true;
+          return nextRef;
+        };
+        return machine;
+      },
+    };
+    const store = memoryStore();
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_pausing_snapshot",
+      name: "Pausing snapshot",
+      server,
+    };
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(JSON.stringify({
+        rung: 2,
+        files: [{ path: "/app/server.js", content: "export const ready = true;" }],
+      })),
+    });
+
+    await runtime.edit(original.id, "Change the server function", ctx);
+
+    await expect(runtime.call(original.id, "fn:ready", {}, ctx)).resolves.toMatchObject({
+      status: "ok",
+      output: { name: "ready" },
+    });
+  });
+
+  it("captures a rung-4 cover during a real code edit and returns it while resuming", async () => {
+    const sandbox = fakeSandbox();
+    const seed = await sandbox.create({ env: {} });
+    const server = await seed.snapshot();
+    const store = memoryStore();
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_http_cover",
+      name: "HTTP cover",
+      ui: "http",
+      server,
+    };
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog,
+      model: scriptedLanguageModel(JSON.stringify({
+        rung: 4,
+        files: [{ path: "/app/server.js", content: "export const ready = true;" }],
+      })),
+    });
+
+    await runtime.edit(original.id, "Change the served web app", ctx);
+
+    expect(await store.blobs(`app:${original.id}`).get("cover.png")).not.toBeNull();
+    await expect(runtime.open(original.id, ctx)).resolves.toEqual({
+      kind: "resuming",
+      cover: expect.stringMatching(/^data:image\/png;base64,/),
+    });
+  });
+
+  it("rejects an edit computed from a document changed before persistence", async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    const store = memoryStore();
+    const original: AppDocument = {
+      format: "vendo/app@1",
+      id: "app_stale_edit",
+      name: "Original",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text" }],
+      },
+    };
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog,
+      model: scriptedLanguageModel(async () => {
+        started();
+        await gate;
+        return JSON.stringify({ ops: [{ op: "set-name", name: "Model edit" }] });
+      }),
+    });
+
+    const editing = runtime.edit(original.id, "Rename it", ctx);
+    await startedPromise;
+    const concurrent = { ...original, name: "Concurrent edit" };
+    await putApp(store, concurrent);
+    release();
+
+    await expect(editing).rejects.toMatchObject({ code: "conflict" });
+    await expect(runtime.get(original.id, ctx)).resolves.toEqual(concurrent);
   });
 
   it("discards a syntax-error code fork and leaves the document and prior machine untouched", async () => {

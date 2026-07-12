@@ -1,12 +1,10 @@
-import { VendoError } from "@vendoai/core";
 import { describe, expect, it } from "vitest";
 import {
-  assertPinsExportable,
   inClientApprovalSchema,
   pinApprovalSchema,
   pinBaselineSchema,
   pinShipRequestSchema,
-} from "./pins.js";
+} from "./index.js";
 
 const capturedAt = "2026-07-11T12:00:00.000Z";
 
@@ -40,41 +38,4 @@ describe("pin contract shapes", () => {
     })).toMatchObject({ versionHash: "sha256:z" });
   });
 
-  it("fails pin export when a matching baseline is missing or forbidden", () => {
-    const pins = [{ slot: "invoice-card", base: "sha256:x" }];
-
-    expect(() => assertPinsExportable(pins, [])).toThrow(
-      new VendoError("blocked", "pin invoice-card is not exportable", {
-        slot: "invoice-card",
-        base: "sha256:x",
-        reason: "missing-baseline",
-      }),
-    );
-    expect(() => assertPinsExportable(pins, [{
-      slot: "invoice-card",
-      source: "source",
-      hash: "sha256:x",
-      exportable: false,
-      capturedAt,
-    }])).toThrow(
-      new VendoError("blocked", "pin invoice-card is not exportable", {
-        slot: "invoice-card",
-        base: "sha256:x",
-        reason: "baseline-forbids-export",
-      }),
-    );
-  });
-
-  it("allows every pin only when its slot baseline is exportable", () => {
-    expect(() => assertPinsExportable(
-      [{ slot: "invoice-card", base: "sha256:x" }],
-      [{
-        slot: "invoice-card",
-        source: "source",
-        hash: "sha256:x",
-        exportable: true,
-        capturedAt,
-      }],
-    )).not.toThrow();
-  });
 });

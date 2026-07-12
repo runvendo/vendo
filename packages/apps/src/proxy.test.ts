@@ -128,6 +128,39 @@ describe("machine tool proxy", () => {
     expect(wrongType.status).toBe(400);
   });
 
+  it("rejects oversized state bodies without persisting them", async () => {
+    const sandbox = fakeSandbox();
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: { async descriptors() { return []; }, async execute() { return { status: "blocked", reason: "no" }; } },
+      sandbox,
+      proxyUrl: "https://proxy.test",
+      catalog: [],
+      model,
+    });
+    const app = await runtime.create({ prompt: "Bounded state" }, ctx);
+    await store.records("vendo_apps").put({
+      id: app.id,
+      data: { ...app, ui: "http" },
+      refs: { subject: ctx.principal.subject },
+    });
+    await runtime.open(app.id, ctx);
+    await vi.waitFor(() => expect(sandbox.machines.size).toBe(1));
+    const token = [...sandbox.machines.values()].at(-1)?.env.VENDO_RUN_TOKEN;
+
+    const response = await runtime.proxy.handler(new Request("https://proxy.test/state", {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ payload: "x".repeat(256 * 1024) }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await json(response)).toMatchObject({ error: { code: "validation" } });
+    expect(await store.records("vendo_state").get(`${app.id}:${ctx.principal.subject}`)).toBeNull();
+  });
+
   it("injects opaque secret handles without ever reading or exposing values", async () => {
     const get = vi.fn(async () => "REAL_SECRET_SENTINEL");
     const sandbox = fakeSandbox();

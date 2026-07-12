@@ -246,6 +246,20 @@ const insertChild = (parent: TreeNode, nodeId: string, index: unknown): void => 
   parent.children = children;
 };
 
+const reachesNode = (tree: Tree, startId: string, targetId: string): boolean => {
+  const pending = [startId];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined || visited.has(current)) continue;
+    if (current === targetId) return true;
+    visited.add(current);
+    const node = tree.nodes.find(({ id }) => id === current);
+    if (node !== undefined) pending.push(...(node.children ?? []));
+  }
+  return false;
+};
+
 const applyTreeOps = (
   source: AppDocument,
   ops: TreeOp[],
@@ -298,6 +312,10 @@ const applyTreeOps = (
         }
         const parent = tree.nodes.find(({ id }) => id === operation.parentId);
         if (parent === undefined) return issue(`move-node parent "${operation.parentId}" does not exist`);
+        if (operation.parentId === operation.nodeId
+          || reachesNode(tree, operation.nodeId, operation.parentId)) {
+          return issue(`move-node cannot move "${operation.nodeId}" under itself or its descendant`);
+        }
         removeChildReference(tree, operation.nodeId);
         insertChild(parent, operation.nodeId, operation.index);
         break;

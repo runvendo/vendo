@@ -2,6 +2,9 @@ import type { AppId, RunContext, ToolRegistry } from "@vendoai/core";
 import type { AppDataAccess } from "./app-data.js";
 import { verifyRunToken, type RunTokenSecret } from "./run-token.js";
 
+const STATE_BODY_MAX_BYTES = 256 * 1024;
+const decoder = new TextDecoder();
+
 const jsonResponse = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), {
   status,
   headers: { "content-type": "application/json" },
@@ -62,7 +65,15 @@ export const createAppsProxy = (dependencies: AppsProxyDependencies): { handler(
     }
     let body: unknown;
     try {
-      body = await request.json();
+      if (isStatePut) {
+        const bytes = new Uint8Array(await request.arrayBuffer());
+        if (bytes.byteLength > STATE_BODY_MAX_BYTES) {
+          return errorResponse(400, "validation", "request body exceeds size limit");
+        }
+        body = JSON.parse(decoder.decode(bytes)) as unknown;
+      } else {
+        body = await request.json();
+      }
     } catch {
       return errorResponse(400, "validation", "request body must be valid JSON");
     }

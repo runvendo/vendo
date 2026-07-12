@@ -113,7 +113,10 @@ export class MemoryStoreAdapter implements StoreAdapter {
   private readonly blobNamespaces = new Map<string, Map<string, StoredBlob>>();
   private lastTimestamp = 0;
 
+  constructor(private readonly fixedTimestamp?: () => string) {}
+
   private readonly timestamp = (): string => {
+    if (this.fixedTimestamp !== undefined) return this.fixedTimestamp();
     this.lastTimestamp = Math.max(Date.now(), this.lastTimestamp + 1);
     return new Date(this.lastTimestamp).toISOString();
   };
@@ -140,4 +143,5 @@ export class MemoryStoreAdapter implements StoreAdapter {
 }
 
 /** Create an isolated in-memory StoreAdapter. */
-export const memoryStore = (): MemoryStoreAdapter => new MemoryStoreAdapter();
+export const memoryStore = (options: { timestamp?: () => string } = {}): MemoryStoreAdapter =>
+  new MemoryStoreAdapter(options.timestamp);

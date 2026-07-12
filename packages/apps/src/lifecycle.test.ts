@@ -1,8 +1,14 @@
-import type { RunContext, ToolRegistry } from "@vendoai/core";
+import type { AppDocument, RunContext, ToolRegistry } from "@vendoai/core";
 import { VENDO_APP_FORMAT, VendoError } from "@vendoai/core";
-import { describe, expect, it } from "vitest";
-import { createApps } from "./index.js";
-import { basicLanguageModel, guardFixture, memoryStore } from "./testing/index.js";
+import { describe, expect, it, vi } from "vitest";
+import { createApps, type SandboxAdapter } from "./index.js";
+import {
+  basicLanguageModel,
+  fakeSandbox,
+  guardFixture,
+  memoryStore,
+  scriptedLanguageModel,
+} from "./testing/index.js";
 
 const tools: ToolRegistry = {
   async descriptors() {
@@ -90,6 +96,49 @@ describe("apps lifecycle", () => {
     expect(await runtime.history(fork.id).list()).toEqual([]);
   });
 
+  it("clones a server snapshot for a fork and drops server refs without an adapter", async () => {
+    const sandbox = fakeSandbox();
+    const seed = await sandbox.create({ env: {}, files: { "/app/value.txt": "source" } });
+    const server = await seed.snapshot();
+    const store = memoryStore();
+    const runtime = createApps({ store, guard: guardFixture(), tools, sandbox, catalog: [] });
+    const source: AppDocument = {
+      format: VENDO_APP_FORMAT,
+      id: "app_server_source",
+      name: "Server source",
+      server,
+    };
+    await store.records("vendo_apps").put({
+      id: source.id,
+      data: source,
+      refs: { subject: "user_ada" },
+    });
+
+    const fork = await runtime.fork(source.id, context("user_ada"));
+
+    expect(fork.server).toMatch(/^fake:snap_/);
+    expect(fork.server).not.toBe(source.server);
+    await runtime.call(fork.id, "fn:touch", {}, context("user_ada"));
+    const forkMachine = [...sandbox.machines.values()].at(-1)!;
+    await forkMachine.files.write("/app/value.txt", "fork");
+    const sourceMachine = await sandbox.resume(source.server!);
+    expect(new TextDecoder().decode(await sourceMachine.files.read("/app/value.txt"))).toBe("source");
+
+    const noAdapterStore = memoryStore();
+    await noAdapterStore.records("vendo_apps").put({
+      id: source.id,
+      data: source,
+      refs: { subject: "user_ada" },
+    });
+    const withoutAdapter = createApps({
+      store: noAdapterStore,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+    });
+    await expect(withoutAdapter.fork(source.id, context("user_ada"))).resolves.not.toHaveProperty("server");
+  });
+
   it("emits one scoped lifecycle audit event for each lifecycle mutation", async () => {
     const { runtime, guard } = setup();
     const ctx = { ...context("user_ada"), venue: "chat" as const, presence: "away" as const };
@@ -154,6 +203,94 @@ describe("apps lifecycle", () => {
     expect(await history.list()).toHaveLength(49);
   });
 
+  it("undoes same-millisecond edits in strict LIFO order", async () => {
+    const store = memoryStore({ timestamp: () => "2026-07-11T12:00:00.000Z" });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: basicLanguageModel(),
+    });
+    const app: AppDocument = {
+      format: VENDO_APP_FORMAT,
+      id: "app_lifo",
+      name: "Original",
+      ui: "tree",
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text" }],
+      },
+    };
+    await store.records("vendo_apps").put({ id: app.id, data: app, refs: { subject: "user_ada" } });
+    const uuid = vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce("ffffffff-ffff-4fff-8fff-ffffffffffff")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000000");
+    try {
+      await runtime.edit(app.id, "First", context("user_ada"));
+      await runtime.edit(app.id, "Second", context("user_ada"));
+
+      await expect(runtime.history(app.id).undo()).resolves.toMatchObject({ name: "First" });
+      await expect(runtime.history(app.id).undo()).resolves.toEqual(app);
+    } finally {
+      uuid.mockRestore();
+    }
+  });
+
+  it("evicts the post-edit machine when undo restores an older server", async () => {
+    const base = fakeSandbox({
+      app: () => ({ status: 200, headers: { "content-type": "application/json" }, body: '{"result":"v1"}' }),
+    });
+    const seed = await base.create({ env: {}, files: { "/app/server.js": "v1" } });
+    const server = await seed.snapshot();
+    const sandbox: SandboxAdapter = {
+      create: (spec) => base.create(spec),
+      async resume(ref) {
+        const machine = await base.resume(ref);
+        const write = machine.files.write;
+        machine.files.write = async (path, bytes) => {
+          await write(path, bytes);
+          const text = typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes);
+          if (path === "/app/server.js" && text.includes("v2")) {
+            machine.setApp(() => ({
+              status: 200,
+              headers: { "content-type": "application/json" },
+              body: '{"result":"v2"}',
+            }));
+          }
+        };
+        return machine;
+      },
+    };
+    const store = memoryStore();
+    const app: AppDocument = { format: VENDO_APP_FORMAT, id: "app_undo_server", name: "Undo server", server };
+    await store.records("vendo_apps").put({ id: app.id, data: app, refs: { subject: "user_ada" } });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      sandbox,
+      catalog: [],
+      model: scriptedLanguageModel(JSON.stringify({
+        rung: 2,
+        files: [{ path: "/app/server.js", content: "v2" }],
+      })),
+    });
+
+    await runtime.edit(app.id, "Change the server", context("user_ada"));
+    await expect(runtime.call(app.id, "fn:version", {}, context("user_ada"))).resolves.toEqual({
+      status: "ok",
+      output: "v2",
+    });
+    await runtime.history(app.id).undo();
+
+    await expect(runtime.call(app.id, "fn:version", {}, context("user_ada"))).resolves.toEqual({
+      status: "ok",
+      output: "v1",
+    });
+  });
+
   it("rejects undo on empty history", async () => {
     const { runtime } = setup();
     const app = await runtime.create({ prompt: "No history" }, context("user_ada"));
@@ -175,5 +312,24 @@ describe("apps lifecycle", () => {
       code: "validation",
       detail: { appId },
     });
+  });
+
+  it("skips corrupt app and history rows in list surfaces", async () => {
+    const { runtime, store } = setup();
+    const ctx = context("user_ada");
+    const valid = await runtime.create({ prompt: "Valid" }, ctx);
+    const edited = await runtime.edit(valid.id, "Edited", ctx);
+    await store.records("vendo_apps").put({
+      id: "app_corrupt",
+      data: { format: VENDO_APP_FORMAT, id: "app_corrupt", name: "" },
+      refs: { subject: ctx.principal.subject },
+    });
+    await store.records(`vendo:app-history:${valid.id}`).put({
+      id: "ver_corrupt",
+      data: { entry: { at: "not-a-date", intent: "bad", rung: 1 }, doc: null },
+    });
+
+    await expect(runtime.list(ctx)).resolves.toEqual([edited.app]);
+    await expect(runtime.history(valid.id).list()).resolves.toEqual([edited.version]);
   });
 });

@@ -99,6 +99,32 @@ describe("apps agent tools", () => {
     expect(guard.audit.filter((event) => event.kind === "tool-call")).toHaveLength(2);
   });
 
+  it("keeps the raw registry unbound while the umbrella wrapper blocks and audits", async () => {
+    const store = memoryStore();
+    const guard = guardFixture({ rules: { vendo_apps_create: "block" } });
+    const runtime = createApps({
+      store,
+      guard,
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const call = {
+      id: "call_unbound_create",
+      tool: "vendo_apps_create",
+      args: { prompt: "Build directly" },
+    };
+
+    await expect(runtime.agentTools().execute(call, ctx)).resolves.toMatchObject({ status: "ok" });
+    expect(await runtime.list(ctx)).toHaveLength(1);
+    expect(guard.audit.filter((event) => event.kind === "tool-call")).toEqual([]);
+
+    await expect(bindTools(guard, runtime.agentTools()).execute({ ...call, id: "call_bound_create" }, ctx))
+      .resolves.toEqual({ status: "blocked", reason: "Programmed block for vendo_apps_create" });
+    expect(await runtime.list(ctx)).toHaveLength(1);
+    expect(guard.audit.filter((event) => event.kind === "tool-call")).toHaveLength(1);
+  });
+
   it("contains runtime and input errors while preserving VendoError codes", async () => {
     const runtime = createApps({
       store: memoryStore(),
