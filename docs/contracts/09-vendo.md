@@ -1,0 +1,110 @@
+# @vendoai/vendo — the umbrella
+
+Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: glue. The default composition + re-exports; the only package allowed to depend on everything. `npm install @vendoai/vendo` + `npx vendo init` = the working agent; blocks stay à la carte for everyone else. `vendoai` stays published as a thin alias; bare `vendo` becomes the unscoped alias if npm frees it. ⚑ This package owns the `vendo` bin (init/doctor/sync) — no separate published CLI.
+
+## 1. Entry points
+
+| Entry | Contents |
+| --- | --- |
+| `@vendoai/vendo` | root types re-exported from core (+ each block's primary types) |
+| `@vendoai/vendo/server` | `createVendo` — the composition + handler |
+| `@vendoai/vendo/react` | re-exports `@vendoai/ui` (+ `<VendoRoot>` = provider wired to defaults) |
+| bin `vendo` | `init`, `doctor`, `sync` |
+
+## 2. The composition
+
+```ts
+import type { Principal, ActAs, SecretsProvider, Json, RunId } from "@vendoai/core";
+import type { LanguageModel } from "ai";                      // peerDependency (00 conventions)
+import type { VendoStore } from "@vendoai/store";
+import type { VendoAgent } from "@vendoai/agent";
+import type { ActionsRegistry, Connector } from "@vendoai/actions";
+import type { VendoGuard, PolicyConfig, Judge } from "@vendoai/guard";
+import type { AppsRuntime, SandboxAdapter } from "@vendoai/apps";
+import type { AutomationsEngine } from "@vendoai/automations";
+
+export function createVendo(config: {
+  model: LanguageModel;                       // the one required thing
+  principal: (req: Request) => Promise<Principal | null>;   // host session → principal; null → ephemeral anonymous
+  store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
+  sandbox?: SandboxAdapter;                   // e.g. e2bSandbox({ apiKey }); absent → rung 1 only
+  connectors?: Connector[];
+  actAs?: ActAs;
+  policy?: PolicyConfig;
+  judge?: Judge;                              // e.g. vendoAutoJudge({ model }) — one import, no shorthand union
+  secrets?: SecretsProvider;                  // default envSecrets()
+  telemetry?: boolean;                        // wires @vendoai/telemetry (out of campaign scope, "stays as-is") — the one consumer outside this set
+}): Vendo;
+
+export interface Vendo {
+  handler: (req: Request) => Promise<Response>;   // fetch-style; mount at /api/vendo/[...]
+  emit(event: string, payload: Json, principal: Principal): Promise<RunId[]>;   // the host-event seam, re-exposed
+  // the composed blocks, for hosts that want to reach in:
+  agent: VendoAgent; guard: VendoGuard; apps: AppsRuntime; automations: AutomationsEngine; actions: ActionsRegistry; store: VendoStore;
+}
+```
+
+Wiring (normative): `actions.add(apps.agentTools())`; every `ToolRegistry` handed to agent, apps, and automations is `guard.bind(...)`ed here — blocks never see an unbound registry. `nextVendoHandler(vendo)` adapts the fetch handler to a Next.js route module; the handler shape itself is framework-agnostic (page: framework-agnostic, any JS runtime).
+
+## 3. The wire (public contract — ui speaks exactly this)
+
+Mounted under one base (default `/api/vendo`). Auth: every request passes through `principal(req)`; payload types are core types, JSON-encoded; streams are SSE.
+
+| Route | Method | Body → Response |
+| --- | --- | --- |
+| `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE) — one conversational turn |
+| `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
+| `/approvals` | GET | pending `ApprovalRequest[]` |
+| `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
+| `/grants` · `/grants/:id` | GET · DELETE | grants · revoke |
+| `/apps` | GET · POST | list · `{ prompt }` → `AppDocument` |
+| `/apps/:id` | GET · DELETE | app · delete |
+| `/apps/:id/open` | GET | `OpenSurface` |
+| `/apps/:id/call` | POST | `{ ref: "fn:<name>" \| "<tool>", args }` → `ToolOutcome` (tree actions + fn: calls — 06 §1 `call`) |
+| `/apps/:id/edit` | POST | `{ instruction }` → `EditResult` |
+| `/apps/:id/history` | GET · POST | versions · `{ op: "undo" }` |
+| `/apps/:id/export` | GET | `.vendoapp` bytes |
+| `/apps/import` | POST | bytes → `AppDocument` (fresh id minted) |
+| `/apps/:id/fork` | POST | → `AppDocument` |
+| `/automations` | GET | list |
+| `/automations/:id/enable` · `/disable` | POST | `{ enabled, missing }` · `{}` |
+| `/automations/:id/dry-run` | POST | `RunPlan` |
+| `/runs` · `/runs/:id` | GET | run records |
+| `/runs/:id/stop` | POST | `{}` |
+| `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>` — what Vercel cron sends natively) |
+| `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) — verified, see below |
+| `/activity` | GET | `AuditEvent[]` — `guard.audit.query({ principal })` self-scoped at this route |
+| `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe) |
+
+**Webhook verification (normative)**: `/webhooks/:source` never dispatches unverified deliveries. Each source registers a verification at wiring time: the connector's own signature scheme (e.g. Composio's signed headers), or — for self-minted subscriptions — the industry-standard signing scheme (Stripe/Svix/GitHub school): HMAC-SHA256 over `id.timestamp.rawBody` with the secret minted at enable, delivered as signature + timestamp + delivery-id headers, verified within a ±5-minute window. **The secret itself never travels in a URL** (URLs leak via logs and proxies). Deliveries are deduped by delivery id, so at-least-once retries never double-fire an automation. Verification failure → `401`, no principal resolution, no run, one audit event. The unauthenticated surface of the wire is exactly: nothing.
+
+**Errors (normative)**: every non-2xx wire response is the one envelope the set already has (06 §4.1): `{ "error": { "code": VendoErrorCode, "message": string } }`, with the fixed status map `validation`→400, `not-found`→404, `blocked`→403, `conflict`→409, `cloud-required`→402, `sandbox-unavailable`/`not-implemented`→501.
+
+**CSRF (normative)**: the wire is cookie-authenticated (`principal(req)` reads the host session), so the handler rejects state-changing requests whose `Content-Type` is not `application/json` (forcing a CORS preflight cross-origin) — the OWASP-recommended minimum for embedded surfaces where hosts relax `SameSite`. Exceptions, listed exhaustively: `/apps/import` (binary body) and `/webhooks/:source` / `/tick` (non-cookie auth above).
+
+Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"` carries the sandbox provider's URL directly; the iframe talks to the machine, the machine talks back only through `VENDO_PROXY_URL` (06 §4.4).
+
+## 4. `.vendo/` directory (the host-side contract, complete)
+
+| Path | Written by | Format |
+| --- | --- | --- |
+| `tools.json` | sync | `vendo/tools@1` (04) |
+| `overrides.json` | init interview / human | `vendo/overrides@1` (04) |
+| `policy.json` | init / human | `vendo/policy@1` (05) |
+| `remixable/<slot>.json` | sync | `PinBaseline` (06 §8) |
+| `brief.md` | init | product brief for the system prompt (03 §3) |
+| `design-rules.md` | host, optional | generation-time design rules (06 §5) |
+| `theme.json` | init extraction | `VendoTheme` |
+| `data/` | store | PGlite files (gitignored; init writes the ignore) |
+
+## 5. The bin (DX, per the locked DX design)
+
+- **`vendo init`** — interactive wizard: scans the app (deterministic + AI riding the dev's existing Claude Code / Codex / API key), interviews with recommendations (risk labels, theme, remix candidates), writes the two wiring snippets (handler route + `<VendoRoot>`) — every code change permission-gated with the diff shown; answers land in `overrides.json`, respected forever. `--agent` mode: emits the plan, writes nothing, asks ≤3 plain-language questions (vibe-coder persona; `install.md` is the canonical staged playbook it follows).
+- **`vendo doctor`** — wiring checks + one live round-trip against `/status`; green = working agent; ends with ladder hints (the one config line that unlocks each remaining block).
+- **`vendo sync`** — the build-step extraction, callable manually (04 §1).
+
+Exit codes: doctor `0` green / `1` broken wiring; sync `0` (fail-soft warns) / `2` with `--strict` on breaking changes.
+
+## 6. Cloud enforcement
+
+`VENDO_API_KEY` present → cloud-gated surfaces (share/publish/org/pinning) verify entitlements against Cloud and light up; absent → those methods throw `VendoError("cloud-required")`. Paid code lives in the private cloud repo; this repo stays pure Apache-2.0.
