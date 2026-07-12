@@ -38,24 +38,45 @@ function joinedText(content: unknown): string {
     .join("\n");
 }
 
-function parseSse(text: string, id: number): JsonRpcResponse {
-  const candidates: JsonRpcResponse[] = [];
-  for (const event of text.split(/\r?\n\r?\n/)) {
-    const data = event
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart())
-      .join("\n");
-    if (!data) continue;
-    try {
-      candidates.push(JSON.parse(data) as JsonRpcResponse);
-    } catch {
-      // Ignore unrelated/non-JSON SSE events and keep looking for this request.
-    }
+function parseSseEvent(event: string, id: number): JsonRpcResponse | undefined {
+  const data = event
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (!data) return undefined;
+  try {
+    const candidate = JSON.parse(data) as JsonRpcResponse;
+    return candidate.id === id ? candidate : undefined;
+  } catch {
+    return undefined;
   }
-  const match = candidates.find((candidate) => candidate.id === id);
-  if (!match) throw new Error(`MCP SSE response did not contain JSON-RPC id ${id}`);
-  return match;
+}
+
+async function readSse(response: Response, id: number): Promise<JsonRpcResponse> {
+  if (!response.body) throw new Error("MCP SSE response had no body");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    let separator = buffer.match(/\r?\n\r?\n/);
+    while (separator?.index !== undefined) {
+      const event = buffer.slice(0, separator.index);
+      buffer = buffer.slice(separator.index + separator[0].length);
+      const match = parseSseEvent(event, id);
+      if (match) {
+        await reader.cancel().catch(() => undefined);
+        return match;
+      }
+      separator = buffer.match(/\r?\n\r?\n/);
+    }
+    if (done) break;
+  }
+  const trailing = parseSseEvent(buffer, id);
+  if (trailing) return trailing;
+  throw new Error(`MCP SSE response did not contain JSON-RPC id ${id}`);
 }
 
 export function mcpConnector(config: {
@@ -79,22 +100,40 @@ export function mcpConnector(config: {
   }
 
   async function send(body: Record<string, unknown>, id?: number): Promise<JsonRpcResponse | undefined> {
-    const response = await fetch(config.url, {
-      method: "POST",
-      headers: requestHeaders(),
-      body: JSON.stringify(body),
-    });
-    const captured = response.headers.get("Mcp-Session-Id");
-    if (captured) sessionId = captured;
-    const text = await response.text();
-    if (!response.ok) throw new Error(`MCP HTTP ${response.status}: ${text.slice(0, 200)}`);
-    if (id === undefined || !text.trim()) return undefined;
-    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (contentType.includes("text/event-stream")) return parseSse(text, id);
     try {
-      return JSON.parse(text) as JsonRpcResponse;
-    } catch {
-      throw new Error("MCP response was not valid JSON");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+      try {
+        const response = await fetch(config.url, {
+          method: "POST",
+          headers: requestHeaders(),
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        const captured = response.headers.get("Mcp-Session-Id");
+        if (captured) sessionId = captured;
+        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        if (contentType.includes("text/event-stream") && response.ok) {
+          if (id === undefined) {
+            await response.body?.cancel().catch(() => undefined);
+            return undefined;
+          }
+          return await readSse(response, id);
+        }
+        const text = await response.text();
+        if (!response.ok) throw new Error(`MCP HTTP ${response.status}: ${text.slice(0, 200)}`);
+        if (id === undefined || !text.trim()) return undefined;
+        try {
+          return JSON.parse(text) as JsonRpcResponse;
+        } catch {
+          throw new Error("MCP response was not valid JSON");
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw new Error("MCP response timed out");
+      throw error;
     }
   }
 
@@ -130,6 +169,7 @@ export function mcpConnector(config: {
       normalizedToRaw.clear();
       const descriptors: ToolDescriptor[] = [];
       let cursor: string | undefined;
+      const seenCursors = new Set<string>();
 
       do {
         const response = await rpc("tools/list", cursor ? { cursor } : {});
@@ -155,6 +195,10 @@ export function mcpConnector(config: {
           });
         }
         cursor = typeof result.nextCursor === "string" && result.nextCursor ? result.nextCursor : undefined;
+        if (cursor) {
+          if (seenCursors.has(cursor)) throw new Error(`MCP tools/list pagination loop at cursor ${cursor}`);
+          seenCursors.add(cursor);
+        }
       } while (cursor);
 
       return descriptors;

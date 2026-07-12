@@ -46,6 +46,7 @@ function inputSchema(document: JsonObject, rawPathItem: JsonObject, rawOperation
     const parameter = jsonObject(resolveRefs(document, rawParameter));
     const name = parameter.name;
     if (typeof name !== "string" || name.length === 0) continue;
+    if (parameter.in !== undefined && parameter.in !== "path" && parameter.in !== "query") continue;
     const schema = jsonObject(resolveRefs(document, parameter.schema ?? { type: "string" }));
     properties[name] = {
       ...schema,
@@ -59,7 +60,7 @@ function inputSchema(document: JsonObject, rawPathItem: JsonObject, rawOperation
   const jsonContent = jsonObject(content["application/json"]);
   if (jsonContent.schema !== undefined) {
     properties.body = resolveRefs(document, jsonContent.schema) as JsonObject;
-    required.add("body");
+    if (requestBody.required === true) required.add("body");
   }
   return {
     type: "object",

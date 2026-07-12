@@ -125,6 +125,34 @@ describe("createActions registry", () => {
     await expect(actions.descriptors()).rejects.toBe(failure);
   });
 
+  it("rejects invalid connector descriptor names with the descriptor source", async () => {
+    const actions = createActions({
+      connectors: [connector([{ name: "invalid.name", description: "Invalid", inputSchema: {}, risk: "read" }])],
+    });
+    await expect(actions.descriptors()).rejects.toMatchObject({
+      name: "VendoError",
+      code: "validation",
+      message: expect.stringContaining("connector stub[0]"),
+    });
+  });
+
+  it("validates configured host tools and added registry descriptors", async () => {
+    await expect(createActions({ tools: [routeTool("invalid.host")] }).descriptors()).rejects.toMatchObject({
+      code: "validation",
+      message: expect.stringContaining("config.tools[0]"),
+    });
+
+    const actions = createActions({});
+    actions.add({
+      descriptors: async () => [{ name: "invalid.added", description: "Invalid", inputSchema: {}, risk: "read" }],
+      execute: async () => ({ status: "ok", output: null }),
+    });
+    await expect(actions.descriptors()).rejects.toMatchObject({
+      code: "validation",
+      message: expect.stringContaining("added registry[0][0]"),
+    });
+  });
+
   it("dispatches added registries untouched and catches connector execute rejections", async () => {
     const addedOutcome: ToolOutcome = { status: "blocked", reason: "owned by child" };
     const added: ToolRegistry = {
@@ -161,6 +189,55 @@ describe("createActions registry", () => {
 });
 
 describe("host HTTP execution", () => {
+  it("forwards present credentials only to the configured host origin", async () => {
+    const firstHeaders: Array<Record<string, string | string[] | undefined>> = [];
+    const secondHeaders: Array<Record<string, string | string[] | undefined>> = [];
+    async function stub(headers: Array<Record<string, string | string[] | undefined>>): Promise<string> {
+      const server = createServer((req, res) => {
+        headers.push(req.headers);
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: true }));
+      });
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          server.off("error", reject);
+          resolve();
+        });
+      });
+      const { port } = server.address() as AddressInfo;
+      closers.push(async () => {
+        server.close();
+        server.closeAllConnections();
+      });
+      return `http://127.0.0.1:${port}`;
+    }
+
+    const configuredOrigin = await stub(firstHeaders);
+    const otherOrigin = await stub(secondHeaders);
+    const tools: ExtractedTool[] = [
+      routeTool("host_same_origin", {
+        binding: { kind: "openapi", operationId: "same", baseUrl: configuredOrigin, method: "GET", path: "/same" },
+      }),
+      routeTool("host_other_origin", {
+        binding: { kind: "openapi", operationId: "other", baseUrl: otherOrigin, method: "GET", path: "/other" },
+      }),
+    ];
+    const actions = createActions({ tools, baseUrl: configuredOrigin });
+    const presentCtx: RunContext = {
+      ...ctx,
+      requestHeaders: { cookie: "fixture_session=user_1", authorization: "Bearer inbound" },
+    };
+
+    await expect(actions.execute({ id: "1", tool: "host_same_origin", args: {} }, presentCtx)).resolves.toMatchObject({ status: "ok" });
+    await expect(actions.execute({ id: "2", tool: "host_other_origin", args: {} }, presentCtx)).resolves.toMatchObject({ status: "ok" });
+    expect(firstHeaders[0]?.cookie).toBe("fixture_session=user_1");
+    expect(firstHeaders[0]?.authorization).toBe("Bearer inbound");
+    expect(secondHeaders[0]?.cookie).toBeUndefined();
+    expect(secondHeaders[0]?.authorization).toBeUndefined();
+    expect(secondHeaders[0]?.accept).toBe("application/json");
+  });
+
   it("encodes query values, strips unsafe forwarded headers, and maps JSON/non-JSON/HTTP failures", async () => {
     const requests: Array<{ url: URL; headers: Record<string, string> }> = [];
     const server = createServer((req, res) => {
@@ -249,5 +326,24 @@ describe("host HTTP execution", () => {
       status: "error",
       error: { code: "network-error", message: "socket closed" },
     });
+  });
+
+  it("expands array path arguments as individually encoded catch-all segments", async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      headers: { "content-type": "application/json" },
+    }));
+    const actions = createActions({
+      tools: [routeTool("host_files", {
+        binding: { kind: "route", method: "GET", path: "/files/{slug}", argsIn: "query" },
+      })],
+      baseUrl: "http://fixture.test",
+      fetch: request as unknown as typeof fetch,
+    });
+
+    await expect(actions.execute(
+      { id: "1", tool: "host_files", args: { slug: ["folder one", "child/name"] } },
+      ctx,
+    )).resolves.toMatchObject({ status: "ok" });
+    expect((request.mock.calls[0]?.[0] as URL).pathname).toBe("/files/folder%20one/child%2Fname");
   });
 });

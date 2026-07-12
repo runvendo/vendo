@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import {
   VendoError,
+  toolDescriptorSchema,
   type ActAs,
   type PermissionGrant,
   type RunContext,
@@ -12,6 +13,7 @@ import {
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import {
+  extractedToolSchema,
   overridesFileSchema,
   toolsFileSchema,
   type ExtractedTool,
@@ -129,7 +131,10 @@ function withPathArgs(path: string, args: Record<string, unknown>): { path: stri
       throw new VendoError("validation", `Missing required path parameter: ${param}`);
     }
     consumed.add(param);
-    return encodeURIComponent(String(args[param]));
+    const value = args[param];
+    return Array.isArray(value)
+      ? value.map((segment) => encodeURIComponent(String(segment))).join("/")
+      : encodeURIComponent(String(value));
   });
   return {
     path: resolved,
@@ -171,6 +176,49 @@ function forwardedHeaders(ctx: RunContext): Record<string, string> {
     if (!STRIPPED_HEADERS.has(name.toLowerCase())) headers[name] = value;
   }
   return headers;
+}
+
+function absoluteHttpUrl(value: string | undefined): URL | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function mayForwardPresentHeaders(
+  binding: RouteBinding | OpenApiBinding,
+  requestUrl: URL,
+  configuredBaseUrl?: string,
+): boolean {
+  const bindingBaseUrl = binding.kind === "openapi" ? absoluteHttpUrl(binding.baseUrl) : undefined;
+  if (!bindingBaseUrl) return true; // The URL was built from the configured host base URL.
+  const configured = absoluteHttpUrl(configuredBaseUrl);
+  return configured !== undefined && configured.origin === requestUrl.origin;
+}
+
+function validationError(source: string, cause: unknown): VendoError {
+  return new VendoError("validation", `Invalid tool descriptor from ${source}`, {
+    cause: cause instanceof Error ? cause.message : String(cause),
+  });
+}
+
+function parseExtractedTool(value: unknown, source: string): ExtractedTool {
+  try {
+    return extractedToolSchema.parse(value);
+  } catch (cause) {
+    throw validationError(source, cause);
+  }
+}
+
+function parseToolDescriptor(value: unknown, source: string): ToolDescriptor {
+  try {
+    return toolDescriptorSchema.parse(value);
+  } catch (cause) {
+    throw validationError(source, cause);
+  }
 }
 
 function setHeader(headers: Record<string, string>, name: string, value: string): void {
@@ -219,7 +267,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
       return error("act-as-error", cause instanceof Error ? cause.message : "away authentication failed");
     }
   } else {
-    headers = forwardedHeaders(ctx);
+    headers = mayForwardPresentHeaders(tool.binding, url, config.baseUrl) ? forwardedHeaders(ctx) : {};
   }
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");
@@ -262,14 +310,15 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
   function loadHost(): Promise<{ tools: ExtractedTool[]; overrides: OverridesFile }> {
     if (!hostPromise) hostPromise = (async () => {
       const emptyOverrides: OverridesFile = { format: "vendo/overrides@1", tools: {} };
-      if (!config.dir) return { tools: config.tools ?? [], overrides: emptyOverrides };
+      const configuredTools = config.tools?.map((tool, index) => parseExtractedTool(tool, `config.tools[${index}]`));
+      if (!config.dir) return { tools: configuredTools ?? [], overrides: emptyOverrides };
       // `dir` may be the host root (we look inside its .vendo/) or the .vendo directory itself.
       const vendoDir = basename(resolve(config.dir)) === ".vendo" ? config.dir : join(config.dir, ".vendo");
       const [toolsFile, overrides] = await Promise.all([
         readOptionalJson(join(vendoDir, "tools.json"), (value) => toolsFileSchema.parse(value)),
         readOptionalJson(join(vendoDir, "overrides.json"), (value) => overridesFileSchema.parse(value)),
       ]);
-      return { tools: config.tools ?? toolsFile?.tools ?? [], overrides: overrides ?? emptyOverrides };
+      return { tools: configuredTools ?? toolsFile?.tools ?? [], overrides: overrides ?? emptyOverrides };
     })();
     return hostPromise;
   }
@@ -319,7 +368,11 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       }
       for (let index = 0; index < connectors.length; index += 1) {
         const connector = connectors[index]!;
-        for (const rawDescriptor of connectorLists[index]!) {
+        for (let descriptorIndex = 0; descriptorIndex < connectorLists[index]!.length; descriptorIndex += 1) {
+          const rawDescriptor = parseToolDescriptor(
+            connectorLists[index]![descriptorIndex],
+            `connector ${connector.name}[${descriptorIndex}]`,
+          );
           const merged = mergeOverride(rawDescriptor, host.overrides.tools[rawDescriptor.name]);
           const { disabled: _disabled, ...descriptor } = merged;
           register(
@@ -331,7 +384,11 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       }
       for (let index = 0; index < added.length; index += 1) {
         const registry = added[index]!;
-        for (const descriptor of registryLists[index]!) {
+        for (let descriptorIndex = 0; descriptorIndex < registryLists[index]!.length; descriptorIndex += 1) {
+          const descriptor = parseToolDescriptor(
+            registryLists[index]![descriptorIndex],
+            `added registry[${index}][${descriptorIndex}]`,
+          );
           register(descriptor.name, "added registry", { kind: "registry", descriptor, registry });
         }
       }

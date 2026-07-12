@@ -20,3 +20,11 @@ Two halves:
 ## Testing
 
 `pnpm --filter @vendoai/actions test`. The extraction and execution e2e suites run against `fixtures/host-app` (deterministic, seeded); the execution suite boots the fixture's real Next server and signs in for a session cookie. Connector suites use in-process stub servers. The core conformance kit (`@vendoai/core/conformance`) runs against the registry.
+
+## Known v0 limitations
+
+- Route discovery uses comment-stripped regex and structural scanning, not a TypeScript/JavaScript AST.
+- Input narrowing detection is top-level only. It covers required/property/type changes, enum reduction or addition, and tightening `additionalProperties` from absent/`true` to `false`; it is not a recursive JSON-Schema compatibility checker.
+- OpenAPI inputs include path and query parameters only (plus parameters with no `in` value). Header/cookie transport and `style`/`explode` serialization are not supported.
+- Catch-all route parameters are represented as one required argument whose value may be a string or an array; array elements become individually encoded path segments.
+- `composioConnector` accepts an additive `baseUrl` configuration seam for deterministic stub and self-hosted endpoint use.

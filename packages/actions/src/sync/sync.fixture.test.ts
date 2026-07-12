@@ -45,6 +45,11 @@ describe("vendoSync host fixture", () => {
     expect(byName.get("host_login_create")?.risk).toBe("write");
     expect(byName.get("host_ping_list")?.risk).toBe("write");
     expect(byName.get("host_listCustomers")?.binding).toMatchObject({ kind: "openapi", path: "/api/customers" });
+    // Alias resolution: the summary route only re-exports GET through @fixture/* (not in openapi.json).
+    expect(byName.get("host_reports_summary_list")).toMatchObject({
+      risk: "write",
+      binding: { kind: "route", method: "GET", path: "/api/reports/summary", argsIn: "query" },
+    });
     expect(toolsFile.tools.some((tool) => String(tool.binding?.path).startsWith("/api/vendo"))).toBe(false);
     expect(byName.get("host_export_data_unclassified")).toMatchObject({
       disabled: true,

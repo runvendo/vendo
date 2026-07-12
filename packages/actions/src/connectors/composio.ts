@@ -17,6 +17,8 @@ interface ComposioPage {
   next_cursor?: unknown;
 }
 
+const MAX_PAGES = 50;
+
 function errorOutcome(message: string): ToolOutcome {
   return { status: "error", error: { code: "connector-error", message } };
 }
@@ -59,8 +61,9 @@ export function composioConnector(config: {
   async function fetchTools(app?: string): Promise<ComposioTool[]> {
     const tools: ComposioTool[] = [];
     let cursor: string | undefined;
+    const seenCursors = new Set<string>();
 
-    for (let page = 0; page < 10; page += 1) {
+    for (let page = 0; page < MAX_PAGES; page += 1) {
       const url = new URL(`${baseUrl}/api/v3/tools`);
       if (app !== undefined) url.searchParams.set("toolkit_slug", app);
       if (cursor !== undefined) url.searchParams.set("cursor", cursor);
@@ -79,9 +82,11 @@ export function composioConnector(config: {
       tools.push(...parsed.items);
       cursor = parsed.nextCursor;
       if (!cursor) return tools;
+      if (seenCursors.has(cursor)) throw new Error(`Composio pagination loop at cursor ${cursor}`);
+      seenCursors.add(cursor);
     }
 
-    throw new Error("Composio tools pagination exceeded 10 pages");
+    throw new Error(`Composio tools pagination exceeded ${MAX_PAGES} pages`);
   }
 
   return {

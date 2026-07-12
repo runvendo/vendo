@@ -110,6 +110,7 @@ function unionExtracted(openApi: ExtractedTool[], routes: ExtractedTool[]): Extr
     seen.add(key);
     union.push(tool);
   }
+  union.sort((left, right) => left.name.localeCompare(right.name) || bindingKey(left).localeCompare(bindingKey(right)));
   return withUniqueNames(union).sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -128,7 +129,7 @@ function sameJson(left: unknown, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right);
 }
 
-function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boolean {
+export function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boolean {
   const oldSchema = objectValue(previous.inputSchema);
   const newSchema = objectValue(next.inputSchema);
   const oldRequired = new Set(arrayValue(oldSchema.required).filter((value): value is string => typeof value === "string"));
@@ -144,11 +145,14 @@ function inputNarrowed(previous: ExtractedTool, next: ExtractedTool): boolean {
     if (!sameJson(oldProperty.type, newProperty.type)) return true;
     const oldEnum = arrayValue(oldProperty.enum);
     const newEnum = arrayValue(newProperty.enum);
+    if (oldEnum.length === 0 && newEnum.length > 0) return true;
     if (oldEnum.length > 0 && newEnum.length > 0) {
       const newValues = new Set(newEnum.map((value) => canonicalJson(value)));
       if (oldEnum.some((value) => !newValues.has(canonicalJson(value)))) return true;
     }
   }
+  if ((oldSchema.additionalProperties === undefined || oldSchema.additionalProperties === true)
+      && newSchema.additionalProperties === false) return true;
   return false;
 }
 
@@ -166,6 +170,7 @@ function compareTools(previous: ExtractedTool[], next: ExtractedTool[]): Pick<Sy
     if (descriptorHash(oldTool) !== descriptorHash(newTool) || !sameJson(oldTool.binding, newTool.binding)) {
       changed.push(name);
     }
+    if (bindingKey(oldTool) !== bindingKey(newTool)) breaking.push({ tool: name, change: "removed" });
     if (inputNarrowed(oldTool, newTool)) breaking.push({ tool: name, change: "input-narrowed" });
   }
 
@@ -217,6 +222,14 @@ export async function vendoSync(options: {
     format: "vendo/tools@1",
     tools: unionExtracted(openApiTools, routeResult.tools),
   });
+  if (overrides) {
+    const extractedNames = new Set(extracted.tools.map((tool) => tool.name));
+    for (const name of Object.keys(overrides.tools).sort()) {
+      if (name.startsWith("host_") && !extractedNames.has(name)) {
+        warnings.push(`host override ${name} did not match any extracted tool`);
+      }
+    }
+  }
 
   const mergedPrevious = mergeOverrides(previousFile?.tools ?? [], overrides);
   const mergedNext = mergeOverrides(extracted.tools, overrides);

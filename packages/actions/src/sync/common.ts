@@ -45,9 +45,9 @@ export async function walk(
   return files.sort();
 }
 
-function stripJsonComments(source: string): string {
+export function stripComments(source: string): string {
   let output = "";
-  let quote: "'" | "\"" | null = null;
+  let quote: "'" | "\"" | "`" | null = null;
   let escaped = false;
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index]!;
@@ -59,7 +59,7 @@ function stripJsonComments(source: string): string {
       else if (character === quote) quote = null;
       continue;
     }
-    if (character === "'" || character === "\"") {
+    if (character === "'" || character === "\"" || character === "`") {
       quote = character;
       output += character;
       continue;
@@ -89,7 +89,7 @@ function stripJsonComments(source: string): string {
 }
 
 function parseJsonLike(source: string): unknown {
-  return JSON.parse(stripJsonComments(source).replace(/,\s*([}\]])/g, "$1"));
+  return JSON.parse(stripComments(source).replace(/,\s*([}\]])/g, "$1"));
 }
 
 function extendsPath(value: unknown, configDir: string): string | null {

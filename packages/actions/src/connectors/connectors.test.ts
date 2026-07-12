@@ -127,6 +127,17 @@ describe("composioConnector", () => {
     const unknown = await connector.execute({ id: "call_3", tool: "missing", args: {} }, ctx);
     expect(toolOutcomeSchema.parse(unknown)).toMatchObject({ status: "error", error: { code: "not-found" } });
   });
+
+  it("fails closed when a pagination cursor repeats", async () => {
+    const server = await startServer((_req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ items: [], next_cursor: "repeat" }));
+    });
+    closers.push(server.close);
+
+    const connector = composioConnector({ apiKey: "secret", baseUrl: server.url });
+    await expect(connector.descriptors()).rejects.toThrow("Composio pagination loop");
+  });
 });
 
 describe("mcpConnector", () => {
@@ -182,7 +193,7 @@ describe("mcpConnector", () => {
         const params = body.params as { name: string };
         if (params.name === "lookup") {
           res.setHeader("content-type", "text/event-stream");
-          res.end(`data: ${JSON.stringify({ jsonrpc: "2.0", id: 999, result: {} })}\n\ndata: ${JSON.stringify({
+          res.write(`data: ${JSON.stringify({ jsonrpc: "2.0", id: 999, result: {} })}\n\ndata: ${JSON.stringify({
             jsonrpc: "2.0",
             id,
             result: { content: [{ type: "text", text: "{\"found\":true}" }] },
@@ -206,7 +217,10 @@ describe("mcpConnector", () => {
     expect(descriptors[2]?.name).toHaveLength(64);
     expect(descriptors[2]?.risk).toBe("write");
 
-    const ok = await connector.execute({ id: "call_1", tool: "mcp_warehouse_lookup", args: { id: 1 } }, ctx);
+    const ok = await Promise.race([
+      connector.execute({ id: "call_1", tool: "mcp_warehouse_lookup", args: { id: 1 } }, ctx),
+      new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("persistent SSE call hung")), 1_000)),
+    ]);
     expect(toolOutcomeSchema.parse(ok)).toEqual({ status: "ok", output: { found: true } });
     const failed = await connector.execute({ id: "call_2", tool: "mcp_warehouse_explode", args: {} }, ctx);
     expect(toolOutcomeSchema.parse(failed)).toMatchObject({
@@ -222,5 +236,25 @@ describe("mcpConnector", () => {
       "tools/call",
     ]);
     expect(sessionHeaders.slice(1).every((header) => header === "session-from-server")).toBe(true);
+  });
+
+  it("fails closed when a tools/list cursor repeats", async () => {
+    const server = await startServer(async (req, res) => {
+      const body = await jsonBody(req);
+      const id = body.id;
+      res.setHeader("content-type", "application/json");
+      if (body.method === "initialize") {
+        res.end(JSON.stringify({ jsonrpc: "2.0", id, result: { protocolVersion: "2025-03-26" } }));
+      } else if (body.method === "notifications/initialized") {
+        res.statusCode = 202;
+        res.end();
+      } else {
+        res.end(JSON.stringify({ jsonrpc: "2.0", id, result: { tools: [], nextCursor: "repeat" } }));
+      }
+    });
+    closers.push(server.close);
+
+    const connector = mcpConnector({ url: server.url, name: "loop" });
+    await expect(connector.descriptors()).rejects.toThrow("MCP tools/list pagination loop");
   });
 });

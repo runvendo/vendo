@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { descriptorHash, VendoError } from "@vendoai/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { hostToolName, mergeOverrides, vendoSync } from "./index.js";
+import type { ExtractedTool } from "../formats.js";
+import { hostToolName, inputNarrowed, mergeOverrides, vendoSync } from "./index.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -38,6 +39,16 @@ async function writeSpec(root: string, paths: Record<string, unknown>): Promise<
 
 async function toolsAt(out: string): Promise<Array<Record<string, any>>> {
   return (JSON.parse(await fs.readFile(path.join(out, "tools.json"), "utf8")) as { tools: Array<Record<string, any>> }).tools;
+}
+
+function extracted(inputSchema: Record<string, unknown>): ExtractedTool {
+  return {
+    name: "host_probe",
+    description: "Probe",
+    inputSchema,
+    risk: "read",
+    binding: { kind: "route", method: "GET", path: "/api/probe", argsIn: "query" },
+  };
 }
 
 describe("sync public helpers", () => {
@@ -87,6 +98,11 @@ describe("validation and route classification", () => {
     await writeFile(root, "src/app/api/opaque/route.ts", "export const handler = () => null;\n");
     await writeFile(root, "src/app/api/files/[...slug]/route.ts", "export function GET() { return new Response(); }\n");
     await writeFile(root, "src/app/api/reports/[[...parts]]/route.ts", "export function POST() { return new Response(); }\n");
+    await writeFile(
+      root,
+      "src/app/api/comment-only/route.ts",
+      "const marker = `// not a comment`;\n// export function GET() { return new Response(); }\n/* export const POST = handler; */\n",
+    );
     const page = "export default function handler(req: any, res: any) { if (req.method !== 'GET') return res.end(); res.end(); }\n";
     await writeFile(root, "src/pages/api/foo-bar.ts", page);
     await writeFile(root, "src/pages/api/foo/bar.ts", page);
@@ -97,9 +113,68 @@ describe("validation and route classification", () => {
     expect(byName.get("host_opaque_unclassified")).toMatchObject({ disabled: true, risk: "destructive" });
     expect(byName.get("host_files_get")?.binding.path).toBe("/api/files/{slug}");
     expect(byName.get("host_reports_create")?.binding.path).toBe("/api/reports/{parts}");
+    expect(byName.get("host_comment_only_unclassified")).toMatchObject({
+      disabled: true,
+      binding: { method: "POST", path: "/api/comment-only" },
+    });
     expect(byName.get("host_foo_bar_list")?.binding.path).toBe("/api/foo-bar");
     expect(byName.get("host_foo_bar_list_get")?.binding.path).toBe("/api/foo/bar");
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
+  });
+
+  it("warns for unmatched host overrides but keeps connector-target overrides silent", async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, { "/api/items": { get: operation("listItems") } });
+    await writeFile(out, "overrides.json", JSON.stringify({
+      format: "vendo/overrides@1",
+      tools: { host_missing: { disabled: true }, connector_missing: { risk: "read" } },
+    }));
+
+    const report = await vendoSync({ root, out });
+    expect(report.warnings).toContain("host override host_missing did not match any extracted tool");
+    expect(report.warnings.some((warning) => warning.includes("connector_missing"))).toBe(false);
+  });
+
+  it("allocates colliding sanitized names independently of OpenAPI declaration order", async () => {
+    const { root, out } = await temporaryHost();
+    const firstPaths = {
+      "/api/zeta": { get: operation("get.item") },
+      "/api/alpha": { get: operation("get_item") },
+    };
+    await writeSpec(root, firstPaths);
+    await vendoSync({ root, out });
+    const first = Object.fromEntries((await toolsAt(out)).map((tool) => [tool.name, tool.binding.path]));
+
+    await writeSpec(root, Object.fromEntries(Object.entries(firstPaths).reverse()));
+    await vendoSync({ root, out });
+    const second = Object.fromEntries((await toolsAt(out)).map((tool) => [tool.name, tool.binding.path]));
+    expect(second).toEqual(first);
+  });
+
+  it("keeps optional request bodies optional and skips header and cookie parameters", async () => {
+    const { root, out } = await temporaryHost();
+    await writeSpec(root, {
+      "/api/items/{id}": {
+        post: {
+          ...operation("createItem", [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "query", in: "query", schema: { type: "string" } },
+            { name: "legacy", required: false, schema: { type: "string" } },
+            { name: "authorization", in: "header", required: true, schema: { type: "string" } },
+            { name: "session", in: "cookie", required: true, schema: { type: "string" } },
+          ]),
+          requestBody: {
+            required: false,
+            content: { "application/json": { schema: { type: "object", properties: { value: { type: "string" } } } } },
+          },
+        },
+      },
+    });
+
+    await vendoSync({ root, out });
+    const tool = (await toolsAt(out)).find((item) => item.name === "host_createItem")!;
+    expect(Object.keys(tool.inputSchema.properties).sort()).toEqual(["body", "id", "legacy", "query"]);
+    expect(tool.inputSchema.required).toEqual(["id"]);
   });
 });
 
@@ -120,6 +195,16 @@ describe("breaking change diff", () => {
     expect(renamed.tools).toMatchObject({ added: ["host_fetchItem"], removed: ["host_getItem"] });
     expect(renamed.breaking).toContainEqual({ tool: "host_getItem", change: "renamed" });
     expect(renamed.breaking).not.toContainEqual({ tool: "host_getItem", change: "removed" });
+  });
+
+  it("treats a same-named binding change as removal while retaining changed", async () => {
+    const host = await temporaryHost();
+    await writeSpec(host.root, { "/api/old": { get: operation("listItems") } });
+    await vendoSync(host);
+    await writeSpec(host.root, { "/api/new": { get: operation("listItems") } });
+    const report = await vendoSync(host);
+    expect(report.tools.changed).toContain("host_listItems");
+    expect(report.breaking).toContainEqual({ tool: "host_listItems", change: "removed" });
   });
 
   it.each([
@@ -143,6 +228,11 @@ describe("breaking change diff", () => {
       [{ name: "value", in: "query", schema: { type: "string", enum: ["a", "b"] } }],
       [{ name: "value", in: "query", schema: { type: "string", enum: ["a"] } }],
     ],
+    [
+      "enum added to an unconstrained property",
+      [{ name: "value", in: "query", schema: { type: "string" } }],
+      [{ name: "value", in: "query", schema: { type: "string", enum: ["a"] } }],
+    ],
   ])("detects input narrowing: %s", async (_label, previousParameters, nextParameters) => {
     const host = await temporaryHost();
     await writeSpec(host.root, { "/api/items": { get: operation("listItems", previousParameters) } });
@@ -151,6 +241,17 @@ describe("breaking change diff", () => {
     const report = await vendoSync(host);
     expect(report.tools.changed).toContain("host_listItems");
     expect(report.breaking).toContainEqual({ tool: "host_listItems", change: "input-narrowed" });
+  });
+
+  it("detects additionalProperties tightening at the top level", () => {
+    expect(inputNarrowed(
+      extracted({ type: "object", properties: {}, additionalProperties: true }),
+      extracted({ type: "object", properties: {}, additionalProperties: false }),
+    )).toBe(true);
+    expect(inputNarrowed(
+      extracted({ type: "object", properties: {} }),
+      extracted({ type: "object", properties: {}, additionalProperties: false }),
+    )).toBe(true);
   });
 
   it("throws strict conflicts only after writing the new artifacts", async () => {

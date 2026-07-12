@@ -1,11 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { toolOutcomeSchema, type PermissionGrant, type RunContext, type ToolOutcome } from "@vendoai/core";
+import { VENDO_OVERRIDES_FORMAT, toolOutcomeSchema, type PermissionGrant, type RunContext, type ToolOutcome } from "@vendoai/core";
 import type { ExtractedTool } from "../formats.js";
+import { vendoSync } from "../sync/index.js";
 import { createActions, type ActionsRunContext } from "./registry.js";
 
 const fixtureDir = fileURLToPath(new URL("../../../../fixtures/host-app/", import.meta.url));
@@ -53,6 +55,25 @@ async function stopFixture(): Promise<void> {
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
   await Promise.race([exited, timeout]);
   if (child.exitCode === null) child.kill("SIGKILL");
+}
+
+async function startFixture(): Promise<void> {
+  const port = await freePort();
+  baseUrl = `http://127.0.0.1:${port}`;
+  serverOutput = "";
+  const fixtureChild = spawn(nextBin, ["dev", "-p", String(port)], {
+    cwd: fixtureDir,
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child = fixtureChild;
+  fixtureChild.stdout.on("data", (chunk) => {
+    serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000);
+  });
+  fixtureChild.stderr.on("data", (chunk) => {
+    serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000);
+  });
+  await waitForFixture();
 }
 
 const routeTools: ExtractedTool[] = [
@@ -127,21 +148,13 @@ async function loginCookie(): Promise<string> {
 
 beforeAll(async () => {
   await access(nextBin);
-  const port = await freePort();
-  baseUrl = `http://127.0.0.1:${port}`;
-  const fixtureChild = spawn(nextBin, ["dev", "-p", String(port)], {
-    cwd: fixtureDir,
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child = fixtureChild;
-  fixtureChild.stdout.on("data", (chunk) => {
-    serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000);
-  });
-  fixtureChild.stderr.on("data", (chunk) => {
-    serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000);
-  });
-  await waitForFixture();
+  try {
+    await startFixture();
+  } catch (cause) {
+    if (!(cause instanceof Error) || !cause.message.startsWith("Fixture exited early")) throw cause;
+    await stopFixture();
+    await startFixture();
+  }
 }, 120_000);
 
 afterAll(stopFixture);
@@ -152,6 +165,40 @@ beforeEach(async () => {
 });
 
 describe("fixture route execution", () => {
+  it("executes the full sync to overrides to runtime chain", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-actions-chain-"));
+    const out = join(root, ".vendo");
+    try {
+      await mkdir(out);
+      await writeFile(join(out, "overrides.json"), JSON.stringify({
+        format: VENDO_OVERRIDES_FORMAT,
+        tools: {
+          host_listCustomers: { disabled: true },
+          host_listInvoices: { description: "Invoices from the synced fixture" },
+        },
+      }));
+      await vendoSync({ root: fixtureDir, out });
+
+      const cookie = await loginCookie();
+      const ctx: RunContext = { ...presentBase, requestHeaders: { cookie } };
+      const actions = createActions({ dir: root, baseUrl });
+      expect(await actions.descriptors()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "host_listInvoices", description: "Invoices from the synced fixture" }),
+      ]));
+      expect((await actions.descriptors()).some((descriptor) => descriptor.name === "host_listCustomers")).toBe(false);
+      await expect(actions.execute({ id: "sync-1", tool: "host_listInvoices", args: {} }, ctx)).resolves.toMatchObject({
+        status: "ok",
+        output: { invoices: expect.any(Array) },
+      });
+      await expect(actions.execute({ id: "sync-2", tool: "host_listCustomers", args: {} }, ctx)).resolves.toMatchObject({
+        status: "error",
+        error: { code: "not-found" },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("uses the present session for list/create/get/update/send/delete", async () => {
     const cookie = await loginCookie();
     const ctx: RunContext = { ...presentBase, requestHeaders: { cookie } };

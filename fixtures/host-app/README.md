@@ -40,5 +40,5 @@ The OpenAPI 3.1 contract is the local `openapi.json` file; the app deliberately 
 - `src/app/api/vendo/[...vendo]/route.ts` is Vendo's mounted route and must be excluded from extracted host tools.
 - `src/pages/api/export-data.ts` is an opaque `withReporting(handler)` export. It contains no local HTTP verb evidence, so a scanner must fail closed and emit it disabled.
 - `downloadInvoicesArchive` is a real `GET /api/invoices/archive` OpenAPI operation whose name does not begin with a recognized read word. It must not be inferred as read risk merely from its HTTP method.
-- The customers App Router route imports through the `@fixture/*` TypeScript alias, exercising alias resolution.
+- `GET /api/reports/summary` is a pure re-export through the `@fixture/*` TypeScript alias (`export { GET } from "@fixture/lib/reports-handler"`), so the scanner must resolve the alias to classify it. Deliberately absent from openapi.json.
 - `src/vendo/components.ts` marks only `InvoiceCard` as `remixable: true`. Sync should follow that import and capture `InvoiceCard` source, but not capture `StatusBadge` as its own remixable registration.

@@ -8,6 +8,7 @@ import {
   resolveImportSource,
   routeToolFullName,
   splitTopLevel,
+  stripComments,
   topLevelObjectLiteral,
   unclassifiedToolFullName,
   walk,
@@ -138,7 +139,7 @@ function exportedVerbs(source: string, kind: RouteSource["kind"]): Set<HttpMetho
   for (const match of source.matchAll(/export\s+(?:const|let|var)\s*\{([^}]+)\}\s*=/g)) {
     addMethodsFromList(methods, match[1] ?? "");
   }
-  for (const match of source.matchAll(/export\s*\{([^}]+)\}/g)) {
+  for (const match of source.matchAll(/export\s*\{([^}]+)\}(?!\s*from\b)/g)) {
     for (const part of (match[1] ?? "").split(",")) {
       const trimmed = part.trim();
       addMethod(methods, trimmed.match(/\bas\s+(GET|POST|PUT|PATCH|DELETE)\b/)?.[1] ?? trimmed);
@@ -205,6 +206,9 @@ function reExportTargets(source: string): ReExportTarget[] {
     for (const part of (match[1] ?? "").split(",")) {
       const names = part.trim().split(/\s+as\s+/).map((name) => name.trim());
       if ((names[1] ?? names[0]) === "default") targets.push({ specifier, assumeDefaultExport: true });
+      else if (HTTP_METHOD_SET.has(names[1] ?? names[0] ?? "")) {
+        targets.push({ specifier, assumeDefaultExport: false });
+      }
     }
   }
   const importedDefault = source.match(/import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'][\s\S]*?export\s+default\s+\1\b/);
@@ -247,15 +251,16 @@ async function verbsFromSource(
   const key = `${file}\t${assumeDefaultExport ? "default" : "named"}`;
   if (visited.has(key)) return new Set();
   visited.add(key);
-  const direct = exportedVerbs(source, route.kind);
+  const evidenceSource = stripComments(source);
+  const direct = exportedVerbs(evidenceSource, route.kind);
   if (direct.size > 0) return direct;
-  const mapped = routeMapVerbs(source, route);
+  const mapped = routeMapVerbs(evidenceSource, route);
   if (mapped) return mapped;
-  const objectMethods = methodKeyObjectVerbs(source);
+  const objectMethods = methodKeyObjectVerbs(evidenceSource);
   if (objectMethods) return objectMethods;
   if (depth < MAX_REEXPORT_DEPTH) {
     const resolvedMethods = new Set<HttpMethod>();
-    for (const target of reExportTargets(source)) {
+    for (const target of reExportTargets(evidenceSource)) {
       const resolved = await resolveImportSource(file, target.specifier, root);
       if (!resolved) continue;
       const nested = await verbsFromSource(
@@ -271,7 +276,7 @@ async function verbsFromSource(
     }
     if (resolvedMethods.size > 0) return resolvedMethods;
   }
-  return inferredPageVerbs(source, route, assumeDefaultExport);
+  return inferredPageVerbs(evidenceSource, route, assumeDefaultExport);
 }
 
 function routeInputSchema(urlPath: string): Record<string, unknown> {
