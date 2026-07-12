@@ -261,7 +261,9 @@ function browserCapabilities(): {
   if (typeof fetch !== "function") {
     throw new Error("SDP exchange is unavailable in this environment");
   }
-  return { mediaDevices: navigator.mediaDevices, PeerConnection: RTCPeerConnection, document, fetch };
+  // `fetch` must keep `this === window`; called as `browser.fetch(...)` it would
+  // throw "Illegal invocation". Bind it so the capability object is safe to call.
+  return { mediaDevices: navigator.mediaDevices, PeerConnection: RTCPeerConnection, document, fetch: fetch.bind(globalThis) };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

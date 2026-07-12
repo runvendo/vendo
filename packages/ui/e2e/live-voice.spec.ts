@@ -28,8 +28,9 @@ test("live: the realtime driver connects, opens its data channel, and reaches li
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ session: { type: "realtime", model: "gpt-realtime" } }),
   });
-  expect(session.ok, `minting the ephemeral credential failed: ${session.status} ${await session.text()}`).toBe(true);
-  const { value: clientSecret } = (await session.json()) as { value: string };
+  const raw = await session.text();
+  expect(session.ok, `minting the ephemeral credential failed: ${session.status} ${raw}`).toBe(true);
+  const clientSecret = (JSON.parse(raw) as { value: string }).value;
   expect(clientSecret, "no ephemeral client secret returned").toBeTruthy();
 
   await page.goto(`/stage-live#${encodeURIComponent(clientSecret)}`);
