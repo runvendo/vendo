@@ -310,7 +310,14 @@ export function toolRegistryConformance(opts: {
   return { seam: "ToolRegistry", cases };
 }
 
-/** Executable Guard checks from 01-core §§4, 6 and 05-guard §2. */
+/**
+ * Executable Guard checks from 01-core §§4, 6 and 05-guard §2.
+ *
+ * Known limit: the kit verifies `onApprovalDecision` returns a working
+ * unsubscribe, but cannot verify decision events actually fire — that needs the
+ * guard block's own approvals API (05 §1), so its delivery semantics are
+ * exercised by the guard block's test suite, not this seam kit.
+ */
 export function guardConformance(opts: {
   makeGuard(): Promise<Guard>;
   ctx: RunContext;

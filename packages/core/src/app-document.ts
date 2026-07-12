@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { componentMapError } from "./component-map.js";
+import { safeErrorMessage } from "./errors.js";
 import { VENDO_APP_FORMAT, VENDO_TREE_FORMAT } from "./formats.js";
 import { appIdSchema, type AppId } from "./ids.js";
+import { TOOL_NAME_PATTERN } from "./tools.js";
 import { triggerSchema, type Trigger } from "./triggers.js";
 import { uiPayloadSchema, validateTree, type UIPayload } from "./tree.js";
 
@@ -124,11 +127,23 @@ const validateAppDocumentUnsafe = (input: unknown): AppDocumentValidation => {
     for (const node of treeResult.tree.nodes) {
       if (node.props !== undefined) collectActionReferences(node.props, fnReferences);
     }
+  } else if (app.components !== undefined) {
+    // No v1 tree to graft onto — the pinned component limits (01-core §8) still
+    // bound what the jail will compile.
+    const componentError = componentMapError(app.components);
+    if (componentError !== null) {
+      return fail("validation", componentError);
+    }
   }
 
   if (app.trigger?.run.kind === "steps") {
     for (const step of app.trigger.run.steps) {
-      if (step.tool.startsWith("fn:")) fnReferences.push(step.tool);
+      if (step.tool.startsWith("fn:")) {
+        fnReferences.push(step.tool);
+      } else if (!TOOL_NAME_PATTERN.test(step.tool)) {
+        // 01-core §4/§11: a step tool is a provider-safe tool name or an fn: ref.
+        return fail("validation", `step "${step.id}" tool "${step.tool}" is not a valid tool name or fn: reference`);
+      }
     }
   }
   for (const reference of fnReferences) {
@@ -174,7 +189,6 @@ export function validateAppDocument(input: unknown): AppDocumentValidation {
   try {
     return validateAppDocumentUnsafe(input);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown validation failure";
-    return fail("validation", `app document validation failed: ${message}`);
+    return fail("validation", `app document validation failed: ${safeErrorMessage(error)}`);
   }
 }
