@@ -87,7 +87,9 @@ export function VendoThread({ threadId }: { threadId?: string }) {
     <ChromeRoot>
       <section className="vendo-thread" aria-label="Vendo conversation">
         <NoPolicyNotice />
-        <div className="vendo-messages" aria-label="Conversation messages" aria-live="polite" aria-busy={busy}>
+        {/* role="log" — aria-label is prohibited on a roleless div (WCAG 4.1.2), and a
+            streaming message list is exactly what "log" names. */}
+        <div className="vendo-messages" role="log" aria-label="Conversation messages" aria-live="polite" aria-busy={busy}>
           {thread.messages.map(message => (
             <article className="vendo-message" data-role={message.role} key={message.id} aria-label={`${message.role} message`}>
               {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`))}

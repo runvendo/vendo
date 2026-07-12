@@ -7,9 +7,14 @@ const MAX_JAIL_HEIGHT = 8_192;
 
 function buildJailSrcdoc(): string {
   const nonce = crypto.randomUUID().replaceAll("-", "");
+  // 'unsafe-eval' (not blob:/hosts): generated code evaluates via the
+  // runtime's controlled `require` (sucrase rewrites every import form),
+  // so no script-src source may permit a module-loader fetch — a blob-ESM
+  // dynamic import("https://…") was browser-verified to initiate a request
+  // despite script-src, which is why blob: is banned here.
   const csp = [
     "default-src 'none'",
-    `script-src 'nonce-${nonce}' blob:`,
+    `script-src 'nonce-${nonce}' 'unsafe-eval'`,
     "style-src 'unsafe-inline'",
     "img-src data:",
     "font-src data:",
