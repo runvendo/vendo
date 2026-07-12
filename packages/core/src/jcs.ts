@@ -4,11 +4,33 @@ const unsupported = (message: string): never => {
   throw new VendoError("validation", message);
 };
 
+const SURROGATE_PATTERN = /[\uD800-\uDFFF]/;
+
+/** RFC 8785 §3.2.2.2 requires well-formed Unicode; a lone surrogate would hash
+ *  differently across implementations (strict ones reject it outright). */
+const assertWellFormed = (value: string): string => {
+  if (!SURROGATE_PATTERN.test(value)) return value;
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      unsupported("canonical JSON does not support lone surrogates");
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      unsupported("canonical JSON does not support lone surrogates");
+    }
+  }
+  return value;
+};
+
 const serialize = (value: unknown, stack: Set<object>, position: "top" | "object" | "array"): string | undefined => {
   if (value === null) return "null";
   switch (typeof value) {
     case "string":
-      return JSON.stringify(value);
+      return JSON.stringify(assertWellFormed(value));
     case "boolean":
       return value ? "true" : "false";
     case "number":
@@ -33,10 +55,16 @@ const serialize = (value: unknown, stack: Set<object>, position: "top" | "object
           );
           return `[${items.join(",")}]`;
         }
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== null && prototype !== Object.prototype) {
+          // Dates, Maps, class instances, etc. are not JSON data — ECMAScript's
+          // JSON.stringify and strict RFC 8785 implementations would disagree here.
+          unsupported("canonical JSON requires plain objects and arrays");
+        }
         const entries: string[] = [];
         for (const key of Object.keys(value).sort()) {
           const serialized = serialize((value as Record<string, unknown>)[key], stack, "object");
-          if (serialized !== undefined) entries.push(`${JSON.stringify(key)}:${serialized}`);
+          if (serialized !== undefined) entries.push(`${JSON.stringify(assertWellFormed(key))}:${serialized}`);
         }
         return `{${entries.join(",")}}`;
       } finally {

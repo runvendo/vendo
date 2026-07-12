@@ -1,32 +1,18 @@
 import { z } from "zod";
+import { componentMapError } from "./component-map.js";
+import { safeErrorMessage } from "./errors.js";
 import { VENDO_TREE_FORMAT } from "./formats.js";
 import type { Json } from "./ids.js";
+import { TREE_MAX_NODES, TREE_MAX_QUERIES } from "./tree-limits.js";
 
-/** 01-core §8 */
-export const TREE_MAX_NODES = 5_000;
-
-/** 01-core §8 */
-export const TREE_MAX_QUERIES = 16;
-
-/** 01-core §8 */
-export const TREE_MAX_GENERATED_COMPONENTS = 16;
-
-/** 01-core §8 */
-export const TREE_MAX_COMPONENT_SOURCE_CHARS = 65_536;
-
-/** 01-core §8 */
-export const TREE_MAX_TOTAL_COMPONENT_CHARS = 262_144;
-
-/** 01-core §8 */
-export const RESERVED_COMPONENT_NAMES = [
-  "Stack",
-  "Row",
-  "Grid",
-  "Text",
-  "Skeleton",
-  "Surface",
-  "Divider",
-] as const;
+export {
+  TREE_MAX_NODES,
+  TREE_MAX_QUERIES,
+  TREE_MAX_GENERATED_COMPONENTS,
+  TREE_MAX_COMPONENT_SOURCE_CHARS,
+  TREE_MAX_TOTAL_COMPONENT_CHARS,
+  RESERVED_COMPONENT_NAMES,
+} from "./tree-limits.js";
 
 /** 01-core §8 */
 export interface PathBinding {
@@ -119,7 +105,6 @@ type TreeValidation =
   | { ok: true; tree: Tree }
   | { ok: false; error: { code: "version" | "provision"; message: string } };
 
-const COMPONENT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 const FN_REFERENCE_PATTERN = /^fn:[A-Za-z_][A-Za-z0-9_-]*$/;
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -209,35 +194,9 @@ const validateTreeUnsafe = (input: unknown): TreeValidation => {
     return fail("provision", "components must be a plain object");
   }
   const components = (input.components ?? {}) as Record<string, unknown>;
-  const names = Object.keys(components);
-  if (names.length > TREE_MAX_GENERATED_COMPONENTS) {
-    return fail("provision", `too many generated components (max ${TREE_MAX_GENERATED_COMPONENTS})`);
-  }
-  let totalChars = 0;
-  for (const name of names) {
-    if (!COMPONENT_NAME_PATTERN.test(name)) {
-      return fail("provision", `generated component name "${name}" must be a PascalCase identifier`);
-    }
-    if ((RESERVED_COMPONENT_NAMES as readonly string[]).includes(name)) {
-      return fail("provision", `generated component name "${name}" is reserved (prewired primitive)`);
-    }
-    const source = components[name];
-    if (typeof source !== "string") {
-      return fail("provision", `generated component "${name}" source must be a string`);
-    }
-    if (source.length > TREE_MAX_COMPONENT_SOURCE_CHARS) {
-      return fail(
-        "provision",
-        `generated component "${name}" source too large (max ${TREE_MAX_COMPONENT_SOURCE_CHARS} chars)`,
-      );
-    }
-    totalChars += source.length;
-  }
-  if (totalChars > TREE_MAX_TOTAL_COMPONENT_CHARS) {
-    return fail(
-      "provision",
-      `generated component sources too large in total (max ${TREE_MAX_TOTAL_COMPONENT_CHARS} chars)`,
-    );
+  const componentError = componentMapError(components);
+  if (componentError !== null) {
+    return fail("provision", componentError);
   }
   for (const node of nodes as TreeNode[]) {
     if (node.source === "generated" && !Object.prototype.hasOwnProperty.call(components, node.component)) {
@@ -258,7 +217,6 @@ export function validateTree(input: unknown): TreeValidation {
   try {
     return validateTreeUnsafe(input);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown validation failure";
-    return fail("provision", `tree validation failed: ${message}`);
+    return fail("provision", `tree validation failed: ${safeErrorMessage(error)}`);
   }
 }

@@ -159,4 +159,49 @@ describe("appDocumentSchema and validateAppDocument", () => {
     expectValidation({ ...minimal(), storage: { invoices: { about: "" } } });
     expectValidation({ ...minimal(), pins: [{ slot: "", base: "sha256:abc" }] });
   });
+
+  it("enforces component limits even without a v1 tree", () => {
+    const base = { format: VENDO_APP_FORMAT, id: "app_x", name: "X" };
+    expectValidation({ ...base, components: { Text: "export default () => null;" } }); // reserved
+    expectValidation({ ...base, components: { "not-pascal": "x" } });
+    expectValidation({ ...base, components: { Big: "x".repeat(65_537) } });
+    expect(validateAppDocument({ ...base, components: { Gauge: "export default () => null;" } }).ok).toBe(true);
+    // opaque-format tree beside components: caps still apply
+    expectValidation({
+      ...base,
+      tree: { formatVersion: "vendo-canvas/v2" },
+      components: { Text: "x" },
+    });
+  });
+
+  it("rejects step tools that are neither valid tool names nor fn: references", () => {
+    const withStep = (tool: string) => ({
+      ...minimal(),
+      server: "e2b:snap_ok",
+      trigger: {
+        on: { kind: "host-event", event: "e" },
+        run: { kind: "steps", steps: [{ id: "s", tool }] },
+      },
+    });
+    expectValidation(withStep("not a tool!!"));
+    expectValidation(withStep("dotted.name"));
+    expect(validateAppDocument(withStep("host_invoices_list")).ok).toBe(true);
+    expect(validateAppDocument(withStep("fn:process")).ok).toBe(true);
+  });
+
+  it("never throws on hostile inputs with throwing getters", () => {
+    const hostile = Object.defineProperty({}, "format", {
+      enumerable: true,
+      get() {
+        throw Object.defineProperty(new Error("boom"), "message", {
+          get() {
+            throw new Error("nested boom");
+          },
+        });
+      },
+    });
+    const result = validateAppDocument(hostile);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("validation");
+  });
 });
