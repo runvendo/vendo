@@ -17,10 +17,14 @@ import {
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
 import { createAppData } from "./app-data.js";
+import { createAppCaller } from "./call.js";
 import { stubEngine, type GenerationDependencies, type GenerationEngine } from "./engine.js";
 import { createAppHistory } from "./history.js";
+import { createMachineSessions } from "./machine.js";
+import { createAppOpener } from "./open.js";
 import { appRecordInput, documentFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
+import { createAppsProxy } from "./proxy.js";
 import type { SandboxAdapter } from "./sandbox.js";
 
 /** 06-apps §1 plus block-plan decisions 3–4. */
@@ -135,6 +139,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const apps = config.store.records("vendo_apps");
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
+  const tokenSecret = globalThis.crypto.getRandomValues(new Uint8Array(32));
+  const machines = createMachineSessions({
+    sandbox: config.sandbox,
+    proxyUrl: config.proxyUrl,
+    store: config.store,
+    tokenSecret,
+  });
 
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
     const record = await apps.get(appId);
@@ -148,6 +159,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     return app;
   };
 
+  const caller = createAppCaller(machines, config.tools);
+  const opener = createAppOpener(machines, caller, config.store);
+  const proxy = createAppsProxy({
+    tokenSecret,
+    tools: config.tools,
+    data,
+    owns: async (appId, subject) => await owned(appId, subject) !== null,
+  });
+
   const reportLifecycle = async (
     operation: "create" | "delete" | "fork",
     appId: AppId,
@@ -155,7 +175,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     extra: Record<string, Json> = {},
   ): Promise<void> => {
     await config.guard.report({
-      id: `aud_${crypto.randomUUID()}`,
+      id: `aud_${globalThis.crypto.randomUUID()}`,
       at: new Date().toISOString(),
       kind: "app-lifecycle",
       principal: { ...ctx.principal },
@@ -176,7 +196,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       const generated = await engine.create(input, generationDependencies(config, config.model));
       const app: AppDocument = {
         ...generated,
-        id: `app_${crypto.randomUUID()}`,
+        id: `app_${globalThis.crypto.randomUUID()}`,
       };
       await apps.put(appRecordInput(app, ctx.principal.subject));
       await reportLifecycle("create", app.id, ctx);
@@ -196,6 +216,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
     async delete(appId, ctx) {
       const app = await requireOwned(appId, ctx.principal.subject);
+      await machines.stop(appId);
       await data.clear(app, ctx.principal.subject);
       await history.clear(appId);
       await apps.delete(appId);
@@ -206,7 +227,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       const source = await requireOwned(appId, ctx.principal.subject);
       const fork: AppDocument = {
         ...structuredClone(source),
-        id: `app_${crypto.randomUUID()}`,
+        id: `app_${globalThis.crypto.randomUUID()}`,
         forkedFrom: source.id,
       };
       await apps.put(appRecordInput(fork, ctx.principal.subject));
@@ -239,14 +260,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return history.surface(appId);
     },
 
-    // Lane C
-    async open(_appId, _ctx) {
-      throw new VendoError("not-implemented", "open is implemented in Lane C");
+    async open(appId, ctx) {
+      return opener(await requireOwned(appId, ctx.principal.subject), ctx);
     },
 
-    // Lane C
-    async call(_appId, _ref, _args, _ctx) {
-      throw new VendoError("not-implemented", "call is implemented in Lane C");
+    async call(appId, ref, args, ctx) {
+      const app = await requireOwned(appId, ctx.principal.subject);
+      return caller.call(app, ref, args, ctx, await machines.mintRun(app, ctx));
     },
 
     // Lane E
@@ -274,12 +294,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       throw new VendoError("not-implemented", "agent tools are implemented in Lane D");
     },
 
-    proxy: {
-      // Lane C
-      async handler(_request) {
-        throw new VendoError("not-implemented", "tool proxy is implemented in Lane C");
-      },
-    },
+    proxy,
   };
 
   return runtime;
