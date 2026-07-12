@@ -24,10 +24,12 @@ Deferred entirely — no stub packages, no reserved exports: `meter`, `memory`, 
 Layered, enforced by the dependency-guard CI gate:
 
 ```
-core → apps → automations        (the one chain)
-store, agent, actions, guard, ui → core only
-vendo (umbrella) → everything    (the only package allowed to)
+core → apps → automations        (the one chain: apps builds on core, automations builds on apps)
+store, agent, actions, guard, ui → depend on core only
+vendo (umbrella) → depends on everything (the only package allowed to)
 ```
+
+(Arrows on the first line read "builds on", left to right — i.e. automations imports apps imports core; nothing imports in the other direction.)
 
 Cross-block communication happens exclusively through seams defined in core (`Guard`, `StoreAdapter`, `ActAs`, `SecretsProvider`, `AgentRunner`, `ToolSet`). A block never imports a sibling; the umbrella wires implementations into seams. Two consequences worth naming:
 
@@ -52,7 +54,7 @@ Resolved with Yousef (2026-07-11 dialogs):
 1. **Server execution protocol = plain HTTP paths.** The machine is just a web server on `$PORT`: `POST /fn/<name>`, `POST /trigger`, everything else is the rung-4 app. Context via env + headers. (06 §4)
 2. **Tree → server function references = `fn:` URI scheme.** `fn:<name>` is valid anywhere a tree binds a data source or an action; no new top-level tree field. (01 §8, 06 §4)
 3. **BYO-LLM seam = the ai-SDK `LanguageModel`.** The agent (and every LLM-consuming seat: judge, generation engine) accepts a Vercel AI SDK model; every provider ships one. (03)
-4. **Deterministic pipelines = minimal steps + JSONata.** Ordered tool-call steps with JSONata for arg mapping, `if`, `forEach`. (07 §3)
+4. **Deterministic pipelines = minimal steps + JSONata.** Ordered tool-call steps with JSONata for arg mapping, `if`, `forEach`. (07 §4)
 
 Made while drafting — flagged for review, each also marked ⚑ in situ:
 

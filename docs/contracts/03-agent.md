@@ -6,7 +6,7 @@ Status: DRAFT (wave 2). One job: run the conversation — streaming, tool-callin
 
 ```ts
 import type { LanguageModel, UIMessage } from "ai";
-import type { ToolSet, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId } from "@vendoai/core";
+import type { ToolSet, Guard, StoreAdapter, RunContext, AgentRunner, ThreadId, InstallId, Tree, RiskLabel, ApprovalId, IsoDateTime } from "@vendoai/core";
 
 export function createAgent(config: {
   model: LanguageModel;                    // BYO: Anthropic, OpenAI, Google, Ollama, local — anything with an ai-SDK model

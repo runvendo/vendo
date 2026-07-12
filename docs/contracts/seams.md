@@ -1,5 +1,7 @@
 # Runtime seam contracts
 
+> **SUPERSEDED (2026-07-11).** This file describes the pre-v0 world and conflicts with the v0 contract set in this directory (start at [00-overview.md](00-overview.md)). It stays only until wave 3 lands, then gets deleted. Do not implement against it.
+
 `packages/vendo-core/src/seams/` defines ten injectable service interfaces. Six belong to the store family: the `Store` aggregate plus `ThreadStore`, `AutomationStore`, `AuditLog`, `GrantStore`, and `CompiledRuleStore`. The other four are `CredentialBroker`, `Executor`, `Scheduler`, and `Channels`. Callers inject only the services required by the runtime or server path they use.
 
 | Interface | Purpose | Provided implementation |

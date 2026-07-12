@@ -5,7 +5,11 @@ Status: DRAFT (wave 2). One job: everything Vendo produces and runs is an app (c
 ## 1. Public API
 
 ```ts
-import type { StoreAdapter, Guard, RunContext, AppDocument, InstallRecord, ToolSet, ToolOutcome, ComponentCatalog, VendoTheme, SecretsProvider, Tree } from "@vendoai/core";
+import type {
+  StoreAdapter, Guard, RunContext, AppDocument, AppId, InstallRecord, InstallId, ToolSet, ToolOutcome,
+  ComponentCatalog, VendoTheme, SecretsProvider, Tree, TreeNode, TreeQuery, Json, IsoDateTime,
+} from "@vendoai/core";
+import type { LanguageModel } from "ai";   // type-only: generation seam
 
 export function createApps(config: {
   store: StoreAdapter;

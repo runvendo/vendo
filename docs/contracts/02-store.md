@@ -44,7 +44,7 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | `vendo_state` | `install_id, subject, data, updated_at` | the built-in per-user-per-app `state` singleton |
 | `vendo_threads` | `id, tenant_id, subject, messages, created_at, updated_at` | conversation threads (03 §5) |
 | `vendo_grants` | `id, tenant_id, subject, tool, descriptor_hash, scope, duration, install_id, source, granted_at, revoked_at, expires_at` | permission grants (core §5) |
-| `vendo_approvals` | `id, tenant_id, subject, request, status, decided_at, created_at` | approval queue (05 §4) |
+| `vendo_approvals` | `id, tenant_id, subject, request, status, decided_at, created_at` | approval queue (05 §1) |
 | `vendo_audit` | `id, at, kind, tenant_id, subject, venue, presence, install_id, tool, event` | append-only audit log (core §7) |
 | `vendo_runs` | `id, install_id, tenant_id, trigger, status, record, started_at, finished_at` | automation run records (07 §5) |
 | `vendo_secrets` | `name, tenant_id, ciphertext, created_at` | optional encrypted secret values (`storeSecrets`) |

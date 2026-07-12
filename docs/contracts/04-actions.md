@@ -2,7 +2,7 @@
 
 Status: DRAFT (wave 2). One job: own ALL tools. Host API, external connectors (Composio, any MCP server), and Vendo capability tools are one tool shape — same risk labels, same guard treatment, same approval UX. Executes as the signed-in user when present; through the host's `actAs` when away. Depends on core only.
 
-## 2 halves: sync (build step) and runtime.
+Two halves: sync (a build step) and runtime.
 
 ## 1. Sync — extraction as a build step, never a command
 
@@ -72,7 +72,7 @@ Merge rule: descriptor = extracted ∪ overrides, overrides win field-wise; `des
 ## 2. Runtime
 
 ```ts
-import type { ToolSet, ToolCall, RunContext, ActAs, ToolOutcome } from "@vendoai/core";
+import type { ToolSet, ToolCall, ToolDescriptor, RunContext, ActAs, ToolOutcome, InstallId } from "@vendoai/core";
 
 export function createActions(config: {
   dir?: string;                          // read .vendo/{tools,overrides}.json; or:

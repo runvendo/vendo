@@ -5,7 +5,10 @@ Status: DRAFT (wave 2). One job: fire triggers and execute runs. An automation i
 ## 1. Public API
 
 ```ts
-import type { RunContext, InstallId, RunId, ToolSet, AgentRunner, StoreAdapter, Trigger } from "@vendoai/core";
+import type {
+  RunContext, InstallId, InstallRecord, RunId, ToolSet, ToolOutcome, AgentRunner, StoreAdapter,
+  Guard, Trigger, TriggerSource, ApprovalRequest, Principal, Json, IsoDateTime,
+} from "@vendoai/core";
 import type { AppsRuntime } from "@vendoai/apps";
 
 export function createAutomations(config: {
@@ -35,7 +38,7 @@ export interface AutomationsEngine {
     list(filter: { installId?: InstallId; status?: RunStatus; cursor?: string }, ctx: RunContext): Promise<{ runs: RunRecord[]; cursor?: string }>;
     stop(id: RunId, ctx: RunContext): Promise<void>;                    // kill switch: best-effort cancel, marks "stopped"
   };
-  dryRun(installId: InstallId, event?: Json, ctx: RunContext): Promise<RunPlan>;   // preview: what would run, nothing executes
+  dryRun(installId: InstallId, ctx: RunContext, event?: Json): Promise<RunPlan>;   // preview: what would run, nothing executes
 }
 ```
 
@@ -43,11 +46,11 @@ export interface AutomationsEngine {
 
 - **`schedule`** — exactly one of `cron` (5-field), `every` (duration: `"15m"`, `"1d"`), `at` (one-shot). Evaluated by `tick`; a missed window (host asleep) fires once on the next tick, never back-fills.
 - **`host-event`** — the honest one-seam cost: the host calls `engine.emit(event, payload, principal)` in its own code path (or points a webhook at the umbrella's `/webhooks/host` route). Fires every enabled automation of that principal whose `trigger.on.event` matches.
-- **`external`** — connector deliveries (Composio webhooks, plain webhooks) arrive at `webhook(req)`; `config` carries connector-specific subscription detail. Delivery → principal resolution comes from the install (an automation always runs as its installing user).
+- **`external`** — connector deliveries (Composio webhooks, plain webhooks) arrive at `webhook(req)`; `config` carries connector-specific subscription detail, including its verification material (connector signature or the per-subscription secret minted at enable — 09 §3). Unverified deliveries are rejected before any dispatch. Delivery → principal resolution comes from the install (an automation always runs as its installing user).
 
 ## 3. Away identity and grant capture
 
-Away runs hold only grants captured while the user was present — the only authority (one security rule). `enable()` is the capture moment: it computes the tool surface the run model references (steps: static analysis of `steps[].tool`; agentic: the model's declared toolset = everything granted + anything already granted), previews it to the user, and the approvals minted there become grants with `source: "automation"`, `installId` bound, `duration: "standing"`. At run time every call still goes through the guard binding with `presence: "away"`: grant match → run; anything else → the call parks `pending-approval`, the step fails soft, and the run record says so. Revoking a grant silently disarms nothing — the next run simply parks and the user sees it.
+Away runs hold only grants captured while the user was present **and bound to this install** — the only authority (one security rule: grants belong to each user's install). `enable()` is the capture moment: it computes the tool surface the run model references (steps: static analysis of `steps[].tool`; agentic: the tools the prompt plausibly needs, model-proposed and shown to the user), previews it with scopes, and the approvals minted there become grants with `source: "automation"`, `installId` = this install, `duration: "standing"`. At run time every call goes through the guard binding with `presence: "away"`, and **only grants whose `installId` matches this install can authorize it** — a standing grant the user minted in chat, or for another automation, never transfers. Anything unauthorized parks `pending-approval`, the step fails soft, and the run record says so; approvals decided from a parked run mint install-bound grants the same way. Revoking a grant silently disarms nothing — the next run simply parks and the user sees it.
 
 ## 4. Run models
 

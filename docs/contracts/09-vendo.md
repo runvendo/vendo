@@ -64,9 +64,11 @@ Mounted under one base (default `/api/vendo`). Auth: every request passes throug
 | `/runs` · `/runs/:id` | GET | run records |
 | `/runs/:id/stop` | POST | `{}` |
 | `/tick` | POST | scheduler tick (serverless cron target; requires shared-secret header `x-vendo-tick-key`) |
-| `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) |
+| `/webhooks/:source` | POST | trigger ingress (Composio, host, plain) — verified, see below |
 | `/activity` | GET | `AuditEvent[]` (self-scoped) |
 | `/status` | GET | `{ posture, version, blocks: {...} }` (doctor's live probe) |
+
+**Webhook verification (normative)**: `/webhooks/:source` never dispatches unverified deliveries. Each source registers a verification at wiring time — connector signature check (e.g. Composio HMAC headers) or a per-subscription secret minted when the automation is enabled and carried in the delivery URL/header. Verification failure → `401`, no principal resolution, no run, one audit event. The unauthenticated surface of the wire is exactly: nothing.
 
 Rung-4 app UI is **not** proxied through the wire: `OpenSurface.kind === "http"` carries the sandbox provider's URL directly; the iframe talks to the machine, the machine talks back only through `VENDO_PROXY_URL` (06 §4.4).
 

@@ -26,7 +26,7 @@ export type JsonSchema = Record<string, unknown>; // JSON Schema draft 2020-12
 
 ## 2. Principals
 
-Who the agent is acting as. Host-minted; the host resolves its own session to a principal (09 §3). `kind: "org"` is reserved for Cloud.
+Who the agent is acting as. Host-minted; the host resolves its own session to a principal (09 §2). `kind: "org"` is reserved for Cloud.
 
 ```ts
 export interface Principal {
@@ -353,11 +353,11 @@ export type ActAs = (principal: Principal, grant: PermissionGrant) => Promise<Au
 
 export interface AuthMaterial { headers?: Record<string, string>; token?: string; expiresAt?: IsoDateTime; }
 
-/** Secret values by name. Default implementation reads env (02 §5). App code never sees values (06 §4.3). */
+/** Secret values by name. Default implementation reads env (02 §1). App code never sees values (06 §4.3). */
 export interface SecretsProvider { get(name: string): Promise<string | undefined>; }
 
 /** Agentic execution seam — how automations run an agent without importing it.
- *  agent exports an implementation (03 §4); the umbrella wires it. */
+ *  agent exports an implementation (03 §1 `asRunner`); the umbrella wires it. */
 export type AgentRunner = (
   task: { prompt: string; tools: ToolSet; budget?: { maxToolCalls?: number } },
   ctx: RunContext,
