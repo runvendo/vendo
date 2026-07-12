@@ -612,8 +612,9 @@ describe("schedule, webhook, and host triggers", () => {
       "x".repeat(1024 * 1024 + 1),
     ));
     expect(oversized.status).toBe(413);
-    expect(guard.audit).toHaveLength(auditsBeforeSize);
-    expect(guard.audit.filter((event) => (event.detail as { status?: string }).status === "webhook-rejected")).toHaveLength(3);
+    // Oversized rejections audit like every other unverified-input rejection.
+    expect(guard.audit).toHaveLength(auditsBeforeSize + 1);
+    expect(guard.audit.filter((event) => (event.detail as { status?: string }).status === "webhook-rejected")).toHaveLength(4);
 
     const concurrentBody = JSON.stringify({ concurrent: true });
     const concurrentSignature = await sign(secret, "delivery_concurrent", timestamp, concurrentBody);

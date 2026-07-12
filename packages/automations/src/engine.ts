@@ -1056,7 +1056,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     { status },
   );
 
-  const rejectWebhook = async (source: string, text: string): Promise<Response> => {
+  const rejectWebhook = async (
+    source: string,
+    text: string,
+    response: { status: number; code: string } = { status: 401, code: "blocked" },
+  ): Promise<Response> => {
     await config.guard.report({
       id: id("aud_"),
       at: iso(),
@@ -1066,7 +1070,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       presence: "away",
       detail: { status: "webhook-rejected", reason: text },
     });
-    return envelope(401, "blocked", text);
+    return envelope(response.status, response.code, text);
   };
 
   const webhook: AutomationsEngine["webhook"] = async (request) => {
@@ -1081,12 +1085,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       signature: request.headers.get("webhook-signature"),
     });
     if (!headerResult.success) return await rejectWebhook(source, "invalid webhook headers");
+    const oversized = { status: 413, code: "validation" };
     const contentLength = request.headers.get("content-length");
     if (contentLength !== null && /^\d+$/.test(contentLength) && Number(contentLength) > WEBHOOK_MAX_BYTES) {
-      return envelope(413, "validation", "webhook body exceeds 1 MiB");
+      return await rejectWebhook(source, "webhook body exceeds 1 MiB", oversized);
     }
     const rawBytes = await readLimitedBody(request, WEBHOOK_MAX_BYTES);
-    if (rawBytes === null) return envelope(413, "validation", "webhook body exceeds 1 MiB");
+    if (rawBytes === null) return await rejectWebhook(source, "webhook body exceeds 1 MiB", oversized);
     const timestampMs = Number(headerResult.data.timestamp) * 1_000;
     if (!Number.isSafeInteger(timestampMs) || Math.abs(now().getTime() - timestampMs) > 300_000) {
       return await rejectWebhook(source, "webhook timestamp is outside the allowed window");
@@ -1227,11 +1232,13 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     let cursor = filter.cursor;
     // Without an appId scope, walk store pages until a page is filled with the
     // caller's runs — bounded so a foreign-heavy table cannot be scanned
-    // unboundedly; the returned cursor continues the walk.
-    for (let pages = 0; pages < 20; pages += 1) {
+    // unboundedly. Each fetch asks for exactly the remaining page budget, so
+    // the store cursor always sits at the consumption boundary: pages never
+    // overfill and the returned cursor never skips rows.
+    for (let pages = 0; pages < 20 && runs.length < RUNS_PAGE_LIMIT; pages += 1) {
       const page = await config.store.records(RUNS).list({
         refs,
-        limit: RUNS_PAGE_LIMIT,
+        limit: RUNS_PAGE_LIMIT - runs.length,
         ...(cursor === undefined ? {} : { cursor }),
       });
       for (const stored of page.records) {
@@ -1245,7 +1252,7 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         if (mine) runs.push(publicRun(run));
       }
       cursor = page.cursor;
-      if (cursor === undefined || runs.length >= RUNS_PAGE_LIMIT) break;
+      if (cursor === undefined) break;
     }
     return { runs, ...(cursor === undefined ? {} : { cursor }) };
   };
