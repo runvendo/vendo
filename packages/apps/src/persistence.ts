@@ -1,5 +1,6 @@
 import {
   VendoError,
+  canonicalJson,
   validateAppDocument,
   type AppDocument,
   type AppId,
@@ -27,12 +28,17 @@ export interface AppRowData {
   doc: AppDocument;
 }
 
-/** Trigger edits invalidate enable-time capture, cursor, and webhook state. */
+/** Trigger edits invalidate enable-time capture, cursor, and webhook state.
+ *  Canonical comparison — key order must not cause a spurious disarm. */
 export const enabledAfterDocumentEdit = (
   previous: AppDocument,
   next: AppDocument,
   enabled: boolean,
-): boolean => JSON.stringify(previous.trigger) === JSON.stringify(next.trigger) && enabled;
+): boolean => {
+  const canon = (trigger: AppDocument["trigger"]): string =>
+    trigger === undefined ? "" : canonicalJson(trigger);
+  return canon(previous.trigger) === canon(next.trigger) && enabled;
+};
 
 export const rowFromRecord = (record: VendoRecord): AppRowData => {
   const data = record.data as Partial<AppRowData> | null;

@@ -585,16 +585,24 @@ class GuardImplementation implements VendoGuard {
     descriptor: ToolDescriptor,
     ctx: RunContext,
   ): Promise<DecisionMetadata> {
-    if (await this.#consumeApprovedCall(call, descriptor, ctx)) {
-      return { decision: { action: "run", decidedBy: "grant" } };
-    }
-
+    // An exact approved replay answers a critical ask (05 §2 stays otherwise:
+    // grants/rules/judge never suppress critical) — but scanners still get the
+    // call below. If a scanner then blocks, the single-use approval is already
+    // consumed: burning it on a blocked call fails closed.
+    let consumedReplay = false;
     if (descriptor.critical === true) {
-      return { decision: { action: "ask", decidedBy: "critical" } };
+      consumedReplay = await this.#consumeApprovedCall(call, descriptor, ctx);
+      if (!consumedReplay) {
+        return { decision: { action: "ask", decidedBy: "critical" } };
+      }
     }
 
     const scannerDecision = await this.#scanInput(call, ctx);
     if (scannerDecision !== undefined) return scannerDecision;
+
+    if (consumedReplay || await this.#consumeApprovedCall(call, descriptor, ctx)) {
+      return { decision: { action: "run", decidedBy: "grant" } };
+    }
 
     const grant = await this.#matchingGrant(call, descriptor, ctx);
     if (grant !== undefined) {

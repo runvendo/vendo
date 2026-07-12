@@ -1091,7 +1091,12 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     if (!Number.isSafeInteger(timestampMs) || Math.abs(now().getTime() - timestampMs) > 300_000) {
       return await rejectWebhook(source, "webhook timestamp is outside the allowed window");
     }
-    const signature = headerResult.data.signature.slice(3);
+    // Standard-Webhooks senders may send several space-separated signatures
+    // (key rotation): accept the delivery if ANY v1 candidate verifies.
+    const signatures = headerResult.data.signature
+      .split(/\s+/)
+      .filter((entry) => entry.startsWith("v1,"))
+      .map((entry) => entry.slice(3));
     const signed = signedWebhookBytes(headerResult.data.id, headerResult.data.timestamp, rawBytes);
     const appRecords = await allRecords(config.store.records(APPS));
     const verified: AppRow[] = [];
@@ -1103,11 +1108,14 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       if (secretRecord === null) continue;
       const secret = webhookSchema.safeParse(secretRecord.data);
       if (!secret.success) continue;
-      if (await verifySignature(
-        secret.data.secret,
-        signature,
-        signed,
-      )) verified.push(row);
+      let matched = false;
+      for (const candidate of signatures) {
+        if (await verifySignature(secret.data.secret, candidate, signed)) {
+          matched = true;
+          break;
+        }
+      }
+      if (matched) verified.push(row);
     }
     if (verified.length === 0) return await rejectWebhook(source, "webhook signature verification failed");
     let body: Json;
@@ -1185,8 +1193,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
           await stepArgs(step, event, outputs, item);
           await add(step.id, step.tool);
         }
-      } catch (error) {
-        throw new VendoError("validation", `dry run step ${step.id}: ${message(error)}`);
+      } catch {
+        // Nothing executes in a dry run, so `steps.<id>` outputs stay empty —
+        // expressions over them cannot expand. Degrade to the static entry
+        // rather than failing the preview.
+        await add(step.id, step.tool);
       }
     }
     return plan;
