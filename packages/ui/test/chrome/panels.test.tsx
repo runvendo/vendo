@@ -29,7 +29,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
 
   it("toggles, captures missing approvals, previews, expands runs, and stops a running run", async () => {
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    const toggle = await screen.findByRole("switch", { name: "Disabled" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(toggle);
     expect(await screen.findByLabelText("Approval for host_email_send")).toBeTruthy();
@@ -46,7 +46,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     await waitFor(() => expect(screen.getByText("stopped")).toBeTruthy());
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/runs/run_1/stop" }));
 
-    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Invoice watcher" }));
     await waitFor(() => expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false"));
     expect(wire.requests).toContainEqual(expect.objectContaining({ method: "POST", path: "/automations/app_auto/disable" }));
   });
@@ -75,7 +75,7 @@ describe("ActivityPanel and AutomationsPanel exports", () => {
     const unhandled = vi.fn();
     window.addEventListener("unhandledrejection", unhandled);
     render(<VendoProvider client={client}><AutomationsPanel /></VendoProvider>);
-    const toggle = await screen.findByRole("switch", { name: "Disabled" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Invoice watcher" });
     wire.state.failures.push({
       method: "POST",
       path: "/automations/app_auto/enable",
