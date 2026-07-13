@@ -20,15 +20,18 @@
  *   - apps ride-along: a wire-created app opens over MCP for real (store read, no
  *     host auth needed).
  *
- * COMPOSITION FIX (see the second case below): route-bound HOST tools authenticate
- * over the composed door through the umbrella's own `actAs` seam. `mcpContext`
- * carries no host session and — per 10-mcp §3 (no token-passthrough) — no
- * requestHeaders, so `@vendoai/actions` route execution now treats a present
- * `venue:"mcp"` call the same session-less way it treats an away call: when
- * `actAs` is configured it mints the host request's AuthMaterial from the seam
- * (keyed on the principal), never from the inbound MCP headers. The host call
- * therefore reaches the host API as the authenticated user — one perimeter, one
- * identity path — without the hand-built injected-`fetch` mcp-e2e uses.
+ * KNOWN GAP (see the second case below): route-bound HOST tools CANNOT authenticate
+ * over the composed door under the frozen contracts today. The door correctly mints
+ * a session-less `venue:"mcp"` context per 10-mcp §3 (no token-passthrough — the
+ * inbound MCP Authorization Bearer is never forwarded, so `mcpContext` carries no
+ * requestHeaders), and `actAs` is contractually the AWAY-only, grant-REQUIRED seam
+ * (04 §4). There is no present-session host-auth seam in the frozen contracts, so a
+ * present MCP host-route call reaches the host API unauthenticated and the host
+ * answers 401. This is the real gap this suite surfaces for the
+ * `createVendo({ mcp: true })` hookup (docs/contracts/10-mcp-umbrella-hookup.md) to
+ * close with a properly designed present-session seam — it is out of scope for this
+ * additive test-suite wave. The host-route legs below assert the desired end-state
+ * with `it.fails` / an explicit gap assertion so the gap is documented, not hidden.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -100,19 +103,26 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
       // --- tools/list: descriptors match the bound registry VERBATIM --------
       const listed = await connected.client.listTools();
       const listedByName = new Map(listed.tools.map((tool) => [tool.name, descriptorShape(tool)]));
-      for (const descriptor of await stack.mcp!.bound.descriptors()) {
+      const boundDescriptors = await stack.mcp!.bound.descriptors();
+      for (const descriptor of boundDescriptors) {
         expect(listedByName.get(descriptor.name)).toEqual({
           name: descriptor.name,
           description: descriptor.description,
           inputSchema: descriptor.inputSchema,
         });
       }
-      // The vendo_apps_* capability tools are served too.
-      expect(listed.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
-        "vendo_apps_create",
-        "vendo_apps_open",
-        "vendo_apps_list",
-      ]));
+      // EXACT set, not a subset: tools/list serves the bound registry (10-mcp §2
+      // "no second catalog" of HOST tools) PLUS exactly the door's own three
+      // apps ride-along capability tools (10-mcp §4, door = viewer + runner):
+      // vendo_apps_list / vendo_apps_open / vendo_apps_call, served from the
+      // composed AppsPort, not the actions registry. Asserting equality against
+      // this closed union still fails on ANY unguarded extra surface — a tool in
+      // tools/list that is neither a bound descriptor nor a known ride-along tool.
+      const APP_RIDE_ALONG = ["vendo_apps_list", "vendo_apps_open", "vendo_apps_call"];
+      const expectedNames = [
+        ...new Set([...boundDescriptors.map((descriptor) => descriptor.name), ...APP_RIDE_ALONG]),
+      ].sort();
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(expectedNames);
 
       // --- Destructive call PARKS in-band (never a JSON-RPC error) ----------
       const parked = await connected.client.callTool({ name: "host_invoices_delete", arguments: { id: "inv_0003" } });
@@ -137,17 +147,26 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
 
       // ONE approvals plane: the wire decision authorizes the MCP retry — the
       // guard no longer parks it (it proceeds straight to execution, minting no
-      // new approval). Robust to the host-auth gap below: whether execution
-      // succeeds or errors at the host, the guard did NOT re-ask.
+      // new approval). We prove the guard-plane claim WITHOUT asserting host
+      // success, because the host DELETE over MCP genuinely cannot succeed today
+      // (the same present-session host-auth KNOWN GAP as the second case below).
       const retried = await connected.client.callTool({ name: "host_invoices_delete", arguments: { id: "inv_0003" } });
+      // (a) no NEW approval was minted — the guard did not re-ask.
       expect(textOf(retried)).not.toMatch(/apr_/);
       expect(await stack.wireFetch("/approvals", {}, ADA).then((response) => response.json())).toEqual([]);
-      // The retry is authorized by the wire-minted grant (05 §6 decidedBy=grant).
+      // (b) the retry is authorized by the wire-minted grant (05 §6 decidedBy=grant).
       expect(await stack.sql<{ decided_by: string }>(
         `SELECT event->>'decidedBy' AS decided_by FROM vendo_audit
           WHERE kind = 'tool-call' AND tool = 'host_invoices_delete' AND venue = 'mcp'
           ORDER BY at DESC LIMIT 1`,
       )).toEqual([{ decided_by: "grant" }]);
+      // (c) the retry's failure mode is the host-auth GAP, NOT an approval park:
+      // the guard let it through to real host execution, which 401s because there
+      // is no present-session host-auth seam. When the createVendo({ mcp: true })
+      // hookup lands that seam (docs/contracts/10-mcp-umbrella-hookup.md), this
+      // becomes a real-deletion assert (inv_0003 gone from the host).
+      expect(retried.isError).toBe(true);
+      expect(textOf(retried)).toMatch(/http-error:.*→ 401/);
 
       // --- Apps ride-along: open a wire-created app over the door for real ---
       const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: app.id } });
@@ -172,14 +191,18 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
     }
   });
 
-  // COMPOSITION FIX — the CORRECT contract behavior (10-mcp §2: an authenticated
-  // MCP tool call gets "identical treatment to chat"). The composed umbrella now
-  // authenticates present MCP host-route calls through its own `actAs` seam
-  // (mcpContext carries no host session and no requestHeaders, so actions mints
-  // host AuthMaterial from actAs — keyed on the principal — exactly as it does for
-  // an away call). The read below therefore reaches the host API as user_ada and
-  // returns real invoices instead of `http-error: GET /api/invoices → 401`.
-  it("a read host tool over the door executes for real against the host app", async () => {
+  // KNOWN GAP (it.fails documents the DESIRED end-state, which does NOT hold today).
+  // 10-mcp §2 says an authenticated MCP tool call should get "identical treatment to
+  // chat", but a present MCP host-route call cannot authenticate under the composed
+  // umbrella: the door mints a session-less venue:"mcp" context (10-mcp §3, no
+  // token-passthrough — no requestHeaders), and actAs is the away-only, grant-required
+  // seam (04 §4), so there is no frozen-contract seam to mint host AuthMaterial for a
+  // present read. The read below therefore reaches the host API unauthenticated and
+  // gets `http-error: GET /api/invoices → 401` instead of real invoices. The
+  // createVendo({ mcp: true }) hookup (docs/contracts/10-mcp-umbrella-hookup.md) closes
+  // this with a properly designed present-session host-auth seam; when it lands, flip
+  // `it.fails` back to `it` and this passes.
+  it.fails("a read host tool over the door executes for real against the host app", async () => {
     await resetFixture();
     stack = await createStack({ mcp: true });
     const connected = await connectWithSdk(stack.mcp!.endpoint);

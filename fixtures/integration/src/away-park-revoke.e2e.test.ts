@@ -22,6 +22,7 @@ import {
   importAutomation,
   partsOfType,
   readSse,
+  resetFixture,
   resumeApproval,
   textTurn,
   toolCallTurn,
@@ -76,6 +77,7 @@ async function invoiceStatus(id: string): Promise<string | undefined> {
 
 describe("J5: away capture, park, resume, revoke through the composed wire", () => {
   it("parks the ungranted step, resumes on a wire decision, mints an app-bound grant, lands the side effect", async () => {
+    await resetFixture();
     stack = await createStack();
     const imported = await importAutomation(
       stack,
@@ -139,6 +141,7 @@ describe("J5: away capture, park, resume, revoke through the composed wire", () 
   });
 
   it("revocation is live: after DELETE /grants/:id the next run parks and the host is untouched", async () => {
+    await resetFixture();
     stack = await createStack();
     const imported = await importAutomation(
       stack,
@@ -181,6 +184,7 @@ describe("J5: away capture, park, resume, revoke through the composed wire", () 
   it("a chat-source grant (no appId) never authorizes an away run — the automation still parks (05 §6)", async () => {
     // The chat leg needs the scripted model: a destructive delete parks in chat,
     // approve+remember mints a STANDING chat grant with no appId binding.
+    await resetFixture();
     stack = await createStack({
       turns: [
         toolCallTurn(DELETE, { id: "inv_0003" }, "call_1"),

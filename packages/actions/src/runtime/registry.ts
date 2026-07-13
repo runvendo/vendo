@@ -280,27 +280,6 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     } catch (cause) {
       return error("act-as-error", cause instanceof Error ? cause.message : "away authentication failed");
     }
-  } else if (ctx.venue === "mcp" && config.actAs) {
-    // An MCP request shares the host's perimeter (10-mcp §2 — identical treatment
-    // to chat) but carries NO host session: the inbound MCP Authorization Bearer
-    // must NEVER be forwarded to the host (10-mcp §3, no token-passthrough — the
-    // door structurally omits requestHeaders). So a present MCP host-route call
-    // authenticates through the SAME session-less seam an away call uses — actAs,
-    // whose host-issued AuthMaterial is keyed on the principal — not through
-    // ctx.requestHeaders. The guard relays a grant only when one authorized the
-    // run (e.g. a standing grant on a parked-then-approved retry); a present read
-    // has none, and we pass it through verbatim rather than fabricate one. When
-    // actAs is NOT configured, execution falls through to the present branch below
-    // (forward ctx.requestHeaders ?? {}), preserving the injected-fetch harness
-    // mcp-e2e depends on.
-    const grant = (ctx as ActionsRunContext).grant;
-    try {
-      const auth = await config.actAs(ctx.principal, grant as PermissionGrant);
-      if (!auth) return error("not-implemented", "the host declined MCP execution for this action");
-      headers = { ...auth.headers };
-    } catch (cause) {
-      return error("act-as-error", cause instanceof Error ? cause.message : "MCP authentication failed");
-    }
   } else {
     headers = mayForwardPresentHeaders(tool.binding, url, config.baseUrl, config.baseUrlTrusted ?? true)
       ? forwardedHeaders(ctx)

@@ -26,6 +26,7 @@ import {
   hostFetch,
   importAutomation,
   pastAtIso,
+  resetFixture,
   waitForRunStatus,
   type Stack,
   type WireApproval,
@@ -82,6 +83,7 @@ afterEach(async () => {
 
 describe("J4: automation lifecycle through the composed wire", () => {
   it("(schedule) imports, enables+captures grants, then a due `at` fires on /tick and creates the invoice for real", async () => {
+    await resetFixture();
     stack = await createStack();
     const MEMO = "J4 scheduled invoice";
 
@@ -155,6 +157,7 @@ describe("J4: automation lifecycle through the composed wire", () => {
   });
 
   it("(host-event) fires via vendo.emit, previews with dry-run, and disable stops firing", async () => {
+    await resetFixture();
     stack = await createStack();
     const EVENT = "j4.invoice.ready";
     const MEMO = "J4 host-event invoice";
