@@ -22,7 +22,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inject } from "vitest";
-import type { Principal } from "@vendoai/core";
+import { zipSync } from "fflate";
+import type { AppDocument, Principal, ToolRegistry } from "@vendoai/core";
+import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createVendo, type Vendo } from "@vendoai/vendo/server";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
@@ -174,6 +176,24 @@ export interface StackOptions {
   /** Ordered scripted turns consumed by doStream (agent) + doGenerate (engine). */
   turns?: LanguageModelV3StreamPart[][];
   model?: LanguageModel;
+  /** Mount the MCP door (J6) beside `vendo.handler` on the same loopback origin,
+   * composed from the umbrella's OWN parts — the way a host must today until the
+   * `createVendo({ mcp: true })` hookup lands (docs/contracts/10-mcp-umbrella-hookup.md). */
+  mcp?: boolean;
+}
+
+/** The door mounted alongside the wire when `createStack({ mcp: true })`. */
+export interface McpDoorHandle {
+  /** The shared loopback origin (identical to `stack.baseUrl`). */
+  origin: string;
+  /** The door mount — `${origin}/api/vendo/mcp` (the MCP Streamable HTTP endpoint). */
+  endpoint: string;
+  /** The SAME guard-bound registry the door serves — `vendo.guard.bind(vendo.actions)`;
+   * used to assert `tools/list` descriptors match the registry verbatim. */
+  bound: ToolRegistry;
+  /** Live door controls: which fixture subject the OAuth adapter authorizes as, and
+   * the revoked-subject set (`principal() → null` kills a session, 10-mcp §3). */
+  control: { autoSubject?: string; revoked: Set<string> };
 }
 
 export interface Stack {
@@ -181,6 +201,8 @@ export interface Stack {
   baseUrl: string;
   vendo: Vendo;
   model: ScriptedModel;
+  /** Present only when created with `{ mcp: true }` — the co-mounted MCP door. */
+  mcp?: McpDoorHandle;
   /** A wire request as `user`: sets x-vendo-test-user (principal) + the host
    * session cookie (so present route bindings authenticate) + JSON content-type. */
   wireFetch(path: string, init?: RequestInit, user?: Principal): Promise<Response>;
@@ -214,7 +236,50 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     policy: { file: ".vendo/policy.json" },
   });
 
-  const httpServer = createServer((req, res) => void forwardToWire(req, res, vendo.handler));
+  // J6 — the MCP door, composed from the umbrella's OWN parts (the hookup note's
+  // exact shape). Same guard, same store, same guard-bound registry chat uses:
+  // one perimeter, one approvals/audit plane. The `oauth` seam is the fixture
+  // host's login (authorize resolves the current fixture subject; principal()
+  // resolution IS revocation, 10-mcp §3).
+  let door: McpDoor | undefined;
+  let mcpControl: McpDoorHandle["control"] | undefined;
+  let mcpBound: ToolRegistry | undefined;
+  if (options.mcp === true) {
+    const control: McpDoorHandle["control"] = { autoSubject: ADA.subject, revoked: new Set<string>() };
+    mcpControl = control;
+    mcpBound = vendo.guard.bind(vendo.actions);
+    const oauth: HostOAuthAdapter = {
+      async authorize() {
+        if (control.autoSubject === undefined) return new Response("missing fixture session", { status: 401 });
+        return { subject: control.autoSubject };
+      },
+      async principal(subject) {
+        return control.revoked.has(subject) ? null : { kind: "user", subject };
+      },
+    };
+    // AppsPort adapter over vendo.apps — AppsRuntime.open has an extra "resuming"
+    // variant AppsPort does not, so map it (the door is a viewer + runner, 10-mcp §4).
+    const appsPort: AppsPort = {
+      list: (ctx) => vendo.apps.list(ctx),
+      async open(appId, ctx) {
+        const opened = await vendo.apps.open(appId, ctx);
+        if (opened.kind === "resuming") throw new Error("app is resuming; unreachable for the door viewer role");
+        return opened.kind === "tree" ? { kind: "tree", payload: opened.payload } : opened;
+      },
+      call: (appId, ref, args, ctx) => vendo.apps.call(appId, ref, args, ctx),
+    };
+    door = createMcpDoor({ tools: mcpBound, guard: vendo.guard, store, oauth, apps: appsPort });
+  }
+
+  // The door serves its own mount (/api/vendo/mcp…) and the origin-root discovery
+  // documents (/.well-known/…); everything else is the umbrella wire. Route by
+  // path so both share one loopback origin (10-mcp-umbrella-hookup §4).
+  const httpServer = createServer((req, res) => {
+    const path = (req.url ?? "/").split("?", 1)[0] ?? "/";
+    const toDoor = door !== undefined
+      && (path === "/api/vendo/mcp" || path.startsWith("/api/vendo/mcp/") || path.startsWith("/.well-known/"));
+    void forwardToWire(req, res, toDoor ? door!.handler : vendo.handler);
+  });
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(0, "127.0.0.1", () => {
@@ -228,10 +293,15 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
 
   const raw = store.raw() as { query(q: string, p?: unknown[]): Promise<{ rows: unknown[] }> };
 
+  const mcp: McpDoorHandle | undefined = door === undefined || mcpControl === undefined || mcpBound === undefined
+    ? undefined
+    : { origin: baseUrl, endpoint: `${baseUrl}/api/vendo/mcp`, bound: mcpBound, control: mcpControl };
+
   return {
     baseUrl,
     vendo,
     model,
+    ...(mcp === undefined ? {} : { mcp }),
     async wireFetch(path, init = {}, user) {
       const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
       const mutation = ["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase());
@@ -371,4 +441,88 @@ export async function resumeApproval(
     method: "POST",
     body: JSON.stringify({ threadId, message: { ...assistant, parts } }),
   }, user);
+}
+
+// ---------------------------------------------------------------------------
+// Automation-journey helpers (J4/J5): .vendoapp import over the wire, approval
+// decisions, and run polling with a deadline. createVendo takes no `now`, so the
+// schedule leg is driven with a PAST `at` that is due on the first /tick.
+// ---------------------------------------------------------------------------
+
+/** An ApprovalRequest as it crosses the wire (enable's `missing[]`, GET /approvals). */
+export interface WireApproval {
+  id: string;
+  call: { tool: string };
+}
+
+/** The RunRecord shape the /runs wire returns (07 §5), narrowed to the asserts. */
+export interface WireRun {
+  id: string;
+  appId: string;
+  status: "running" | "ok" | "error" | "stopped" | "pending-approval";
+  steps: Array<{ id: string; tool: string; outcome: string; detail?: string }>;
+  summary?: string;
+  error?: { code: string; message: string };
+}
+
+/** Build a `.vendoapp` archive (app.json only — no machine) from an AppDocument.
+ * The import boundary re-mints the id and re-validates the document (06 §7). */
+export function buildVendoApp(doc: AppDocument): Uint8Array {
+  return zipSync({ "app.json": new TextEncoder().encode(JSON.stringify(doc)) }, { level: 6 });
+}
+
+/** Import an automation through the PUBLIC wire (POST /apps/import,
+ * application/octet-stream). Returns the imported (fresh-id) document. */
+export async function importAutomation(stack: Stack, doc: AppDocument, user: Principal): Promise<AppDocument> {
+  const response = await stack.wireFetch("/apps/import", {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: buildVendoApp(doc),
+  }, user);
+  if (!response.ok) throw new Error(`import failed (${response.status}): ${await response.text()}`);
+  return (await response.json()) as AppDocument;
+}
+
+/** Decide a batch of approvals over the wire (POST /approvals/decide). */
+export async function decideApprovals(
+  stack: Stack,
+  ids: string[],
+  decision: Record<string, unknown>,
+  user: Principal,
+): Promise<Response> {
+  return stack.wireFetch("/approvals/decide", {
+    method: "POST",
+    body: JSON.stringify({ ids, decision }),
+  }, user);
+}
+
+/** Poll GET /runs/:id until it reaches `status` or the deadline passes. Away runs
+ * resume asynchronously (guard.onApprovalDecision), so callers poll; the deadline
+ * tolerates CI-grade slowness. */
+export async function waitForRunStatus(
+  stack: Stack,
+  runId: string,
+  user: Principal,
+  status: WireRun["status"],
+  timeoutMs = 30_000,
+): Promise<WireRun> {
+  const deadline = Date.now() + timeoutMs;
+  let last: string | undefined;
+  while (Date.now() <= deadline) {
+    const response = await stack.wireFetch(`/runs/${runId}`, {}, user);
+    if (response.ok) {
+      const run = (await response.json()) as WireRun;
+      last = run.status;
+      if (run.status === status) return run;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`run ${runId} did not reach ${status}; last status was ${last ?? "unknown"}`);
+}
+
+/** An ISO timestamp an hour in the past — a due `at` schedule that fires on the
+ * first /tick after enable (the deterministic public-wire way to drive a schedule
+ * trigger without clock injection). */
+export function pastAtIso(): string {
+  return new Date(Date.now() - 3_600_000).toISOString();
 }
