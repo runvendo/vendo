@@ -703,7 +703,10 @@ async function openVendoSurface(page: E2ePage, timeoutMs: number): Promise<void>
 }
 
 async function sendPrompt(page: E2ePage, prompt: string): Promise<void> {
-  const input = page.getByLabel(/message/i);
+  // The overlay's composer form and its textarea both carry /message/i labels
+  // (aria-label "Message composer" / "Message"), so a bare getByLabel violates
+  // Playwright strict mode — target the textbox role.
+  const input = page.getByRole("textbox", { name: /message/i });
   if (!input.fill) throw new Error("Vendo composer message field did not expose fill()");
   await input.fill(prompt);
   if (input.press) {

@@ -32,6 +32,11 @@ import {
 } from "./init-step.js";
 import { prepareE2eRepo as defaultPrepareE2eRepo } from "./e2e-prep.js";
 import {
+  runLiveDoctor as defaultRunLiveDoctor,
+  type LiveDoctorResult,
+  type RunLiveDoctorOptions,
+} from "./doctor-live.js";
+import {
   runE2eLayer as defaultRunE2eLayer,
   type E2eLayerContext,
   type E2eLayerRunResult,
@@ -71,7 +76,7 @@ const usage = `Usage:
 
 Commands:
   validate  Load and validate corpus/manifest.json.
-  list      Print manifest repo names with tier and pinned SHA.
+  list      Print manifest repo names with tier and source revision/path.
   run       Clone, bootstrap, inject local Vendo, run init, and execute selected layers.
   boot      Clone, bootstrap, inject local Vendo, run init, boot one deep-tier app, and wait for Ctrl-C.
 `;
@@ -99,6 +104,7 @@ export interface CorpusCliDependencies {
   runScoredLayer?: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
   prepareE2eRepo?: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
   runE2eLayer?: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
+  runLiveDoctor?: (options: RunLiveDoctorOptions) => Promise<LiveDoctorResult>;
   commandRunner?: StructuralCommandRunner;
 }
 
@@ -120,6 +126,7 @@ interface ResolvedDeps {
   runScoredLayer: (ctx: ScoredLayerContext) => Promise<ScoredLayerRunResult>;
   prepareE2eRepo: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
   runE2eLayer: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
+  runLiveDoctor: (options: RunLiveDoctorOptions) => Promise<LiveDoctorResult>;
   commandRunner: StructuralCommandRunner;
 }
 
@@ -159,6 +166,7 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     runScoredLayer: deps.runScoredLayer ?? defaultRunScoredLayer,
     prepareE2eRepo: deps.prepareE2eRepo ?? defaultPrepareE2eRepo,
     runE2eLayer: deps.runE2eLayer ?? defaultRunE2eLayer,
+    runLiveDoctor: deps.runLiveDoctor ?? defaultRunLiveDoctor,
     commandRunner: deps.commandRunner ?? runShellCommand,
   };
 }
@@ -443,7 +451,7 @@ async function runRepoThroughLayerOne(
   const logPaths: string[] = [];
 
   try {
-    const checkoutDir = await deps.ensureRepoCheckout(repo, { context });
+    const checkoutDir = await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
     const appRoot = resolveAppRoot(repo, checkoutDir);
     const bootstrap = await deps.bootstrapRepo(repo, { context, env: deps.env });
     logPaths.push(bootstrap.logs.stdout, bootstrap.logs.stderr);
@@ -483,6 +491,7 @@ async function runRepoThroughLayerOne(
       baseline,
       commandRunner: loggedCommands.runner,
       env: deps.env,
+      framework: repo.framework ?? "next",
     });
 
     const layers: ScorecardLayerInput[] = [
@@ -530,6 +539,16 @@ async function runRepoThroughLayerOne(
             env: deps.env,
           });
           layerLogPaths.push(...bootHandleLogPaths(handle));
+          const doctor = repo.framework === "express"
+            ? await deps.runLiveDoctor({
+                workspaceRoot: deps.workspaceRoot ?? defaultWorkspaceRoot,
+                appRoot,
+                readinessUrl: handle.readinessUrl,
+                logsDir: context.logsDir(repo.name),
+                env: deps.env,
+              })
+            : undefined;
+          if (doctor) layerLogPaths.push(doctor.logPath);
           const e2e = await deps.runE2eLayer({
             repoName: repo.name,
             repoDir: appRoot,
@@ -540,6 +559,8 @@ async function runRepoThroughLayerOne(
           });
           layer = {
             ...e2e.layer,
+            ...(doctor && !doctor.check.pass ? { status: "fail" as const, hardFailure: true } : {}),
+            checks: [...(e2e.layer.checks ?? []), ...(doctor ? [doctor.check] : [])],
             logPaths: [...layerLogPaths, ...(e2e.layer.logPaths ?? [])],
           };
         } catch (error) {
@@ -603,7 +624,7 @@ async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): 
 
   const context = deps.createContext();
   const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
-  await deps.ensureRepoCheckout(repo, { context });
+  await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
   await deps.bootstrapRepo(repo, { context, env: deps.env });
 
   const injectResult = await injector.inject(repo);
@@ -667,7 +688,7 @@ export async function runCli(args = process.argv.slice(2), providedDeps: CorpusC
     if (command === "list") {
       const manifest = await deps.loadManifest();
       for (const repo of manifest) {
-        deps.stdout(`${repo.name}\t${repo.tier}\t${repo.pinnedSha}`);
+        deps.stdout(`${repo.name}\t${repo.tier}\t${repo.localPath ?? repo.pinnedSha}`);
       }
       return 0;
     }

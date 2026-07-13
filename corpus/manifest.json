@@ -426,5 +426,27 @@
       "buildCommand": "corepack pnpm --ignore-workspace --filter @teable/app build"
     },
     "notes": "Substitutes for Plane because makeplane/plane default branch preview now builds apps/web with React Router rather than Next.js. Default branch develop verified via GitHub API and git ls-remote; apps/nextjs-app/package.json declares next 16.1.6. GitHub license API returned NOASSERTION, so LICENSE and AGPL_LICENSE were inspected."
+  },
+  {
+    "name": "express-host",
+    "localPath": "corpus/hosts/express-host",
+    "framework": "express",
+    "license": "Apache-2.0",
+    "tier": "deep",
+    "bootstrap": {
+      "installCommand": "pnpm install --ignore-workspace",
+      "envTemplate": {
+        "PORT": "3210",
+        "VENDO_BASE_URL": "http://127.0.0.1:3210"
+      },
+      "typecheckCommand": "pnpm --ignore-workspace typecheck",
+      "buildCommand": "pnpm --ignore-workspace build",
+      "devServer": {
+        "command": "pnpm --ignore-workspace start",
+        "readinessUrl": "http://127.0.0.1:3210",
+        "readinessTimeoutMs": 120000
+      }
+    },
+    "notes": "Permanent local Express host proving the framework-agnostic fetch handler composition through all corpus layers."
   }
 ]
