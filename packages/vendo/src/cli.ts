@@ -1,11 +1,12 @@
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { runCloud } from "./cli/cloud/index.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runInit } from "./cli/init.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
 
-const HELP = `vendo — default Vendo composition\n\nUsage: vendo <command> [dir] [options]\n\nCommands:\n  init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring\n  doctor [dir]    Verify wiring and make one live /status round-trip\n  sync [dir]      Extract tools and remix baselines (use --strict for CI)\n\nOptions:\n  --agent         Init only: print a read-only plan with at most three questions\n  --yes           Init only: approve the displayed code changes\n  --force         Init only: regenerate owned .vendo files\n  --model-import  Init only: module exporting the host's ai-SDK model\n  --url           Doctor only: mounted wire base (default http://localhost:3000/api/vendo)\n  --strict        Sync only: exit 2 on breaking changes\n  --version       Print the version\n`;
+const HELP = `vendo — default Vendo composition\n\nUsage: vendo <command> [dir] [options]\n\nCommands:\n  init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring\n  doctor [dir]    Verify wiring and make one live /status round-trip\n  sync [dir]      Extract tools and remix baselines (use --strict for CI)\n  cloud <command> Use the public Vendo Cloud API\n\nOptions:\n  --agent         Init only: print a read-only plan with at most three questions\n  --yes           Init only: approve the displayed code changes\n  --force         Init only: regenerate owned .vendo files\n  --model-import  Init only: module exporting the host's ai-SDK model\n  --url           Doctor only: mounted wire base (default http://localhost:3000/api/vendo)\n  --strict        Sync only: exit 2 on breaking changes\n  --version       Print the version\n`;
 
 function option(args: string[], name: string): string | undefined {
   const exact = args.indexOf(name);
@@ -32,6 +33,7 @@ export async function main(argv: string[]): Promise<number> {
     console.log(CLI_VERSION);
     return 0;
   }
+  if (command === "cloud") return runCloud(args);
   if (command === "init") {
     return runInit({
       targetDir: target(args),

@@ -6,7 +6,7 @@ import { normalizeBootstrapInstallCommand } from "./install-command.js";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
-export type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "bootstrap">;
+export type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "localPath" | "bootstrap">;
 
 export interface BootstrapOptions {
   context?: CorpusRunContext;
@@ -111,6 +111,16 @@ export async function bootstrapRepo(repo: BootstrapRepo, options: BootstrapOptio
   await writeFile(envPath, formatEnv(resolved.values));
 
   await mkdir(logsDir, { recursive: true });
+  if (repo.localPath !== undefined) {
+    await writeFile(logs.stdout, "Skipped pre-injection install for local corpus source; injection performs the standalone install.\n");
+    await writeFile(logs.stderr, "");
+    return {
+      repoDir,
+      envPath,
+      logs,
+    };
+  }
+
   const hasPnpmWorkspace = await pathExists(path.join(repoDir, "pnpm-workspace.yaml"));
   const installCommand = normalizeBootstrapInstallCommand(repo.bootstrap.installCommand, {
     dropIgnoreWorkspace: hasPnpmWorkspace,

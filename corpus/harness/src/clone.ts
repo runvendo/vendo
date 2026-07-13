@@ -1,13 +1,16 @@
 import { spawn } from "node:child_process";
-import { mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 
-export type CloneRepo = Pick<ManifestEntry, "name" | "gitUrl" | "pinnedSha">;
+export type CloneRepo = Pick<ManifestEntry, "name" | "gitUrl" | "pinnedSha" | "localPath">;
 
 export interface EnsureRepoCheckoutOptions {
   context?: CorpusRunContext;
   gitBin?: string;
+  workspaceRoot?: string;
 }
 
 interface CommandResult {
@@ -21,6 +24,8 @@ interface FetchAttempt {
   result: CommandResult;
   hasCommit: boolean;
 }
+
+const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 
 function runGit(gitBin: string, args: readonly string[], cwd: string): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
@@ -128,6 +133,37 @@ export async function ensureRepoCheckout(repo: CloneRepo, options: EnsureRepoChe
   const repoDir = context.repoDir(repo.name);
 
   await mkdir(context.reposDir, { recursive: true });
+  if (repo.localPath !== undefined) {
+    const workspaceRoot = path.resolve(options.workspaceRoot ?? defaultWorkspaceRoot);
+    const sourceDir = path.resolve(workspaceRoot, repo.localPath);
+    await rm(repoDir, { recursive: true, force: true });
+    await cp(sourceDir, repoDir, {
+      recursive: true,
+      filter(source) {
+        const relative = path.relative(sourceDir, source);
+        if (relative === "") return true;
+        const segments = relative.split(path.sep);
+        if (segments.some((segment) => segment === "node_modules" || segment === "dist" || segment === "vendor")) return false;
+        return !segments.some((segment, index) => segment === ".vendo" && segments[index + 1] === "data");
+      },
+    });
+    await checkedGit(gitBin, ["init"], repoDir);
+    await checkedGit(gitBin, ["add", "-A"], repoDir);
+    await checkedGit(gitBin, [
+      "-c",
+      "user.name=Vendo Corpus",
+      "-c",
+      "user.email=corpus@vendo.local",
+      "commit",
+      "-m",
+      "Snapshot local corpus source",
+    ], repoDir);
+    return repoDir;
+  }
+
+  if (repo.gitUrl === undefined || repo.pinnedSha === undefined) {
+    throw new Error(`Git corpus source ${repo.name} must define gitUrl and pinnedSha`);
+  }
   if (!await isGitWorkTree(gitBin, repoDir)) {
     await rm(repoDir, { recursive: true, force: true });
     await initializeWorkTree(gitBin, repoDir, repo.gitUrl);

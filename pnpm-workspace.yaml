@@ -2,6 +2,7 @@ packages:
   - "packages/*"
   - "fixtures/*"
   - "corpus/harness"
+  - "corpus/hosts/*"
   - "apps/*"
   - "bench"
   - "spikes/*"

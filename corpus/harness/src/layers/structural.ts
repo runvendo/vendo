@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   vendoThemeSchema,
@@ -57,6 +57,7 @@ export interface StructuralHostBaseline {
 
 export interface StructuralLayerContext {
   repoDir: string;
+  framework?: "next" | "express";
   initExitCode: number | null;
   initDetail?: string;
   secondInitExitCode?: number | null;
@@ -166,7 +167,10 @@ async function readText(repoDir: string, rel: string): Promise<string | null> {
   }
 }
 
-async function defaultExpectedFiles(repoDir: string): Promise<{ files: string[]; app: AppRouterInfo | null }> {
+async function defaultExpectedFilesForFramework(
+  repoDir: string,
+  framework: "next" | "express",
+): Promise<{ files: string[]; app: AppRouterInfo | null }> {
   const app = await findAppRouter(repoDir);
   const files = [
     ".vendo/tools.json",
@@ -177,11 +181,33 @@ async function defaultExpectedFiles(repoDir: string): Promise<{ files: string[];
     ".vendo/data/.gitignore",
   ];
 
-  if (app) {
+  if (framework === "express") {
+    files.push("src/server/vendo.ts", "src/server/index.ts", "src/client/main.tsx");
+  } else if (app) {
     files.push(routeRel(app), app.layoutRel);
   }
 
   return { files, app };
+}
+
+async function sourceTreeText(repoDir: string, rel: string): Promise<string> {
+  const root = path.join(repoDir, rel);
+  const parts: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return "";
+  }
+  for (const entry of entries) {
+    const entryRel = path.posix.join(rel, entry.name);
+    if (entry.isDirectory()) {
+      parts.push(await sourceTreeText(repoDir, entryRel));
+    } else if (/\.(?:[cm]?[jt]sx?)$/.test(entry.name)) {
+      parts.push(await readText(repoDir, entryRel) ?? "");
+    }
+  }
+  return parts.join("\n");
 }
 
 async function checkInitExit(ctx: StructuralLayerContext): Promise<StructuralCheckResult> {
@@ -196,8 +222,22 @@ async function checkInitExit(ctx: StructuralLayerContext): Promise<StructuralChe
   };
 }
 
+function hasFunctionalExpressVendoMount(server: string): boolean {
+  const mount = /app\.use\(\s*["']\/api\/vendo["']\s*,\s*/g;
+  for (const match of server.matchAll(mount)) {
+    const mounted = server.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 1_200);
+    if (/^mountVendo\s*\(\s*\)/.test(mounted)) return true;
+    if (/^vendo\.handler\s*\(/.test(mounted)) return true;
+    if (/^(?:async\s*)?\([^)]*\)\s*=>[\s\S]{0,800}?\b(?:serve|adapt|handle)[\w$]*\s*\([^;]{0,800}?vendo\.handler\b/m.test(mounted)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<StructuralCheckResult> {
-  const { files, app } = await defaultExpectedFiles(ctx.repoDir);
+  const framework = ctx.framework ?? "next";
+  const { files, app } = await defaultExpectedFilesForFramework(ctx.repoDir, framework);
   const required = ctx.expectedFiles ?? files;
   const missing: string[] = [];
 
@@ -207,7 +247,19 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
 
   const wiringProblems: string[] = [];
   if (!ctx.expectedFiles) {
-    if (!app) {
+    if (framework === "express") {
+      const server = await sourceTreeText(ctx.repoDir, "src/server");
+      const client = await sourceTreeText(ctx.repoDir, "src/client");
+      if (!server.includes("@vendoai/vendo/server") || !server.includes("createVendo")) {
+        wiringProblems.push("Express server sources do not compose createVendo from @vendoai/vendo/server");
+      }
+      if (!hasFunctionalExpressVendoMount(server)) {
+        wiringProblems.push("Express server does not mount vendo.handler at /api/vendo");
+      }
+      if (!client.includes("<VendoRoot")) {
+        wiringProblems.push("Express client sources do not render <VendoRoot");
+      }
+    } else if (!app) {
       wiringProblems.push("no App Router root layout found at app/layout.* or src/app/layout.*");
     } else {
       const layout = await readText(ctx.repoDir, app.layoutRel);
@@ -225,7 +277,7 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
     return {
       id: "files.expected",
       pass: true,
-      detail: `found ${required.length} generated files plus v0 Next route/provider wiring`,
+      detail: `found ${required.length} generated files plus v0 ${framework === "express" ? "Express handler/provider" : "Next route/provider"} wiring`,
     };
   }
 

@@ -178,6 +178,15 @@ export function AppVendoRoot({ children }: { children: ReactNode }) {
 }
 
 describe("prepareE2eRepo", () => {
+  it("keeps the permanently wired Express host as an explicit no-op", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "vendo-express-prep-"));
+    const appRoot = path.join(root, "express-host");
+    const logsDir = path.join(root, "logs");
+
+    await expect(prepareE2eRepo({ name: "express-host" }, appRoot, logsDir)).resolves.toEqual([]);
+    await expect(readFile(path.join(logsDir, "e2e.prepare.log"), "utf8")).rejects.toThrow();
+  });
+
   it("adds Skateshop corpus routes, reviewed tools, handler guidance, and per-attempt thread ids", async () => {
     const { appRoot, logsDir } = await createSkateshopFixture();
     const logs = await prepareE2eRepo({ name: "skateshop" }, appRoot, logsDir);

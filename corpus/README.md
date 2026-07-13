@@ -37,13 +37,24 @@ Known local-pack hazard: paths containing spaces are rejected up front by the
 harness. Keep both the Vendo workspace path and `corpus/.repos/<name>/` paths
 space-free.
 
+## Local hosts
+
+Manifest entries may use `localPath` instead of `gitUrl` plus `pinnedSha`. The
+path is relative to the Vendo repo root; each run copies it into `.repos/`,
+omits generated/dependency trees, and creates a fresh one-commit Git snapshot
+for the same init-idempotency checks used by external repos. `express-host` is
+the permanent proof that the framework-agnostic handler claim in contracts 09
+§2 survives all three corpus layers, including a live `vendo doctor` check.
+
 ## Manifest
 
 `corpus/manifest.json` is a JSON array. Each entry has:
 
 - `name`: stable lowercase repo identifier.
-- `gitUrl`: HTTPS git URL.
-- `pinnedSha`: 40-character commit SHA from the repo's default branch.
+- Source: either `gitUrl` plus a 40-character `pinnedSha`, or a repo-relative
+  `localPath`; the two forms are mutually exclusive.
+- `framework`: optional `next` or `express` structural wiring mode; defaults to
+  `next`.
 - `license`: SPDX identifier or a documented best-effort license string.
 - `tier`: `broad` or `deep`.
 - `bootstrap`: install command, env template, optional seed command, build

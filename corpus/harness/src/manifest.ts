@@ -6,6 +6,17 @@ const gitShaPattern = /^[0-9a-f]{40}$/;
 const repoNamePattern = /^[a-z0-9][a-z0-9-]*$/;
 const appDirSegmentPattern = /^[A-Za-z0-9._-]+$/;
 
+function relativePosixPathSchema(field: "appDir" | "localPath") {
+  return z
+    .string()
+    .min(1)
+    .refine((value) => !value.startsWith("/") && !value.includes("\\"), `${field} must be a relative POSIX path`)
+    .refine(
+      (value) => value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && appDirSegmentPattern.test(segment)),
+      `${field} must contain only relative path segments`,
+    );
+}
+
 const devServerSchema = z
   .object({
     command: z.string().min(1),
@@ -46,17 +57,11 @@ const bootstrapRecipeSchema = z
 export const manifestEntrySchema = z
   .object({
     name: z.string().regex(repoNamePattern),
-    gitUrl: z.string().url(),
-    pinnedSha: z.string().regex(gitShaPattern, "pinnedSha must be a 40-character Git SHA"),
-    appDir: z
-      .string()
-      .min(1)
-      .refine((value) => !value.startsWith("/") && !value.includes("\\"), "appDir must be a relative POSIX path")
-      .refine(
-        (value) => value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && appDirSegmentPattern.test(segment)),
-        "appDir must contain only relative path segments",
-      )
-      .optional(),
+    gitUrl: z.string().url().optional(),
+    pinnedSha: z.string().regex(gitShaPattern, "pinnedSha must be a 40-character Git SHA").optional(),
+    localPath: relativePosixPathSchema("localPath").optional(),
+    appDir: relativePosixPathSchema("appDir").optional(),
+    framework: z.enum(["next", "express"]).default("next"),
     license: z.string().min(1),
     tier: z.enum(["broad", "deep"]),
     bootstrap: bootstrapRecipeSchema,
@@ -64,6 +69,37 @@ export const manifestEntrySchema = z
   })
   .strict()
   .superRefine((entry, ctx) => {
+    if (entry.localPath !== undefined) {
+      if (entry.gitUrl !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["gitUrl"],
+          message: "localPath entries must not define gitUrl",
+        });
+      }
+      if (entry.pinnedSha !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["pinnedSha"],
+          message: "localPath entries must not define pinnedSha",
+        });
+      }
+    } else {
+      if (entry.gitUrl === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["gitUrl"],
+          message: "gitUrl is required when localPath is not defined",
+        });
+      }
+      if (entry.pinnedSha === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["pinnedSha"],
+          message: "pinnedSha is required when localPath is not defined",
+        });
+      }
+    }
     if (entry.tier === "deep" && !entry.bootstrap.devServer) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -93,8 +129,8 @@ export const corpusManifestSchema = z
     }
   });
 
-export type ManifestEntry = z.infer<typeof manifestEntrySchema>;
-export type CorpusManifest = z.infer<typeof corpusManifestSchema>;
+export type ManifestEntry = z.input<typeof manifestEntrySchema>;
+export type CorpusManifest = ManifestEntry[];
 export type DatabaseProvisioning = z.infer<typeof databaseProvisioningSchema>;
 
 export const defaultManifestPath = fileURLToPath(new URL("../../manifest.json", import.meta.url));

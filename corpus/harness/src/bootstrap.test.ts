@@ -6,7 +6,7 @@ import { bootstrapRepo } from "./bootstrap.js";
 import { createRunContext } from "./run-context.js";
 import type { ManifestEntry } from "./manifest.js";
 
-type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "bootstrap">;
+type BootstrapRepo = Pick<ManifestEntry, "name" | "appDir" | "localPath" | "bootstrap">;
 
 const tempRoots: string[] = [];
 
@@ -56,6 +56,24 @@ async function writeNodeBin(file: string, body: string): Promise<void> {
 }
 
 describe("bootstrapRepo", () => {
+  it("writes local-source env and logs while skipping the pre-injection install", async () => {
+    const { corpusRoot, repo, repoDir } = await makeRepo();
+    const context = createRunContext({ corpusRoot });
+    repo.localPath = "corpus/hosts/fixture-app";
+    repo.bootstrap.envTemplate = { PORT: "3210" };
+    await writeInstallScript(repoDir, `
+      import { writeFileSync } from "node:fs";
+      writeFileSync("install-should-not-run.txt", "ran");
+    `);
+
+    const result = await bootstrapRepo(repo, { context });
+
+    await expect(readFile(result.envPath, "utf8")).resolves.toBe("PORT=3210\n");
+    await expect(readFile(path.join(repoDir, "install-should-not-run.txt"), "utf8")).rejects.toThrow();
+    await expect(readFile(result.logs.stdout, "utf8")).resolves.toMatch(/skipped pre-injection install/i);
+    await expect(readFile(result.logs.stderr, "utf8")).resolves.toBe("");
+  });
+
   it("runs the install command in the corpus repo directory and captures command logs", async () => {
     const { corpusRoot, repo, repoDir } = await makeRepo();
     const context = createRunContext({ corpusRoot });

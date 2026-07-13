@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "k": 2,
+  "threshold": 1,
+  "timeoutMs": 90000,
+  "seedNotes": "Relay starts with eight deterministic tasks. The destructive prompt targets the seeded Review mobile empty states task.",
+  "conversations": [
+    {
+      "id": "list-open-tasks",
+      "description": "Read Relay's current open task inventory.",
+      "prompts": [
+        "What tasks are open right now?"
+      ],
+      "assertions": [
+        {
+          "kind": "tool-called",
+          "name": "host_listTasks"
+        },
+        {
+          "kind": "no-error-toast"
+        }
+      ]
+    },
+    {
+      "id": "delete-seeded-task-approval",
+      "description": "Deleting a specific seeded task must stop for destructive approval.",
+      "prompts": [
+        "Delete the task about Review mobile empty states."
+      ],
+      "assertions": [
+        {
+          "kind": "approval-card-shown"
+        },
+        {
+          "kind": "no-error-toast"
+        }
+      ]
+    },
+    {
+      "id": "build-and-open-priority-dashboard",
+      "description": "Create a generated dashboard and open it in the Relay SPA.",
+      "prompts": [
+        "Build a task-priority dashboard with the exact visible heading Relay priority dashboard.",
+        "Open the Relay priority dashboard you just built."
+      ],
+      "assertions": [
+        {
+          "kind": "view-rendered",
+          "text": {
+            "contains": "Relay priority dashboard"
+          }
+        },
+        {
+          "kind": "no-error-toast"
+        }
+      ]
+    }
+  ]
+}

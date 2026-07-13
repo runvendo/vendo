@@ -37,7 +37,20 @@ const entry = {
 
 describe("parseManifest", () => {
   it("accepts valid corpus entries", () => {
-    expect(parseManifest([entry])).toEqual([entry]);
+    expect(parseManifest([entry])).toEqual([{ ...entry, framework: "next" }]);
+  });
+
+  it("accepts a local source without git metadata and defaults its framework", () => {
+    const { gitUrl: _gitUrl, pinnedSha: _pinnedSha, ...shared } = entry;
+    expect(parseManifest([{ ...shared, localPath: "corpus/hosts/express-host" }])).toEqual([{
+      ...shared,
+      localPath: "corpus/hosts/express-host",
+      framework: "next",
+    }]);
+  });
+
+  it("accepts an explicit Express framework", () => {
+    expect(parseManifest([{ ...entry, framework: "express" }])[0]?.framework).toBe("express");
   });
 
   it("accepts optional relative app directories", () => {
@@ -49,9 +62,18 @@ describe("parseManifest", () => {
     expect(() => parseManifest([{ ...entry, appDir: "/apps/web" }])).toThrow(/appDir/i);
   });
 
-  it("rejects entries missing a pinned SHA", () => {
+  it("rejects local paths that can escape the workspace", () => {
+    const { gitUrl: _gitUrl, pinnedSha: _pinnedSha, ...shared } = entry;
+    expect(() => parseManifest([{ ...shared, localPath: "../express-host" }])).toThrow(/localPath/i);
+    expect(() => parseManifest([{ ...shared, localPath: "/corpus/hosts/express-host" }])).toThrow(/localPath/i);
+  });
+
+  it("requires exactly one complete git or local source", () => {
+    expect(() => parseManifest([{ ...entry, localPath: "corpus/hosts/express-host" }])).toThrow(/localPath.*gitUrl|gitUrl.*localPath/i);
     const { pinnedSha: _pinnedSha, ...missingSha } = entry;
     expect(() => parseManifest([missingSha])).toThrow(/pinnedSha/i);
+    const { gitUrl: _gitUrl, ...missingUrl } = entry;
+    expect(() => parseManifest([missingUrl])).toThrow(/gitUrl/i);
   });
 
   it("rejects unknown tiers", () => {
@@ -85,6 +107,11 @@ describe("parseManifest", () => {
     // tier grows over time, so assert membership rather than an exact list.
     expect(names).toEqual(expect.arrayContaining(["umami", "skateshop", "papermark"]));
     expect(new Set(names).size).toBe(names.length);
+    expect(manifest.find((repo) => repo.name === "express-host")).toMatchObject({
+      localPath: "corpus/hosts/express-host",
+      framework: "express",
+      tier: "deep",
+    });
     for (const repo of manifest.filter((entry) => ["umami", "skateshop", "papermark"].includes(entry.name))) {
       expect(repo.bootstrap.database?.kind).toBe("docker-postgres");
       expect(repo.bootstrap.devServer?.readinessTimeoutMs).toBeGreaterThan(0);
