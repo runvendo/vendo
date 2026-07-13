@@ -1,0 +1,150 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_completeTask",
+      "description": "Mark a Relay task complete",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Relay task id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "completeTask",
+        "method": "POST",
+        "path": "/api/tasks/{id}/complete"
+      }
+    },
+    {
+      "name": "host_createTask",
+      "description": "Create a Relay task",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "required": [
+              "title"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Short task title"
+              },
+              "description": {
+                "type": "string",
+                "description": "Task details"
+              },
+              "assignee": {
+                "type": "string",
+                "description": "Assignee name"
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "dueDate": {
+                "type": "string",
+                "format": "date"
+              }
+            }
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "createTask",
+        "method": "POST",
+        "path": "/api/tasks"
+      }
+    },
+    {
+      "name": "host_deleteTask",
+      "description": "Permanently delete a Relay task",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Relay task id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "deleteTask",
+        "method": "DELETE",
+        "path": "/api/tasks/{id}"
+      }
+    },
+    {
+      "name": "host_getTask",
+      "description": "Get one Relay task",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Relay task id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getTask",
+        "method": "GET",
+        "path": "/api/tasks/{id}"
+      }
+    },
+    {
+      "name": "host_listTasks",
+      "description": "List Relay tasks, optionally filtered by status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in-progress",
+              "done"
+            ],
+            "description": "Only return tasks in this status"
+          }
+        }
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listTasks",
+        "method": "GET",
+        "path": "/api/tasks"
+      }
+    }
+  ]
+}

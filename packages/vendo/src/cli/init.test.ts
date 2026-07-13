@@ -24,6 +24,24 @@ async function fixture(): Promise<string> {
   return root;
 }
 
+async function expressFixture(wired: boolean): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "vendo-init-express-"));
+  cleanup.push(root);
+  await writeFile(join(root, "package.json"), JSON.stringify({
+    name: "express-host",
+    dependencies: { express: "5.0.0", "@vendoai/vendo": "0.3.0" },
+  }));
+  await writeFile(join(root, "tsconfig.json"), "{}\n");
+  if (wired) {
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "server.ts"),
+      'import { createVendo } from "@vendoai/vendo/server";\nconst vendo = createVendo({ model, principal: async () => null });\n');
+    await writeFile(join(root, "src", "client.tsx"),
+      'import { VendoRoot } from "@vendoai/vendo/react";\nexport const App = () => <VendoRoot><main /></VendoRoot>;\n');
+  }
+  return root;
+}
+
 function output(): { output: Output; logs: string[]; errors: string[] } {
   const logs: string[] = [];
   const errors: string[] = [];
@@ -42,6 +60,87 @@ async function tree(root: string, at = root): Promise<Record<string, string>> {
 }
 
 describe("vendo init", () => {
+  it.each([
+    [{ dependencies: { express: "5.0.0" } }, "express"],
+    [{ dependencies: { express: "5.0.0", next: "16.0.0" } }, "next"],
+    [{ dependencies: { react: "19.0.0" } }, "unknown"],
+  ] as const)("detects the host framework from package.json", async (manifest, expected) => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-detect-"));
+    cleanup.push(root);
+    await writeFile(join(root, "package.json"), JSON.stringify(manifest));
+    const sink = output();
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+    expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({ framework: expected });
+  });
+
+  it("recognizes a wired Express host and leaves its code untouched across reruns", async () => {
+    const root = await expressFixture(true);
+    const sink = output();
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+    expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({ framework: "express", codeChanges: [] });
+
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
+      await expect(readFile(join(root, ".vendo", file), "utf8")).resolves.toBeTruthy();
+    }
+    await expect(readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).resolves.toBe("*\n!.gitignore\n");
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, "app", "layout.tsx")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+
+    const first = await tree(root);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await tree(root)).toEqual(first);
+  });
+
+  it("proposes one diff-gated TypeScript scaffold for an unwired Express host", async () => {
+    const root = await expressFixture(false);
+    const planned = output();
+    expect(await runInit({ targetDir: root, agent: true, output: planned.output })).toBe(0);
+    const plan = JSON.parse(planned.logs.join("\n")) as {
+      framework: string;
+      codeChanges: Array<{ path: string; diff: string }>;
+    };
+    expect(plan.framework).toBe("express");
+    expect(plan.codeChanges).toHaveLength(1);
+    expect(plan.codeChanges[0]?.path).toBe("vendo/server.ts");
+    expect(plan.codeChanges[0]?.diff).toContain("createVendo");
+    expect(plan.codeChanges[0]?.diff).toContain("new Request");
+
+    const declined = output();
+    const confirm = vi.fn().mockResolvedValue(false);
+    expect(await runInit({ targetDir: root, confirm, output: declined.output })).toBe(0);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(declined.logs.join("\n")).toContain("Proposed code change");
+    await expect(readFile(join(root, "vendo", "server.ts")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const scaffold = await readFile(join(root, "vendo", "server.ts"), "utf8");
+    expect(scaffold).toContain('from "@vendoai/vendo/server"');
+    expect(scaffold).toContain('from "@/lib/ai"');
+    expect(scaffold).toContain("Readable.toWeb(request)");
+    expect(scaffold).toContain("source.body.getReader()");
+    expect(scaffold).toContain('app.use("/api/vendo", mountVendo());');
+    expect(scaffold).toContain("<VendoRoot>");
+    await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, "app", "layout.tsx")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    const first = await tree(root);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await tree(root)).toEqual(first);
+  });
+
+  it("uses an ESM scaffold when an Express host has no tsconfig", async () => {
+    const root = await expressFixture(false);
+    await rm(join(root, "tsconfig.json"));
+    const sink = output();
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+    expect(JSON.parse(sink.logs.join("\n")).codeChanges).toMatchObject([{ path: "vendo/server.mjs" }]);
+  });
+
   it("emits a read-only agent plan with three plain-language questions", async () => {
     const root = await fixture();
     const before = await tree(root);
@@ -187,6 +286,21 @@ describe("vendo init", () => {
     const events = fetchImpl.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).event);
     expect(events).toEqual(expect.arrayContaining(["init_started", "init_completed"]));
     expect(events).not.toContain("refresh");
+
+    const expressHome = await mkdtemp(join(tmpdir(), "vendo-home-express-"));
+    cleanup.push(expressHome);
+    const expressFetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    await runInit({
+      targetDir: await expressFixture(true),
+      yes: true,
+      output: output().output,
+      telemetry: { home: expressHome, posthogKey: "phc_test", env: { NODE_ENV: "test" }, fetchImpl: expressFetch },
+    });
+    expect(expressFetch.mock.calls.map((call) => JSON.parse(String(call[1]?.body))))
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        event: "init_completed",
+        properties: expect.objectContaining({ framework: "express" }),
+      })]));
 
     const disabled = vi.fn();
     await runInit({
