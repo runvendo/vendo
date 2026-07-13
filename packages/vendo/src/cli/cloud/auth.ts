@@ -17,7 +17,7 @@ export interface CloudAuthOptions {
   fetcher?: CloudFetcher;
   writeSession?: (session: CloudSession) => Promise<void>;
   deleteSession?: () => Promise<void>;
-  promptOtp?: () => Promise<string>;
+  promptOtp?: (prompt: string) => Promise<string>;
   home?: string;
   env?: Record<string, string | undefined>;
 }
@@ -41,16 +41,23 @@ function verifiedSession(value: unknown): CloudSession {
     ? (value as { session: unknown }).session
     : value;
   if (typeof candidate !== "object" || candidate === null
-    || typeof (candidate as Partial<CloudSession>).access_token !== "string") {
+    || typeof (candidate as Partial<CloudSession>).access_token !== "string"
+    || typeof (candidate as Partial<CloudSession>).refresh_token !== "string"
+    || typeof (candidate as Partial<CloudSession>).expires_at !== "number") {
     throw new Error("Vendo Cloud returned an invalid session");
   }
-  return candidate as CloudSession;
+  const session = candidate as Required<CloudSession>;
+  return {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    expires_at: session.expires_at,
+  };
 }
 
-async function interactiveOtp(): Promise<string> {
+async function interactiveOtp(prompt: string): Promise<string> {
   const readline = createInterface({ input: stdin, output: stdout });
   try {
-    return await readline.question("Email OTP: ");
+    return await readline.question(`${prompt}: `);
   } finally {
     readline.close();
   }
@@ -71,7 +78,7 @@ export async function runLogin(args: string[], options: CloudAuthOptions = {}): 
     }
   }
 
-  const email = positionals(args, ["--token", "--otp", "--api-url"])[0];
+  const email = positionals(args, ["--token", "--api-url"])[0];
   if (!email) {
     output.error("Cloud login requires an email or --token <jwt>");
     return 1;
@@ -84,8 +91,8 @@ export async function runLogin(args: string[], options: CloudAuthOptions = {}): 
   };
   try {
     await fetcher("/api/v1/auth/otp/start", { ...common, method: "POST", body: { email } });
-    const otp = option(args, "--otp") ?? await (options.promptOtp ?? interactiveOtp)();
-    if (!otp) throw new Error("Email OTP is required");
+    const otp = (await (options.promptOtp ?? interactiveOtp)(`Enter the code sent to ${email}`)).trim();
+    if (!/^\d{6}$/.test(otp)) throw new Error("Email OTP must be a 6-digit code");
     const result = await fetcher("/api/v1/auth/otp/verify", {
       ...common,
       method: "POST",

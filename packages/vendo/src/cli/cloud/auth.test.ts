@@ -46,17 +46,49 @@ describe("cloud auth", () => {
       .mockResolvedValueOnce({ sent: true })
       .mockResolvedValueOnce(session);
     const writeSession = vi.fn().mockResolvedValue(undefined);
+    const promptOtp = vi.fn().mockResolvedValue("123456");
 
-    expect(await runLogin(["person@example.com", "--otp", "123456"], {
+    expect(await runLogin(["person@example.com", "--api-url", "https://cloud.example"], {
       output: messages.sink,
       fetcher,
       writeSession,
+      promptOtp,
     })).toBe(0);
     expect(fetcher.mock.calls).toEqual([
-      ["/api/v1/auth/otp/start", expect.objectContaining({ method: "POST", body: { email: "person@example.com" } })],
-      ["/api/v1/auth/otp/verify", expect.objectContaining({ method: "POST", body: { email: "person@example.com", token: "123456" } })],
+      ["/api/v1/auth/otp/start", expect.objectContaining({
+        apiUrl: "https://cloud.example",
+        method: "POST",
+        body: { email: "person@example.com" },
+      })],
+      ["/api/v1/auth/otp/verify", expect.objectContaining({
+        apiUrl: "https://cloud.example",
+        method: "POST",
+        body: { email: "person@example.com", token: "123456" },
+      })],
     ]);
+    expect(promptOtp).toHaveBeenCalledWith("Enter the code sent to person@example.com");
     expect(writeSession).toHaveBeenCalledWith(session);
+    expect(JSON.parse(messages.logs[0]!)).toMatchObject({
+      loggedIn: true,
+      mode: "email",
+      email: "person@example.com",
+    });
+  });
+
+  it("rejects a non-six-digit email code before verification", async () => {
+    const messages = output();
+    const fetcher = vi.fn().mockResolvedValue({ sent: true });
+    const writeSession = vi.fn();
+
+    expect(await runLogin(["person@example.com"], {
+      output: messages.sink,
+      fetcher,
+      writeSession,
+      promptOtp: vi.fn().mockResolvedValue("12345"),
+    })).toBe(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(writeSession).not.toHaveBeenCalled();
+    expect(messages.errors).toEqual(["Email OTP must be a 6-digit code"]);
   });
 
   it("uses an ephemeral token for whoami", async () => {

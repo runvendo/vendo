@@ -456,11 +456,13 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     },
 
     async share(appId, ctx) {
-      return share(appId, ctx);
+      const app = await requireOwned(appId, ctx.principal.subject);
+      return share(appId, app, ctx);
     },
 
     async publish(appId, ctx) {
-      return publish(appId, ctx);
+      const app = await requireOwned(appId, ctx.principal.subject);
+      return publish(appId, app, ctx);
     },
 
     agentTools() {
