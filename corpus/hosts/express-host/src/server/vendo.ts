@@ -22,6 +22,7 @@ function productionModel(): LanguageModel {
 export function createRelayVendo(options: RelayVendoOptions = {}): Vendo {
   return createVendo({
     model: options.model ?? productionModel(),
+    // Loopback-only single-user fixture: one fixed demo principal is intentional.
     principal: async () => RELAY_PRINCIPAL,
     ...(options.store === undefined ? {} : { store: options.store }),
     policy: { file: ".vendo/policy.json" },

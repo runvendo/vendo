@@ -129,14 +129,13 @@ function expressServerSource(modelImport: string, typescript: boolean): string {
     : "";
   const signatures = typescript
     ? {
-        firstHeader: `(value: string | string[] | undefined): string | undefined`,
         requestHeaders: `(headers: IncomingHttpHeaders): Headers`,
         absoluteUrl: `(request: ExpressRequest): string`,
         sendResponse: `(source: Response, target: ServerResponse): Promise<void>`,
         handle: `(request: ExpressRequest, response: ServerResponse): Promise<void>`,
         mountReturn: `: (request: ExpressRequest, response: ServerResponse, next: ExpressNext) => void`,
       }
-    : { firstHeader: "(value)", requestHeaders: "(headers)", absoluteUrl: "(request)", sendResponse: "(source, target)", handle: "(request, response)", mountReturn: "" };
+    : { requestHeaders: "(headers)", absoluteUrl: "(request)", sendResponse: "(source, target)", handle: "(request, response)", mountReturn: "" };
   const requestInit = typescript
     ? `  const init: RequestInit & { duplex?: "half" } = { method, headers: requestHeaders(request.headers) };\n`
     : `  const init = { method, headers: requestHeaders(request.headers) };\n`;
@@ -157,9 +156,6 @@ function expressServerSource(modelImport: string, typescript: boolean): string {
     `  model,\n` +
     `  principal: async () => null,\n` +
     `});\n\n` +
-    `function firstHeader${signatures.firstHeader} {\n` +
-    `  return Array.isArray(value) ? value[0] : value;\n` +
-    `}\n\n` +
     `function requestHeaders${signatures.requestHeaders} {\n` +
     `  const result = new Headers();\n` +
     `  for (const [name, value] of Object.entries(headers)) {\n` +
@@ -169,15 +165,23 @@ function expressServerSource(modelImport: string, typescript: boolean): string {
     `  return result;\n` +
     `}\n\n` +
     `function absoluteUrl${signatures.absoluteUrl} {\n` +
-    `  const forwardedProtocol = firstHeader(request.headers["x-forwarded-proto"])?.split(",", 1)[0]?.trim();\n` +
     `  const encrypted = "encrypted" in request.socket && request.socket.encrypted === true;\n` +
-    `  const protocol = forwardedProtocol || (encrypted ? "https" : "http");\n` +
-    `  const host = firstHeader(request.headers["x-forwarded-host"]) ?? request.headers.host ?? "localhost";\n` +
+    `  const protocol = encrypted ? "https" : "http";\n` +
+    `  const host = request.headers.host ?? "localhost";\n` +
+    `  // Behind a trusted proxy, set VENDO_BASE_URL explicitly or validate forwarded headers in the host.\n` +
     `  return new URL(request.originalUrl ?? request.url ?? "/", \`${"${protocol}"}://${"${host}"}\`).href;\n` +
     `}\n\n` +
     `async function sendResponse${signatures.sendResponse} {\n` +
     `  target.statusCode = source.status;\n` +
-    `  source.headers.forEach((value, name) => target.setHeader(name, value));\n` +
+    `  source.headers.forEach((value, name) => {\n` +
+    `    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);\n` +
+    `  });\n` +
+    `  const getSetCookie = source.headers.getSetCookie;\n` +
+    `  const fallbackCookie = source.headers.get("set-cookie");\n` +
+    `  const cookies = typeof getSetCookie === "function"\n` +
+    `    ? getSetCookie.call(source.headers)\n` +
+    `    : fallbackCookie === null ? [] : [fallbackCookie];\n` +
+    `  if (cookies.length > 0) target.setHeader("set-cookie", cookies);\n` +
     `  if (source.body === null) {\n` +
     `    target.end();\n` +
     `    return;\n` +
@@ -296,7 +300,7 @@ function diff(path: string, before: string | null, after: string): string {
 async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
-  const modelImport = options.modelImport ?? "@/lib/ai";
+  const modelImport = options.modelImport ?? (framework === "express" ? "./ai" : "@/lib/ai");
   const changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> = [];
 
   if (framework === "express") {
@@ -309,6 +313,14 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
       if (serverBefore !== serverAfter) {
         const path = relative(root, server);
         changes.push({ absolute: server, path, before: serverBefore, after: serverAfter, diff: diff(path, serverBefore, serverAfter) });
+      }
+      if (modelImport === "./ai") {
+        const modelModule = join(root, "vendo", typescript ? "ai.ts" : "ai.mjs");
+        if (!(await exists(modelModule))) {
+          const modelPath = relative(root, modelModule);
+          const modelAfter = defaultModelSource();
+          changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
+        }
       }
     }
   } else {
@@ -352,7 +364,7 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
       writes,
       codeChanges: changes.map(({ path, diff: rendered }) => ({ path, diff: rendered })),
       questions: [
-        { id: "modelImport", question: "Where does your ai-SDK model export live?", recommendation: options.modelImport ?? "@/lib/ai" },
+        { id: "modelImport", question: "Where does your ai-SDK model export live?", recommendation: modelImport },
         { id: "brief", question: "In one paragraph, what should the agent know about this product?", recommendation: options.brief ?? "Describe the product, users, and the jobs they do." },
         { id: "risk", question: "Which extracted write actions need stricter review?", recommendation: "Mark destructive or irreversible tools critical in .vendo/overrides.json." },
       ],
@@ -493,7 +505,12 @@ export async function runInit(options: InitOptions): Promise<number> {
     if (changes.some((change) => change.after === defaultModelSource() && change.before === null)) {
       output.log("Wrote a starter model module: install its provider (`npm install ai @ai-sdk/anthropic`) and set ANTHROPIC_API_KEY.");
     }
-    output.log("Vendo initialized. Run `vendo doctor` to verify the live composition.");
+    const finalWiring = plan.framework === "express" ? await detectVendoWiring(root) : null;
+    if (finalWiring !== null && (!finalWiring.server || !finalWiring.client)) {
+      output.log("Vendo Express setup is incomplete. Two manual steps remain: mount `mountVendo()` with `app.use(\"/api/vendo\", mountVendo())`, and wrap the client in `<VendoRoot>`. `vendo doctor` will report broken until both are complete.");
+    } else {
+      output.log("Vendo initialized. Run `vendo doctor` to verify the live composition.");
+    }
     return 0;
   } catch (error) {
     await telemetry.track("init_failed", { framework: plan.framework, failedStep: "wiring" });

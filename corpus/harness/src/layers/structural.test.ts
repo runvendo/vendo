@@ -161,7 +161,7 @@ async function makeExpressRepo(): Promise<string> {
   );
   await writeFile(
     path.join(repoDir, "src/server/index.ts"),
-    'import { vendo } from "./vendo.js";\napp.use("/api/vendo", (_req, _res) => vendo.handler);\n',
+    'import { serveHandler } from "./adapter.js";\nimport { vendo } from "./vendo.js";\napp.use("/api/vendo", (req, res) => serveHandler(req, res, vendo.handler));\n',
   );
   await writeFile(
     path.join(repoDir, "src/client/main.tsx"),
@@ -197,6 +197,16 @@ describe("runStructuralLayer", () => {
     }));
     expect(passing["files.expected"]).toMatchObject({ pass: true });
     expect(passing["files.expected"]?.detail).toContain("Express handler/provider wiring");
+
+    await writeFile(
+      path.join(repoDir, "src/server/index.ts"),
+      'import { vendo } from "./vendo.js";\napp.use("/api/vendo", (_req, _res) => vendo.handler);\n',
+    );
+    const bareHandler = byId(await runStructuralLayer({
+      ...passingContext(repoDir, runner),
+      framework: "express",
+    }));
+    expect(bareHandler["files.expected"]).toMatchObject({ pass: false });
 
     await writeFile(path.join(repoDir, "src/server/index.ts"), "app.use('/elsewhere', handler);\n");
     const failing = byId(await runStructuralLayer({

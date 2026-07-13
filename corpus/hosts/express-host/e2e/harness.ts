@@ -77,10 +77,30 @@ export async function startTestHost(model: LanguageModel): Promise<TestHost> {
   const dataDir = await mkdtemp(join(tmpdir(), "relay-express-e2e-"));
   const store = createStore({ dataDir });
   const relay = createRelayServer({ model, store });
-  const server = await new Promise<Server>((resolve, reject) => {
-    const listening = relay.app.listen(0, "127.0.0.1", () => resolve(listening));
-    listening.once("error", reject);
-  });
+  let server: Server;
+  try {
+    // Let the eager composition migration settle before a bind failure enters
+    // cleanup; closing PGlite while it is still opening can mask the listen error.
+    await store.ensureSchema();
+    server = await new Promise<Server>((resolve, reject) => {
+      const listening = relay.app.listen(0, "127.0.0.1", (error?: Error) => {
+        if (error !== undefined) {
+          reject(error);
+          return;
+        }
+        if (listening.address() === null) {
+          reject(new Error("Relay test host reported listening without an address"));
+          return;
+        }
+        resolve(listening);
+      });
+      listening.once("error", reject);
+    });
+  } catch (error) {
+    await store.close();
+    await rm(dataDir, { recursive: true, force: true });
+    throw error;
+  }
   const address = server.address() as AddressInfo;
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,

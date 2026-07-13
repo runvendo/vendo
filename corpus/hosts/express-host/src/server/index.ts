@@ -119,7 +119,10 @@ function isEntrypoint(): boolean {
 if (isEntrypoint()) {
   const port = Number(process.env.PORT ?? 3210);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`Invalid PORT: ${process.env.PORT}`);
-  createRelayServer().app.listen(port, () => {
+  process.env.VENDO_BASE_URL ??= `http://127.0.0.1:${port}`;
+  // Loopback only: the principal resolver hands every request the demo
+  // principal, so the fixture must never be reachable from the LAN.
+  createRelayServer().app.listen(port, "127.0.0.1", () => {
     console.log(`Relay listening at http://localhost:${port}`);
   });
 }

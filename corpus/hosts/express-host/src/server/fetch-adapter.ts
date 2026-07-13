@@ -33,7 +33,15 @@ export async function serveFetchHandler(
 
   const response = await handler(new Request(url, init));
   res.statusCode = response.status;
-  response.headers.forEach((value, name) => res.setHeader(name, value));
+  response.headers.forEach((value, name) => {
+    if (name.toLowerCase() !== "set-cookie") res.setHeader(name, value);
+  });
+  const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  const fallbackCookie = response.headers.get("set-cookie");
+  const cookies = typeof getSetCookie === "function"
+    ? getSetCookie.call(response.headers)
+    : fallbackCookie === null ? [] : [fallbackCookie];
+  if (cookies.length > 0) res.setHeader("set-cookie", cookies);
   if (response.body === null) {
     res.end();
     return;

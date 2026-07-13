@@ -35,6 +35,25 @@
           "kind": "no-error-toast"
         }
       ]
+    },
+    {
+      "id": "build-and-open-priority-dashboard",
+      "description": "Create a generated dashboard and open it in the Relay SPA.",
+      "prompts": [
+        "Build a task-priority dashboard with the exact visible heading Relay priority dashboard.",
+        "Open the Relay priority dashboard you just built."
+      ],
+      "assertions": [
+        {
+          "kind": "view-rendered",
+          "text": {
+            "contains": "Relay priority dashboard"
+          }
+        },
+        {
+          "kind": "no-error-toast"
+        }
+      ]
     }
   ]
 }

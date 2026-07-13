@@ -222,6 +222,19 @@ async function checkInitExit(ctx: StructuralLayerContext): Promise<StructuralChe
   };
 }
 
+function hasFunctionalExpressVendoMount(server: string): boolean {
+  const mount = /app\.use\(\s*["']\/api\/vendo["']\s*,\s*/g;
+  for (const match of server.matchAll(mount)) {
+    const mounted = server.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 1_200);
+    if (/^mountVendo\s*\(\s*\)/.test(mounted)) return true;
+    if (/^vendo\.handler\s*\(/.test(mounted)) return true;
+    if (/^(?:async\s*)?\([^)]*\)\s*=>[\s\S]{0,800}?\b(?:serve|adapt|handle)[\w$]*\s*\([^;]{0,800}?vendo\.handler\b/m.test(mounted)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<StructuralCheckResult> {
   const framework = ctx.framework ?? "next";
   const { files, app } = await defaultExpectedFilesForFramework(ctx.repoDir, framework);
@@ -240,7 +253,7 @@ async function checkExpectedFiles(ctx: StructuralLayerContext): Promise<Structur
       if (!server.includes("@vendoai/vendo/server") || !server.includes("createVendo")) {
         wiringProblems.push("Express server sources do not compose createVendo from @vendoai/vendo/server");
       }
-      if (!/app\.use\(\s*["']\/api\/vendo["']/.test(server) || !server.includes("vendo.handler")) {
+      if (!hasFunctionalExpressVendoMount(server)) {
         wiringProblems.push("Express server does not mount vendo.handler at /api/vendo");
       }
       if (!client.includes("<VendoRoot")) {

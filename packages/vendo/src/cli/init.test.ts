@@ -79,7 +79,10 @@ describe("vendo init", () => {
     expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
     expect(JSON.parse(sink.logs.join("\n"))).toMatchObject({ framework: "express", codeChanges: [] });
 
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const initialized = output();
+    expect(await runInit({ targetDir: root, yes: true, output: initialized.output })).toBe(0);
+    expect(initialized.logs).toContain("Vendo initialized. Run `vendo doctor` to verify the live composition.");
+    expect(initialized.logs.join("\n")).not.toContain("Two manual steps remain");
     for (const file of ["tools.json", "overrides.json", "policy.json", "brief.md", "theme.json"]) {
       await expect(readFile(join(root, ".vendo", file), "utf8")).resolves.toBeTruthy();
     }
@@ -94,7 +97,7 @@ describe("vendo init", () => {
     expect(await tree(root)).toEqual(first);
   });
 
-  it("proposes one diff-gated TypeScript scaffold for an unwired Express host", async () => {
+  it("proposes a resolvable TypeScript scaffold and model module for an unwired Express host", async () => {
     const root = await expressFixture(false);
     const planned = output();
     expect(await runInit({ targetDir: root, agent: true, output: planned.output })).toBe(0);
@@ -103,27 +106,38 @@ describe("vendo init", () => {
       codeChanges: Array<{ path: string; diff: string }>;
     };
     expect(plan.framework).toBe("express");
-    expect(plan.codeChanges).toHaveLength(1);
+    expect(plan.codeChanges).toHaveLength(2);
     expect(plan.codeChanges[0]?.path).toBe("vendo/server.ts");
     expect(plan.codeChanges[0]?.diff).toContain("createVendo");
     expect(plan.codeChanges[0]?.diff).toContain("new Request");
+    expect(plan.codeChanges[1]?.path).toBe("vendo/ai.ts");
 
     const declined = output();
     const confirm = vi.fn().mockResolvedValue(false);
     expect(await runInit({ targetDir: root, confirm, output: declined.output })).toBe(0);
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm).toHaveBeenCalledTimes(2);
     expect(declined.logs.join("\n")).toContain("Proposed code change");
     await expect(readFile(join(root, "vendo", "server.ts")))
       .rejects.toMatchObject({ code: "ENOENT" });
 
-    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const initialized = output();
+    expect(await runInit({ targetDir: root, yes: true, output: initialized.output })).toBe(0);
     const scaffold = await readFile(join(root, "vendo", "server.ts"), "utf8");
     expect(scaffold).toContain('from "@vendoai/vendo/server"');
-    expect(scaffold).toContain('from "@/lib/ai"');
+    expect(scaffold).toContain('from "./ai"');
+    expect(scaffold).not.toContain("x-forwarded-host");
+    expect(scaffold).not.toContain("x-forwarded-proto");
+    expect(scaffold).toContain("VENDO_BASE_URL");
+    expect(scaffold).toContain("getSetCookie");
     expect(scaffold).toContain("Readable.toWeb(request)");
     expect(scaffold).toContain("source.body.getReader()");
     expect(scaffold).toContain('app.use("/api/vendo", mountVendo());');
     expect(scaffold).toContain("<VendoRoot>");
+    expect(await readFile(join(root, "vendo", "ai.ts"), "utf8")).toContain("export const model");
+    expect(initialized.logs.join("\n")).toContain("Two manual steps remain");
+    expect(initialized.logs.join("\n")).toContain('mount `mountVendo()`');
+    expect(initialized.logs.join("\n")).toContain("wrap the client in `<VendoRoot>`");
+    expect(initialized.logs.join("\n")).toContain("will report broken until both are complete");
     await expect(readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts")))
       .rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(root, "app", "layout.tsx")))
@@ -138,7 +152,10 @@ describe("vendo init", () => {
     await rm(join(root, "tsconfig.json"));
     const sink = output();
     expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    expect(JSON.parse(sink.logs.join("\n")).codeChanges).toMatchObject([{ path: "vendo/server.mjs" }]);
+    expect(JSON.parse(sink.logs.join("\n")).codeChanges).toMatchObject([
+      { path: "vendo/server.mjs" },
+      { path: "vendo/ai.mjs" },
+    ]);
   });
 
   it("emits a read-only agent plan with three plain-language questions", async () => {
