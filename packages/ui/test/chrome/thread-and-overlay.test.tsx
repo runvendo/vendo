@@ -19,7 +19,10 @@ describe("VendoThread and VendoOverlay exports", () => {
     await wire.close();
   });
 
-  it("runs a complete wire turn, renders receipts and approvals, and honors composer keys", async () => {
+  // A full streaming wire turn + gated reply + approval round-trip; CI runs the
+  // whole workspace's suites in parallel, so this heavy integration test can
+  // starve past the 5s default under load (275ms locally, ~7s on a loaded runner).
+  it("runs a complete wire turn, renders receipts and approvals, and honors composer keys", { timeout: 20_000 }, async () => {
     let release = () => undefined;
     wire.state.threadReplyGate = new Promise<void>(resolve => { release = resolve; });
     render(<VendoProvider client={client}><VendoThread threadId="thr_1" /></VendoProvider>);
