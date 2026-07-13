@@ -139,13 +139,15 @@ export function VendoPalette({ onCommand }: { onCommand?(command: VendoCommand):
               {visible.map((command, index) => (
                 <li
                   id={`vendo-command-${command.id}`}
-                  className="fl-picker-item"
+                  className="fl-picker-item fl-option"
                   role="option"
                   aria-selected={index === active}
                   key={command.id}
                   onMouseDown={event => event.preventDefault()}
                   onClick={() => select(command)}
-                  style={index === active ? { background: "var(--vendo-accent-soft)", borderColor: "var(--vendo-border-strong)" } : undefined}
+                  style={index === active
+                    ? { background: "var(--vendo-accent-soft)", borderColor: "var(--vendo-border-strong)", cursor: "pointer" }
+                    : { cursor: "pointer" }}
                 >
                   <span className="fl-picker-ic" aria-hidden="true">
                     {command.kind === "new-conversation" ? (

@@ -117,10 +117,73 @@ for (const backend of backends()) {
       expect(new Set(seen).size).toBe(ids.length);
     });
 
+    for (const collection of ["vendo_mcp_clients", "vendo_mcp_grants"] as const) {
+      it(`round-trips ${collection} through its dedicated generic table`, async () => {
+        const records = made.store.records(collection);
+        const id = `${collection}_roundtrip`;
+        const first = await records.put({
+          id,
+          data: { blockInternal: { arbitrary: [true, 42] } },
+          refs: { subject: "user_door", client_id: "client_roundtrip" },
+        });
+        expect(await records.get(id)).toEqual(first);
+        expect((await records.list({ ids: [id] })).records).toEqual([first]);
+        expect(await made.sql(`SELECT data, refs FROM ${collection} WHERE id = $1`, [id])).toEqual([{
+          data: { blockInternal: { arbitrary: [true, 42] } },
+          refs: { subject: "user_door", client_id: "client_roundtrip" },
+        }]);
+        expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_records WHERE id = $1", [id]))[0]?.count)).toBe(0);
+
+        const updated = await records.put({ id, data: { rotated: true }, refs: { subject: "user_door" } });
+        expect(updated.createdAt).toBe(first.createdAt);
+        expect(updated.data).toEqual({ rotated: true });
+        expect(updated.refs).toEqual({ subject: "user_door" });
+
+        await records.delete(id);
+        expect(await records.get(id)).toBeNull();
+      });
+
+      it(`filters ${collection} by arbitrary refs equality`, async () => {
+        const records = made.store.records(collection);
+        const prefix = `${collection}_refs`;
+        await records.put({ id: `${prefix}_a`, data: { n: 1 }, refs: { subject: "user_one", kind: "primary" } });
+        await records.put({ id: `${prefix}_b`, data: { n: 2 }, refs: { subject: "user_one" } });
+        await records.put({ id: `${prefix}_c`, data: { n: 3 }, refs: { subject: "user_two", kind: "primary" } });
+
+        expect((await records.list({ refs: { subject: "user_one", kind: "primary" } })).records.map((row) => row.id))
+          .toEqual([`${prefix}_a`]);
+      });
+
+      it(`walks cursor pages in ${collection} without duplicates or misses`, async () => {
+        const records = made.store.records(collection);
+        const pageSet = `${collection}_pages`;
+        const ids = Array.from({ length: 15 }, (_, index) => `${pageSet}_${String(index).padStart(2, "0")}`);
+        for (let index = 0; index < ids.length; index += 1) {
+          const id = ids[index] as string;
+          await records.put({ id, data: { index }, refs: { page_set: pageSet } });
+          await made.sql(`UPDATE ${collection} SET created_at = $1, updated_at = $1 WHERE id = $2`, [at(index), id]);
+        }
+
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await records.list({ refs: { page_set: pageSet }, limit: 5, cursor });
+          seen.push(...page.records.map((record) => record.id));
+          cursor = page.cursor;
+        } while (cursor !== undefined);
+
+        expect(seen).toEqual([...ids].reverse());
+        expect(new Set(seen).size).toBe(ids.length);
+      });
+    }
+
     it("leaves near-match collection names in vendo_records", async () => {
       await made.store.records("vendo_grants_x").put({ id: "ordinary_row", data: { ordinary: true } });
+      await made.store.records("vendo_mcp_clients_x").put({ id: "ordinary_door_row", data: { ordinary: true } });
       expect(await made.sql("SELECT collection, data FROM vendo_records WHERE id = 'ordinary_row'"))
         .toEqual([{ collection: "vendo_grants_x", data: { ordinary: true } }]);
+      expect(await made.sql("SELECT collection, data FROM vendo_records WHERE id = 'ordinary_door_row'"))
+        .toEqual([{ collection: "vendo_mcp_clients_x", data: { ordinary: true } }]);
     });
 
     it("keeps principal-aware and registered routed writes ephemeral", async () => {

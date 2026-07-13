@@ -58,6 +58,16 @@ export const DDL = [
   `CREATE TABLE IF NOT EXISTS vendo_secrets (
     name text PRIMARY KEY, ciphertext text NOT NULL, created_at timestamptz NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS vendo_mcp_clients (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_clients_refs_idx ON vendo_mcp_clients USING GIN (refs jsonb_path_ops)",
+  `CREATE TABLE IF NOT EXISTS vendo_mcp_grants (
+    id text PRIMARY KEY, data jsonb NOT NULL, refs jsonb,
+    created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_refs_idx ON vendo_mcp_grants USING GIN (refs jsonb_path_ops)",
 ] as const;
 
 // Additive columns stay compatible with same-version development databases (02 §2
@@ -69,7 +79,14 @@ const ADDITIVE_DDL = [
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS session_id text",
   "ALTER TABLE vendo_approvals ADD COLUMN IF NOT EXISTS consumed_at timestamptz",
   "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS id text GENERATED ALWAYS AS (app_id || ':' || subject) STORED",
-  "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS created_at timestamptz",
+  // created_at is the pagination cursor column, so it must never be NULL. DEFAULT now()
+  // fills the column for any direct INSERT that omits it (the table map is public); our
+  // own write paths always populate it explicitly.
+  "ALTER TABLE vendo_state ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now()",
+  // ADD COLUMN IF NOT EXISTS SKIPS when the column already exists, so databases that
+  // booted before the DEFAULT was introduced would keep a default-less column forever.
+  // SET DEFAULT is idempotent, so it runs every boot like the rest of this block.
+  "ALTER TABLE vendo_state ALTER COLUMN created_at SET DEFAULT now()",
   "CREATE INDEX IF NOT EXISTS vendo_state_id_idx ON vendo_state (id)",
 ] as const;
 
@@ -77,26 +94,29 @@ const ADDITIVE_DDL = [
 // migrations by vendo_meta.schema_version, forward-only). Three moves:
 //   1. Relocate legacy vendo_state singletons that a pre-fix deployment wrote into
 //      vendo_records (collection 'vendo_state', id `${app_id}:${subject}`) into the
-//      dedicated table. App ids are colon-free (`^app_[^:]*$`), so the FIRST colon
-//      splits id into app_id + subject unambiguously; the `id ~ '^app_[^:]*:'`
-//      predicate relocates only rows whose leading segment is a real app id — the
-//      SAME shape the state door (splitStateId) enforces. Anything else (colon-less
-//      rows, or ids whose first segment is not app-shaped) SURVIVES in vendo_records
-//      rather than being silently destroyed or misrouted.
+//      dedicated table. App ids are colon-free and non-empty (`^app_[^:]+$`), so the
+//      FIRST colon splits id into app_id + subject unambiguously; the
+//      `id ~ '^app_[^:]+:.'` predicate relocates only rows whose leading segment is a
+//      real app id AND whose subject is non-empty — the SAME shape the state door
+//      (splitStateId) enforces. Anything else (colon-less rows, ids whose first
+//      segment is not app-shaped, or empty-subject ids like 'app_x:') SURVIVES in
+//      vendo_records rather than being silently destroyed or misrouted.
 //   2. The DELETE is scoped to the identical predicate as the INSERT — only the rows
 //      actually relocated are removed.
 //   3. Both write doors were live pre-fix (stateStore wrote the dedicated table, the
 //      seam wrote vendo_records), so a legacy row can be NEWER than an existing
 //      dedicated row. Resolve by timestamp (`WHERE vendo_state.updated_at <
 //      EXCLUDED.updated_at`) so the newer write wins instead of DO NOTHING dropping it.
-//   4. Backfill created_at for state rows that predate the created_at column.
+//   4. Relocated rows set created_at = updated_at on insert (the column now DEFAULTs to
+//      now(), so it must be given the legacy timestamp explicitly); the trailing UPDATE
+//      still backfills created_at for any pre-existing row that predates the column.
 const DATA_BACKFILL = [
-  `INSERT INTO vendo_state (app_id, subject, data, updated_at)
-   SELECT split_part(id, ':', 1), substring(id FROM position(':' IN id) + 1), data, updated_at
-   FROM vendo_records WHERE collection = 'vendo_state' AND id ~ '^app_[^:]*:'
+  `INSERT INTO vendo_state (app_id, subject, data, updated_at, created_at)
+   SELECT split_part(id, ':', 1), substring(id FROM position(':' IN id) + 1), data, updated_at, updated_at
+   FROM vendo_records WHERE collection = 'vendo_state' AND id ~ '^app_[^:]+:.'
    ON CONFLICT (app_id, subject) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
      WHERE vendo_state.updated_at < EXCLUDED.updated_at`,
-  "DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id ~ '^app_[^:]*:'",
+  "DELETE FROM vendo_records WHERE collection = 'vendo_state' AND id ~ '^app_[^:]+:.'",
   "UPDATE vendo_state SET created_at = updated_at WHERE created_at IS NULL",
 ] as const;
 

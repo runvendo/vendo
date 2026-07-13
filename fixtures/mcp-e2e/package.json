@@ -1,0 +1,28 @@
+{
+  "name": "@vendoai-fixtures/mcp-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Wave-6 full-stack e2e harness for @vendoai/mcp: a REAL MCP SDK client driving the door against fixture host app + real store + real guard + real actions, composed the way the umbrella will compose them.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vendoai/actions": "workspace:*",
+    "@vendoai/apps": "workspace:*",
+    "@vendoai/core": "workspace:*",
+    "@vendoai/guard": "workspace:*",
+    "@vendoai/mcp": "workspace:*",
+    "@vendoai/store": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

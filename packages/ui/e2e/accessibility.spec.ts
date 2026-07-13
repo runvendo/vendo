@@ -36,8 +36,18 @@ for (const scenario of chromeScenarios) {
 
     // Audit the fully-settled state: entrance animations (fade/rise) briefly hold
     // elements at <1 opacity, which composites text/fills lighter. Wait for every
-    // running animation to finish so axe sees the resting colors, not a transient frame.
-    await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished.catch(() => undefined))));
+    // FINITE animation to finish — but bound it, since the voice presence runs a
+    // continuous (infinite) breathe/ball whose `finished` never resolves.
+    await page.evaluate(() => {
+      const finite = document.getAnimations().filter(a => {
+        const iterations = (a.effect?.getTiming().iterations ?? 1);
+        return Number.isFinite(iterations);
+      });
+      return Promise.race([
+        Promise.all(finite.map(a => a.finished.catch(() => undefined))),
+        new Promise(resolve => setTimeout(resolve, 1500)),
+      ]);
+    });
 
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

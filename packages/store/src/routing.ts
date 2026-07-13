@@ -10,6 +10,7 @@ import {
   type VendoRecord,
 } from "@vendoai/core";
 import type { Db } from "./db.js";
+import { createRecordStore, type DedicatedRecordTable } from "./records.js";
 import { isEphemeralApp, isEphemeralSubject, overlayFor, registerEphemeralSubject, snapshot, stateKey } from "./ephemeral.js";
 import {
   appFromRow,
@@ -55,6 +56,8 @@ export const RESERVED_COLLECTIONS = [
   "vendo_apps",
   "vendo_state",
 ] as const;
+
+export const DEDICATED_RECORD_COLLECTIONS = ["vendo_mcp_clients", "vendo_mcp_grants"] as const;
 
 export type ReservedCollection = typeof RESERVED_COLLECTIONS[number];
 
@@ -170,7 +173,7 @@ function stateRecord(row: EphemeralStateRow): VendoRecord {
  * "app_a:b:c" and collide on read/write/delete. The apps runtime mints colon-free
  * ids; this enforces it at the door so a doctored id can never target another row.
  */
-const APP_ID_SEGMENT = /^app_[^:]*$/;
+const APP_ID_SEGMENT = /^app_[^:]+$/;
 
 function splitStateId(id: string): { appId: string; subject: string } {
   const colon = id.indexOf(":");
@@ -179,7 +182,13 @@ function splitStateId(id: string): { appId: string; subject: string } {
   if (!APP_ID_SEGMENT.test(appId)) {
     invalid(`vendo_state record id must start with a colon-free app id ("app_..."): ${id}`);
   }
-  return { appId, subject: id.slice(colon + 1) };
+  const subject = id.slice(colon + 1);
+  // An empty subject ("app_x:") would route a state row to no principal — reject it
+  // (the apps runtime always writes a non-empty subject).
+  if (subject === "") {
+    invalid(`vendo_state record id must have a non-empty subject after the colon: ${id}`);
+  }
+  return { appId, subject };
 }
 
 function matchesRecord(record: VendoRecord, query: RecordQuery, cursor?: { c: string; i: string }): boolean {
@@ -458,6 +467,9 @@ export function createReservedRecordStore(
   db: Db,
   collection: string,
 ): RecordStore | undefined {
+  if ((DEDICATED_RECORD_COLLECTIONS as readonly string[]).includes(collection)) {
+    return createRecordStore(store, db, collection, collection as DedicatedRecordTable);
+  }
   if (!(RESERVED_COLLECTIONS as readonly string[]).includes(collection)) return undefined;
   return createTableRecordStore(db, configFor(store, db, collection as ReservedCollection));
 }

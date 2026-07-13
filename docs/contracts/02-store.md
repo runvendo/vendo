@@ -44,6 +44,8 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | `vendo_audit` | `id, at, kind, subject, venue, presence, app_id, tool, event` | append-only audit log (core §7) |
 | `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation run records (07 §5) |
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values (`storeSecrets`) |
+| `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | MCP client state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
+| `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | MCP grant state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
 
 Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)` (containment, so the GIN index is actually used).
 
