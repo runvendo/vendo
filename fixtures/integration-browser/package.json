@@ -1,0 +1,31 @@
+{
+  "name": "@vendoai-fixtures/integration-browser",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Real-browser leg of the cross-block integration suite: Playwright Chromium drives @vendoai/vendo/react (VendoRoot + hooks/chrome) in a page against the REAL composed umbrella wire and the fixture host app.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test:browser": "playwright test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vendoai/core": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "@vendoai/ui": "workspace:*",
+    "@vendoai/vendo": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "ai": "^6.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

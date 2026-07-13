@@ -1,0 +1,8 @@
+{
+  "format": "vendo/policy@1",
+  "rules": [
+    { "match": { "risk": "destructive" }, "action": "ask" },
+    { "match": { "risk": "read" }, "action": "run" },
+    { "match": { "risk": "write" }, "action": "run" }
+  ]
+}
