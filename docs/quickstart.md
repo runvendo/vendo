@@ -24,6 +24,7 @@ import type { ActionsRegistry, Connector } from "@vendoai/actions";
 import type { VendoGuard, PolicyConfig, Judge } from "@vendoai/guard";
 import type { AppsRuntime, SandboxAdapter } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
+import type { HostOAuthAdapter } from "@vendoai/mcp";
 
 export function createVendo(config: {
   model: LanguageModel;
@@ -36,6 +37,8 @@ export function createVendo(config: {
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
+  mcp?: boolean;               // open the door: serve host tools to MCP clients
+  oauth?: HostOAuthAdapter;    // required when mcp is true
 }): Vendo;
 
 export interface Vendo {
@@ -103,6 +106,74 @@ the unconfigured-policy notice.
 A sandbox adapter unlocks server-backed app rungs. `actAs` unlocks host API
 calls while the user is away. Connectors add external tools. `VENDO_API_KEY`
 activates cloud-gated sharing, publishing, org overlays, and pinning.
+
+## Serve your product to MCP clients (the door)
+
+The door makes your host tools installable in Claude, ChatGPT, Cursor, and any
+MCP client. Enable it with one flag and one seam:
+
+```ts
+const vendo = createVendo({
+  model,
+  principal,
+  actAs,          // see below
+  mcp: true,
+  oauth: hostOAuth,
+});
+```
+
+`oauth` is a two-function `HostOAuthAdapter`. The door owns all OAuth protocol
+mechanics. The host owns exactly two answers: who is this user, and did they
+consent.
+
+```ts
+import type { HostOAuthAdapter } from "@vendoai/mcp";
+
+const hostOAuth: HostOAuthAdapter = {
+  // Authenticate with your existing session machinery and confirm scope consent.
+  authorize: async (req, { clientName, scopes }) => {
+    const subject = await confirmConsentWithHostLogin(req, clientName, scopes);
+    return { subject };
+  },
+  // Resolve a subject to the principal the door executes as. null revokes.
+  principal: async (subject) => resolveUser(subject),
+};
+```
+
+MCP clients have no host browser session, so door tool calls cannot forward
+cookies. They authenticate over the **same `actAs` seam** away automations use.
+There is one seam, not two: `actAs` now backs both away automations and MCP
+host calls. If you already implemented `actAs`, the door reuses it. If you have
+not, host tool calls over the door degrade cleanly with a not-implemented tool
+error, exactly like away execution on a host that never wired the seam.
+
+Policy posture: the shipped policy example blocks `venue: "mcp"`. Opening the
+door is a host decision, never a default. `vendo init` asks before opening it.
+
+The door also serves discovery documents at the origin root, which the
+`/api/vendo/[...]` catch-all cannot see. In a Next.js host, add a sibling
+well-known route forwarding to the same handler. The door owns only four exact
+paths — forward just those and 404 anything else, so the route never shadows a
+host serving its own OAuth/OIDC metadata at the same origin:
+
+```ts
+// app/.well-known/[...vendo]/route.ts
+import { vendo } from "@/lib/vendo";
+
+const DOOR_PATHS = new Set([
+  "/.well-known/oauth-protected-resource/api/vendo/mcp",
+  "/.well-known/oauth-authorization-server/api/vendo/mcp",
+  "/.well-known/mcp/server-card.json",
+  "/.well-known/mcp-server-card",
+]);
+
+const forward = (req: Request) =>
+  DOOR_PATHS.has(new URL(req.url).pathname)
+    ? vendo.handler(req)
+    : new Response(null, { status: 404 });
+export const GET = forward;
+export const POST = forward;
+```
 
 ## Check the install
 

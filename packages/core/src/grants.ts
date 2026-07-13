@@ -63,7 +63,15 @@ export interface PermissionGrant {
   duration: GrantDuration;
   contextKey?: string;
   appId?: AppId;
-  source: "chat" | "batch" | "automation";
+  /**
+   * How this grant was minted. `"mcp"` is additive (same mechanism the door
+   * wave used for `AuditEvent.kind: "door-auth"`, 01-core §15) and has exactly
+   * one mint point: the actions-side projection of the door's OAuth consent
+   * (10-mcp §3) — the per-call, honestly-labeled authority handed to `actAs`
+   * for venue="mcp" host execution. It is never persisted and never consulted
+   * by guard; the other sources are minted from in-product decisions.
+   */
+  source: "chat" | "batch" | "automation" | "mcp";
   grantedAt: IsoDateTime;
   expiresAt?: IsoDateTime;
   revokedAt?: IsoDateTime;
@@ -79,7 +87,7 @@ export const permissionGrantSchema = z.object({
   duration: grantDurationSchema,
   contextKey: z.string().optional(),
   appId: appIdSchema.optional(),
-  source: z.enum(["chat", "batch", "automation"]),
+  source: z.enum(["chat", "batch", "automation", "mcp"]),
   grantedAt: isoDateTimeSchema,
   expiresAt: isoDateTimeSchema.optional(),
   revokedAt: isoDateTimeSchema.optional(),

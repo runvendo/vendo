@@ -85,19 +85,60 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
   const statusUrl = options.url
     ?? process.env.VENDO_URL?.replace(/\/$/, "")
     ?? "http://localhost:3000/api/vendo";
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let mcpEnabled = false;
   try {
-    const response = await (options.fetchImpl ?? fetch)(`${statusUrl}/status`, {
+    const response = await fetchImpl(`${statusUrl}/status`, {
       headers: { accept: "application/json" },
     });
-    const body = await response.json() as { posture?: unknown; version?: unknown; blocks?: unknown };
+    const body = await response.json() as {
+      posture?: unknown;
+      version?: unknown;
+      blocks?: { mcp?: unknown } | null;
+    };
     if (!response.ok || typeof body.posture !== "string" || typeof body.version !== "string"
       || typeof body.blocks !== "object" || body.blocks === null) {
       fail(`/status returned an invalid composition response (${response.status})`);
     } else {
       pass(`/status live round-trip (${body.version}, ${body.posture})`);
+      // 10-mcp §1 — the door flag lives under blocks.mcp.
+      mcpEnabled = body.blocks.mcp === true;
     }
   } catch {
     fail(`/status is unreachable at ${statusUrl}/status`);
+  }
+
+  // 10-mcp §5 — when the door is open, verify both discovery documents resolve
+  // and the server card parses. The metadata is path-inserted (RFC 9728 §3): a
+  // door mounted at /api/vendo/mcp serves /.well-known/...-resource/api/vendo/mcp.
+  if (mcpEnabled) {
+    const origin = new URL(statusUrl).origin;
+    const mountPath = `${new URL(statusUrl).pathname.replace(/\/$/, "")}/mcp`;
+    const resolves = async (url: string, valid: (body: Record<string, unknown>) => boolean, label: string): Promise<void> => {
+      try {
+        const response = await fetchImpl(url, { headers: { accept: "application/json" } });
+        const body = await response.json() as Record<string, unknown>;
+        if (response.ok && valid(body)) pass(label);
+        else fail(`${label} (${response.status})`);
+      } catch {
+        fail(`${label} is unreachable`);
+      }
+    };
+    await resolves(
+      `${origin}/.well-known/oauth-protected-resource${mountPath}`,
+      (body) => typeof body.resource === "string",
+      "MCP protected-resource metadata resolves",
+    );
+    await resolves(
+      `${origin}/.well-known/oauth-authorization-server${mountPath}`,
+      (body) => typeof body.issuer === "string",
+      "MCP authorization-server metadata resolves",
+    );
+    await resolves(
+      `${origin}/.well-known/mcp/server-card.json`,
+      (body) => typeof body.name === "string" && Array.isArray(body.transports),
+      "MCP server card parses",
+    );
   }
 
   output.log("Ladder: add sandbox to unlock server apps; actAs for away host actions; connectors for external tools.");
