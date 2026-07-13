@@ -535,4 +535,41 @@ describe("host HTTP execution — venue=mcp (10-mcp §3 / 04 §4 ActAs auth)", (
     expect(actAs).not.toHaveBeenCalled();
     expect(host.seen).toHaveLength(0);
   });
+
+  // FIX A: apps re-contextualizes a door-driven in-app tool ref to
+  // `{ ...ctx, venue: "app", appId }` (06-apps call.ts), so it reaches executeHost
+  // as venue="app" — but the door's mcpConsent survives that spread and is the
+  // key that routes to actAs.
+  it("routes a venue=app ctx carrying the door's mcpConsent through actAs, forwarding nothing", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act-as-user_1" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    const ctx = mcpCtx({
+      venue: "app",
+      appId: "app_1",
+      mcpConsent: { clientId: "mcpc_x", scopes: ["read", "write"] },
+      requestHeaders: { cookie: "fixture_session=user_1", authorization: "Bearer inbound-mcp-bearer" },
+    });
+
+    await expect(actions.execute({ id: "1", tool: "host_write", args: {} }, ctx)).resolves.toMatchObject({ status: "ok" });
+    expect(actAs).toHaveBeenCalledTimes(1);
+    const [, grant] = actAs.mock.calls[0] as unknown as [Principal, PermissionGrant];
+    expect(grant).toMatchObject({ source: "mcp", scope: { kind: "tool" } });
+    // No forwarded browser session — only the actAs AuthMaterial reaches the host.
+    expect(host.seen[0]?.cookie).toBeUndefined();
+    expect(host.seen[0]?.authorization).toBe("Bearer act-as-user_1");
+  });
+
+  it("leaves a venue=app ctx WITHOUT mcpConsent on the ordinary present-forward path (unchanged)", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    const ctx = mcpCtx({ venue: "app", appId: "app_1", requestHeaders: { cookie: "fixture_session=user_1" } });
+
+    await expect(actions.execute({ id: "1", tool: "host_write", args: {} }, ctx)).resolves.toMatchObject({ status: "ok" });
+    // Ordinary in-product app use: actAs is not consulted and the present cookie
+    // forwards to the trusted host origin exactly as before.
+    expect(actAs).not.toHaveBeenCalled();
+    expect(host.seen[0]?.cookie).toBe("fixture_session=user_1");
+  });
 });

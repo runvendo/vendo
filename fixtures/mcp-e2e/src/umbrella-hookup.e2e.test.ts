@@ -21,7 +21,7 @@ import type { HostOAuthAdapter } from "@vendoai/mcp";
 import { createStore, type VendoStore } from "@vendoai/store";
 import { createVendo, type CreateVendoConfig, type Vendo } from "@vendoai/vendo/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { fixtureBaseUrl, hostTools, loginCookie, resetFixture, SUBJECT, type Stack } from "./harness.js";
+import { FIXTURE_APP_ID, fixtureBaseUrl, hostTools, loginCookie, resetFixture, SUBJECT, type Stack } from "./harness.js";
 import { connectWithSdk, descriptorShape, textOf } from "./support.js";
 
 const MCP_PATH = "/api/vendo/mcp";
@@ -139,6 +139,38 @@ async function createUmbrella(
 /** connectWithSdk (support.ts) only reads `.endpoint`; the cast keeps that reuse. */
 function asStack(umbrella: Umbrella): Stack {
   return umbrella as unknown as Stack;
+}
+
+/** Seed a rung-1 app owned by SUBJECT so a vendo_apps_call can resolve it.
+ * createVendo starts store.ensureSchema() without blocking construction (the
+ * wire handler awaits it per-request), so a DIRECT store write must await it
+ * itself or the vendo_apps table may not exist yet. */
+async function seedApp(umbrella: Umbrella): Promise<void> {
+  await umbrella.vendo.store.ensureSchema();
+  await umbrella.vendo.store.records("vendo_apps").put({
+    id: FIXTURE_APP_ID,
+    data: {
+      subject: SUBJECT,
+      enabled: false,
+      doc: {
+        format: "vendo/app@1",
+        id: FIXTURE_APP_ID,
+        name: "Umbrella invoice app",
+        description: "A rung-1 app for the umbrella apps-call leg.",
+        tree: {
+          formatVersion: "vendo-genui/v1",
+          root: "root",
+          nodes: [{ id: "root", component: "Text", props: { children: "Umbrella fixture" } }],
+        },
+      },
+    },
+    refs: { subject: SUBJECT },
+  });
+}
+
+async function umbrellaSql<Row = Record<string, unknown>>(umbrella: Umbrella, query: string, params?: unknown[]): Promise<Row[]> {
+  const raw = umbrella.vendo.store.raw() as { query(q: string, p?: unknown[]): Promise<{ rows: unknown[] }> };
+  return (await raw.query(query, params)).rows as Row[];
 }
 
 describe("umbrella hookup — createVendo({ mcp: true }) mounts the door", () => {
@@ -266,6 +298,90 @@ describe("umbrella hookup — createVendo({ mcp: true }) mounts the door", () =>
         headers: { cookie: await loginCookie(SUBJECT) },
       });
       expect(check.status).toBe(404);
+    } finally {
+      await connected.close();
+    }
+  });
+
+  it("g) runs a vendo_apps_call whose ref is a HOST tool, authenticated via actAs (FIX A)", async () => {
+    const umbrella = await createUmbrella();
+    await seedApp(umbrella);
+    const connected = await connectWithSdk(asStack(umbrella));
+    try {
+      const called = await connected.client.callTool({
+        name: "vendo_apps_call",
+        arguments: {
+          appId: FIXTURE_APP_ID,
+          ref: "host_invoices_update",
+          args: { id: "inv_0003", memo: "updated via app over MCP" },
+        },
+      });
+      // apps re-contextualizes the in-app host ref to venue="app", but the door's
+      // mcpConsent survives the spread — so the host is still reached through the
+      // ActAs seam as the OAuth'd user, never a forwarded cookie (FIX A). Before
+      // FIX A this fell to the unauthenticated present-forward path and only the
+      // harness's cookie mask (now removed) hid the failure.
+      expect(called.isError, `app call errored: ${textOf(called)}`).not.toBe(true);
+      expect(textOf(called)).toContain("updated via app over MCP");
+      expect(umbrella.actAs).toHaveBeenCalled();
+      expect(umbrella.actAs.mock.calls.at(-1)?.[1]).toMatchObject({ source: "mcp", scope: { kind: "tool" } });
+
+      // Real host side effect: the fixture invoice memo actually changed.
+      const check = await fetch(`${fixtureBaseUrl()}/api/invoices/inv_0003`, {
+        headers: { cookie: await loginCookie(SUBJECT) },
+      });
+      expect(await check.json()).toMatchObject({ invoice: { memo: "updated via app over MCP" } });
+    } finally {
+      await connected.close();
+    }
+  });
+
+  it("h) a one-off approval (no remember) authorizes an MCP retry via the consent projection (FIX B)", async () => {
+    const umbrella = await createUmbrella();
+    const connected = await connectWithSdk(asStack(umbrella));
+    try {
+      const parked = await connected.client.callTool({
+        name: "host_invoices_delete",
+        arguments: { id: "inv_0003" },
+      });
+      expect(parked.isError).toBe(true);
+      const approvalId = textOf(parked).match(/apr_[0-9a-f-]+/)?.[0];
+      expect(approvalId).toMatch(/^apr_/);
+
+      // Approve WITHOUT remember: a one-off that mints NO standing grant.
+      const decided = await fetch(`${umbrella.origin}/api/vendo/approvals/decide`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: `vendo_user=${SUBJECT}` },
+        body: JSON.stringify({ ids: [approvalId], decision: { approve: true } }),
+      });
+      expect(decided.status).toBe(200);
+
+      // Retry the IDENTICAL call: the door reuses the parked ToolCall id (FIX B),
+      // so guard's single-use approval replays and the call runs — authenticated
+      // by the per-call consent projection, not a stored grant.
+      const retried = await connected.client.callTool({
+        name: "host_invoices_delete",
+        arguments: { id: "inv_0003" },
+      });
+      expect(retried.isError, `retry errored: ${textOf(retried)}`).not.toBe(true);
+      expect(JSON.parse(textOf(retried))).toEqual({ ok: true });
+
+      // The projection is never persisted: no MCP-sourced grant row exists.
+      expect(await umbrellaSql(umbrella, "SELECT id FROM vendo_grants WHERE source = 'mcp'")).toEqual([]);
+
+      // Real host side effect: the invoice is gone.
+      const check = await fetch(`${fixtureBaseUrl()}/api/invoices/inv_0003`, {
+        headers: { cookie: await loginCookie(SUBJECT) },
+      });
+      expect(check.status).toBe(404);
+
+      // The one-off approval is spent: a THIRD identical call parks again.
+      const reparked = await connected.client.callTool({
+        name: "host_invoices_delete",
+        arguments: { id: "inv_0003" },
+      });
+      expect(reparked.isError).toBe(true);
+      expect(textOf(reparked)).toMatch(/apr_/);
     } finally {
       await connected.close();
     }

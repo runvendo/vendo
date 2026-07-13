@@ -91,13 +91,18 @@ export async function runDoctor(options: DoctorOptions): Promise<number> {
     const response = await fetchImpl(`${statusUrl}/status`, {
       headers: { accept: "application/json" },
     });
-    const body = await response.json() as { posture?: unknown; version?: unknown; blocks?: unknown; mcp?: unknown };
+    const body = await response.json() as {
+      posture?: unknown;
+      version?: unknown;
+      blocks?: { mcp?: unknown } | null;
+    };
     if (!response.ok || typeof body.posture !== "string" || typeof body.version !== "string"
       || typeof body.blocks !== "object" || body.blocks === null) {
       fail(`/status returned an invalid composition response (${response.status})`);
     } else {
       pass(`/status live round-trip (${body.version}, ${body.posture})`);
-      mcpEnabled = body.mcp === true;
+      // 10-mcp §1 — the door flag lives under blocks.mcp.
+      mcpEnabled = body.blocks.mcp === true;
     }
   } catch {
     fail(`/status is unreachable at ${statusUrl}/status`);

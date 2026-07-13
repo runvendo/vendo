@@ -94,6 +94,32 @@ describe("createMcpDoor routing and OAuth", () => {
     );
   });
 
+  it("advertises a configured mount on the cold server card, before any traffic (FIX C)", async () => {
+    const harness = makeHarness({ mount: "/api/vendo/mcp" });
+    // Cold start: no authenticated MCP request has arrived. A configured mount is
+    // authoritative, so the card advertises /api/vendo/mcp — not the /mcp fallback
+    // the unconfigured door would use.
+    for (const path of ["/.well-known/mcp/server-card.json", "/.well-known/mcp-server-card"]) {
+      const cold = await harness.door.handler(new Request(`https://product.example${path}`));
+      expect(await cold.json()).toMatchObject({
+        transports: [{ type: "streamable-http", url: BASE }],
+        authorization: {
+          type: "oauth2",
+          resource_metadata: "https://product.example/.well-known/oauth-protected-resource/api/vendo/mcp",
+        },
+      });
+    }
+
+    // Authenticated traffic does not move a configured mount.
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+    await connected.client.listTools();
+    const after = await harness.door.handler(new Request("https://product.example/.well-known/mcp/server-card.json"));
+    expect(await after.json()).toMatchObject({ transports: [{ type: "streamable-http", url: BASE }] });
+    await connected.client.close();
+  });
+
   it("refuses CIMD client ids pointing at non-public hosts without fetching them", async () => {
     const harness = makeHarness();
     const fetchSpy = vi.fn();
@@ -583,7 +609,8 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
-  it("keeps the bound registry verbatim when it already carries a vendo_apps_* tool", async () => {
+  it("keeps a registry-owned vendo_apps_* verbatim but attaches the shim _meta and renders its payload (FIX E)", async () => {
+    const treePayload = { formatVersion: "vendo-genui/v1", root: "root", nodes: [], data: { via: "registry" } };
     const apps: AppsPort = {
       async list() { return []; },
       async open() { return { kind: "http", url: "https://app.example" }; },
@@ -591,6 +618,9 @@ describe("createMcpDoor MCP protocol", () => {
     };
     const harness = makeHarness({
       apps,
+      // The registry (apps.agentTools via the umbrella) owns vendo_apps_open and
+      // returns an OpenSurface envelope — exactly what the door must unwrap.
+      getOutcome: () => ({ status: "ok", output: { kind: "tree", payload: treePayload } }),
       extraDescriptors: [{
         name: "vendo_apps_open",
         description: "Registry-owned apps open (agentTools via the umbrella)",
@@ -604,22 +634,88 @@ describe("createMcpDoor MCP protocol", () => {
 
     const listed = await connected.client.listTools();
     const opens = listed.tools.filter((tool) => tool.name === "vendo_apps_open");
-    // Exactly one listing — the registry's, verbatim (no door _meta, no dupes);
-    // the door still adds its non-colliding ride-along tools.
+    // Exactly one listing — the registry's descriptor VERBATIM (name/description/
+    // inputSchema untouched), no dupes — but now carrying the door's shim _meta so
+    // MCP Apps clients preload the renderer (FIX E).
     expect(opens).toEqual([{
       name: "vendo_apps_open",
       description: "Registry-owned apps open (agentTools via the umbrella)",
       inputSchema: { type: "object" },
+      _meta: {
+        ui: { resourceUri: "ui://vendo/tree-shim.html" },
+        "ui/resourceUri": "ui://vendo/tree-shim.html",
+      },
     }]);
     expect(listed.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["vendo_apps_list", "vendo_apps_call"]),
     );
 
-    // Execution routes through the registry, not the AppsPort.
+    // Execution routes through the registry (one guard decision), not the
+    // AppsPort — and the door unwraps its OpenSurface into a bare, shim-renderable
+    // format-tagged UIPayload (core §8), not the {kind,payload} envelope.
     const before = harness.executions.length;
     const result = await connected.client.callTool({ name: "vendo_apps_open", arguments: {} });
-    expect(result).toMatchObject({ structuredContent: { answer: 42 } });
+    expect(result.structuredContent).toEqual(treePayload);
     expect(harness.executions.length).toBe(before + 1);
+    await connected.client.close();
+  });
+
+  it("reuses a parked call id for identical retries and clears it on resolution (FIX B)", async () => {
+    let outcome: ToolOutcome = { status: "pending-approval", approvalId: "apr_1" };
+    const harness = makeHarness({ getOutcome: () => outcome });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    const args = { query: "same" };
+    // A destructive-shaped call parks; the retry of the IDENTICAL call must carry
+    // the same ToolCall id so guard's single-use approval replay (which pins
+    // call.id) can authorize it — a fresh id would silently re-park.
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    const parkedId = harness.executions[0]!.id;
+    expect(parkedId).toMatch(/^mctc_/);
+    expect(harness.executions[1]!.id).toBe(parkedId);
+
+    // A DISTINCT call (different args) gets its own unique id — ids stay unique
+    // per distinct call (01-core).
+    await connected.client.callTool({ name: "host_lookup", arguments: { query: "other" } });
+    expect(harness.executions[2]!.id).not.toBe(parkedId);
+
+    // The approval resolves (run): the parked id is reused one last time, then cleared.
+    outcome = { status: "ok", output: { answer: 1 } };
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    expect(harness.executions[3]!.id).toBe(parkedId);
+
+    // The one-off approval is spent: a later identical call mints a fresh id and
+    // would park anew.
+    outcome = { status: "pending-approval", approvalId: "apr_2" };
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    expect(harness.executions[4]!.id).not.toBe(parkedId);
+    await connected.client.close();
+  });
+
+  it("refuses subject B's bearer presented with subject A's session id (FIX G)", async () => {
+    let subject = "user_a";
+    const harness = makeHarness({ authorizeSubject: () => subject });
+    const registration = await register(harness.door);
+
+    // Subject A establishes a live session.
+    const tokensA = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokensA.access_token);
+    await connected.client.listTools();
+    const sessionA = connected.transport.sessionId!;
+
+    // Subject B authenticates and gets a valid bearer of their own.
+    subject = "user_b";
+    const tokensB = await issue(harness.door, registration.body.client_id);
+
+    // B's valid bearer carrying A's session id → unknown-session, never executes.
+    const before = harness.executions.length;
+    const crossed = await harness.door.handler(mcpRequest(tokensB.access_token, sessionA));
+    expect(crossed.status).toBe(404);
+    expect(await crossed.json()).toMatchObject({ error: { message: "Session not found" } });
+    expect(harness.executions.length).toBe(before);
     await connected.client.close();
   });
 });
@@ -631,6 +727,10 @@ interface HarnessOptions {
   apps?: AppsPort;
   extraDescriptors?: Awaited<ReturnType<ToolRegistry["descriptors"]>>;
   check?: Guard["check"];
+  mount?: string;
+  /** The subject the OAuth authorize step returns (defaults "user_1"); a fn lets
+   * a test mint tokens for two different subjects against one door (FIX G). */
+  authorizeSubject?: () => string;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -663,10 +763,11 @@ function makeHarness(options: HarnessOptions = {}) {
     guard,
     store,
     apps: options.apps,
+    ...(options.mount === undefined ? {} : { mount: options.mount }),
     oauth: {
       async authorize(_req, ctx) {
         authorizeContexts.push(ctx);
-        return { subject: "user_1" };
+        return { subject: options.authorizeSubject ? options.authorizeSubject() : "user_1" };
       },
       async principal() {
         return options.principal ? options.principal() : { kind: "user", subject: "user_1" };

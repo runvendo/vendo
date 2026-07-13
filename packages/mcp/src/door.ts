@@ -43,7 +43,21 @@ interface SessionState {
   transport: WebStandardStreamableHTTPServerTransport;
   sessionId?: string;
   touchedAt: number;
+  /** 10-mcp §2 / 01-core (ids unique per call) — a bounded per-session map from
+   * a call's (tool + canonical-args) fingerprint to the ToolCall id last minted
+   * for it while its outcome was pending-approval. Guard's single-use approval
+   * replay pins the exact call.id it parked (guard.ts #consumeApprovedCall), so
+   * a fresh id per retry could never satisfy a one-off approval (approve without
+   * `remember`) — the retry would silently re-park. Reusing the parked id lets
+   * the in-product approval authorize the retry; any non-pending outcome clears
+   * the entry, so a DISTINCT call still gets a unique id and a later identical
+   * call parks anew once the one-off approval is spent. */
+  replay: Map<string, string>;
 }
+
+/** Caps SessionState.replay so a client hammering distinct parking calls in one
+ * session cannot grow it without bound; the whole map dies with the session. */
+const REPLAY_CAP = 256;
 
 /** A session outlives its access token only for as long as the client keeps
  * using it (every request re-authenticates). An abandoned session therefore
@@ -63,6 +77,12 @@ export interface McpDoorConfig {
   store: StoreAdapter;
   /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. */
   apps?: AppsPort;
+  /** 10-mcp §5 — the door's canonical mount path (e.g. `/api/vendo/mcp`). When
+   * set, the cold server card advertises THIS transport URL and learned request
+   * paths never override it; when unset the card falls back to `/mcp` until an
+   * authenticated request teaches it a mount. The umbrella passes its fixed
+   * mount so a composed door's card is correct before any traffic arrives. */
+  mount?: string;
 }
 
 export interface McpDoor {
@@ -108,7 +128,10 @@ class Door {
     }
     if (path === SERVER_CARD_PATH || path === SERVER_CARD_ALIAS_PATH) {
       if (req.method !== "GET") return notFound();
-      const mount = this.#cardMount ?? "/mcp";
+      // A configured mount is authoritative: a cold composed umbrella advertises
+      // the RIGHT transport URL before any traffic, and learned paths never move
+      // it. Only an unconfigured door falls back to the learned mount / `/mcp`.
+      const mount = this.#config.mount ?? this.#cardMount ?? "/mcp";
       const identity = await this.#hostIdentity();
       // SEP-2127 remains a draft; this deliberately minimal shape tracks it.
       return json({
@@ -167,8 +190,9 @@ class Door {
       return unauthorized(url.origin, mount, true);
     }
     // Only authenticated traffic teaches the server card its mount — an
-    // unauthenticated probe to an arbitrary path must not steer discovery.
-    this.#cardMount = normalizeMount(mount);
+    // unauthenticated probe to an arbitrary path must not steer discovery. A
+    // configured mount (10-mcp §5) is fixed and never learned over.
+    if (this.#config.mount === undefined) this.#cardMount = normalizeMount(mount);
 
     // The OAuth consent this authenticated request rode in on — projected onto
     // every RunContext the door mints (10-mcp §3), the evidence actions uses to
@@ -225,6 +249,7 @@ class Door {
       server,
       transport,
       touchedAt: Date.now(),
+      replay: new Map<string, string>(),
     };
     this.#registerHandlers(state, identity);
     await server.connect(transport);
@@ -236,7 +261,7 @@ class Door {
       tools: await this.#listedTools(),
     }));
     state.server.setRequestHandler(CallToolRequestSchema, async (request) =>
-      this.#callTool(request.params.name, request.params.arguments ?? {}, state.context, identity));
+      this.#callTool(request.params.name, request.params.arguments ?? {}, state, identity));
 
     if (this.#config.apps !== undefined) {
       state.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
@@ -257,16 +282,25 @@ class Door {
 
   async #listedTools(): Promise<Tool[]> {
     const descriptors = await this.#config.tools.descriptors();
-    const tools: Tool[] = descriptors.map(({ name, description, inputSchema }) => ({
-      name,
-      description,
-      inputSchema: inputSchema as Tool["inputSchema"],
-    }));
-    // The bound registry is verbatim and always wins (10-mcp §2); the door's
-    // ride-along tools are additions only — a same-named registry tool (e.g.
-    // vendo_apps_open from apps.agentTools(), if the umbrella registered it)
-    // keeps its registry descriptor and its registry execution path.
-    if (this.#config.apps !== undefined) {
+    const appsConfigured = this.#config.apps !== undefined;
+    // The bound registry's descriptors are served VERBATIM — name, description,
+    // and inputSchema are the registry's, never the door's (10-mcp §2/§4). But a
+    // registry that owns an app-viewer name (e.g. vendo_apps_open from
+    // apps.agentTools(), which the umbrella registers) must still advertise the
+    // MCP Apps shim so the client preloads the renderer: we attach ONLY the
+    // door's `_meta.ui` to those listings (FIX E). Execution still routes through
+    // the registry (one guard decision), and #callTool unwraps its OpenSurface
+    // output into a shim-renderable payload.
+    const tools: Tool[] = descriptors.map(({ name, description, inputSchema }) => {
+      const tool: Tool = { name, description, inputSchema: inputSchema as Tool["inputSchema"] };
+      if (appsConfigured && APP_TOOL_NAMES.has(name)) tool._meta = appUiMeta();
+      return tool;
+    });
+    // The door's own ride-along tools are additions for the app-viewer names the
+    // registry does NOT own (e.g. vendo_apps_list / vendo_apps_call when only
+    // vendo_apps_open is registered) — a same-named registry tool keeps its
+    // verbatim descriptor (with door `_meta` attached above) and is not duplicated.
+    if (appsConfigured) {
       const taken = new Set(tools.map((tool) => tool.name));
       tools.push(...appTools().filter((tool) => !taken.has(tool.name)));
     }
@@ -276,21 +310,26 @@ class Door {
   async #callTool(
     name: string,
     args: Record<string, unknown>,
-    ctx: RunContext,
+    state: SessionState,
     identity: HostIdentity,
   ): Promise<CallToolResult> {
     const descriptors = await this.#config.tools.descriptors();
     if (!descriptors.some((descriptor) => descriptor.name === name)) {
       if (this.#config.apps !== undefined && APP_TOOL_NAMES.has(name)) {
-        return this.#callAppsTool(name, args, ctx, identity);
+        return this.#callAppsTool(name, args, state, identity);
       }
       return inBandError(`not-found: Tool ${name} was not found`);
     }
-    const outcome = await this.#config.tools.execute({
-      id: `mctc_${crypto.randomUUID()}`,
-      tool: name,
-      args,
-    }, ctx);
+    const id = replayId(state, name, args);
+    const outcome = await this.#config.tools.execute({ id, tool: name, args }, state.context);
+    recordReplay(state, name, args, id, outcome.status);
+    // FIX E: a bound registry that owns an app-viewer name (vendo_apps_open via
+    // apps.agentTools()) returns an OpenSurface envelope ({kind,payload}); the
+    // MCP Apps shim renders a bare format-tagged UIPayload (core §8), so unwrap
+    // it exactly as the door's own apps path does before mapping the result.
+    if (name === "vendo_apps_open" && this.#config.apps !== undefined && outcome.status === "ok") {
+      return mapOutcome({ status: "ok", output: unwrapAppsOpen(outcome.output) }, identity.name);
+    }
     return mapOutcome(outcome, identity.name);
   }
 
@@ -307,20 +346,23 @@ class Door {
   async #callAppsTool(
     name: string,
     args: Record<string, unknown>,
-    ctx: RunContext,
+    state: SessionState,
     identity: HostIdentity,
   ): Promise<CallToolResult> {
+    const ctx = state.context;
     const descriptor = APP_TOOL_DESCRIPTORS.find((candidate) => candidate.name === name);
     if (this.#config.apps === undefined || descriptor === undefined) {
       return inBandError(`not-found: Tool ${name} was not found`);
     }
-    const call = { id: `mctc_${crypto.randomUUID()}`, tool: name, args: args as Json };
+    const id = replayId(state, name, args);
+    const call = { id, tool: name, args: args as Json };
     const decision = await this.#config.guard.check(call, descriptor, ctx);
     const outcome: ToolOutcome = decision.action === "block"
       ? { status: "blocked", reason: decision.reason }
       : decision.action === "ask"
         ? { status: "pending-approval", approvalId: decision.approval.id }
         : await this.#executeAppsTool(name, args, ctx);
+    recordReplay(state, name, args, id, outcome.status);
     await this.#config.guard.report({
       id: `aud_${randomHex(12)}`,
       at: new Date().toISOString(),
@@ -509,18 +551,82 @@ const APP_TOOL_DESCRIPTORS: ToolDescriptor[] = [
 
 const APP_TOOL_NAMES = new Set(APP_TOOL_DESCRIPTORS.map((descriptor) => descriptor.name));
 
+/** 10-mcp §4 — the MCP Apps `_meta` that advertises the shim resource so a host
+ * client preloads the tree renderer. A non-renderable result (e.g. a list) is
+ * contained gracefully by the shim's core-§8 format dispatch. */
+function appUiMeta(): { ui: { resourceUri: string }; "ui/resourceUri": string } {
+  return { ui: { resourceUri: SHIM_URI }, "ui/resourceUri": SHIM_URI };
+}
+
 function appTools(): Tool[] {
   // 10-mcp §4 names both vendo_apps_list and vendo_apps_open as carrying
   // _meta.ui.resourceUri; all three ride-along tools advertise the shim so the
-  // host can preload it. A list result isn't a renderable payload — the shim's
-  // format dispatch (core §8) contains that gracefully.
-  const uiMeta = { ui: { resourceUri: SHIM_URI }, "ui/resourceUri": SHIM_URI };
+  // host can preload it.
   return APP_TOOL_DESCRIPTORS.map(({ name, description, inputSchema }) => ({
     name,
     description,
     inputSchema: inputSchema as Tool["inputSchema"],
-    _meta: uiMeta,
+    _meta: appUiMeta(),
   }));
+}
+
+/** FIX E — the registry's vendo_apps_open returns an OpenSurface envelope
+ * (`{ kind: "tree", payload } | { kind: "http", url } | { kind: "resuming" }`);
+ * the door's own apps path hands the shim a bare payload / `{ url }`. Unwrap the
+ * envelope so a registry-executed open renders identically over MCP Apps. A
+ * `resuming` (or any other shape) passes through untouched — the shim's core-§8
+ * dispatch contains an unrenderable payload gracefully. */
+function unwrapAppsOpen(output: unknown): unknown {
+  if (isRecord(output) && typeof output.kind === "string") {
+    if (output.kind === "http") return { url: output.url };
+    if (output.kind === "tree") return output.payload;
+  }
+  return output;
+}
+
+/** 01-core: ToolCall ids are unique per call. The door mints a fresh id per
+ * tools/call, EXCEPT when replaying an identical still-parked call in the same
+ * session — then it reuses the parked id so guard's single-use approval replay
+ * (guard.ts #consumeApprovedCall pins call.id) can authorize the retry. */
+function replayId(state: SessionState, tool: string, args: Record<string, unknown>): string {
+  return state.replay.get(replayKey(tool, args)) ?? `mctc_${crypto.randomUUID()}`;
+}
+
+function recordReplay(
+  state: SessionState,
+  tool: string,
+  args: Record<string, unknown>,
+  id: string,
+  status: ToolOutcome["status"],
+): void {
+  const key = replayKey(tool, args);
+  if (status === "pending-approval") {
+    // Cap the map: evict the oldest fingerprint (insertion order) before adding
+    // a new one, so distinct parking calls can't grow it without bound.
+    if (!state.replay.has(key) && state.replay.size >= REPLAY_CAP) {
+      const oldest = state.replay.keys().next().value;
+      if (oldest !== undefined) state.replay.delete(oldest);
+    }
+    state.replay.set(key, id);
+  } else {
+    // Any resolved outcome (ok / error / blocked) spends the one-off approval; a
+    // later identical call must mint a fresh id and park anew.
+    state.replay.delete(key);
+  }
+}
+
+function replayKey(tool: string, args: Record<string, unknown>): string {
+  return `${tool} ${canonicalJson(args)}`;
+}
+
+/** Stable JSON with lexicographically-sorted object keys, so two structurally
+ * identical arg objects fingerprint the same regardless of key insertion order. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
 }
 
 function appToolPreview(name: string, args: Record<string, unknown>): string {

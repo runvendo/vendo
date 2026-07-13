@@ -32,6 +32,17 @@ This wave wires it in. The normative content lives in `10-mcp` (auth model in
   or a per-call consent projection (`source: "mcp"`), and fails closed otherwise.
   Full model and non-goals: **10-mcp §2.1**.
 
+## Base URL note
+
+Route-binding host execution needs a base origin. With no `VENDO_BASE_URL` the
+umbrella learns the wire's own origin from the first request that addresses a
+real wire route — but **door requests deliberately do not teach that same-origin
+default** (they are the door's paths, not wire routes, 04 §4). A host whose MCP
+traffic may arrive before any in-product wire request therefore has no learned
+base when a door tool call resolves its route binding; such hosts should set
+`VENDO_BASE_URL` explicitly (it is also the trusted origin credentials forward
+to, so setting it is the right move regardless).
+
 ## Next.js note
 
 The `/api/vendo/[...]` catch-all cannot see origin-root paths, so

@@ -152,13 +152,25 @@ door is a host decision, never a default. `vendo init` asks before opening it.
 
 The door also serves discovery documents at the origin root, which the
 `/api/vendo/[...]` catch-all cannot see. In a Next.js host, add a sibling
-well-known route forwarding to the same handler:
+well-known route forwarding to the same handler. The door owns only four exact
+paths — forward just those and 404 anything else, so the route never shadows a
+host serving its own OAuth/OIDC metadata at the same origin:
 
 ```ts
 // app/.well-known/[...vendo]/route.ts
 import { vendo } from "@/lib/vendo";
 
-const forward = (req: Request) => vendo.handler(req);
+const DOOR_PATHS = new Set([
+  "/.well-known/oauth-protected-resource/api/vendo/mcp",
+  "/.well-known/oauth-authorization-server/api/vendo/mcp",
+  "/.well-known/mcp/server-card.json",
+  "/.well-known/mcp-server-card",
+]);
+
+const forward = (req: Request) =>
+  DOOR_PATHS.has(new URL(req.url).pathname)
+    ? vendo.handler(req)
+    : new Response(null, { status: 404 });
 export const GET = forward;
 export const POST = forward;
 ```

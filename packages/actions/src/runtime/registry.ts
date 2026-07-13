@@ -328,12 +328,20 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     });
     if ("error" in authed) return authed.error;
     headers = authed.headers;
-  } else if (ctx.venue === "mcp") {
-    // 04 §4 / 10-mcp §3: an MCP-OAuth user has no host browser session, so the
-    // present path has nothing to forward — and we forward NOTHING even if a
-    // forged/mis-plumbed ctx carries requestHeaders (fail-closed). Host auth
-    // comes from the ActAs seam, exactly as away: the guard-attached grant when
-    // the run was grant-decided, else the door's OAuth-consent projection.
+  } else if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
+    // 04 §4 / 10-mcp §2.1 / §3: an MCP-OAuth user has no host browser session,
+    // so the present path has nothing to forward — and we forward NOTHING even
+    // if a forged/mis-plumbed ctx carries requestHeaders (fail-closed). Host
+    // auth comes from the ActAs seam, exactly as away: the guard-attached grant
+    // when the run was grant-decided, else the door's OAuth-consent projection.
+    //
+    // The routing KEY is the door's consent evidence (`mcpConsent`), not just
+    // venue==="mcp": apps re-contextualizes a `vendo_apps_call` in-app tool ref
+    // to `{ ...ctx, venue: "app", appId }` (06-apps call.ts), so a door-driven
+    // app interaction reaches here as venue="app" — but `mcpConsent` survives
+    // that spread, so we still authenticate via ActAs rather than falling to the
+    // (unauthenticated for MCP users) present-forward branch. A venue="app" ctx
+    // WITHOUT mcpConsent (ordinary in-product app use) never enters here.
     if (!config.actAs) {
       return error(
         "not-implemented",

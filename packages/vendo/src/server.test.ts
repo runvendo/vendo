@@ -216,8 +216,7 @@ describe("09 §3 public wire", () => {
     expect(await status.json()).toEqual({
       posture: "unconfigured",
       version: "0.3.0",
-      mcp: false,
-      blocks: { store: true, agent: true, actions: true, guard: true, apps: true, automations: true },
+      blocks: { store: true, agent: true, actions: true, guard: true, apps: true, automations: true, mcp: false },
     });
   });
 
@@ -321,5 +320,54 @@ describe("09 §3 conversational turn against the real composed store", () => {
     const rows = await store.records("vendo_threads").list({ refs: { subject: principal.subject } });
     expect(rows.records).toHaveLength(1);
     expect(rows.records[0]?.id).toBe("thr_round_trip");
+  });
+});
+
+describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {
+  async function mcpVendo(): Promise<Vendo> {
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-door-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const vendo = createVendo({
+      model: {} as LanguageModel,
+      principal: async () => null,
+      store,
+      mcp: true,
+      oauth: {
+        async authorize() { return { subject: "user_door" }; },
+        async principal(subject) { return { kind: "user", subject }; },
+      },
+    });
+    // createVendo kicks off ensureSchema() without blocking; a test whose
+    // requests all 404 before `await ready` would otherwise close the store
+    // mid-schema-creation (the known PGlite close-race hang).
+    await store.ensureSchema();
+    return vendo;
+  }
+  const root = (path: string): Request => new Request(`https://host.test${path}`);
+
+  it("serves protected-resource metadata at the door's exact path-inserted URL", async () => {
+    const vendo = await mcpVendo();
+    const res = await vendo.handler(root("/.well-known/oauth-protected-resource/api/vendo/mcp"));
+    expect(res.status).toBe(200);
+    expect((await res.json() as { resource?: string }).resource).toBe("https://host.test/api/vendo/mcp");
+  });
+
+  it("does NOT route boundary-adjacent or foreign well-known paths to the door", async () => {
+    const vendo = await mcpVendo();
+    // A boundary-free prefix would have matched all of these; the exact-path set
+    // does not, so they fall through to the wire and get no door metadata.
+    for (const path of [
+      "/.well-known/oauth-protected-resourceX",
+      "/.well-known/oauth-protected-resource/other",
+      "/.well-known/oauth-authorization-server/other",
+      "/.well-known/openid-configuration",
+    ]) {
+      const res = await vendo.handler(root(path));
+      const body = await res.json() as { resource?: unknown; issuer?: unknown; error?: unknown };
+      expect(res.status, path).toBe(404);
+      expect(body.resource, path).toBeUndefined();
+      expect(body.issuer, path).toBeUndefined();
+    }
   });
 });

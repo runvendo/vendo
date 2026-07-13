@@ -152,19 +152,26 @@ function relativePath(url: URL): string | null {
   return url.pathname.slice(BASE_PATH.length);
 }
 
-/** 10-mcp §4-5 — the three path families the door owns: its own mount, and the
-    origin-root discovery documents it serves (RFC 9728 path-inserted metadata +
-    the SEP-2127 server card). These are NOT wire routes — the door mints its own
-    principals (§3), and the OAuth /token and /register endpoints are
-    form-encoded POSTs — so they bypass the wire's principal/CSRF machinery. */
+/** 10-mcp §4-5 — the paths the door owns: its own mount (plus subpaths), and the
+    FOUR exact origin-root discovery documents it serves — the RFC 9728/8414
+    path-inserted metadata for its fixed mount, and the SEP-2127 server card. We
+    match those four EXACTLY rather than claiming the whole `/.well-known/oauth-*`
+    prefixes: a boundary-free prefix would shadow a host serving its own OAuth/
+    OIDC metadata at the same origin (and would even swallow
+    `/.well-known/oauth-protected-resourceX`). These are NOT wire routes — the
+    door mints its own principals (§3), and the OAuth /token and /register
+    endpoints are form-encoded POSTs — so they bypass the wire's principal/CSRF
+    machinery. */
+const DOOR_WELL_KNOWN_PATHS: ReadonlySet<string> = new Set([
+  `/.well-known/oauth-protected-resource${MCP_MOUNT}`,
+  `/.well-known/oauth-authorization-server${MCP_MOUNT}`,
+  "/.well-known/mcp/server-card.json",
+  "/.well-known/mcp-server-card",
+]);
+
 function isDoorPath(pathname: string): boolean {
   if (pathname === MCP_MOUNT || pathname.startsWith(`${MCP_MOUNT}/`)) return true;
-  return (
-    pathname.startsWith("/.well-known/oauth-protected-resource")
-    || pathname.startsWith("/.well-known/oauth-authorization-server")
-    || pathname === "/.well-known/mcp/server-card.json"
-    || pathname === "/.well-known/mcp-server-card"
-  );
+  return DOOR_WELL_KNOWN_PATHS.has(pathname);
 }
 
 function routeSegments(path: string): string[] {
@@ -466,7 +473,6 @@ function createWireHandler(deps: {
         return json({
           posture: deps.guard.status().posture,
           version: VERSION,
-          mcp: deps.mcp,
           blocks: {
             store: true,
             agent: true,
@@ -474,6 +480,9 @@ function createWireHandler(deps: {
             guard: true,
             apps: true,
             automations: true,
+            // 10-mcp §1 — the door is off by default; true only when
+            // createVendo({ mcp: true }) opened it.
+            mcp: deps.mcp,
           },
         });
       }
@@ -571,7 +580,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       },
       call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
     };
-    door = createMcpDoor({ tools: boundTools, guard, store, oauth: config.oauth, apps: appsPort });
+    // 10-mcp §5 — pin the door's canonical mount so a cold umbrella's server
+    // card advertises the right transport URL (BASE_PATH/mcp) before any request
+    // teaches it, and learned paths never override it.
+    door = createMcpDoor({ tools: boundTools, guard, store, oauth: config.oauth, apps: appsPort, mount: MCP_MOUNT });
   }
   const sessionId = `session_${globalThis.crypto.randomUUID()}`;
   const anonymous = ephemeralPrincipal(`anonymous_${globalThis.crypto.randomUUID()}`);

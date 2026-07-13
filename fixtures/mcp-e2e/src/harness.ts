@@ -140,18 +140,17 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     oauthMode: options.oauthMode ?? "auto",
   };
   const revoked = new Set<string>();
-  const fixtureFetch: typeof fetch = async (input, init) => {
-    const subject = control.autoSubject ?? SUBJECT;
-    const headers = new Headers(init?.headers);
-    headers.set("cookie", await loginCookie(subject));
-    return fetch(input, { ...init, headers });
-  };
   const actions = createActions({
     tools: hostTools as unknown as Parameters<typeof createActions>[0]["tools"],
     baseUrl: fixtureBaseUrl(),
-    fetch: fixtureFetch,
+    // NO custom fetch: door host calls must reach the fixture host with EXACTLY
+    // the auth actions attaches, so the e2e exercises the real ActAs seam. (An
+    // earlier fixtureFetch injected a login cookie on every outbound call, which
+    // silently masked whether venue="mcp" / app-ride-along calls authenticated
+    // at all — FIX A removed it; it did no loopback routing, only that masking.)
+    //
     // venue="mcp" host calls authenticate through the ActAs seam (04 §4 / 10-mcp
-    // §3), never a browser session — so the host models it: mint the OAuth'd
+    // §2.1), never a browser session — so the host models it: mint the OAuth'd
     // user's fixture session for the door's consent-projection grant.
     actAs: async (principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
   });
