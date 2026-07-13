@@ -1,25 +1,22 @@
 /** J6 — MCP DOOR ROUND-TRIP composed around the umbrella's own parts.
  *
- * ┌─ ACCEPTANCE TEST for the v0-mcp-hookup wave ───────────────────────────────┐
- * │ This journey is the acceptance test for the dedicated MCP-hookup wave       │
- * │ (`createVendo({ mcp: true })` + actAs-for-venue="mcp" host auth). When that  │
- * │ wave lands, host-route auth over the door starts working, so it must FLIP    │
- * │ the two fail-closed legs marked `⚑ HOOKUP FLIP` below to green:              │
- * │   1. the `it.fails(...)` "a read host tool over the door executes for real"  │
- * │      → change to `it(...)` and keep the real-invoice assertion; and          │
- * │   2. the retried-destructive assertion in the main test (currently asserts   │
- * │      isError + the 401 gap signature) → assert the real host DELETE landed.  │
- * │ Until then these legs assert the current fail-closed behavior so the gap is  │
- * │ documented, never hidden. Do NOT delete this journey. See the KNOWN GAP      │
- * │ note below and docs/contracts/10-mcp-umbrella-hookup.md.                     │
+ * ┌─ ACCEPTANCE TEST for the v0-mcp-hookup wave — FLIPPED GREEN 2026-07-13 ────┐
+ * │ Both `⚑ HOOKUP FLIP` legs below now assert the landed end-state:             │
+ * │   1. the read host tool executes for real against the host app; and          │
+ * │   2. the approved destructive retry really deletes on the host.              │
+ * │ venue="mcp" host auth rides the ActAs seam (10-mcp §2.1): the door attaches  │
+ * │ its OAuth-consent record to every context it mints, and actions hands actAs  │
+ * │ the guard-attached grant or the consent projection — never cookies, never    │
+ * │ the inbound bearer. Do NOT delete this journey; it locks the auth model.     │
  * └────────────────────────────────────────────────────────────────────────────┘
  *
- * The `createVendo({ mcp: true })` hookup is an unlanded handoff
- * (docs/contracts/10-mcp-umbrella-hookup.md), so the harness mounts `createMcpDoor`
+ * The harness predates `createVendo({ mcp: true })` and mounts `createMcpDoor`
  * beside `vendo.handler` on the SAME loopback origin, fed the umbrella's composed
  * parts: the guard-bound registry (`vendo.guard.bind(vendo.actions)`), the same
  * `vendo.guard`, `vendo.store`, a fixture `HostOAuthAdapter`, and an `AppsPort`
- * over `vendo.apps`.
+ * over `vendo.apps` — proving the door COMPOSES against exactly what the umbrella
+ * wires (the one-flag composition itself is covered by fixtures/mcp-e2e's
+ * umbrella-hookup suite).
  *
  * This journey does NOT re-prove door-internal OAuth conformance (fixtures/mcp-e2e
  * owns that). It proves the door COMPOSES correctly around the umbrella and shares
@@ -34,24 +31,18 @@
  *   - apps ride-along: a wire-created app opens over MCP for real (store read, no
  *     host auth needed).
  *
- * KNOWN GAP (see the second case below): route-bound HOST tools CANNOT authenticate
- * over the composed door under the frozen contracts today. The door correctly mints
- * a session-less `venue:"mcp"` context per 10-mcp §3 (no token-passthrough — the
- * inbound MCP Authorization Bearer is never forwarded, so `mcpContext` carries no
- * requestHeaders), and `actAs` is contractually the AWAY-only, grant-REQUIRED seam
- * (04 §4). There is no present-session host-auth seam in the frozen contracts, so a
- * present MCP host-route call reaches the host API unauthenticated and the host
- * answers 401. This is the real gap this suite surfaces for the
- * `createVendo({ mcp: true })` hookup (docs/contracts/10-mcp-umbrella-hookup.md) to
- * close with a properly designed present-session seam — it is out of scope for this
- * additive test-suite wave. The host-route legs below assert the desired end-state
- * with `it.fails` / an explicit gap assertion so the gap is documented, not hidden.
+ *   - route-bound HOST tools execute FOR REAL: venue="mcp" host auth is sourced
+ *     from the ActAs seam via the door-attached OAuth-consent record (10-mcp
+ *     §2.1) — no token-passthrough, no requestHeaders, no cookies. This was the
+ *     KNOWN GAP this suite originally surfaced; the v0-mcp-hookup wave closed it
+ *     and flipped both host-route legs to assert real host effects.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ADA,
   createStack,
   generationTurn,
+  hostFetch,
   resetFixture,
   type Stack,
 } from "./harness.js";
@@ -161,9 +152,7 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
 
       // ONE approvals plane: the wire decision authorizes the MCP retry — the
       // guard no longer parks it (it proceeds straight to execution, minting no
-      // new approval). We prove the guard-plane claim WITHOUT asserting host
-      // success, because the host DELETE over MCP genuinely cannot succeed today
-      // (the same present-session host-auth KNOWN GAP as the second case below).
+      // new approval).
       const retried = await connected.client.callTool({ name: "host_invoices_delete", arguments: { id: "inv_0003" } });
       // (a) no NEW approval was minted — the guard did not re-ask.
       expect(textOf(retried)).not.toMatch(/apr_/);
@@ -174,14 +163,12 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
           WHERE kind = 'tool-call' AND tool = 'host_invoices_delete' AND venue = 'mcp'
           ORDER BY at DESC LIMIT 1`,
       )).toEqual([{ decided_by: "grant" }]);
-      // (c) the retry's failure mode is the host-auth GAP, NOT an approval park:
-      // the guard let it through to real host execution, which 401s because there
-      // is no present-session host-auth seam. When the createVendo({ mcp: true })
-      // hookup lands that seam (docs/contracts/10-mcp-umbrella-hookup.md), this
-      // becomes a real-deletion assert (inv_0003 gone from the host).
-      // ⚑ HOOKUP FLIP (2/2): replace these two asserts with a real host-DELETE assert.
-      expect(retried.isError).toBe(true);
-      expect(textOf(retried)).toMatch(/http-error:.*→ 401/);
+      // (c) the retry executes FOR REAL (⚑ HOOKUP FLIP 2/2, flipped 2026-07-13):
+      // venue="mcp" host auth rides the ActAs seam (10-mcp §2.1) — the
+      // grant-authorized DELETE lands on the host AS the OAuth'd user, so
+      // inv_0003 is really gone.
+      expect(retried.isError).not.toBe(true);
+      expect((await hostFetch("/api/invoices/inv_0003", ADA.subject)).status).toBe(404);
 
       // --- Apps ride-along: open a wire-created app over the door for real ---
       const opened = await connected.client.callTool({ name: "vendo_apps_open", arguments: { appId: app.id } });
@@ -206,19 +193,13 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
     }
   });
 
-  // KNOWN GAP (it.fails documents the DESIRED end-state, which does NOT hold today).
-  // 10-mcp §2 says an authenticated MCP tool call should get "identical treatment to
-  // chat", but a present MCP host-route call cannot authenticate under the composed
-  // umbrella: the door mints a session-less venue:"mcp" context (10-mcp §3, no
-  // token-passthrough — no requestHeaders), and actAs is the away-only, grant-required
-  // seam (04 §4), so there is no frozen-contract seam to mint host AuthMaterial for a
-  // present read. The read below therefore reaches the host API unauthenticated and
-  // gets `http-error: GET /api/invoices → 401` instead of real invoices. The
-  // createVendo({ mcp: true }) hookup (docs/contracts/10-mcp-umbrella-hookup.md) closes
-  // this with a properly designed present-session host-auth seam; when it lands, flip
-  // `it.fails` back to `it` and this passes.
-  // ⚑ HOOKUP FLIP (1/2): change `it.fails` → `it` once host-route auth works.
-  it.fails("a read host tool over the door executes for real against the host app", async () => {
+  // ⚑ HOOKUP FLIP (1/2) — flipped 2026-07-13: the gap this leg documented is closed.
+  // venue="mcp" host-route calls authenticate through the ActAs seam: the door
+  // attaches its OAuth-consent record to every context it mints, and actions hands
+  // actAs the guard-attached grant or the consent projection (10-mcp §2.1). The
+  // door still never forwards the inbound bearer or any requestHeaders. This read
+  // therefore executes against the host FOR REAL, as the OAuth'd user.
+  it("a read host tool over the door executes for real against the host app", async () => {
     await resetFixture();
     stack = await createStack({ mcp: true });
     const connected = await connectWithSdk(stack.mcp!.endpoint);
