@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudError } from "./client.js";
-import { runPinShip, runShare, runValidate } from "./services.js";
+import { runPinShip, runPublish, runShare, runValidate } from "./services.js";
 
 const cleanup: string[] = [];
 afterEach(async () => Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true }))));
@@ -25,16 +25,34 @@ describe("cloud services", () => {
     }));
   });
 
-  it("reads and posts an app document", async () => {
+  it("wraps a shared app document with its id", async () => {
     const root = await mkdtemp(join(tmpdir(), "vendo-cloud-services-"));
     cleanup.push(root);
     const file = join(root, "app.json");
-    const app = { appId: "accounting", doc: { root: "card" } };
-    await writeFile(file, JSON.stringify(app));
-    const fetcher = vi.fn().mockResolvedValue({ id: "shr_1", doc: app.doc });
+    const doc = { id: "accounting", root: "card" };
+    await writeFile(file, JSON.stringify(doc));
+    const fetcher = vi.fn().mockResolvedValue({ id: "shr_1", doc });
 
-    expect(await runShare([file, "--key=vnd_test"], { output: output().sink, fetcher })).toBe(0);
-    expect(fetcher).toHaveBeenCalledWith("/api/v1/apps/share", expect.objectContaining({ body: app }));
+    expect(await runShare([file, "--key=vnd_test"], { output: output().sink, fetcher, env: {} })).toBe(0);
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/apps/share", expect.objectContaining({
+      body: { appId: "accounting", doc },
+    }));
+  });
+
+  it("allows --app to override the published document id", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-cloud-publish-"));
+    cleanup.push(root);
+    const file = join(root, "app.json");
+    const doc = { id: "file-id", root: "card" };
+    await writeFile(file, JSON.stringify(doc));
+    const fetcher = vi.fn().mockResolvedValue({ id: "pub_1", appId: "override-id" });
+
+    expect(await runPublish([
+      file, "--app", "override-id", "--key=vnd_test",
+    ], { output: output().sink, fetcher, env: {} })).toBe(0);
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/apps/publish", expect.objectContaining({
+      body: { appId: "override-id", doc },
+    }));
   });
 
   it("reads a textual diff for pin shipping", async () => {

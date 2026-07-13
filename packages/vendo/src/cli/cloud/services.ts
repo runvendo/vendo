@@ -36,9 +36,19 @@ async function serviceCommand(
 }
 
 async function appDocument(args: string[]): Promise<unknown> {
-  const file = positionals(args, ["--key", "--api-url"])[0];
+  const file = positionals(args, ["--key", "--api-url", "--app"])[0];
   if (!file) throw new Error("An appfile.json path is required");
   return JSON.parse(await readFile(file, "utf8")) as unknown;
+}
+
+async function appRequestBody(args: string[]): Promise<{ appId: string; doc: unknown }> {
+  const doc = await appDocument(args);
+  const documentId = typeof doc === "object" && doc !== null
+    ? (doc as { id?: unknown }).id
+    : undefined;
+  const appId = option(args, "--app") ?? (typeof documentId === "string" ? documentId : undefined);
+  if (!appId) throw new Error("App document must have a string id or pass --app <id>");
+  return { appId, doc };
 }
 
 export function runValidate(args: string[], options: CloudCommandOptions = {}): Promise<number> {
@@ -52,7 +62,7 @@ export function runShare(args: string[], options: CloudCommandOptions = {}): Pro
   return serviceCommand(options, async (context) => context.fetcher("/api/v1/apps/share", {
     ...machineOptions(args, context),
     method: "POST",
-    body: await appDocument(args),
+    body: await appRequestBody(args),
   }));
 }
 
@@ -60,7 +70,7 @@ export function runPublish(args: string[], options: CloudCommandOptions = {}): P
   return serviceCommand(options, async (context) => context.fetcher("/api/v1/apps/publish", {
     ...machineOptions(args, context),
     method: "POST",
-    body: await appDocument(args),
+    body: await appRequestBody(args),
   }));
 }
 
