@@ -1,9 +1,9 @@
 ---
 title: "CLI"
-description: "The three commands owned by the @vendoai/vendo package: init, doctor, and sync."
+description: "Commands owned by the @vendoai/vendo package: init, doctor, sync, and cloud."
 ---
 
-The umbrella owns the `vendo` bin. It has three commands.
+The umbrella owns the `vendo` bin.
 
 ## `vendo init`
 
@@ -34,6 +34,23 @@ Exit codes:
 
 - `0`: success, including fail-soft warnings
 - `2`: breaking changes when `--strict` is set
+
+## `vendo cloud`
+
+Client for Vendo Cloud. `vendo cloud login <email>` sends a six-digit email
+OTP and stores the resulting session; `--token <jwt>` skips the OTP and stores
+a long-lived token instead. Other subcommands include `logout`, `whoami`,
+`orgs`, `keys`, `members`, `invite`, `deployments`, `usage`, `billing`,
+`share`, `publish`, `pin-ship`, and `validate`. All results print as JSON.
+
+Global options:
+
+- `--api-url <url>` overrides `VENDO_CLOUD_URL` (default `https://console.vendo.run`).
+- `--key <vnd_...>` overrides `VENDO_API_KEY` for machine commands.
+- `--org <id>` selects the organization; omit only if your account has one.
+
+Run `vendo cloud help` for the full command list. See
+[Vendo Cloud](/deploy/vendo-cloud) for setup, keys, and sharing.
 
 ## Telemetry opt-out
 

@@ -45,7 +45,7 @@
       },
       {
         "group": "Deploy and operate",
-        "pages": ["deploy/persistence", "deploy/deploying", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
+        "pages": ["deploy/persistence", "deploy/deploying", "deploy/vendo-cloud", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
       },
       {
         "group": "Reference",

@@ -1,0 +1,106 @@
+---
+title: "Vendo Cloud"
+description: "Sign in, provide an API key, and use hosted sharing and publishing from your app or CI."
+---
+
+Vendo Cloud is the hosted backend for cloud-gated surfaces: sharing frozen app
+copies, publishing app versions, and org-scoped keys and members. Local
+development does not need it. Reach for it when you want cross-host sharing,
+published app copies, or a machine key for CI.
+
+## Prerequisites
+
+- A Vendo Cloud account, reachable at `https://console.vendo.run`.
+- The `vendo` CLI available on your PATH (`npx vendo` also works).
+
+## Sign in from the CLI
+
+`vendo cloud login <email>` sends a six-digit code to your inbox, prompts for
+it on stdin, and stores the returned session under your home directory. The
+session is then used by every other `vendo cloud` subcommand.
+
+```bash
+vendo cloud login you@example.com
+# Enter the code sent to you@example.com: 123456
+# { "loggedIn": true, "mode": "email", "email": "you@example.com" }
+```
+
+If you already have a long-lived JWT — for example, from your identity
+provider — skip the OTP flow and store it directly:
+
+```bash
+vendo cloud login --token <jwt>
+```
+
+Sign out with `vendo cloud logout`. Confirm the active identity and list your
+organizations with `vendo cloud whoami`.
+
+## Provide an API key to the runtime
+
+Cloud-gated runtime calls read `VENDO_API_KEY` from the host process. When it
+is unset or empty, `apps.share()` and `apps.publish()` throw `cloud-required`,
+and the wire returns HTTP 402. Set it wherever your handler runs:
+
+```bash
+export VENDO_API_KEY=vnd_live_...
+```
+
+Create and rotate keys from the CLI:
+
+```bash
+vendo cloud keys create --org <orgId> --name "ci-publisher"
+vendo cloud keys list --org <orgId>
+vendo cloud keys revoke --org <orgId> --id <keyId>
+```
+
+`--org` is only optional when your account has exactly one organization.
+
+## Point at a different Vendo Cloud URL
+
+By default the runtime and CLI both target `https://console.vendo.run`. Set
+`VENDO_CLOUD_URL` to override, for example when running against a staging
+environment:
+
+```bash
+export VENDO_CLOUD_URL=https://console.staging.vendo.run
+```
+
+Individual CLI commands accept `--api-url <url>` for one-off overrides.
+
+## Share and publish
+
+With `VENDO_API_KEY` set, the runtime uses the hosted API automatically:
+
+```ts
+import { apps } from "@vendoai/apps";
+
+const snapshot = await apps.share(appId, doc, ctx);
+const record = await apps.publish(appId, doc, ctx);
+```
+
+`share` returns a `ShareSnapshot` — a frozen copy pinned to `createdAt`.
+`publish` returns a `PublishRecord` with the assigned `version`. Both
+responses are validated against the frozen wire schemas before they resolve;
+malformed responses reject as `validation` errors.
+
+To publish from CI without loading your app in Node, upload the app document
+directly:
+
+```bash
+vendo cloud share ./app.json
+vendo cloud publish ./app.json
+```
+
+## Error handling
+
+Cloud calls surface the shared error taxonomy documented in
+[Troubleshooting](/deploy/troubleshooting):
+
+- `cloud-required` (HTTP 402) — the runtime has no `VENDO_API_KEY`, or the key
+  lacks the entitlement for the requested surface.
+- `validation`, `not-found`, `conflict`, `blocked` — propagated from the
+  hosted API with the same codes your wire uses.
+
+Handle `cloud-required` by prompting the operator to set `VENDO_API_KEY` or,
+for interactive tools, by running `vendo cloud login` and creating a key with
+`vendo cloud keys create`.
