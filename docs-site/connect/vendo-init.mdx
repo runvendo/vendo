@@ -18,6 +18,10 @@ Answers land in `.vendo/overrides.json` and remain authoritative across future
 sync runs. Init also writes policy, product brief, theme, and the PGlite ignore
 entry where applicable.
 
+Init also asks whether to open the [MCP door](/capabilities/mcp). Opening it
+is a host decision and requires a `HostOAuthAdapter`, so it stays off unless
+you explicitly opt in.
+
 ## Agent mode
 
 ```bash

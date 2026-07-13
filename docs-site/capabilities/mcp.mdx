@@ -1,0 +1,132 @@
+---
+title: "MCP door"
+description: "Serve your product's tools to outside agents like Claude, ChatGPT, and Cursor through one guarded, OAuth-authenticated door."
+---
+
+The MCP door makes your host product installable in MCP clients such as Claude,
+ChatGPT, and Cursor. Every door tool call flows through the same guard-bound
+registry, policy, approvals, and audit path as chat — outside agents get no
+weaker perimeter than your own conversation surface.
+
+Enabling the door is a host decision. It is off by default, and `vendo init`
+asks before turning it on.
+
+## When to use it
+
+- You want an installable MCP server that exposes your product's tools to
+  third-party agents.
+- Users of those agents should act as themselves in your product, with the
+  same policy and approvals you enforce in-product.
+- You already own a session and consent flow you can plug in behind an OAuth
+  seam.
+
+Skip it if you only need to pull *remote* MCP tools into your own agent — that
+is what `mcpConnector` does, and it runs the other direction. See
+[Connectors](/capabilities/integrations).
+
+## Enable the door
+
+Set `mcp: true` and pass a `HostOAuthAdapter`:
+
+```ts
+import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+import type { HostOAuthAdapter } from "@vendoai/mcp";
+
+const oauth: HostOAuthAdapter = {
+  async authorize(request, { clientName, scopes }) {
+    // Authenticate the user with your existing session and confirm consent.
+    // Return { subject } on success, or a Response for redirects/renders.
+    const user = await resolveSession(request);
+    if (!user) return renderLogin(request);
+    return { subject: user.id };
+  },
+  async principal(subject) {
+    // Resolve subject → Principal on every door request. Return null to revoke.
+    const user = await lookupUser(subject);
+    return user ? { kind: "user", subject: user.id, display: user.name } : null;
+  },
+};
+
+const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  mcp: true,
+  oauth,
+});
+
+export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+```
+
+`oauth` is required when `mcp` is true. Without it, `createVendo` throws — the
+door cannot mint principals otherwise.
+
+## Route the discovery paths
+
+The door mounts at `/api/vendo/mcp` alongside the wire. Its OAuth discovery
+documents live at the origin root, so on Next.js you need a sibling well-known
+route forwarding to the same handler:
+
+```ts
+// app/.well-known/[...path]/route.ts
+import { vendo } from "@/lib/vendo";
+
+export const GET = (request: Request) => vendo.handler(request);
+export const POST = (request: Request) => vendo.handler(request);
+```
+
+The four exact paths the door owns are:
+
+- `/api/vendo/mcp` — the MCP Streamable HTTP transport and OAuth endpoints.
+- `/.well-known/oauth-protected-resource/api/vendo/mcp`
+- `/.well-known/oauth-authorization-server/api/vendo/mcp`
+- `/.well-known/mcp-server-card` and `/.well-known/mcp/server-card.json`
+
+Everything else on `/.well-known/*` continues to reach your own routes.
+
+## Set VENDO_BASE_URL
+
+Host tools that bind to routes need a base origin. Requests that arrive first
+through the door do not teach the wire its own origin, so set
+`VENDO_BASE_URL` explicitly whenever MCP traffic may hit your product before
+any in-product wire request does.
+
+```bash
+VENDO_BASE_URL=https://app.example.com
+```
+
+## How door calls authenticate to host tools
+
+MCP clients have no host browser session, so the inbound MCP bearer is never
+forwarded to your host routes. Instead, door tool calls reach host APIs
+through the same `ActAs` seam away automations use:
+
+- On successful OAuth, the door records the user's consent for that client.
+- When a door tool call resolves to a host route, Vendo calls
+  `actAs(principal, grant)` to source auth material for the OAuth'd user.
+- Without either a real grant or a consent record, the call fails closed.
+- Without `actAs` configured at all, the tool returns a `not-implemented`
+  error — the same clean degradation as an away automation.
+
+The OAuth-scoped user is the authority. Risky tools still stop at your
+per-call guard decision regardless of the token's scopes.
+
+## Saved apps ride along
+
+If the composition has apps, the door exposes them as MCP Apps: `tools/list`
+includes `vendo_apps_list` and `vendo_apps_open`, and opened apps render
+through a static HTML shim. Interactions inside the rendered app route back
+through the same guard-bound path. The door is a viewer and runner — app
+creation and editing stay in-product.
+
+## Verify
+
+```bash
+npx vendo doctor
+```
+
+When the door is open, doctor verifies both OAuth metadata documents resolve
+and the server card parses. `GET /status` returns `blocks.mcp: true`.
+
+To connect a client, point it at `https://your-app.example.com/api/vendo/mcp`.
+The client discovers OAuth from the `WWW-Authenticate` challenge on its first
+`401`, walks the user through your `authorize` step, and starts calling tools.

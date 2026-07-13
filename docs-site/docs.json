@@ -41,7 +41,7 @@
       },
       {
         "group": "Capabilities",
-        "pages": ["capabilities/integrations", "capabilities/voice"]
+        "pages": ["capabilities/integrations", "capabilities/mcp", "capabilities/voice"]
       },
       {
         "group": "Deploy and operate",
