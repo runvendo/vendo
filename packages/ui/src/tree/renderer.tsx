@@ -17,6 +17,8 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
+import { useVendoThemeOrDefault } from "../context.js";
+import { themeCssVariables } from "../theme.js";
 import { resolvePointer } from "./bindings.js";
 import { NodeErrorBoundary } from "./error-boundary.js";
 import { JailedComponent } from "./jail/JailedComponent.js";
@@ -137,6 +139,7 @@ interface NodeRendererProps {
   ancestry: ReadonlySet<string>;
   nodes: ReadonlyMap<string, TreeNode>;
   generated: Record<string, string>;
+  themeVars: Record<string, string>;
   components: Record<string, ComponentType>;
   data: Record<string, Json>;
   state: Record<string, Json>;
@@ -184,6 +187,7 @@ function NodeRenderer(props: NodeRendererProps) {
             name={node.component}
             source={source}
             props={bound}
+            themeVars={props.themeVars}
             onAction={invoke}
             onStateSet={props.setViewState}
           />
@@ -230,6 +234,8 @@ function StatefulTreeView({
   onAction,
   onStateChange,
 }: TreeViewProps) {
+  const theme = useVendoThemeOrDefault();
+  const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
   const validation = validateTree(tree);
   const [viewState, setViewState] = useState<Record<string, Json>>({});
   const stateRef = useRef(viewState);
@@ -279,6 +285,7 @@ function StatefulTreeView({
         ancestry={new Set()}
         nodes={nodes}
         generated={validation.tree.components ?? {}}
+        themeVars={themeVars}
         components={components}
         data={data ?? validation.tree.data ?? {}}
         state={viewState}

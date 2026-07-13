@@ -70,9 +70,20 @@ async function writeInitOutput(
     path.join(repoDir, ".vendo/theme.json"),
     JSON.stringify(
       {
-        version: 1,
-        ...expectedTheme,
-        ...(options.theme ?? {}),
+        colors: {
+          background: options.theme?.["background"] ?? expectedTheme.background,
+          surface: options.theme?.["surface"] ?? expectedTheme.surface,
+          text: options.theme?.["text"] ?? expectedTheme.text,
+          muted: options.theme?.["mutedText"] ?? expectedTheme.mutedText,
+          accent: options.theme?.["accent"] ?? expectedTheme.accent,
+          accentText: "#ffffff",
+          danger: "#dc2626",
+          border: "#e5e7eb",
+        },
+        typography: { fontFamily: expectedTheme.fontFamily, baseSize: "16px" },
+        radius: { small: "4px", medium: `${expectedTheme.radius}px`, large: "12px" },
+        density: "comfortable",
+        motion: "full",
       },
       null,
       2,
@@ -82,33 +93,32 @@ async function writeInitOutput(
     path.join(repoDir, ".vendo/tools.json"),
     JSON.stringify(
       {
-        version: 1,
+        format: "vendo/tools@1",
         tools: [
           {
-            name: "listInvoices",
+            name: "host_listInvoices",
             description: "List invoices.",
             inputSchema: { type: "object", properties: {} },
-            annotations: { mutating: false, dangerous: false },
-            binding: { type: "http", method: "GET", path: "/api/invoices" },
+            risk: "read",
+            binding: { kind: "route", method: "GET", path: "/api/invoices", argsIn: "query" },
           },
           {
-            name: "createInvoice",
+            name: "host_createInvoice",
             description: "Create invoice.",
             inputSchema: { type: "object", properties: {} },
-            annotations: { mutating: options.createMutating ?? true, dangerous: false },
-            binding: { type: "http", method: "POST", path: "/api/invoices" },
+            risk: options.createMutating === false ? "read" : "write",
+            binding: { kind: "route", method: "POST", path: "/api/invoices", argsIn: "body" },
           },
           ...(options.extraTool
             ? [{
-                name: "listCustomers",
+                name: "host_listCustomers",
                 description: "List customers.",
                 inputSchema: { type: "object", properties: {} },
-                annotations: { mutating: false, dangerous: false },
-                binding: { type: "http" as const, method: "GET" as const, path: "/api/customers" },
+                risk: "read",
+                binding: { kind: "route" as const, method: "GET" as const, path: "/api/customers", argsIn: "query" as const },
               }]
             : []),
         ],
-        events: [],
       },
       null,
       2,

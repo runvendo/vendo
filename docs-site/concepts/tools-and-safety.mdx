@@ -1,129 +1,24 @@
 ---
 title: "Tools and safety"
-description: "How Vendo tools execute on the customer's session, why they fail closed, and how the approval policy gates reads, writes, and critical actions."
+description: "One tool shape, one guard choke point, and app-bound authority for away runs."
 ---
 
-Vendo tools are governed before they execute. Reads can run directly when they
-are marked safe. Mutating or unverified actions pause for approval. Critical
-actions always ask.
+Every host API, connector, and Vendo capability uses one `ToolDescriptor`.
+Names match `/^[a-zA-Z0-9_-]{1,64}$/`; underscore is the namespace separator.
+Risk is `read`, `write`, or `destructive`.
 
-## Host API Tools Run In The Browser
+`guard.bind(tools)` is the only sanctioned execution path. Its decision order
+is critical flag, input scanners, grant match, policy rules, policy code,
+judge, then the default posture. Critical tools always ask. Breakers can turn a
+run decision into an ask.
 
-Your app's API surface lives in `.vendo/tools.json`. The server registers those
-tools with the agent so the model can choose them, but the server does not
-execute them. The browser executes host API tools on the customer's existing
-session.
+Present calls can pause for an interactive approval. Away calls cannot. They
+park as `pending-approval` and resume only after the user returns and decides.
 
-The execution path is:
+Approvals display the real inputs. Grants bind to the principal, tool
+descriptor hash, scope, and duration. Away execution additionally requires a
+standing grant bound to the running app. A chat grant or another app's grant
+never transfers.
 
-1. The model selects a host API tool.
-2. The server evaluates policy through the tool's `needsApproval` gate.
-3. If approval is required, the shell shows an approval card and waits.
-4. After the stream settles, the browser calls your API with `fetch` and
-   `credentials: "include"`.
-5. The browser returns the tool result to the model turn.
-
-Only the tool result enters the agent loop. Customer cookies and bearer tokens
-stay in the browser and your app's own auth layer remains the final authority.
-
-## Manifest Annotations
-
-Every `.vendo/tools.json` entry has required safety annotations:
-
-```json
-{
-  "version": 1,
-  "tools": [
-    {
-      "name": "listInvoices",
-      "description": "List invoices",
-      "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      },
-      "annotations": {
-        "mutating": false,
-        "dangerous": false
-      },
-      "binding": {
-        "type": "http",
-        "method": "GET",
-        "path": "/api/invoices"
-      }
-    }
-  ],
-  "events": []
-}
-```
-
-Vendo converts these annotations into policy hints:
-
-- `mutating: false` means read-only. The default policy allows it.
-- `mutating: true` means the action can change host state. The default policy
-  asks for approval unless a remembered exact approval or valid grant
-  suppresses that act-tier approval.
-- `dangerous: true` means critical. Grants do not suppress it.
-- `idempotent` is optional metadata for repeat-call safety.
-
-The route scanner is conservative. Tools inferred from route scans are marked
-`mutating: true` by default, because inferred safety should not auto-run. Relax
-a tool to `mutating: false` only after you review the endpoint.
-
-## Approval Decisions
-
-The policy result is one of three decisions:
-
-- `allow`: run without asking.
-- `approve`: pause and ask the customer.
-- `deny`: do not run.
-
-For client-executed host tools, the server enforces that decision at the
-approval gate before the browser executor runs. For generated UI actions, the
-sandbox dispatches to `POST /api/vendo/action`; that route issues a single-use
-`approvalToken` when approval is needed and only executes the exact approved
-action and payload when the token is returned.
-
-## Consent Surfaces
-
-The shell renders the immediate consent surface that matches the risk:
-
-- A normal approval card for act-tier actions.
-- A batch approval card for multiple same-tool act-tier approvals in one turn.
-- A critical ceremony card for `dangerous: true` tools. Critical approvals do
-  not batch.
-- A fade proposal when the customer has repeatedly approved the same
-  suppressible action shape.
-
-Vendo also exposes Waiting and Trust surfaces for parked automation actions,
-standing grants, compiled rules, audit rows, and critical tools.
-
-Consent has two wires. The Vercel AI SDK approval response resumes the paused
-tool call. Vendo's consent channel records richer semantics such as yes, no,
-subset, grants, fade decisions, and audit events.
-
-## Deployment Gate
-
-The handler holds model and integration credentials, so production traffic must
-be gated by your app. Pass a `principal` resolver to `createVendoHandler()` and
-return `null` for unauthorized requests.
-
-```ts
-import { createVendoHandler } from "vendoai/server";
-
-export const { GET, POST } = createVendoHandler({
-  principal: async (req) => {
-    const session = await yourAuth(req);
-    return session ? { userId: session.user.id } : null;
-  }
-});
-```
-
-Without `principal`, Vendo serves local development requests with a default
-identity. In `NODE_ENV=production`, it fails closed unless you pass
-`principal` or explicitly set `VENDO_ALLOW_REMOTE=1`.
-
-<Warning>
-  `VENDO_ALLOW_REMOTE=1` disables the default remote guard without replacing it
-  with your auth. Use it only for a throwaway environment you already trust.
-</Warning>
+Every tool call, approval, policy decision, run, and app lifecycle event is
+audited with principal, venue, presence, and app context.

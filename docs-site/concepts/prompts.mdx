@@ -1,108 +1,22 @@
 ---
-title: "How prompts are assembled"
-description: "How the default handler prompt combines platform guardrails with your product identity, brand, tools, and instructionsExtra additions."
+title: "Prompt assembly"
+description: "The fixed order used to build the agent system prompt on every turn."
 ---
 
-Vendo builds the system prompt at run time. The default handler prompt combines
-platform behavior, your app identity, your brand, your available tools, and
-your extra instructions.
+The agent assembles its system prompt fresh for each turn:
 
-## Default Assembly
+1. Vendo's operating prompt.
+2. The host product brief from `.vendo/brief.md`.
+3. Company directions returned by `guard.directions(ctx)`.
+4. Catalog and theme summary when the venue can render trees.
+5. Host instructions.
 
-With `createVendoHandler()` and no full prompt override, Vendo assembles the
-prompt from these inputs:
+Directions are policy data. Put them in `.vendo/policy.json` or pass them in
+`PolicyConfig`; there is no second directions channel or merge rule.
 
-- Product identity from `productName`.
-- Platform behavior: when to answer in text, when to call `render_view`, how
-  approvals work, how to talk about capabilities, and how to use Connect cards.
-- Brand guidance from `.vendo/theme.json`.
-- Prewired and host component catalogs.
-- Host API capability text from `.vendo/tools.json` or `hostTools`.
-- Integration, MCP, and automation guidance when those capabilities are present.
-- A live per-run tool summary from `ctx.toolSummary`.
-- Your `instructionsExtra`, if supplied.
-- Final non-negotiable guardrails.
+The apps generation engine has its own specialized prompts for tree emission
+and code edits. It receives the component catalog, theme, optional
+`.vendo/design-rules.md`, and format limits. It can use the same model as the
+agent or a different AI SDK `LanguageModel`.
 
-The guardrail section is appended last in the default prompt. If your extra
-instructions conflict with Vendo safety rules, the safety rules win.
-
-## Add Host Instructions
-
-Use `instructionsExtra` for normal customization. It is appended before the
-final guardrail section, so you can add product-specific behavior without
-replacing the platform prompt.
-
-```ts
-import { createVendoHandler } from "vendoai/server";
-
-export const { GET, POST } = createVendoHandler({
-  productName: "Acme",
-  instructionsExtra: [
-    "Use the invoice status labels exactly as they appear in Acme.",
-    "When showing money, include the currency code when the account has one."
-  ].join("\n")
-});
-```
-
-Good host instructions are concrete and local to your product. They should
-describe names, field conventions, customer-facing tone, or workflow rules that
-Vendo cannot infer from your API and component catalog.
-
-## Full Prompt Overrides
-
-`instructions` replaces the assembled default prompt. Use it only when you want
-to own the whole system prompt.
-
-`instructions` can be a string or a function. The function form runs per turn
-after the live toolset is assembled, and receives `ctx.toolSummary`.
-
-```ts
-import { createVendoHandler } from "vendoai/server";
-
-export const { GET, POST } = createVendoHandler({
-  instructions: (ctx) => {
-    const tools = ctx.toolSummary.map((tool) => tool.name).join(", ");
-
-    return [
-      "You are Acme's assistant.",
-      "Use the available tools to answer customer requests.",
-      `Available tools in this run: ${tools || "none"}.`,
-      "Actions that change state require the customer's explicit approval.",
-      "Use render_view when a chart, table, dashboard, or custom interactive view is better than text."
-    ].join("\n");
-  }
-});
-```
-
-When you use a full override, include the safety and rendering guidance you
-still want. Vendo will still enforce policy in code, but a sparse prompt can
-make the model less useful.
-
-## Grounded Capability Talk
-
-The live `ctx.toolSummary` is also how the default prompt answers "what can you
-do?" without inventing capabilities. The summary is built from the merged
-toolset for that run, excluding internal mechanics such as `render_view` and
-`request_connect`.
-
-If an integration is not connected, its tools are not in the live toolset. The
-default prompt tells the model to offer a Connect card instead of claiming the
-integration is already available.
-
-## Tool Output Capping
-
-Tool results are capped before they enter model context. Vendo uses
-`capToolOutput` at ingestion points so large or messy outputs do not dominate
-the prompt.
-
-The cap is deterministic and shape-stable:
-
-- Long strings are shortened with an explicit truncation marker.
-- HTML bodies are reduced to text.
-- Binary data is omitted.
-- Arrays and wide objects are shortened without fabricating replacement rows.
-- Plain object results can receive a `_truncation` note that explains what was
-  cut.
-
-This keeps the model grounded in real tool output while making oversized
-responses explicit instead of silent.
+Memory is deferred and has no reserved v0 seam.

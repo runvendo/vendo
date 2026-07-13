@@ -1,0 +1,11 @@
+{
+  "format": "vendo/policy@1",
+  "directions": [
+    "Be concise and use Maple's banking data without inventing balances or transactions."
+  ],
+  "rules": [
+    { "match": { "risk": "destructive" }, "action": "ask" },
+    { "match": { "risk": "write" }, "action": "ask" },
+    { "match": { "risk": "read" }, "action": "run" }
+  ]
+}

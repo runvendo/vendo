@@ -1,0 +1,23 @@
+{
+  "colors": {
+    "background": "#f7f5f1",
+    "surface": "#ffffff",
+    "text": "#221e19",
+    "muted": "#5c554b",
+    "accent": "#266755",
+    "accentText": "#FFFFFF",
+    "danger": "#B42318",
+    "border": "#DED8CF"
+  },
+  "typography": {
+    "fontFamily": "Hanken Grotesk, ui-sans-serif, system-ui, sans-serif",
+    "baseSize": "15px"
+  },
+  "radius": {
+    "small": "6px",
+    "medium": "12px",
+    "large": "12px"
+  },
+  "density": "comfortable",
+  "motion": "full"
+}

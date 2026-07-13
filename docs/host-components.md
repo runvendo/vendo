@@ -1,82 +1,99 @@
-# Registering host components
+# Host components and UI surfaces
 
-Give the agent your app's own components. Registered components render inside generated views pixel-identical to your product — nothing is more on-brand. Three files, all mechanical:
+`@vendoai/ui` is headless by default. It imports shared shapes from
+`@vendoai/core` and talks to the server only through the umbrella wire.
 
-## 1. Descriptors (React-free — feeds the server prompt + validation)
+## Entry points
 
-```ts
-// src/vendo/host-components/descriptors.ts
-import { z } from "zod";
-import { hostComponent, toHostRegistry } from "@vendoai/components/descriptors";
+| Entry | Contents |
+| --- | --- |
+| `@vendoai/ui` | client, provider, and hooks, with no styles |
+| `@vendoai/ui/chrome` | shipped, theme-driven surfaces |
+| `@vendoai/ui/tree` | the `vendo-genui/v1` renderer |
+| `@vendoai/ui/voice` | voice stage driver and surface |
 
-export const sparklineDescriptor = hostComponent(
-  "MapleSparkline",                       // PascalCase; primitives' names are rejected
-  "Tiny inline trend line. Use next to a stat. `data` is chronological.", // the agent READS this
-  z.object({ data: z.array(z.number()).min(2) }),  // JSON-safe props only
-);
-
-export const myHostComponents = toHostRegistry([sparklineDescriptor]);
-```
-
-`hostComponent` fails at build time on non-PascalCase names, reserved primitive names, or an empty description. Write descriptions like API docs — they are what the model uses to choose components.
-
-## 2. Adapters (React — compiled into the sandbox bundle only)
-
-```tsx
-// src/vendo/host-components/impls.tsx
-import { bindHostImpl } from "@vendoai/components";
-import { Sparkline } from "@/components/charts/sparkline";      // your REAL component
-import { sparklineDescriptor } from "./descriptors";
-
-const MapleSparkline = bindHostImpl(sparklineDescriptor, (p, runtime) => (
-  // p = schema-validated JSON props; runtime = stage-injected capabilities
-  // ({ vendo.dispatch, nodeId }) — absent outside the stage.
-  <Sparkline data={p.data} stroke="var(--vendo-fg)" />
-));
-
-export const myHostImpls = { MapleSparkline };
-```
-
-The adapter gets schema-validated props (invalid props render a contained fallback; render-time throws are error-bounded per node). It is also where host-world inputs are translated: host CSS vars → `--vendo-*` tokens, callbacks → `vendo.dispatch`.
-
-## 3. Sandbox bundle (two lines + a vite config)
+## Provider
 
 ```ts
-// vendo-sandbox/entry.ts
-import { installVendoHost } from "@vendoai/components/sandbox";
-import { myHostImpls } from "../src/vendo/host-components/impls";
-// Optional css: rules your components need inside the sandbox (e.g. the
-// Tailwind utilities they use) — manual today, extractor-emitted later.
-installVendoHost(myHostImpls, { css: MY_HOST_CSS });
+export function createVendoClient(config: { baseUrl?: string; headers?: Record<string, string> }): VendoClient;
+
+export function VendoProvider(props: {
+  client?: VendoClient;
+  components?: Record<string, ComponentType>;
+  theme?: Partial<VendoTheme>;
+  children: ReactNode;
+}): JSX.Element;
 ```
 
-`installVendoHost` throws on a name collision with the built-in catalog — rename (prefix with your app name) rather than shadow.
+The default client base is `/api/vendo`. Component names must match the catalog
+descriptors extracted by sync.
+
+## Component catalog
 
 ```ts
-// vendo-sandbox/vite.config.mts  (.mts if your app is not type:module)
-import { vendoHostPreset } from "@vendoai/stage/build";
-export default vendoHostPreset({ entry: "entry.ts", version: "my-app" });
+export interface RegisteredComponent {
+  name: string;
+  description: string;
+  propsSchema: StandardSchema;
+  remixable?: boolean;
+}
+
+export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 ```
 
-Serve the artifact as the stage's `bundleSource` (demo-bank copies it to `public/vendo/` at predev).
+Names are PascalCase and unique. `propsSchema` uses the Standard Schema
+interface. Set `remixable` only when sync may capture the component's real
+source as a pin baseline. The prewired primitives are reserved and do not
+appear in the catalog: `Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`,
+and `Divider`.
 
-## 4. Wire the registry
+## Headless hooks
 
-Pass `[...prewiredComponents, ...myHostComponents]` wherever the registry goes:
+| Hook | Surface |
+| --- | --- |
+| `useVendoThread` | messages, sending, in-turn approvals, and stop |
+| `useApprovals` | pending approvals and batch decisions |
+| `useGrants` | grants and revocation |
+| `useApps` | list, create, remove, and fork |
+| `useApp` | open, call, edit, history, undo, and refresh by re-opening |
+| `useAutomations` | enable, disable, runs, dry-run, and stop |
+| `useActivity` | self-scoped audit activity |
+| `useVendoStatus` | connection and guard posture |
+| `useVoice` | voice stage state, start, stop, and transcript |
+| `useVendoTheme` | resolved theme tokens |
 
-- the `VendoProvider`/`VendoStage` `components` prop (validates generated host-node props);
-- the engine's `components` config (`createVendoAgent({ components })`) so `render_view` rejects unknown names and schema-invalid host props server-side, where the model can repair them;
-- your agent's system prompt: list them under a HOST COMPONENTS section with `componentPromptCatalog(myHostComponents)` from `@vendoai/components/descriptors` so the model prefers them and uses exact prop names.
+All hooks are transport-only and SSR-safe.
 
-## Error story
+## Shipped chrome
 
-- Bad registration (name/description/schema) → throws at module load, breaking the build.
-- Schema-invalid props from the model → rejected server-side in `render_view` as a correctable tool error (when the engine gets `components`), then re-validated at genui resolution (contained placeholder) and in the adapter (inline fallback).
-- Unknown component name → a correctable `render_view` error server-side; a visible "Unknown component" notice per node if one still reaches the view.
-- Adapter/render throw → per-node error boundary; siblings render.
+`VendoThread`, `VendoOverlay`, `VendoSlot`, `VendoPage`, `VendoPalette`, and
+`VendoStage` cover the main placements. `ApprovalCard`, `ActivityPanel`,
+`AutomationsPanel`, and `NoPolicyNotice` cover trust and operations.
 
-## Constraints
+Chrome derives all styling from `VendoTheme` tokens. The required bar is WCAG
+2.1 AA, complete keyboard access, screen-reader testing, and mobile web.
 
-- Props cross a JSON boundary: no functions, no React nodes, no Dates. Icons by name, dates as ISO strings.
-- The sandbox ships no host CSS: components styled by CSS-in-JS/inline styles/SVG attributes port as-is; Tailwind/external-stylesheet components need their CSS delivered into the bundle (extractor work) or an adapter that restyles.
-- Host CSS variables don't exist in the sandbox — map them to `--vendo-*` tokens in the adapter.
+## Tree rendering
+
+```ts
+export function TreeView(props: {
+  tree: Tree;
+  components: Record<string, ComponentType>;
+  data?: Record<string, Json>;
+  onAction(req: { nodeId: string; action: string; payload?: Json }): Promise<ToolOutcome>;
+}): JSX.Element;
+```
+
+`TreeView` renders `vendo-genui/v1`. `$path` resolves against app data and
+`$state` against the per-user, per-app state singleton. Host components render
+by registered name. Generated components always run inside the iframe jail
+with `connect-src 'none'`.
+
+Actions leave the renderer through `onAction`, then cross the wire and guard.
+Tool names and `fn:` references are opaque to the renderer. Erroring nodes are
+contained, dangling children render skeletons, and unknown format tags render a
+contained notice.
+
+Approved pins mount through `VendoSlot` with a fallback to the original host
+component. HTTP app surfaces render in an iframe; a resuming app shows its
+dimmed, non-interactive cover.

@@ -68,7 +68,7 @@ function installUmamiAuthFetch(): () => void {
 `;
 
 const umamiTools = {
-  version: 1,
+  format: "vendo/tools@1",
   tools: [
     {
       name: "list_umami_websites",
@@ -78,8 +78,8 @@ const umamiTools = {
         properties: {},
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/me/websites" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/me/websites", argsIn: "query" },
     },
     {
       name: "get_umami_website_metrics",
@@ -102,8 +102,8 @@ const umamiTools = {
         required: ["websiteId", "type", "startAt", "endAt"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/websites/{websiteId}/metrics" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/websites/{websiteId}/metrics", argsIn: "query" },
     },
     {
       name: "get_umami_pageviews",
@@ -120,8 +120,8 @@ const umamiTools = {
         required: ["websiteId", "startAt", "endAt"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/websites/{websiteId}/pageviews" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/websites/{websiteId}/pageviews", argsIn: "query" },
     },
     {
       name: "get_umami_revenue_report",
@@ -156,8 +156,8 @@ const umamiTools = {
         required: ["body"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "POST", path: "/api/reports/revenue" },
+      risk: "read",
+      binding: { kind: "openapi", operationId: "getUmamiRevenueReport", method: "POST", path: "/api/reports/revenue" },
       formats: { value: "cents", total: "cents" },
     },
     {
@@ -204,11 +204,10 @@ const umamiTools = {
         required: ["body"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "POST", path: "/api/reports/funnel" },
+      risk: "read",
+      binding: { kind: "openapi", operationId: "getUmamiFunnelReport", method: "POST", path: "/api/reports/funnel" },
     },
   ],
-  events: [],
 };
 
 const papermarkInstructions = [
@@ -226,7 +225,7 @@ const papermarkInstructions = [
 ].join("\n");
 
 const papermarkTools = {
-  version: 1,
+  format: "vendo/tools@1",
   tools: [
     {
       name: "getTeams",
@@ -236,8 +235,8 @@ const papermarkTools = {
         properties: {},
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/teams" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/teams", argsIn: "query" },
     },
     {
       name: "listTeamDocuments",
@@ -252,8 +251,8 @@ const papermarkTools = {
         required: ["teamId"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/teams/{teamId}/documents" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/documents", argsIn: "query" },
     },
     {
       name: "getDocumentStats",
@@ -267,8 +266,8 @@ const papermarkTools = {
         required: ["teamId", "documentId"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/teams/{teamId}/documents/{documentId}/views-count" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/documents/{documentId}/views-count", argsIn: "query" },
     },
     {
       name: "getDocumentViews",
@@ -285,8 +284,8 @@ const papermarkTools = {
         required: ["teamId"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/teams/{teamId}/viewers" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/viewers", argsIn: "query" },
     },
     {
       name: "listDocumentLinks",
@@ -300,8 +299,8 @@ const papermarkTools = {
         required: ["teamId", "documentId"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/teams/{teamId}/documents/{documentId}/links" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/documents/{documentId}/links", argsIn: "query" },
     },
     {
       name: "listDatarooms",
@@ -315,8 +314,8 @@ const papermarkTools = {
         required: ["teamId"],
         additionalProperties: false,
       },
-      annotations: { mutating: false, dangerous: false, idempotent: true },
-      binding: { type: "http", method: "GET", path: "/api/teams/{teamId}/datarooms" },
+      risk: "read",
+      binding: { kind: "route", method: "GET", path: "/api/teams/{teamId}/datarooms", argsIn: "query" },
     },
     {
       name: "createShareLink",
@@ -345,8 +344,8 @@ const papermarkTools = {
         required: ["body"],
         additionalProperties: false,
       },
-      annotations: { mutating: true, dangerous: false, idempotent: false },
-      binding: { type: "http", method: "POST", path: "/api/links" },
+      risk: "write",
+      binding: { kind: "route", method: "POST", path: "/api/links", argsIn: "body" },
     },
     {
       name: "addDocumentToDataroom",
@@ -368,8 +367,8 @@ const papermarkTools = {
         required: ["teamId", "documentId", "body"],
         additionalProperties: false,
       },
-      annotations: { mutating: true, dangerous: false, idempotent: false },
-      binding: { type: "http", method: "POST", path: "/api/teams/{teamId}/documents/{documentId}/add-to-dataroom" },
+      risk: "write",
+      binding: { kind: "route", method: "POST", path: "/api/teams/{teamId}/documents/{documentId}/add-to-dataroom", argsIn: "body" },
     },
     {
       name: "updateLinkSettings",
@@ -391,11 +390,10 @@ const papermarkTools = {
         required: ["linkId", "body"],
         additionalProperties: false,
       },
-      annotations: { mutating: true, dangerous: false, idempotent: false },
-      binding: { type: "http", method: "PUT", path: "/api/links/{linkId}" },
+      risk: "write",
+      binding: { kind: "route", method: "PUT", path: "/api/links/{linkId}", argsIn: "body" },
     },
   ],
-  events: [],
 };
 
 const papermarkSeedScript = String.raw`import { mkdir, writeFile } from "node:fs/promises";

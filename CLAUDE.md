@@ -4,21 +4,20 @@ Vendo is a devtool that lets a company's users customize its product: an
 embedded agent that acts through the host's own API as the user and renders
 generated UI in a sandboxed, brand-native surface.
 
-## Layout (v0 rebuild in progress — waves 3+)
+## Layout
 
-- `packages/` — the active workspace: new blocks built fresh against the FROZEN
-  contracts in `docs/contracts/` (read `00-overview.md` first), plus `vendo-telemetry`
-  (orthogonal, unchanged)
-- `legacy/` — the pre-v0 packages and demo apps: a **read-only quarry**, out of the
-  workspace, never imported by new packages (enforced by `scripts/dependency-guard.mjs`
-  in `pnpm lint`); deleted wave by wave, gone by wave 7
-- `corpus/` — init-extraction corpus harness; red by design until wave 7
-- `docs/` — integration docs
+- `packages/` — the nine `@vendoai/*` blocks + the `@vendoai/vendo` umbrella and
+  `vendoai` alias, built against the FROZEN contracts in `docs/contracts/`
+  (read `00-overview.md` first); layering enforced by `scripts/dependency-guard.mjs`
+  in `pnpm lint`
+- `apps/` — the two demo hosts: `demo-bank` (Maple) and `demo-accounting` (Cadence)
+- `corpus/` — init-extraction corpus harness (`pnpm corpus`)
+- `docs/` — integration docs; `docs-site/` — the public docs site
 
 ## Commands
 
 - `pnpm install` · `pnpm build` · `pnpm test` · `pnpm typecheck` · `pnpm lint` (turbo-cached)
-- Demo apps are quarried under `legacy/apps/` until wave 7 (`pnpm demo` returns then).
+- Demos: `pnpm --filter demo-bank dev` (Maple) · `pnpm --filter demo-accounting dev` (Cadence)
 
 ## Rules
 

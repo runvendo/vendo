@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createLocalVendoInjector,
-  localVendoInitArgs,
   type PackWorkspacePackage,
 } from "./inject.js";
 import { createRunContext } from "./run-context.js";
@@ -35,97 +34,38 @@ async function createWorkspace(): Promise<string> {
     packageManager: "pnpm@9.12.0",
   });
 
-  const packages: Array<{ dir: string; name: string; dependencies?: Record<string, string> }> = [
+  const packages: Array<{ dir: string; name: string; version?: string; dependencies?: Record<string, string> }> = [
     {
       dir: "vendo",
-      name: "vendoai",
+      name: "@vendoai/vendo",
       dependencies: {
-        "@vendoai/client": "0.1.0",
-        "@vendoai/components": "0.1.0",
-        "@vendoai/core": "0.1.0",
-        "@vendoai/react": "0.1.0",
-        "@vendoai/server": "0.1.0",
-        "@vendoai/shell": "0.1.0",
+        "@vendoai/actions": "workspace:*",
+        "@vendoai/agent": "workspace:*",
+        "@vendoai/apps": "workspace:*",
+        "@vendoai/automations": "workspace:*",
+        "@vendoai/core": "workspace:*",
+        "@vendoai/guard": "workspace:*",
+        "@vendoai/store": "workspace:*",
+        "@vendoai/telemetry": "workspace:*",
+        "@vendoai/ui": "workspace:*",
       },
     },
-    { dir: "vendo-cli", name: "@vendoai/cli" },
-    {
-      dir: "vendo-client",
-      name: "@vendoai/client",
-      dependencies: {
-        "@vendoai/components": "0.1.0",
-        "@vendoai/core": "0.1.0",
-        "@vendoai/react": "0.1.0",
-        "@vendoai/server": "0.1.0",
-        "@vendoai/shell": "0.1.0",
-        "@vendoai/stage": "0.1.0",
-      },
-    },
-    {
-      dir: "vendo-components",
-      name: "@vendoai/components",
-      dependencies: {
-        "@vendoai/core": "0.1.0",
-      },
-    },
-    { dir: "vendo-core", name: "@vendoai/core" },
-    {
-      dir: "vendo-react",
-      name: "@vendoai/react",
-      dependencies: {
-        "@vendoai/core": "0.1.0",
-        "@vendoai/stage": "0.1.0",
-      },
-    },
-    {
-      dir: "vendo-runtime",
-      name: "@vendoai/runtime",
-      dependencies: {
-        "@vendoai/core": "0.1.0",
-      },
-    },
-    {
-      dir: "vendo-server",
-      name: "@vendoai/server",
-      dependencies: {
-        "@vendoai/components": "0.1.0",
-        "@vendoai/core": "0.1.0",
-        "@vendoai/runtime": "0.1.0",
-        "@vendoai/shell": "0.1.0",
-        "@vendoai/store": "0.1.0",
-        "@vendoai/telemetry": "0.1.0",
-      },
-    },
-    {
-      dir: "vendo-shell",
-      name: "@vendoai/shell",
-      dependencies: {
-        "@vendoai/core": "0.1.0",
-        "@vendoai/react": "0.1.0",
-      },
-    },
-    {
-      dir: "vendo-stage",
-      name: "@vendoai/stage",
-      dependencies: {
-        "@vendoai/core": "0.1.0",
-      },
-    },
-    {
-      dir: "vendo-store",
-      name: "@vendoai/store",
-      dependencies: {
-        "@vendoai/core": "0.1.0",
-        "@vendoai/runtime": "0.1.0",
-      },
-    },
-    { dir: "vendo-telemetry", name: "@vendoai/telemetry" },
+    { dir: "vendoai", name: "vendoai", dependencies: { "@vendoai/vendo": "workspace:*" } },
+    { dir: "actions", name: "@vendoai/actions" },
+    { dir: "agent", name: "@vendoai/agent" },
+    { dir: "apps", name: "@vendoai/apps" },
+    { dir: "automations", name: "@vendoai/automations" },
+    { dir: "core", name: "@vendoai/core" },
+    { dir: "guard", name: "@vendoai/guard" },
+    { dir: "store", name: "@vendoai/store" },
+    { dir: "vendo-telemetry", name: "@vendoai/telemetry", version: "0.2.0" },
+    { dir: "ui", name: "@vendoai/ui" },
   ];
 
   for (const pkg of packages) {
     await writeJson(path.join(workspaceRoot, "packages", pkg.dir, "package.json"), {
       name: pkg.name,
-      version: "0.1.0",
+      version: pkg.version ?? "0.3.0",
       type: "module",
       main: "index.js",
       files: ["index.js"],
@@ -133,8 +73,6 @@ async function createWorkspace(): Promise<string> {
     });
     await writeFile(path.join(workspaceRoot, "packages", pkg.dir, "index.js"), "export {};\n");
   }
-  await mkdir(path.join(workspaceRoot, "vendor"), { recursive: true });
-  await writeFile(path.join(workspaceRoot, "vendor/fluidkit-0.5.0-test.tgz"), "fixture fluidkit");
   return workspaceRoot;
 }
 
@@ -145,6 +83,7 @@ async function createTargetRepo(corpusRoot: string, name: string): Promise<strin
     name,
     packageManager: "pnpm@9.12.0",
     dependencies: {
+      "@vendoai/vendo": "latest",
       "vendoai": "latest",
     },
   });
@@ -153,7 +92,7 @@ async function createTargetRepo(corpusRoot: string, name: string): Promise<strin
 
 function readPackageJson(repoDir: string): Promise<{
   dependencies: Record<string, string>;
-  devDependencies: Record<string, string>;
+  devDependencies?: Record<string, string>;
   pnpm: { overrides: Record<string, string> };
 }> {
   return readFile(path.join(repoDir, "package.json"), "utf8").then((source) => JSON.parse(source));
@@ -162,14 +101,6 @@ function readPackageJson(repoDir: string): Promise<{
 function readAnyPackageJson(repoDir: string): Promise<Record<string, unknown>> {
   return readFile(path.join(repoDir, "package.json"), "utf8").then((source) => JSON.parse(source) as Record<string, unknown>);
 }
-
-describe("localVendoInitArgs", () => {
-  it("passes the CLI local mode through to later init invocation", async () => {
-    const workspaceRoot = await createWorkspace();
-
-    expect(localVendoInitArgs(workspaceRoot)).toEqual(["--local", workspaceRoot]);
-  });
-});
 
 describe("createLocalVendoInjector", () => {
   it("builds and packs workspace packages once per sweep, then reuses tarballs across repos", async () => {
@@ -201,69 +132,64 @@ describe("createLocalVendoInjector", () => {
     expect(second.repoDir).toBe(repoTwo);
     expect(buildCount).toBe(1);
     expect([...packCounts.entries()].sort()).toEqual([
-      ["@vendoai/cli", 1],
-      ["@vendoai/client", 1],
-      ["@vendoai/components", 1],
+      ["@vendoai/actions", 1],
+      ["@vendoai/agent", 1],
+      ["@vendoai/apps", 1],
+      ["@vendoai/automations", 1],
       ["@vendoai/core", 1],
-      ["@vendoai/react", 1],
-      ["@vendoai/runtime", 1],
-      ["@vendoai/server", 1],
-      ["@vendoai/shell", 1],
-      ["@vendoai/stage", 1],
+      ["@vendoai/guard", 1],
       ["@vendoai/store", 1],
       ["@vendoai/telemetry", 1],
+      ["@vendoai/ui", 1],
+      ["@vendoai/vendo", 1],
       ["vendoai", 1],
     ]);
     await expect(readdir(path.join(repoOne, "vendor"))).resolves.toEqual(expect.arrayContaining([
-      "fluidkit-0.5.0-test.tgz",
-      "vendoai-0.1.0.tgz",
-      "vendoai-cli-0.1.0.tgz",
-      "vendoai-client-0.1.0.tgz",
-      "vendoai-components-0.1.0.tgz",
-      "vendoai-core-0.1.0.tgz",
-      "vendoai-react-0.1.0.tgz",
-      "vendoai-runtime-0.1.0.tgz",
-      "vendoai-server-0.1.0.tgz",
-      "vendoai-shell-0.1.0.tgz",
-      "vendoai-stage-0.1.0.tgz",
-      "vendoai-store-0.1.0.tgz",
-      "vendoai-telemetry-0.1.0.tgz",
+      "vendoai-0.3.0.tgz",
+      "vendoai-actions-0.3.0.tgz",
+      "vendoai-agent-0.3.0.tgz",
+      "vendoai-apps-0.3.0.tgz",
+      "vendoai-automations-0.3.0.tgz",
+      "vendoai-core-0.3.0.tgz",
+      "vendoai-guard-0.3.0.tgz",
+      "vendoai-store-0.3.0.tgz",
+      "vendoai-telemetry-0.2.0.tgz",
+      "vendoai-ui-0.3.0.tgz",
+      "vendoai-vendo-0.3.0.tgz",
     ]));
     await expect(readdir(path.join(repoTwo, "vendor"))).resolves.toEqual(expect.arrayContaining([
-      "vendoai-0.1.0.tgz",
-      "vendoai-cli-0.1.0.tgz",
-      "vendoai-client-0.1.0.tgz",
-      "vendoai-components-0.1.0.tgz",
-      "vendoai-core-0.1.0.tgz",
-      "vendoai-react-0.1.0.tgz",
-      "vendoai-runtime-0.1.0.tgz",
-      "vendoai-server-0.1.0.tgz",
-      "vendoai-shell-0.1.0.tgz",
-      "vendoai-stage-0.1.0.tgz",
-      "vendoai-store-0.1.0.tgz",
-      "vendoai-telemetry-0.1.0.tgz",
+      "vendoai-0.3.0.tgz",
+      "vendoai-actions-0.3.0.tgz",
+      "vendoai-agent-0.3.0.tgz",
+      "vendoai-apps-0.3.0.tgz",
+      "vendoai-automations-0.3.0.tgz",
+      "vendoai-core-0.3.0.tgz",
+      "vendoai-guard-0.3.0.tgz",
+      "vendoai-store-0.3.0.tgz",
+      "vendoai-telemetry-0.2.0.tgz",
+      "vendoai-ui-0.3.0.tgz",
+      "vendoai-vendo-0.3.0.tgz",
     ]));
 
     const pkg = await readPackageJson(repoTwo);
-    expect(pkg.dependencies["vendoai"]).toBe("file:vendor/vendoai-0.1.0.tgz");
-    expect(pkg.devDependencies["@vendoai/cli"]).toBe("file:vendor/vendoai-cli-0.1.0.tgz");
+    expect(pkg.dependencies["@vendoai/vendo"]).toBe("file:vendor/vendoai-vendo-0.3.0.tgz");
+    expect(pkg.dependencies["vendoai"]).toBeUndefined();
+    expect(pkg.devDependencies).toBeUndefined();
     for (const name of [
-      "@vendoai/cli",
-      "@vendoai/client",
-      "@vendoai/components",
+      "@vendoai/actions",
+      "@vendoai/agent",
+      "@vendoai/apps",
+      "@vendoai/automations",
       "@vendoai/core",
-      "@vendoai/react",
-      "@vendoai/runtime",
-      "@vendoai/server",
-      "@vendoai/shell",
-      "@vendoai/stage",
+      "@vendoai/guard",
       "@vendoai/store",
       "@vendoai/telemetry",
+      "@vendoai/ui",
+      "@vendoai/vendo",
       "vendoai",
     ]) {
       expect(pkg.pnpm.overrides[name]).toMatch(/^file:vendor\/vendoai-/);
     }
-    expect(pkg.pnpm.overrides["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
   });
 
   it("runs a non-frozen host install command and accepts lockfiles that point Vendo packages at local tarballs", async () => {
@@ -288,12 +214,12 @@ describe("createLocalVendoInjector", () => {
         installCalls.push(`${command} @ ${cwd}`);
         await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
           "dependencies:",
-          "  vendoai:",
-          "    specifier: file:vendor/vendoai-0.1.0.tgz",
-          "    version: file:vendor/vendoai-0.1.0.tgz",
-          "  '@vendoai/server':",
-          "    specifier: file:vendor/vendoai-server-0.1.0.tgz",
-          "    version: file:vendor/vendoai-server-0.1.0.tgz",
+          "  '@vendoai/vendo':",
+          "    specifier: file:vendor/vendoai-vendo-0.3.0.tgz",
+          "    version: file:vendor/vendoai-vendo-0.3.0.tgz",
+          "  '@vendoai/core':",
+          "    specifier: file:vendor/vendoai-core-0.3.0.tgz",
+          "    version: file:vendor/vendoai-core-0.3.0.tgz",
           "",
         ].join("\n"));
       },
@@ -301,12 +227,11 @@ describe("createLocalVendoInjector", () => {
 
     const result = await injector.inject({ name: "repo-lock" });
 
-    expect(result.initArgs).toEqual(["--local", workspaceRoot]);
     expect(installCalls).toEqual([
       `pnpm --config.minimumReleaseAge=0 --config.dangerouslyAllowAllBuilds=true install --no-frozen-lockfile @ ${repoDir}`,
     ]);
     expect(notes.join("\n")).toMatch(/post-injection install.*non-frozen/i);
-    await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-0.1.0.tgz");
+    await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).resolves.toContain("file:vendor/vendoai-vendo-0.3.0.tgz");
   });
 
   it("targets appDir package.json when injecting into monorepo apps", async () => {
@@ -339,8 +264,8 @@ describe("createLocalVendoInjector", () => {
     const result = await injector.inject({ name: "repo-app", appDir: "apps/web" });
 
     expect(result.repoDir).toBe(appRoot);
-    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"vendoai": "file:vendor/vendoai-0.1.0.tgz"');
-    await expect(readFile(path.join(appRoot, "vendor", "vendoai-0.1.0.tgz"), "utf8")).resolves.toBe("packed vendoai");
+    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"@vendoai/vendo": "file:vendor/vendoai-vendo-0.3.0.tgz"');
+    await expect(readFile(path.join(appRoot, "vendor", "vendoai-vendo-0.3.0.tgz"), "utf8")).resolves.toBe("packed @vendoai/vendo");
     await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.not.toContain("vendoai");
   });
 
@@ -399,12 +324,12 @@ describe("createLocalVendoInjector", () => {
           "importers:",
           "  apps/web:",
           "    dependencies:",
-          "      vendoai:",
-          "        specifier: file:vendor/vendoai-0.1.0.tgz",
-          "        version: file:apps/web/vendor/vendoai-0.1.0.tgz",
-          "      '@vendoai/server':",
-          "        specifier: file:vendor/vendoai-server-0.1.0.tgz",
-          "        version: file:apps/web/vendor/vendoai-server-0.1.0.tgz",
+          "      '@vendoai/vendo':",
+          "        specifier: file:vendor/vendoai-vendo-0.3.0.tgz",
+          "        version: file:apps/web/vendor/vendoai-vendo-0.3.0.tgz",
+          "      '@vendoai/core':",
+          "        specifier: file:vendor/vendoai-core-0.3.0.tgz",
+          "        version: file:apps/web/vendor/vendoai-core-0.3.0.tgz",
           "",
         ].join("\n"));
       },
@@ -426,26 +351,24 @@ describe("createLocalVendoInjector", () => {
     ]);
     expect(notes.join("\n")).toMatch(/workspace root/i);
     await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"@repo/ui": "workspace:*"');
-    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"vendoai": "file:vendor/vendoai-0.1.0.tgz"');
+    await expect(readFile(path.join(appRoot, "package.json"), "utf8")).resolves.toContain('"@vendoai/vendo": "file:vendor/vendoai-vendo-0.3.0.tgz"');
     const rootPkg = await readAnyPackageJson(repoDir) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
       pnpm: { overrides: Record<string, string> };
     };
     expect(rootPkg.dependencies?.["vendoai"]).toBeUndefined();
-    expect(rootPkg.devDependencies?.["@vendoai/cli"]).toBeUndefined();
+    expect(rootPkg.devDependencies?.["@vendoai/vendo"]).toBeUndefined();
     const workspaceYaml = await readFile(path.join(repoDir, "pnpm-workspace.yaml"), "utf8");
-    expect(workspaceYaml).toContain('"@vendoai/server": "file:apps/web/vendor/vendoai-server-0.1.0.tgz"');
-    expect(workspaceYaml).toContain('"@vendoai/server@0.1.0": "file:apps/web/vendor/vendoai-server-0.1.0.tgz"');
-    expect(workspaceYaml).toContain('"vendoai": "file:apps/web/vendor/vendoai-0.1.0.tgz"');
-    expect(workspaceYaml).toContain('"vendoai@0.1.0": "file:apps/web/vendor/vendoai-0.1.0.tgz"');
-    expect(workspaceYaml).toContain('"fluidkit": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
-    expect(workspaceYaml).toContain('"fluidkit@0.5.0-test": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
-    expect(workspaceYaml).toContain('"fluidkit@0.5.0": "file:apps/web/vendor/fluidkit-0.5.0-test.tgz"');
-    expect(rootPkg.pnpm.overrides["@vendoai/server"]).toBe("file:apps/web/vendor/vendoai-server-0.1.0.tgz");
-    expect(rootPkg.pnpm.overrides["@vendoai/server@0.1.0"]).toBe("file:apps/web/vendor/vendoai-server-0.1.0.tgz");
-    expect(rootPkg.pnpm.overrides["vendoai"]).toBe("file:apps/web/vendor/vendoai-0.1.0.tgz");
-    expect(rootPkg.pnpm.overrides["vendoai@0.1.0"]).toBe("file:apps/web/vendor/vendoai-0.1.0.tgz");
+    expect(workspaceYaml).toContain('"@vendoai/core": "file:apps/web/vendor/vendoai-core-0.3.0.tgz"');
+    expect(workspaceYaml).toContain('"@vendoai/core@0.3.0": "file:apps/web/vendor/vendoai-core-0.3.0.tgz"');
+    expect(workspaceYaml).toContain('"@vendoai/vendo": "file:apps/web/vendor/vendoai-vendo-0.3.0.tgz"');
+    expect(workspaceYaml).toContain('"@vendoai/vendo@0.3.0": "file:apps/web/vendor/vendoai-vendo-0.3.0.tgz"');
+    expect(workspaceYaml).toContain('"vendoai": "file:apps/web/vendor/vendoai-0.3.0.tgz"');
+    expect(rootPkg.pnpm.overrides["@vendoai/core"]).toBe("file:apps/web/vendor/vendoai-core-0.3.0.tgz");
+    expect(rootPkg.pnpm.overrides["@vendoai/core@0.3.0"]).toBe("file:apps/web/vendor/vendoai-core-0.3.0.tgz");
+    expect(rootPkg.pnpm.overrides["@vendoai/vendo"]).toBe("file:apps/web/vendor/vendoai-vendo-0.3.0.tgz");
+    expect(rootPkg.pnpm.overrides["@vendoai/vendo@0.3.0"]).toBe("file:apps/web/vendor/vendoai-vendo-0.3.0.tgz");
   });
 
   it("rejects lockfiles that still point Vendo packages at the registry", async () => {
@@ -464,16 +387,16 @@ describe("createLocalVendoInjector", () => {
       async runInstallCommand(_command, cwd) {
         await writeFile(path.join(cwd, "pnpm-lock.yaml"), [
           "packages:",
-          "  /vendoai/0.1.0:",
+          "  /vendoai/0.3.0:",
           "    resolution:",
-          "      tarball: https://registry.npmjs.org/vendoai/-/vendoai-0.1.0.tgz",
+          "      tarball: https://registry.npmjs.org/vendoai/-/vendoai-0.3.0.tgz",
           "",
         ].join("\n"));
       },
     });
 
     await expect(injector.inject({ name: "repo-registry-lock" })).rejects.toThrow(/pnpm-lock\.yaml.*registry\.npmjs\.org.*Vendo/i);
-    await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.toContain("file:vendor/vendoai-0.1.0.tgz");
+    await expect(readFile(path.join(repoDir, "package.json"), "utf8")).resolves.toContain("file:vendor/vendoai-vendo-0.3.0.tgz");
   });
 
   it("fails early when the workspace or corpus repo path contains a space", async () => {
@@ -529,10 +452,10 @@ describe("createLocalVendoInjector", () => {
       async runInstallCommand(command, cwd) {
         installCalls.push(`${command} @ ${cwd}`);
         await writeFile(path.join(cwd, "yarn.lock"), [
-          '"@vendoai/server@file:apps/web/vendor/vendoai-server-0.1.0.tgz":',
-          '  resolution: "@vendoai/server@file:apps/web/vendor/vendoai-server-0.1.0.tgz"',
-          '"vendoai@file:apps/web/vendor/vendoai-0.1.0.tgz":',
-          '  resolution: "vendoai@file:apps/web/vendor/vendoai-0.1.0.tgz"',
+          '"@vendoai/core@file:apps/web/vendor/vendoai-core-0.3.0.tgz":',
+          '  resolution: "@vendoai/core@file:apps/web/vendor/vendoai-core-0.3.0.tgz"',
+          '"@vendoai/vendo@file:apps/web/vendor/vendoai-vendo-0.3.0.tgz":',
+          '  resolution: "@vendoai/vendo@file:apps/web/vendor/vendoai-vendo-0.3.0.tgz"',
           "",
         ].join("\n"));
       },
@@ -556,16 +479,15 @@ describe("createLocalVendoInjector", () => {
     await expect(readFile(path.join(repoDir, ".yarnrc.yml"), "utf8")).resolves.toBe("nodeLinker: node-modules\n");
     const pkg = await readAnyPackageJson(appRoot) as {
       dependencies: Record<string, string>;
-      devDependencies: Record<string, string>;
+      devDependencies?: Record<string, string>;
       resolutions: Record<string, string>;
       pnpm?: unknown;
       overrides?: unknown;
     };
-    expect(pkg.dependencies["vendoai"]).toBe("file:vendor/vendoai-0.1.0.tgz");
+    expect(pkg.dependencies["@vendoai/vendo"]).toBe("file:vendor/vendoai-vendo-0.3.0.tgz");
     expect(pkg.dependencies["next"]).toBe("16.2.3");
-    expect(pkg.devDependencies["@vendoai/cli"]).toBe("file:vendor/vendoai-cli-0.1.0.tgz");
-    expect(pkg.resolutions["@vendoai/server"]).toBe("file:vendor/vendoai-server-0.1.0.tgz");
-    expect(pkg.resolutions["fluidkit"]).toBe("file:vendor/fluidkit-0.5.0-test.tgz");
+    expect(pkg.devDependencies).toBeUndefined();
+    expect(pkg.resolutions["@vendoai/vendo"]).toBe("file:vendor/vendoai-vendo-0.3.0.tgz");
     expect(pkg.pnpm).toBeUndefined();
     expect(pkg.overrides).toBeUndefined();
   });
@@ -592,9 +514,9 @@ describe("createLocalVendoInjector", () => {
       async buildWorkspace() {},
       async runInstallCommand(_command, cwd) {
         await writeFile(path.join(cwd, "yarn.lock"), [
-          '"@vendoai/server@^0.1.0":',
-          '  version "0.1.0"',
-          '  resolved "https://registry.yarnpkg.com/@vendoai/server/-/server-0.1.0.tgz"',
+          '"@vendoai/vendo@^0.3.0":',
+          '  version "0.3.0"',
+          '  resolved "https://registry.yarnpkg.com/@vendoai/vendo/-/vendo-0.3.0.tgz"',
           "",
         ].join("\n"));
       },

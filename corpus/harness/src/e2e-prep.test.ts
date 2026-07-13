@@ -12,7 +12,7 @@ async function createSkateshopFixture(): Promise<{ appRoot: string; logsDir: str
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
   await mkdir(path.join(appRoot, "src/app/api/vendo/[...path]"), { recursive: true });
   await mkdir(path.join(appRoot, "src/app"), { recursive: true });
-  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ version: 1, tools: [], events: [] }));
+  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
   await writeFile(
     path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"),
     `import { createVendoHandler } from "vendoai/server";
@@ -104,7 +104,7 @@ async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string 
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
   await mkdir(path.join(appRoot, "src/app/api/vendo/[...path]"), { recursive: true });
   await mkdir(path.join(appRoot, "src/app"), { recursive: true });
-  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ version: 1, tools: [], events: [] }));
+  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
   await writeFile(
     path.join(appRoot, "src/app/api/vendo/[...path]/route.ts"),
     `import { createVendoHandler } from "vendoai/server";
@@ -139,7 +139,7 @@ async function createPapermarkFixture(): Promise<{ appRoot: string; logsDir: str
   await mkdir(path.join(appRoot, "app/api/vendo/[...path]"), { recursive: true });
   await mkdir(path.join(appRoot, "app"), { recursive: true });
   await mkdir(path.join(appRoot, "pages/api"), { recursive: true });
-  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ version: 1, tools: [], events: [] }));
+  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
   await writeFile(
     path.join(appRoot, "app/api/vendo/[...path]/route.ts"),
     `import { createVendoHandler } from "vendoai/server";
@@ -185,7 +185,7 @@ describe("prepareE2eRepo", () => {
     const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
       tools: Array<{
         name: string;
-        annotations: { mutating: boolean; dangerous: boolean; idempotent?: boolean };
+        risk: "read" | "write" | "destructive";
         binding: { method: string; path: string };
       }>;
     };
@@ -208,12 +208,12 @@ describe("prepareE2eRepo", () => {
       "place_skateshop_order",
       "get_skateshop_checkout_defaults",
     ]);
-    expect(tools.tools.map((tool) => [tool.name, tool.annotations])).toEqual([
-      ["list_skateshop_catalog_products", { mutating: false, dangerous: false, idempotent: true }],
-      ["search_skateshop_products", { mutating: false, dangerous: false, idempotent: true }],
-      ["add_skateshop_item_to_cart", { mutating: true, dangerous: false }],
-      ["place_skateshop_order", { mutating: true, dangerous: false }],
-      ["get_skateshop_checkout_defaults", { mutating: false, dangerous: false, idempotent: true }],
+    expect(tools.tools.map((tool) => [tool.name, tool.risk])).toEqual([
+      ["list_skateshop_catalog_products", "read"],
+      ["search_skateshop_products", "read"],
+      ["add_skateshop_item_to_cart", "write"],
+      ["place_skateshop_order", "write"],
+      ["get_skateshop_checkout_defaults", "read"],
     ]);
     expect(tools.tools.map((tool) => [tool.binding.method, tool.binding.path])).toEqual([
       ["GET", "/api/corpus/products"],
@@ -296,7 +296,7 @@ describe("prepareE2eRepo", () => {
     const logs = await prepareE2eRepo({ name: "papermark" }, appRoot, logsDir);
 
     const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
-      tools: Array<{ name: string; annotations: { mutating: boolean }; binding: { method: string; path: string } }>;
+      tools: Array<{ name: string; risk: "read" | "write" | "destructive"; binding: { method: string; path: string } }>;
     };
     const route = await readFile(path.join(appRoot, "app/api/vendo/[...path]/route.ts"), "utf8");
     const root = await readFile(path.join(appRoot, "app/vendo-root.tsx"), "utf8");
@@ -324,15 +324,16 @@ describe("prepareE2eRepo", () => {
       "addDocumentToDataroom",
       "updateLinkSettings",
     ]);
-    expect(tools.tools.filter((tool) => tool.annotations.mutating).map((tool) => tool.name)).toEqual([
+    expect(tools.tools.filter((tool) => tool.risk === "write").map((tool) => tool.name)).toEqual([
       "createShareLink",
       "addDocumentToDataroom",
       "updateLinkSettings",
     ]);
     expect(tools.tools.find((tool) => tool.name === "listTeamDocuments")?.binding).toEqual({
-      type: "http",
+      kind: "route",
       method: "GET",
       path: "/api/teams/{teamId}/documents",
+      argsIn: "query",
     });
     expect(route).toContain("storage: false");
     expect(route).toContain("instructionsExtra");

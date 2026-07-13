@@ -77,7 +77,7 @@ async function writeFakeVendoCli(root: string): Promise<string> {
     if (args[0] !== "init") process.exit(2);
     const targetDir = args[1];
     if (!targetDir) process.exit(3);
-    if (!args.includes("--skip-llm")) process.exit(4);
+    if (!args.includes("--yes")) process.exit(4);
 
     mkdirSync(path.join(targetDir, ".vendo"), { recursive: true });
     writeFileSync(path.join(targetDir, ".vendo", "theme.json"), JSON.stringify({ version: 1, accent: "#0a7cff" }, null, 2) + "\\n");
@@ -86,12 +86,12 @@ async function writeFakeVendoCli(root: string): Promise<string> {
     }
     if (process.env.WRITE_VENDOR_TARBALL) {
       mkdirSync(path.join(targetDir, "vendor"), { recursive: true });
-      writeFileSync(path.join(targetDir, "vendor", "vendoai-0.1.0.tgz"), process.env.WRITE_VENDOR_TARBALL);
+      writeFileSync(path.join(targetDir, "vendor", "vendoai-vendo-0.3.0.tgz"), process.env.WRITE_VENDOR_TARBALL);
     }
 
     const pkgPath = path.join(targetDir, "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-    pkg.dependencies = { ...pkg.dependencies, "@vendoai/next": "latest" };
+    pkg.dependencies = { ...pkg.dependencies, "@vendoai/vendo": "file:vendor/vendoai-vendo-0.3.0.tgz" };
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\\n");
 
     if (process.env.FAIL_INIT === "1") {
@@ -118,7 +118,6 @@ describe("runVendoInitStep", () => {
       cliCommand: process.execPath,
       cliArgs: [fakeCli],
       force: true,
-      localVendoDir: "/tmp/local-vendo",
     });
 
     expect(result.exitCode).toBe(0);
@@ -130,14 +129,14 @@ describe("runVendoInitStep", () => {
     const log = await readFile(result.artifacts.log, "utf8");
     expect(log).toContain("fake init stdout");
     expect(log).toContain("fake init stderr");
-    expect(log).toContain(`"init","${repoDir}","--skip-llm","--force","--local","/tmp/local-vendo"`);
+    expect(log).toContain(`"init","${repoDir}","--yes","--force"`);
 
     const tokenCost = await readFile(result.artifacts.tokenCost!, "utf8");
     expect(tokenCost).toContain("tokens: 12 cost: $0.00");
 
     const diff = await readFile(result.artifacts.diff, "utf8");
     expect(diff).toContain("diff --git a/.vendo/theme.json b/.vendo/theme.json");
-    expect(diff).toContain('+    "@vendoai/next": "latest"');
+    expect(diff).toContain('+    "@vendoai/vendo": "file:vendor/vendoai-vendo-0.3.0.tgz"');
     await expect(readFile(path.join(repoDir, ".corpus/logs/init.log"), "utf8")).rejects.toThrow();
   });
 
@@ -167,7 +166,7 @@ describe("runVendoInitStep", () => {
 
     expect(result.repoDir).toBe(appRoot);
     const log = await readFile(result.artifacts.log, "utf8");
-    expect(log).toContain(`"init","${appRoot}","--skip-llm"`);
+    expect(log).toContain(`"init","${appRoot}","--yes"`);
 
     const diff = await readFile(result.artifacts.diff, "utf8");
     expect(diff).toContain("diff --git a/apps/web/second-only.txt b/apps/web/second-only.txt");

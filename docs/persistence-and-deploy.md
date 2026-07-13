@@ -1,189 +1,94 @@
-# Persistence + Deploy
+# Persistence and deployment
 
-What survives a restart, how the scheduler stays alive without a browser tab
-open, and how to wire Composio triggers — the three things that change once
-you take a Vendo install past `next dev` on your laptop.
+Vendo uses Postgres only. Development defaults to embedded PGlite at
+`.vendo/data`; production points the same schema at Postgres.
 
-## The one storage knob
-
-`createVendoHandler({ storage })` is the only setting that matters:
-
-- **Unset (default)** — an embedded PGlite database at `.vendo/data`
-  (override the directory with `VENDO_DATA_DIR`). Zero config, file-backed,
-  good for local dev and a single long-lived process (Docker, a VPS,
-  `next start`). PGlite is single-process by design: on a known-serverless
-  runtime (Vercel, Cloudflare Pages, Lambda) the handler refuses to boot on
-  this default and tells you to set `DATABASE_URL` instead, rather than
-  silently running on an ephemeral filesystem.
-- **`storage: { connectionString }` or `DATABASE_URL`** — any real Postgres:
-  Supabase, Neon, RDS, a Docker container. Same schema, same code path, just
-  a different `pg` connection.
-- **`storage: false`** — in-memory. Nothing survives a restart. This is also
-  what you get automatically when `NODE_ENV=test` and you pass no `storage`
-  option at all — see the single-writer section below, this one bites people.
-
-Migrations run automatically on first boot (`autoMigrate: true` by default),
-guarded by a per-process init lock and, on real Postgres, a Postgres advisory
-lock so two cold starts can't race the same DDL. Shops that gate schema
-changes behind a review process set `storage: { autoMigrate: false }` and
-call the exported `migrateVendoDatabase(handle)` (from `@vendoai/store`)
-out of band, whenever they're ready to apply it.
-
-All tables live in a dedicated `vendo` Postgres schema — your app's
-`public` schema stays untouched.
-
-## What persists
-
-The durable schema in `packages/vendo-store/src/schema.ts` contains these
-surfaces:
-
-- **Automations**: definitions, versions, run history, and parked actions in
-  `automations`, `automation_versions`, `automation_runs`, and
-  `parked_actions`. Each version stores its spec and pre-approved grants.
-- **Approval decisions**: remembered policy decisions in `decisions`, keyed
-  by principal and canonical policy key.
-- **Chat threads**: `threads` and `thread_messages`, with message-id upserts so
-  a resumed approval replaces parts in place.
-- **Integration connections**: connected Composio toolkits and the
-  connected-account-to-principal mapping in `connections`.
-- **Operational metadata**: scheduler heartbeat and future operational flags
-  in `meta`. This table is not for domain data.
-
-`createVendoHandler()` wires the durable thread, automation, decision, and
-connection stores automatically when storage is configured. A host-provided
-`connections` option takes precedence over that default.
-
-Audit events, standing permission grants, and compiled always-ask rules remain
-injectable store interfaces, but `@vendoai/store` does not define standalone
-tables for them today. Without host-provided implementations, those surfaces
-are in-memory and do not survive a restart.
-
-## Single-writer, single-tenant — read this before deploying
-
-This release does not add multi-instance or multi-tenant support. Two things
-to know:
-
-- **One process owns the scheduler and the runner.** Durable storage makes
-  state survive a restart, not concurrent writers safe. Automations dedup on
-  a `firingRunId` primary key (so a timer/cron overlap or a restart mid-fire
-  is a duplicate-key no-op), and approval resume is an atomic conditional
-  claim — but full multi-replica coordination (per-automation leases or
-  advisory locks) is out of scope. Run the handler as one long-lived Node
-  process, not spread across cold serverless instances.
-- **A `principal` resolver is an access gate, not tenant isolation.** It
-  decides who may call the endpoints; it does not partition the store. Every
-  caller still shares one automations-world scope, one connections store,
-  one cached-agent set. If you configure a custom `principal` resolver
-  together with durable storage, the handler logs a one-time warning about
-  this. Every table already carries `tenant_id`/`subject` columns, so
-  per-user partitioning is a future behavior change, not a schema migration —
-  but it isn't built yet.
-- **`NODE_ENV=test` silently disables durability.** If `storage` is left
-  unset and `NODE_ENV` is `"test"`, the handler behaves exactly like
-  `storage: false` — no warning, no on-disk PGlite directory. This exists so
-  running the test suite dozens of times doesn't spray `.vendo/data`
-  directories around the repo. Never let `NODE_ENV=test` leak into a real
-  deploy: pass an explicit `storage` value (including `false`, if that's
-  really what you want) to opt back in under any `NODE_ENV`.
-
-## Scheduler modes
-
-By default, schedules fire from an in-process timer that boots with your
-Next.js server — `vendo init` writes an `instrumentation.ts` (or
-`src/instrumentation.ts`, next to a `src/app`) that calls
-`startVendoScheduler()` from `vendoai/server` when the Node.js runtime
-starts:
+## Store configuration
 
 ```ts
-export async function register() {
-  if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { startVendoScheduler } = await import("vendoai/server");
-    startVendoScheduler();
-  }
-}
+export function createStore(config?: {
+  url?: string;
+  dataDir?: string;
+  encryption?: { key: string };
+}): VendoStore;
 ```
 
-This is the real Next.js boot hook — no request needs to land first. It's
-idempotent and safe under dev-mode HMR.
+Omit `url` to use PGlite. `dataDir` defaults to `.vendo/data`. When `url` is
+set, `dataDir` is ignored. Call `ensureSchema()` during boot; migrations are
+idempotent and forward-only within the version train.
 
-Set `VENDO_SCHEDULER=external` to disable the internal timer entirely
-(serverless or multi-instance deploys) and drive ticks from an external cron
-hitting `POST <mount>/tick` instead, authenticated with
-`authorization: Bearer $VENDO_TICK_SECRET`. Without `VENDO_TICK_SECRET`
-configured, remote ticks are refused outright; a wrong bearer is always a
-hard 401, never a silent fall-through to the normal principal guard.
+`encryption.key` is a base64 32-byte AES-256-GCM key for `vendo_secrets` only.
+App data remains plaintext so hosts can query and join it. Database and disk
+encryption remain the host's responsibility.
 
-**Vercel.** Vercel Cron Jobs only ever send a `GET` request and don't let you
-attach a custom `Authorization` header — so point the cron at a tiny relay
-route in your own app, and have that route perform the authenticated `POST`
-to `/api/vendo/tick`:
+## Public table map
 
-```json
-// vercel.json
-{
-  "crons": [{ "path": "/api/cron/vendo-tick", "schedule": "* * * * *" }]
-}
+| Table | Stable key columns | Holds |
+| --- | --- | --- |
+| `vendo_meta` | `key, value` | schema version and boot id |
+| `vendo_apps` | `id, subject, enabled, doc, created_at, updated_at` | each user's app |
+| `vendo_records` | `collection, id, data, refs, created_at, updated_at` | app record collections |
+| `vendo_blobs` | `namespace, key, bytes, content_type, created_at` | files, exports, and screenshots |
+| `vendo_state` | `app_id, subject, data, updated_at` | per-user, per-app state singleton |
+| `vendo_threads` | `id, subject, messages, created_at, updated_at` | conversation threads |
+| `vendo_grants` | `id, subject, tool, descriptor_hash, scope, duration, app_id, source, granted_at, revoked_at, expires_at` | grants |
+| `vendo_approvals` | `id, subject, request, status, decided_at, created_at` | approval queue |
+| `vendo_audit` | `id, at, kind, subject, venue, presence, app_id, tool, event` | append-only audit log |
+| `vendo_runs` | `id, app_id, trigger, status, record, started_at, finished_at` | automation runs |
+| `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secrets |
+
+All JSON columns use `jsonb`. `vendo_records.refs` is GIN-indexed. App storage
+collections use `app:<appId>:<name>`.
+
+```sql
+SELECT ...
+FROM invoices i
+JOIN vendo_records r
+  ON r.refs @> jsonb_build_object('invoice_id', i.id)
 ```
+
+`subject` is the only partition axis. Ephemeral principals never touch disk.
+
+## Long-lived hosts
+
+Call `automations.start()` to run the convenience timer around `tick()`. The
+returned function stops the timer. Cron expressions use five fields and are
+evaluated in UTC. A missed window fires once on the next tick and does not
+back-fill.
+
+## Serverless hosts
+
+Schedule `POST /api/vendo/tick` from the platform cron. Send:
+
+```http
+Authorization: Bearer <secret>
+```
+
+The `/tick` endpoint is outside cookie auth and requires this bearer secret.
+Use hosted Postgres for serverless deployment. Local PGlite files are suitable
+for a durable single-process host, not an ephemeral filesystem.
+
+## Host events and webhooks
+
+Call the composition seam from the host code path that owns the event:
 
 ```ts
-// app/api/cron/vendo-tick/route.ts
-export async function GET(req: Request) {
-  const origin = new URL(req.url).origin;
-  const res = await fetch(`${origin}/api/vendo/tick`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${process.env.VENDO_TICK_SECRET}` },
-  });
-  return new Response(null, { status: res.ok ? 200 : 502 });
-}
+await vendo.emit("invoice.paid", invoice, principal);
 ```
 
-**Cloudflare Cron Triggers.** A Worker's `scheduled` handler runs arbitrary
-code, so it can call the Next.js deployment directly:
+External and host webhook deliveries enter through
+`POST /api/vendo/webhooks/:source`. Every source registers verification during
+wiring. Connector schemes use their signed headers. Self-minted subscriptions
+use HMAC-SHA256 over `id.timestamp.rawBody`, accept timestamps within five
+minutes, and deduplicate by delivery id. The secret never appears in a URL.
 
-```toml
-# wrangler.toml
-[triggers]
-crons = ["* * * * *"]
-```
+Verification failure returns 401, resolves no principal, starts no run, and
+writes one audit event.
 
-```ts
-export default {
-  async scheduled(_event: ScheduledEvent, env: { VENDO_TICK_SECRET: string; APP_ORIGIN: string }) {
-    await fetch(`${env.APP_ORIGIN}/api/vendo/tick`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${env.VENDO_TICK_SECRET}` },
-    });
-  },
-};
-```
+## Operations
 
-Missed fires are never backfilled: the due-window starts at process boot, so
-downtime just means skipped fires, not a catch-up burst when the server comes
-back.
-
-## Composio webhooks
-
-`POST <mount>/webhooks/composio` is a signature-verified ingress route for
-Composio triggers (Gmail, Slack, etc. firing without polling). To wire it:
-
-1. Set `COMPOSIO_WEBHOOK_SECRET` to the signing secret from Composio's
-   dashboard webhook settings (the `whsec_`-prefixed value, verbatim).
-2. Point the webhook URL in that dashboard at
-   `https://your-deployed-host/api/vendo/webhooks/composio` (adjust the
-   mount if you didn't use the default `api/vendo` catch-all path).
-3. Without `COMPOSIO_WEBHOOK_SECRET` set, the route 404s — there's no way to
-   authenticate a request, so it fails closed rather than accepting
-   everything.
-
-**Local dev:** Composio can't reach `localhost`. Use a tunnel (ngrok,
-Cloudflare Tunnel, etc.) pointed at the webhook route.
-
-**The connect-fast-path caveat.** The integrations POST endpoint's "connect"
-action has a fast path: if you're already authorized with Composio for a
-toolkit, it flips the toolkit on immediately without capturing a connected-
-account id. Only the status-poll path (the one a fresh OAuth redirect lands
-on) captures the connected-account id that webhook routing keys off of. So a
-toolkit connected via the fast path — including any toolkit connected before
-this release shipped — has no webhook route until it goes through one fresh
-`authorize()` + poll cycle. Disconnect and reconnect the toolkit once if its
-webhook triggers aren't firing.
+- Back up the `vendo_` tables with the host database.
+- Apply retention with host SQL against the public tables.
+- Use `/status` as the live composition probe.
+- Use run history and the stop endpoint as the automation kill switch.
+- Keep `.vendo/data` out of source control.

@@ -85,7 +85,9 @@ Derive the expected inventory from the app's source-owned API surface:
   auto-allow inferred route handlers. OpenAPI-derived tools may use `read` for
   spec-declared read-only operations.
 
-Use deterministic lower-camel names so labels are not tied to one LLM run:
+Use deterministic lower-camel names so labels are not tied to one LLM run.
+Expectation files omit the runtime `host_` provenance prefix; the scorer adds
+it before comparison with v0 `ToolDescriptor.name` values:
 prefix the lowercase HTTP method, drop the leading `api` path segment, and
 PascalCase each remaining static or parameter segment. Examples:
 `GET /api/invoices/{id}` becomes `getInvoicesId`, and
@@ -96,7 +98,8 @@ Layer 2 scores tools as precision and recall over the full
 
 ## Annotations
 
-Every expected tool needs a safety annotation:
+Every expected tool needs a safety annotation. The label pair maps directly to
+the v0 `ToolDescriptor.risk` union (`read`, `write`, `destructive`):
 
 - Read-only tools: `{ "mutating": false, "dangerous": false }`.
 - State-changing tools: `{ "mutating": true, "dangerous": false }`.
@@ -104,9 +107,6 @@ Every expected tool needs a safety annotation:
   transfer, send, or close: `{ "mutating": true, "dangerous": true }`.
 - Route-scan-derived tools are expected to set `mutating: true` regardless of
   HTTP method. LLM-assisted route descriptions never grant auto-allow.
-- Add `idempotent: true` only when repeating the same call with the same input is
-  safe by app semantics.
-
 Write safety is a hard check. If generated output marks any write-capable tool
 as auto-allowed, Layer 2 fails regardless of the numeric score.
 

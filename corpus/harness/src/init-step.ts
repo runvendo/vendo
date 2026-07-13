@@ -32,8 +32,7 @@ export interface RunVendoInitStepOptions {
   force?: boolean;
   gitBin?: string;
   artifactPrefix?: string;
-  localVendoDir?: string;
-  skipLlm?: boolean;
+  yes?: boolean;
   diffBase?: "head" | "pre-run";
 }
 
@@ -46,7 +45,7 @@ interface CommandResult {
 }
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
-const defaultCliBin = path.join(defaultWorkspaceRoot, "packages/vendo-cli/dist/cli.js");
+const defaultCliBin = path.join(defaultWorkspaceRoot, "packages/vendo/bin/vendo.mjs");
 
 function defaultCliInvocation(): { command: string; args: string[] } {
   return {
@@ -65,9 +64,8 @@ function initLogPaths(logsDir: string, prefix = "init"): InitStepArtifacts {
 
 function initArgs(repoDir: string, options: RunVendoInitStepOptions): string[] {
   const args = ["init", repoDir];
-  if (options.skipLlm !== false) args.push("--skip-llm");
+  if (options.yes !== false) args.push("--yes");
   if (options.force) args.push("--force");
-  if (options.localVendoDir) args.push("--local", options.localVendoDir);
   return args;
 }
 

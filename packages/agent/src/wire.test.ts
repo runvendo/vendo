@@ -146,20 +146,23 @@ describe("agent UI message wire", () => {
         nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
       },
     };
+    // The app runtime's open tool returns an OpenSurface; the view part's appId
+    // comes from the call args (OpenSurface itself carries none).
+    const openSurface = { kind: "tree" as const, payload: view.payload };
     const model = scriptedModel([
-      toolCallTurn("render_result", {}, "call_view"),
+      toolCallTurn("vendo_apps_open", { appId: "app_1" }, "call_view"),
       textTurn("Rendered.", "text_view_done"),
     ]);
-    const guard = testGuard({ render_result: "run" });
+    const guard = testGuard({ vendo_apps_open: "run" });
     const tools = boundRegistry({
-      render_result: {
+      vendo_apps_open: {
         descriptor: {
-          name: "render_result",
-          description: "Return a rendered app surface.",
-          inputSchema: { type: "object", additionalProperties: false },
+          name: "vendo_apps_open",
+          description: "Open the latest serving surface for a Vendo app.",
+          inputSchema: { type: "object", properties: { appId: { type: "string" } }, required: ["appId"] },
           risk: "read",
         },
-        execute: async () => view,
+        execute: async () => openSurface,
       },
     }, guard);
     const agent = createAgent({ model, tools, guard });
@@ -172,7 +175,8 @@ describe("agent UI message wire", () => {
     const { parts } = await readSse(response);
     const part = parts.find((candidate) => candidate.type === "data-vendo-view");
 
-    expect(part).toEqual({ type: "data-vendo-view", ...view });
-    expect(vendoViewPartSchema.safeParse(part).success).toBe(true);
+    expect(part).toEqual({ type: "data-vendo-view", data: view });
+    const viewData = (part as { data: Record<string, unknown> }).data;
+    expect(vendoViewPartSchema.safeParse({ type: "data-vendo-view", ...viewData }).success).toBe(true);
   });
 });

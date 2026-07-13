@@ -27,6 +27,22 @@ function riskByCall(messages: UIMessage[]): Map<string, RiskLabel> {
   return risks;
 }
 
+/** Guard approval ids (apr_…) by tool call — carried in the data-vendo-approval
+    part beside the native ai-SDK approval (whose own id is transport-local). */
+function approvalIdByCall(messages: UIMessage[]): Map<string, string> {
+  const ids = new Map<string, string>();
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type !== "data-vendo-approval") continue;
+      const data = partData(part) as { toolCallId?: unknown; approvalId?: unknown };
+      if (typeof data.toolCallId === "string" && typeof data.approvalId === "string") {
+        ids.set(data.toolCallId, data.approvalId);
+      }
+    }
+  }
+  return ids;
+}
+
 function toolName(part: Extract<UIMessage["parts"][number], { toolCallId: string }>): string {
   return part.type === "dynamic-tool" && "toolName" in part ? part.toolName : part.type.replace(/^tool-/, "");
 }
@@ -78,6 +94,7 @@ export function VendoThread({
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const risks = useMemo(() => riskByCall(thread.messages), [thread.messages]);
+  const guardApprovalIds = useMemo(() => approvalIdByCall(thread.messages), [thread.messages]);
   const busy = thread.status === "submitted" || thread.status === "streaming";
   const landing = thread.messages.length === 0;
   const activeAssistant = thread.messages.at(-1)?.role === "assistant" ? thread.messages.at(-1) : undefined;
@@ -165,7 +182,9 @@ export function VendoThread({
           </button>
         )}
       </div>
-      <span role="status" aria-live="polite" className="fl-sr-only">{thread.status}</span>
+      <span role="status" aria-live="polite" className="fl-sr-only">
+        {thread.status === "error" && thread.error ? `error: ${thread.error.message}` : thread.status}
+      </span>
     </form>
   );
 
@@ -268,12 +287,21 @@ export function VendoThread({
               ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
               createdAt: new Date().toISOString(),
             };
+            const guardApprovalId = guardApprovalIds.get(part.toolCallId);
             return (
               <ApprovalCard
                 key={part.approval.id}
                 approval={approval}
-                allowRemember={false}
-                onDecide={decision => thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve })}
+                allowRemember={guardApprovalId !== undefined}
+                onDecide={async decision => {
+                  // Decide the guard's approval record over the wire FIRST so the
+                  // resumed execution replays as approved (05 §1) — the native
+                  // response alone only tells the model loop to continue.
+                  if (guardApprovalId !== undefined) {
+                    await client.approvals.decide([guardApprovalId], decision);
+                  }
+                  thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
+                }}
               />
             );
           })}

@@ -2,11 +2,10 @@ import { readdir, readFile } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
 import {
-  manifestThemeSchema,
-  toolsManifestSchema,
-  type ManifestTheme,
-  type ManifestTool,
+  vendoThemeSchema,
+  type VendoTheme,
 } from "@vendoai/core";
+import { toolsFileSchema, type ExtractedTool } from "@vendoai/actions";
 import {
   THEME_RUBRIC_DIMENSIONS,
   loadRepoBaseline,
@@ -70,18 +69,25 @@ function score(points: number, total: number): ScorecardScore {
   };
 }
 
-function normalizeThemeValue(dimension: ThemeRubricDimension, value: RepoExpectations["theme"][ThemeRubricDimension] | ManifestTheme[ThemeRubricDimension]): string {
+function normalizeThemeValue(dimension: ThemeRubricDimension, value: RepoExpectations["theme"][ThemeRubricDimension] | string): string {
   if (dimension === "radius") {
     return typeof value === "number" ? `${value}px` : value.toLowerCase();
   }
   return String(value).trim().toLowerCase();
 }
 
-function scoreTheme(expected: RepoExpectations, actual: ManifestTheme): WeightedResult {
+function actualThemeValue(theme: VendoTheme, dimension: ThemeRubricDimension): string {
+  if (dimension === "fontFamily") return theme.typography.fontFamily;
+  if (dimension === "radius") return theme.radius.medium;
+  if (dimension === "mutedText") return theme.colors.muted;
+  return theme.colors[dimension];
+}
+
+function scoreTheme(expected: RepoExpectations, actual: VendoTheme): WeightedResult {
   let points = 0;
   const checks = THEME_RUBRIC_DIMENSIONS.map((dimension) => {
     const expectedValue = normalizeThemeValue(dimension, expected.theme[dimension]);
-    const actualValue = normalizeThemeValue(dimension, actual[dimension]);
+    const actualValue = normalizeThemeValue(dimension, actualThemeValue(actual, dimension));
     const pass = expectedValue === actualValue;
     if (pass) points += 1;
     return {
@@ -96,25 +102,39 @@ function scoreTheme(expected: RepoExpectations, actual: ManifestTheme): Weighted
   return { checks, points, total: THEME_RUBRIC_DIMENSIONS.length };
 }
 
-function actualInventory(tool: ManifestTool): ExpectedToolInventory {
+function actualInventory(tool: ExtractedTool): ExpectedToolInventory {
   return {
     name: tool.name,
     method: tool.binding.method,
     path: tool.binding.path,
-    readOrWrite: tool.annotations.mutating ? "write" : "read",
+    readOrWrite: tool.risk === "read" ? "read" : "write",
   };
 }
 
+// A tool's IDENTITY for scoring is its endpoint (method + path) and its
+// read/write classification — NOT its name. Tool names are a deterministic,
+// contract-defined value (01-core §15: provider-safe `host_<path>` slugs),
+// while the checked-in expectations carry the pre-freeze OpenAPI-operationId
+// names (`getAdminTeams`). Keying on the endpoint is the "adapted names" the
+// v0 corpus requires, and still catches every real extraction defect: a missed
+// endpoint drops recall, a mis-classified read/write breaks the key.
 function inventoryKey(item: ExpectedToolInventory): string {
-  return `${item.name}\t${item.method}\t${item.path}\t${item.readOrWrite}`;
+  return `${item.method}\t${item.path}\t${item.readOrWrite}`;
 }
 
-function scoreTools(expected: RepoExpectations, actualTools: readonly ManifestTool[]): WeightedResult {
-  const expectedKeys = new Set(expected.tools.map(inventoryKey));
+/** The endpoint identity (method + path) used to join an expectation to the
+    actual tool independent of the renamed slug. */
+function endpointKey(method: string, path: string): string {
+  return `${method}\t${path}`;
+}
+
+function scoreTools(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
+  const expectedInventories = expected.tools;
+  const expectedKeys = new Set(expectedInventories.map(inventoryKey));
   const actualInventories = actualTools.map(actualInventory);
   const actualKeys = actualInventories.map(inventoryKey);
   const actualMatches = actualKeys.filter((key) => expectedKeys.has(key)).length;
-  const expectedMatches = expected.tools.filter((tool) => actualKeys.includes(inventoryKey(tool))).length;
+  const expectedMatches = expectedInventories.filter((tool) => actualKeys.includes(inventoryKey(tool))).length;
   const precision = actualInventories.length === 0 ? 1 : actualMatches / actualInventories.length;
   const recall = expected.tools.length === 0 ? 1 : expectedMatches / expected.tools.length;
 
@@ -136,24 +156,30 @@ function scoreTools(expected: RepoExpectations, actualTools: readonly ManifestTo
   };
 }
 
-function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: ManifestTool | undefined): boolean {
+function expectedAnnotationMatches(expected: ExpectedToolAnnotation, actual: ExtractedTool | undefined): boolean {
   if (!actual) return false;
-  if (actual.annotations.mutating !== expected.mutating) return false;
-  if (actual.annotations.dangerous !== expected.dangerous) return false;
-  if (expected.idempotent !== undefined && actual.annotations.idempotent !== expected.idempotent) return false;
-  return true;
+  const expectedRisk = expected.dangerous ? "destructive" : expected.mutating ? "write" : "read";
+  return actual.risk === expectedRisk;
 }
 
-function isUnsafeAutoAllowed(tool: ManifestTool): boolean {
+function isUnsafeAutoAllowed(tool: ExtractedTool): boolean {
   const method = tool.binding.method;
-  if (WRITE_METHODS.has(method) && !tool.annotations.mutating) return true;
-  if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && !tool.annotations.dangerous) return true;
+  if (WRITE_METHODS.has(method) && tool.risk === "read") return true;
+  if ((method === "DELETE" || DESTRUCTIVE_NAME.test(tool.name)) && tool.risk !== "destructive") return true;
   return false;
 }
 
-function scoreAnnotations(expected: RepoExpectations, actualTools: readonly ManifestTool[]): WeightedResult {
-  const byName = new Map(actualTools.map((tool) => [tool.name, tool]));
-  const matched = expected.annotations.filter((annotation) => expectedAnnotationMatches(annotation, byName.get(annotation.name))).length;
+function scoreAnnotations(expected: RepoExpectations, actualTools: readonly ExtractedTool[]): WeightedResult {
+  // Names changed by contract (§15), so join by endpoint: the annotation's name
+  // resolves to an expected tool's (method,path) within the expectations, and
+  // that endpoint finds the actual tool.
+  const expectedByName = new Map(expected.tools.map((tool) => [tool.name, tool]));
+  const actualByEndpoint = new Map(actualTools.map((tool) => [endpointKey(tool.binding.method, tool.binding.path), tool]));
+  const resolveActual = (annotationName: string): ExtractedTool | undefined => {
+    const endpoint = expectedByName.get(annotationName);
+    return endpoint ? actualByEndpoint.get(endpointKey(endpoint.method, endpoint.path)) : undefined;
+  };
+  const matched = expected.annotations.filter((annotation) => expectedAnnotationMatches(annotation, resolveActual(annotation.name))).length;
   const annotationScore = expected.annotations.length === 0 ? 1 : matched / expected.annotations.length;
   const unsafe = actualTools.filter(isUnsafeAutoAllowed);
 
@@ -254,14 +280,14 @@ async function readJsonFile(filePath: string): Promise<unknown> {
   return JSON.parse(await readFile(filePath, "utf8")) as unknown;
 }
 
-async function readActualTheme(repoDir: string): Promise<ManifestTheme> {
-  const parsed = manifestThemeSchema.safeParse(await readJsonFile(path.join(repoDir, ".vendo/theme.json")));
+async function readActualTheme(repoDir: string): Promise<VendoTheme> {
+  const parsed = vendoThemeSchema.safeParse(await readJsonFile(path.join(repoDir, ".vendo/theme.json")));
   if (!parsed.success) throw new Error(`.vendo/theme.json schema error: ${parsed.error.issues[0]?.message ?? "invalid theme"}`);
   return parsed.data;
 }
 
-async function readActualTools(repoDir: string): Promise<ManifestTool[]> {
-  const parsed = toolsManifestSchema.safeParse(await readJsonFile(path.join(repoDir, ".vendo/tools.json")));
+async function readActualTools(repoDir: string): Promise<ExtractedTool[]> {
+  const parsed = toolsFileSchema.safeParse(await readJsonFile(path.join(repoDir, ".vendo/tools.json")));
   if (!parsed.success) throw new Error(`.vendo/tools.json schema error: ${parsed.error.issues[0]?.message ?? "invalid tools"}`);
   return parsed.data.tools;
 }
@@ -352,8 +378,8 @@ export async function runScoredLayer(ctx: ScoredLayerContext): Promise<ScoredLay
     };
   }
 
-  let actualTheme: ManifestTheme;
-  let actualTools: ManifestTool[];
+  let actualTheme: VendoTheme;
+  let actualTools: ExtractedTool[];
   let actualComponents: ActualComponent[];
   try {
     actualTheme = await readActualTheme(ctx.repoDir);

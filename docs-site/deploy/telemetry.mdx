@@ -1,102 +1,25 @@
 ---
 title: "Telemetry"
-description: "What anonymous events Vendo's setup and dev tooling collect, which properties are allowlisted, and how to opt out with vendo telemetry disable."
+description: "Anonymous, opt-out events from build and development tooling only."
 ---
 
-Vendo collects anonymous, opt-out telemetry from setup and development tooling. Product telemetry does not run from a deployed production app.
+Vendo telemetry runs in build and development tooling. It does not fire from a
+deployed production app and does not collect end-user product activity.
 
-Telemetry is best effort. Network failures are swallowed and cannot break builds or dev servers.
+Events contain a random anonymous id plus allowlisted counts and short enums.
+They never contain source, file paths, prompts, generated UI, tool inputs or
+outputs, keys, environment values, request bodies, error messages, or stack
+traces.
 
-## When Events Fire
+Disable telemetry with any of these controls:
 
-| Event | When it fires |
-| --- | --- |
-| `init_started` | `vendo init` starts. |
-| `init_completed` | `vendo init` finishes successfully. |
-| `init_failed` | `vendo init` fails during theme, tools, components, or wiring. |
-| `agent_run` | A dev server handles a chat run outside production. |
-| `error_class` | A dev server catches a Vendo boot error outside production. |
+- `VENDO_TELEMETRY_DISABLED=1`
+- `"optedOut": true` in `~/.vendo/telemetry.json`
+- `DO_NOT_TRACK=1`
+- `CI`
+- `NODE_ENV=production`
 
-## What Is Collected
+The stored id is a random UUID and is not derived from a machine, account,
+project, or host app. Deleting the file rotates it.
 
-Every event includes:
-
-- `vendoVersion`
-- `osPlatform`
-- `nodeVersion`
-- A random anonymous id stored in `~/.vendo/telemetry.json`
-
-Event-specific properties are allowlisted:
-
-| Event | Extra properties |
-| --- | --- |
-| `init_started` | `framework` |
-| `init_completed` | `framework`, `provider`, `llmSkipped`, `componentCount`, `toolCount`, `durationMs` |
-| `init_failed` | `framework`, `failedStep` |
-| `agent_run` | None |
-| `error_class` | `errorClass` |
-
-Keys outside these allowlists are dropped before sending.
-
-Example payload:
-
-```json
-{
-  "api_key": "phc_...",
-  "event": "init_completed",
-  "distinct_id": "3f2a1c2d-4b5a-4678-9abc-1d2e3f4a5b6c",
-  "properties": {
-    "vendoVersion": "0.0.0",
-    "osPlatform": "darwin",
-    "nodeVersion": "v22.3.0",
-    "framework": "next",
-    "provider": "configured",
-    "llmSkipped": false,
-    "componentCount": 4,
-    "toolCount": 7,
-    "durationMs": 1200
-  }
-}
-```
-
-## What Is Never Collected
-
-Vendo product telemetry does not collect:
-
-- Source code
-- File paths
-- Prompts
-- Generated UI
-- Tool inputs or outputs
-- API keys
-- Host app names
-- Environment values
-- Request bodies
-- Error messages
-- Stack traces
-
-The anonymous id is a random UUID. It is not derived from your machine, account, project, app, or environment. Deleting `~/.vendo/telemetry.json` rotates it.
-
-## Opt Out
-
-Any one of these disables product telemetry:
-
-- Run `vendo telemetry disable`.
-- Set `VENDO_TELEMETRY_DISABLED=1` or `VENDO_TELEMETRY_DISABLED=true`.
-- Set `DO_NOT_TRACK=1` or `DO_NOT_TRACK=true`.
-- Run in CI. `CI=true` and any non-empty value except `0` or `false` disables telemetry.
-- Run the dev-runtime telemetry in production with `NODE_ENV=production`.
-
-Run `vendo telemetry enable` to clear the local config-file opt-out.
-
-Check the current local setting:
-
-```bash
-vendo telemetry status
-```
-
-## Where Data Goes
-
-Product events are sent to PostHog US Cloud with a write-only project key. You can override the destination project with `VENDO_POSTHOG_KEY`.
-
-Published package install attribution is wired through Scarf on the published entrypoint packages. Vendo's product telemetry code does not send those install-attribution payloads itself. Set `DO_NOT_TRACK=1` before installing to opt out of Scarf attribution.
+The full event allowlist is maintained in the repository's `TELEMETRY.md`.

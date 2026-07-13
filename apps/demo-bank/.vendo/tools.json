@@ -1,0 +1,431 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_createOrder",
+      "description": "Place a delivery order on the user's account. This MOVES MONEY: it charges the user's card and appends a transaction.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "merchant": {
+                "type": "string",
+                "description": "Merchant name, e.g. DoorDash"
+              },
+              "amountCents": {
+                "type": "number",
+                "description": "Charge amount in cents, e.g. 3184"
+              },
+              "descriptor": {
+                "type": "string",
+                "description": "Card statement descriptor"
+              },
+              "items": {
+                "type": "string",
+                "description": "Human-readable order contents"
+              },
+              "hour": {
+                "type": "number",
+                "description": "Order hour (0-23, Pacific). Demo default is late-night."
+              },
+              "minute": {
+                "type": "number",
+                "description": "Order minute (0-59)"
+              }
+            }
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "createOrder",
+        "method": "POST",
+        "path": "/api/orders"
+      }
+    },
+    {
+      "name": "host_demo_reset_create",
+      "description": "POST /api/demo/reset",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/demo/reset",
+        "argsIn": "body"
+      }
+    },
+    {
+      "name": "host_getAccount",
+      "description": "Fetch one account by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id, e.g. acct_checking"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getAccount",
+        "method": "GET",
+        "path": "/api/accounts/{id}"
+      }
+    },
+    {
+      "name": "host_getBudgets",
+      "description": "Budgets with spend-to-date per category.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getBudgets",
+        "method": "GET",
+        "path": "/api/insights/budgets"
+      }
+    },
+    {
+      "name": "host_getCashflowInsights",
+      "description": "Cash inflow/outflow summary. Amounts are integer cents (e.g. 1284000 = $12,840.00): divide by 100 exactly once before displaying, including any totals you compute.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getCashflowInsights",
+        "method": "GET",
+        "path": "/api/insights/cashflow"
+      }
+    },
+    {
+      "name": "host_getProfile",
+      "description": "Fetch the signed-in user's profile.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getProfile",
+        "method": "GET",
+        "path": "/api/profile"
+      }
+    },
+    {
+      "name": "host_getRecurringInsights",
+      "description": "Detected recurring charges and subscriptions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getRecurringInsights",
+        "method": "GET",
+        "path": "/api/insights/recurring"
+      }
+    },
+    {
+      "name": "host_getSpendingInsights",
+      "description": "Spending by category for the current period. Amounts are integer cents (e.g. 285000 = $2,850.00): divide by 100 exactly once before displaying, including any totals you compute.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getSpendingInsights",
+        "method": "GET",
+        "path": "/api/insights/spending"
+      }
+    },
+    {
+      "name": "host_getTransaction",
+      "description": "Fetch one transaction by id, including its status timeline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getTransaction",
+        "method": "GET",
+        "path": "/api/transactions/{id}"
+      }
+    },
+    {
+      "name": "host_listAccounts",
+      "description": "List the user's bank accounts with balances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listAccounts",
+        "method": "GET",
+        "path": "/api/accounts"
+      }
+    },
+    {
+      "name": "host_listAccountTransactions",
+      "description": "List recent transactions for one account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listAccountTransactions",
+        "method": "GET",
+        "path": "/api/accounts/{id}/transactions"
+      }
+    },
+    {
+      "name": "host_listCards",
+      "description": "List the user's physical and virtual cards.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listCards",
+        "method": "GET",
+        "path": "/api/cards"
+      }
+    },
+    {
+      "name": "host_listCardTransactions",
+      "description": "List recent transactions charged to one card.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Card id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listCardTransactions",
+        "method": "GET",
+        "path": "/api/cards/{id}/transactions"
+      }
+    },
+    {
+      "name": "host_listGoals",
+      "description": "List savings goals with progress.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listGoals",
+        "method": "GET",
+        "path": "/api/goals"
+      }
+    },
+    {
+      "name": "host_listNotifications",
+      "description": "List recent account notifications.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listNotifications",
+        "method": "GET",
+        "path": "/api/notifications"
+      }
+    },
+    {
+      "name": "host_listPayees",
+      "description": "List saved payees.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listPayees",
+        "method": "GET",
+        "path": "/api/payees"
+      }
+    },
+    {
+      "name": "host_listScheduledPayments",
+      "description": "List upcoming scheduled payments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listScheduledPayments",
+        "method": "GET",
+        "path": "/api/payments/scheduled"
+      }
+    },
+    {
+      "name": "host_listTransactions",
+      "description": "Search and list transactions across all accounts, with filters, sorting and cursor pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free-text match on merchant/descriptor"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category, e.g. dining, groceries, coffee, transport, subscriptions"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending | authorized | posted"
+          },
+          "from": {
+            "type": "string",
+            "description": "ISO date lower bound"
+          },
+          "to": {
+            "type": "string",
+            "description": "ISO date upper bound"
+          },
+          "min": {
+            "type": "number",
+            "description": "Minimum absolute amount in cents"
+          },
+          "max": {
+            "type": "number",
+            "description": "Maximum absolute amount in cents"
+          },
+          "sort": {
+            "type": "string",
+            "description": "date_desc | date_asc | amount_desc | amount_asc"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listTransactions",
+        "method": "GET",
+        "path": "/api/transactions"
+      }
+    },
+    {
+      "name": "host_transferMoney",
+      "description": "Send money to a person from the user's checking account. This IRREVERSIBLY MOVES MONEY: it debits checking and appends a transfer. There is no undo.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Amount to send in cents (positive whole number), e.g. 50000 = $500.00"
+          },
+          "recipient_name": {
+            "type": "string",
+            "description": "Who the money goes to, e.g. Alex Rivera"
+          },
+          "memo": {
+            "type": "string",
+            "description": "Optional note shown on the transfer, e.g. June rent"
+          }
+        },
+        "required": [
+          "amount",
+          "recipient_name"
+        ]
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "transferMoney",
+        "method": "POST",
+        "path": "/api/transfers"
+      }
+    },
+    {
+      "name": "host_voice_create",
+      "description": "POST /api/voice",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "route",
+        "method": "POST",
+        "path": "/api/voice",
+        "argsIn": "body"
+      }
+    }
+  ]
+}

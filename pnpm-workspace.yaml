@@ -1,5 +1,7 @@
 packages:
   - "packages/*"
   - "fixtures/*"
+  - "corpus/harness"
+  - "apps/*"
   - "bench"
   - "spikes/*"

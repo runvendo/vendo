@@ -1,99 +1,70 @@
 ---
 title: "Quickstart: Next.js"
-description: "Install Vendo in a Next.js App Router app with one command, one provider key, and the vendo init codemod that wires the route, root, and scheduler."
+description: "Install the default composition, mount the fetch handler, and add VendoRoot."
 ---
 
-In the root of your Next.js App Router app:
+## Install
 
 ```bash
-npm install vendoai
+npm install @vendoai/vendo
 npx vendo init
 ```
 
-That is the install. The codemod adds Vendo beside your existing code, the handler reads `.vendo/` from disk at runtime, and nothing it cannot edit with certainty gets touched. `init` is interactive: it prompts for a provider key, then offers a picker of components to wrap. The steps below walk the same flow from a fresh app.
+The init interview scans the app, recommends risk labels, extracts theme and
+remix candidates, and proposes the handler and `<VendoRoot>` edits. It shows
+each code diff before writing it.
 
-<Steps>
-  <Step title="Install Vendo">
-    In a new app or an existing App Router app:
+## Mount the server
 
-    ```bash
-    npx create-next-app@latest my-app
-    cd my-app
-    npm install vendoai
-    npx vendo init
-    ```
+```ts
+import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
 
-    `vendo init` prompts for a provider key, offers the component picker, writes reviewable files, and skips anything it cannot edit with certainty. Review the diff before you continue. `init` is safe to re-run: it fills gaps and never overwrites. Once installed, use `vendo refresh` to catch up as your app grows.
+const vendo = createVendo({
+  model,
+  principal: async (request) => {
+    const user = await resolveSession(request);
+    return user ? { kind: "user", subject: user.id, display: user.name } : null;
+  },
+});
 
-    <Frame caption="vendo init: theme extracted from your CSS, tools derived from the OpenAPI spec, components wrapped, routes wired.">
-      <img src="/images/init.gif" alt="vendo init running the codemod against a Next.js app" />
-    </Frame>
-  </Step>
+export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+```
 
-  <Step title="Check what was added">
-    On a standard App Router app, the codemod writes:
+Place the catch-all route under `/api/vendo`. `model` and `principal` are the
+only required configuration. Returning `null` creates an ephemeral session
+whose state does not persist.
 
-    - `.vendo/theme.json`, `.vendo/tools.json`, and component files under `.vendo/components/`.
-    - `app/api/vendo/[...path]/route.ts`, the catch-all Vendo route.
-    - `app/vendo-root.tsx`, then wraps your root layout with it.
-    - `instrumentation.ts` or `src/instrumentation.ts` to start the scheduler in the Node.js runtime.
-    - `.env.example` with provider, integration, storage, scheduler, and webhook variables.
-    - `public/vendo/react-runtime.js` and `public/vendo/components-sandbox.js`.
-    - A `prebuild` script that runs `vendo sync`. By default the sync runs via npx, which needs registry access at build time; add `@vendoai/cli` as a devDependency for hermetic or offline builds — the `vendo` bin picks it up automatically.
+## Add the root
 
-    The generated route is:
+```tsx
+import { VendoRoot } from "@vendoai/vendo/react";
 
-    ```ts
-    import { createVendoHandler } from "vendoai/server";
+export function Root({ children }: { children: React.ReactNode }) {
+  return <VendoRoot>{children}</VendoRoot>;
+}
+```
 
-    export const runtime = "nodejs";
-    export const dynamic = "force-dynamic";
+Choose headless hooks from `@vendoai/ui` or a ready-made surface from
+`@vendoai/ui/chrome`.
 
-    export const { GET, POST } = createVendoHandler();
-    ```
-  </Step>
+## Send the first turn
 
-  <Step title="Add one provider key">
-    If you pasted a key at the `init` prompt, it is already saved to `.env.local` and you can skip this step. Otherwise, copy the generated example env file and set one model provider key by hand:
-
-    ```bash
-    cp .env.example .env.local
-    ```
-
-    ```bash
-    ANTHROPIC_API_KEY=sk-ant-...
-    # or OPENAI_API_KEY=sk-...
-    # or GOOGLE_GENERATIVE_AI_API_KEY=...
-    ```
-
-    One of those keys enables chat and generated UI. Vendo picks a provider from whichever key is set (precedence Anthropic, then OpenAI, then Google) and uses its default model — `claude-sonnet-5`, `gpt-5.5`, or `gemini-3.5-flash`. Additional keys add capabilities, but they are not required for the first view.
-
-    <Note>
-      Added the key after running `init`? Run `vendo refresh` to run the LLM-assisted steps (tools and components) that were skipped without a key.
-    </Note>
-  </Step>
-
-  <Step title="Run the app">
-    Start your app normally:
-
-    ```bash
-    npm run dev
-    ```
-
-    Open the app, click the Vendo launcher or press Cmd/Ctrl+K, then ask for a visual result, for example:
-
-    ```txt
-    Show me a dashboard comparing three savings plans.
-    ```
-
-    Vendo streams the response and renders the generated view in the sandbox.
-
-    <Frame caption="The agent composes a live view from the host's own components and API, right beside chat.">
-      <img src="/images/hero.gif" alt="Vendo rendering a generated dashboard from a chat prompt" />
-    </Frame>
-  </Step>
-</Steps>
+Open your conversation surface and ask for a view, such as “Show my overdue
+invoices by customer.” The client sends `POST /threads` and reads an AI SDK UI
+message stream. App views arrive as `data-vendo-view` parts. Approval metadata
+arrives as `data-vendo-approval` parts.
 
 <Note>
-  The default route mount is `/api/vendo`. You can inspect the server-side feature flags at `GET /api/vendo/capabilities`.
+  With no policy or judge configured, tool calls auto-run and are audited.
+  Shipped chrome displays the unconfigured-policy notice.
 </Note>
+
+## Verify
+
+```bash
+npx vendo doctor
+npx vendo sync
+```
+
+Doctor checks wiring and probes `/status`. Sync extracts tools and remix
+baselines for build and development flows.

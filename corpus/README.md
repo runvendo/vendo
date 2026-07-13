@@ -11,28 +11,27 @@ gitignored; do not commit foreign repo code or generated run artifacts.
 - `pnpm corpus list` prints the pinned repos in the manifest.
 - `pnpm corpus run [repo...] --layer 1` runs the Layer 1 sweep for the selected
   repos, or every manifest repo when none are named.
+- `pnpm corpus run [repo...] --layer 2` adds scoring against the checked-in
+  expectations for the selected development repos.
 - `pnpm --filter @vendoai/corpus-harness test` runs the harness unit tests.
 
 Run artifacts are written under `corpus/.repos/.logs/`, with a copy of the
-aggregate scorecard under each selected repo's `run/` directory. By default the
-runner invokes real `vendo init` with LLM steps enabled; pass `--skip-llm` for
-cheap harness runs. Pass `--json` to print the machine-readable scorecard, and
+aggregate scorecard under each selected repo's `run/` directory. The runner
+invokes the built umbrella CLI as `vendo init <repo> --yes`, after local package
+injection. Pass `--json` to print the machine-readable scorecard, and
 `--strict` to make hard failures return a nonzero exit code. Without `--strict`,
 the sweep reports all repo failures and exits 0.
 
 ## Local Vendo injection
 
-The Vendo CLI's existing local/dev mode is:
-
-```sh
-vendo init [dir] --local <vendo-monorepo>
-```
-
-`--local=<vendo-monorepo>` is equivalent. That mode calls the CLI's
-`installLocalVendoPackages()` path, packing local `@vendoai/*` workspace
-packages and rewriting the host app to `file:vendor/*.tgz` dependencies and
-overrides. The corpus harness reuses that local-pack mechanism and caches the
-packed tarballs once per sweep before copying them into each repo.
+The harness owns the local-pack boundary. Once per sweep it builds the workspace
+and packs the v0 publish set: `@vendoai/core`, `store`, `agent`, `actions`,
+`guard`, `apps`, `automations`, `ui`, `telemetry`, `vendo`, plus the `vendoai`
+alias. Each cloned app receives the cached tarballs under `vendor/`, depends on
+the bin-owning `@vendoai/vendo` umbrella, and pins the complete workspace closure
+to `file:vendor/*.tgz` through its package-manager resolution field. The harness
+then runs the app's non-frozen install and invokes `vendo init --yes` through the
+built `packages/vendo` CLI.
 
 Known local-pack hazard: paths containing spaces are rejected up front by the
 harness. Keep both the Vendo workspace path and `corpus/.repos/<name>/` paths
@@ -69,8 +68,8 @@ the orchestrating environment; Vendo-specific wiring never belongs here.
 ## Continuous integration
 
 The `Corpus Nightly` workflow (`.github/workflows/corpus-nightly.yml`) runs the
-sweep on a schedule (08:00 UTC daily) and on demand via `workflow_dispatch`
-(inputs: `repos` space-separated filter, `layer` 1/2/3). It builds the
+development sweep on a schedule (08:00 UTC daily) and on demand via
+`workflow_dispatch` (inputs: `repos` space-separated filter, `layer` 1/2). It builds the
 workspace, runs `pnpm corpus run --json`, writes the scorecard to the job
 summary, appends a trend delta versus the previous run
 (`corpus/scripts/corpus-trend.mjs`), and uploads `scorecard.json` + `.md` +

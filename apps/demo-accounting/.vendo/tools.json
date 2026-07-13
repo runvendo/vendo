@@ -1,0 +1,309 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_getClient",
+      "description": "Fetch one client with document progress, derived status and assigned staff.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id, e.g. cl_rivera"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getClient",
+        "method": "GET",
+        "path": "/api/clients/{id}"
+      }
+    },
+    {
+      "name": "host_getDashboard",
+      "description": "Firm-wide dashboard metrics: how many clients are missing documents, documents outstanding vs received, and the nearest filing deadline with its client.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "getDashboard",
+        "method": "GET",
+        "path": "/api/dashboard"
+      }
+    },
+    {
+      "name": "host_listActivity",
+      "description": "Firm-wide activity feed, newest first: uploads received, documents verified or rejected, messages sent, deadlines approaching.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of events to return; omit for the full feed"
+          }
+        }
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listActivity",
+        "method": "GET",
+        "path": "/api/activity"
+      }
+    },
+    {
+      "name": "host_listClientDocuments",
+      "description": "List one client's requested tax documents (their checklist) with per-document status, uploaded file and any rejection note.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listClientDocuments",
+        "method": "GET",
+        "path": "/api/clients/{id}/documents"
+      }
+    },
+    {
+      "name": "host_listClientMessages",
+      "description": "Read one client's message thread with the firm, oldest first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listClientMessages",
+        "method": "GET",
+        "path": "/api/clients/{id}/messages"
+      }
+    },
+    {
+      "name": "host_listClients",
+      "description": "List the firm's clients with document progress, derived status and assigned staff. Filter to clients still missing documents or search by name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "missing_docs"
+            ],
+            "description": "Set to missing_docs to return only clients with at least one outstanding document"
+          },
+          "q": {
+            "type": "string",
+            "description": "Case-insensitive search on business name or contact name, e.g. 'rivera'"
+          }
+        }
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listClients",
+        "method": "GET",
+        "path": "/api/clients"
+      }
+    },
+    {
+      "name": "host_listDeadlines",
+      "description": "All clients ordered by filing deadline (soonest first), each with document progress and the kinds of documents still missing. Use this to see who is at risk of missing their deadline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "read",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "listDeadlines",
+        "method": "GET",
+        "path": "/api/deadlines"
+      }
+    },
+    {
+      "name": "host_resetDemo",
+      "description": "Demo control: discard all changes and restore the seeded opening state (8 clients missing documents). Returns fresh dashboard metrics.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "resetDemo",
+        "method": "POST",
+        "path": "/api/demo/reset"
+      }
+    },
+    {
+      "name": "host_sendClientMessage",
+      "description": "Send a message to a client as the firm. This is what the firm uses to chase outstanding documents; the client sees it in their portal.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          },
+          "body": {
+            "type": "object",
+            "required": [
+              "body"
+            ],
+            "properties": {
+              "body": {
+                "type": "string",
+                "description": "Message text; must be non-empty"
+              },
+              "author": {
+                "type": "string",
+                "description": "Staff member sending the message; defaults to the signed-in user, Maya Alvarez"
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ]
+      },
+      "risk": "destructive",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "sendClientMessage",
+        "method": "POST",
+        "path": "/api/clients/{id}/messages"
+      }
+    },
+    {
+      "name": "host_setDocumentStatus",
+      "description": "Advance a document through its lifecycle: 'receive' marks a missing document as uploaded (attaching a file name), 'verify' confirms an uploaded document is correct, 'reject' returns a wrong upload to missing with a reason the client sees. Verify and reject only apply to documents in status received or needs_review.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Client id"
+          },
+          "docId": {
+            "type": "string",
+            "description": "Document request id belonging to that client"
+          },
+          "body": {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "receive",
+                  "verify",
+                  "reject"
+                ],
+                "description": "Lifecycle transition to apply"
+              },
+              "fileName": {
+                "type": "string",
+                "description": "Uploaded file name (receive only); a plausible default is generated if omitted"
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why the document was rejected (reject only); shown to the client until they re-upload"
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "docId",
+          "body"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "setDocumentStatus",
+        "method": "POST",
+        "path": "/api/clients/{id}/documents/{docId}/status"
+      }
+    },
+    {
+      "name": "host_simulateClientUpload",
+      "description": "Demo control: simulate a client uploading a file for a missing document. variant 'correct' lands the document in status received; variant 'wrong' (e.g. a personal bank statement instead of the business one) lands it in needs_review with an explanatory note. Also records a client-to-firm message and activity.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "required": [
+              "clientId",
+              "docId",
+              "variant"
+            ],
+            "properties": {
+              "clientId": {
+                "type": "string",
+                "description": "Client doing the uploading, e.g. cl_rivera"
+              },
+              "docId": {
+                "type": "string",
+                "description": "Document request being fulfilled; must belong to the client and be in status missing"
+              },
+              "variant": {
+                "type": "string",
+                "enum": [
+                  "correct",
+                  "wrong"
+                ],
+                "description": "correct: plausible right file -> received. wrong: mismatched file -> needs_review with a note"
+              },
+              "fileName": {
+                "type": "string",
+                "description": "Uploaded file name; a plausible default is generated if omitted"
+              }
+            }
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "risk": "write",
+      "binding": {
+        "kind": "openapi",
+        "operationId": "simulateClientUpload",
+        "method": "POST",
+        "path": "/api/demo/simulate/upload"
+      }
+    }
+  ]
+}

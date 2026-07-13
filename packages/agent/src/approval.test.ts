@@ -111,13 +111,14 @@ describe("agent approval round trip", () => {
       toolCallId,
     });
     const vendoPart = parts.find((part) => part.type === "data-vendo-approval");
+    // Wire form: the ai-SDK data-chunk envelope carries the core part fields
+    // under `data` (the stock client's chunk schema rejects the flat form).
     expect(vendoPart).toEqual({
       type: "data-vendo-approval",
-      toolCallId,
-      risk: "write",
-      approvalId: approval.id,
+      data: { toolCallId, risk: "write", approvalId: approval.id },
     });
-    expect(vendoApprovalPartSchema.safeParse(vendoPart).success).toBe(true);
+    const vendoData = (vendoPart as { data: Record<string, unknown> }).data;
+    expect(vendoApprovalPartSchema.safeParse({ type: "data-vendo-approval", ...vendoData }).success).toBe(true);
     expect(approval.id).toBe(`apr_${toolCallId}`);
     expect(approval.inputPreview).toBe(JSON.stringify(input));
     expect(Object.isFrozen(approval.descriptor)).toBe(true);

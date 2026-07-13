@@ -171,7 +171,7 @@ describe("headless hooks", () => {
     await waitFor(() => expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2"]));
     await act(() => result.current.loadMore());
     expect(result.current.events.map(event => event.id)).toEqual(["aud_1", "aud_2", "aud_3"]);
-    expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=aud_2" }));
+    expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/activity?cursor=eyJjIjoiMjAyNi0wNy0xMVQxMjowMDowMC4wMDBaIiwiaSI6ImF1ZF8yIn0" }));
   });
 
   it("loads posture and transitions to disconnected after the server is killed", async () => {

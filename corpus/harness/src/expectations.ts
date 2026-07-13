@@ -44,7 +44,6 @@ export const expectedToolAnnotationSchema = z
     name: z.string().min(1),
     mutating: z.boolean(),
     dangerous: z.boolean(),
-    idempotent: z.boolean().optional(),
   })
   .strict();
 

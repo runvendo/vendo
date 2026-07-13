@@ -59,8 +59,8 @@ describe("scenario 1: full approval round-trip", () => {
 
     expect(partsOfType(paused, "tool-approval-request")[0]).toMatchObject({ toolCallId: "call_1" });
     const vendoPart = partsOfType(paused, "data-vendo-approval")[0];
-    expect(vendoPart).toMatchObject({ toolCallId: "call_1", risk: "write" });
-    expect(String(vendoPart!.approvalId)).toMatch(/^apr_/);
+    expect(vendoPart).toMatchObject({ data: { toolCallId: "call_1", risk: "write" } });
+    expect(String((vendoPart!.data as { approvalId?: unknown }).approvalId)).toMatch(/^apr_/);
     expect(paused.parts.at(-1)).toEqual({ type: "finish", finishReason: "tool-calls" });
     // Nothing executed; exactly one pending approval on disk.
     expect(registry.count(TOOL)).toBe(0);

@@ -140,12 +140,28 @@ async function renderComponent(source: string, rawProps: Record<string, unknown>
   );
 }
 
+/** Host brand tokens: only --vendo-* custom properties may cross into the jail,
+    so generated code styled with the theme variables matches the host (06 §5). */
+function applyThemeVars(vars: unknown): void {
+  if (typeof vars !== "object" || vars === null) return;
+  const rootStyle = document.documentElement.style;
+  for (const [key, value] of Object.entries(vars as Record<string, unknown>)) {
+    if (typeof value === "string" && /^--vendo-[a-z0-9-]+$/.test(key)) {
+      rootStyle.setProperty(key, value);
+    }
+  }
+  document.body.style.fontFamily = "var(--vendo-font-family, system-ui, sans-serif)";
+  document.body.style.color = "var(--vendo-color-text, #16161a)";
+  document.body.style.fontSize = "var(--vendo-font-size, 15px)";
+}
+
 window.addEventListener("message", (event) => {
   if (event.source !== parent) return;
   const message = event.data as Record<string, unknown> | undefined;
   if (!message || message.vendo !== true) return;
 
   if (message.kind === "render" && typeof message.source === "string") {
+    applyThemeVars(message.themeVars);
     void renderComponent(message.source, (message.props ?? {}) as Record<string, unknown>)
       .then(() => post({ kind: "ready" }))
       .catch((error: unknown) => post({
@@ -168,7 +184,11 @@ if (typeof ResizeObserver !== "undefined") {
   const observer = new ResizeObserver(() => {
     post({ kind: "resize", height: document.documentElement.scrollHeight });
   });
-  observer.observe(document.documentElement);
+  // Observe the growing boxes: html/body are pinned to height:100% of the
+  // frame, so their border boxes never change when content grows — only the
+  // React mount's does.
+  observer.observe(mount);
+  observer.observe(document.body);
 }
 
 post({ kind: "booted" });

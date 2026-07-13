@@ -56,18 +56,21 @@ describe("agent stream consumed by an ai-SDK client", () => {
         nodes: [{ id: "r", component: "Text", props: { text: "Ready" } }],
       },
     };
+    // The app runtime's open tool returns an OpenSurface; the view part's appId
+    // comes from the call args (OpenSurface itself carries none).
+    const openSurface = { kind: "tree" as const, payload: view.payload };
     const descriptor: ToolDescriptor = {
-      name: "render_result",
-      description: "Return a rendered app surface.",
-      inputSchema: { type: "object", additionalProperties: false },
+      name: "vendo_apps_open",
+      description: "Open the latest serving surface for a Vendo app.",
+      inputSchema: { type: "object", properties: { appId: { type: "string" } }, required: ["appId"] },
       risk: "read",
     };
     const model = scriptedModel([
-      toolCallTurn("render_result", {}, "call_view"),
+      toolCallTurn("vendo_apps_open", { appId: "app_1" }, "call_view"),
       textTurn("Rendered.", "text_view_done"),
     ]);
-    const guard = testGuard({ render_result: "run" });
-    const tools = boundRegistry({ render_result: { descriptor, execute: async () => view } }, guard);
+    const guard = testGuard({ vendo_apps_open: "run" });
+    const tools = boundRegistry({ vendo_apps_open: { descriptor, execute: async () => openSurface } }, guard);
     const store = memoryStore();
     const agent = createAgent({ model, tools, guard, store });
     const runCtx = ctx();
@@ -86,14 +89,17 @@ describe("agent stream consumed by an ai-SDK client", () => {
     const toolPart = dynamicTool(message, "call_view");
     expect(toolPart).toMatchObject({
       type: "dynamic-tool",
-      toolName: "render_result",
+      toolName: "vendo_apps_open",
       state: "output-available",
-      output: { status: "ok", output: view },
+      output: { status: "ok", output: openSurface },
     });
 
+    // Wire form: the ai-SDK data-chunk envelope carries the core part fields
+    // under `data` — useChat's strict chunk schema rejects the flat form.
     const viewPart = partOfType(message, "data-vendo-view");
-    expect(viewPart).toEqual({ type: "data-vendo-view", ...view });
-    expect(vendoViewPartSchema.safeParse(viewPart).success).toBe(true);
+    expect(viewPart).toEqual({ type: "data-vendo-view", data: view });
+    const viewData = (viewPart as { data: Record<string, unknown> }).data;
+    expect(vendoViewPartSchema.safeParse({ type: "data-vendo-view", ...viewData }).success).toBe(true);
 
     const textPart = message.parts.find(
       (part) => part.type === "text" && (part as { text?: string }).text === "Rendered.",
@@ -152,11 +158,10 @@ describe("agent stream consumed by an ai-SDK client", () => {
     const approvalPart = partOfType(message, "data-vendo-approval");
     expect(approvalPart).toEqual({
       type: "data-vendo-approval",
-      toolCallId: "call_ap",
-      risk: "write",
-      approvalId: "apr_call_ap",
+      data: { toolCallId: "call_ap", risk: "write", approvalId: "apr_call_ap" },
     });
-    expect(vendoApprovalPartSchema.safeParse(approvalPart).success).toBe(true);
+    const approvalData = (approvalPart as { data: Record<string, unknown> }).data;
+    expect(vendoApprovalPartSchema.safeParse({ type: "data-vendo-approval", ...approvalData }).success).toBe(true);
 
     // The tool did not execute; the approval remains queued for the user.
     expect(tools.invocations.send_echo).toBe(0);

@@ -316,11 +316,12 @@ export function partsOfType(read: StreamRead, type: string): Array<Record<string
   return read.parts.filter((part) => part.type === type);
 }
 
-/** The core approvalId (apr_...) surfaced beside the native tool part. */
+/** The core approvalId (apr_...) surfaced beside the native tool part. The
+ *  wire chunk is the ai-SDK data-part envelope: fields ride under `data`. */
 export function vendoApprovalId(read: StreamRead): ApprovalId {
   const part = partsOfType(read, "data-vendo-approval")[0];
   expect(part).toBeDefined();
-  return part!.approvalId as ApprovalId;
+  return (part!.data as { approvalId?: ApprovalId }).approvalId as ApprovalId;
 }
 
 /** The native (ai-SDK) approval id — carried back on the resume message. */

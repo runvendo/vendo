@@ -4,6 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   isToolUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
   type DynamicToolUIPart,
   type ToolUIPart,
   type UIMessage,
@@ -42,7 +43,10 @@ export function useVendoThread(threadId?: string) {
           if (!message) throw new Error("Cannot send an empty Vendo turn.");
           return {
             body: threadId === undefined ? { message } : { threadId, message },
-            headers: { ...client.headers, "Content-Type": "application/json" },
+            // No Content-Type here: the transport already sets application/json,
+            // and a second value would double the header ("application/json,
+            // application/json"), which the wire's CSRF floor rejects (09 §3).
+            headers: { ...client.headers },
           };
         },
       }),
@@ -52,6 +56,9 @@ export function useVendoThread(threadId?: string) {
     ...(threadId === undefined ? {} : { id: threadId }),
     messages: [],
     transport,
+    // Approval decisions resume the parked turn server-side (03 §4): once every
+    // requested approval has a response, send the updated messages back.
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
   useEffect(() => {
@@ -89,6 +96,7 @@ export function useVendoThread(threadId?: string) {
     messages: chat.messages,
     sendMessage: chat.sendMessage,
     status: chat.status,
+    error: chat.error,
     approvals,
     addToolApprovalResponse: chat.addToolApprovalResponse,
     stop: chat.stop,

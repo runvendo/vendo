@@ -74,6 +74,31 @@ for (const backend of backends()) {
       expect((await made.store.records("vendo_audit").get(helperEvent.id))?.data).toEqual(helperEvent);
     });
 
+    it("routes vendo_state through the typed table with composite keys", async () => {
+      const states = made.store.records("vendo_state");
+      const id = "app_state:user_state";
+      const written = await states.put({
+        id,
+        data: { selected: "invoice_42" },
+        refs: { app_id: "ignored", subject: "ignored" },
+      });
+
+      expect(written).toMatchObject({
+        id,
+        data: { selected: "invoice_42" },
+        refs: { app_id: "app_state", subject: "user_state" },
+      });
+      expect(await states.get(id)).toEqual(written);
+      expect((await states.list({ refs: { app_id: "app_state", subject: "user_state" } })).records)
+        .toEqual([written]);
+      expect(await made.sql("SELECT app_id, subject, data FROM vendo_state WHERE app_id = $1 AND subject = $2", ["app_state", "user_state"]))
+        .toEqual([{ app_id: "app_state", subject: "user_state", data: { selected: "invoice_42" } }]);
+      expect(Number((await made.sql("SELECT COUNT(*)::int AS count FROM vendo_records WHERE collection = 'vendo_state' AND id = $1", [id]))[0]?.count)).toBe(0);
+
+      await states.delete(id);
+      expect(await states.get(id)).toBeNull();
+    });
+
     it("walks newest-first routed pages without duplicates or misses", async () => {
       const grants = made.store.records("vendo_grants");
       const ids = Array.from({ length: 15 }, (_, index) => `grt_page_${String(index).padStart(2, "0")}`);

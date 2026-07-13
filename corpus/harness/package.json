@@ -1,14 +1,16 @@
 {
   "name": "@vendoai/corpus-harness",
-  "version": "0.0.0",
+  "version": "0.3.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "corpus": "tsx src/cli.ts",
+    "corpus": "node --import tsx src/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@vendoai/actions": "workspace:*",
     "@vendoai/core": "workspace:*",
     "zod": "^3.24.0"
   },
