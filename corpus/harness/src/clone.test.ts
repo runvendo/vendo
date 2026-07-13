@@ -101,6 +101,47 @@ describe("createRunContext", () => {
 });
 
 describe("ensureRepoCheckout", () => {
+  it("freshly snapshots a local source with generated trees excluded and one clean commit", async () => {
+    const workspaceRoot = await makeTempRoot("local-workspace");
+    const sourceDir = path.join(workspaceRoot, "corpus/hosts/fixture-app");
+    await mkdir(path.join(sourceDir, "src"), { recursive: true });
+    await mkdir(path.join(sourceDir, "node_modules/pkg"), { recursive: true });
+    await mkdir(path.join(sourceDir, "dist"), { recursive: true });
+    await mkdir(path.join(sourceDir, "vendor"), { recursive: true });
+    await mkdir(path.join(sourceDir, ".vendo/data"), { recursive: true });
+    await writeFile(path.join(sourceDir, "src/index.ts"), "export const version = 1;\n");
+    await writeFile(path.join(sourceDir, "node_modules/pkg/index.js"), "excluded\n");
+    await writeFile(path.join(sourceDir, "dist/index.js"), "excluded\n");
+    await writeFile(path.join(sourceDir, "vendor/pkg.tgz"), "excluded\n");
+    await writeFile(path.join(sourceDir, ".vendo/data/state"), "excluded\n");
+    const corpusRoot = await makeTempRoot("local-copy");
+    const context = createRunContext({ corpusRoot });
+
+    const repoDir = await ensureRepoCheckout({
+      name: "fixture-app",
+      localPath: "corpus/hosts/fixture-app",
+    }, { context, workspaceRoot });
+
+    await expect(readFile(path.join(repoDir, "src/index.ts"), "utf8")).resolves.toContain("version = 1");
+    for (const excluded of [
+      "node_modules/pkg/index.js",
+      "dist/index.js",
+      "vendor/pkg.tgz",
+      ".vendo/data/state",
+    ]) {
+      await expect(readFile(path.join(repoDir, excluded), "utf8")).rejects.toThrow();
+    }
+    await expect(runGit(["rev-list", "--count", "HEAD"], repoDir)).resolves.toBe("1");
+    await expect(runGit(["status", "--porcelain"], repoDir)).resolves.toBe("");
+
+    await writeFile(path.join(repoDir, "stale.txt"), "remove me");
+    await writeFile(path.join(sourceDir, "src/index.ts"), "export const version = 2;\n");
+    await ensureRepoCheckout({ name: "fixture-app", localPath: "corpus/hosts/fixture-app" }, { context, workspaceRoot });
+    await expect(readFile(path.join(repoDir, "src/index.ts"), "utf8")).resolves.toContain("version = 2");
+    await expect(readFile(path.join(repoDir, "stale.txt"), "utf8")).rejects.toThrow();
+    await expect(runGit(["rev-list", "--count", "HEAD"], repoDir)).resolves.toBe("1");
+  });
+
   it("clones a repository at the pinned SHA with detached HEAD", async () => {
     const source = await createFixtureRepo();
     const pinnedSha = await source.commitFile("pinned\n");

@@ -257,7 +257,16 @@ export function rewritePackageJsonForLocalVendo(
     if (!byName.has(name)) throw new Error(`local tarball map is missing ${name}`);
   }
 
-  const dependencies = withoutVendoPackages(stringRecord(pkg["dependencies"]));
+  const originalDependencies = stringRecord(pkg["dependencies"]);
+  const dependencies = withoutVendoPackages(originalDependencies);
+  // Standalone local hosts may import publishable Vendo packages directly
+  // (for example @vendoai/ui chrome). Keep those declared at the same direct
+  // dependency level while replacing workspace:/registry specs with tarballs.
+  for (const name of Object.keys(originalDependencies)) {
+    if (name.startsWith("@vendoai/") && byName.has(name)) {
+      dependencies[name] = fileSpec(byName.get(name)!.fileName);
+    }
+  }
   for (const name of LOCAL_DIRECT_DEPENDENCIES) dependencies[name] = fileSpec(byName.get(name)!.fileName);
   // Force the ai peer + init's starter provider onto the v6 train the umbrella
   // requires (a target's own ai major is irrelevant — we inject our umbrella).
@@ -267,7 +276,15 @@ export function rewritePackageJsonForLocalVendo(
   for (const field of ["devDependencies", "peerDependencies", "optionalDependencies"] as const) {
     // Also strip a conflicting ai/@ai-sdk pin from the other sections so one
     // coherent v6 version wins the install.
-    const values = withoutVendoPackages(stringRecord(pkg[field]));
+    const original = stringRecord(pkg[field]);
+    const values = withoutVendoPackages(original);
+    if (field === "devDependencies") {
+      for (const name of Object.keys(original)) {
+        if (name.startsWith("@vendoai/") && byName.has(name)) {
+          values[name] = fileSpec(byName.get(name)!.fileName);
+        }
+      }
+    }
     for (const name of Object.keys(AI_TRAIN_OVERRIDES)) delete values[name];
     if (Object.keys(values).length > 0 || pkg[field] !== undefined) pkg[field] = sortedRecord(values);
   }

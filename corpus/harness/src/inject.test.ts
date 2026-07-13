@@ -103,6 +103,45 @@ function readAnyPackageJson(repoDir: string): Promise<Record<string, unknown>> {
 }
 
 describe("createLocalVendoInjector", () => {
+  it("falls back to pnpm without a lockfile and preserves direct local Vendo packages used by a standalone host", async () => {
+    const workspaceRoot = await createWorkspace();
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    const repoDir = context.repoDir("local-host");
+    await writeJson(path.join(repoDir, "package.json"), {
+      name: "local-host",
+      dependencies: {
+        "@vendoai/ui": "workspace:*",
+        "@vendoai/vendo": "workspace:*",
+      },
+      devDependencies: {
+        "@vendoai/store": "workspace:*",
+      },
+    });
+    const pack: PackWorkspacePackage = async (pkg, opts) => {
+      await mkdir(opts.vendorDir, { recursive: true });
+      await writeFile(path.join(opts.vendorDir, opts.fileName), `packed ${pkg.name}`);
+    };
+    const injector = createLocalVendoInjector({
+      context,
+      workspaceRoot,
+      runInstall: false,
+      pack,
+      async buildWorkspace() {},
+    });
+
+    const result = await injector.inject({ name: "local-host" });
+    const pkg = await readPackageJson(repoDir);
+
+    expect(result.packageManager).toBe("pnpm");
+    expect(result.installDir).toBe(repoDir);
+    expect(pkg.dependencies["@vendoai/vendo"]).toBe("file:vendor/vendoai-vendo-0.3.0.tgz");
+    expect(pkg.dependencies["@vendoai/ui"]).toBe("file:vendor/vendoai-ui-0.3.0.tgz");
+    expect(pkg.devDependencies?.["@vendoai/store"]).toBe("file:vendor/vendoai-store-0.3.0.tgz");
+    await expect(readFile(path.join(repoDir, "pnpm-lock.yaml"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(repoDir, "node_modules/.modules.yaml"), "utf8")).rejects.toThrow();
+  });
+
   it("builds and packs workspace packages once per sweep, then reuses tarballs across repos", async () => {
     const workspaceRoot = await createWorkspace();
     const corpusRoot = await makeTempRoot();
