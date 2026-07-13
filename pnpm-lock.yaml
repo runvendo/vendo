@@ -379,6 +379,9 @@ importers:
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vendoai/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@vendoai/store':
         specifier: workspace:*
         version: link:../../packages/store
@@ -386,6 +389,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/vendo
     devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@3.25.76)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -401,6 +407,49 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
+  fixtures/integration-browser:
+    dependencies:
+      '@vendoai/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@vendoai/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+      '@vendoai/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@vendoai/vendo':
+        specifier: workspace:*
+        version: link:../../packages/vendo
+      react:
+        specifier: ^19.0.0
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.7(react@19.2.7)
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.49.0
+        version: 1.61.1
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.0
+        version: 19.2.3(@types/react@19.2.17)
+      ai:
+        specifier: ^6.0.0
+        version: 6.0.28(zod@3.25.76)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0)(yaml@2.9.0)
 
   fixtures/mcp-e2e:
     dependencies:

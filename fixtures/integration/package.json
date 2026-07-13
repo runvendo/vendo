@@ -13,10 +13,12 @@
   },
   "dependencies": {
     "@vendoai/core": "workspace:*",
+    "@vendoai/mcp": "workspace:*",
     "@vendoai/store": "workspace:*",
     "@vendoai/vendo": "workspace:*"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^22.0.0",
     "ai": "^6.0.0",
     "fflate": "^0.8.2",

@@ -45,7 +45,10 @@
     ".next/redteam-e2e/dev/types/**/*.ts",
     ".next/redteam-e2e/dev/dev/types/**/*.ts",
     ".next/integration-e2e/dev/types/**/*.ts",
-    ".next/integration-e2e/dev/dev/types/**/*.ts"
+    ".next/integration-e2e/dev/dev/types/**/*.ts",
+    ".next/integration-browser/dev/types/**/*.ts",
+    ".next/integration-browser/dev/dev/types/**/*.ts",
+    ".next/integration-browser/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
