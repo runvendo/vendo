@@ -118,6 +118,12 @@ export function AutomationsPanel() {
     setMissing(current => ({ ...current, [appId]: (current[appId] ?? []).filter(item => item.id !== approval.id) }));
   };
 
+  // Evaluated once per render (not once per automation): matchMedia is cheap but
+  // querying it inside the list map was needless repeated work.
+  const reduced = theme.motion === "reduced"
+    || (typeof window !== "undefined" && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
   return (
     <ChromeRoot>
       <section aria-labelledby="vendo-automations-heading" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -129,9 +135,6 @@ export function AutomationsPanel() {
           const appRuns = runs[appId];
           const flow = automationFlow(entry.app.trigger);
           const celebrating = justEnabled[appId] === true;
-          const reduced = theme.motion === "reduced"
-            || (typeof window !== "undefined" && typeof window.matchMedia === "function"
-              && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
           return (
             <article
               className="fl-automation"
