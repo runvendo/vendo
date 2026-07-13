@@ -12,6 +12,7 @@ describe("cloud command dispatch", () => {
     const messages = output();
     expect(await runCloud(["--help"], { output: messages.sink })).toBe(0);
     expect(messages.logs.join("\n")).toContain("pin-ship --app <id>");
+    expect(messages.logs.join("\n")).toContain("login EMAIL");
   });
 
   it("returns one for unknown cloud commands", async () => {

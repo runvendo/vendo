@@ -11,7 +11,7 @@ export const CLOUD_HELP = `vendo cloud — Vendo Cloud API client
 Usage: vendo cloud <command> [options]
 
 User commands:
-  login <email>                         Request and verify an email OTP
+  login EMAIL                           Send a 6-digit email OTP and prompt for it
   login --token <jwt>                   Store an access-token fallback
   logout                               Delete the stored cloud session
   whoami [--token <jwt>]                List organizations for the current user
