@@ -12,13 +12,23 @@ and remix candidates, then proposes the handler and `<VendoRoot>` wiring. Every
 code change is permission-gated and shown as a diff. Answers are written to
 `.vendo/overrides.json` and respected by future sync runs.
 
+Init detects the host framework and scaffolds only what applies. Next.js apps
+get an `app/api/vendo/[...vendo]/route.ts` and a layout that wraps
+`<VendoRoot>`. Express (and other non-Next) apps get a `vendo/server.ts`
+containing the `createVendo()` composition and a Node HTTP↔fetch adapter, plus
+a starter `vendo/ai.ts` — mount the adapter with
+`app.use("/api/vendo", mountVendo())` and wrap the client entry in
+`<VendoRoot>` to finish.
+
 `--agent` emits the setup plan, writes nothing, and asks at most three
 plain-language questions.
 
 ## `vendo doctor`
 
-Checks wiring and makes one live `/status` round trip. It ends with the config
-line that unlocks each remaining block.
+Checks wiring and makes one live `/status` round trip. It recognizes both
+Next.js (catch-all route + layout `<VendoRoot>`) and Express (server uses
+`createVendo` from `@vendoai/vendo/server`; client mounts `<VendoRoot>`), and
+ends with the config line that unlocks each remaining block.
 
 Exit codes:
 

@@ -1,18 +1,59 @@
 ---
 title: "Quickstart: any JavaScript server"
-description: "Mount Vendo's fetch-style handler in any runtime with fetch and WebCrypto."
+description: "Mount Vendo's fetch-style handler in Express or any runtime with fetch and WebCrypto."
 ---
 
-Install the umbrella:
+Vendo's handler is framework-agnostic. It accepts a standard `Request` and
+returns a standard `Response`, so you can mount it in Express, Fastify, Hono,
+Bun, or any Node-compatible runtime.
+
+## Install and scaffold
+
+Install the umbrella and run `vendo init` from your app root:
 
 ```bash
 npm install @vendoai/vendo
+npx vendo init
 ```
 
-Create the composition once during server boot:
+When init detects Express (or any non-Next framework), it does not scaffold
+Next files. Instead, it writes a diff-gated `vendo/server.ts` containing a
+`createVendo()` composition plus a small Node HTTP↔fetch adapter, and a
+starter `vendo/ai.ts` model module. Two manual wiring steps remain — init
+prints them at the end.
+
+## Wire the handler
+
+Mount the exported adapter under one base path, normally `/api/vendo`:
+
+```ts
+import express from "express";
+import { mountVendo } from "./vendo/server.js";
+
+const app = express();
+app.use("/api/vendo", mountVendo());
+app.listen(3000);
+```
+
+Wrap the client root in `<VendoRoot>`:
+
+```tsx
+import { VendoRoot } from "@vendoai/vendo/react";
+
+root.render(
+  <VendoRoot>
+    <App />
+  </VendoRoot>,
+);
+```
+
+## Composition
+
+The generated `vendo/server.ts` calls `createVendo` once during boot:
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
+import { model } from "./ai.js";
 
 const vendo = createVendo({
   model,
@@ -23,13 +64,30 @@ const vendo = createVendo({
 });
 ```
 
-Mount `vendo.handler` under one base path, normally `/api/vendo`. It accepts a
-standard `Request` and returns a standard `Response`. Preserve streaming for
-`POST /threads`.
+The adapter converts each Node request into a `Request`, awaits
+`vendo.handler(...)`, and streams the `Response` back. Requirements the
+adapter must preserve:
 
-The adapter must pass GET, POST, and DELETE requests through unchanged. Cookie
-and authorization headers must remain available to `principal(req)` and to
-present-mode same-origin tool calls.
+- Pass GET, POST, and DELETE through unchanged.
+- Preserve streaming for `POST /threads`.
+- Keep cookie and authorization headers available to `principal(request)` and
+  to present-mode same-origin tool calls.
+- Forward multi-value `Set-Cookie` headers as a header array, not a joined
+  string.
+
+Behind a trusted proxy, set `VENDO_BASE_URL` explicitly so the adapter does
+not trust the `Host` header when reconstructing the absolute URL.
+
+## Verify
+
+Run `vendo doctor` against the running server. It detects Express, checks the
+server and client wiring, and makes one live `/status` round trip:
+
+```bash
+npx vendo doctor
+```
+
+## Persistence
 
 Use hosted Postgres by passing `createStore({ url })` for multi-process or
 serverless deployments. The default is PGlite at `.vendo/data`.

@@ -18,6 +18,21 @@ Answers land in `.vendo/overrides.json` and remain authoritative across future
 sync runs. Init also writes policy, product brief, theme, and the PGlite ignore
 entry where applicable.
 
+## Framework detection
+
+Init inspects `package.json` and scaffolds only the files that apply:
+
+- **Next.js**: proposes `app/api/vendo/[...vendo]/route.ts` and wraps the root
+  layout in `<VendoRoot>`.
+- **Express** (or any non-Next host): proposes a `vendo/server.ts` module
+  containing the `createVendo()` composition and a Node HTTP↔fetch adapter,
+  plus a starter `vendo/ai.ts` model module. Two manual wiring steps remain
+  after init: mount the adapter with `app.use("/api/vendo", mountVendo())` and
+  wrap the client entry with `<VendoRoot>`. Init prints both steps, and
+  `vendo doctor` reports broken until they are done.
+
+Next behavior is unchanged. Non-Next hosts never receive Next-shaped files.
+
 ## Agent mode
 
 ```bash
