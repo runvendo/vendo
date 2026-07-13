@@ -2,9 +2,11 @@ import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import {
   VendoError,
+  descriptorHash,
   toolDescriptorSchema,
   type ActAs,
   type PermissionGrant,
+  type Principal,
   type RunContext,
   type ToolCall,
   type ToolDescriptor,
@@ -27,8 +29,16 @@ export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
 }
 
-/** Away calls carry the exact grant captured by the guard binding. */
-export type ActionsRunContext = RunContext & { grant?: PermissionGrant };
+/** Away calls carry the exact grant captured by the guard binding; venue="mcp"
+ * calls carry the door's OAuth-consent projection (10-mcp §3) as `mcpConsent`,
+ * attached by the door. `mcpConsent` is the STRUCTURAL twin of @vendoai/mcp's
+ * `McpRunContext` — actions depends on core only (so the type can't be
+ * imported); the door guarantees the shape, exactly as guard guarantees
+ * `grant`. */
+export type ActionsRunContext = RunContext & {
+  grant?: PermissionGrant;
+  mcpConsent?: { clientId: string; scopes: string[] };
+};
 
 interface RegistryConfig {
   dir?: string;
@@ -242,6 +252,45 @@ function setHeader(headers: Record<string, string>, name: string, value: string)
   headers[name] = value;
 }
 
+/** The shared ActAs invocation for away + venue="mcp" host execution (04 §4).
+ * The two paths source the grant differently but the seam call is identical:
+ * `null` → the host declined; a throw → act-as-error. Returns the AuthMaterial
+ * headers or the ToolOutcome to surface. */
+async function actAsAuth(
+  actAs: ActAs,
+  principal: Principal,
+  grant: PermissionGrant,
+  messages: { declined: string; failed: string },
+): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
+  try {
+    const auth = await actAs(principal, grant);
+    if (!auth) return { error: error("not-implemented", messages.declined) };
+    return { headers: { ...auth.headers } };
+  } catch (cause) {
+    return { error: error("act-as-error", cause instanceof Error ? cause.message : messages.failed) };
+  }
+}
+
+/** The consent projection (10-mcp §3): a PermissionGrant-shaped value minted
+ * per-call ONLY when the ctx carries the door's OAuth-consent record and the
+ * guard did not attach a real grant. It honestly labels the authority — the
+ * user's standing OAuth consent — as the argument handed to `actAs`. Never
+ * stored, never consulted by guard; it exists only for the seam call. */
+function mcpConsentGrant(ctx: ActionsRunContext, call: ToolCall, tool: ExtractedTool): PermissionGrant | undefined {
+  if (!ctx.mcpConsent) return undefined;
+  return {
+    id: `grt_mcp_${ctx.sessionId}`,
+    subject: ctx.principal.subject,
+    tool: call.tool,
+    descriptorHash: descriptorHash(descriptorOf(tool)),
+    scope: { kind: "tool" },
+    duration: "session",
+    contextKey: ctx.sessionId,
+    source: "mcp",
+    grantedAt: new Date().toISOString(),
+  };
+}
+
 async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
   if (!isArgsObject(call.args)) return error("validation", `Arguments for ${call.tool} must be an object`);
 
@@ -273,13 +322,35 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     if (!config.actAs) return error("not-implemented", "away execution isn't set up for this product");
     const grant = (ctx as ActionsRunContext).grant;
     if (!grant) return error("validation", "away execution requires a captured grant");
-    try {
-      const auth = await config.actAs(ctx.principal, grant);
-      if (!auth) return error("not-implemented", "the host declined away execution for this action");
-      headers = { ...auth.headers };
-    } catch (cause) {
-      return error("act-as-error", cause instanceof Error ? cause.message : "away authentication failed");
+    const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
+      declined: "the host declined away execution for this action",
+      failed: "away authentication failed",
+    });
+    if ("error" in authed) return authed.error;
+    headers = authed.headers;
+  } else if (ctx.venue === "mcp") {
+    // 04 §4 / 10-mcp §3: an MCP-OAuth user has no host browser session, so the
+    // present path has nothing to forward — and we forward NOTHING even if a
+    // forged/mis-plumbed ctx carries requestHeaders (fail-closed). Host auth
+    // comes from the ActAs seam, exactly as away: the guard-attached grant when
+    // the run was grant-decided, else the door's OAuth-consent projection.
+    if (!config.actAs) {
+      return error(
+        "not-implemented",
+        "MCP host execution isn't set up for this product — the host must provide actAs (createVendo({ actAs }))",
+      );
     }
+    const actionsCtx = ctx as ActionsRunContext;
+    // A ctx with neither a real grant nor the door's consent record did not come
+    // from the door — fail closed rather than authenticate an unattested call.
+    const grant = actionsCtx.grant ?? mcpConsentGrant(actionsCtx, call, tool);
+    if (!grant) return error("validation", "MCP host execution requires the door's consent context");
+    const authed = await actAsAuth(config.actAs, ctx.principal, grant, {
+      declined: "the host declined MCP execution for this action",
+      failed: "MCP authentication failed",
+    });
+    if ("error" in authed) return authed.error;
+    headers = authed.headers;
   } else {
     headers = mayForwardPresentHeaders(tool.binding, url, config.baseUrl, config.baseUrlTrusted ?? true)
       ? forwardedHeaders(ctx)

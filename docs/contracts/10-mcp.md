@@ -1,6 +1,6 @@
 # @vendoai/mcp — the door: serve your product's tools to outside agents
 
-Status: DRAFT (wave 6 — added after the v0 freeze on Yousef's directive; this document is ADDITIVE and changes nothing frozen). One job: make the host product installable in Claude, ChatGPT, Cursor, and any MCP client — OAuth, tool serving, and MCP Apps rendering handled behind one flag. Same guard, same audit: door calls get identical treatment to chat — no second, weaker perimeter. Depends on core only; the umbrella wires everything else in through seams.
+Status: DRAFT (wave 6 — added after the v0 freeze on Yousef's directive; this document is ADDITIVE and changes nothing frozen). Umbrella hookup + `venue: "mcp"` host-call auth LANDED 2026-07-13 (this wave): §2.1 is the auth model, and the former handoff note `10-mcp-umbrella-hookup.md` is now the landed record. One job: make the host product installable in Claude, ChatGPT, Cursor, and any MCP client — OAuth, tool serving, and MCP Apps rendering handled behind one flag. Same guard, same audit: door calls get identical treatment to chat — no second, weaker perimeter. Depends on core only; the umbrella wires everything else in through seams.
 
 Derived from the page's `@vendoai/mcp` block against the frozen contract set, then corrected against the live specs (MCP 2025-11-25 revision; MCP Apps 2026-01-26; dual review round applied — see §8). The hooks were already reserved: `venue: "mcp"` in core §3, provider-safe tool names (decision 15, MCP-compatible by construction), `guard.bind` as the one execution path (decision 6).
 
@@ -24,7 +24,7 @@ export interface McpDoor {
 }
 ```
 
-The umbrella exposes it as the page's one flag — literally: `createVendo({ mcp: true })` (⚑ additive boolean key, allowed within the version train). Server identity in the MCP initialize handshake derives from the host's package.json.
+The umbrella exposes it as the page's one flag — literally `createVendo({ mcp: true, oauth })` (⚑ additive boolean key + the `oauth` seam, allowed within the version train). `oauth` is a top-level `HostOAuthAdapter` (§3), REQUIRED when `mcp` is true — the door cannot mint principals without it. ⚑ **LANDED** in the umbrella this wave (2026-07-13): `createVendo` constructs the door from the already-composed blocks (the same guard-bound registry, guard, store, and an `AppsPort` adapter over `vendo.apps`), mounts `door.handler` on the wire plus the origin-root well-known families (§5), and surfaces `blocks.mcp` in `/status` and `vendo doctor` checks. Server identity in the MCP initialize handshake derives from the host's package.json.
 
 ## 2. Door semantics (normative)
 
@@ -32,6 +32,20 @@ The umbrella exposes it as the page's one flag — literally: `createVendo({ mcp
 - **Principal**: minted by the OAuth layer (§3) — the door never trusts client-supplied identity. Anonymous/ephemeral principals are not served: an unauthenticated request gets `401` with the challenge header (§3), never a session.
 - **Tool surface**: `tools/list` = the bound registry's descriptors verbatim (names are already MCP-safe, `inputSchema` is already the MCP field). No door-specific renames, no second catalog.
 - **Default policy posture**: unchanged from guard's — but the shipped policy example (05 §3) blocks `venue: "mcp"`; `vendo init` asks before opening the door. Opening it is a host decision, never a default.
+
+## 2.1 Host-call auth over the door (normative)
+
+A door tool call reaches the same actions `executeHost` path as chat (§2), but the present-execution assumption from 04 §4 does not hold: an MCP client has **no host browser session**, so there is no cookie or `Authorization` header to forward. `ctx.requestHeaders` here would carry the *inbound MCP request's* bearer — a door credential scoped to the door, never a host session — and is therefore **never forwarded** to the host route (fail-closed even if a forged `RunContext` smuggles headers in). Host-call auth for `venue: "mcp"` rides the **existing `ActAs` seam** (01 §13, 04 §4) — the same seam away automations use. No new seam, no new host function.
+
+- **The door mints consent, not authority.** On success, `HostOAuthAdapter.authorize` (§3) records the user's standing door-session consent — `{ clientId, scopes }` — as door state (`vendo_mcp_grants`) plus a `door-auth` audit event. This is *not* a `PermissionGrant` and never suppresses a guard decision. The door attaches it to every `RunContext` it mints, as `ctx.mcpConsent`.
+- **Sourcing the `actAs` grant.** In `executeHost` for `venue: "mcp"`, actions hands `actAs(principal, grant)` one of two values:
+  - the **guard-attached real grant** (`ctx.grant`) when the run was grant-decided — e.g. a post-approval retry, or a `remember`-minted standing grant (01 §5). Ordinary grants flow through unchanged.
+  - otherwise, a **per-call consent projection**: a `PermissionGrant`-shaped value `{ scope: { kind: "tool" }, duration: "session", contextKey: sessionId, source: "mcp" }`, minted **only** when `ctx.mcpConsent` is present. It is never stored and never consulted by guard — it exists solely to carry the OAuth'd principal into `actAs` so the host can vend that user's auth material.
+- **Fail-closed.** No consent record and no grant → the call errors, closed; nothing executes anonymously. `actAs` absent → clean `not-implemented` tool error ("away execution isn't set up for this product", 04 §4) — the door degrades exactly like an away automation on a host that never wired the seam. `actAs → null` → the host declined this principal/tool; tool error.
+- **The additive `source: "mcp"` variant.** `PermissionGrant.source` (01 §5) gains `"mcp"` as an additive union member, under the same forward-compat mechanism (01 §15) that admits the door wave's `AuditEvent.kind: "door-auth"` (§3). Its **only** documented mint point is the consent projection above; because that projection is never persisted, no stored grant ever carries it.
+- **One security rule, kept honest.** The projection carries the *OAuth-authenticated user* as principal and nothing more: `scope: { kind: "tool" }` grants no bounded authority, `duration: "session"` outlives nothing, and the value never reaches guard — guard still asks per-call for anything risky, with the real inputs (01 §5). The authority is the USER the OAuth flow authenticated; the token, the client id, and the consent record hold **none** of it. A stolen token resolves to a principal whose every risky action still stops at an in-product approval (§2).
+
+**Non-goals (normative).** This model changes nothing frozen. `ActAs`'s signature and semantics are untouched (01 §13). No new seam is introduced. The door captures no host credential and forwards no bearer — the inbound MCP token authenticates the door request and dies there; 04 §4 is untouched, 10-mcp is its additive home.
 
 ## 3. OAuth — the host's auth becomes the MCP OAuth server
 

@@ -38,7 +38,7 @@ interface HostIdentity {
 
 interface SessionState {
   subject: string;
-  context: RunContext;
+  context: McpRunContext;
   server: Server;
   transport: WebStandardStreamableHTTPServerTransport;
   sessionId?: string;
@@ -170,19 +170,29 @@ class Door {
     // unauthenticated probe to an arbitrary path must not steer discovery.
     this.#cardMount = normalizeMount(mount);
 
+    // The OAuth consent this authenticated request rode in on — projected onto
+    // every RunContext the door mints (10-mcp §3), the evidence actions uses to
+    // authenticate host execution via ActAs. The inbound bearer itself is never
+    // forwarded; only this clientId/scopes projection travels.
+    const consent = { clientId: auth.grant.clientId, scopes: auth.grant.scopes };
+
     if (requestedSessionId !== undefined) {
-      requestedState!.context = mcpContext(principal, requestedSessionId);
+      requestedState!.context = mcpContext(principal, requestedSessionId, consent);
       requestedState!.touchedAt = Date.now();
       return requestedState!.transport.handleRequest(req);
     }
 
-    const state = await this.#newSession(auth.grant.subject, principal);
+    const state = await this.#newSession(auth.grant.subject, principal, consent);
     const response = await state.transport.handleRequest(req);
     if (state.sessionId === undefined) await state.transport.close();
     return response;
   }
 
-  async #newSession(subject: string, principal: Principal): Promise<SessionState> {
+  async #newSession(
+    subject: string,
+    principal: Principal,
+    consent: { clientId: string; scopes: string[] },
+  ): Promise<SessionState> {
     const identity = await this.#hostIdentity();
     let state: SessionState;
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -190,7 +200,7 @@ class Door {
       enableJsonResponse: true,
       onsessioninitialized: (sessionId) => {
         state.sessionId = sessionId;
-        state.context = mcpContext(state.context.principal, sessionId);
+        state.context = mcpContext(state.context.principal, sessionId, consent);
         this.#sessions.set(sessionId, state);
         const sessions = this.#subjectSessions.get(subject) ?? new Set<string>();
         sessions.add(sessionId);
@@ -211,7 +221,7 @@ class Door {
     );
     state = {
       subject,
-      context: mcpContext(principal, `mcpr_${randomHex(16)}`),
+      context: mcpContext(principal, `mcpr_${randomHex(16)}`, consent),
       server,
       transport,
       touchedAt: Date.now(),
@@ -551,8 +561,26 @@ function stringify(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-function mcpContext(principal: Principal, sessionId: string): RunContext {
-  return { principal, venue: "mcp", presence: "present", sessionId };
+/** The RunContext the door mints for every MCP tool call. It carries the
+ * door's OAuth-consent evidence structurally: `mcpConsent` is the projection of
+ * the authenticated AccessGrant (10-mcp §3) — the OAuth'd user's `clientId` and
+ * the scopes they consented the client to. actions reads it off the ctx to
+ * authenticate host execution through the ActAs seam (04 §4) WITHOUT the door
+ * ever forwarding the inbound MCP bearer. actions CANNOT import this type
+ * (actions depends on core only, enforced by scripts/dependency-guard.mjs), so
+ * — exactly as guard attaches `ctx.grant` for ActionsRunContext — this is a
+ * STRUCTURAL contract: ActionsRunContext's optional `mcpConsent?` twin must
+ * match this shape. */
+export type McpRunContext = RunContext & {
+  mcpConsent: { clientId: string; scopes: string[] };
+};
+
+function mcpContext(
+  principal: Principal,
+  sessionId: string,
+  consent: { clientId: string; scopes: string[] },
+): McpRunContext {
+  return { principal, venue: "mcp", presence: "present", sessionId, mcpConsent: consent };
 }
 
 async function readHostIdentity(): Promise<HostIdentity> {

@@ -4,6 +4,6 @@
  * the contract's §1 verbatim; nothing else is exported from the root.
  */
 export { createMcpDoor } from "./door.js";
-export type { McpDoor, McpDoorConfig } from "./door.js";
+export type { McpDoor, McpDoorConfig, McpRunContext } from "./door.js";
 export type { HostOAuthAdapter } from "./oauth/adapter.js";
 export type { AppsPort } from "./apps-port.js";

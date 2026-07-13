@@ -25,5 +25,9 @@ Connector annotations supply risk when available. Otherwise Vendo defaults to
 provider-specific, but every call still crosses the same guard and approval
 path.
 
-This connector support is distinct from the deferred MCP venue. V0 does not
-expose an MCP server door into the agent.
+This connector support is distinct from the MCP door, which runs the other
+direction: connectors pull remote MCP tools *into* your agent, while the door
+serves *your* host tools *out* to MCP clients like Claude and ChatGPT. Enable
+the door with `createVendo({ mcp: true, oauth })`. Door tool calls authenticate
+over the same `actAs` seam away automations use, since MCP clients have no host
+browser session. See the quickstart for setup.

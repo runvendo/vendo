@@ -216,6 +216,7 @@ describe("09 §3 public wire", () => {
     expect(await status.json()).toEqual({
       posture: "unconfigured",
       version: "0.3.0",
+      mcp: false,
       blocks: { store: true, agent: true, actions: true, guard: true, apps: true, automations: true },
     });
   });

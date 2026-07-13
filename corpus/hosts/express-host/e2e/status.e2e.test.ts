@@ -10,6 +10,7 @@ describe("Relay Vendo status over Express", () => {
       expect(await response.json()).toEqual({
         posture: "rules",
         version: expect.any(String),
+        mcp: false,
         blocks: {
           store: true,
           agent: true,

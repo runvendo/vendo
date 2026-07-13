@@ -150,6 +150,10 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     tools: hostTools as unknown as Parameters<typeof createActions>[0]["tools"],
     baseUrl: fixtureBaseUrl(),
     fetch: fixtureFetch,
+    // venue="mcp" host calls authenticate through the ActAs seam (04 §4 / 10-mcp
+    // §3), never a browser session — so the host models it: mint the OAuth'd
+    // user's fixture session for the door's consent-projection grant.
+    actAs: async (principal) => ({ headers: { cookie: await loginCookie(principal.subject) } }),
   });
   const bound = guard.bind(actions);
   const apps = createApps({ store, guard, tools: bound, catalog: [] });

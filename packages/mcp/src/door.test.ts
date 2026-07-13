@@ -394,6 +394,14 @@ describe("createMcpDoor MCP protocol", () => {
       sessionId: expect.stringMatching(/^mcps_/),
     });
     expect(harness.executions[0]?.id).toMatch(/^mctc_/);
+    // 10-mcp §3: the door projects the authenticated OAuth grant's consent onto
+    // every RunContext it mints — the evidence actions uses to authenticate host
+    // execution via actAs. A tools/call re-uses the session (the existing-session
+    // refresh path), which must carry the consent just like the fresh mint does.
+    expect((harness.executions[0]?.ctx as { mcpConsent?: unknown }).mcpConsent).toEqual({
+      clientId: clientRegistration.body.client_id,
+      scopes: ["read", "write"],
+    });
 
     outcome = { status: "error", error: { code: "upstream", message: "failed" } };
     expect(await connected.client.callTool({ name: "host_lookup", arguments: {} })).toMatchObject({

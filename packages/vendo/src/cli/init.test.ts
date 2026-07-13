@@ -158,14 +158,14 @@ describe("vendo init", () => {
     ]);
   });
 
-  it("emits a read-only agent plan with three plain-language questions", async () => {
+  it("emits a read-only agent plan with the plain-language questions", async () => {
     const root = await fixture();
     const before = await tree(root);
     const sink = output();
     expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
     expect(await tree(root)).toEqual(before);
     const plan = JSON.parse(sink.logs.join("\n")) as { questions: unknown[]; codeChanges: Array<{ diff: string }> };
-    expect(plan.questions).toHaveLength(3);
+    expect(plan.questions).toHaveLength(4);
     expect(plan.codeChanges).toHaveLength(3); // route + layout + starter model module
     expect(plan.codeChanges[0]?.diff).toContain("@vendoai/vendo/server");
   });
@@ -210,7 +210,7 @@ describe("vendo init", () => {
       targetDir: root,
       confirm: async () => true,
       interview: async (questions) => {
-        expect(questions).toHaveLength(3);
+        expect(questions).toHaveLength(4);
         return {
           modelImport: "@/server/model",
           brief: "A billing product for finance teams.",

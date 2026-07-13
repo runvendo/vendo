@@ -22,12 +22,15 @@ import {
   type VendoTheme,
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
+import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
 import { createStore, envSecrets, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 
 const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
+/** 10-mcp §5 — the door's canonical mount under the wire's own prefix. */
+const MCP_MOUNT = `${BASE_PATH}/mcp`;
 
 const STATUS_BY_CODE: Record<VendoErrorCode, number> = {
   validation: 400,
@@ -61,6 +64,14 @@ export interface CreateVendoConfig {
   judge?: Judge;
   secrets?: SecretsProvider;
   telemetry?: boolean;
+  /** 10-mcp §1 — the one flag: open the MCP door so outside agents (Claude,
+      ChatGPT, Cursor) reach the host's tools through the SAME guard-bound path.
+      Opening it is a host decision (10-mcp §2), so it is off by default. */
+  mcp?: boolean;
+  /** 10-mcp §3 — the host's identity + consent seam. Threaded top-level like
+      `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
+      REQUIRED when `mcp` is true: the door cannot mint principals without it. */
+  oauth?: HostOAuthAdapter;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -141,6 +152,21 @@ function relativePath(url: URL): string | null {
   return url.pathname.slice(BASE_PATH.length);
 }
 
+/** 10-mcp §4-5 — the three path families the door owns: its own mount, and the
+    origin-root discovery documents it serves (RFC 9728 path-inserted metadata +
+    the SEP-2127 server card). These are NOT wire routes — the door mints its own
+    principals (§3), and the OAuth /token and /register endpoints are
+    form-encoded POSTs — so they bypass the wire's principal/CSRF machinery. */
+function isDoorPath(pathname: string): boolean {
+  if (pathname === MCP_MOUNT || pathname.startsWith(`${MCP_MOUNT}/`)) return true;
+  return (
+    pathname.startsWith("/.well-known/oauth-protected-resource")
+    || pathname.startsWith("/.well-known/oauth-authorization-server")
+    || pathname === "/.well-known/mcp/server-card.json"
+    || pathname === "/.well-known/mcp-server-card"
+  );
+}
+
 function routeSegments(path: string): string[] {
   try {
     return path.split("/").filter(Boolean).map(decodeURIComponent);
@@ -188,6 +214,8 @@ function createWireHandler(deps: {
   guard: VendoGuard;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  mcp: boolean;
+  door?: McpDoor;
   onRequestOrigin?: (origin: string) => void;
 }): (request: Request) => Promise<Response> {
   const context = async (request: Request, venue: RunContext["venue"]): Promise<RunContext> => {
@@ -214,6 +242,19 @@ function createWireHandler(deps: {
   return async (request) => {
     try {
       const url = new URL(request.url);
+      // 10-mcp: hand the door its own paths BEFORE any wire machinery. It runs
+      // ahead of relativePath's not-found rejection (the origin-root discovery
+      // documents fall outside BASE_PATH) and ahead of the CSRF json-mutation
+      // gate (OAuth /token and /register are form-encoded POSTs, not JSON). The
+      // door authenticates every request through oauth.principal (§3), so the
+      // wire's principal resolver never runs for it — and, deliberately, these
+      // requests do NOT teach the same-origin baseUrl default: only a request
+      // addressing a real Vendo WIRE route may (04 §4), and the door's paths are
+      // the door's, not wire routes.
+      if (deps.door !== undefined && isDoorPath(url.pathname)) {
+        await deps.ready;
+        return await deps.door.handler(request);
+      }
       const path = relativePath(url);
       if (path === null) throw new VendoError("not-found", "unknown Vendo route");
       // Learn the same-origin default only from a request that addresses a real
@@ -425,6 +466,7 @@ function createWireHandler(deps: {
         return json({
           posture: deps.guard.status().posture,
           version: VERSION,
+          mcp: deps.mcp,
           blocks: {
             store: true,
             agent: true,
@@ -500,6 +542,37 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     runner: agent.asRunner(),
   });
+  // 10-mcp §1 — construct the door from the parts already assembled: the SAME
+  // guard-bound registry chat/apps/automations use, the guard (its core seam is
+  // what the door holds for auth audit), the store (a StoreAdapter for the door's
+  // own protocol state), the host's oauth seam, and an AppsPort view of `apps`.
+  let door: McpDoor | undefined;
+  if (config.mcp === true) {
+    if (config.oauth === undefined) {
+      throw new VendoError(
+        "validation",
+        "createVendo({ mcp: true }) requires an `oauth` HostOAuthAdapter (10-mcp §3): the door mints door principals through it and cannot open without one.",
+      );
+    }
+    // AppsRuntime.open adds a "resuming" variant AppsPort (tree | http) does not
+    // carry. The door is a viewer + runner (10-mcp §4), so a server app still
+    // waking up has no surface to hand back over MCP — signal it as an in-band
+    // tool error (the door catches VendoError and preserves the code).
+    const appsPort: AppsPort = {
+      list: (ctx) => apps.list(ctx),
+      async open(appId, ctx) {
+        const opened = await apps.open(appId, ctx);
+        if (opened.kind === "tree") return { kind: "tree", payload: opened.payload };
+        if (opened.kind === "http") return { kind: "http", url: opened.url };
+        throw new VendoError(
+          "not-implemented",
+          "This is a server app resuming in-product; open it in the host to use it over MCP.",
+        );
+      },
+      call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
+    };
+    door = createMcpDoor({ tools: boundTools, guard, store, oauth: config.oauth, apps: appsPort });
+  }
   const sessionId = `session_${globalThis.crypto.randomUUID()}`;
   const anonymous = ephemeralPrincipal(`anonymous_${globalThis.crypto.randomUUID()}`);
   const handler = createWireHandler({
@@ -512,6 +585,8 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     apps,
     automations,
+    mcp: config.mcp === true,
+    ...(door === undefined ? {} : { door }),
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
       // → the wire's own origin, learned from the first VALIDATED request and

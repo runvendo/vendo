@@ -66,7 +66,7 @@ async function extractTheme(root: string): Promise<VendoTheme> {
 }
 
 export interface InitQuestion {
-  id: "modelImport" | "brief" | "risk";
+  id: "modelImport" | "brief" | "risk" | "mcp";
   question: string;
   recommendation: string;
 }
@@ -92,6 +92,7 @@ export interface InitOptions {
     modelImport?: string;
     brief?: string;
     criticalTools?: string[];
+    openDoor?: boolean;
   }>;
   telemetry?: {
     home?: string;
@@ -367,6 +368,8 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
         { id: "modelImport", question: "Where does your ai-SDK model export live?", recommendation: modelImport },
         { id: "brief", question: "In one paragraph, what should the agent know about this product?", recommendation: options.brief ?? "Describe the product, users, and the jobs they do." },
         { id: "risk", question: "Which extracted write actions need stricter review?", recommendation: "Mark destructive or irreversible tools critical in .vendo/overrides.json." },
+        // 10-mcp §2: opening the door is a host decision, never a default — so ask.
+        { id: "mcp", question: "Open the MCP door so agents (Claude, ChatGPT, Cursor) can use your product's tools?", recommendation: "No — opening it is a host decision and needs a HostOAuthAdapter (docs/contracts/10-mcp)." },
       ],
     },
   };
@@ -387,6 +390,7 @@ async function defaultInterview(questions: InitQuestion[]): Promise<{
   modelImport?: string;
   brief?: string;
   criticalTools?: string[];
+  openDoor?: boolean;
 }> {
   if (!stdin.isTTY || !stdout.isTTY) return {};
   const prompt = createInterface({ input: stdin, output: stdout });
@@ -394,12 +398,14 @@ async function defaultInterview(questions: InitQuestion[]): Promise<{
     const modelImport = await prompt.question(`${questions[0]?.question} [${questions[0]?.recommendation}] `);
     const brief = await prompt.question(`${questions[1]?.question} [${questions[1]?.recommendation}] `);
     const critical = await prompt.question(`${questions[2]?.question} [comma-separated names; Enter accepts recommendation] `);
+    const door = await prompt.question(`${questions[3]?.question} [y/N] `);
     return {
       ...(modelImport.trim() === "" ? {} : { modelImport: modelImport.trim() }),
       ...(brief.trim() === "" ? {} : { brief: brief.trim() }),
       ...(critical.trim() === "" ? {} : {
         criticalTools: critical.split(",").map((name) => name.trim()).filter(Boolean),
       }),
+      ...(/^y(?:es)?$/i.test(door.trim()) ? { openDoor: true } : {}),
     };
   } finally {
     prompt.close();
@@ -504,6 +510,13 @@ export async function runInit(options: InitOptions): Promise<number> {
     });
     if (changes.some((change) => change.after === defaultModelSource() && change.before === null)) {
       output.log("Wrote a starter model module: install its provider (`npm install ai @ai-sdk/anthropic`) and set ANTHROPIC_API_KEY.");
+    }
+    // 10-mcp §2: the door never opens by default. When the host asks to open it,
+    // point them at the one code change they make deliberately — a HostOAuthAdapter
+    // (identity + consent) plus `mcp: true` on createVendo. init cannot scaffold the
+    // adapter (it is host auth), so it guides rather than writes broken wiring.
+    if (answers.openDoor === true) {
+      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. See docs/contracts/10-mcp; `vendo doctor` verifies the discovery documents once it is live.");
     }
     const finalWiring = plan.framework === "express" ? await detectVendoWiring(root) : null;
     if (finalWiring !== null && (!finalWiring.server || !finalWiring.client)) {

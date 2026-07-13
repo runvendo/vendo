@@ -9,6 +9,9 @@ import {
   VENDO_TOOLS_FORMAT,
   descriptorHash,
   toolOutcomeSchema,
+  type ActAs,
+  type PermissionGrant,
+  type Principal,
   type RunContext,
   type ToolDescriptor,
   type ToolOutcome,
@@ -16,7 +19,7 @@ import {
 } from "@vendoai/core";
 import type { Connector } from "../connectors/connector.js";
 import type { ExtractedTool } from "../formats.js";
-import { createActions } from "./registry.js";
+import { createActions, type ActionsRunContext } from "./registry.js";
 
 const ctx: RunContext = {
   principal: { kind: "user", subject: "user_1" },
@@ -403,5 +406,133 @@ describe("host HTTP execution", () => {
       ctx,
     )).resolves.toMatchObject({ status: "ok" });
     expect((request.mock.calls[0]?.[0] as URL).pathname).toBe("/files/folder%20one/child%2Fname");
+  });
+});
+
+describe("host HTTP execution — venue=mcp (10-mcp §3 / 04 §4 ActAs auth)", () => {
+  async function hostServer(): Promise<{ url: string; seen: Array<Record<string, string | string[] | undefined>> }> {
+    const seen: Array<Record<string, string | string[] | undefined>> = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    });
+    const { port } = server.address() as AddressInfo;
+    closers.push(async () => { server.close(); server.closeAllConnections(); });
+    return { url: `http://127.0.0.1:${port}`, seen };
+  }
+
+  const writeTool = (baseUrl: string): ExtractedTool =>
+    routeTool("host_write", {
+      risk: "write",
+      binding: { kind: "openapi", operationId: "write", baseUrl, method: "POST", path: "/write" },
+    });
+
+  const mcpCtx = (extra: Partial<ActionsRunContext>): ActionsRunContext => ({
+    principal: { kind: "user", subject: "user_1" },
+    venue: "mcp",
+    presence: "present",
+    sessionId: "mcps_1",
+    ...extra,
+  });
+
+  it("never forwards ctx.requestHeaders; sends only the actAs AuthMaterial headers", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act-as-user_1" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    // A poisoned/forged ctx: the inbound MCP bearer and a cookie ride along.
+    const ctx = mcpCtx({
+      mcpConsent: { clientId: "mcpc_x", scopes: ["read", "write"] },
+      requestHeaders: { cookie: "fixture_session=user_1", authorization: "Bearer inbound-mcp-bearer" },
+    });
+
+    await expect(actions.execute({ id: "1", tool: "host_write", args: {} }, ctx)).resolves.toMatchObject({ status: "ok" });
+    expect(host.seen[0]?.cookie).toBeUndefined();
+    expect(host.seen[0]?.authorization).toBe("Bearer act-as-user_1");
+  });
+
+  it("returns not-implemented and makes no host request when actAs is absent", async () => {
+    const host = await hostServer();
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url });
+    const out = await actions.execute(
+      { id: "1", tool: "host_write", args: {} },
+      mcpCtx({ mcpConsent: { clientId: "mcpc_x", scopes: ["read"] } }),
+    );
+    expect(out).toMatchObject({ status: "error", error: { code: "not-implemented" } });
+    if (out.status === "error") expect(out.error.message).toContain("actAs");
+    expect(host.seen).toHaveLength(0);
+  });
+
+  it("returns an error and makes no host request when actAs declines (null)", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => null);
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    const out = await actions.execute(
+      { id: "1", tool: "host_write", args: {} },
+      mcpCtx({ mcpConsent: { clientId: "mcpc_x", scopes: ["read"] } }),
+    );
+    expect(out).toMatchObject({ status: "error", error: { code: "not-implemented", message: "the host declined MCP execution for this action" } });
+    expect(host.seen).toHaveLength(0);
+  });
+
+  it("hands actAs the consent projection when the guard attached no grant", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    const ctx = mcpCtx({ sessionId: "mcps_42", mcpConsent: { clientId: "mcpc_x", scopes: ["read", "write"] } });
+
+    await expect(actions.execute({ id: "1", tool: "host_write", args: {} }, ctx)).resolves.toMatchObject({ status: "ok" });
+    expect(actAs).toHaveBeenCalledTimes(1);
+    const [principal, grant] = actAs.mock.calls[0] as unknown as [Principal, PermissionGrant];
+    expect(principal).toEqual({ kind: "user", subject: "user_1" });
+    expect(grant).toMatchObject({
+      id: "grt_mcp_mcps_42",
+      subject: "user_1",
+      tool: "host_write",
+      scope: { kind: "tool" },
+      duration: "session",
+      contextKey: "mcps_42",
+      source: "mcp",
+    });
+    // descriptorHash is core's, computed over the merged descriptor.
+    expect(grant.descriptorHash).toBe(
+      descriptorHash({ name: "host_write", description: "host_write", inputSchema: { type: "object" }, risk: "write" }),
+    );
+  });
+
+  it("hands actAs the guard-attached grant verbatim, not a projection", async () => {
+    const host = await hostServer();
+    const realGrant: PermissionGrant = {
+      id: "grt_real",
+      subject: "user_1",
+      tool: "host_write",
+      descriptorHash: "sha256:real",
+      scope: { kind: "tool" },
+      duration: "standing",
+      source: "chat",
+      grantedAt: "2026-07-13T00:00:00.000Z",
+    };
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    // Both a real grant and a consent record are present: the real grant wins.
+    const ctx = mcpCtx({ grant: realGrant, mcpConsent: { clientId: "mcpc_x", scopes: ["read"] } });
+
+    await expect(actions.execute({ id: "1", tool: "host_write", args: {} }, ctx)).resolves.toMatchObject({ status: "ok" });
+    const [, passed] = actAs.mock.calls[0] as unknown as [Principal, PermissionGrant];
+    expect(passed).toBe(realGrant);
+  });
+
+  it("fails closed when the ctx carries neither a grant nor mcpConsent", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: {} }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    const out = await actions.execute({ id: "1", tool: "host_write", args: {} }, mcpCtx({}));
+    expect(out).toMatchObject({ status: "error", error: { code: "validation" } });
+    expect(actAs).not.toHaveBeenCalled();
+    expect(host.seen).toHaveLength(0);
   });
 });
