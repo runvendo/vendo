@@ -103,21 +103,33 @@ export function VendoThread({
   ) ?? false;
   const working = busy && !assistantHasVisibleText;
 
+  const [attachError, setAttachError] = useState<string>();
   const send = (override?: string) => {
     const text = (override ?? draft).trim();
     if ((!text && files.length === 0) || busy) return;
     const pending = files;
-    setDraft("");
-    setFiles([]);
-    if (fileRef.current) fileRef.current.value = "";
     void (async () => {
-      const parts = await Promise.all(pending.map(fileToPart));
+      let parts: Awaited<ReturnType<typeof fileToPart>>[];
+      try {
+        parts = await Promise.all(pending.map(fileToPart));
+      } catch (reason) {
+        // A file read failed — DON'T clear the draft/attachments, or the message
+        // would vanish silently. Surface the error and let the user retry.
+        setAttachError(reason instanceof Error ? reason.message : "Couldn't read an attachment.");
+        return;
+      }
+      // Only clear once the turn is committed.
+      setAttachError(undefined);
+      setDraft("");
+      setFiles([]);
+      if (fileRef.current) fileRef.current.value = "";
       void thread.sendMessage(parts.length > 0 ? { text, files: parts } : { text });
     })();
   };
 
   const composer = (
     <form className="fl-composer" aria-label="Message composer" onSubmit={event => { event.preventDefault(); send(); }}>
+      {attachError ? <div className="fl-att-error" role="alert">{attachError}</div> : null}
       {files.length > 0 ? (
         <div className="fl-att-chips">
           {files.map((file, i) => (
