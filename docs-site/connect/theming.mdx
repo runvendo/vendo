@@ -15,6 +15,10 @@ export interface VendoTheme {
 }
 ```
 
+Init wires this file into the scaffolded `<VendoRoot theme={...}>` at build time
+(sync regenerates it on each build), so a fresh install renders on brand without
+passing `theme` by hand.
+
 Pass partial runtime overrides through `VendoProvider.theme`. Shipped chrome
 derives its colors, typography, radius, density, and motion from these tokens.
 It does not hardcode a Vendo brand.

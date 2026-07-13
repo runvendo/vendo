@@ -35,6 +35,10 @@ export interface Vendo {
 }
 ```
 
+When `principal(req)` resolves null, each client gets its own ephemeral session
+principal, carried by a signed httpOnly cookie scoped to the wire base. Sessions
+are per client, never persisted, and reset on process restart.
+
 The composition registers app capability tools in actions and guard-binds every
 tool registry passed to agent, apps, and automations.
 
