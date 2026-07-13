@@ -1,0 +1,62 @@
+{
+  "format": "vendo/tools@1",
+  "tools": [
+    {
+      "name": "host_invoices_list",
+      "description": "List invoices",
+      "inputSchema": { "type": "object" },
+      "risk": "read",
+      "binding": { "kind": "route", "method": "GET", "path": "/api/invoices", "argsIn": "query" }
+    },
+    {
+      "name": "host_invoices_get",
+      "description": "Get one invoice by id",
+      "inputSchema": { "type": "object" },
+      "risk": "read",
+      "binding": { "kind": "route", "method": "GET", "path": "/api/invoices/{id}", "argsIn": "query" }
+    },
+    {
+      "name": "host_customers_list",
+      "description": "List customers",
+      "inputSchema": { "type": "object" },
+      "risk": "read",
+      "binding": { "kind": "route", "method": "GET", "path": "/api/customers", "argsIn": "query" }
+    },
+    {
+      "name": "host_invoices_create",
+      "description": "Create an invoice",
+      "inputSchema": { "type": "object" },
+      "risk": "write",
+      "binding": { "kind": "route", "method": "POST", "path": "/api/invoices", "argsIn": "body" }
+    },
+    {
+      "name": "host_invoices_update",
+      "description": "Update an invoice",
+      "inputSchema": { "type": "object" },
+      "risk": "write",
+      "binding": { "kind": "route", "method": "PATCH", "path": "/api/invoices/{id}", "argsIn": "body" }
+    },
+    {
+      "name": "host_invoices_send",
+      "description": "Send an invoice",
+      "inputSchema": { "type": "object" },
+      "risk": "write",
+      "binding": { "kind": "route", "method": "POST", "path": "/api/invoices/{id}/send", "argsIn": "body" }
+    },
+    {
+      "name": "host_invoices_delete",
+      "description": "Delete an invoice (destructive)",
+      "inputSchema": { "type": "object" },
+      "risk": "destructive",
+      "binding": { "kind": "route", "method": "DELETE", "path": "/api/invoices/{id}", "argsIn": "query" }
+    },
+    {
+      "name": "host_invoices_send_critical",
+      "description": "Send an invoice with a critical confirmation",
+      "inputSchema": { "type": "object" },
+      "risk": "write",
+      "critical": true,
+      "binding": { "kind": "route", "method": "POST", "path": "/api/invoices/{id}/send", "argsIn": "body" }
+    }
+  ]
+}
