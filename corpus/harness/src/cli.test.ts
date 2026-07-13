@@ -475,7 +475,7 @@ describe("runCli run", () => {
   it("runs Layer 3 by booting a deep repo and passing the booted app to the e2e harness", async () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
-    const repo = deepManifestEntry("repo-e2e");
+    const repo = { ...deepManifestEntry("repo-e2e"), framework: "express" as const };
     const events: string[] = [];
     const e2eContexts: E2eLayerContext[] = [];
     const stdout: string[] = [];
@@ -558,6 +558,18 @@ describe("runCli run", () => {
         events.push("boot:repo-e2e");
         return handle;
       },
+      runLiveDoctor: async (options) => {
+        events.push("doctor:repo-e2e");
+        expect(options).toMatchObject({
+          appRoot: context.repoDir("repo-e2e"),
+          readinessUrl: "http://127.0.0.1:3333",
+          logsDir: context.logsDir("repo-e2e"),
+        });
+        return {
+          check: { id: "doctor.live", pass: true, detail: "live doctor passed" },
+          logPath: path.join(context.logsDir(repo.name), "doctor.live.log"),
+        };
+      },
       runE2eLayer: async (layerContext): Promise<E2eLayerRunResult> => {
         events.push("layer3:repo-e2e");
         e2eContexts.push(layerContext);
@@ -589,6 +601,7 @@ describe("runCli run", () => {
       "layer1:repo-e2e",
       "layer2:repo-e2e",
       "boot:repo-e2e",
+      "doctor:repo-e2e",
       "layer3:repo-e2e",
       "teardown:repo-e2e",
     ]);
@@ -602,6 +615,8 @@ describe("runCli run", () => {
     expect(stdout.join("\n")).toContain("| repo-e2e | Layer 3 e2e | PASS | 5/5 |");
     expect(stdout.join("\n")).toContain("boot.server.log");
     expect(stdout.join("\n")).toContain("e2e.conversations.json");
+    expect(stdout.join("\n")).toContain("doctor.live.log");
+    await expect(readFile(path.join(context.reposDir, ".logs", "scorecard.json"), "utf8")).resolves.toContain('"id": "doctor.live"');
   });
 
   it("continues after a repo failure and makes only --strict return nonzero", async () => {

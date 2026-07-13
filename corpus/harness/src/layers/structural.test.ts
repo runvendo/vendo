@@ -150,6 +150,26 @@ async function makeTempRepo(): Promise<string> {
   return repoDir;
 }
 
+async function makeExpressRepo(): Promise<string> {
+  const repoDir = await makeTempRepo();
+  await rm(path.join(repoDir, "app"), { recursive: true, force: true });
+  await mkdir(path.join(repoDir, "src/server"), { recursive: true });
+  await mkdir(path.join(repoDir, "src/client"), { recursive: true });
+  await writeFile(
+    path.join(repoDir, "src/server/vendo.ts"),
+    'import { createVendo } from "@vendoai/vendo/server";\nexport const vendo = createVendo({} as never);\n',
+  );
+  await writeFile(
+    path.join(repoDir, "src/server/index.ts"),
+    'import { serveHandler } from "./adapter.js";\nimport { vendo } from "./vendo.js";\napp.use("/api/vendo", (req, res) => serveHandler(req, res, vendo.handler));\n',
+  );
+  await writeFile(
+    path.join(repoDir, "src/client/main.tsx"),
+    'import { VendoRoot } from "@vendoai/vendo/react";\nroot.render(<VendoRoot><App /></VendoRoot>);\n',
+  );
+  return repoDir;
+}
+
 function passingContext(repoDir: string, runner: StructuralCommandRunner): StructuralLayerContext {
   return {
     repoDir,
@@ -167,6 +187,36 @@ function byId(results: Awaited<ReturnType<typeof runStructuralLayer>>) {
 }
 
 describe("runStructuralLayer", () => {
+  it("replaces Next wiring checks with the Express handler and client wiring contract", async () => {
+    const repoDir = await makeExpressRepo();
+    const runner: StructuralCommandRunner = async () => ({ code: 0, stdout: "ok", stderr: "" });
+
+    const passing = byId(await runStructuralLayer({
+      ...passingContext(repoDir, runner),
+      framework: "express",
+    }));
+    expect(passing["files.expected"]).toMatchObject({ pass: true });
+    expect(passing["files.expected"]?.detail).toContain("Express handler/provider wiring");
+
+    await writeFile(
+      path.join(repoDir, "src/server/index.ts"),
+      'import { vendo } from "./vendo.js";\napp.use("/api/vendo", (_req, _res) => vendo.handler);\n',
+    );
+    const bareHandler = byId(await runStructuralLayer({
+      ...passingContext(repoDir, runner),
+      framework: "express",
+    }));
+    expect(bareHandler["files.expected"]).toMatchObject({ pass: false });
+
+    await writeFile(path.join(repoDir, "src/server/index.ts"), "app.use('/elsewhere', handler);\n");
+    const failing = byId(await runStructuralLayer({
+      ...passingContext(repoDir, runner),
+      framework: "express",
+    }));
+    expect(failing["files.expected"]).toMatchObject({ pass: false });
+    expect(failing["files.expected"]?.detail).toContain("mount vendo.handler at /api/vendo");
+  });
+
   it("passes all Layer 1 structural checks for a generated App Router fixture", async () => {
     const repoDir = await makeTempRepo();
     const calls: string[] = [];

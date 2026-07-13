@@ -271,7 +271,9 @@ describe("§5 — grant constraints, scopes, durations, and mint sources", () =>
       scope: { kind: "tool" as const }, grantedAt: "2026-07-11T16:00:00.000Z",
     };
     for (const duration of ["standing", "session", "task"] as const) {
-      for (const source of ["chat", "batch", "automation"] as const) {
+      // "mcp" is the door's consent-projection source (10-mcp §3), additive to
+      // the in-product sources — accepted here, still rejecting non-sources.
+      for (const source of ["chat", "batch", "automation", "mcp"] as const) {
         expect(permissionGrantSchema.safeParse({ ...base, duration, source }).success).toBe(true);
       }
     }

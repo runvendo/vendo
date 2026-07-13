@@ -17,7 +17,8 @@
     "@vendoai/core": "workspace:*",
     "@vendoai/guard": "workspace:*",
     "@vendoai/mcp": "workspace:*",
-    "@vendoai/store": "workspace:*"
+    "@vendoai/store": "workspace:*",
+    "@vendoai/vendo": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

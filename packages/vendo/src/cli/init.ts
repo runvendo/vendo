@@ -5,6 +5,7 @@ import { stdin, stdout } from "node:process";
 import { vendoSync } from "@vendoai/actions";
 import type { VendoTheme } from "@vendoai/core";
 import type { Telemetry } from "@vendoai/telemetry";
+import { detectFramework, detectVendoWiring, type HostFramework } from "./framework.js";
 import { extractTheme as extractThemeSlots } from "./theme/extract-theme.js";
 import {
   consoleOutput,
@@ -65,13 +66,13 @@ async function extractTheme(root: string): Promise<VendoTheme> {
 }
 
 export interface InitQuestion {
-  id: "modelImport" | "brief" | "risk";
+  id: "modelImport" | "brief" | "risk" | "mcp";
   question: string;
   recommendation: string;
 }
 
 export interface InitPlan {
-  framework: "next" | "unknown";
+  framework: HostFramework;
   root: string;
   writes: string[];
   codeChanges: Array<{ path: string; diff: string }>;
@@ -91,6 +92,7 @@ export interface InitOptions {
     modelImport?: string;
     brief?: string;
     criticalTools?: string[];
+    openDoor?: boolean;
   }>;
   telemetry?: {
     home?: string;
@@ -98,20 +100,6 @@ export interface InitOptions {
     posthogKey?: string;
     fetchImpl?: typeof fetch;
   };
-}
-
-async function detectFramework(root: string): Promise<"next" | "unknown"> {
-  try {
-    const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
-    return manifest.dependencies?.next !== undefined || manifest.devDependencies?.next !== undefined
-      ? "next"
-      : "unknown";
-  } catch {
-    return "unknown";
-  }
 }
 
 async function appDirectory(root: string): Promise<string> {
@@ -127,6 +115,105 @@ function routeSource(modelImport: string): string {
     `  principal: async () => null,\n` +
     `});\n\n` +
     `export const { GET, POST, DELETE } = nextVendoHandler(vendo);\n`;
+}
+
+function expressServerSource(modelImport: string, typescript: boolean): string {
+  const imports = typescript
+    ? `import { once } from "node:events";\n` +
+      `import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";\n` +
+      `import { Readable } from "node:stream";\n`
+    : `import { once } from "node:events";\n` +
+      `import { Readable } from "node:stream";\n`;
+  const types = typescript
+    ? `\ntype ExpressRequest = IncomingMessage & { originalUrl?: string };\n` +
+      `type ExpressNext = (error?: unknown) => void;\n`
+    : "";
+  const signatures = typescript
+    ? {
+        requestHeaders: `(headers: IncomingHttpHeaders): Headers`,
+        absoluteUrl: `(request: ExpressRequest): string`,
+        sendResponse: `(source: Response, target: ServerResponse): Promise<void>`,
+        handle: `(request: ExpressRequest, response: ServerResponse): Promise<void>`,
+        mountReturn: `: (request: ExpressRequest, response: ServerResponse, next: ExpressNext) => void`,
+      }
+    : { requestHeaders: "(headers)", absoluteUrl: "(request)", sendResponse: "(source, target)", handle: "(request, response)", mountReturn: "" };
+  const requestInit = typescript
+    ? `  const init: RequestInit & { duplex?: "half" } = { method, headers: requestHeaders(request.headers) };\n`
+    : `  const init = { method, headers: requestHeaders(request.headers) };\n`;
+  const body = typescript
+    ? `    init.body = Readable.toWeb(request) as ReadableStream<Uint8Array>;\n`
+    : `    init.body = Readable.toWeb(request);\n`;
+
+  return `/**\n` +
+    ` * Add these two wiring lines in your host:\n` +
+    ` *   app.use("/api/vendo", mountVendo());\n` +
+    ` *   root.render(<VendoRoot><App /></VendoRoot>); // in the client entry\n` +
+    ` */\n` +
+    imports +
+    `import { model } from ${JSON.stringify(modelImport)};\n` +
+    `import { createVendo } from "@vendoai/vendo/server";\n` +
+    types +
+    `\nconst vendo = createVendo({\n` +
+    `  model,\n` +
+    `  principal: async () => null,\n` +
+    `});\n\n` +
+    `function requestHeaders${signatures.requestHeaders} {\n` +
+    `  const result = new Headers();\n` +
+    `  for (const [name, value] of Object.entries(headers)) {\n` +
+    `    if (Array.isArray(value)) for (const item of value) result.append(name, item);\n` +
+    `    else if (value !== undefined) result.set(name, value);\n` +
+    `  }\n` +
+    `  return result;\n` +
+    `}\n\n` +
+    `function absoluteUrl${signatures.absoluteUrl} {\n` +
+    `  const encrypted = "encrypted" in request.socket && request.socket.encrypted === true;\n` +
+    `  const protocol = encrypted ? "https" : "http";\n` +
+    `  const host = request.headers.host ?? "localhost";\n` +
+    `  // Behind a trusted proxy, set VENDO_BASE_URL explicitly or validate forwarded headers in the host.\n` +
+    `  return new URL(request.originalUrl ?? request.url ?? "/", \`${"${protocol}"}://${"${host}"}\`).href;\n` +
+    `}\n\n` +
+    `async function sendResponse${signatures.sendResponse} {\n` +
+    `  target.statusCode = source.status;\n` +
+    `  source.headers.forEach((value, name) => {\n` +
+    `    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);\n` +
+    `  });\n` +
+    `  const getSetCookie = (source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;\n` +
+    `  const fallbackCookie = source.headers.get("set-cookie");\n` +
+    `  const cookies = typeof getSetCookie === "function"\n` +
+    `    ? getSetCookie.call(source.headers)\n` +
+    `    : fallbackCookie === null ? [] : [fallbackCookie];\n` +
+    `  if (cookies.length > 0) target.setHeader("set-cookie", cookies);\n` +
+    `  if (source.body === null) {\n` +
+    `    target.end();\n` +
+    `    return;\n` +
+    `  }\n` +
+    `  target.flushHeaders();\n` +
+    `  const reader = source.body.getReader();\n` +
+    `  try {\n` +
+    `    while (true) {\n` +
+    `      const chunk = await reader.read();\n` +
+    `      if (chunk.done) break;\n` +
+    `      if (!target.write(chunk.value)) await once(target, "drain");\n` +
+    `    }\n` +
+    `    target.end();\n` +
+    `  } finally {\n` +
+    `    reader.releaseLock();\n` +
+    `  }\n` +
+    `}\n\n` +
+    `async function handle${signatures.handle} {\n` +
+    `  const method = request.method ?? "GET";\n` +
+    requestInit +
+    `  if (method !== "GET" && method !== "HEAD") {\n` +
+    body +
+    `    init.duplex = "half";\n` +
+    `  }\n` +
+    `  await sendResponse(await vendo.handler(new Request(absoluteUrl(request), init)), response);\n` +
+    `}\n\n` +
+    `export function mountVendo()${signatures.mountReturn} {\n` +
+    `  return (request, response, next) => {\n` +
+    `    void handle(request, response).catch(next);\n` +
+    `  };\n` +
+    `}\n`;
 }
 
 function defaultModelSource(): string {
@@ -214,30 +301,53 @@ function diff(path: string, before: string | null, after: string): string {
 async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> }> {
   const root = resolve(options.targetDir);
   const framework = await detectFramework(root);
-  const app = await appDirectory(root);
-  const route = join(app, "api", "vendo", "[...vendo]", "route.ts");
-  const layout = join(app, "layout.tsx");
-  const routeBefore = await readOptional(route);
-  const layoutBefore = await readOptional(layout);
-  const modelImport = options.modelImport ?? "@/lib/ai";
-  const routeAfter = routeBefore ?? routeSource(modelImport);
-  const layoutAfter = layoutBefore === null ? defaultLayoutSource() : wireLayout(layoutBefore);
+  const modelImport = options.modelImport ?? (framework === "express" ? "./ai" : "@/lib/ai");
   const changes: Array<{ absolute: string; path: string; before: string | null; after: string; diff: string }> = [];
-  if (routeBefore === null) {
-    const path = relative(root, route);
-    changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
-    // A fresh app has no model module yet: scaffold the BYO-LLM seat (one env
-    // key = working agent) instead of wiring an import that cannot resolve.
-    const modelModule = await modelModuleCandidate(root, app, modelImport);
-    if (modelModule !== null && !(await exists(modelModule)) && !(await exists(modelModule.replace(/\.ts$/, ".js")))) {
-      const modelPath = relative(root, modelModule);
-      const modelAfter = defaultModelSource();
-      changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
+
+  if (framework === "express") {
+    const wiring = await detectVendoWiring(root);
+    if (!wiring.server || !wiring.client) {
+      const typescript = await exists(join(root, "tsconfig.json"));
+      const server = join(root, "vendo", typescript ? "server.ts" : "server.mjs");
+      const serverBefore = await readOptional(server);
+      const serverAfter = expressServerSource(modelImport, typescript);
+      if (serverBefore !== serverAfter) {
+        const path = relative(root, server);
+        changes.push({ absolute: server, path, before: serverBefore, after: serverAfter, diff: diff(path, serverBefore, serverAfter) });
+      }
+      if (modelImport === "./ai") {
+        const modelModule = join(root, "vendo", typescript ? "ai.ts" : "ai.mjs");
+        if (!(await exists(modelModule))) {
+          const modelPath = relative(root, modelModule);
+          const modelAfter = defaultModelSource();
+          changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
+        }
+      }
     }
-  }
-  if (layoutAfter !== null && layoutAfter !== layoutBefore) {
-    const path = relative(root, layout);
-    changes.push({ absolute: layout, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
+  } else {
+    const app = await appDirectory(root);
+    const route = join(app, "api", "vendo", "[...vendo]", "route.ts");
+    const layout = join(app, "layout.tsx");
+    const routeBefore = await readOptional(route);
+    const layoutBefore = await readOptional(layout);
+    const routeAfter = routeBefore ?? routeSource(modelImport);
+    const layoutAfter = layoutBefore === null ? defaultLayoutSource() : wireLayout(layoutBefore);
+    if (routeBefore === null) {
+      const path = relative(root, route);
+      changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
+      // A fresh app has no model module yet: scaffold the BYO-LLM seat (one env
+      // key = working agent) instead of wiring an import that cannot resolve.
+      const modelModule = await modelModuleCandidate(root, app, modelImport);
+      if (modelModule !== null && !(await exists(modelModule)) && !(await exists(modelModule.replace(/\.ts$/, ".js")))) {
+        const modelPath = relative(root, modelModule);
+        const modelAfter = defaultModelSource();
+        changes.push({ absolute: modelModule, path: modelPath, before: null, after: modelAfter, diff: diff(modelPath, null, modelAfter) });
+      }
+    }
+    if (layoutAfter !== null && layoutAfter !== layoutBefore) {
+      const path = relative(root, layout);
+      changes.push({ absolute: layout, path, before: layoutBefore, after: layoutAfter, diff: diff(path, layoutBefore, layoutAfter) });
+    }
   }
   const writes = [
     ".vendo/tools.json",
@@ -255,9 +365,11 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
       writes,
       codeChanges: changes.map(({ path, diff: rendered }) => ({ path, diff: rendered })),
       questions: [
-        { id: "modelImport", question: "Where does your ai-SDK model export live?", recommendation: options.modelImport ?? "@/lib/ai" },
+        { id: "modelImport", question: "Where does your ai-SDK model export live?", recommendation: modelImport },
         { id: "brief", question: "In one paragraph, what should the agent know about this product?", recommendation: options.brief ?? "Describe the product, users, and the jobs they do." },
         { id: "risk", question: "Which extracted write actions need stricter review?", recommendation: "Mark destructive or irreversible tools critical in .vendo/overrides.json." },
+        // 10-mcp §2: opening the door is a host decision, never a default — so ask.
+        { id: "mcp", question: "Open the MCP door so agents (Claude, ChatGPT, Cursor) can use your product's tools?", recommendation: "No — opening it is a host decision and needs a HostOAuthAdapter (docs/contracts/10-mcp)." },
       ],
     },
   };
@@ -278,6 +390,7 @@ async function defaultInterview(questions: InitQuestion[]): Promise<{
   modelImport?: string;
   brief?: string;
   criticalTools?: string[];
+  openDoor?: boolean;
 }> {
   if (!stdin.isTTY || !stdout.isTTY) return {};
   const prompt = createInterface({ input: stdin, output: stdout });
@@ -285,12 +398,14 @@ async function defaultInterview(questions: InitQuestion[]): Promise<{
     const modelImport = await prompt.question(`${questions[0]?.question} [${questions[0]?.recommendation}] `);
     const brief = await prompt.question(`${questions[1]?.question} [${questions[1]?.recommendation}] `);
     const critical = await prompt.question(`${questions[2]?.question} [comma-separated names; Enter accepts recommendation] `);
+    const door = await prompt.question(`${questions[3]?.question} [y/N] `);
     return {
       ...(modelImport.trim() === "" ? {} : { modelImport: modelImport.trim() }),
       ...(brief.trim() === "" ? {} : { brief: brief.trim() }),
       ...(critical.trim() === "" ? {} : {
         criticalTools: critical.split(",").map((name) => name.trim()).filter(Boolean),
       }),
+      ...(/^y(?:es)?$/i.test(door.trim()) ? { openDoor: true } : {}),
     };
   } finally {
     prompt.close();
@@ -396,7 +511,19 @@ export async function runInit(options: InitOptions): Promise<number> {
     if (changes.some((change) => change.after === defaultModelSource() && change.before === null)) {
       output.log("Wrote a starter model module: install its provider (`npm install ai @ai-sdk/anthropic`) and set ANTHROPIC_API_KEY.");
     }
-    output.log("Vendo initialized. Run `vendo doctor` to verify the live composition.");
+    // 10-mcp §2: the door never opens by default. When the host asks to open it,
+    // point them at the one code change they make deliberately — a HostOAuthAdapter
+    // (identity + consent) plus `mcp: true` on createVendo. init cannot scaffold the
+    // adapter (it is host auth), so it guides rather than writes broken wiring.
+    if (answers.openDoor === true) {
+      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. See docs/contracts/10-mcp; `vendo doctor` verifies the discovery documents once it is live.");
+    }
+    const finalWiring = plan.framework === "express" ? await detectVendoWiring(root) : null;
+    if (finalWiring !== null && (!finalWiring.server || !finalWiring.client)) {
+      output.log("Vendo Express setup is incomplete. Two manual steps remain: mount `mountVendo()` with `app.use(\"/api/vendo\", mountVendo())`, and wrap the client in `<VendoRoot>`. `vendo doctor` will report broken until both are complete.");
+    } else {
+      output.log("Vendo initialized. Run `vendo doctor` to verify the live composition.");
+    }
     return 0;
   } catch (error) {
     await telemetry.track("init_failed", { framework: plan.framework, failedStep: "wiring" });

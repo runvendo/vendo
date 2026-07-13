@@ -719,6 +719,7 @@ export async function prepareE2eRepo(
   appRoot: string,
   logsDir: string,
 ): Promise<string[]> {
+  if (repo.name === "express-host") return [];
   if (repo.name === "skateshop") return prepareSkateshopE2eRepo(appRoot, logsDir);
   await mkdir(logsDir, { recursive: true });
   const logPath = path.join(logsDir, "e2e.prepare.log");

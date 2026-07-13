@@ -275,6 +275,14 @@ describe("runE2eLayer", () => {
             },
           });
         }
+        if (role === "textbox") {
+          return new FakeLocator(1, "", {
+            fill: () => {},
+            press: () => {
+              promptSent = true;
+            },
+          });
+        }
         return new FakeLocator(0);
       },
       getByLabel() {
@@ -353,6 +361,14 @@ describe("runE2eLayer", () => {
             },
           });
         }
+        if (role === "textbox") {
+          return new FakeLocator(1, "", {
+            fill: () => {},
+            press: () => {
+              promptSent = true;
+            },
+          });
+        }
         return new FakeLocator(0);
       },
       getByLabel() {
@@ -420,6 +436,14 @@ describe("runE2eLayer", () => {
       },
       getByRole(role: string) {
         if (role === "dialog") return new FakeLocator(1);
+        if (role === "textbox") {
+          return new FakeLocator(1, "", {
+            fill: () => {},
+            press: () => {
+              promptSent = true;
+            },
+          });
+        }
         return new FakeLocator(0);
       },
       getByLabel() {
