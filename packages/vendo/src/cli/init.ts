@@ -176,7 +176,7 @@ function expressServerSource(modelImport: string, typescript: boolean): string {
     `  source.headers.forEach((value, name) => {\n` +
     `    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);\n` +
     `  });\n` +
-    `  const getSetCookie = source.headers.getSetCookie;\n` +
+    `  const getSetCookie = (source.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;\n` +
     `  const fallbackCookie = source.headers.get("set-cookie");\n` +
     `  const cookies = typeof getSetCookie === "function"\n` +
     `    ? getSetCookie.call(source.headers)\n` +
