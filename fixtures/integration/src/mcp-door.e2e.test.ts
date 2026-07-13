@@ -20,12 +20,15 @@
  *   - apps ride-along: a wire-created app opens over MCP for real (store read, no
  *     host auth needed).
  *
- * ⚠ COMPOSITION FINDING (see the `it.fails` case below): route-bound HOST tools
- * cannot authenticate over the composed door — `mcpContext` carries no session and
- * `createVendo` exposes `actAs` only for `presence:"away"`, so present MCP host
- * calls reach the host API with no credentials (401). mcp-e2e masks this by
- * injecting an authenticating `fetch` into a hand-built `createActions`; the
- * umbrella exposes no such seam.
+ * COMPOSITION FIX (see the second case below): route-bound HOST tools authenticate
+ * over the composed door through the umbrella's own `actAs` seam. `mcpContext`
+ * carries no host session and — per 10-mcp §3 (no token-passthrough) — no
+ * requestHeaders, so `@vendoai/actions` route execution now treats a present
+ * `venue:"mcp"` call the same session-less way it treats an away call: when
+ * `actAs` is configured it mints the host request's AuthMaterial from the seam
+ * (keyed on the principal), never from the inbound MCP headers. The host call
+ * therefore reaches the host API as the authenticated user — one perimeter, one
+ * identity path — without the hand-built injected-`fetch` mcp-e2e uses.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -169,14 +172,14 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
     }
   });
 
-  // COMPOSITION FINDING — asserts the CORRECT contract behavior (10-mcp §2: an
-  // authenticated MCP tool call gets "identical treatment to chat"). It currently
-  // FAILS because the composed umbrella has no seam to authenticate present MCP
-  // host-route calls (mcpContext carries no session; actAs is away-only), so the
-  // call reaches the host API unauthenticated (401). Remove `.fails` when the
-  // umbrella grows a host-call identity seam for the door. Evidence: the read call
-  // below returns `http-error: GET /api/invoices → 401`.
-  it.fails("a read host tool over the door executes for real against the host app", async () => {
+  // COMPOSITION FIX — the CORRECT contract behavior (10-mcp §2: an authenticated
+  // MCP tool call gets "identical treatment to chat"). The composed umbrella now
+  // authenticates present MCP host-route calls through its own `actAs` seam
+  // (mcpContext carries no host session and no requestHeaders, so actions mints
+  // host AuthMaterial from actAs — keyed on the principal — exactly as it does for
+  // an away call). The read below therefore reaches the host API as user_ada and
+  // returns real invoices instead of `http-error: GET /api/invoices → 401`.
+  it("a read host tool over the door executes for real against the host app", async () => {
     await resetFixture();
     stack = await createStack({ mcp: true });
     const connected = await connectWithSdk(stack.mcp!.endpoint);

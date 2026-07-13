@@ -29,6 +29,13 @@ const present: RunContext = {
 
 const away: RunContext = { ...present, presence: "away" };
 
+const mcpPresent: RunContext = {
+  principal: { kind: "user", subject: "user_1" },
+  venue: "mcp",
+  presence: "present",
+  sessionId: "mcpr_1",
+};
+
 describe("actions never self-authorizes away execution", () => {
   it("returns a clean not-implemented error for an away call when actAs is absent", async () => {
     const fetchSpy = vi.fn();
@@ -119,6 +126,99 @@ describe("actions never self-authorizes away execution", () => {
     const headers = (fetchSpy.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
     expect(headers.cookie).toBe("session=user_1");
     expect(headers.authorization).toBe("Bearer inbound");
+  });
+
+  // An MCP request carries no host session (the door mints venue "mcp",
+  // presence "present", and — per 10-mcp §3's no-token-passthrough rule — NO
+  // requestHeaders). A present MCP host-route call must therefore authenticate
+  // through the session-less actAs seam, exactly as an away call does, never by
+  // forwarding the inbound MCP headers.
+  it("authenticates a present MCP host-route call via actAs, never forwarding the inbound headers", async () => {
+    const actAs = vi.fn(async () => ({ headers: { cookie: "host-session=user_1" } }));
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      headers: { "content-type": "application/json" },
+    }));
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "http://host.test",
+      actAs,
+      fetch: fetchSpy as unknown as typeof fetch,
+    });
+
+    const ctx: RunContext = {
+      ...mcpPresent,
+      // A hostile inbound MCP request may carry its OWN Authorization bearer plus
+      // an attacker-chosen cookie; NEITHER may reach the host (10-mcp §3).
+      requestHeaders: { authorization: "Bearer mcp-client-token", cookie: "mcp=should-not-forward" },
+    };
+    await expect(actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx))
+      .resolves.toMatchObject({ status: "ok" });
+
+    expect(actAs).toHaveBeenCalledTimes(1);
+    // A present read has no captured grant; actAs is invoked with the principal
+    // and NO fabricated grant.
+    expect(actAs.mock.calls[0]?.[0]).toEqual(mcpPresent.principal);
+    expect(actAs.mock.calls[0]?.[1]).toBeUndefined();
+
+    const headers = (fetchSpy.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+    // Only the host-issued AuthMaterial rides the request.
+    expect(headers.cookie).toBe("host-session=user_1");
+    // Defense-in-depth for the no-passthrough rule: the MCP client's own
+    // Authorization is dropped entirely, even though it was present on ctx.
+    expect(headers.authorization).toBeUndefined();
+  });
+
+  it("passes the guard-relayed grant to actAs when the MCP call was grant-authorized", async () => {
+    const actAs = vi.fn(async () => ({ headers: { cookie: "host-session=user_1" } }));
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      headers: { "content-type": "application/json" },
+    }));
+    const actions = createActions({
+      tools: [routeTool("host_probe", { risk: "destructive" })],
+      baseUrl: "http://host.test",
+      actAs,
+      fetch: fetchSpy as unknown as typeof fetch,
+    });
+
+    // A standing grant that authorized a parked-then-approved destructive retry
+    // is relayed on ctx.grant; it rides to actAs verbatim.
+    const grant = {
+      id: "grt_1",
+      subject: "user_1",
+      tool: "host_probe",
+      descriptorHash: "hash",
+      scope: { kind: "tool" as const },
+      duration: "standing" as const,
+      source: "chat" as const,
+      grantedAt: "2026-07-12T00:00:00.000Z",
+    };
+    const ctx: ActionsRunContext = { ...mcpPresent, grant };
+    await expect(actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx))
+      .resolves.toMatchObject({ status: "ok" });
+
+    expect(actAs).toHaveBeenCalledTimes(1);
+    expect(actAs.mock.calls[0]?.[1]).toEqual(grant);
+  });
+
+  it("without actAs, keeps legacy present-forwarding so the injected-fetch harness (mcp-e2e) is unchanged", async () => {
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      headers: { "content-type": "application/json" },
+    }));
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "http://host.test",
+      fetch: fetchSpy as unknown as typeof fetch,
+    });
+
+    const ctx: RunContext = { ...mcpPresent, requestHeaders: { cookie: "session=user_1" } };
+    await expect(actions.execute({ id: "1", tool: "host_probe", args: {} }, ctx))
+      .resolves.toMatchObject({ status: "ok" });
+
+    const headers = (fetchSpy.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+    // No actAs seam → today's behavior is preserved: the trusted same-origin base
+    // forwards the inbound headers (mcp-e2e supplies auth via an injected fetch,
+    // not requestHeaders, so it keeps working untouched).
+    expect(headers.cookie).toBe("session=user_1");
   });
 
   it("treats an unannotated connector tool as risk=write (conservative default)", async () => {
