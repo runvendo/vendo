@@ -1,5 +1,19 @@
 /** J6 — MCP DOOR ROUND-TRIP composed around the umbrella's own parts.
  *
+ * ┌─ ACCEPTANCE TEST for the v0-mcp-hookup wave ───────────────────────────────┐
+ * │ This journey is the acceptance test for the dedicated MCP-hookup wave       │
+ * │ (`createVendo({ mcp: true })` + actAs-for-venue="mcp" host auth). When that  │
+ * │ wave lands, host-route auth over the door starts working, so it must FLIP    │
+ * │ the two fail-closed legs marked `⚑ HOOKUP FLIP` below to green:              │
+ * │   1. the `it.fails(...)` "a read host tool over the door executes for real"  │
+ * │      → change to `it(...)` and keep the real-invoice assertion; and          │
+ * │   2. the retried-destructive assertion in the main test (currently asserts   │
+ * │      isError + the 401 gap signature) → assert the real host DELETE landed.  │
+ * │ Until then these legs assert the current fail-closed behavior so the gap is  │
+ * │ documented, never hidden. Do NOT delete this journey. See the KNOWN GAP      │
+ * │ note below and docs/contracts/10-mcp-umbrella-hookup.md.                     │
+ * └────────────────────────────────────────────────────────────────────────────┘
+ *
  * The `createVendo({ mcp: true })` hookup is an unlanded handoff
  * (docs/contracts/10-mcp-umbrella-hookup.md), so the harness mounts `createMcpDoor`
  * beside `vendo.handler` on the SAME loopback origin, fed the umbrella's composed
@@ -165,6 +179,7 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
       // is no present-session host-auth seam. When the createVendo({ mcp: true })
       // hookup lands that seam (docs/contracts/10-mcp-umbrella-hookup.md), this
       // becomes a real-deletion assert (inv_0003 gone from the host).
+      // ⚑ HOOKUP FLIP (2/2): replace these two asserts with a real host-DELETE assert.
       expect(retried.isError).toBe(true);
       expect(textOf(retried)).toMatch(/http-error:.*→ 401/);
 
@@ -202,6 +217,7 @@ describe("J6: MCP door round-trip composed around the umbrella", () => {
   // createVendo({ mcp: true }) hookup (docs/contracts/10-mcp-umbrella-hookup.md) closes
   // this with a properly designed present-session host-auth seam; when it lands, flip
   // `it.fails` back to `it` and this passes.
+  // ⚑ HOOKUP FLIP (1/2): change `it.fails` → `it` once host-route auth works.
   it.fails("a read host tool over the door executes for real against the host app", async () => {
     await resetFixture();
     stack = await createStack({ mcp: true });
