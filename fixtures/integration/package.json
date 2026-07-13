@@ -1,0 +1,26 @@
+{
+  "name": "@vendoai-fixtures/integration",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Permanent cross-block integration suite: boots the REAL composed umbrella (createVendo) against the fixture host app and drives whole-product user journeys through the public wire over real HTTP, asserting real side effects.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@vendoai/core": "workspace:*",
+    "@vendoai/store": "workspace:*",
+    "@vendoai/vendo": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ai": "^6.0.0",
+    "fflate": "^0.8.2",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
