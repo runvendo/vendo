@@ -32,7 +32,7 @@ Set `mcp: true` and pass a `HostOAuthAdapter`. Compose once in a shared module:
 ```ts
 // lib/vendo.ts
 import { createVendo } from "@vendoai/vendo/server";
-import type { HostOAuthAdapter } from "@vendoai/mcp";
+import type { HostOAuthAdapter } from "@vendoai/vendo";
 
 const oauth: HostOAuthAdapter = {
   async authorize(request, { clientName, scopes }) {
@@ -68,9 +68,9 @@ export const { GET, POST, DELETE } = nextVendoHandler(vendo);
 ```
 
 `oauth` is required when `mcp` is true. Without it, `createVendo` throws: the
-door cannot mint principals otherwise. The `HostOAuthAdapter` type imports from
-`@vendoai/mcp`, which ships as a dependency of the umbrella; strict package
-managers may need it added explicitly until the umbrella re-exports it.
+door cannot mint principals otherwise. Import the `HostOAuthAdapter` type from
+`@vendoai/vendo` — the umbrella re-exports it so you never have to depend on
+`@vendoai/mcp` directly.
 
 ## Route the discovery paths
 
