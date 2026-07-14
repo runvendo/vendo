@@ -444,7 +444,65 @@ export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; payload:
 export interface VendoApprovalPart { type: "data-vendo-approval"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
 ```
 
+## 17. Capability-miss event (`vendo/capability-miss@1`)
+
+The embedded agent emits exactly one capability-miss event when it cannot fulfill a user ask for one of three reasons: no matching tool exists, tool use has failed repeatedly, or the agent explicitly gives up. The agent decides that a miss occurred; the umbrella composition owns persistence and optional transport so core remains shape-only and agent does not acquire filesystem or cloud dependencies.
+
+```ts
+export const VENDO_CAPABILITY_MISS_FORMAT = "vendo/capability-miss@1";
+
+export interface CapabilityMissToolFailure {
+  tool: string;
+  attempt: number;                 // 1-based attempt order within this miss
+  failure: { code?: string; message: string };
+}
+
+export interface CapabilityMissEvent {
+  format: "vendo/capability-miss@1";
+  id: string;                      // globally unique, "mis_..."
+  at: IsoDateTime;
+  hostId: string;                  // stable host-app identity; Cloud tenancy partition
+  appId?: AppId;                   // set when the ask occurred inside a Vendo app
+  sessionId: string;
+  threadId?: ThreadId;
+  intent: string;                  // privacy-scrubbed user ask, preserving refinement intent
+  surface: {
+    format: "vendo/tools@1";
+    hash: string;                  // sha256:<hex> of canonicalJson(parsed .vendo/tools.json)
+  };
+  trigger:
+    | { kind: "no-matching-tool"; toolsConsidered: string[] }
+    | {
+        kind: "repeated-tool-failure";
+        toolsConsidered: string[];
+        attempts: [CapabilityMissToolFailure, CapabilityMissToolFailure, ...CapabilityMissToolFailure[]];
+      }
+    | { kind: "agent-give-up"; toolsConsidered: string[]; toolsAttempted: string[] };
+}
+```
+
+Trigger semantics are closed for `@1`:
+
+- `no-matching-tool`: the available/searchable surface contains no tool capable of the ask; no tool attempt is implied.
+- `repeated-tool-failure`: two or more failed attempts prevented fulfillment. `attempts` is ordered and carries each attempted tool name plus a scrubbed failure code/message.
+- `agent-give-up`: the agent makes an explicit terminal decision that it cannot fulfill the ask, whether or not it attempted a tool. This is not a catch-all for an unclassified exception.
+
+`surface.hash` identifies the exact extracted surface that existed at miss time; formatting-only changes do not alter it. The gap dashboard clusters by `intent` within `hostId`, resolves that surface snapshot by `(surface.format, surface.hash)`, and diffs the miss against its tools. Dashboard export and the refine feed consumed by `vendo refine` carry this same event shape unchanged.
+
+Persistence and transport are normative:
+
+- OSS always appends each event as one JSON object plus a newline to `.vendo/data/misses.jsonl`. This local append is not consent-gated, happens independently of upload, and remains the source of truth if upload fails.
+- Cloud upload is allowed only when `VENDO_API_KEY` is non-empty **and** the existing telemetry opt-out state allows it: the saved telemetry config is not opted out; `VENDO_TELEMETRY_DISABLED` and `DO_NOT_TRACK` are neither `"1"` nor `"true"`; and `CI` is absent, empty, `"0"`, or `"false"`. Otherwise no miss data leaves the machine.
+- `intent` is user-authored content and may contain confidential or personal data. Emitters must remove credentials and secrets and minimize unrelated personal data while preserving the ask's intent; failure messages receive the same treatment. Events must never include raw tool arguments or outputs. Hosts must treat both the plaintext local JSONL and any Cloud copy as confidential user data.
+
 ## Amendments
+
+### 2026-07-14 — Capability-miss event shape (ENG-253)
+
+- **Changed:** Added the additive `vendo/capability-miss@1` persisted/wire shape, with the three locked emission triggers, exact extracted-surface identity, host/session context, and tool-attempt detail.
+- **Changed:** Contracted unconditional local JSONL persistence, API-key-plus-opt-out-gated Cloud upload, privacy handling, and reuse of the same event by the gap dashboard and refine feed.
+- **Why:** Miss capture needs one stable handoff between the embedded agent, OSS history, Cloud gap analysis, and `vendo refine` before ENG-253 implementation begins.
+- **Approved by:** Pending — merge is GATED on Yousef sign-off (ENG-253).
 
 ### 2026-07-14 — MCP additions, RunContext promotion, and shipped export surface
 
