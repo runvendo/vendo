@@ -194,6 +194,9 @@ describe("vendo init", () => {
     expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {} });
     expect(tools).toMatchObject({ format: "vendo/tools@1", tools: [] });
     expect(policy).toMatchObject({ format: "vendo/policy@1" });
+    const envExample = await readFile(join(root, ".env.example"), "utf8");
+    expect(envExample).toContain("VENDO_BASE_URL=http://localhost:3000");
+    expect(envExample).toContain("credential forwarding is disabled without it");
     expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
     expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
       .toContain("@vendoai/vendo/server");
@@ -205,6 +208,19 @@ describe("vendo init", () => {
     const first = await tree(root);
     expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
     expect(await tree(root)).toEqual(first);
+  });
+
+  it("preserves an existing env example while appending the trusted Vendo origin once", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env.example"), "DATABASE_URL=postgres://localhost/host\n");
+
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+
+    const envExample = await readFile(join(root, ".env.example"), "utf8");
+    expect(envExample).toContain("DATABASE_URL=postgres://localhost/host");
+    expect(envExample).toContain("credential forwarding is disabled without it");
+    expect(envExample.match(/^VENDO_BASE_URL=/gm)).toHaveLength(1);
   });
 
   it("shows each code diff and writes no code without approval", async () => {
