@@ -19,6 +19,35 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `telemetry` | no | wires build and development telemetry |
 | `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; off by default |
 | `oauth` | conditional | `HostOAuthAdapter` used by the door for identity and consent; required when `mcp` is `true` |
+| `agent` | no | chat context controls: `toolOutputCap`, `maxOutputTokens`, `historyWindow` (see [Agent context](#agent-context)) |
+
+## Agent context
+
+Pass an `agent` block to tune what the chat loop sends to the model. All
+fields are optional.
+
+```ts
+createVendo({
+  model,
+  principal,
+  agent: {
+    toolOutputCap: 32_000, // char cap per tool result before it reaches the model; 0 disables
+    maxOutputTokens: 4_000, // upper bound on tokens the model may emit per turn
+    historyWindow: 20,      // last N whole messages re-sent per turn; omit to send the full thread
+  },
+});
+```
+
+- `toolOutputCap` caps a single tool result before it reaches the model, so a
+  runaway host response can't blow the context window. Defaults to `32000`
+  characters. Pass `0` to disable the cap. Persistence and the streamed
+  thread are unaffected — only the copy sent to the model is truncated.
+- `maxOutputTokens` bounds tokens the model may emit per turn. Omit to defer
+  to the model default.
+- `historyWindow` bounds how many past messages are re-sent to the model
+  each turn. Whole messages are kept so tool-call/result pairs are never
+  split. Omit to send the full thread (current behavior). The stored thread
+  is untouched; only the per-turn model context shrinks.
 
 ## Base path
 
