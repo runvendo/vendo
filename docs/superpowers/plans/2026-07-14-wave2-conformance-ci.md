@@ -60,10 +60,10 @@
 - Create: `.github/workflows/nightly.yml`
 - Modify: `packages/agent/src/live.test.ts` (extend the key-gated pattern to OpenAI + proxy)
 
-- [ ] **Step 1:** Wire-format tests: run the full loop (approval pause/resume, blocked-outcome, view parts) against transports that speak each wire format — the existing `MockLanguageModelV3` covers the ai-SDK seam; add an OpenAI-compatible transport leg (ai-SDK `createOpenAICompatible` against a local fake HTTP endpoint replaying recorded OpenAI-format responses) so the OpenAI/proxy path is exercised without keys. Anthropic wire specifics stay covered by the mock + nightly.
-- [ ] **Step 2:** Extend `live.test.ts` to three key-gated legs: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `VENDO_TEST_PROXY_URL`+key (OpenAI-compatible proxy). Same scripted journey each.
-- [ ] **Step 3:** `nightly.yml`: scheduled cron, repo secrets, runs the live legs plus the existing key-gated live suites (live-agentic, live-e2b, live-claude, live-egress, judge.live) and uploads failures visibly.
-- [ ] **Step 4:** Commit.
+- [x] **Step 1:** Wire-format tests: run the full loop (approval pause/resume, blocked-outcome, view parts) against transports that speak each wire format — the existing `MockLanguageModelV3` covers the ai-SDK seam; add an OpenAI-compatible transport leg (ai-SDK `createOpenAICompatible` against a local fake HTTP endpoint replaying recorded OpenAI-format responses) so the OpenAI/proxy path is exercised without keys. Anthropic wire specifics stay covered by the mock + nightly.
+- [x] **Step 2:** Extend `live.test.ts` to three key-gated legs: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `VENDO_TEST_PROXY_URL`+key (OpenAI-compatible proxy). Same scripted journey each.
+- [x] **Step 3:** `nightly.yml`: scheduled cron, repo secrets, runs the live legs plus the existing key-gated live suites (live-agentic, live-e2b, live-claude, live-egress, judge.live) and uploads failures visibly.
+- [x] **Step 4:** Commit.
 
 ### Task 5: Small gates — shim freshness, corpus pack closure
 

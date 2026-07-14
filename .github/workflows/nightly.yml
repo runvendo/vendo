@@ -1,0 +1,116 @@
+name: Nightly live conformance
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VENDO_TEST_PROXY_URL: ${{ secrets.VENDO_TEST_PROXY_URL }}
+      VENDO_TEST_PROXY_KEY: ${{ secrets.VENDO_TEST_PROXY_KEY }}
+      E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: mkdir -p nightly-logs
+
+      - name: Agent provider matrix (Anthropic, OpenAI, proxy)
+        id: agent_providers
+        continue-on-error: true
+        run: pnpm --filter @vendoai/agent exec vitest run src/live.test.ts 2>&1 | tee nightly-logs/agent-providers.log
+
+      - name: Live agentic automation
+        id: live_agentic
+        continue-on-error: true
+        run: pnpm --filter @vendoai-fixtures/automations-e2e exec vitest run src/live-agentic.e2e.test.ts 2>&1 | tee nightly-logs/live-agentic.log
+
+      - name: Live E2B automation
+        id: live_e2b
+        continue-on-error: true
+        run: pnpm --filter @vendoai-fixtures/automations-e2e exec vitest run src/live-e2b.e2e.test.ts 2>&1 | tee nightly-logs/live-e2b.log
+
+      - name: Live secret-egress red team
+        id: live_egress
+        continue-on-error: true
+        run: pnpm --filter @vendoai/redteam-e2e exec vitest run src/live-egress.e2e.test.ts 2>&1 | tee nightly-logs/live-egress.log
+
+      - name: Live judge
+        id: judge_live
+        continue-on-error: true
+        run: pnpm --filter @vendoai/guard exec vitest run test/live/judge.live.test.ts 2>&1 | tee nightly-logs/judge-live.log
+
+      - name: Install Claude Code for live MCP door
+        run: npm install --global @anthropic-ai/claude-code@2.1.209
+
+      - name: Live Claude MCP registration
+        id: live_claude
+        continue-on-error: true
+        run: |
+          log=nightly-logs/live-claude.log
+          VENDO_LIVE_MCP=1 pnpm --filter @vendoai-fixtures/mcp-e2e exec vitest run src/live-claude.e2e.test.ts >"$log" 2>&1 &
+          test_pid=$!
+          cleanup() {
+            kill "$test_pid" >/dev/null 2>&1 || true
+            claude mcp remove vendo-e2e --scope local >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..60}; do
+            if curl --silent --output /dev/null http://127.0.0.1:7337/api/vendo/mcp; then
+              break
+            fi
+            if ! kill -0 "$test_pid" >/dev/null 2>&1; then
+              cat "$log"
+              wait "$test_pid"
+            fi
+            sleep 2
+          done
+          claude mcp remove vendo-e2e --scope local >/dev/null 2>&1 || true
+          claude mcp add --transport http --scope local vendo-e2e http://127.0.0.1:7337/api/vendo/mcp
+          claude -p "Use the vendo-e2e MCP server to call host_invoices_list exactly once, then report that it succeeded." \
+            --allowedTools "mcp__vendo-e2e__host_invoices_list" \
+            --permission-mode bypassPermissions
+          wait "$test_pid"
+          cat "$log"
+          trap - EXIT
+          claude mcp remove vendo-e2e --scope local >/dev/null 2>&1 || true
+
+      - name: Upload nightly live logs
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        with:
+          name: nightly-live-conformance-logs
+          path: nightly-logs
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Fail when any live leg failed
+        if: always()
+        env:
+          AGENT_PROVIDERS: ${{ steps.agent_providers.outcome }}
+          LIVE_AGENTIC: ${{ steps.live_agentic.outcome }}
+          LIVE_E2B: ${{ steps.live_e2b.outcome }}
+          LIVE_EGRESS: ${{ steps.live_egress.outcome }}
+          JUDGE_LIVE: ${{ steps.judge_live.outcome }}
+          LIVE_CLAUDE: ${{ steps.live_claude.outcome }}
+        run: |
+          for outcome in "$AGENT_PROVIDERS" "$LIVE_AGENTIC" "$LIVE_E2B" "$LIVE_EGRESS" "$JUDGE_LIVE" "$LIVE_CLAUDE"; do
+            if [ "$outcome" != "success" ]; then
+              echo "::error title=Nightly live conformance failed::One or more live legs failed; inspect the uploaded logs."
+              exit 1
+            fi
+          done
