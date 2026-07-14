@@ -13,6 +13,8 @@ import { JAIL_PROBE_HTML } from "./jail-probe-html.js";
 
 export const PROBE_MOUNT = "/probe/mcp";
 export const REAL_DOOR_MOUNT = "/api/vendo/mcp";
+const PROBE_RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${PROBE_MOUNT}`;
+const PROBE_AUTHORIZATION_METADATA_PATH = `/.well-known/oauth-authorization-server${PROBE_MOUNT}`;
 export const PROBE_RESOURCE_URI = "ui://vendo/jail-capability-probe.html";
 export const REAL_JAIL_APP_ID = "app_jail_probe" as AppId;
 export const PROBE_USERNAME = "probe";
@@ -188,6 +190,11 @@ async function handleIncoming(
       response = await loginRoute(request);
     } else if (url.pathname === PROBE_MOUNT) {
       response = await probeHandler(request);
+    } else if (isProbeOAuthPath(url.pathname)) {
+      // The standalone probe is intentionally no-auth. Without this namespace
+      // fence the co-hosted real door answers probe-scoped discovery and auth
+      // routes, causing clients to invent an OAuth flow for /probe/mcp.
+      response = new Response("Not found", { status: 404 });
     } else {
       response = await doorHandler(request);
     }
@@ -199,6 +206,14 @@ async function handleIncoming(
     outgoing.setHeader("content-type", "text/plain; charset=utf-8");
     outgoing.end(error instanceof Error ? error.stack ?? error.message : String(error));
   }
+}
+
+function isProbeOAuthPath(pathname: string): boolean {
+  return pathname === PROBE_RESOURCE_METADATA_PATH
+    || pathname.startsWith(`${PROBE_RESOURCE_METADATA_PATH}/`)
+    || pathname === PROBE_AUTHORIZATION_METADATA_PATH
+    || pathname.startsWith(`${PROBE_AUTHORIZATION_METADATA_PATH}/`)
+    || pathname.startsWith(`${PROBE_MOUNT}/`);
 }
 
 async function toWebRequest(request: IncomingMessage): Promise<Request> {

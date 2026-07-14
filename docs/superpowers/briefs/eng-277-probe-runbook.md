@@ -34,13 +34,15 @@ curl --fail --silent --show-error \
   "$PROBE_ORIGIN/.well-known/oauth-protected-resource/api/vendo/mcp"
 curl --fail --silent --show-error \
   "$PROBE_ORIGIN/.well-known/oauth-authorization-server/api/vendo/mcp"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "$PROBE_ORIGIN/.well-known/oauth-protected-resource/probe/mcp")" = 404
 ```
 
-Every absolute URL in the two metadata documents must begin with `$PROBE_ORIGIN`, never `http://127.0.0.1:3210`. The bridge honors `X-Forwarded-Host` and `X-Forwarded-Proto`; `PROBE_PUBLIC_ORIGIN=https://...` is also available as an explicit origin override if a different tunnel does not forward those headers correctly.
+Every absolute URL in the real door's two metadata documents must begin with `$PROBE_ORIGIN`, never `http://127.0.0.1:3210`. Probe-scoped OAuth discovery must return 404: `/probe/mcp` is deliberately no-auth and its `/authorize`, `/token`, and `/register` subpaths are fenced from the co-hosted real door. The bridge honors `X-Forwarded-Host` and `X-Forwarded-Proto`; `PROBE_PUBLIC_ORIGIN=https://...` is also available as an explicit origin override if a different tunnel does not forward those headers correctly.
 
 ## OAuth login and consent
 
-The standalone capability endpoint has no authentication. The real Vendo endpoint performs the complete OAuth 2.1 flow:
+The standalone capability endpoint has no authentication. If a client presents OAuth for that entry, remove and recreate the entry so it discards stale discovery from an older fixture process. The real Vendo endpoint performs the complete OAuth 2.1 flow:
 
 1. Let Claude or ChatGPT open the authorization page after connector creation or tool scanning.
 2. On **Sign in to the ENG-277 probe**, enter username `probe` and password `jail`, then select **Sign in**.
@@ -109,7 +111,7 @@ If the standalone rows pass but this card does not render, record the client con
 
 ## Local regression check
 
-This checks both MCP registration shapes, full OAuth on the real door, real shim loading, generated-component rendering, and the jailed button interaction in headless Chromium:
+This checks both MCP registration shapes, standalone no-auth discovery isolation, the real door's browser-driven login/consent bounce with exact authorization-query preservation, real shim loading, generated-component rendering, and the jailed button interaction in headless Chromium:
 
 ```bash
 pnpm --filter @vendoai-fixtures/mcp-e2e typecheck
