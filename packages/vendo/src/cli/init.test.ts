@@ -132,8 +132,13 @@ describe("vendo init", () => {
     expect(scaffold).toContain("Readable.toWeb(request)");
     expect(scaffold).toContain("source.body.getReader()");
     expect(scaffold).toContain('app.use("/api/vendo", mountVendo());');
-    expect(scaffold).toContain("<VendoRoot>");
+    expect(scaffold).toContain("<VendoRoot theme={theme as VendoTheme}>");
+    expect(scaffold).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    expect(scaffold).toContain('import theme from "<path-to>/.vendo/theme.json";');
+    expect(scaffold).toContain('import type { VendoTheme } from "@vendoai/vendo";');
     expect(await readFile(join(root, "vendo", "ai.ts"), "utf8")).toContain("export const model");
+    // Pinned majors: @ai-sdk/anthropic@4 targets ai v7 — unpinned install breaks fresh hosts.
+    expect(initialized.logs.join("\n")).toContain("`npm install ai@^6 @ai-sdk/anthropic@^3`");
     expect(initialized.logs.join("\n")).toContain("Two manual steps remain");
     expect(initialized.logs.join("\n")).toContain('mount `mountVendo()`');
     expect(initialized.logs.join("\n")).toContain("wrap the client in `<VendoRoot>`");
@@ -152,10 +157,18 @@ describe("vendo init", () => {
     await rm(join(root, "tsconfig.json"));
     const sink = output();
     expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    expect(JSON.parse(sink.logs.join("\n")).codeChanges).toMatchObject([
+    const codeChanges = JSON.parse(sink.logs.join("\n")).codeChanges as Array<{ path: string; diff: string }>;
+    expect(codeChanges).toMatchObject([
       { path: "vendo/server.mjs" },
       { path: "vendo/ai.mjs" },
     ]);
+    // The JS wiring hint must be pasteable JavaScript — no type-only syntax.
+    const scaffold = codeChanges[0]?.diff ?? "";
+    expect(scaffold).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    expect(scaffold).toContain('import theme from "<path-to>/.vendo/theme.json";');
+    expect(scaffold).toContain("<VendoRoot theme={theme}>");
+    expect(scaffold).not.toContain("as VendoTheme");
+    expect(scaffold).not.toContain("import type");
   });
 
   it("emits a read-only agent plan with the plain-language questions", async () => {
@@ -184,8 +197,10 @@ describe("vendo init", () => {
     expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
     expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
       .toContain("@vendoai/vendo/server");
-    expect(await readFile(join(root, "app", "layout.tsx"), "utf8"))
-      .toContain("<VendoRoot>{children}</VendoRoot>");
+    const wiredLayout = await readFile(join(root, "app", "layout.tsx"), "utf8");
+    expect(wiredLayout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+    expect(wiredLayout).toContain('import theme from "../.vendo/theme.json";');
+    expect(wiredLayout).toContain('import type { VendoTheme } from "@vendoai/vendo";');
 
     const first = await tree(root);
     expect(await runInit({ targetDir: root, yes: true, output: sink.output })).toBe(0);
@@ -286,7 +301,69 @@ describe("vendo init", () => {
     expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
     const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
     expect(layout).toContain("import { VendoRoot } from \"@vendoai/vendo/react\";");
-    expect(layout).toContain("return <VendoRoot>{children}</VendoRoot>;");
+    expect(layout).toContain("import theme from \"../.vendo/theme.json\";");
+    expect(layout).toContain("return <VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>;");
+  });
+
+  it("scaffolds a fresh root app/ layout that imports and passes the extracted theme", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-fresh-"));
+    cleanup.push(root);
+    await mkdir(join(root, "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host", dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
+    }));
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
+    // 08 §4 / 09 §4: fresh install adopts the host brand, not neutral chrome.
+    expect(layout).toContain("import theme from \"../.vendo/theme.json\";");
+    expect(layout).toContain("import type { VendoTheme } from \"@vendoai/vendo\";");
+    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+  });
+
+  it("computes the theme specifier from a src/app layout (../../ to project root)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "vendo-init-srcapp-"));
+    cleanup.push(root);
+    await mkdir(join(root, "src", "app"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "host", dependencies: { next: "16.0.0", "@vendoai/vendo": "0.3.0" },
+    }));
+    await writeFile(join(root, "src", "app", "layout.tsx"),
+      "export default function Layout({ children }) { return <html><body>{children}</body></html>; }\n");
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const layout = await readFile(join(root, "src", "app", "layout.tsx"), "utf8");
+    expect(layout).toContain("import theme from \"../../.vendo/theme.json\";");
+    expect(layout).toContain("import type { VendoTheme } from \"@vendoai/vendo\";");
+    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+  });
+
+  it("wires theme while preserving a \"use client\" directive at the top of the file", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "app", "layout.tsx"),
+      "\"use client\";\n" +
+      "import type { ReactNode } from \"react\";\n" +
+      "export default function Layout({ children }: { children: ReactNode }) { return <html><body>{children}</body></html>; }\n");
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
+    expect(layout.startsWith("\"use client\";\n")).toBe(true);
+    expect(layout).toContain("import { VendoRoot } from \"@vendoai/vendo/react\";");
+    expect(layout).toContain("import theme from \"../.vendo/theme.json\";");
+    expect(layout).toContain("import type { VendoTheme } from \"@vendoai/vendo\";");
+    expect(layout).toContain("<VendoRoot theme={theme as VendoTheme}>{children}</VendoRoot>");
+    // Idempotent: a second run leaves the already-wired layout byte-identical.
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    expect(await readFile(join(root, "app", "layout.tsx"), "utf8")).toBe(layout);
+  });
+
+  it("degrades to bare VendoRoot wiring when the project disables resolveJsonModule", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { resolveJsonModule: false } }));
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const layout = await readFile(join(root, "app", "layout.tsx"), "utf8");
+    expect(layout).toContain("<VendoRoot>{children}</VendoRoot>");
+    expect(layout).not.toContain("theme.json");
+    expect(layout).not.toContain("theme={theme");
+    expect(layout).not.toContain("VendoTheme");
   });
 
   it("emits only init telemetry and respects env opt-out", async () => {

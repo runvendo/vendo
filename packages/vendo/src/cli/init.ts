@@ -1,5 +1,5 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { vendoSync } from "@vendoai/actions";
@@ -144,10 +144,25 @@ function expressServerSource(modelImport: string, typescript: boolean): string {
     ? `    init.body = Readable.toWeb(request) as ReadableStream<Uint8Array>;\n`
     : `    init.body = Readable.toWeb(request);\n`;
 
+  // The client-entry hint mirrors the host's language: the TS variant needs the
+  // VendoTheme cast (JSON-module literals widen to string), the JS variant must
+  // not show type-only syntax a JavaScript host cannot paste.
+  const clientHint = typescript
+    ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
+      ` *   // the cast narrows TypeScript's widened JSON-module string literals:\n` +
+      ` *   import { VendoRoot } from "@vendoai/vendo/react";\n` +
+      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+      ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
+      ` *   root.render(<VendoRoot theme={theme as VendoTheme}><App /></VendoRoot>);\n`
+    : ` *   // in the client entry — theme.json adopts the host brand (08 §4):\n` +
+      ` *   import { VendoRoot } from "@vendoai/vendo/react";\n` +
+      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+      ` *   root.render(<VendoRoot theme={theme}><App /></VendoRoot>);\n`;
+
   return `/**\n` +
-    ` * Add these two wiring lines in your host:\n` +
+    ` * Add these wiring lines in your host:\n` +
     ` *   app.use("/api/vendo", mountVendo());\n` +
-    ` *   root.render(<VendoRoot><App /></VendoRoot>); // in the client entry\n` +
+    clientHint +
     ` */\n` +
     imports +
     `import { model } from ${JSON.stringify(modelImport)};\n` +
@@ -258,17 +273,41 @@ async function tsconfigAliasRoot(root: string): Promise<string | null> {
   return null;
 }
 
-function defaultLayoutSource(): string {
+// 08 §4 / 09 §4: the scaffold imports the sync-extracted theme.json and passes it
+// to VendoRoot so a fresh install adopts the host brand at the wow moment — no
+// flash of neutral chrome. theme.json is a BUILD artifact (sync regenerates it),
+// so baking it at build time is doctrinally consistent. `specifier === null`
+// degrades to bare wiring when the theme import cannot resolve (resolveJsonModule
+// off) — see themeImportSpecifier. The `as VendoTheme` cast is load-bearing:
+// TypeScript widens JSON-module string literals, so the import is typed
+// `{ density: string; ... }` — not assignable to `Partial<VendoTheme>`
+// (`density?: "compact" | "comfortable"`); without the cast every strict host
+// fails `next build`. VendoTheme comes off the umbrella root (not /react).
+function themeWiring(specifier: string | null): { importLine: string; prop: string } {
+  return specifier === null
+    ? { importLine: "", prop: "" }
+    : {
+        importLine: `import theme from ${JSON.stringify(specifier)};\n` +
+          `import type { VendoTheme } from "@vendoai/vendo";\n`,
+        prop: " theme={theme as VendoTheme}",
+      };
+}
+
+function defaultLayoutSource(themeSpecifier: string | null): string {
+  const theme = themeWiring(themeSpecifier);
   return `import { VendoRoot } from "@vendoai/vendo/react";\n` +
+    theme.importLine +
     `import type { ReactNode } from "react";\n\n` +
     `export default function RootLayout({ children }: { children: ReactNode }) {\n` +
-    `  return <html><body><VendoRoot>{children}</VendoRoot></body></html>;\n` +
+    `  return <html><body><VendoRoot${theme.prop}>{children}</VendoRoot></body></html>;\n` +
     `}\n`;
 }
 
-function wireLayout(source: string): string | null {
+function wireLayout(source: string, themeSpecifier: string | null): string | null {
   if (source.includes("<VendoRoot") || source.includes("from \"@vendoai/vendo/react\"")) return source;
-  const importLine = `import { VendoRoot } from "@vendoai/vendo/react";\n`;
+  const theme = themeWiring(themeSpecifier);
+  const importLine = `import { VendoRoot } from "@vendoai/vendo/react";\n${theme.importLine}`;
+  const open = `<VendoRoot${theme.prop}>`;
   const directive = source.match(/^(["']use (?:client|server)["'];?\s*)/);
   const prefix = directive?.[1] ?? "";
   const withImport = (body: string): string =>
@@ -276,15 +315,48 @@ function wireLayout(source: string): string | null {
 
   const childMatches = source.match(/\{children\}/g)?.length ?? 0;
   if (childMatches === 1) {
-    return withImport(source).replace("{children}", "<VendoRoot>{children}</VendoRoot>");
+    return withImport(source).replace("{children}", `${open}{children}</VendoRoot>`);
   }
   // A layout that returns the bare `children` (a valid Next pattern, e.g.
   // `return children;`) has no {children} JSX slot to wrap — rewrite the return.
   const bareReturn = /(\breturn\s*\(?\s*)children(\s*\)?\s*;)/;
   if (childMatches === 0 && bareReturn.test(source)) {
-    return withImport(source).replace(bareReturn, "$1<VendoRoot>{children}</VendoRoot>$2");
+    return withImport(source).replace(bareReturn, `$1${open}{children}</VendoRoot>$2`);
   }
   return null;
+}
+
+/** Relative, posix-style import specifier from the layout's directory to the
+    project-root `.vendo/theme.json` — NOT the `@/` alias (its root is often
+    src/ while .vendo sits at the project root). Returns null when the project
+    EXPLICITLY disables resolveJsonModule, so we degrade to bare VendoRoot wiring
+    instead of scaffolding an import that will not compile. runInit always writes
+    theme.json (writeIfMissing) before any code change applies, so the specifier
+    always resolves at build time — no exists() gate needed on the normal path. */
+async function themeImportSpecifier(root: string, layoutDir: string): Promise<string | null> {
+  if (await resolveJsonModuleDisabled(root)) return null;
+  const themeJson = join(root, ".vendo", "theme.json");
+  return relative(layoutDir, themeJson).split(sep).join("/");
+}
+
+/** True only when tsconfig/jsconfig EXPLICITLY sets
+    `compilerOptions.resolveJsonModule === false` — the one case where importing
+    theme.json breaks the build. Next's default (and demo hosts) leave it on.
+    Reads the project's own config only (no `extends` follow — matches
+    tsconfigAliasRoot's actual behavior); a JSONC config with comments fails
+    JSON.parse and is treated as the safe default (enabled). */
+async function resolveJsonModuleDisabled(root: string): Promise<boolean> {
+  for (const file of ["tsconfig.json", "jsconfig.json"]) {
+    const raw = await readOptional(join(root, file));
+    if (raw === null) continue;
+    try {
+      const config = JSON.parse(raw) as { compilerOptions?: { resolveJsonModule?: boolean } };
+      if (config.compilerOptions?.resolveJsonModule === false) return true;
+    } catch {
+      // Malformed config — assume the default (enabled).
+    }
+  }
+  return false;
 }
 
 function diff(path: string, before: string | null, after: string): string {
@@ -331,7 +403,10 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
     const routeBefore = await readOptional(route);
     const layoutBefore = await readOptional(layout);
     const routeAfter = routeBefore ?? routeSource(modelImport);
-    const layoutAfter = layoutBefore === null ? defaultLayoutSource() : wireLayout(layoutBefore);
+    const themeSpecifier = await themeImportSpecifier(root, app);
+    const layoutAfter = layoutBefore === null
+      ? defaultLayoutSource(themeSpecifier)
+      : wireLayout(layoutBefore, themeSpecifier);
     if (routeBefore === null) {
       const path = relative(root, route);
       changes.push({ absolute: route, path, before: routeBefore, after: routeAfter, diff: diff(path, routeBefore, routeAfter) });
@@ -509,7 +584,10 @@ export async function runInit(options: InitOptions): Promise<number> {
       durationMs: Date.now() - started,
     });
     if (changes.some((change) => change.after === defaultModelSource() && change.before === null)) {
-      output.log("Wrote a starter model module: install its provider (`npm install ai @ai-sdk/anthropic`) and set ANTHROPIC_API_KEY.");
+      // Majors pinned deliberately: @ai-sdk/anthropic@4 targets ai v7
+      // (LanguageModelV4), incompatible with the umbrella's `ai >=6 <7` peer —
+      // an unpinned install breaks `createVendo({ model })` on fresh hosts.
+      output.log("Wrote a starter model module: install its provider (`npm install ai@^6 @ai-sdk/anthropic@^3`) and set ANTHROPIC_API_KEY.");
     }
     // 10-mcp §2: the door never opens by default. When the host asks to open it,
     // point them at the one code change they make deliberately — a HostOAuthAdapter

@@ -23,7 +23,7 @@ import {
 } from "@vendoai/core";
 import { createGuard, type Judge, type PolicyConfig, type VendoGuard } from "@vendoai/guard";
 import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } from "@vendoai/mcp";
-import { createStore, envSecrets, type VendoStore } from "@vendoai/store";
+import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
 
@@ -202,6 +202,114 @@ function ephemeralPrincipal(subject: string): Principal {
   return { kind: "user", subject, ephemeral: true };
 }
 
+/** 00 overview ("no host principal resolver → an ephemeral session-scoped
+    principal"), 01-core §2, 02-store §4. When `principal(req)` returns null the
+    visitor is anonymous, and each CLIENT gets its OWN ephemeral principal —
+    session-scoped, never persisted — carried by a signed httpOnly cookie so two
+    anonymous visitors never share threads, grants, approvals, or apps. */
+const ANON_COOKIE = "vendo_anon_session";
+/** Secure requests use the `__Host-` prefix against session fixation (cookie
+    tossing): a sibling subdomain could otherwise plant an attacker's validly
+    signed cookie via `Domain=` and read everything the victim's anonymous
+    session then accrues — browsers refuse `__Host-*` cookies that set Domain or
+    arrive from another host. `__Host-` REQUIRES Secure + Path=/ + no Domain. */
+const ANON_COOKIE_SECURE = `__Host-${ANON_COOKIE}`;
+
+function anonCookieName(secure: boolean): string {
+  return secure ? ANON_COOKIE_SECURE : ANON_COOKIE;
+}
+
+/** Whether a request counts as secure for cookie purposes: its own URL is
+    https, OR the operator-set VENDO_BASE_URL (the TRUSTED origin channel —
+    never x-forwarded-*) is https — i.e. TLS terminates at a proxy and the
+    request reaches this process as http. */
+function secureRequest(url: URL, trustedBaseIsHttps: boolean): boolean {
+  return url.protocol === "https:" || trustedBaseIsHttps;
+}
+
+/** Per-process HMAC key for the anonymous-session cookie, generated at
+    createVendo() time with WebCrypto only (globalThis.crypto — NO node:crypto),
+    so this module keeps loading/bundling on edge/Worker targets (cf.
+    dotVendoFile). Restart semantics: a new process mints a new key, which
+    invalidates every outstanding cookie and resets all anonymous sessions —
+    acceptable because ephemeral sessions never persist past the process anyway
+    (00 overview; 02-store §4). */
+function newAnonKey(): Promise<CryptoKey> {
+  const raw = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(raw);
+  return globalThis.crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+function hex(bytes: ArrayBuffer | Uint8Array): string {
+  let out = "";
+  for (const b of bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)) out += b.toString(16).padStart(2, "0");
+  return out;
+}
+
+function randomId(): string {
+  const raw = new Uint8Array(16); // 128-bit session id
+  globalThis.crypto.getRandomValues(raw);
+  return hex(raw);
+}
+
+async function anonSign(key: CryptoKey, id: string): Promise<string> {
+  return hex(await globalThis.crypto.subtle.sign("HMAC", key, new TextEncoder().encode(id)));
+}
+
+/** Length-independent-leak-free digest compare (both are equal-length hex when
+    the cookie is well-formed; unequal lengths simply fail). */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function readCookie(header: string | null, name: string): string | null {
+  if (header === null) return null;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return null;
+}
+
+/** Verify the `<id>.<sig>` anon cookie against the per-process key; return the id
+    when the HMAC matches, else null (absent, malformed, or tampered → the caller
+    mints a fresh session). Looks up the name matching the CURRENT request's
+    secure determination — a client switching protocols just gets a fresh
+    ephemeral session. */
+async function verifyAnonCookie(key: CryptoKey, cookieHeader: string | null, secure: boolean): Promise<string | null> {
+  const raw = readCookie(cookieHeader, anonCookieName(secure));
+  if (raw === null) return null;
+  const dot = raw.lastIndexOf(".");
+  if (dot <= 0 || dot === raw.length - 1) return null;
+  const id = raw.slice(0, dot);
+  const sig = raw.slice(dot + 1);
+  return constantTimeEqual(sig, await anonSign(key, id)) ? id : null;
+}
+
+/** The Set-Cookie for a freshly minted anonymous session. Secure requests get
+    the fixation-proof `__Host-` form (Secure + Path=/, per the prefix rules);
+    insecure (localhost http dev) keeps the plain name scoped to the wire base. */
+async function buildAnonCookie(key: CryptoKey, id: string, secure: boolean): Promise<string> {
+  const value = `${id}.${await anonSign(key, id)}`;
+  return secure
+    ? `${ANON_COOKIE_SECURE}=${value}; Path=/; HttpOnly; SameSite=Lax; Secure`
+    : `${ANON_COOKIE}=${value}; Path=${BASE_PATH}; HttpOnly; SameSite=Lax`;
+}
+
+/** Append the minted Set-Cookie to the response. Stream/SSE responses carry
+    immutable headers, so re-wrap via `new Response(body, response)` (copies
+    status/statusText/headers into a fresh mutable Headers) before appending. */
+function withAnonCookie(response: Response, setCookie: string | undefined): Response {
+  if (setCookie === undefined) return response;
+  const rewrapped = new Response(response.body, response);
+  rewrapped.headers.append("set-cookie", setCookie);
+  return rewrapped;
+}
+
 function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
   if (enabled !== true) return undefined;
   try {
@@ -214,8 +322,11 @@ function telemetryClient(enabled: boolean | undefined): Telemetry | undefined {
 function createWireHandler(deps: {
   principal: CreateVendoConfig["principal"];
   ready: Promise<void>;
-  anonymous: Principal;
+  anonKey: Promise<CryptoKey>;
+  /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
+  trustedBaseIsHttps: boolean;
   sessionId: string;
+  store: VendoStore;
   telemetry?: Telemetry;
   agent: VendoAgent;
   guard: VendoGuard;
@@ -225,28 +336,59 @@ function createWireHandler(deps: {
   door?: McpDoor;
   onRequestOrigin?: (origin: string) => void;
 }): (request: Request) => Promise<Response> {
-  const context = async (request: Request, venue: RunContext["venue"]): Promise<RunContext> => {
-    const resolved = await deps.principal(request);
-    let principal: Principal;
-    if (resolved === null) {
-      principal = deps.anonymous;
-    } else {
-      const parsed = principalSchema.safeParse(resolved);
-      if (!parsed.success) {
-        throw new VendoError("validation", "principal resolver returned an invalid principal");
-      }
-      principal = parsed.data;
-    }
-    return {
-      principal,
-      venue,
-      presence: "present",
-      sessionId: request.headers.get("x-vendo-session-id") ?? deps.sessionId,
-      requestHeaders: requestHeaders(request),
-    };
-  };
-
   return async (request) => {
+    // Per-request anonymous-session state. This handler closure is shared across
+    // requests, so the minted-cookie state MUST live here (per-invocation) — a
+    // shared one would leak one visitor's session to the next. INVARIANT: one
+    // request resolves to at most ONE anonymous id — `anon.id` caches the first
+    // resolution so a route that calls context() twice on a cookie-less request
+    // can never mint a second id (which would silently split one request across
+    // two subjects and overwrite the Set-Cookie).
+    const anon: { id?: string; setCookie?: string } = {};
+    const context = async (req: Request, venue: RunContext["venue"]): Promise<RunContext> => {
+      const resolved = await deps.principal(req);
+      let principal: Principal;
+      // Host-resolved principals keep the process-wide fallback sessionId; only
+      // anonymous requests fall back to their per-client cookie id (below).
+      let sessionId = req.headers.get("x-vendo-session-id") ?? deps.sessionId;
+      if (resolved === null) {
+        const key = await deps.anonKey;
+        const secure = secureRequest(new URL(req.url), deps.trustedBaseIsHttps);
+        let id = anon.id ?? await verifyAnonCookie(key, req.headers.get("cookie"), secure);
+        if (id === null) {
+          id = randomId();
+          anon.setCookie = await buildAnonCookie(key, id, secure);
+        }
+        anon.id = id;
+        principal = ephemeralPrincipal(`anonymous_${id}`);
+        // 02-store §4: ephemeral subjects never touch disk. Declare this session
+        // ephemeral to the store up front so EVERY subsequent write this turn
+        // routes to the in-memory overlay — including the raw records() paths
+        // (apps, state, app-data) that only self-register on the typed helpers,
+        // and which persist mid-turn before any helper has seen the subject.
+        registerEphemeralSubject(deps.store, principal.subject);
+        // 05-guard §2: session/task grants bind to ctx.sessionId. Anonymous
+        // sessions bind per CLIENT (the cookie id), not per PROCESS, so one
+        // visitor's session grant never authorizes another's calls. The explicit
+        // x-vendo-session-id header still wins when the client sets it.
+        if (req.headers.get("x-vendo-session-id") === null) sessionId = `anon_${id}`;
+      } else {
+        const parsed = principalSchema.safeParse(resolved);
+        if (!parsed.success) {
+          throw new VendoError("validation", "principal resolver returned an invalid principal");
+        }
+        principal = parsed.data;
+      }
+      return {
+        principal,
+        venue,
+        presence: "present",
+        sessionId,
+        requestHeaders: requestHeaders(req),
+      };
+    };
+
+    const respond = async (): Promise<Response> => {
     try {
       const url = new URL(request.url);
       // 10-mcp: hand the door its own paths BEFORE any wire machinery. It runs
@@ -492,6 +634,10 @@ function createWireHandler(deps: {
       if (error instanceof VendoError) return errorResponse(error);
       return internalError();
     }
+    };
+    // Attach the anon Set-Cookie (if a session was minted this request) at the
+    // single exit — covering JSON, error, and SSE/stream responses alike.
+    return withAnonCookie(await respond(), anon.setCookie);
   };
 }
 
@@ -586,12 +732,26 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     door = createMcpDoor({ tools: boundTools, guard, store, oauth: config.oauth, apps: appsPort, mount: MCP_MOUNT });
   }
   const sessionId = `session_${globalThis.crypto.randomUUID()}`;
-  const anonymous = ephemeralPrincipal(`anonymous_${globalThis.crypto.randomUUID()}`);
+  // Per-process signing key for anonymous-session cookies (WebCrypto only; see
+  // newAnonKey). Anonymous principals are minted per-CLIENT in the handler.
+  const anonKey = newAnonKey();
+  // An https VENDO_BASE_URL means TLS terminates at a trusted proxy and requests
+  // arrive here as http — anon cookies must still be Secure/__Host- then.
+  const trustedBaseIsHttps = ((): boolean => {
+    if (configuredBaseUrl === undefined) return false;
+    try {
+      return new URL(configuredBaseUrl).protocol === "https:";
+    } catch {
+      return false;
+    }
+  })();
   const handler = createWireHandler({
     principal: config.principal,
     ready,
-    anonymous,
+    anonKey,
+    trustedBaseIsHttps,
     sessionId,
+    store,
     telemetry: telemetryClient(config.telemetry),
     agent,
     guard,
