@@ -62,6 +62,40 @@ describe("apps agent tools", () => {
       expect(() => JSON.stringify(descriptor.inputSchema)).not.toThrow();
     }
     expect(descriptors.map((descriptor) => descriptor.risk)).toEqual(["write", "write", "read"]);
+    expect(descriptors.find(({ name }) => name === "vendo_apps_edit")?.description).toMatch(/retry.*same app/i);
+  });
+
+  it("surfaces a structured retryable edit failure instead of implying the app changed", async () => {
+    const broken = JSON.stringify({
+      ops: [{ op: "set-prop", nodeId: "missing", prop: "value", value: 1 }],
+    });
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated, broken),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+
+    const outcome = await runtime.agentTools().execute({
+      id: "call_edit_failure",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Change a missing card" },
+    }, ctx);
+
+    expect(outcome).toMatchObject({
+      status: "ok",
+      output: {
+        app: created,
+        failure: {
+          code: "edit-rejected",
+          retryable: true,
+          message: expect.stringMatching(/same app/i),
+        },
+        issues: expect.arrayContaining([expect.stringContaining("missing")]),
+      },
+    });
   });
 
   it("creates and opens an app through the guard-bound fixture", async () => {

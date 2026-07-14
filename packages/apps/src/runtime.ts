@@ -62,6 +62,14 @@ export interface EditResult {
   app: AppDocument;
   version: VersionEntry;
   issues?: string[];
+  /** Additive failure detail: when present, no edit was persisted. */
+  failure?: EditFailure;
+}
+
+export interface EditFailure {
+  code: "edit-rejected";
+  retryable: boolean;
+  message: string;
 }
 
 /** 06-apps §1 */
@@ -182,6 +190,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     app: AppDocument,
     instruction: string,
     issues: string[],
+    retryable = true,
   ): EditResult => ({
     app: structuredClone(app),
     version: {
@@ -190,7 +199,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       rung: rungFor(app),
     },
     issues: [...issues],
+    failure: {
+      code: "edit-rejected",
+      retryable,
+      message: retryable
+        ? "Edit was not applied. Retry vendo_apps_edit on the same app with a narrower instruction; do not rebuild the app."
+        : "Edit was not applied and cannot be retried until the reported blocker is resolved.",
+    },
   });
+
+  const appendIssues = (current: string[], next: string[]): string[] => [
+    ...new Set([...current, ...next]),
+  ];
 
   const syntaxCheck = async (
     machine: SandboxMachine,
@@ -367,10 +387,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (instructionRequiresServer(previous, instruction) && !machines.available()) {
         return failedEdit(previous, instruction, [
           "sandbox-unavailable: this edit requires server execution",
-        ]);
+        ], false);
       }
 
       let repairIssues: string[] | undefined;
+      let collectedIssues: string[] = [];
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const generated = await engine.edit(
           {
@@ -380,7 +401,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           },
           generationDependencies(config, config.model),
         );
-        if (generated.kind === "failure") return failedEdit(previous, instruction, generated.issues);
+        if (generated.kind === "failure") {
+          collectedIssues = appendIssues(collectedIssues, generated.issues);
+          repairIssues = collectedIssues;
+          continue;
+        }
 
         if (generated.kind === "document") {
           const app: AppDocument = { ...generated.document, id: appId };
@@ -397,7 +422,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
 
         const applied = await applyCodeFiles(previous, generated.files, ctx);
         if (applied.server === undefined) {
-          repairIssues = applied.issues;
+          collectedIssues = appendIssues(collectedIssues, applied.issues);
+          repairIssues = collectedIssues;
           continue;
         }
         const app: AppDocument = { ...structuredClone(previous), server: applied.server };
@@ -410,7 +436,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         await machines.evict(appId);
         return { app: persisted, version: { ...version } };
       }
-      return failedEdit(previous, instruction, repairIssues ?? ["code edit failed validation"]);
+      return failedEdit(
+        previous,
+        instruction,
+        collectedIssues.length === 0 ? ["edit failed validation"] : collectedIssues,
+      );
     },
 
     /**

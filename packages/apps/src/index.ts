@@ -11,6 +11,7 @@ export {
   type AppsConfig,
   type AppsProxy,
   type AppsRuntime,
+  type EditFailure,
   type EditResult,
   type OpenSurface,
   type VersionEntry,
