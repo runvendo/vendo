@@ -82,7 +82,7 @@ const fixtureApp: AppDocument = {
   },
 };
 
-export type OAuthMode = "auto" | "interactive";
+export type OAuthMode = "auto" | "interactive" | "prebuilt";
 
 export interface Stack {
   store: VendoStore;
@@ -161,7 +161,18 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     data: { subject: SUBJECT, enabled: false, doc: fixtureApp },
     refs: { subject: SUBJECT },
   });
-  const oauth: HostOAuthAdapter = {
+  const resolvePrincipal: HostOAuthAdapter["principal"] = async (subject) => {
+    return revoked.has(subject)
+      ? null
+      : { kind: "user", subject, display: `Fixture ${subject}` } satisfies Principal;
+  };
+  const oauth: HostOAuthAdapter = control.oauthMode === "prebuilt" ? {
+    async session() {
+      if (!control.autoSubject) return new Response("missing fixture session", { status: 401 });
+      return { subject: control.autoSubject };
+    },
+    principal: resolvePrincipal,
+  } : {
     async authorize() {
       if (control.oauthMode === "interactive") {
         return new Response(null, {
@@ -172,11 +183,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
       if (!control.autoSubject) return new Response("missing fixture session", { status: 401 });
       return { subject: control.autoSubject };
     },
-    async principal(subject) {
-      return revoked.has(subject)
-        ? null
-        : { kind: "user", subject, display: `Fixture ${subject}` } satisfies Principal;
-    },
+    principal: resolvePrincipal,
   };
   const appsPort: AppsPort = {
     list: (ctx) => apps.list(ctx),

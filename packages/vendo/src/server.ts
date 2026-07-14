@@ -68,7 +68,7 @@ export interface CreateVendoConfig {
       ChatGPT, Cursor) reach the host's tools through the SAME guard-bound path.
       Opening it is a host decision (10-mcp §2), so it is off by default. */
   mcp?: boolean;
-  /** 10-mcp §3 — the host's identity + consent seam. Threaded top-level like
+  /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
   oauth?: HostOAuthAdapter;
@@ -777,7 +777,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     // 10-mcp §5 — pin the door's canonical mount so a cold umbrella's server
     // card advertises the right transport URL (BASE_PATH/mcp) before any request
     // teaches it, and learned paths never override it.
-    door = createMcpDoor({ tools: boundTools, guard, store, oauth: config.oauth, apps: appsPort, mount: MCP_MOUNT });
+    door = createMcpDoor({
+      tools: boundTools,
+      guard,
+      store,
+      oauth: config.oauth,
+      apps: appsPort,
+      mount: MCP_MOUNT,
+      ...(theme === undefined ? {} : { theme }),
+    });
   }
   const sessionId = `session_${globalThis.crypto.randomUUID()}`;
   // Per-process signing key for anonymous-session cookies (WebCrypto only; see

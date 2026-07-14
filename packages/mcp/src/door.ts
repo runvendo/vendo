@@ -7,6 +7,7 @@ import type {
   ToolDescriptor,
   ToolOutcome,
   ToolRegistry,
+  VendoTheme,
 } from "@vendoai/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -68,12 +69,15 @@ export interface McpDoorConfig {
   tools: ToolRegistry;
   /** Audit reporting for auth events (§3); tool decisions happen inside the bound registry. */
   guard: Guard;
-  /** §3 — two functions; the host owns identity + consent, the door owns the protocol. */
+  /** §3 — the host owns session/principal lookup; the door can own consent too. */
   oauth: HostOAuthAdapter;
   /** Door-owned protocol state (clients, codes, refresh grants) — wired like every other block. */
   store: StoreAdapter;
   /** §4 — saved apps ride along as MCP Apps; absent → tools-only door. */
   apps?: AppsPort;
+  /** The same resolved theme the UI pipeline consumes. The prebuilt consent
+   * page emits it as `--vendo-*` custom properties. */
+  theme?: VendoTheme;
   /** 10-mcp §5 — the door's canonical mount path (e.g. `/api/vendo/mcp`). When
    * set, the cold server card advertises THIS transport URL and learned request
    * paths never override it; when unset the card falls back to `/mcp` until an
@@ -164,7 +168,8 @@ class Door {
     const endpoint = endpointFor(path);
     const mount = endpoint.mount;
     if (endpoint.kind === "authorize") {
-      return req.method === "GET" && this.#config.remoteAs === undefined
+      return this.#config.remoteAs === undefined
+        && (req.method === "GET" || (req.method === "POST" && this.#oauth.hasPrebuiltConsent))
         ? this.#oauth.authorize(req, resourceUri(url.origin, mount))
         : notFound();
     }
@@ -175,7 +180,9 @@ class Door {
       return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.register(req) : notFound();
     }
     if (endpoint.kind === "federate") {
-      return req.method === "GET" && this.#config.federation !== undefined
+      return req.method === "GET"
+        && this.#config.federation !== undefined
+        && this.#config.oauth.authorize !== undefined
         ? handleFederation(req, resourceUri(url.origin, mount), this.#config.federation.secret, this.#config.oauth)
         : notFound();
     }
