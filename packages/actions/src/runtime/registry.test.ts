@@ -526,6 +526,31 @@ describe("host HTTP execution — venue=mcp (10-mcp §3 / 04 §4 ActAs auth)", (
     expect(passed).toBe(realGrant);
   });
 
+  it("refuses a guard-attached grant for a different subject before actAs", async () => {
+    const host = await hostServer();
+    const mismatchedGrant: PermissionGrant = {
+      id: "grt_other_user",
+      subject: "user_2",
+      tool: "host_write",
+      descriptorHash: "sha256:real",
+      scope: { kind: "tool" },
+      duration: "standing",
+      source: "chat",
+      grantedAt: "2026-07-14T00:00:00.000Z",
+    };
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer act" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+
+    const outcome = await actions.execute(
+      { id: "1", tool: "host_write", args: {} },
+      mcpCtx({ grant: mismatchedGrant, mcpConsent: { clientId: "mcpc_x", scopes: ["write"] } }),
+    );
+
+    expect(outcome).toMatchObject({ status: "error", error: { code: "act-as-subject-mismatch" } });
+    expect(actAs).not.toHaveBeenCalled();
+    expect(host.seen).toHaveLength(0);
+  });
+
   it("fails closed when the ctx carries neither a grant nor mcpConsent", async () => {
     const host = await hostServer();
     const actAs = vi.fn(async () => ({ headers: {} }));
