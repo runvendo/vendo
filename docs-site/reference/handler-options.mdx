@@ -45,9 +45,9 @@ createVendo({
 - `maxOutputTokens` bounds tokens the model may emit per turn. Omit to defer
   to the model default.
 - `historyWindow` bounds how many past messages are re-sent to the model
-  each turn. Whole messages are kept so tool-call/result pairs are never
-  split. Omit to send the full thread (current behavior). The stored thread
-  is untouched; only the per-turn model context shrinks.
+  each turn. Vendo keeps whole messages so tool-call/result pairs stay
+  paired. Omit to send the full thread (current behavior). The stored
+  thread is untouched; only the per-turn model context shrinks.
 
 ## Base path
 
