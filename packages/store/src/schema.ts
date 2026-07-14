@@ -88,6 +88,23 @@ const ADDITIVE_DDL = [
   // SET DEFAULT is idempotent, so it runs every boot like the rest of this block.
   "ALTER TABLE vendo_state ALTER COLUMN created_at SET DEFAULT now()",
   "CREATE INDEX IF NOT EXISTS vendo_state_id_idx ON vendo_state (id)",
+  // Keyset pagination lists order by (created_at, id) DESC with a `(created_at, id) < (c, i)`
+  // predicate (records.ts / routing.ts). Without these btree indexes the generic records
+  // table and the paged dedicated tables fall back to a seq-scan + sort per page; a dropped
+  // index here is exactly the order-of-magnitude regression the perf gate exists to catch.
+  "CREATE INDEX IF NOT EXISTS vendo_records_collection_created_idx ON vendo_records (collection, created_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_clients_created_idx ON vendo_mcp_clients (created_at DESC, id DESC)",
+  "CREATE INDEX IF NOT EXISTS vendo_mcp_grants_created_idx ON vendo_mcp_grants (created_at DESC, id DESC)",
+  // The automations tick and vendo.emit fetch apps by trigger kind (schedule / host-event).
+  // A STORED generated column projects doc->trigger->on->kind into an indexable value so
+  // those paths query only the matching apps instead of scanning every app for every subject.
+  // ADD COLUMN ... GENERATED ALWAYS AS ... STORED backfills existing rows on ALTER, so no
+  // separate data migration is needed (mirrors the vendo_state.id generated column above).
+  "ALTER TABLE vendo_apps ADD COLUMN IF NOT EXISTS trigger_kind text GENERATED ALWAYS AS (doc->'trigger'->'on'->>'kind') STORED",
+  "CREATE INDEX IF NOT EXISTS vendo_apps_subject_trigger_idx ON vendo_apps (subject, trigger_kind)",
+  // Thread listing derives a title without loading the full messages array (routing.ts uses a
+  // messages-less listSelect once a row has a stored title). NULLable; populated on next write.
+  "ALTER TABLE vendo_threads ADD COLUMN IF NOT EXISTS title text",
 ] as const;
 
 // v2 backfill (runs once, only when upgrading from a version < 2 — 02 §4 keys

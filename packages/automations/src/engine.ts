@@ -378,7 +378,16 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const writeApp = async (record: VendoRecord, row: AppRow): Promise<void> => {
-    await config.store.records(APPS).put({ id: record.id, data: row, refs: { subject: row.subject } });
+    // trigger_kind lets the tick/emit fetch apps by trigger kind (the reserved store derives it
+    // from a column and ignores caller refs; a generic StoreAdapter honors what we pass here).
+    await config.store.records(APPS).put({
+      id: record.id,
+      data: row,
+      refs: {
+        subject: row.subject,
+        ...(row.doc.trigger === undefined ? {} : { trigger_kind: row.doc.trigger.on.kind }),
+      },
+    });
   };
 
   const descriptors = async (): Promise<Map<string, ToolDescriptor>> =>
@@ -656,7 +665,11 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
     }
   };
 
-  const startRun = async (app: AppRow, kind: TriggerSource["kind"], event: Json): Promise<RunId> => {
+  // Mint the run and its record synchronously (so the id is known immediately), then
+  // execute the whole automation on the returned `done` promise. Splitting the id from the
+  // completion lets the tick collect runIds without blocking on each run to finish, and lets
+  // it bound how long it waits on any single run (see runFiredSchedules).
+  const launchRun = (app: AppRow, kind: TriggerSource["kind"], event: Json): { runId: RunId; done: Promise<void> } => {
     const trigger = validateTrigger(app.doc.trigger);
     const runId = id("run_");
     const startedAt = iso();
@@ -672,24 +685,72 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
       steps: [],
     };
     const ctx = runContext(record, app.subject);
-    await writeRun(record);
-    await audit(ctx, "running");
-    active.add(runId);
-    try {
-      if (trigger.run.kind === "steps") {
-        await continueSteps(app, trigger, record, ctx, {
-          stepIndex: 0,
-          event,
-          stepOutputs: {},
-        });
-      } else {
-        await runAgentic(trigger, record, ctx);
+    const done = (async (): Promise<void> => {
+      await writeRun(record);
+      await audit(ctx, "running");
+      active.add(runId);
+      try {
+        if (trigger.run.kind === "steps") {
+          await continueSteps(app, trigger, record, ctx, { stepIndex: 0, event, stepOutputs: {} });
+        } else {
+          await runAgentic(trigger, record, ctx);
+        }
+      } finally {
+        active.delete(runId);
+        stopped.delete(runId);
       }
-    } finally {
-      active.delete(runId);
-      stopped.delete(runId);
-    }
+    })();
+    return { runId, done };
+  };
+
+  const startRun = async (app: AppRow, kind: TriggerSource["kind"], event: Json): Promise<RunId> => {
+    const { runId, done } = launchRun(app, kind, event);
+    await done;
     return runId;
+  };
+
+  const delay = (ms: number): Promise<void> => new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    // Never keep the event loop alive just for the tick's timeout.
+    (timer as unknown as { unref?: () => void }).unref?.();
+  });
+
+  // Execute fired automations with bounded parallelism and an optional per-run timeout, so
+  // one hung/slow run cannot block other tenants or overrun the tick interval. All runIds are
+  // returned regardless of whether their run finished within the timeout (a timed-out run keeps
+  // running detached and persists its own terminal state).
+  const runFiredSchedules = async (
+    fired: Array<{ row: AppRow; scheduledFor: string; firedAt: string }>,
+  ): Promise<RunId[]> => {
+    const concurrency = Math.max(1, Math.floor(config.tickConcurrency ?? 4));
+    const timeoutMs = config.runTimeoutMs;
+    const ids: Array<RunId | undefined> = new Array(fired.length);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (true) {
+        const index = next;
+        next += 1;
+        if (index >= fired.length) return;
+        const entry = fired[index] as { row: AppRow; scheduledFor: string; firedAt: string };
+        let launched: { runId: RunId; done: Promise<void> };
+        try {
+          launched = launchRun(entry.row, "schedule", { scheduledFor: entry.scheduledFor, firedAt: entry.firedAt });
+        } catch {
+          // A run that cannot even start (e.g. an invalid trigger) is skipped so other
+          // tenants' fired runs still proceed.
+          continue;
+        }
+        ids[index] = launched.runId;
+        // A detached (timed-out) run must never surface as an unhandled rejection.
+        const settled = launched.done.catch(() => undefined);
+        if (timeoutMs === undefined) await settled;
+        else await Promise.race([settled, delay(timeoutMs)]);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, fired.length) }, () => worker()),
+    );
+    return ids.filter((value): value is RunId => value !== undefined);
   };
 
   const mintGrant = async (request: ApprovalRequest): Promise<void> => {
@@ -978,14 +1039,22 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   const runTick: AutomationsEngine["tick"] = async (providedNow) => {
     await sweepParked();
     const at = providedNow ?? now();
-    const appRecords = await allRecords(config.store.records(APPS));
-    const fired: Array<{ row: AppRow; scheduledFor: string }> = [];
-    for (const record of appRecords) {
-      const row = parseAppRow(record);
-      if (!row.enabled || row.doc.trigger?.on.kind !== "schedule") continue;
+    const atIso = at.toISOString();
+    // Fetch only schedule-triggered apps (indexed trigger_kind ref) instead of scanning every
+    // app for every subject, then batch every schedule cursor in one query (was an N+1 get).
+    const appRecords = await allRecords(config.store.records(APPS), { refs: { trigger_kind: "schedule" } });
+    const rows = appRecords
+      .map(parseAppRow)
+      .filter((row) => row.enabled && row.doc.trigger?.on.kind === "schedule");
+    const cursorRecords = rows.length === 0
+      ? []
+      : await allRecords(config.store.records(SCHEDULE), { ids: rows.map((row) => row.doc.id) });
+    const cursorById = new Map(cursorRecords.map((record) => [record.id, record]));
+    const fired: Array<{ row: AppRow; scheduledFor: string; firedAt: string }> = [];
+    for (const row of rows) {
       const trigger = validateTrigger(row.doc.trigger);
       if (trigger.on.kind !== "schedule") continue;
-      const cursorRecord = await config.store.records(SCHEDULE).get(row.doc.id);
+      const cursorRecord = cursorById.get(row.doc.id) ?? null;
       const cursor = cursorRecord === null
         ? { lastFiredAt: at.toISOString() }
         : scheduleSchema.parse(cursorRecord.data);
@@ -1010,16 +1079,9 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
         ...(trigger.on.at === undefined ? {} : { firedAt: at.toISOString() }),
       };
       await config.store.records(SCHEDULE).put({ id: row.doc.id, data: nextCursor });
-      fired.push({ row, scheduledFor });
+      fired.push({ row, scheduledFor, firedAt: atIso });
     }
-    const ids: string[] = [];
-    for (const entry of fired) {
-      ids.push(await startRun(entry.row, "schedule", {
-        scheduledFor: entry.scheduledFor,
-        firedAt: at.toISOString(),
-      }));
-    }
-    return ids;
+    return await runFiredSchedules(fired);
   };
 
   const tick: AutomationsEngine["tick"] = (providedNow) => {
@@ -1039,7 +1101,10 @@ export const createAutomationsEngine = (config: AutomationsConfig): AutomationsE
   };
 
   const emit: AutomationsEngine["emit"] = async (event, payload, principal) => {
-    const records = await allRecords(config.store.records(APPS), { refs: { subject: principal.subject } });
+    // Only host-event apps for this subject (indexed refs) — was a full scan of the subject's apps.
+    const records = await allRecords(config.store.records(APPS), {
+      refs: { subject: principal.subject, trigger_kind: "host-event" },
+    });
     const ids: string[] = [];
     for (const record of records) {
       const row = parseAppRow(record);
