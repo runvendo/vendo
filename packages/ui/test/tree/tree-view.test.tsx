@@ -70,6 +70,18 @@ describe("TreeView public surface", () => {
     expect(document.querySelector('[data-dangling-node="not-yet-streamed"] [data-primitive="Skeleton"]')).not.toBeNull();
   });
 
+  it("contains a validated but empty rooted layout instead of rendering a blank surface", () => {
+    render(
+      <TreeView
+        tree={tree([{ id: "root", component: "Stack", source: "prewired" }])}
+        components={{}}
+        onAction={ok}
+      />,
+    );
+
+    expect(screen.getByRole("note", { name: /empty ui tree/i }).textContent).toMatch(/no renderable content/i);
+  });
+
   it("contains an erroring host node while preserving its sibling", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const Boom = () => {
