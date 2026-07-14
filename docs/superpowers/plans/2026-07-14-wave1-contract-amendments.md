@@ -23,19 +23,19 @@
 - Read: `docs/contracts/00-overview.md`, `01-core.md`, `02-store.md`, `03-agent.md` in full
 - Reference (evidence only, do not edit): `docs/contracts/10-mcp.md`, `packages/store/README.md`, `packages/store/src/routing.ts`, `packages/core/src/index.ts`
 
-- [ ] **Step 1:** Read the spec's Wave 1 section and the full gap appendix; list the gap IDs this wave closes: CORE-1, CORE-3, CORE-4, CORE-7 (doc note), CORE-12/XCUT-1, STORE-4/XCUT-2, STORE-5, STORE-9 (doc note), AGENT-5/XCUT-6, plus forward-contracting of CORE-2, erase API, encryption default-on.
-- [ ] **Step 2:** Read all four contract docs end-to-end before editing anything.
+- [x] **Step 1:** Read the spec's Wave 1 section and the full gap appendix; list the gap IDs this wave closes: CORE-1, CORE-3, CORE-4, CORE-7 (doc note), CORE-12/XCUT-1, STORE-4/XCUT-2, STORE-5, STORE-9 (doc note), AGENT-5/XCUT-6, plus forward-contracting of CORE-2, erase API, encryption default-on.
+- [x] **Step 2:** Read all four contract docs end-to-end before editing anything.
 
 ### Task 2: Amend 00-overview.md (mcp un-deferral)
 
 **Files:**
 - Modify: `docs/contracts/00-overview.md`
 
-- [ ] **Step 1:** Remove `mcp` from the "deferred entirely" list (line ~20); leave meter/memory/knowledge/evals deferred.
-- [ ] **Step 2:** Add an `mcp` row to the package table (~lines 8–18) and an mcp edge to the dependency diagram (~lines 26–30), consistent with reality: `@vendoai/mcp → core` only (per `scripts/dependency-guard.mjs`), consumed by the umbrella; contract lives in 10-mcp.md.
-- [ ] **Step 3:** Add the dated Amendments section recording: mcp un-deferred (built + contracted in wave 6 of v0; overview missed in that update — 02-store was updated at the time, 00/01/03 were not).
-- [ ] **Step 4:** Re-read the edited doc top-to-bottom for internal contradictions (any remaining "deferred" mentions of mcp).
-- [ ] **Step 5:** Commit: `docs(contracts): amend 00-overview — un-defer mcp (XCUT-1/CORE-12)`.
+- [x] **Step 1:** Remove `mcp` from the "deferred entirely" list (line ~20); leave meter/memory/knowledge/evals deferred.
+- [x] **Step 2:** Add an `mcp` row to the package table (~lines 8–18) and an mcp edge to the dependency diagram (~lines 26–30), consistent with reality: `@vendoai/mcp → core` only (per `scripts/dependency-guard.mjs`), consumed by the umbrella; contract lives in 10-mcp.md.
+- [x] **Step 3:** Add the dated Amendments section recording: mcp un-deferred (built + contracted in wave 6 of v0; overview missed in that update — 02-store was updated at the time, 00/01/03 were not).
+- [x] **Step 4:** Re-read the edited doc top-to-bottom for internal contradictions (any remaining "deferred" mentions of mcp).
+- [x] **Step 5:** Commit: `docs(contracts): amend 00-overview — un-defer mcp (XCUT-1/CORE-12)`.
 
 ### Task 3: Amend 01-core.md
 
