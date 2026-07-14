@@ -31,8 +31,8 @@ Tool names use letters, numbers, `_`, and `-`, with a maximum of 64
 characters. Use `_` for namespaces. Each descriptor includes JSON Schema input
 and a `read`, `write`, or `destructive` risk label.
 
-Route scans fail closed. A route the extractor cannot classify is emitted as
-disabled with a note.
+Route scans fail closed. The extractor emits any route it cannot classify as
+disabled, with a note.
 
 ## Durable overrides
 
