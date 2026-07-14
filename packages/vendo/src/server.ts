@@ -192,10 +192,35 @@ function jsonMutationRequired(request: Request, path: string): boolean {
   return true;
 }
 
-function tickAuthorized(request: Request): boolean {
+/** Lazily-minted random per-process HMAC key for constant-time secret compares
+    (WebCrypto only — NO node:crypto — so the module keeps bundling for edge/
+    Worker targets; cf. newAnonKey). */
+let compareKeyPromise: Promise<CryptoKey> | undefined;
+function compareKey(): Promise<CryptoKey> {
+  compareKeyPromise ??= newAnonKey();
+  return compareKeyPromise;
+}
+
+/** Constant-time string equality via WebCrypto, matching the webhook HMAC path
+    (which leans on crypto.subtle.verify for the same guarantee). HMACs both
+    inputs under a random per-process key so the digests are equal-length 32-byte
+    values regardless of input length — equal digests iff equal inputs (SHA-256
+    collision resistance) — and the byte compare leaks neither length nor content
+    through timing. Replaces the `===` bearer compare, a classic timing oracle. */
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const key = await compareKey();
+  const encoder = new TextEncoder();
+  const [da, db] = await Promise.all([
+    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(a)),
+    globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(b)),
+  ]);
+  return constantTimeEqual(hex(da), hex(db));
+}
+
+async function tickAuthorized(request: Request): Promise<boolean> {
   const secret = environment("VENDO_TICK_SECRET");
   if (secret === undefined) return false;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return timingSafeEqual(request.headers.get("authorization") ?? "", `Bearer ${secret}`);
 }
 
 function ephemeralPrincipal(subject: string): Principal {
@@ -418,7 +443,7 @@ function createWireHandler(deps: {
         return await deps.automations.webhook(request);
       }
       if (request.method === "POST" && path === "/tick") {
-        if (!tickAuthorized(request)) {
+        if (!await tickAuthorized(request)) {
           return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
         }
         return json({ runIds: await deps.automations.tick() });

@@ -62,6 +62,7 @@ const makeHarness = async (options: {
     runId: "run_egress",
     presence: "present",
     expiresAt: Date.now() + 60_000,
+    jti: "jti_egress",
   });
   return { handler: proxy.handler, token, fetchMock, get };
 };

@@ -1,6 +1,7 @@
 import type { AppDocument, AppId, RunContext, SecretsProvider, ToolRegistry } from "@vendoai/core";
 import type { AppDataAccess } from "./app-data.js";
 import { hostAllowed, substituteSecretHandles } from "./egress.js";
+import type { RunTokenGate } from "./run-token-gate.js";
 import { verifyRunToken, type RunTokenSecret } from "./run-token.js";
 import { checkEgressUrl, type IpResolver } from "./ssrf.js";
 
@@ -85,6 +86,11 @@ export interface AppsProxyDependencies {
   fetch?: typeof globalThis.fetch;
   /** Override DNS resolution (tests, edge hosts); defaults to node:dns. */
   resolveIp?: IpResolver;
+  /** ENG-251 — anti-replay gate. A run token stays valid for EVERY callback of its
+      live run (tools, state, egress — a run legitimately makes many), but the moment
+      its machine is torn down the machine cache burns its jti here, so a captured
+      token replayed afterwards is refused even though its HMAC and TTL still verify. */
+  consumedRunTokens?: RunTokenGate;
 }
 
 /** 06-apps §4.4 and plan decision 3 — fetch-style machine capability proxy. */
@@ -229,6 +235,14 @@ export const createAppsProxy = (dependencies: AppsProxyDependencies): { handler(
       const token = bearerToken(request);
       const payload = token === null ? null : await verifyRunToken(dependencies.tokenSecret, token);
       if (payload === null) return errorResponse(401, "unauthorized", "invalid or expired run token");
+      // ENG-251 anti-replay. This gates EVERY proxy route (tools, state, egress)
+      // identically: the token is good for as long as its run is live — a run
+      // legitimately makes many calls, and /egress especially — but once the run's
+      // machine is evicted its jti is burned and a replay of the captured bearer is
+      // refused here, shrinking the replay window from the full TTL to the live run.
+      if (dependencies.consumedRunTokens?.isConsumed(payload.jti)) {
+        return errorResponse(401, "unauthorized", "run token has been revoked");
+      }
       if (!await dependencies.owns(payload.appId, payload.subject)) {
         return errorResponse(404, "not-found", "app not found");
       }

@@ -93,6 +93,7 @@ describe("the proxy resolves a secret ONLY for allowlisted egress", () => {
 
   const token = async () => mintRunToken(tokenSecret, {
     appId: app.id, subject: "user_ada", runId: "run_wired", presence: "present", expiresAt: Date.now() + 60_000,
+    jti: "jti_wired",
   });
 
   const call = (bearer: string, url: string): Request => new Request("https://proxy.test/egress", {
