@@ -79,9 +79,9 @@
 **Files:**
 - Read: all four amended docs
 
-- [ ] **Step 1:** Verify every Wave 1 gap ID from Task 1 Step 1 maps to a landed amendment; list the mapping in the task output.
-- [ ] **Step 2:** Grep `docs/contracts/` for leftover contradictions: `grep -rn "deferred" docs/contracts/00-overview.md docs/contracts/01-core.md | grep -i mcp` (expect no hits claiming mcp deferred); `grep -n "≥ 5\|>= 5" docs/contracts/03-agent.md` (expect none).
-- [ ] **Step 3:** Run `pnpm lint && pnpm typecheck && pnpm test` — expected all green and untouched by this wave (docs-only); this proves no test pins the old doc text.
+- [x] **Step 1:** Verify every Wave 1 gap ID from Task 1 Step 1 maps to a landed amendment; list the mapping in the task output.
+- [x] **Step 2:** Grep `docs/contracts/` for leftover contradictions: `grep -rn "deferred" docs/contracts/00-overview.md docs/contracts/01-core.md | grep -i mcp` (expect no hits claiming mcp deferred); `grep -n "≥ 5\|>= 5" docs/contracts/03-agent.md` (expect none).
+- [x] **Step 3:** Run `pnpm lint && pnpm typecheck && pnpm test` — expected all green and untouched by this wave (docs-only); this proves no test pins the old doc text.
 - [ ] **Step 4:** Final commit if anything moved in steps 1–2; then open the PR titled `docs(contracts): Wave 1 amendment log — foundations gap closure (ENG-234)` with a body linking ENG-234 and the spec file, and a per-doc summary of amendments.
 
 ---
