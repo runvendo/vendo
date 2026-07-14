@@ -15,6 +15,7 @@ import {
   memoryStore,
   seedAppRow,
   scriptedLanguageModel,
+  type ScriptedModelCall,
 } from "./testing/index.js";
 import { modelEngine } from "./engine.js";
 
@@ -83,6 +84,29 @@ const putApp = async (
 ): Promise<void> => {
   await seedAppRow(store, app, ctx.principal.subject);
 };
+
+const promptText = (call: ScriptedModelCall): string => call.prompt.map((message) => {
+  if (typeof message.content === "string") return message.content;
+  return message.content.map((part) => part.text ?? "").join("");
+}).join("\n");
+
+const generatedTreeApp = (): AppDocument => ({
+  format: "vendo/app@1",
+  id: "app_generated_edit",
+  name: "Generated dashboard",
+  ui: "tree",
+  tree: {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", source: "prewired", children: ["existing"] },
+      { id: "existing", component: "ExistingPanel", source: "generated" },
+    ],
+  },
+  components: {
+    ExistingPanel: "export default function ExistingPanel() { return <section>Existing</section>; }",
+  },
+});
 
 describe("generation engine through createApps", () => {
   it("fails closed when a tree-classified edit unexpectedly yields server code", async () => {
@@ -344,6 +368,238 @@ describe("generation engine through createApps", () => {
     expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("missing") ]));
     expect(await runtime.get(original.id, ctx)).toEqual(original);
     expect(await runtime.history(original.id).list()).toEqual([]);
+  });
+
+  it("retries a failed tree-edit plan with cumulative, indexed repair feedback", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const duplicateRoot = JSON.stringify({
+      ops: [{
+        op: "add-node",
+        node: { id: "root", component: "Stack", source: "prewired" },
+      }],
+    });
+    const malformedComponent = JSON.stringify({
+      ops: [{ op: "add-component", component: { name: "PeriodFilter", source: "export default null" } }],
+    });
+    const repaired = JSON.stringify({
+      ops: [
+        {
+          op: "add-component",
+          name: "PeriodFilter",
+          source: "export default function PeriodFilter() { return <select><option>All time</option></select>; }",
+        },
+        {
+          op: "add-node",
+          node: { id: "filter", component: "PeriodFilter", source: "generated" },
+          parentId: "root",
+          index: 1,
+        },
+      ],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        duplicateRoot,
+        malformedComponent,
+        (call) => {
+          const prompt = promptText(call).replaceAll('\\"', '"');
+          expect(prompt).toContain('tree op[0] add-node failed: node "root" already exists');
+          expect(prompt).toContain("tree op[0] add-component failed: requires name and source strings");
+          expect(prompt).toContain('"index"');
+          expect(prompt).toContain('"nodeId"');
+          return repaired;
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Add a filter dropdown", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.issues).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["existing", "filter"]);
+    expect(result.app.components).toMatchObject({
+      ExistingPanel: original.components?.ExistingPanel,
+      PeriodFilter: expect.stringContaining("<select>"),
+    });
+  });
+
+  it("rejects an edit that leaves the rooted view empty and returns a retryable failure", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const removeOnlyContent = JSON.stringify({
+      ops: [{ op: "remove-node", nodeId: "existing" }],
+    });
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(removeOnlyContent),
+    });
+
+    const result = await runtime.edit(original.id, "Remove the only visible panel", ctx);
+
+    expect(result.failure).toMatchObject({ code: "edit-rejected", retryable: true });
+    expect(result.issues).toEqual(expect.arrayContaining([expect.stringContaining("empty")]));
+    expect(result.app).toEqual(original);
+    expect(await runtime.get(original.id, ctx)).toEqual(original);
+  });
+
+  it("rejects unsupported position aliases instead of silently misplacing an added node", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const source = "export default function PeriodFilter() { return <select><option>All</option></select>; }";
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({
+          ops: [
+            { op: "add-component", name: "PeriodFilter", source },
+            {
+              op: "add-node",
+              node: { id: "filter", component: "PeriodFilter", source: "generated" },
+              parentId: "root",
+              position: 0,
+            },
+          ],
+        }),
+        (call) => {
+          expect(promptText(call).replaceAll('\\"', '"')).toContain('tree op[1] add-node failed: unsupported field "position"');
+          return JSON.stringify({
+            ops: [
+              { op: "add-component", name: "PeriodFilter", source },
+              {
+                op: "add-node",
+                node: { id: "filter", component: "PeriodFilter", source: "generated" },
+                parentId: "root",
+                index: 0,
+              },
+            ],
+          });
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Put a filter before the dashboard", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["filter", "existing"]);
+  });
+
+  it("repairs parent placement fields nested inside add-node instead of persisting an orphan", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const source = "export default function PeriodFilter() { return <select><option>All</option></select>; }";
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({
+          ops: [
+            { op: "add-component", name: "PeriodFilter", source },
+            {
+              op: "add-node",
+              node: {
+                id: "filter",
+                component: "PeriodFilter",
+                source: "generated",
+                parentId: "root",
+                position: 0,
+              },
+            },
+          ],
+        }),
+        (call) => {
+          const prompt = promptText(call).replaceAll('\\"', '"');
+          expect(prompt).toContain('tree op[1] add-node failed: node has unsupported fields "parentId", "position"');
+          expect(prompt).toContain("place parentId and index on the add-node operation");
+          return JSON.stringify({
+            ops: [
+              { op: "add-component", name: "PeriodFilter", source },
+              {
+                op: "add-node",
+                node: { id: "filter", component: "PeriodFilter", source: "generated" },
+                parentId: "root",
+                index: 0,
+              },
+            ],
+          });
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Put a filter before the dashboard", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["filter", "existing"]);
+    expect(result.app.tree?.nodes.filter(({ id }) => id === "filter")).toHaveLength(1);
+  });
+
+  it("rejects a move index that leaves a gap instead of silently appending the node", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        JSON.stringify({
+          ops: [{ op: "move-node", nodeId: "existing", parentId: "root", index: 4 }],
+        }),
+        (call) => {
+          expect(promptText(call).replaceAll('\\"', '"')).toContain(
+            'tree op[0] move-node failed: index 4 leaves a gap in parent "root" children (length 0)',
+          );
+          return JSON.stringify({
+            ops: [{ op: "move-node", nodeId: "existing", parentId: "root", index: 0 }],
+          });
+        },
+      ),
+    });
+
+    const result = await runtime.edit(original.id, "Keep the panel first", ctx);
+
+    expect(result.failure).toBeUndefined();
+    expect(result.app.tree?.nodes.find(({ id }) => id === "root")?.children).toEqual(["existing"]);
+  });
+
+  it("preserves existing generated component sources across unrelated tree ops", async () => {
+    const store = memoryStore();
+    const original = generatedTreeApp();
+    await putApp(store, original);
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(JSON.stringify({
+        ops: [{ op: "set-prop", nodeId: "existing", prop: "tone", value: "green" }],
+      })),
+    });
+
+    const result = await runtime.edit(original.id, "Make the numbers green", ctx);
+
+    expect(result.app.components).toEqual(original.components);
+    await expect(runtime.open(original.id, ctx)).resolves.toMatchObject({
+      kind: "tree",
+      payload: { components: original.components },
+      components: original.components,
+    });
   });
 
   it("rejects moving a node under its own descendant without changing the document", async () => {

@@ -35,7 +35,7 @@ const descriptors: ToolDescriptor[] = [
   },
   {
     name: "vendo_apps_edit",
-    description: "Edit an existing Vendo app with one natural-language instruction.",
+    description: "Edit an existing Vendo app with one natural-language instruction. If the result has failure.retryable=true, retry vendo_apps_edit on the same appId with a narrower instruction; do not rebuild it with vendo_apps_create.",
     inputSchema: {
       $schema: DRAFT_2020_12,
       type: "object",
@@ -198,6 +198,7 @@ export const createAgentTools = (
           output: {
             app: result.app,
             ...(result.issues === undefined ? {} : { issues: result.issues }),
+            ...(result.failure === undefined ? {} : { failure: result.failure }),
           } as unknown as Json,
         };
       }
