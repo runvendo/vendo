@@ -151,10 +151,12 @@ Policy posture: the shipped policy example blocks `venue: "mcp"`. Opening the
 door is a host decision, never a default. `vendo init` asks before opening it.
 
 The door also serves discovery documents at the origin root, which the
-`/api/vendo/[...]` catch-all cannot see. In a Next.js host, add a sibling
-well-known route forwarding to the same handler. The door owns only four exact
-paths — forward just those and 404 anything else, so the route never shadows a
-host serving its own OAuth/OIDC metadata at the same origin:
+`/api/vendo/[...]` catch-all cannot see. When you opt into MCP during `vendo init`
+in a Next.js host, init generates `app/.well-known/[...vendo]/route.ts` (under
+`src/app` when that layout is present) and forwards through the same handler.
+The generated route allows only the door's four exact paths and 404s everything
+else, so it never shadows host OAuth/OIDC metadata. If you wire Vendo without
+init, add the equivalent route manually:
 
 ```ts
 // app/.well-known/[...vendo]/route.ts
