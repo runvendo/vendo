@@ -242,6 +242,22 @@ describe("vendo init", () => {
       .toEqual({ format: "vendo/overrides@1", tools: { host_invoices_send: { critical: true } } });
   });
 
+  it("guides an explicitly opened MCP door through discovery without generating routes", async () => {
+    const root = await fixture();
+    const sink = output();
+    await runInit({
+      targetDir: root,
+      confirm: async () => true,
+      interview: async () => ({ openDoor: true }),
+      output: sink.output,
+    });
+
+    expect(sink.logs.join("\n")).toContain("vendo mcp server-json");
+    expect(sink.logs.join("\n")).toContain("vendo mcp verify-domain");
+    expect(sink.logs.join("\n")).toContain("vendo doctor");
+    expect(Object.keys(await tree(root)).some((path) => path.includes(".well-known"))).toBe(false);
+  });
+
   it("extracts host CSS variables into the Vendo theme as concrete values", async () => {
     const root = await fixture();
     // hex, shadcn hsl triple behind a var() chain, oklch, rem radius — all

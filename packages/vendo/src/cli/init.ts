@@ -594,7 +594,7 @@ export async function runInit(options: InitOptions): Promise<number> {
     // (identity + consent) plus `mcp: true` on createVendo. init cannot scaffold the
     // adapter (it is host auth), so it guides rather than writes broken wiring.
     if (answers.openDoor === true) {
-      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. See docs/contracts/10-mcp; `vendo doctor` verifies the discovery documents once it is live.");
+      output.log("MCP door: implement a HostOAuthAdapter (identity + consent) and pass `createVendo({ mcp: true, oauth })`. Then run `vendo mcp server-json`, `vendo mcp verify-domain`, and `vendo doctor` for registry discovery. See docs/contracts/10-mcp.");
     }
     const finalWiring = plan.framework === "express" ? await detectVendoWiring(root) : null;
     if (finalWiring !== null && (!finalWiring.server || !finalWiring.client)) {
