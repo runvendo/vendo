@@ -12,6 +12,44 @@ pnpm --filter @vendoai/ui build:mcp-shim
 
 The server-card response tracks the provisional SEP-2127 draft and may move with that specification before ratification.
 
+## Transport state seam
+
+The door's protocol-lifetime state is isolated behind the package-internal
+`McpDoorState` interface. `createMcpDoor` still composes the 2025-11-25
+Streamable HTTP transport with `InMemoryMcpDoorState`, so initialization,
+`Mcp-Session-Id`, response bytes, and error behavior are unchanged.
+
+The current adapter owns three related lifetimes:
+
+- a TTL-indexed session record keyed by `Mcp-Session-Id`, containing the
+  authenticated subject and opaque SDK runtime;
+- the subject-to-session index used to close every live runtime on revocation;
+- a bounded approval-replay map keyed by an opaque replay scope plus the
+  canonical tool/arguments fingerprint. A pending approval retains its exact
+  `ToolCall.id`; any resolved outcome deletes it. Session deletion, revocation,
+  and idle expiry also delete the scope's replay records.
+
+A 2026-07-28 adapter would leave OAuth and guard behavior alone and replace the
+transport/state composition as follows:
+
+1. Do not mint, accept, or look up `Mcp-Session-Id`, and do not persist an SDK
+   transport runtime across requests. Construct the runtime and `McpRunContext`
+   for the authenticated request only.
+2. Supply a stable opaque replay scope for the logical approval/retry context,
+   derived from authenticated request context and never from caller-controlled
+   protocol input. Use that value for both the `RunContext.sessionId` context
+   key and `McpStateSession.replayScope`.
+3. Back `getReplay`, `setReplay`, and `deleteReplay` with the durable store,
+   preserving absolute expiry, the per-scope capacity bound, and eviction. The
+   stored value includes the authenticated subject and parked `ToolCall.id`, so
+   an identical approved retry reuses it, a resolved retry removes it, and
+   subject revocation purges it even when there is no live transport runtime.
+4. Make the session registry operations request-scoped/no-op for the stateless
+   transport, while preserving subject revocation before any tool execution.
+
+The seam is intentionally internal until that protocol adapter exists; the
+package-root API remains the frozen `createMcpDoor(config)` surface.
+
 ## Operating notes for host integrators
 
 - **`HostOAuthAdapter.authorize` renders consent.** The door passes the client's
