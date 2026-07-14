@@ -80,6 +80,7 @@ The user's saved layer, not just raw tools — delivered the way the MCP Apps sp
 
 - The door ships **one static HTML shim resource** — the tree renderer (`@vendoai/ui/tree`, which already ships as a library per 08 §1) — at a `ui://` URI with mimeType `text/html;profile=mcp-app`, negotiated via the `io.modelcontextprotocol/ui` extension.
 - App access is **ordinary door tools** (`vendo_apps_list`, `vendo_apps_open`) carrying `_meta: { ui: { resourceUri } }`; the host client renders the shim when the tool is called, and the tool result carries the `UIPayload` for the shim to render. Format dispatch inside the shim follows core §8 (unknown tags render a contained notice).
+- `AppsRuntime.open()` has already resolved v0 tree queries into `tree.data` (06 §1), so the MCP projection omits `tree.queries` from that resolved payload. The static shim retains query resolution only as a compatibility fallback for unresolved payloads from non-door hosts; a door open executes each query exactly once.
 - Interactions inside the rendered app go back over the shim's `postMessage` JSON-RPC bridge as `tools/call` — which lands in the guard-bound path like every other door call. An app run from ChatGPT has exactly the authority it has in-product: the running user's, asked in context.
 
 ```ts
