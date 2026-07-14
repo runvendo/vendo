@@ -42,13 +42,13 @@
 **Files:**
 - Modify: `docs/contracts/01-core.md`
 
-- [ ] **Step 1:** §5 `PermissionGrant.source`: add `"mcp"` to the pinned union; §7 `AuditEvent.kind`: add `"door-auth"`. Cross-reference 10-mcp as their origin (CORE-1).
-- [ ] **Step 2:** Fix the §"reserved" note (~line 46) that calls mcp "the deferred door".
-- [ ] **Step 3:** §3 `RunContext`: contract optional `grant?: PermissionGrant` and `mcpConsent` fields (shapes per the existing structural twin in `packages/actions/src/runtime/registry.ts:39-40`), marked "contracted here, implemented in Wave 5; until then they ride through passthrough" (CORE-2).
-- [ ] **Step 4:** Bless the real export surface (CORE-3/4): document the `./conformance` subpath (purpose: contract-conformance kits + `memoryStoreAdapter`; explicitly test-infrastructure surface, exempt from the "no behavior" rule which continues to govern the root) and the root extras siblings consume (`canonicalJson`, `sha256Hex` — noting the exact-grant `inputHash` algorithm is `sha256:` over `canonicalJson(args)` — plus `safeErrorMessage`, `TOOL_NAME_PATTERN`, `TREE_MAX_*`, `RESERVED_COMPONENT_NAMES`, `PathBinding`/`StateBinding` + guards). Amend the "single entry point" sentence accordingly.
-- [ ] **Step 5:** §8: add the Tree.data/props size delegation note — core does not bound them; hosts must enforce request-body limits (CORE-7, evidence pinned in `tree-dos.test.ts`).
-- [ ] **Step 6:** Add the dated Amendments section covering steps 1–5.
-- [ ] **Step 7:** Re-read the doc; commit: `docs(contracts): amend 01-core — mcp additions, real export surface, RunContext promotion (CORE-1/2/3/4/7)`.
+- [x] **Step 1:** §5 `PermissionGrant.source`: add `"mcp"` to the pinned union; §7 `AuditEvent.kind`: add `"door-auth"`. Cross-reference 10-mcp as their origin (CORE-1).
+- [x] **Step 2:** Fix the §"reserved" note (~line 46) that calls mcp "the deferred door".
+- [x] **Step 3:** §3 `RunContext`: contract optional `grant?: PermissionGrant` and `mcpConsent` fields (shapes per the existing structural twin in `packages/actions/src/runtime/registry.ts:39-40`), marked "contracted here, implemented in Wave 5; until then they ride through passthrough" (CORE-2).
+- [x] **Step 4:** Bless the real export surface (CORE-3/4): document the `./conformance` subpath (purpose: contract-conformance kits + `memoryStoreAdapter`; explicitly test-infrastructure surface, exempt from the "no behavior" rule which continues to govern the root) and the root extras siblings consume (`canonicalJson`, `sha256Hex` — noting the exact-grant `inputHash` algorithm is `sha256:` over `canonicalJson(args)` — plus `safeErrorMessage`, `TOOL_NAME_PATTERN`, `TREE_MAX_*`, `RESERVED_COMPONENT_NAMES`, `PathBinding`/`StateBinding` + guards). Amend the "single entry point" sentence accordingly.
+- [x] **Step 5:** §8: add the Tree.data/props size delegation note — core does not bound them; hosts must enforce request-body limits (CORE-7, evidence pinned in `tree-dos.test.ts`).
+- [x] **Step 6:** Add the dated Amendments section covering steps 1–5.
+- [x] **Step 7:** Re-read the doc; commit: `docs(contracts): amend 01-core — mcp additions, real export surface, RunContext promotion (CORE-1/2/3/4/7)`.
 
 ### Task 4: Amend 02-store.md
 

@@ -2,7 +2,9 @@
 
 Status: FROZEN (wave-2 gate passed by Yousef, 2026-07-11). Changes now require a major. One job: contracts only — types, zod schemas, format constants, pure validators and hash helpers. No I/O, no behavior. Dependencies: `zod` only. Runs in any JS runtime.
 
-Everything below is exported from the package root (single entry point). Every type ships a matching zod schema (`<camelCaseName>Schema`) unless marked *type-only*.
+Everything below is exported from the package root unless noted. Core has one additional entry point: `@vendoai/core/conformance`, which exports the contract-conformance kits and `memoryStoreAdapter` for tests. That subpath is explicitly test-infrastructure behavior and is exempt from the root's "no behavior" rule; the package root remains governed by it. Every type ships a matching zod schema (`<camelCaseName>Schema`) unless marked *type-only*.
+
+The stable root utility surface also includes `canonicalJson`, `sha256Hex`, `safeErrorMessage`, `TOOL_NAME_PATTERN`, the `TREE_MAX_*` constants, `RESERVED_COMPONENT_NAMES`, and `PathBinding` / `StateBinding` with their guards. These are contract utilities shared by sibling blocks, not deep-import implementation details.
 
 ## 1. Formats, ids, time
 
@@ -43,16 +45,20 @@ Attached to every tool call, guard decision, and audit event. The two axes the p
 ```ts
 export interface RunContext {
   principal: Principal;
-  venue: "chat" | "app" | "automation" | "mcp";   // mcp reserved for the deferred door
+  venue: "chat" | "app" | "automation" | "mcp";   // the MCP door is contracted in 10-mcp
   presence: "present" | "away";
   sessionId: string;
   appId?: AppId;        // set when running inside an app
   trigger?: TriggerRef;         // set when fired by a trigger
   requestHeaders?: Record<string, string>; // present-mode: the inbound host request's auth material (04 §4)
+  grant?: PermissionGrant;      // the exact grant captured by the guard binding
+  mcpConsent?: { clientId: string; scopes: string[] }; // door OAuth consent evidence (10-mcp §2.1)
 }
 
 export interface TriggerRef { runId: RunId; kind: TriggerSource["kind"]; }   // the app is RunContext.appId — never duplicated here
 ```
+
+`grant` and `mcpConsent` are contracted here and implemented in Wave 5. Until then, they ride through `RunContext`'s schema passthrough; the structural twins in actions and mcp remain temporary.
 
 ## 4. Tools
 
@@ -60,6 +66,7 @@ The one tool shape. Host API, connectors, and Vendo's own capabilities all speak
 
 ```ts
 export type RiskLabel = "read" | "write" | "destructive";
+export const TOOL_NAME_PATTERN: RegExp; // /^[a-zA-Z0-9_-]{1,64}$/
 
 export interface ToolDescriptor {
   name: string;                 // matches /^[a-zA-Z0-9_-]{1,64}$/ — the charset OpenAI, Anthropic, and MCP all enforce.
@@ -76,6 +83,8 @@ export interface ToolDescriptor {
  *  of { name, description, inputSchema, risk, critical }, absent optional fields omitted — so independent
  *  implementations always agree, and the algorithm can rotate without a flag-day. */
 export function descriptorHash(d: ToolDescriptor): string;   // "sha256:ab12..."
+export function canonicalJson(value: unknown): string;        // RFC 8785 canonical JSON
+export function sha256Hex(input: string): string;              // lowercase 64-character hex
 
 export interface ToolCall {
   id: string;                   // caller-minted, unique per call
@@ -96,7 +105,7 @@ export interface ToolRegistry {
 }
 ```
 
-Execution discipline (normative): nothing calls `ToolRegistry.execute` directly except a guard binding (05 §2). Chat, app functions, automations, and the future MCP door all reach tools through `guard.bind`.
+Execution discipline (normative): nothing calls `ToolRegistry.execute` directly except a guard binding (05 §2). Chat, app functions, automations, and the MCP door all reach tools through `guard.bind`.
 
 ## 5. Grants and approvals
 
@@ -107,7 +116,7 @@ export interface GrantConstraint { path: string; op: "eq" | "lte" | "gte" | "mat
 
 export type GrantScope =
   | { kind: "tool" }                                             // the whole tool
-  | { kind: "exact"; inputHash: string; inputPreview: string }   // these args only
+  | { kind: "exact"; inputHash: string; inputPreview: string }   // these args only; inputHash = `sha256:${sha256Hex(canonicalJson(args))}`
   | { kind: "constrained"; constraints: GrantConstraint[] };     // bounded args
 
 export type GrantDuration = "standing" | "session" | "task";
@@ -121,7 +130,7 @@ export interface PermissionGrant {
   duration: GrantDuration;
   contextKey?: string;          // binds session/task grants to their context
   appId?: AppId;        // set when granted to a specific app (incl. automation pre-approval)
-  source: "chat" | "batch" | "automation";   // the only mint points: ApprovalDecision.remember (chat/batch) and automation enable-capture
+  source: "chat" | "batch" | "automation" | "mcp"; // ApprovalDecision.remember, automation enable-capture, or the door consent projection
   grantedAt: IsoDateTime;
   expiresAt?: IsoDateTime;
   revokedAt?: IsoDateTime;
@@ -142,6 +151,8 @@ export interface ApprovalDecision {
   remember?: { scope: GrantScope; duration: GrantDuration };  // mint a grant from this answer
 }
 ```
+
+The additive `source: "mcp"` member originates in 10-mcp §2.1. Its only mint point is the door's per-call consent projection; that projection is never stored and never consulted by guard.
 
 ## 6. Guard seam
 
@@ -171,7 +182,7 @@ Every tool call, approval, and policy decision — recorded with principal + app
 export interface AuditEvent {
   id: string;                    // "aud_..."
   at: IsoDateTime;
-  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share";
+  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth";
   principal: Principal;
   venue: RunContext["venue"];
   presence: RunContext["presence"];
@@ -184,6 +195,8 @@ export interface AuditEvent {
   detail?: Json;
 }
 ```
+
+The additive `door-auth` event originates in 10-mcp §3 and records successful door authorization.
 
 ## 8. The instant-path UI payload (format-tagged; v0 format: the tree, `vendo-genui/v1`)
 
@@ -225,11 +238,20 @@ export interface TreeQuery {
 
 **Prop bindings** (pinned): `{ "$path": "/invoices/0/total" }` binds a prop to the data model by JSON Pointer; `{ "$state": "draft" }` binds to client-side view state.
 
+```ts
+export interface PathBinding { $path: string; }
+export interface StateBinding { $state: string; }
+export function isPathBinding(value: unknown): value is PathBinding;
+export function isStateBinding(value: unknown): value is StateBinding;
+```
+
 **Actions**: an interactive node dispatches a named action `{ action: string, payload? }` through the renderer's dispatch chokepoint (08 §5). The action name is a tool name or an `fn:` reference; guard checks it like any call.
 
 **`fn:` references** (v0 addition, Yousef-approved): anywhere a tree names a callable — `TreeQuery.tool` or an action name — the form `fn:<name>` (`<name>` matching `/^[A-Za-z_][A-Za-z0-9_-]*$/`) targets a function of the app's own machine instead of a tool. Resolution: `POST /fn/<name>` on the app's server (06 §4). Trees without a machine must not contain `fn:` references (validation error).
 
 **Limits and reserved names** (pinned): max 5000 nodes, 16 queries, 16 generated components, 64 KB per component source / 256 KB total; generated component names are PascalCase and may not shadow the prewired primitives (`Stack`, `Row`, `Grid`, `Text`, `Skeleton`, `Surface`, `Divider`).
+
+Core deliberately does not bound the size of `Tree.data` or `TreeNode.props`. Hosts must enforce request-body limits before tree validation; the core DoS conformance test records this delegation.
 
 ```ts
 export function validateTree(input: unknown): { ok: true; tree: Tree } | { ok: false; error: { code: "version" | "provision"; message: string } };
@@ -405,6 +427,7 @@ export type VendoErrorCode =
   | "conflict";
 
 export class VendoError extends Error { code: VendoErrorCode; detail?: Json; }
+export function safeErrorMessage(error: unknown): string; // never throws, including for hostile error objects
 ```
 
 Forward compatibility (normative): clients treat an unknown error code as a generic error, and renderers/consumers ignore unknown stream-part types, unknown `OpenSurface` kinds, and unknown discriminated-union variants they don't recognize — new codes, parts, trigger kinds, and run models are additive within the version train.
@@ -417,3 +440,14 @@ Typed `data-*` parts riding the ai-SDK UI message stream (03 §4). Live here —
 export interface VendoViewPart { type: "data-vendo-view"; appId: AppId; payload: UIPayload }                    // a rendered app surface in-thread
 export interface VendoApprovalPart { type: "data-vendo-approval"; toolCallId: string; risk: RiskLabel; approvalId?: ApprovalId }  // receipt/approval metadata beside native tool parts
 ```
+
+## Amendments
+
+### 2026-07-14 — MCP additions, RunContext promotion, and shipped export surface
+
+- **Changed:** Made `PermissionGrant.source: "mcp"` and `AuditEvent.kind: "door-auth"` normative, with their origin in 10-mcp; removed the stale reservation note.
+- **Changed:** Contracted optional `RunContext.grant` and `RunContext.mcpConsent` fields. They ship in Wave 5 and ride through schema passthrough until then.
+- **Changed:** Documented the shipped `@vendoai/core/conformance` test-infrastructure subpath and the stable root utilities already consumed by sibling blocks, including the exact-grant input hash algorithm.
+- **Changed:** Recorded that `Tree.data` and `TreeNode.props` size limits are delegated to host request-body enforcement.
+- **Why:** Post-freeze MCP work and sibling usage had expanded the real surface without updating this contract, and the host-side tree size responsibility was only pinned in a test.
+- **Approved by:** Yousef, 2026-07-14.
