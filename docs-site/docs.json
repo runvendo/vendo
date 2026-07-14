@@ -41,11 +41,11 @@
       },
       {
         "group": "Capabilities",
-        "pages": ["capabilities/integrations", "capabilities/voice"]
+        "pages": ["capabilities/integrations", "capabilities/mcp", "capabilities/voice"]
       },
       {
         "group": "Deploy and operate",
-        "pages": ["deploy/persistence", "deploy/deploying", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
+        "pages": ["deploy/persistence", "deploy/deploying", "deploy/vendo-cloud", "deploy/scheduler-and-webhooks", "deploy/telemetry", "deploy/troubleshooting"]
       },
       {
         "group": "Reference",

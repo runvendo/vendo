@@ -1,0 +1,160 @@
+---
+title: "MCP door"
+description: "Serve your product's tools to Claude, ChatGPT, Cursor, and other MCP clients through one guarded, OAuth-authenticated door that shares your policy."
+---
+
+The MCP door makes your host product installable in MCP clients such as Claude,
+ChatGPT, and Cursor. Every door tool call runs through the same guard-bound
+registry, policy, approvals, and audit path as chat, so outside agents get no
+weaker perimeter than your own conversation surface.
+
+Opening the door is a host decision. It is off by default, and `vendo init`
+asks whether you want it, then points you at the wiring rather than turning it
+on itself.
+
+## When to use it
+
+- You want an installable MCP server that exposes your product's tools to
+  third-party agents.
+- Users of those agents should act as themselves in your product, with the same
+  policy and approvals you enforce in-product.
+- You already own a session and consent flow you can plug in behind an OAuth
+  seam.
+
+Skip it if you only need to pull remote MCP tools into your own agent. That is
+what `mcpConnector` does, and it runs the other direction. See
+[Connectors](/capabilities/integrations).
+
+## Enable the door
+
+Set `mcp: true` and pass a `HostOAuthAdapter`. Compose once in a shared module:
+
+```ts
+// lib/vendo.ts
+import { createVendo } from "@vendoai/vendo/server";
+import type { HostOAuthAdapter } from "@vendoai/mcp";
+
+const oauth: HostOAuthAdapter = {
+  async authorize(request, { clientName, scopes }) {
+    // Authenticate the user with your existing session and confirm consent.
+    // Return { subject } on success, or a Response for redirects/renders.
+    const user = await resolveSession(request);
+    if (!user) return renderLogin(request);
+    return { subject: user.id };
+  },
+  async principal(subject) {
+    // Re-resolved on every bearer-authenticated MCP request. Return null to revoke.
+    const user = await lookupUser(subject);
+    return user ? { kind: "user", subject: user.id, display: user.name } : null;
+  },
+};
+
+export const vendo = createVendo({
+  model,
+  principal: resolvePrincipal,
+  mcp: true,
+  oauth,
+});
+```
+
+Then re-export the handler from your catch-all route:
+
+```ts
+// app/api/vendo/[...vendo]/route.ts
+import { nextVendoHandler } from "@vendoai/vendo/server";
+import { vendo } from "@/lib/vendo";
+
+export const { GET, POST, DELETE } = nextVendoHandler(vendo);
+```
+
+`oauth` is required when `mcp` is true. Without it, `createVendo` throws: the
+door cannot mint principals otherwise. The `HostOAuthAdapter` type imports from
+`@vendoai/mcp`, which ships as a dependency of the umbrella; strict package
+managers may need it added explicitly until the umbrella re-exports it.
+
+## Route the discovery paths
+
+The door's transport and OAuth endpoints mount under the wire at
+`/api/vendo/mcp`, so your existing catch-all handler already serves them. The
+OAuth discovery documents live at the origin root, outside `/api/vendo`, so on
+Next.js you forward them to the same handler:
+
+```ts
+// app/.well-known/[...path]/route.ts
+import { vendo } from "@/lib/vendo";
+
+export const GET = (request: Request) => vendo.handler(request);
+```
+
+The door answers only its own discovery paths and returns 404 for anything else
+under `/.well-known`. If your app also serves its own well-known documents,
+branch on the pathname and call `vendo.handler` only for the paths below. The
+door owns:
+
+- `/.well-known/oauth-protected-resource/api/vendo/mcp` (RFC 9728
+  protected-resource metadata)
+- `/.well-known/oauth-authorization-server/api/vendo/mcp` (RFC 8414
+  authorization-server metadata)
+- `/.well-known/mcp/server-card.json` (server card; `/.well-known/mcp-server-card`
+  is an alias)
+
+On Express, the adapter that `vendo init` generates reconstructs the full path
+from `req.originalUrl`, so the same handler serves both bases:
+
+```ts
+app.use("/api/vendo", mountVendo());
+app.use("/.well-known", mountVendo());
+```
+
+Because the door 404s every other well-known path, register your app's own
+well-known routes before that second mount.
+
+## Set VENDO_BASE_URL
+
+Host tools that bind to routes need a base origin. The wire normally learns its
+own origin from the first in-product request, but door requests never teach it
+(only wire routes do). Set `VENDO_BASE_URL` explicitly so door-first traffic can
+still resolve host routes.
+
+```bash
+VENDO_BASE_URL=https://app.example.com
+```
+
+## How door calls reach host tools
+
+MCP clients have no host browser session, so the inbound MCP bearer is never
+forwarded to your host routes. Door tool calls reach host APIs through the same
+`actAs` seam away automations use:
+
+- On successful OAuth, the door records the user's consent for that client.
+- When a door tool call resolves to a host route, Vendo calls
+  `actAs(principal, grant)` to source auth material for the OAuth'd user.
+- Without a real grant or a consent record, the call fails closed.
+- Without `actAs` configured, the tool returns a `not-implemented` error, the
+  same clean degradation as an away automation.
+
+The OAuth-authenticated user is the authority. Risky tools still stop at your
+per-call guard decision, whatever the token's scopes.
+
+## Saved apps ride along
+
+The door exposes your saved apps as MCP Apps. `tools/list` includes
+`vendo_apps_list`, `vendo_apps_open`, and `vendo_apps_call`, and opened apps
+render through a static HTML shim. Interactions inside a rendered app route back
+through the same guard-bound path. The door is a viewer and runner: app creation
+and editing stay in-product.
+
+## Verify
+
+```bash
+npx vendo doctor
+```
+
+When the door is open, doctor verifies both OAuth metadata documents resolve and
+the server card parses. `GET /status` returns `blocks.mcp: true`. See
+[HTTP routes](/reference/http-routes) for the door's route table and
+[Handler options](/reference/handler-options) for the `mcp` and `oauth` options.
+
+To connect a client, point it at `https://your-app.example.com/api/vendo/mcp`.
+The client discovers OAuth from the `WWW-Authenticate` challenge on its first
+`401`, walks the user through your `authorize` step, and starts calling tools.

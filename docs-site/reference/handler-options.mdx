@@ -17,6 +17,8 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `judge` | no | contextual guard judge |
 | `secrets` | no | defaults to environment-backed secret lookup |
 | `telemetry` | no | wires build and development telemetry |
+| `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; off by default |
+| `oauth` | conditional | `HostOAuthAdapter` used by the door for identity and consent; required when `mcp` is `true` |
 
 ## Base path
 
@@ -46,3 +48,4 @@ Every non-2xx response has this shape:
 
 The fixed map is `validation` 400, `not-found` 404, `blocked` 403, `conflict`
 409, `cloud-required` 402, and `sandbox-unavailable` or `not-implemented` 501.
+MCP door paths are the exception; they speak MCP and OAuth response shapes.

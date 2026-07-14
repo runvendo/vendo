@@ -31,7 +31,30 @@ stream over SSE.
 | `/tick` | POST | scheduler tick (serverless cron target; requires `Authorization: Bearer <secret>`) |
 | `/webhooks/:source` | POST | trigger ingress (Composio, host, plain), verified as described below |
 | `/activity` | GET | `AuditEvent[]`, self-scoped with `guard.audit.query({ principal })` |
-| `/status` | GET | `{ posture, version, blocks: {...} }` |
+| `/status` | GET | `{ posture, version, blocks: {...} }`, includes `blocks.mcp: true` when the door is open |
+
+## MCP door
+
+With `createVendo({ mcp: true, oauth })`, the door serves its transport under
+the wire plus four origin-root discovery documents through the same handler.
+Bodies follow the MCP transport spec, not the wire's JSON envelope.
+
+| Path | Method | Purpose |
+| --- | --- | --- |
+| `/api/vendo/mcp` | POST · GET · DELETE | MCP Streamable HTTP transport |
+| `/api/vendo/mcp/authorize` | GET | OAuth authorization endpoint |
+| `/api/vendo/mcp/token` | POST | OAuth token endpoint (form-encoded) |
+| `/api/vendo/mcp/register` | POST | OAuth dynamic client registration (JSON body) |
+| `/.well-known/oauth-protected-resource/api/vendo/mcp` | GET | RFC 9728 protected-resource metadata |
+| `/.well-known/oauth-authorization-server/api/vendo/mcp` | GET | RFC 8414 authorization-server metadata |
+| `/.well-known/mcp/server-card.json` · `/.well-known/mcp-server-card` | GET | server card describing the door |
+
+Door paths bypass the wire's principal resolver and CSRF JSON gate. The door
+re-resolves `oauth.principal(subject)` on every bearer-authenticated transport
+request, so returning `null` revokes live sessions; the OAuth and discovery
+endpoints are not principal-resolved. The origin-root discovery documents sit
+outside `/api/vendo`, so on Next.js you forward them to `vendo.handler`. See
+[MCP door](/capabilities/mcp).
 
 ## Webhook verification
 
@@ -52,4 +75,5 @@ and 501 sandbox unavailable or not implemented.
 
 Cookie-authenticated mutations require `Content-Type: application/json`.
 Binary app import, signed webhooks, and bearer-authenticated tick are the only
-exceptions.
+exceptions. MCP door paths sit outside both rules; they speak MCP and OAuth
+response shapes, not the wire envelope.

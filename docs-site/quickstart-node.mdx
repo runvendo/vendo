@@ -1,35 +1,114 @@
 ---
-title: "Quickstart: any JavaScript server"
-description: "Mount Vendo's fetch-style handler in any JavaScript runtime with fetch and WebCrypto, from Node and Bun to Deno, Cloudflare Workers, and other edges."
+title: "Quickstart: Express and other JavaScript servers"
+description: "A fetch handler you can mount in any Node-compatible runtime. vendo init scaffolds the adapter for Express; elsewhere you mount vendo.handler yourself."
 ---
 
-Install the umbrella:
+Vendo's handler is framework-agnostic. It takes a standard `Request` and returns
+a standard `Response`, so it runs in Express, Fastify, Hono, Bun, or any
+Node-compatible runtime (the umbrella requires Node 20 or later).
+
+## Install and scaffold
+
+Install the umbrella and run `vendo init` from your app root:
 
 ```bash
 npm install @vendoai/vendo
+npx vendo init
 ```
 
-Create the composition once during server boot:
+Init always writes the `.vendo` contract (tools, policy, theme, brief). It reads
+`package.json` to decide what code to propose:
+
+- **Express** (an `express` dependency): a diff-gated `vendo/server.ts`
+  (`vendo/server.mjs` when the host has no `tsconfig.json`) holding a
+  `createVendo()` composition and a Node HTTP-to-fetch adapter, plus a starter
+  `vendo/ai.ts` model module. Two manual wiring steps remain, and init prints
+  both.
+- **Any other runtime** (Fastify, Hono, Bun): init detects only `next` and
+  `express`, so it proposes Next-shaped files. Decline those diffs and mount
+  `vendo.handler` yourself (see below). Detection checks `next` first, so an app
+  with both dependencies gets the Next scaffold.
+
+## Wire the Express adapter
+
+Mount the exported adapter under one base path, normally `/api/vendo`:
+
+```ts
+import express from "express";
+import { mountVendo } from "./vendo/server.js";
+
+const app = express();
+app.use("/api/vendo", mountVendo());
+app.listen(3000);
+```
+
+Wrap the client root in `<VendoRoot>`:
+
+```tsx
+import { VendoRoot } from "@vendoai/vendo/react";
+
+root.render(
+  <VendoRoot>
+    <App />
+  </VendoRoot>,
+);
+```
+
+## Composition
+
+The generated `vendo/server.ts` calls `createVendo` once during boot:
 
 ```ts
 import { createVendo } from "@vendoai/vendo/server";
+import { model } from "./ai";
 
 const vendo = createVendo({
   model,
-  principal: async (request) => {
-    const user = await resolveSession(request);
-    return user ? { kind: "user", subject: user.id } : null;
-  },
+  principal: async () => null,
 });
 ```
 
-Mount `vendo.handler` under one base path, normally `/api/vendo`. It accepts a
-standard `Request` and returns a standard `Response`. Preserve streaming for
-`POST /threads`.
+Replace `principal` with your session resolver. It receives the `Request` and
+returns a `Principal`, or `null` for an anonymous session:
 
-The adapter must pass GET, POST, and DELETE requests through unchanged. Cookie
-and authorization headers must remain available to `principal(req)` and to
-present-mode same-origin tool calls.
+```ts
+principal: async (request) => {
+  const user = await resolveSession(request);
+  return user ? { kind: "user", subject: user.id } : null;
+},
+```
 
-Use hosted Postgres by passing `createStore({ url })` for multi-process or
+## Mount the handler directly
+
+Outside Express, mount `vendo.handler` under one base path yourself. It takes a
+standard `Request` and returns a standard `Response`. The Node adapter that
+`vendo init` generates for Express is the pattern to copy. An adapter must:
+
+- Pass every method (GET, POST, DELETE) through unchanged.
+- Preserve streaming for `POST /threads`, never buffering the response body.
+- Reconstruct the request URL from `req.originalUrl`, not `req.url`, when mounted
+  with `app.use` on a base path (Express strips the mount path from `req.url`).
+- Keep cookie and authorization headers available to `principal(request)` and to
+  present-mode same-origin tool calls.
+- Return multi-value `Set-Cookie` as a header array, not a joined string.
+
+Behind a TLS-terminating proxy, set `VENDO_BASE_URL` to your public origin. It is
+the trusted origin Vendo uses for same-origin tool calls and for marking the
+anonymous-session cookie `Secure`.
+
+## Verify
+
+Run `vendo doctor` against the running server:
+
+```bash
+npx vendo doctor
+```
+
+For an Express host it checks that the server composes `createVendo` from
+`@vendoai/vendo/server`, that the client mounts `<VendoRoot>`, and makes one live
+`/status` round trip. It reports broken until both wiring steps are done.
+
+## Persistence
+
+Pass `createStore({ url })` to use hosted Postgres for multi-process or
 serverless deployments. The default is PGlite at `.vendo/data`.
