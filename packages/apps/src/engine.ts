@@ -20,12 +20,19 @@ import {
   type VendoTheme,
 } from "@vendoai/core";
 import type { LanguageModel } from "ai";
+import {
+  IncrementalTreeParser,
+  parseModelJson,
+  type IncrementalGeneratedTree,
+} from "./incremental-tree.js";
 
 export interface GenerationDependencies {
   model: LanguageModel;
   catalog: ComponentCatalog;
   theme?: VendoTheme;
   designRules?: string;
+  /** 06-apps §5 — additive, optional partial-tree streaming seam. */
+  onPartial?: (partial: IncrementalGeneratedTree) => void | Promise<void>;
 }
 
 export interface GenerationCreateInput {
@@ -61,29 +68,12 @@ const SAFE_MACHINE_PATH = /^\/app\/[A-Za-z0-9._/-]+$/;
 const SERVER_INSTRUCTION = /\b(server|server-side|backend|api|database|persist|mutation|mutate|external|http|web app|function|secret|egress)\b/i;
 const SERVER_COMPUTED_INSTRUCTION = /\b(server-computed|computed (?:view|tree)|render(?:ed)? on the server)\b/i;
 const FULL_WEB_APP_INSTRUCTION = /\b(full web app|served web app|custom client|ui:? ?http)\b/i;
-const JSON_FENCE = /^```(?:json)?\s*([\s\S]*?)\s*```$/i;
 const reserved = new Set<string>(RESERVED_COMPONENT_NAMES);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const asJson = (value: unknown): Json => value as Json;
-
-const parseModelJson = (text: string): { value?: unknown; issues: string[] } => {
-  const trimmed = text.trim();
-  const fenced = JSON_FENCE.exec(trimmed)?.[1];
-  const source = fenced ?? trimmed;
-  const start = source.indexOf("{");
-  const end = source.lastIndexOf("}");
-  const candidate = start === -1 || end < start ? source : source.slice(start, end + 1);
-  try {
-    return { value: JSON.parse(candidate) as unknown, issues: [] };
-  } catch (error) {
-    return {
-      issues: [`model output is not valid JSON: ${error instanceof Error ? error.message : "parse failed"}`],
-    };
-  }
-};
 
 const catalogPrompt = (catalog: ComponentCatalog): string => JSON.stringify(
   catalog.map(({ name, description, propsJsonSchema, examples }) => ({
@@ -96,10 +86,22 @@ const catalogPrompt = (catalog: ComponentCatalog): string => JSON.stringify(
   2,
 );
 
-const formatContract = (deps: GenerationDependencies): string => `
-You are the Vendo app generation engine. Return JSON only, with no markdown.
+interface GenerationPromptSection {
+  id: "role" | "tree-contract" | "component-styling" | "catalog" | "theme" | "design-rules";
+  content: string;
+}
 
-TREE CONTRACT:
+const composePromptSections = (sections: readonly GenerationPromptSection[]): string => sections
+  .map(({ content }) => content.trim())
+  .filter((content) => content.length > 0)
+  .join("\n\n");
+
+const generationPromptSections = (deps: GenerationDependencies): GenerationPromptSection[] => [{
+  id: "role",
+  content: "You are the Vendo app generation engine. Return JSON only, with no markdown.",
+}, {
+  id: "tree-contract",
+  content: `TREE CONTRACT:
 - At rest the app is {name, description?, tree, components?}; never emit id, server, secrets, egress, storage, or authority.
 - tree.formatVersion is "vendo-genui/v1" and tree contains root, nodes, optional data and queries.
 - Maximums: ${TREE_MAX_NODES} nodes, ${TREE_MAX_QUERIES} queries, ${TREE_MAX_GENERATED_COMPONENTS} generated components, ${TREE_MAX_COMPONENT_SOURCE_CHARS} characters per generated component, ${TREE_MAX_TOTAL_COMPONENT_CHARS} total generated-component characters.
@@ -112,38 +114,83 @@ TREE CONTRACT:
 - Prop bindings are exactly {"$path":"/json/pointer"} and {"$state":"clientStateKey"}.
 - Queries are {path, tool, input?}; path is an RFC 6901 JSON Pointer. Actions embedded in props are {action,payload?}.
 - Query tools and action names are host tool names, or fn:<name> where name matches [A-Za-z_][A-Za-z0-9_-]*. A rung-1 tree cannot use fn: because it has no server.
-
-GENERATED COMPONENT STYLING:
+`,
+}, {
+  id: "component-styling",
+  content: `GENERATED COMPONENT STYLING:
 - The component renders in a sandbox that sits directly on the host page's background (THEME TOKENS colors.background when provided; otherwise assume a light background). Never design for an imaginary dark backdrop; give the component's own containers explicit backgrounds.
 - The host's brand tokens are available as CSS custom properties: --vendo-color-background, --vendo-color-surface, --vendo-color-text, --vendo-color-muted, --vendo-color-accent, --vendo-color-accent-text, --vendo-color-danger, --vendo-color-border, --vendo-font-family, --vendo-heading-family, --vendo-font-size, --vendo-radius-small/medium/large. Prefer them (e.g. color: "var(--vendo-color-text)") so the view matches the host brand.
+`,
+}, {
+  id: "catalog",
+  content: `HOST CATALOG (names, when-to-use guidance, props JSON schemas, and usage examples):\n${catalogPrompt(deps.catalog)}\nWhen a host catalog entry fits any part of the request, you MUST use a source:"host" node with its exact name and props schema; do not generate an equivalent component. Compose host, prewired, and generated nodes when needed.`,
+}, {
+  id: "theme",
+  content: `THEME TOKENS:\n${JSON.stringify(deps.theme ?? null, null, 2)}`,
+}, {
+  id: "design-rules",
+  content: `HOST DESIGN RULES:\n${deps.designRules?.trim() || "(none provided)"}`,
+}];
 
-HOST CATALOG (names, when-to-use guidance, props JSON schemas, and usage examples):
-${catalogPrompt(deps.catalog)}
-When a host catalog entry fits any part of the request, you MUST use a source:"host" node with its exact name and props schema; do not generate an equivalent component. Compose host, prewired, and generated nodes when needed.
-
-THEME TOKENS:
-${JSON.stringify(deps.theme ?? null, null, 2)}
-
-HOST DESIGN RULES:
-${deps.designRules?.trim() || "(none provided)"}
-`.trim();
+const formatContract = (deps: GenerationDependencies): string =>
+  composePromptSections(generationPromptSections(deps));
 
 const generateJson = async (
   deps: GenerationDependencies,
   system: string,
   prompt: string,
 ): Promise<{ value?: unknown; issues: string[] }> => {
+  const parser = deps.onPartial === undefined ? undefined : new IncrementalTreeParser();
+  let latest: IncrementalGeneratedTree | undefined;
+  let lastFlushAt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const pending: Promise<void>[] = [];
+  const flush = (): void => {
+    if (latest === undefined || deps.onPartial === undefined) return;
+    const partial = latest;
+    latest = undefined;
+    lastFlushAt = Date.now();
+    pending.push(Promise.resolve(deps.onPartial(partial)).catch(() => undefined));
+  };
+  const schedule = (partial: IncrementalGeneratedTree): void => {
+    latest = partial;
+    const remaining = Math.max(0, 100 - (Date.now() - lastFlushAt));
+    if (lastFlushAt === 0 || remaining === 0) {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      flush();
+    } else if (timer === undefined) {
+      timer = setTimeout(() => {
+        timer = undefined;
+        flush();
+      }, remaining);
+    }
+  };
+  const finishPartials = async (): Promise<void> => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    flush();
+    await Promise.all(pending);
+  };
   try {
-    const { generateText } = await import("ai");
-    const result = await generateText({
+    const { streamText } = await import("ai");
+    const result = streamText({
       model: deps.model,
       system,
       prompt,
       temperature: 0,
       maxRetries: 0,
     });
-    return parseModelJson(result.text);
+    let text = "";
+    for await (const delta of result.textStream) {
+      text += delta;
+      const partial = parser?.push(delta);
+      if (partial !== undefined) schedule(partial);
+    }
+    await finishPartials();
+    return parseModelJson(text);
   } catch (error) {
+    await finishPartials();
     return { issues: [`model generation failed: ${error instanceof Error ? error.message : "unknown error"}`] };
   }
 };

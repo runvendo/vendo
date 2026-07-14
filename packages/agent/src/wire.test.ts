@@ -176,7 +176,7 @@ describe("agent UI message wire", () => {
     const { parts } = await readSse(response);
     const part = parts.find((candidate) => candidate.type === "data-vendo-view");
 
-    expect(part).toEqual({ type: "data-vendo-view", data: view });
+    expect(part).toEqual({ type: "data-vendo-view", id: "vendo-view:app_1", data: view });
     const viewData = (part as { data: Record<string, unknown> }).data;
     expect(vendoViewPartSchema.safeParse({ type: "data-vendo-view", ...viewData }).success).toBe(true);
   });

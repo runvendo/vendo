@@ -1,5 +1,7 @@
 import {
+  VENDO_VIEW_STREAM,
   VendoError,
+  vendoViewStreamId,
   type AppDocument,
   type AppId,
   type Json,
@@ -8,6 +10,7 @@ import {
   type ToolDescriptor,
   type ToolOutcome,
   type ToolRegistry,
+  type VendoViewStreamingToolCall,
 } from "@vendoai/core";
 import type { AppDataAccess } from "./app-data.js";
 import type { AppsRuntime } from "./runtime.js";
@@ -178,7 +181,13 @@ export const createAgentTools = (
     try {
       if (call.tool === "vendo_apps_create") {
         const args = input(call.args, ["prompt"]);
-        const app = await runtime.create({ prompt: args.prompt as string }, ctx);
+        const stream = (call as VendoViewStreamingToolCall)[VENDO_VIEW_STREAM];
+        const app = await runtime.create({
+          prompt: args.prompt as string,
+          ...(stream === undefined ? {} : {
+            onView: (part) => stream({ id: vendoViewStreamId(part.appId), part }),
+          }),
+        }, ctx);
         return { status: "ok", output: app as unknown as Json };
       }
       if (call.tool === "vendo_apps_edit") {

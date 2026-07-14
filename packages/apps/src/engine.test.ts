@@ -238,6 +238,44 @@ describe("generation engine through createApps", () => {
     });
   });
 
+  it("streams node-boundary view snapshots, resolves queries during create, and finishes with the open result", async () => {
+    const streamed = [
+      '{"name":"Streaming dashboard","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["metric"]},',
+      '{"id":"metric","component":"Text","source":"prewired","props":{"text":{"$path":"/metric"}}}],"queries":[{"path":"/metric","tool":"host_metric"}]}}',
+    ];
+    const queryTools: ToolRegistry = {
+      async descriptors() { return []; },
+      async execute(call) {
+        return call.tool === "host_metric"
+          ? { status: "ok", output: "$42k" }
+          : { status: "error", error: { code: "not-found", message: "missing" } };
+      },
+    };
+    const runtime = createApps({
+      store: memoryStore(),
+      guard: guardFixture(),
+      tools: queryTools,
+      catalog: [],
+      model: scriptedLanguageModel(streamed),
+    });
+    const views: Array<{ appId: string; payload: Record<string, unknown> }> = [];
+
+    const app = await runtime.create({
+      prompt: "Build a streaming dashboard",
+      onView: (part) => views.push(part as unknown as typeof views[number]),
+    }, ctx);
+    const opened = await runtime.open(app.id, ctx);
+
+    expect(views.length).toBeGreaterThanOrEqual(3);
+    expect(views.every((view) => view.appId === app.id)).toBe(true);
+    expect(views[0]?.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(views.some((view) => (view.payload.data as { metric?: string } | undefined)?.metric === "$42k")).toBe(true);
+    expect(views.at(-1)?.payload).not.toHaveProperty("streaming");
+    expect(opened).toMatchObject({ kind: "tree" });
+    if (opened.kind !== "tree") throw new Error("Expected a tree surface");
+    expect(views.at(-1)?.payload).toEqual(opened.payload);
+  });
+
   it("repairs one invalid create and rejects two invalid attempts without persisting", async () => {
     const repairedStore = memoryStore();
     const repaired = createApps({

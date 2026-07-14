@@ -563,6 +563,96 @@ describe("09 §3 conversational turn against the real composed store", () => {
     expect(rows.records).toHaveLength(1);
     expect(rows.records[0]?.id).toBe("thr_round_trip");
   });
+
+  it("carries reconciled partial create views through the real HTTP SSE handler before open completes", async () => {
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
+    const usage = {
+      inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 0, text: 0, reasoning: 0 },
+    } as const;
+    let agentCalls = 0;
+    const model = new MockLanguageModelV3({
+      doStream: async ({ prompt }) => {
+        const serialized = JSON.stringify(prompt);
+        if (serialized.includes("TASK: CREATE_APP")) {
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "text-start", id: "generation" },
+              {
+                type: "text-delta",
+                id: "generation",
+                delta: '{"name":"SSE app","tree":{"formatVersion":"vendo-genui/v1","root":"root","nodes":[{"id":"root","component":"Stack","source":"prewired","children":["detail"]},',
+              },
+              {
+                type: "text-delta",
+                id: "generation",
+                delta: '{"id":"detail","component":"Text","source":"prewired","props":{"text":"Ready"}}]}}',
+              },
+              { type: "text-end", id: "generation" },
+              { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
+            ] }),
+          };
+        }
+
+        agentCalls += 1;
+        if (agentCalls === 1) {
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "tool-call", toolCallId: "call_create_sse", toolName: "vendo_apps_create", input: JSON.stringify({ prompt: "Build an SSE app" }) },
+              { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
+            ] }),
+          };
+        }
+        if (agentCalls === 2) {
+          const appId = serialized.match(/app_[0-9a-f-]{36}/u)?.[0];
+          if (appId === undefined) throw new Error("created app id missing from tool result");
+          return {
+            stream: simulateReadableStream({ chunks: [
+              { type: "tool-call", toolCallId: "call_open_sse", toolName: "vendo_apps_open", input: JSON.stringify({ appId }) },
+              { type: "finish", usage, finishReason: { unified: "tool-calls", raw: undefined } },
+            ] }),
+          };
+        }
+        return {
+          stream: simulateReadableStream({ chunks: [
+            { type: "text-start", id: "done" },
+            { type: "text-delta", id: "done", delta: "Opened." },
+            { type: "text-end", id: "done" },
+            { type: "finish", usage, finishReason: { unified: "stop", raw: undefined } },
+          ] }),
+        };
+      },
+    });
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-stream-turn-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const vendo = createVendo({
+      model: model as unknown as LanguageModel,
+      principal: async () => principal,
+      store,
+      policy: { rules: [{ match: { tool: "vendo_apps_*", presence: "present" }, action: "run" }] },
+    });
+
+    const response = await vendo.handler(request("POST", "/threads", {
+      threadId: "thr_stream_round_trip",
+      message: { id: "m_stream", role: "user", parts: [{ type: "text", text: "Build it" }] },
+    }));
+    const raw = await response.text();
+    const chunks = raw.split("\n")
+      .filter((line) => line.startsWith("data: {") && line !== "data: [DONE]")
+      .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>);
+    const views = chunks.filter((chunk) => chunk.type === "data-vendo-view") as Array<{
+      id: string;
+      data: { appId: string; payload: { nodes: unknown[]; streaming?: boolean } };
+    }>;
+
+    expect(response.status).toBe(200);
+    expect(views.length).toBeGreaterThanOrEqual(3);
+    expect(views[0]?.data.payload).toMatchObject({ streaming: true, nodes: [{ id: "root" }] });
+    expect(new Set(views.map((view) => view.id))).toEqual(new Set([`vendo-view:${views[0]?.data.appId}`]));
+    expect(views.at(-1)?.data.payload.nodes).toHaveLength(2);
+    expect(views.at(-1)?.data.payload.streaming).toBeUndefined();
+  });
 });
 
 describe("09 §2 apps composition", () => {
