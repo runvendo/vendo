@@ -4,11 +4,12 @@ export type VoiceState =
   | "unavailable"
   | "idle"
   | "connecting"
+  | "reconnecting"
   | "listening"
   | "speaking"
   | "error";
 
-export type VoiceSessionState = Extract<VoiceState, "connecting" | "listening" | "speaking">;
+export type VoiceSessionState = Extract<VoiceState, "connecting" | "reconnecting" | "listening" | "speaking">;
 
 export interface VoiceTranscriptEntry {
   id: string;
@@ -25,6 +26,7 @@ export interface VoiceDriverError {
 export type KnownVoiceDriverEvent =
   | { type: "state"; state: VoiceSessionState }
   | { type: "transcript"; entry: VoiceTranscriptEntry }
+  | { type: "amplitude"; level: number }
   | { type: "error"; error: VoiceDriverError };
 
 /**
@@ -38,6 +40,7 @@ export interface VoiceDriverHandlers {
 }
 
 export interface VoiceSessionHandle {
+  setMuted?(muted: boolean): void;
   stop(): void;
 }
 

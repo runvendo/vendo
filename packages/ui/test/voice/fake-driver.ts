@@ -8,6 +8,7 @@ import type {
 export class ScriptedVoiceDriver implements VoiceDriver {
   starts = 0;
   stops = 0;
+  muted: boolean[] = [];
   private handlers: VoiceDriverHandlers | null = null;
 
   start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
@@ -15,6 +16,9 @@ export class ScriptedVoiceDriver implements VoiceDriver {
     this.handlers = handlers;
     let stopped = false;
     return {
+      setMuted: (muted) => {
+        this.muted.push(muted);
+      },
       stop: () => {
         if (stopped) return;
         stopped = true;

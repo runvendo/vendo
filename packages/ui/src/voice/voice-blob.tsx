@@ -3,6 +3,7 @@ import type { VoiceBallProps, VoiceBallMode } from "fluidkit";
 
 export type VoiceBlobState =
   | "connecting"
+  | "reconnecting"
   | "listening"
   | "thinking"
   | "speaking"
@@ -28,6 +29,7 @@ let cached: VoiceBallComponent | null | undefined;
  *  reads as a lie. `thinking` is a calm working breathe (idle), not attentive. */
 const MODE: Record<VoiceBlobState, VoiceBallMode> = {
   connecting: "idle",
+  reconnecting: "idle",
   listening: "listening",
   thinking: "idle",
   speaking: "speaking",
