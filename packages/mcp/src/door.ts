@@ -20,6 +20,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { HostOAuthAdapter } from "./oauth/adapter.js";
 import type { AppsPort } from "./apps-port.js";
+import { handleFederation } from "./oauth/federation.js";
+import { RemoteAsVerifier } from "./oauth/remote-as.js";
 import { canonicalUri, OAuthServer, sameCanonicalUri } from "./oauth/server.js";
 import { SHIM_HTML } from "./shim/shim-html.gen.js";
 import {
@@ -78,6 +80,11 @@ export interface McpDoorConfig {
    * authenticated request teaches it a mount. The umbrella passes its fixed
    * mount so a composed door's card is correct before any traffic arrives. */
   mount?: string;
+  /** Trust access tokens from an external OAuth authorization server instead
+   * of serving the door's local authorization-server endpoints. */
+  remoteAs?: { issuer: string; jwksUri?: string; audience: string };
+  /** Enable the generic signed login-federation handshake at `{mount}/federate`. */
+  federation?: { secret: string };
 }
 
 export interface McpDoor {
@@ -100,6 +107,7 @@ export function createMcpDoorWithState(config: McpDoorConfig, state: McpDoorStat
 class Door {
   readonly #config: McpDoorConfig;
   readonly #oauth: OAuthServer;
+  readonly #remoteAs: RemoteAsVerifier | undefined;
   readonly #state: McpDoorState;
   /** Last mount an MCP request actually arrived at — a server-card hint only.
    * Authority never derives from remembered paths: every flow re-derives its
@@ -113,6 +121,7 @@ class Door {
     this.#config = config;
     this.#state = state;
     this.#oauth = new OAuthServer(config);
+    this.#remoteAs = config.remoteAs === undefined ? undefined : new RemoteAsVerifier(config.remoteAs);
   }
 
   async handler(req: Request): Promise<Response> {
@@ -121,10 +130,14 @@ class Door {
 
     if (path.startsWith(PRM_PREFIX)) {
       if (req.method !== "GET") return notFound();
-      return json(protectedResourceMetadata(url.origin, path.slice(PRM_PREFIX.length)));
+      return json(protectedResourceMetadata(
+        url.origin,
+        path.slice(PRM_PREFIX.length),
+        this.#config.remoteAs?.issuer,
+      ));
     }
     if (path.startsWith(AS_PREFIX)) {
-      if (req.method !== "GET") return notFound();
+      if (req.method !== "GET" || this.#config.remoteAs !== undefined) return notFound();
       return json(authorizationServerMetadata(url.origin, path.slice(AS_PREFIX.length)));
     }
     if (path === SERVER_CARD_PATH || path === SERVER_CARD_ALIAS_PATH) {
@@ -151,13 +164,20 @@ class Door {
     const endpoint = endpointFor(path);
     const mount = endpoint.mount;
     if (endpoint.kind === "authorize") {
-      return req.method === "GET" ? this.#oauth.authorize(req, resourceUri(url.origin, mount)) : notFound();
+      return req.method === "GET" && this.#config.remoteAs === undefined
+        ? this.#oauth.authorize(req, resourceUri(url.origin, mount))
+        : notFound();
     }
     if (endpoint.kind === "token") {
-      return req.method === "POST" ? this.#oauth.token(req) : notFound();
+      return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.token(req) : notFound();
     }
     if (endpoint.kind === "register") {
-      return req.method === "POST" ? this.#oauth.register(req) : notFound();
+      return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.register(req) : notFound();
+    }
+    if (endpoint.kind === "federate") {
+      return req.method === "GET" && this.#config.federation !== undefined
+        ? handleFederation(req, resourceUri(url.origin, mount), this.#config.federation.secret, this.#config.oauth)
+        : notFound();
     }
     if (!["GET", "POST", "DELETE"].includes(req.method)) return notFound();
     return this.#handleMcp(req, mount);
@@ -167,7 +187,9 @@ class Door {
     const url = new URL(req.url);
     const resource = resourceUri(url.origin, mount);
     await this.#sweepIdleSessions();
-    const auth = await this.#oauth.authenticate(req);
+    const auth = this.#remoteAs === undefined
+      ? await this.#oauth.authenticate(req)
+      : await this.#remoteAs.authenticate(req);
     if (!auth || !sameCanonicalUri(auth.grant.resource, resource)) {
       return unauthorized(url.origin, mount, req.headers.has("authorization"));
     }
@@ -477,11 +499,12 @@ class Door {
   }
 }
 
-function endpointFor(path: string): { kind: "mcp" | "authorize" | "token" | "register"; mount: string } {
+function endpointFor(path: string): { kind: "mcp" | "authorize" | "token" | "register" | "federate"; mount: string } {
   for (const [suffix, kind] of [
     ["/authorize", "authorize"],
     ["/token", "token"],
     ["/register", "register"],
+    ["/federate", "federate"],
   ] as const) {
     if (path.endsWith(suffix)) return { kind, mount: path.slice(0, -suffix.length) };
   }
@@ -501,11 +524,11 @@ function protectedResourceMetadataUrl(origin: string, mount: string): string {
   return canonicalUri(origin) + PRM_PREFIX + normalizeMount(mount);
 }
 
-function protectedResourceMetadata(origin: string, mount: string) {
+function protectedResourceMetadata(origin: string, mount: string, remoteIssuer?: string) {
   const resource = resourceUri(origin, mount);
   return {
     resource,
-    authorization_servers: [resource],
+    authorization_servers: [remoteIssuer ?? resource],
     bearer_methods_supported: ["header"],
   };
 }
