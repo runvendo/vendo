@@ -25,6 +25,8 @@ export interface ThreadRow {
   id: ThreadId;
   subject: string;
   messages: Json[];
+  /** Precomputed listing title (03 §5); lets `list` skip loading the messages array. */
+  title?: string;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
 }

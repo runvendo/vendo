@@ -10,6 +10,9 @@ export interface Thread {
   id: ThreadId;
   subject: string;
   messages: UIMessage[];
+  /** Precomputed listing title. Persisted beside the thread so `list` need not load the
+   *  full messages array to derive it; absent on legacy rows (derived from messages then). */
+  title?: string;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
 }
@@ -34,22 +37,30 @@ function threadFromRecord(record: VendoRecord): Thread | null {
   if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") return null;
   const data = record.data;
   if (typeof data !== "object" || data === null) return null;
-  const candidate = data as { subject?: unknown; messages?: unknown };
+  const candidate = data as { subject?: unknown; messages?: unknown; title?: unknown };
   if (typeof candidate.subject !== "string" || !Array.isArray(candidate.messages)) return null;
   return {
     id: record.id,
     subject: candidate.subject,
     messages: candidate.messages as UIMessage[],
+    ...(typeof candidate.title === "string" ? { title: candidate.title } : {}),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
 }
 
 function titleFor(thread: Thread): string {
+  // A persisted title short-circuits the message scan (and the listing skips loading the
+  // messages array entirely once a title exists — routing.ts).
+  if (typeof thread.title === "string" && thread.title.trim()) return thread.title.slice(0, 80);
+  return deriveTitle(thread.messages);
+}
+
+function deriveTitle(messages: UIMessage[]): string {
   // Messages come from a Json array (parseThreadData accepts any shape), so a
   // message may lack an iterable `parts` or carry non-text parts — tolerate both,
   // skipping rather than throwing.
-  for (const message of thread.messages) {
+  for (const message of messages) {
     if (message === null || typeof message !== "object") continue;
     if ((message as { role?: unknown }).role !== "user") continue;
     const parts = (message as { parts?: unknown }).parts;
@@ -168,6 +179,9 @@ export class ThreadRepository {
       // store seam is typed `Json` and rejects `undefined` values, so serialize
       // to plain JSON — dropping absent-anyway keys — before it crosses.
       messages: toPlainJson(messages),
+      // Precompute the listing title from the derivation (never a stale prior title),
+      // so `list` can read it back without loading the messages array.
+      title: deriveTitle(messages),
       updatedAt: new Date().toISOString(),
     };
     if (this.usesMemory(ctx)) {

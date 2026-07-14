@@ -102,9 +102,13 @@ jobs:
             fi
             repos+=("$repo")
           done
-          pnpm corpus run "${repos[@]}" --layer "$layer" --json || true
+          # No `|| true`: a sweep failure (regression, crash) must fail this job
+          # loudly. The scorecard/trend/upload steps below run on `always()` so
+          # the evidence is still published before the job is marked red.
+          pnpm corpus run "${repos[@]}" --layer "$layer" --json
 
       - name: Publish scorecard to job summary
+        if: always()
         run: |
           if [ -f corpus/.repos/.logs/scorecard.md ]; then
             cat corpus/.repos/.logs/scorecard.md >> "$GITHUB_STEP_SUMMARY"
@@ -113,12 +117,14 @@ jobs:
           fi
 
       - name: Append trend to job summary
+        if: always()
         run: |
           node corpus/scripts/corpus-trend.mjs \
             previous-scorecard/scorecard.json \
             corpus/.repos/.logs/scorecard.json >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Annotate regressions
+        if: always()
         run: |
           node corpus/scripts/corpus-trend.mjs \
             previous-scorecard/scorecard.json \

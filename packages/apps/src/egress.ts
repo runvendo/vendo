@@ -11,7 +11,8 @@ export type SecretHandleMap = Readonly<Record<string, string>> | ReadonlyMap<str
 const entries = (handleMap: SecretHandleMap): Array<[string, string]> =>
   handleMap instanceof Map ? [...handleMap.entries()] : Object.entries(handleMap);
 
-const hostAllowed = (hostname: string, allowlist: readonly string[]): boolean => {
+/** 06-apps §4.3 — exact or `*.`-wildcard host match against a declared egress allowlist. */
+export const hostAllowed = (hostname: string, allowlist: readonly string[]): boolean => {
   const host = hostname.toLowerCase();
   return allowlist.some((entry) => {
     const allowed = entry.toLowerCase();
