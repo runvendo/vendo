@@ -21,6 +21,7 @@ import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } fro
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
@@ -569,6 +570,45 @@ describe("06-apps §9 in-client venue over the wire", () => {
 });
 
 describe("09 §2 composition", () => {
+  it("audits one structured warning when present auth cannot be forwarded", async () => {
+    vi.stubEnv("VENDO_BASE_URL", "");
+    const { vendo } = await setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const target = input instanceof Request ? input : new Request(input, init);
+      return vendo.handler(target);
+    }));
+
+    // Teach the zero-config route origin, then exercise the real present-forward
+    // branch twice with inbound credentials. The learned origin is deliberately
+    // untrusted, so both calls forward no auth but only one warning is recorded.
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    for (let index = 0; index < 2; index += 1) {
+      await vendo.handler(request("POST", "/doctor/present", {}, {
+        authorization: "Bearer vendo-doctor-present",
+        cookie: "vendo_doctor_present=1",
+      }));
+    }
+
+    const events = await vendo.guard.audit.query({ principal });
+    const warnings = events.events.filter((event) =>
+      event.detail !== undefined
+      && typeof event.detail === "object"
+      && event.detail !== null
+      && "warning" in event.detail);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      kind: "tool-call",
+      presence: "present",
+      detail: {
+        warning: {
+          code: "present-credentials-not-forwarded",
+          reason: "untrusted-host-origin",
+          action: "Set VENDO_BASE_URL to the host origin and restart the server.",
+        },
+      },
+    });
+  });
+
   it("adds app capability tools and executes them only through the guard binding", async () => {
     const { vendo } = await setup();
     expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
