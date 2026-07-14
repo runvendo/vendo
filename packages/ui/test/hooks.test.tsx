@@ -219,4 +219,62 @@ describe("headless hooks", () => {
     expect(typeof result.current.addToolApprovalResponse).toBe("function");
     expect(typeof result.current.stop).toBe("function");
   });
+
+  it("adopts a server-minted default thread id for the next user turn", async () => {
+    const { result } = renderHook(() => useVendoThread(), { wrapper });
+
+    await act(() => result.current.sendMessage({ text: "My name is Farouk." }));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    await act(() => result.current.sendMessage({ text: "What is my name?" }));
+    await waitFor(() => {
+      expect(wire.requests.filter(request => request.method === "POST" && request.path === "/threads"))
+        .toHaveLength(2);
+      expect(result.current.status).toBe("ready");
+    });
+
+    const turns = wire.requests.filter(request => request.method === "POST" && request.path === "/threads");
+    expect(turns[0]?.body).toMatchObject({
+      message: { role: "user", parts: [{ type: "text", text: "My name is Farouk." }] },
+    });
+    expect(turns[0]?.body).not.toHaveProperty("threadId");
+    expect(turns[1]?.body).toMatchObject({
+      threadId: "thr_minted",
+      message: { role: "user", parts: [{ type: "text", text: "What is my name?" }] },
+    });
+  });
+
+  it("uses the adopted default thread id for approval auto-resume", async () => {
+    const { result } = renderHook(() => useVendoThread(), { wrapper });
+
+    await act(() => result.current.sendMessage({ text: "Send the email" }));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    const nativeApproval = result.current.approvals.find(part => part.type === "dynamic-tool");
+    expect(nativeApproval).toMatchObject({ state: "approval-requested" });
+
+    await act(() => result.current.addToolApprovalResponse({
+      id: (nativeApproval as { approval: { id: string } }).approval.id,
+      approved: true,
+    }));
+    await waitFor(() => {
+      expect(wire.requests.filter(request => request.method === "POST" && request.path === "/threads"))
+        .toHaveLength(2);
+      expect(result.current.status).toBe("ready");
+    });
+
+    const resume = wire.requests.filter(
+      request => request.method === "POST" && request.path === "/threads",
+    )[1];
+    expect(resume?.body).toMatchObject({
+      threadId: "thr_minted",
+      message: {
+        role: "assistant",
+      },
+    });
+    const resumeParts = (resume?.body as { message?: { parts?: unknown[] } } | undefined)?.message?.parts;
+    expect(resumeParts).toContainEqual(expect.objectContaining({
+      type: "dynamic-tool",
+      state: "approval-responded",
+      approval: { id: "apr_stream", approved: true },
+    }));
+  });
 });

@@ -68,6 +68,7 @@ describe("agent UI message wire", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    expect(response.headers.get("x-vendo-thread-id")).toBe("thr_minimal");
     const { rawFrames } = await readSse(response);
     expect(normalizeMessageIds(rawFrames)).toEqual([
       'data: {"type":"start","messageId":"<message-id>"}\n\n',

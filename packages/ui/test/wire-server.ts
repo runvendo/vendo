@@ -192,6 +192,7 @@ export async function createWireServer() {
 
       if (method === "POST" && url.pathname === "/threads") {
         const input = parsedBody as { threadId?: string; message: UIMessage };
+        const threadId = input.threadId ?? "thr_minted";
         const chunks = createUIMessageStream<UIMessage>({
           originalMessages: [input.message],
           generateId: () => "msg_assistant",
@@ -214,7 +215,9 @@ export async function createWireServer() {
             writer.write({ type: "text-end", id: "text_1" });
           },
         });
-        await sendFetchResponse(createUIMessageStreamResponse({ stream: chunks }), response);
+        const streamResponse = createUIMessageStreamResponse({ stream: chunks });
+        streamResponse.headers.set("x-vendo-thread-id", threadId);
+        await sendFetchResponse(streamResponse, response);
         return;
       }
 

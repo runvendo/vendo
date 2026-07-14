@@ -22,6 +22,8 @@ import { createRunner } from "./runner.js";
 import { ThreadRepository, type Thread, type ThreadSummary } from "./threads.js";
 import { buildAgentTools } from "./tools.js";
 
+const THREAD_ID_HEADER = "x-vendo-thread-id";
+
 interface AgentConfig {
   model: LanguageModel;
   tools: ToolRegistry;
@@ -160,7 +162,12 @@ export function createAgent(config: AgentConfig): VendoAgent {
         },
         onError: () => "An error occurred while generating the response.",
       });
-      return createUIMessageStreamResponse({ stream });
+      const response = createUIMessageStreamResponse({ stream });
+      // ENG-211: a caller may begin without an id, in which case resolve()
+      // mints one. Return the effective id on every turn so fetch clients can
+      // adopt it without changing the ai-SDK SSE part contract.
+      response.headers.set(THREAD_ID_HEADER, thread.id);
+      return response;
     },
     threads: {
       get: (id, ctx) => threads.get(id, ctx),
