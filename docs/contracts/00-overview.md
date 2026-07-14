@@ -15,10 +15,11 @@ Sources of truth: the "Open-Source Full Stack Agentic Interface" Notion page and
 | `@vendoai/apps` | the app artifact + the engine that builds and runs them | [06-apps.md](06-apps.md) |
 | `@vendoai/automations` | apps that run on triggers while the user is away | [07-automations.md](07-automations.md) |
 | `@vendoai/ui` | headless hooks + optional chrome, every surface | [08-ui.md](08-ui.md) |
-| `@vendoai/mcp` | the door: serve the product's tools to outside agents | [10-mcp.md](10-mcp.md) |
 | `@vendoai/vendo` | the umbrella: default composition, wire routes, CLI | [09-vendo.md](09-vendo.md) |
+| `@vendoai/mcp` | the door: serve the host's tools to outside agents over MCP (OAuth + tool serving + MCP Apps) | [10-mcp.md](10-mcp.md) |
 
-Deferred entirely — no stub packages, no reserved exports: `meter`, `memory`, `knowledge`, `evals`. `@vendoai/telemetry` stays as-is (orthogonal to the campaign).
+<!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door, listing `mcp` as deferred. It is now published `@vendoai/mcp` v0.3.0, an umbrella dependency re-exported from `@vendoai/vendo`, contract 10-mcp.md. Moved out of the deferred list below and added to the table above. -->
+Deferred entirely — no stub packages, no reserved exports: `meter`, `memory`, `knowledge`, `evals`. `@vendoai/telemetry` stays as-is (orthogonal to the campaign). `@vendoai/mcp` (the door) shipped post-freeze — see [10-mcp.md](10-mcp.md).
 
 ## The dependency rule
 
