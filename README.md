@@ -55,8 +55,9 @@ tool proxy.
 
 ## Install flow
 
-`vendo init` scans the host app, interviews you about risk labels, theme, and
-remix candidates, then proposes the handler route and `<VendoRoot>` wiring.
+`vendo init` scans the host app, then asks about the model import, product brief,
+critical-tool risk labels, and whether to open the MCP door. It proposes the
+handler route and `<VendoRoot>` wiring while extracting the theme automatically.
 Every code change is permission-gated and shown as a diff. It writes the
 reviewable `.vendo/` directory and leaves the PGlite data directory ignored.
 
