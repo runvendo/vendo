@@ -25,7 +25,7 @@ Options:
   --model-import <specifier> Init only: module exporting the host's ai-SDK model
   --brief <text>             Init only: product brief used for non-interactive setup
   --url <url>                Doctor/server-json: mounted wire base or public MCP URL
-  --strict                   Sync only: exit 2 on breaking changes
+  --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
   --version                  Print the version
 `;
 
@@ -70,7 +70,11 @@ export async function main(argv: string[]): Promise<number> {
     return runDoctor({ targetDir: target(args), url: option(args, "--url") });
   }
   if (command === "sync") {
-    return runSync({ targetDir: target(args), strict: args.includes("--strict") });
+    return runSync({
+      targetDir: target(args),
+      strict: args.includes("--strict"),
+      url: option(args, "--url"),
+    });
   }
   console.error(`Unknown command: ${command}\n\n${HELP}`);
   return 1;
