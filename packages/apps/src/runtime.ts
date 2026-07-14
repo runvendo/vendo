@@ -39,6 +39,7 @@ import { createAppOpener } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
+import { createRunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter } from "./sandbox.js";
 import type { SandboxMachine } from "./sandbox.js";
 import type { IpResolver } from "./ssrf.js";
@@ -150,10 +151,14 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   const data = createAppData(config.store);
   const history = createAppHistory(config.store);
   const tokenSecret = globalThis.crypto.getRandomValues(new Uint8Array(32));
+  // ENG-251 — one anti-replay gate shared by the machine cache (which burns a
+  // run's jti on teardown) and the proxy (which rejects a burned jti).
+  const consumedRunTokens = createRunTokenGate();
   const machines = createMachineSessions({
     sandbox: config.sandbox,
     proxyUrl: config.proxyUrl,
     tokenSecret,
+    consumedRunTokens,
   });
 
   const owned = async (appId: AppId, subject: string): Promise<AppDocument | null> => {
@@ -187,6 +192,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     ...(config.secrets === undefined ? {} : { secrets: config.secrets }),
     ...(config.egressTransport?.fetch === undefined ? {} : { fetch: config.egressTransport.fetch }),
     ...(config.egressTransport?.resolveIp === undefined ? {} : { resolveIp: config.egressTransport.resolveIp }),
+    consumedRunTokens,
   });
 
   const failedEdit = (

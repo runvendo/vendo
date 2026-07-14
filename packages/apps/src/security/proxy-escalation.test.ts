@@ -47,7 +47,7 @@ const spyData = (): { data: AppDataAccess; state: Array<{ appId: AppId; subject:
 };
 
 const mintFor = (claims: { appId: string; subject: string; presence: "present" | "away" }): Promise<string> =>
-  mintRunToken(SECRET, { ...claims, runId: "run_x", expiresAt: future() });
+  mintRunToken(SECRET, { ...claims, runId: "run_x", expiresAt: future(), jti: "jti_x" });
 
 describe("proxy privilege escalation", () => {
   it("derives ctx from the signed token and IGNORES appId/subject/presence in the body", async () => {
@@ -99,7 +99,7 @@ describe("proxy privilege escalation", () => {
     }));
     expect(noBearer.status).toBe(401);
 
-    const forged = await mintRunToken("WRONG-secret", { appId: "app_A", subject: "sub_A", runId: "run_x", presence: "present", expiresAt: future() });
+    const forged = await mintRunToken("WRONG-secret", { appId: "app_A", subject: "sub_A", runId: "run_x", presence: "present", expiresAt: future(), jti: "jti_x" });
     const badToken = await proxy.handler(new Request("https://proxy.test/tools/host_x", {
       method: "POST",
       headers: { authorization: `Bearer ${forged}`, "content-type": "application/json" },
