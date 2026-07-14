@@ -21,3 +21,7 @@ apps/*/.vendo/data/
 
 # wave-6 orchestration lane briefs/signals (never committed)
 .lanes/
+
+# type-surface test fixtures (packages/vendo/src/type-surface.test.ts) — cleaned
+# in afterEach; ignored so an interrupted run can never dirty a commit.
+packages/vendo/.type-surface.*.ts

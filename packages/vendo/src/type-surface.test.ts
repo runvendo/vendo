@@ -15,6 +15,10 @@ import { afterEach, describe, expect, it } from "vitest";
 // missing re-export makes tsc emit TS2305 and exit non-zero, which
 // execFileSync surfaces as a throw. Removing any single re-export from
 // src/index.ts turns this suite red (proven by mutation in the wave report).
+// Deliberately checks the SOURCE entry, not the published `@vendoai/vendo`
+// surface: source is deterministic against the working tree, while dist would
+// silently test stale build output; exports-map/dist breakage is a different
+// failure class, covered by the clean-room publish verification at release.
 
 const require = createRequire(import.meta.url);
 const tsc = require.resolve("typescript/bin/tsc");
