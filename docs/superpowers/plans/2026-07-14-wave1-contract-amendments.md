@@ -70,9 +70,9 @@
 **Files:**
 - Modify: `docs/contracts/03-agent.md`
 
-- [ ] **Step 1:** Fix the header dependency line: `ai` peer is `>=6.0.0 <7`, not "≥ 5" (AGENT-5/XCUT-6).
-- [ ] **Step 2:** Add the dated Amendments section recording the fix (manifests always shipped the v6 train; doc lagged).
-- [ ] **Step 3:** Re-read the doc; commit: `docs(contracts): amend 03-agent — ai peer range >=6 <7 (AGENT-5)`.
+- [x] **Step 1:** Fix the header dependency line: `ai` peer is `>=6.0.0 <7`, not "≥ 5" (AGENT-5/XCUT-6).
+- [x] **Step 2:** Add the dated Amendments section recording the fix (manifests always shipped the v6 train; doc lagged).
+- [x] **Step 3:** Re-read the doc; commit: `docs(contracts): amend 03-agent — ai peer range >=6 <7 (AGENT-5)`.
 
 ### Task 6: Cross-check and verify
 
