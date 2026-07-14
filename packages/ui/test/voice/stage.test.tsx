@@ -6,6 +6,12 @@ import { VendoProvider } from "../../src/index.js";
 import { VendoStage } from "../../src/voice/index.js";
 import { ScriptedVoiceDriver } from "./fake-driver.js";
 
+// This suite exercises VendoStage's behavior (controls, announced status,
+// ordered transcript) — not fluidkit's animated presence, which is decorative
+// and `aria-hidden`. fluidkit is stubbed package-wide via the `resolve.alias`
+// in ../../vitest.config.ts, so the real `VoiceBall` (and its `motion`
+// frameloop teardown hazard) never loads in any ui test.
+
 describe("VendoStage", () => {
   it("controls the session and renders announced state and ordered transcript", () => {
     const driver = new ScriptedVoiceDriver();
