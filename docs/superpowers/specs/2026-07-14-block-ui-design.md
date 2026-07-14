@@ -109,6 +109,14 @@ because thread core underlies everything. Parent (this session) owns merges:
   blob, transcript drawer, view feed.
 - Error/timeout states (fixes the infinite "connecting" with no feedback).
 - Stage layout integration so it doesn't read bolted-on.
+- **Live pipeline (amendment 2026-07-14, ENG-319)**: voice v1 includes the
+  agent-package realtime tool-call bridge + demo wiring — a real voice agent
+  acts through Vendo mid-call, minting views into the feed and raising real
+  approvals into the consent bar. The realtime channel today doesn't carry
+  those events (additive driver event vocabulary required). Agent-package
+  file touches are flagged to the parent before dispatch (Child 1 works in
+  agent.ts/threads.ts concurrently). The "voice session with consent" GIF
+  must show a live agent acting, not a scripted harness.
 
 ### Parent (this session)
 
@@ -151,3 +159,7 @@ hosts · overlay memory = persist across reopen · composer = type + queue +
 edit + regenerate · Maple accent = neutral bubbles AND fix theme.json ·
 structure = 3 children + parent · Linear = issues only · send = queue · GIFs =
 core set ~14.
+
+Amendments (2026-07-14, post-approval): AGENT-8/AGENT-9 accepted from
+block-foundations as ENG-309/ENG-310 (thread-core child owns them) · voice v1
+includes the live realtime tool-call pipeline, owned by Child 3 (ENG-319).
