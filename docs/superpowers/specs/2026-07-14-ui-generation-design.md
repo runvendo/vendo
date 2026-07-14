@@ -20,9 +20,12 @@ automation-produced UI, voice-driven UI).
 - **Fidelity:** token-level match guaranteed (host colors, fonts, radii,
   spacing), host-component integration working (model composes the host's own
   registered components). A designer squinting can't tell.
-- **External gate:** the 5 live-verified corpus repos each render generated UI
-  that looks native — screenshot harness output with **Yousef's visual
-  sign-off per repo**.
+- **External gate:** 5 corpus repos each render generated UI that looks
+  native — screenshot harness output with **Yousef's visual sign-off per
+  repo**. (Amended 2026-07-14: only 4 were bootable; gate = umami, skateshop,
+  papermark + one extraction-project flagship fixture (Rallly/Twenty/NextCRM/
+  teable, pick pending the extraction session's recommendation) as the 5th.
+  The synthetic express-host is out of the sign-off montage.)
 - **Demo GIFs (all required):** streaming first-paint beat on Maple + Cadence
   with visible timer; host-component beat (model picks e.g. MapleSparkline
   from the catalog); remix/edit beat with no blank-iframe regressions; corpus
