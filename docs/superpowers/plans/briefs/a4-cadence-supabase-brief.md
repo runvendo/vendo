@@ -22,7 +22,9 @@ Supabase Auth:
 
 1. **Supabase Auth via Supabase local** (`supabase start` CLI stack) in dev
    and CI: real email/password login in Cadence's brand, seeded demo users
-   (at least two). Document the local setup in the README; CI must either run
+   (at least two). The login must be scriptable — seeded email/password
+   usable by Playwright, no captcha or magic-link-only flow — the parent's
+   GIF wave drives it headlessly. Document the local setup in the README; CI must either run
    Supabase local or skip the Supabase-dependent suites cleanly — pick
    whichever the repo's CI can sustain and say which you chose in the PR.
 2. **Principal resolver reads the real Supabase session** (subject = Supabase

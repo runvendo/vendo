@@ -23,7 +23,9 @@ Auth.js authentication:
 1. **Auth.js (NextAuth) with the credentials provider**: real login page in
    Maple's brand, seeded demo users (at least two, so per-user isolation is
    demonstrable), real session tokens. Keep the demo bootable with zero
-   external services.
+   external services. The login must be scriptable — seeded email/password
+   usable by Playwright, no captcha or magic-link-only flow — the parent's
+   GIF wave drives it headlessly.
 2. **Principal resolver reads the real session** — `resolveDemoPrincipal`
    becomes a session-backed resolver (subject = the Auth.js user id). No more
    fixed principal.
