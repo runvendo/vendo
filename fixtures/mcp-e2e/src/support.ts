@@ -3,8 +3,10 @@ import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { expect } from "vitest";
-import type { Stack } from "./harness.js";
+
+interface EndpointStack {
+  endpoint: string;
+}
 
 export const REDIRECT_URI = "http://127.0.0.1/callback";
 export const VERIFIER = "mcp-e2e-verifier-with-enough-entropy-1234567890-abcdefghijklmnop";
@@ -71,7 +73,7 @@ export interface ConnectedClient {
   close(): Promise<void>;
 }
 
-export async function connectWithSdk(stack: Stack): Promise<ConnectedClient> {
+export async function connectWithSdk(stack: EndpointStack): Promise<ConnectedClient> {
   const provider = new TestOAuthProvider();
   const requests: URL[] = [];
   const trackedFetch: typeof fetch = async (input, init) => {
@@ -83,14 +85,21 @@ export async function connectWithSdk(stack: Stack): Promise<ConnectedClient> {
     fetch: trackedFetch,
   });
   const firstClient = new Client({ name: "vendo-mcp-e2e", version: "1.0.0" });
-  await expect(firstClient.connect(firstTransport)).rejects.toBeInstanceOf(UnauthorizedError);
+  try {
+    await firstClient.connect(firstTransport);
+    throw new Error("MCP SDK connected without the required OAuth challenge");
+  } catch (error) {
+    if (!(error instanceof UnauthorizedError)) throw error;
+  }
   const authorizationUrl = provider.authorizationUrl;
   if (!authorizationUrl) throw new Error("SDK did not request an OAuth redirect");
   let authorization = await fetch(authorizationUrl, { redirect: "manual" });
   if (authorization.status === 200 && authorization.headers.get("content-type")?.includes("text/html")) {
     authorization = await submitPrebuiltConsent(authorization);
   }
-  expect(authorization.status).toBe(302);
+  if (authorization.status !== 302) {
+    throw new Error(`Authorization did not redirect (${authorization.status})`);
+  }
   const location = authorization.headers.get("location");
   if (!location) throw new Error("Authorization did not return a redirect location");
   const code = new URL(location).searchParams.get("code");
@@ -142,7 +151,7 @@ function htmlAttribute(html: string, element: string, attribute: string): string
   return match[1];
 }
 
-export async function registerClient(stack: Stack, redirectUris = [REDIRECT_URI]) {
+export async function registerClient(stack: EndpointStack, redirectUris = [REDIRECT_URI]) {
   const response = await fetch(`${stack.endpoint}/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -152,7 +161,7 @@ export async function registerClient(stack: Stack, redirectUris = [REDIRECT_URI]
 }
 
 export async function authorizeCode(
-  stack: Stack,
+  stack: EndpointStack,
   clientId: string,
   values: Record<string, string> = {},
 ): Promise<Response> {
@@ -175,7 +184,7 @@ export async function authorizeCode(
 }
 
 export async function exchangeCode(
-  stack: Stack,
+  stack: EndpointStack,
   values: Record<string, string>,
 ): Promise<Response> {
   return fetch(`${stack.endpoint}/token`, {
@@ -190,7 +199,7 @@ export async function exchangeCode(
   });
 }
 
-export async function issueTokens(stack: Stack, clientId: string) {
+export async function issueTokens(stack: EndpointStack, clientId: string) {
   const authorization = await authorizeCode(stack, clientId);
   const location = authorization.headers.get("location");
   if (!location) throw new Error("Authorization response omitted Location");
@@ -214,7 +223,7 @@ export async function issueTokens(stack: Stack, clientId: string) {
 }
 
 export async function refreshToken(
-  stack: Stack,
+  stack: EndpointStack,
   refreshTokenValue: string,
   clientId: string,
 ): Promise<Response> {

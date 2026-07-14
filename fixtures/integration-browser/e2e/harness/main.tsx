@@ -9,6 +9,7 @@
 import { createVendoClient, useApps, VendoRoot } from "@vendoai/vendo/react";
 import { ActivityPanel, VendoThread } from "@vendoai/ui/chrome";
 import { createRoot } from "react-dom/client";
+import { McpAppsHost } from "./mcp-host.tsx";
 
 const params = new URLSearchParams(window.location.search);
 const TEST_USER = params.get("user") ?? "user_ada";
@@ -59,4 +60,4 @@ function Page() {
 
 const root = document.getElementById("root");
 if (!root) throw new Error("browser harness root is missing");
-createRoot(root).render(<Page />);
+createRoot(root).render(window.location.pathname === "/mcp-apps" ? <McpAppsHost /> : <Page />);

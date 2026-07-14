@@ -92,6 +92,8 @@ export interface Stack {
   revoked: Set<string>;
   autoSubject?: string;
   oauthMode: OAuthMode;
+  /** Successful resources/read URIs observed at the real HTTP door. */
+  resourceReads: string[];
   origin: string;
   endpoint: string;
   close(): Promise<void>;
@@ -197,8 +199,9 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     call: (appId, ref, args, ctx) => apps.call(appId, ref, args, ctx),
   };
   const door = createMcpDoor({ tools: bound, guard, oauth, store, apps: appsPort });
+  const resourceReads: string[] = [];
   const httpServer = createServer((req, res) => {
-    void forwardToDoor(req, res, door.handler);
+    void forwardToDoor(req, res, door.handler, (uri) => resourceReads.push(uri));
   });
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
@@ -221,6 +224,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     set autoSubject(value) { control.autoSubject = value; },
     get oauthMode() { return control.oauthMode; },
     set oauthMode(value) { control.oauthMode = value; },
+    resourceReads,
     origin,
     endpoint: `${origin}${MCP_MOUNT}`,
     async sql(query, params) {
@@ -240,6 +244,7 @@ async function forwardToDoor(
   req: IncomingMessage,
   res: ServerResponse,
   handler: (request: Request) => Promise<Response>,
+  onResourceRead: (uri: string) => void,
 ): Promise<void> {
   try {
     const chunks: Buffer[] = [];
@@ -251,12 +256,27 @@ async function forwardToDoor(
       headers.set(name, Array.isArray(value) ? value.join(", ") : value);
     }
     const body = chunks.length === 0 ? undefined : Buffer.concat(chunks);
+    let resourceUri: string | undefined;
+    if (body !== undefined) {
+      try {
+        const parsed = JSON.parse(body.toString("utf8")) as unknown;
+        const messages = Array.isArray(parsed) ? parsed : [parsed];
+        const read = messages.find((message) => {
+          if (typeof message !== "object" || message === null) return false;
+          return (message as { method?: unknown }).method === "resources/read";
+        }) as { params?: { uri?: unknown } } | undefined;
+        if (typeof read?.params?.uri === "string") resourceUri = read.params.uri;
+      } catch {
+        // OAuth form posts and transport GETs are intentionally ignored.
+      }
+    }
     const request = new Request(`http://${host}${req.url ?? "/"}`, {
       method: req.method,
       headers,
       ...(body === undefined ? {} : { body }),
     });
     const response = await handler(request);
+    if (response.ok && resourceUri !== undefined) onResourceRead(resourceUri);
     res.statusCode = response.status;
     response.headers.forEach((value, name) => res.setHeader(name, value));
     res.end(Buffer.from(await response.arrayBuffer()));
