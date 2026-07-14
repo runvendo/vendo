@@ -70,7 +70,7 @@ Normative:
 - **Audience binding (RFC 8707)**: the `resource` parameter is accepted and enforced on both authorization and token requests; access tokens are bound to `(subject, clientId, scopes, resource)` and rejected when the resource is not the door's canonical URI — token-passthrough is structurally impossible.
 - **Challenge**: every `401` carries `WWW-Authenticate` naming the protected-resource metadata URL (RFC 9728 §5.1) — this is the discovery entry point compliant clients start from.
 - **Clients**: HTTPS-URL client ids (Client ID Metadata Documents) are accepted and advertised; RFC 7591 dynamic registration stays as the fallback (registered clients live in door state).
-- **Tokens**: opaque (never host-verifiable JWTs), checked on every request, refresh rotates, PKCE required, redirect URIs exact-match. Lifetimes: access 1h, refresh 30d (per-request `principal()` resolution is the real kill switch).
+- **Tokens**: opaque (never host-verifiable JWTs), checked on every request, refresh rotates, PKCE required, redirect URIs exact-match. Authorization-code consumption and refresh rotation use the store's database-level atomic claim; an adapter without that additive capability fails closed at the token endpoint. Lifetimes: access 1h, refresh 30d (per-request `principal()` resolution is the real kill switch).
 - **Audit**: token issuance and revocation are `AuditEvent`s (`kind: "door-auth"`, additive variant per 01 §15) — the SIEM export (05 §1) sees the door's auth lifecycle, same as everything else.
 - Door state lands in `vendo_mcp_clients` / `vendo_mcp_grants` (additive to the 02 §2 table map; typed helpers are block-internal, same status as guard's).
 

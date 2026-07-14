@@ -57,11 +57,10 @@ package-root API remains the frozen `createMcpDoor(config)` surface.
   straight to your adapter. **Escape it** before rendering it on a consent screen;
   a client can register a name like `"Google Drive (official)"` for phishing or
   inject markup for XSS on your page. The door deliberately does no rendering.
-- **Single-secret redemption is serialized in-process.** Concurrent redemptions of
-  the same authorization code or refresh token are locked within one process, so a
-  refresh cannot fork. A **multi-instance** deployment (several door processes
-  behind a load balancer) needs sticky routing by token, or a shared-store atomic
-  claim, to keep that guarantee — the store exposes no atomic claim today.
+- **Single-secret redemption is claimed in the database.** Authorization codes and
+  refresh tokens use the store's atomic compare-and-claim capability, so one
+  redeemer wins across multiple door processes sharing Postgres. A custom
+  `StoreAdapter` that omits atomic claims fails closed at the token endpoint.
 - **CIMD fetch egress.** The door resolves a Client ID Metadata Document URL server-side
   and rejects private/loopback/link-local resolutions (best-effort, via `node:dns`
   when present). On runtimes without a resolver, or for defense in depth, enforce
