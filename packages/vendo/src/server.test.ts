@@ -9,6 +9,7 @@ import {
   type Principal,
   type RunContext,
 } from "@vendoai/core";
+import type { SandboxAdapter } from "@vendoai/apps";
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -169,6 +170,25 @@ describe("09 §3 public wire", () => {
     }
   });
 
+  it("does not read history for an unowned app on GET or undo", async () => {
+    const { vendo } = await setup();
+    stubRouteBlocks(vendo);
+    vi.mocked(vendo.apps.get).mockResolvedValue(null);
+    const history = vi.mocked(vendo.apps.history);
+
+    for (const [method, body] of [
+      ["GET", undefined],
+      ["POST", { op: "undo" }],
+    ] as const) {
+      const response = await vendo.handler(request(method, "/apps/app_other/history", body));
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({
+        error: { code: "not-found", message: "app not found: app_other" },
+      });
+    }
+    expect(history).not.toHaveBeenCalled();
+  });
+
   it("enforces JSON CSRF on mutations with only the three contracted exceptions", async () => {
     const { vendo, resolver } = await setup();
     stubRouteBlocks(vendo);
@@ -206,6 +226,9 @@ describe("09 §3 public wire", () => {
 
   it("requires tick bearer auth and returns the doctor status shape", async () => {
     vi.stubEnv("VENDO_TICK_SECRET", "right");
+    vi.stubEnv("E2B_API_KEY", "");
+    vi.stubEnv("MODAL_TOKEN_ID", "");
+    vi.stubEnv("MODAL_TOKEN_SECRET", "");
     const { vendo, resolver } = await setup();
     const denied = await vendo.handler(request("POST", "/tick", undefined, { authorization: "Bearer wrong" }));
     expect(denied.status).toBe(401);
@@ -216,8 +239,49 @@ describe("09 §3 public wire", () => {
     expect(await status.json()).toEqual({
       posture: "unconfigured",
       version: "0.3.0",
-      blocks: { store: true, agent: true, actions: true, guard: true, apps: true, automations: true, mcp: false },
+      blocks: {
+        store: true,
+        agent: true,
+        actions: true,
+        guard: true,
+        apps: true,
+        automations: true,
+        sandbox: false,
+        mcp: false,
+      },
     });
+  });
+
+  it("selects explicit, E2B, Modal, and dark venues with the required precedence", async () => {
+    const custom: SandboxAdapter = {
+      create: vi.fn(async () => { throw new Error("not called"); }),
+      resume: vi.fn(async () => { throw new Error("not called"); }),
+    };
+    const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-custom-"));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
+    const statusFor = async (
+      env: { E2B_API_KEY: string; MODAL_TOKEN_ID: string; MODAL_TOKEN_SECRET: string },
+      sandbox?: SandboxAdapter,
+    ): Promise<unknown> => {
+      for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+      const vendo = createVendo({
+        model: {} as LanguageModel,
+        principal: vi.fn(async () => principal),
+        store,
+        ...(sandbox === undefined ? {} : { sandbox }),
+      });
+      const status = await vendo.handler(request("GET", "/status"));
+      return (await status.json() as { blocks: { sandbox: unknown } }).blocks.sandbox;
+    };
+
+    const allKeys = { E2B_API_KEY: "e2b-key", MODAL_TOKEN_ID: "modal-id", MODAL_TOKEN_SECRET: "modal-secret" };
+    expect(await statusFor(allKeys, custom)).toBe("custom");
+    expect(await statusFor(allKeys)).toBe("e2b");
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "" })).toBe("modal");
+    expect(await statusFor({ ...allKeys, E2B_API_KEY: "", MODAL_TOKEN_SECRET: "" })).toBe(false);
+    expect(custom.create).not.toHaveBeenCalled();
+    expect(custom.resume).not.toHaveBeenCalled();
   });
 
   it("adapts the same fetch handler to Next route exports", async () => {

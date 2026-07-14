@@ -1,6 +1,8 @@
 import { createActions, type ActionsRegistry, type Connector } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
 import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
+import { e2bSandbox } from "@vendoai/apps/e2b";
+import { modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -72,6 +74,31 @@ export interface CreateVendoConfig {
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
   oauth?: HostOAuthAdapter;
+}
+
+type SandboxVenue = "e2b" | "modal" | "custom" | false;
+
+function selectSandbox(configured: SandboxAdapter | undefined): {
+  adapter: SandboxAdapter | undefined;
+  venue: SandboxVenue;
+} {
+  if (configured !== undefined) return { adapter: configured, venue: "custom" };
+
+  const e2bApiKey = environment("E2B_API_KEY");
+  if (e2bApiKey !== undefined) {
+    return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
+  }
+
+  const modalTokenId = environment("MODAL_TOKEN_ID");
+  const modalTokenSecret = environment("MODAL_TOKEN_SECRET");
+  if (modalTokenId !== undefined && modalTokenSecret !== undefined) {
+    return {
+      adapter: modalSandbox({ tokenId: modalTokenId, tokenSecret: modalTokenSecret }),
+      venue: "modal",
+    };
+  }
+
+  return { adapter: undefined, venue: false };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -332,6 +359,7 @@ function createWireHandler(deps: {
   guard: VendoGuard;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  sandbox: SandboxVenue;
   mcp: boolean;
   door?: McpDoor;
   onRequestOrigin?: (origin: string) => void;
@@ -622,6 +650,7 @@ function createWireHandler(deps: {
             guard: true,
             apps: true,
             automations: true,
+            sandbox: deps.sandbox,
             // 10-mcp §1 — the door is off by default; true only when
             // createVendo({ mcp: true }) opened it.
             mcp: deps.mcp,
@@ -644,6 +673,7 @@ function createWireHandler(deps: {
 /** 09-vendo §2 — compose every live block around the guard choke point. */
 export function createVendo(config: CreateVendoConfig): Vendo {
   const store = config.store ?? createStore();
+  const sandbox = selectSandbox(config.sandbox);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
@@ -685,7 +715,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
-    ...(config.sandbox === undefined ? {} : { sandbox: config.sandbox }),
+    ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
   actions.add(apps.agentTools());
@@ -757,6 +787,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     apps,
     automations,
+    sandbox: sandbox.venue,
     mcp: config.mcp === true,
     ...(door === undefined ? {} : { door }),
     onRequestOrigin: (origin) => {
