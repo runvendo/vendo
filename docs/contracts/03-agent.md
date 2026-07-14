@@ -44,6 +44,7 @@ export interface VendoAgent {
 - Every tool call goes through the guard-bound `ToolRegistry`. A `pending-approval` outcome surfaces as the ai-SDK native approval flow (`needsApproval` / `addToolApprovalResponse`); the turn pauses, the approval decision resumes it.
 - `blocked` outcomes are told to the model (it should explain and adapt), never silently swallowed.
 - Away tasks (`asRunner()`) run the same loop with `presence: "away"`: no interactive approvals — a `pending-approval` outcome is recorded, the step fails soft, and the run report says so.
+- The additive `AgentRunner` task field `abortSignal?: AbortSignal` is passed to the ai-SDK generation call. An in-process abort returns an `AgentRunReport` with status `"stopped"`; runners that predate the optional field remain structurally compatible.
 - The loop is venue-agnostic: chat, app editing, and automations all reuse it; venue arrives via `RunContext` and is stamped on every audit event by guard.
 
 ## 3. Context engineering (what the system prompt is made of)

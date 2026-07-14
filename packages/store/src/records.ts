@@ -1,4 +1,4 @@
-import { canonicalJson, type RecordQuery, type RecordStore, type VendoRecord } from "@vendoai/core";
+import { canonicalJson, VendoError, type AtomicRecordStore, type RecordQuery, type RecordStore, type VendoRecord } from "@vendoai/core";
 import type { Db } from "./db.js";
 import { isEphemeralApp, overlayFor, snapshot } from "./ephemeral.js";
 import { decodeCursor, encodeCursor, iso, jsonParam, pageLimit, text } from "./helpers/utils.js";
@@ -8,12 +8,17 @@ export type DedicatedRecordTable = "vendo_mcp_clients" | "vendo_mcp_grants";
 
 function recordFromRow(row: Record<string, unknown>): VendoRecord {
   const refs = row["refs"] as Record<string, string> | null;
+  const revision = row["revision"];
+  if (revision !== undefined && !(typeof revision === "string" || typeof revision === "number" || typeof revision === "bigint")) {
+    throw new Error("Expected database revision");
+  }
   return {
     id: text(row["id"]),
     data: row["data"],
     ...(refs == null ? {} : { refs }),
     createdAt: iso(row["created_at"]),
     updatedAt: iso(row["updated_at"]),
+    ...(revision === undefined ? {} : { revision: String(revision) }),
   };
 }
 
@@ -23,6 +28,10 @@ function sameRecordValue(
 ): boolean {
   return canonicalJson(current.data) === canonicalJson(expected.data)
     && canonicalJson(current.refs ?? null) === canonicalJson(expected.refs ?? null);
+}
+
+function requireRevision(value: string): void {
+  if (!/^[1-9]\d*$/.test(value)) throw new VendoError("validation", "malformed record revision");
 }
 
 /** 01-core §12 */
@@ -46,6 +55,61 @@ export function createRecordStore(
   };
   const isEphemeral = async (): Promise<boolean> => appId !== undefined && isEphemeralApp(store, db, appId);
 
+  const atomic: AtomicRecordStore = {
+    async insertIfAbsent(record) {
+      const now = new Date().toISOString();
+      if (await isEphemeral()) {
+        const records = ephemeralRecords();
+        if (records.has(record.id)) return null;
+        const stored: VendoRecord = {
+          id: record.id,
+          data: record.data,
+          ...(record.refs === undefined ? {} : { refs: record.refs }),
+          createdAt: now,
+          updatedAt: now,
+          revision: "1",
+        };
+        records.set(record.id, snapshot(stored));
+        return snapshot(stored);
+      }
+      const result = await db.query(
+        `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at, revision)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $5, 1)
+         ON CONFLICT (collection, id) DO NOTHING
+         RETURNING id, data, refs, created_at, updated_at, revision`,
+        [collection, record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now],
+      );
+      return result.rows[0] ? recordFromRow(result.rows[0]) : null;
+    },
+    async compareAndSwap(record, expectedRevision) {
+      requireRevision(expectedRevision);
+      const now = new Date().toISOString();
+      if (await isEphemeral()) {
+        const records = ephemeralRecords();
+        const prior = records.get(record.id);
+        if (prior === undefined || prior.revision !== expectedRevision) return null;
+        const stored: VendoRecord = {
+          id: record.id,
+          data: record.data,
+          ...(record.refs === undefined ? {} : { refs: record.refs }),
+          createdAt: prior.createdAt,
+          updatedAt: now,
+          revision: String(BigInt(expectedRevision) + 1n),
+        };
+        records.set(record.id, snapshot(stored));
+        return snapshot(stored);
+      }
+      const result = await db.query(
+        `UPDATE vendo_records
+         SET data = $3::jsonb, refs = $4::jsonb, updated_at = $5, revision = revision + 1
+         WHERE collection = $1 AND id = $2 AND revision = $6::bigint
+         RETURNING id, data, refs, created_at, updated_at, revision`,
+        [collection, record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now, expectedRevision],
+      );
+      return result.rows[0] ? recordFromRow(result.rows[0]) : null;
+    },
+  };
+
   return {
     async get(id) {
       if (await isEphemeral()) {
@@ -54,7 +118,7 @@ export function createRecordStore(
       }
       const result = usesCollection
         ? await db.query(
-          "SELECT id, data, refs, created_at, updated_at FROM vendo_records WHERE collection = $1 AND id = $2",
+          "SELECT id, data, refs, created_at, updated_at, revision FROM vendo_records WHERE collection = $1 AND id = $2",
           [collection, id],
         )
         : await db.query(
@@ -74,17 +138,19 @@ export function createRecordStore(
           ...(record.refs === undefined ? {} : { refs: record.refs }),
           createdAt: prior?.createdAt ?? now,
           updatedAt: now,
+          revision: String(BigInt(prior?.revision ?? "0") + 1n),
         };
         records.set(record.id, snapshot(stored));
         return snapshot(stored);
       }
       const result = usesCollection
         ? await db.query(
-          `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at)
-           VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $5)
+          `INSERT INTO vendo_records (collection, id, data, refs, created_at, updated_at, revision)
+           VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $5, 1)
            ON CONFLICT (collection, id) DO UPDATE
-           SET data = EXCLUDED.data, refs = EXCLUDED.refs, updated_at = EXCLUDED.updated_at
-           RETURNING id, data, refs, created_at, updated_at`,
+           SET data = EXCLUDED.data, refs = EXCLUDED.refs, updated_at = EXCLUDED.updated_at,
+               revision = vendo_records.revision + 1
+           RETURNING id, data, refs, created_at, updated_at, revision`,
           [collection, record.id, jsonParam(record.data), record.refs === undefined ? null : jsonParam(record.refs), now],
         )
         : await db.query(
@@ -111,6 +177,7 @@ export function createRecordStore(
             ...(replacement.refs === undefined ? {} : { refs: replacement.refs }),
             createdAt: current.createdAt,
             updatedAt: new Date().toISOString(),
+            revision: String(BigInt(current.revision ?? "0") + 1n),
           }));
         }
         return true;
@@ -134,7 +201,7 @@ export function createRecordStore(
       const updatedAtParam = params.push(new Date().toISOString());
       const result = await db.query(
         `UPDATE ${table}
-         SET data = $${dataParam}::jsonb, refs = $${refsParam}::jsonb, updated_at = $${updatedAtParam}
+         SET data = $${dataParam}::jsonb, refs = $${refsParam}::jsonb, updated_at = $${updatedAtParam}${usesCollection ? ", revision = revision + 1" : ""}
          WHERE ${clauses}
          RETURNING id`,
         params,
@@ -187,7 +254,7 @@ export function createRecordStore(
       }
       params.push(limit + 1);
       const result = await db.query(
-        `SELECT id, data, refs, created_at, updated_at FROM ${table}
+        `SELECT id, data, refs, created_at, updated_at${usesCollection ? ", revision" : ""} FROM ${table}
          ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
          ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
         params,
@@ -199,5 +266,6 @@ export function createRecordStore(
         ...(result.rows.length > limit && last ? { cursor: encodeCursor(last.createdAt, last.id) } : {}),
       };
     },
+    ...(usesCollection ? { atomic } : {}),
   };
 }

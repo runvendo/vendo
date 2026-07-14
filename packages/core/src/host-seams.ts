@@ -24,7 +24,13 @@ export interface SecretsProvider {
 
 /** 01-core §13 */
 export type AgentRunner = (
-  task: { prompt: string; tools: ToolRegistry; budget?: { maxToolCalls?: number } },
+  task: {
+    prompt: string;
+    tools: ToolRegistry;
+    budget?: { maxToolCalls?: number };
+    /** Best-effort in-process cancellation; runners that do not support it may ignore it. */
+    abortSignal?: AbortSignal;
+  },
   ctx: RunContext,
 ) => Promise<AgentRunReport>;
 

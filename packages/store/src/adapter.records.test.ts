@@ -33,6 +33,26 @@ for (const backend of backends()) {
       expect(await records.get("note_1")).toBeNull();
     });
 
+    it("atomically inserts one claimant and lets only one matching revision swap win", async () => {
+      const records = made.store.records("automations:claims");
+      expect(records.atomic).toBeDefined();
+      const atomic = records.atomic!;
+
+      const claims = await Promise.all(Array.from({ length: 8 }, (_, claimant) =>
+        atomic.insertIfAbsent({ id: "claim_1", data: { claimant } })));
+      const winners = claims.filter((claim) => claim !== null);
+      expect(winners).toHaveLength(1);
+      expect(winners[0]?.revision).toBeDefined();
+
+      const revision = winners[0]!.revision!;
+      const swaps = await Promise.all([
+        atomic.compareAndSwap({ id: "claim_1", data: { claimant: "a" } }, revision),
+        atomic.compareAndSwap({ id: "claim_1", data: { claimant: "b" } }, revision),
+      ]);
+      expect(swaps.filter((record) => record !== null)).toHaveLength(1);
+      expect((await records.get("claim_1"))?.revision).not.toBe(revision);
+    });
+
     it("filters by ids and refs containment", async () => {
       const records = made.store.records("app:app_a:filters");
       await records.put({ id: "flt_a", data: { n: 1 }, refs: { owner: "one", kind: "invoice" } });
