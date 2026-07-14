@@ -119,8 +119,9 @@ describe("J8: OpenAPI sync produces tools.json whose tools are callable over the
 
     // The synced tool executed through the composed guard/actions as a real HTTP
     // round-trip to the fixture host: the audit trail records the tool-call ok.
+    // The outcome lives in the audit event's jsonb payload (not a top-level column).
     const audit = await stack.sql<{ tool: string; outcome: string }>(
-      "SELECT tool, outcome FROM vendo_audit WHERE subject = $1 AND kind = 'tool-call'",
+      "SELECT tool, event->>'outcome' AS outcome FROM vendo_audit WHERE subject = $1 AND kind = 'tool-call'",
       [ADA.subject],
     );
     expect(audit).toContainEqual({ tool: "host_listInvoices", outcome: "ok" });

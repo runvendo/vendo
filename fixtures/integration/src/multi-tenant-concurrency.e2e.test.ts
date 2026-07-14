@@ -27,6 +27,7 @@ import {
   decideApprovals,
   hostFetch,
   importAutomation,
+  loginCookie,
   readSse,
   resetFixture,
   textTurn,
@@ -96,6 +97,10 @@ afterEach(async () => {
 describe("J10: multi-tenant isolation holds under concurrent chat/apps/automations", () => {
   it("keeps every tenant's threads, apps, and away runs private through a real race", async () => {
     await resetFixture();
+    // Pre-warm each tenant's host login cookie SEQUENTIALLY so the concurrent
+    // phases below stress the fast in-process VENDO wire (the isolation surface
+    // under test) rather than firing N cold logins at the host dev server at once.
+    for (const tenant of TENANTS) await loginCookie(tenant.subject);
     // One identical text turn per tenant chat call (order-independent single pull).
     stack = await createStack({ turns: TENANTS.map((_, index) => textTurn("Working on it.", `t_${index}`)) });
 

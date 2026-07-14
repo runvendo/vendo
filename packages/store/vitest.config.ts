@@ -7,6 +7,11 @@ export default defineConfig({
       reporter: ["text", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.test-util.{ts,tsx}"],
+      // Ratcheted line-coverage floor (ENG-255): conservative — measured from the
+      // stable subset (84.53%, excluding the flaky conformance suite and the
+      // space-path-sensitive durability drill). CI runs the full suite (both
+      // included) and comfortably exceeds this, so the floor only ratchets up.
+      thresholds: { lines: 84 },
     },
     fileParallelism: false,
     // Dual-backend PGlite/Postgres CRUD + a SIGKILL durability drill; under CI
