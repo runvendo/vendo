@@ -47,11 +47,11 @@
 **Files:**
 - Modify/create tests in `packages/core/src/`, `packages/store/src/`, `packages/agent/src/` (follow each package's existing test layout and naming)
 
-- [ ] **Step 1 (core):** Extend the clause-walk to the amended clauses: `door-auth` positive audit-kind leg; `source: "mcp"` grant leg; export-surface test covers the newly blessed root utilities and the `/conformance` subpath inventory.
-- [ ] **Step 2 (store):** Conformance-name the amended §3 routing contract: a test that asserts the routed reserved-collection list in code equals the list in the contract doc (parse `RESERVED_COLLECTIONS` vs the doc's bullet list — drift in either direction fails); a characterization test documenting current `vendo_audit` door mutability, explicitly marked as the behavior Wave 3 flips (mirrors the grant-forge characterization precedent).
-- [ ] **Step 3 (agent):** Clause-named tests for 03 §3 assembly order and §4 stream parts already exist — add the missing §3 clause (4) test as a *failing-is-expected* skip-marked test pointing at Wave 5 (catalog/theme wiring), so the gap stays visible.
-- [ ] **Step 4:** Add a `conformance` turbo task + CI job that runs exactly these suites (per-package filter or test-name pattern — pick whichever the repo's vitest setup expresses most simply).
-- [ ] **Step 5:** Commit.
+- [x] **Step 1 (core):** Extend the clause-walk to the amended clauses: `door-auth` positive audit-kind leg; `source: "mcp"` grant leg; export-surface test covers the newly blessed root utilities and the `/conformance` subpath inventory.
+- [x] **Step 2 (store):** Conformance-name the amended §3 routing contract: a test that asserts the routed reserved-collection list in code equals the list in the contract doc (parse `RESERVED_COLLECTIONS` vs the doc's bullet list — drift in either direction fails); a characterization test documenting current `vendo_audit` door mutability, explicitly marked as the behavior Wave 3 flips (mirrors the grant-forge characterization precedent).
+- [x] **Step 3 (agent):** Clause-named tests for 03 §3 assembly order and §4 stream parts already exist — add the missing §3 clause (4) test as a *failing-is-expected* skip-marked test pointing at Wave 5 (catalog/theme wiring), so the gap stays visible.
+- [x] **Step 4:** Add a `conformance` turbo task + CI job that runs exactly these suites (per-package filter or test-name pattern — pick whichever the repo's vitest setup expresses most simply).
+- [x] **Step 5:** Commit.
 
 ### Task 4: Provider wire-format conformance (PR CI) + nightly live legs
 
