@@ -12,7 +12,7 @@ const cleanup: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
-});
+}, 180_000);
 
 async function write(root: string, relative: string, body: string): Promise<void> {
   const path = join(root, relative);
@@ -91,5 +91,5 @@ describe("vendo doctor MCP discovery live", () => {
     })).toBe(0);
     expect(errors).toEqual([]);
     expect(logs).toContain("ok: server.json remote agrees with the live MCP door");
-  });
+  }, 180_000);
 });
