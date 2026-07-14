@@ -3,7 +3,13 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { parseCssVars, type CssVarDecl } from "./css-vars.js";
 import { collectNextFontVars, collectNextLayoutVars, TAILWIND_NEUTRAL_COLORS } from "./next-fonts.js";
-import { mapVarsToBrand, type BrandMappingResult, type InferredSlotValue } from "./map-to-brand.js";
+import {
+  mapVarsToBrand,
+  normalizeColorVar,
+  type BrandMappingResult,
+  type InferredSlotValue,
+  type ThemeSlotValues,
+} from "./map-to-brand.js";
 import { resolveWorkspacePackageSpecifier } from "./workspace-resolve.js";
 import { walk } from "./walk.js";
 
@@ -156,22 +162,140 @@ async function collectCssFiles(targetDir: string): Promise<{ selected: string[];
  */
 const MUTED_UTILITY = /(?<![\w:-])text-(slate|gray|zinc|neutral|stone)-(400|500|600)\b/g;
 
-async function inferMutedTextFromUtilities(targetDir: string): Promise<InferredSlotValue | undefined> {
-  const files = await walk(targetDir, (rel) => /\.(tsx|jsx)$/.test(rel), 2_000);
-  const counts = new Map<string, number>();
-  for (const file of files) {
-    const source = await fs.readFile(file, "utf8").catch(() => "");
-    for (const match of source.matchAll(MUTED_UTILITY)) {
-      counts.set(`${match[1]}-${match[2]}`, (counts.get(`${match[1]}-${match[2]}`) ?? 0) + 1);
+const ACCENT_BG_UTILITY = /(?<![\w:-])bg-([a-z][a-z0-9-]*)\b/g;
+const RADIUS_UTILITY = /(?<![\w:-])rounded-(sm|md|lg|xl|2xl|3xl)(?![\w-])/g;
+const SMALL_TEXT_UTILITY = /(?<![\w:-])text-(xs|sm)\b|(?<![\w:-])text-\[((?:\d+|\d*\.\d+))px\]/g;
+const LARGE_TEXT_UTILITY = /(?<![\w:-])text-(base|lg)\b|(?<![\w:-])text-\[((?:\d+|\d*\.\d+))px\]/g;
+const COMPACT_HEIGHT_UTILITY = /(?<![\w:-])h-(6|7|8)\b/g;
+const COMFORTABLE_HEIGHT_UTILITY = /(?<![\w:-])h-(10|11|12)\b/g;
+const MOTION_UTILITY = /(?<![\w:-])(?:transition(?:-[\w-]+)?|animate-[\w-]+)\b/g;
+const NON_ACCENT_BG = /^(?:bg|background|surface|card|panel|popover|hover|muted|border|line|transparent|current|inherit|white|gray|grey|slate|stone|zinc|neutral|status|success|warning|error|danger|destructive|positive|negative|pos|neg)(?:-|$)/;
+const RADIUS_VALUES: Record<string, string> = {
+  sm: "2px",
+  md: "6px",
+  lg: "8px",
+  xl: "12px",
+  "2xl": "16px",
+  "3xl": "24px",
+};
+
+interface SourceInferences {
+  accent?: InferredSlotValue;
+  mutedText?: InferredSlotValue;
+  radius?: InferredSlotValue;
+  density?: InferredSlotValue;
+  motion?: InferredSlotValue;
+}
+
+function hasDisablingReducedMotionRule(source: string): boolean {
+  const media = /@media\s*\([^)]*prefers-reduced-motion\s*:\s*reduce[^)]*\)\s*\{/gi;
+  for (const match of source.matchAll(media)) {
+    const start = match.index! + match[0].length;
+    let depth = 1;
+    let end = start;
+    for (; end < source.length && depth > 0; end += 1) {
+      if (source[end] === "{") depth += 1;
+      else if (source[end] === "}") depth -= 1;
+    }
+    const block = source.slice(start, end - 1);
+    if (/(?:animation|transition)(?:-duration)?\s*:\s*none(?:\s*!important)?\s*[;}]/i.test(block)) return true;
+    if (/scroll-behavior\s*:\s*auto(?:\s*!important)?\s*[;}]/i.test(block)) return true;
+    for (const duration of block.matchAll(/(?:animation|transition)-duration\s*:\s*(\d*\.?\d+)(ms|s)(?:\s*!important)?\s*[;}]/gi)) {
+      const milliseconds = Number(duration[1]) * (duration[2]!.toLowerCase() === "s" ? 1_000 : 1);
+      if (milliseconds <= 1) return true;
     }
   }
+  return false;
+}
+
+function dominant(
+  counts: Map<string, number>,
+  minimum: number,
+  lead = 1.5,
+): [string, number] | undefined {
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const [winner, runnerUp] = ranked;
-  // Require real adoption and a clear winner, not a coin flip between scales.
-  if (!winner || winner[1] < 5 || (runnerUp && winner[1] < runnerUp[1] * 1.5)) return undefined;
-  const [family, step] = winner[0].split("-") as [string, string];
-  const value = TAILWIND_NEUTRAL_COLORS[family]?.[step];
-  return value ? { value, source: `text-${winner[0]} ×${winner[1]}` } : undefined;
+  if (!winner || winner[1] < minimum || (runnerUp && winner[1] < runnerUp[1] * lead)) return undefined;
+  return winner;
+}
+
+/**
+ * Source-level fallbacks are deliberately high-signal: a utility must be used
+ * repeatedly and dominate alternatives. A one-off class never becomes a host
+ * theme token, which keeps extraction fail-closed on mixed design systems.
+ */
+async function inferSlotsFromUtilities(targetDir: string, vars: CssVarDecl[]): Promise<SourceInferences> {
+  const files = await walk(targetDir, (rel) => /\.(tsx|jsx)$/.test(rel), 2_000);
+  const cssFiles = await walk(targetDir, (rel) => rel.endsWith(".css"), 2_000);
+  const accentCounts = new Map<string, number>();
+  const mutedCounts = new Map<string, number>();
+  const radiusCounts = new Map<string, number>();
+  let compact = 0;
+  let comfortable = 0;
+  let motion = 0;
+
+  for (const file of files) {
+    const source = await fs.readFile(file, "utf8").catch(() => "");
+    for (const match of source.matchAll(ACCENT_BG_UTILITY)) {
+      const token = match[1]!;
+      if (!NON_ACCENT_BG.test(token)) accentCounts.set(token, (accentCounts.get(token) ?? 0) + 1);
+    }
+    for (const match of source.matchAll(MUTED_UTILITY)) {
+      const token = `${match[1]}-${match[2]}`;
+      mutedCounts.set(token, (mutedCounts.get(token) ?? 0) + 1);
+    }
+    for (const match of source.matchAll(RADIUS_UTILITY)) {
+      const token = match[1]!;
+      radiusCounts.set(token, (radiusCounts.get(token) ?? 0) + 1);
+    }
+    for (const match of source.matchAll(SMALL_TEXT_UTILITY)) {
+      const arbitrary = match[2] ? Number(match[2]) : null;
+      if (arbitrary === null || arbitrary <= 13.5) compact += 1;
+    }
+    for (const match of source.matchAll(LARGE_TEXT_UTILITY)) {
+      const arbitrary = match[2] ? Number(match[2]) : null;
+      if (arbitrary === null || arbitrary >= 16) comfortable += 1;
+    }
+    compact += [...source.matchAll(COMPACT_HEIGHT_UTILITY)].length;
+    comfortable += [...source.matchAll(COMFORTABLE_HEIGHT_UTILITY)].length;
+    motion += [...source.matchAll(MOTION_UTILITY)].length;
+  }
+
+  const inferred: SourceInferences = {};
+  const accent = dominant(accentCounts, 5);
+  if (accent) {
+    const decl = [...vars].reverse().find((value) => !value.darkScope && value.name === `--color-${accent[0]}`);
+    const color = decl ? normalizeColorVar(decl.value, vars) : null;
+    if (color) inferred.accent = { value: color, source: `bg-${accent[0]} ×${accent[1]}` };
+  }
+  const muted = dominant(mutedCounts, 5);
+  if (muted) {
+    const [family, step] = muted[0].split("-") as [string, string];
+    const value = TAILWIND_NEUTRAL_COLORS[family]?.[step];
+    if (value) inferred.mutedText = { value, source: `text-${muted[0]} ×${muted[1]}` };
+  }
+  const radius = dominant(radiusCounts, 5);
+  if (radius) inferred.radius = { value: RADIUS_VALUES[radius[0]]!, source: `rounded-${radius[0]} ×${radius[1]}` };
+
+  if (compact >= 12 && compact >= comfortable * 1.5) {
+    inferred.density = { value: "compact", source: `compact type/spacing utilities ×${compact}` };
+  } else if (comfortable >= 12 && comfortable >= compact * 1.5) {
+    inferred.density = { value: "comfortable", source: `comfortable type/spacing utilities ×${comfortable}` };
+  }
+  let reducedMotionFile: string | undefined;
+  for (const file of cssFiles) {
+    const source = await fs.readFile(file, "utf8").catch(() => "");
+    if (hasDisablingReducedMotionRule(source)) {
+      reducedMotionFile = path.relative(targetDir, file) || path.basename(file);
+      break;
+    }
+  }
+  if (reducedMotionFile) {
+    inferred.motion = { value: "reduced", source: `prefers-reduced-motion in ${reducedMotionFile}` };
+  } else if (motion >= 5) {
+    inferred.motion = { value: "full", source: `transition/animation utilities ×${motion}` };
+  }
+  return inferred;
 }
 
 export async function extractTheme(
@@ -199,9 +323,12 @@ export async function extractTheme(
   // Inference fallbacks fill only slots no declared variable claims — map
   // first, and pay the source scan only when the slot actually defaulted.
   let result = mapVarsToBrand(vars);
-  if (result.defaulted.includes("mutedText")) {
-    const mutedText = await inferMutedTextFromUtilities(targetDir);
-    if (mutedText) result = mapVarsToBrand(vars, { mutedText });
+  const utilitySlots = ["accent", "radius", "density", "motion"] satisfies Array<keyof ThemeSlotValues>;
+  const needsUtilityInference = utilitySlots.some((slot) => result.defaulted.includes(slot))
+    || /(?:card|popover|modal|dialog)/.test(result.matched.radius ?? "");
+  if (needsUtilityInference || result.defaulted.includes("mutedText")) {
+    const inferred = await inferSlotsFromUtilities(targetDir, vars);
+    result = mapVarsToBrand(vars, inferred);
   }
   return { ...result, errors, varCount: vars.length };
 }
