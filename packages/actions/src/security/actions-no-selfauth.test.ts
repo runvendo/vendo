@@ -63,6 +63,39 @@ describe("actions never self-authorizes away execution", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("refuses an away grant captured for a different subject before actAs", async () => {
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer host-issued" } }));
+    const fetchSpy = vi.fn();
+    const actions = createActions({
+      tools: [routeTool("host_probe")],
+      baseUrl: "http://host.test",
+      actAs,
+      fetch: fetchSpy as unknown as typeof fetch,
+    });
+    const mismatched: ActionsRunContext = {
+      ...away,
+      grant: {
+        id: "grt_other_user",
+        subject: "user_2",
+        tool: "host_probe",
+        descriptorHash: "hash",
+        scope: { kind: "tool" },
+        duration: "standing",
+        source: "automation",
+        grantedAt: "2026-07-14T00:00:00.000Z",
+      },
+    };
+
+    const outcome = await actions.execute({ id: "1", tool: "host_probe", args: {} }, mismatched);
+
+    expect(outcome).toMatchObject({
+      status: "error",
+      error: { code: "act-as-subject-mismatch" },
+    });
+    expect(actAs).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("uses host-issued credentials (not the caller's headers) for a properly-granted away call", async () => {
     const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer host-issued" } }));
     const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
