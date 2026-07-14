@@ -55,15 +55,15 @@
 **Files:**
 - Modify: `docs/contracts/02-store.md`
 
-- [ ] **Step 1:** Rewrite §3: retire the typed-helper architecture text; bless reserved-collection routing as THE sanctioned cross-block persistence seam (STORE-4/XCUT-2). State: blocks persist through core's `StoreAdapter.records()/blobs()` using reserved `vendo_*` collection names; the store's routing layer maps them to dedicated tables; the reserved-name list mirrors `RESERVED_COLLECTIONS` in `packages/store/src/routing.ts`; `records()` with non-reserved names remains app data. Keep the trusted-caller trust-boundary framing that already governs the door.
-- [ ] **Step 2:** In the §2 table map, document per-door semantics for `vendo_audit`: append-only will be *enforced* at routing (put on existing id errors, delete refused) — marked "contracted here, enforced in Wave 3" (STORE-2); deletion only via the erase API.
-- [ ] **Step 3:** §1 exports: add `secretStore` (set/delete/list) as the sanctioned secret-write path (STORE-5).
-- [ ] **Step 4:** §2 key columns: add `vendo_grants.context_key` (required by 05 §2 step 3; omission was a contract-internal miss).
-- [ ] **Step 5:** New retention subsection replacing the "retention = host SQL" stance: store-level erase API — by subject (full erasure), by app, by age — cascading across all 13 tables, exposed on the umbrella, the only sanctioned deletion path for audit rows; host SQL remains available for everything else. Marked "contracted here, ships in Wave 3".
-- [ ] **Step 6:** §4 encryption: state the default-on composition — `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` in `.env`, `createVendo` picks it up from env; AES-GCM gains AAD binding ciphertext to secret name with envelope versioning. Marked "contracted here, ships in Wave 3" (STORE-6/8).
-- [ ] **Step 7:** §4 ephemeral: replace the unimplementable "dropped at session end" sentence with current truth (overlay drops at `close()`; per-process, so multi-instance deployments split anonymous-session state — STORE-1/9) plus a forward pointer: real session lifecycle is Wave 4 scope and will amend this section again when designed.
-- [ ] **Step 8:** Add the dated Amendments section covering steps 1–7.
-- [ ] **Step 9:** Re-read the doc; commit: `docs(contracts): amend 02-store — bless routing seam, erase API, encryption default-on, audit append-only (STORE-1/2/4/5/6/8/9)`.
+- [x] **Step 1:** Rewrite §3: retire the typed-helper architecture text; bless reserved-collection routing as THE sanctioned cross-block persistence seam (STORE-4/XCUT-2). State: blocks persist through core's `StoreAdapter.records()/blobs()` using reserved `vendo_*` collection names; the store's routing layer maps them to dedicated tables; the reserved-name list mirrors `RESERVED_COLLECTIONS` in `packages/store/src/routing.ts`; `records()` with non-reserved names remains app data. Keep the trusted-caller trust-boundary framing that already governs the door.
+- [x] **Step 2:** In the §2 table map, document per-door semantics for `vendo_audit`: append-only will be *enforced* at routing (put on existing id errors, delete refused) — marked "contracted here, enforced in Wave 3" (STORE-2); deletion only via the erase API.
+- [x] **Step 3:** §1 exports: add `secretStore` (set/delete/list) as the sanctioned secret-write path (STORE-5).
+- [x] **Step 4:** §2 key columns: add `vendo_grants.context_key` (required by 05 §2 step 3; omission was a contract-internal miss).
+- [x] **Step 5:** New retention subsection replacing the "retention = host SQL" stance: store-level erase API — by subject (full erasure), by app, by age — cascading across all 13 tables, exposed on the umbrella, the only sanctioned deletion path for audit rows; host SQL remains available for everything else. Marked "contracted here, ships in Wave 3".
+- [x] **Step 6:** §4 encryption: state the default-on composition — `vendo init` provisions `VENDO_STORE_ENCRYPTION_KEY` in `.env`, `createVendo` picks it up from env; AES-GCM gains AAD binding ciphertext to secret name with envelope versioning. Marked "contracted here, ships in Wave 3" (STORE-6/8).
+- [x] **Step 7:** §4 ephemeral: replace the unimplementable "dropped at session end" sentence with current truth (overlay drops at `close()`; per-process, so multi-instance deployments split anonymous-session state — STORE-1/9) plus a forward pointer: real session lifecycle is Wave 4 scope and will amend this section again when designed.
+- [x] **Step 8:** Add the dated Amendments section covering steps 1–7.
+- [x] **Step 9:** Re-read the doc; commit: `docs(contracts): amend 02-store — bless routing seam, erase API, encryption default-on, audit append-only (STORE-1/2/4/5/6/8/9)`.
 
 ### Task 5: Amend 03-agent.md
 
