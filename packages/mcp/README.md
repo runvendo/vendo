@@ -4,6 +4,8 @@
 
 The umbrella package wires it behind the one-flag setup, `createVendo({ mcp: true })`, so the same tool registry, guard policy, approvals, and audit trail apply to MCP calls as to in-product calls.
 
+Read [MCP](https://docs.vendo.run/capabilities/mcp).
+
 The MCP Apps tree renderer is a committed, prebuilt HTML artifact. This keeps `@vendoai/mcp` dependent on core rather than UI at runtime. Regenerate the artifact from its owner with:
 
 ```sh
