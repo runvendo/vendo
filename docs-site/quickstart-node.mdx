@@ -1,11 +1,11 @@
 ---
 title: "Quickstart: Express and other JavaScript servers"
-description: "Vendo's handler is a fetch handler you can mount in any runtime. vendo init auto-scaffolds the adapter for Express; elsewhere you mount vendo.handler yourself."
+description: "A fetch handler you can mount in any Node-compatible runtime. vendo init scaffolds the adapter for Express; elsewhere you mount vendo.handler yourself."
 ---
 
 Vendo's handler is framework-agnostic. It takes a standard `Request` and returns
-a standard `Response`, so it runs in Express, Fastify, Hono, Bun, Deno,
-Cloudflare Workers, or any runtime with `fetch` and WebCrypto.
+a standard `Response`, so it runs in Express, Fastify, Hono, Bun, or any
+Node-compatible runtime (the umbrella requires Node 20 or later).
 
 ## Install and scaffold
 
@@ -24,9 +24,10 @@ Init always writes the `.vendo` contract (tools, policy, theme, brief). It reads
   `createVendo()` composition and a Node HTTP-to-fetch adapter, plus a starter
   `vendo/ai.ts` model module. Two manual wiring steps remain, and init prints
   both.
-- **Any other runtime** (Fastify, Hono, Bun, Deno, Workers): init detects only
-  `next` and `express`, so it proposes Next-shaped files. Decline those diffs and
-  mount `vendo.handler` yourself (see below).
+- **Any other runtime** (Fastify, Hono, Bun): init detects only `next` and
+  `express`, so it proposes Next-shaped files. Decline those diffs and mount
+  `vendo.handler` yourself (see below). Detection checks `next` first, so an app
+  with both dependencies gets the Next scaffold.
 
 ## Wire the Express adapter
 
@@ -67,8 +68,15 @@ const vendo = createVendo({
 });
 ```
 
-Replace `principal` with your session resolver: it receives the `Request` and
-returns your user, or `null` for an anonymous session.
+Replace `principal` with your session resolver. It receives the `Request` and
+returns a `Principal`, or `null` for an anonymous session:
+
+```ts
+principal: async (request) => {
+  const user = await resolveSession(request);
+  return user ? { kind: "user", subject: user.id } : null;
+},
+```
 
 ## Mount the handler directly
 

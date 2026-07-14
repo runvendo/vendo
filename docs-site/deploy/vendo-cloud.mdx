@@ -17,7 +17,9 @@ published copies, or a machine key for CI.
 
 `vendo cloud login <email>` sends a six-digit code to your inbox, prompts for it
 on stdin, and stores the returned session at `~/.vendo/cloud-session.json`
-(file mode 0600). Every other `vendo cloud` command reuses that session.
+(file mode 0600). The user commands reuse that session; the machine commands
+(`validate`, `share`, `publish`, `pin-ship`) authenticate with `--key` or
+`VENDO_API_KEY` instead.
 
 ```bash
 vendo cloud login you@example.com
@@ -32,8 +34,8 @@ directly:
 vendo cloud login --token <jwt>
 ```
 
-Sign out with `vendo cloud logout`. Confirm the active identity and list your
-organizations with `vendo cloud whoami`.
+Sign out with `vendo cloud logout`. Check that the session works with
+`vendo cloud whoami`, which prints the organizations it can reach.
 
 ## Provide an API key to the runtime
 

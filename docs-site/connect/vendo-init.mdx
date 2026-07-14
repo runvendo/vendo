@@ -1,6 +1,6 @@
 ---
 title: "vendo init"
-description: "How the vendo init wizard scans your app, interviews you about risk, theme, and remix candidates, and writes reviewable diffs plus .vendo overrides."
+description: "How the vendo init wizard scans your app, asks about your model, brief, critical-tool risk, and the MCP door, and writes reviewable diffs plus .vendo files."
 ---
 
 Run init after installing the umbrella:
@@ -10,18 +10,20 @@ npx vendo init
 ```
 
 The wizard scans the app with deterministic analysis plus available AI
-assistance. It interviews you with recommendations for risk labels, theme, and
-remix candidates. It then proposes the handler route and `<VendoRoot>` wiring.
-The scaffolded `<VendoRoot>` imports the extracted `.vendo/theme.json` and passes
-it as the `theme` prop, so shipped chrome adopts the host brand from the first
-boot with no hand wiring. Every code change is permission-gated and shown as a
-diff.
+assistance. It interviews you with recommendations on four questions: your model
+import, the product brief, risk labels for critical tools, and whether to open
+the MCP door. Theme is extracted automatically, not asked. It then proposes the
+handler route and `<VendoRoot>` wiring. The scaffolded `<VendoRoot>` imports the
+extracted `.vendo/theme.json` and passes it as the `theme` prop, so shipped
+chrome adopts the host brand from the first boot with no hand wiring. Every code
+change is permission-gated and shown as a diff.
 
-Answers land in `.vendo/overrides.json` and remain authoritative across future
-sync runs. Init also writes policy, product brief, theme, and the PGlite ignore
-entry where applicable.
+Critical-tool risk answers land in `.vendo/overrides.json` and remain
+authoritative across future sync runs. Init also writes policy, product brief,
+theme, and the PGlite ignore entry where applicable.
 
-Init also asks whether to open the [MCP door](/capabilities/mcp). Opening it is
+One of those questions is whether to open the [MCP door](/capabilities/mcp).
+Opening it is
 a host decision and needs a `HostOAuthAdapter`, so init never scaffolds it: on
 yes it points you at the wiring. The door stays off unless you opt in.
 
@@ -31,7 +33,8 @@ Init reads `package.json` and scaffolds only the files that apply. It detects tw
 frameworks by dependency:
 
 - **Next.js** (a `next` dependency): proposes `app/api/vendo/[...vendo]/route.ts`
-  and wraps the root layout in `<VendoRoot>`.
+  (under `src/app` when that directory exists) and wraps the root layout in
+  `<VendoRoot>`.
 - **Express** (an `express` dependency): proposes a `vendo/server.ts` module
   (`vendo/server.mjs` without a `tsconfig.json`) holding the `createVendo()`
   composition and a Node HTTP-to-fetch adapter, plus a starter `vendo/ai.ts`. Two
@@ -40,9 +43,10 @@ frameworks by dependency:
   `<VendoRoot>`. Init prints both, and `vendo doctor` reports broken until they
   are done.
 
-Init recognizes only `next` and `express`. A host with neither is treated as
-Next. In other runtimes (Fastify, Hono, Bun, Deno, Workers), decline the proposed
-diffs and mount `vendo.handler` yourself. See
+Init recognizes only `next` and `express`, checking `next` first, so an app with
+both dependencies gets the Next scaffold. A host with neither is treated as
+Next. In other runtimes (Fastify, Hono, Bun), decline the proposed diffs and
+mount `vendo.handler` yourself. See
 [Quickstart: Express and other JavaScript servers](/quickstart-node).
 
 ## Agent mode
@@ -51,8 +55,8 @@ diffs and mount `vendo.handler` yourself. See
 npx vendo init --agent
 ```
 
-Agent mode emits a plan, writes nothing, and asks at most three plain-language
-questions. Its staged playbook is `install.md`.
+Agent mode emits the setup plan with its four plain-language questions and
+writes nothing.
 
 Use `vendo doctor` after setup. It checks wiring and makes one live `/status`
 round trip.

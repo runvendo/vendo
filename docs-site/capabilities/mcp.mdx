@@ -27,10 +27,11 @@ what `mcpConnector` does, and it runs the other direction. See
 
 ## Enable the door
 
-Set `mcp: true` and pass a `HostOAuthAdapter`:
+Set `mcp: true` and pass a `HostOAuthAdapter`. Compose once in a shared module:
 
 ```ts
-import { createVendo, nextVendoHandler } from "@vendoai/vendo/server";
+// lib/vendo.ts
+import { createVendo } from "@vendoai/vendo/server";
 import type { HostOAuthAdapter } from "@vendoai/mcp";
 
 const oauth: HostOAuthAdapter = {
@@ -42,24 +43,34 @@ const oauth: HostOAuthAdapter = {
     return { subject: user.id };
   },
   async principal(subject) {
-    // Resolve subject to a Principal on every door request. Return null to revoke.
+    // Re-resolved on every bearer-authenticated MCP request. Return null to revoke.
     const user = await lookupUser(subject);
     return user ? { kind: "user", subject: user.id, display: user.name } : null;
   },
 };
 
-const vendo = createVendo({
+export const vendo = createVendo({
   model,
   principal: resolvePrincipal,
   mcp: true,
   oauth,
 });
+```
+
+Then re-export the handler from your catch-all route:
+
+```ts
+// app/api/vendo/[...vendo]/route.ts
+import { nextVendoHandler } from "@vendoai/vendo/server";
+import { vendo } from "@/lib/vendo";
 
 export const { GET, POST, DELETE } = nextVendoHandler(vendo);
 ```
 
 `oauth` is required when `mcp` is true. Without it, `createVendo` throws: the
-door cannot mint principals otherwise.
+door cannot mint principals otherwise. The `HostOAuthAdapter` type imports from
+`@vendoai/mcp`, which ships as a dependency of the umbrella; strict package
+managers may need it added explicitly until the umbrella re-exports it.
 
 ## Route the discovery paths
 
@@ -86,6 +97,17 @@ door owns:
   authorization-server metadata)
 - `/.well-known/mcp/server-card.json` (server card; `/.well-known/mcp-server-card`
   is an alias)
+
+On Express, the adapter that `vendo init` generates reconstructs the full path
+from `req.originalUrl`, so the same handler serves both bases:
+
+```ts
+app.use("/api/vendo", mountVendo());
+app.use("/.well-known", mountVendo());
+```
+
+Because the door 404s every other well-known path, register your app's own
+well-known routes before that second mount.
 
 ## Set VENDO_BASE_URL
 
