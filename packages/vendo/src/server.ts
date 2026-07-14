@@ -208,6 +208,24 @@ function ephemeralPrincipal(subject: string): Principal {
     session-scoped, never persisted — carried by a signed httpOnly cookie so two
     anonymous visitors never share threads, grants, approvals, or apps. */
 const ANON_COOKIE = "vendo_anon_session";
+/** Secure requests use the `__Host-` prefix against session fixation (cookie
+    tossing): a sibling subdomain could otherwise plant an attacker's validly
+    signed cookie via `Domain=` and read everything the victim's anonymous
+    session then accrues — browsers refuse `__Host-*` cookies that set Domain or
+    arrive from another host. `__Host-` REQUIRES Secure + Path=/ + no Domain. */
+const ANON_COOKIE_SECURE = `__Host-${ANON_COOKIE}`;
+
+function anonCookieName(secure: boolean): string {
+  return secure ? ANON_COOKIE_SECURE : ANON_COOKIE;
+}
+
+/** Whether a request counts as secure for cookie purposes: its own URL is
+    https, OR the operator-set VENDO_BASE_URL (the TRUSTED origin channel —
+    never x-forwarded-*) is https — i.e. TLS terminates at a proxy and the
+    request reaches this process as http. */
+function secureRequest(url: URL, trustedBaseIsHttps: boolean): boolean {
+  return url.protocol === "https:" || trustedBaseIsHttps;
+}
 
 /** Per-process HMAC key for the anonymous-session cookie, generated at
     createVendo() time with WebCrypto only (globalThis.crypto — NO node:crypto),
@@ -259,9 +277,11 @@ function readCookie(header: string | null, name: string): string | null {
 
 /** Verify the `<id>.<sig>` anon cookie against the per-process key; return the id
     when the HMAC matches, else null (absent, malformed, or tampered → the caller
-    mints a fresh session). */
-async function verifyAnonCookie(key: CryptoKey, cookieHeader: string | null): Promise<string | null> {
-  const raw = readCookie(cookieHeader, ANON_COOKIE);
+    mints a fresh session). Looks up the name matching the CURRENT request's
+    secure determination — a client switching protocols just gets a fresh
+    ephemeral session. */
+async function verifyAnonCookie(key: CryptoKey, cookieHeader: string | null, secure: boolean): Promise<string | null> {
+  const raw = readCookie(cookieHeader, anonCookieName(secure));
   if (raw === null) return null;
   const dot = raw.lastIndexOf(".");
   if (dot <= 0 || dot === raw.length - 1) return null;
@@ -270,12 +290,14 @@ async function verifyAnonCookie(key: CryptoKey, cookieHeader: string | null): Pr
   return constantTimeEqual(sig, await anonSign(key, id)) ? id : null;
 }
 
-/** The Set-Cookie for a freshly minted anonymous session. httpOnly + SameSite=Lax
-    + Path scoped to the wire base; Secure only over https so localhost http still
-    works. */
-async function buildAnonCookie(key: CryptoKey, id: string, url: URL): Promise<string> {
-  const secure = url.protocol === "https:" ? "; Secure" : "";
-  return `${ANON_COOKIE}=${id}.${await anonSign(key, id)}; Path=${BASE_PATH}; HttpOnly; SameSite=Lax${secure}`;
+/** The Set-Cookie for a freshly minted anonymous session. Secure requests get
+    the fixation-proof `__Host-` form (Secure + Path=/, per the prefix rules);
+    insecure (localhost http dev) keeps the plain name scoped to the wire base. */
+async function buildAnonCookie(key: CryptoKey, id: string, secure: boolean): Promise<string> {
+  const value = `${id}.${await anonSign(key, id)}`;
+  return secure
+    ? `${ANON_COOKIE_SECURE}=${value}; Path=/; HttpOnly; SameSite=Lax; Secure`
+    : `${ANON_COOKIE}=${value}; Path=${BASE_PATH}; HttpOnly; SameSite=Lax`;
 }
 
 /** Append the minted Set-Cookie to the response. Stream/SSE responses carry
@@ -301,6 +323,8 @@ function createWireHandler(deps: {
   principal: CreateVendoConfig["principal"];
   ready: Promise<void>;
   anonKey: Promise<CryptoKey>;
+  /** VENDO_BASE_URL is https → TLS terminates upstream; see secureRequest. */
+  trustedBaseIsHttps: boolean;
   sessionId: string;
   store: VendoStore;
   telemetry?: Telemetry;
@@ -329,10 +353,11 @@ function createWireHandler(deps: {
       let sessionId = req.headers.get("x-vendo-session-id") ?? deps.sessionId;
       if (resolved === null) {
         const key = await deps.anonKey;
-        let id = anon.id ?? await verifyAnonCookie(key, req.headers.get("cookie"));
+        const secure = secureRequest(new URL(req.url), deps.trustedBaseIsHttps);
+        let id = anon.id ?? await verifyAnonCookie(key, req.headers.get("cookie"), secure);
         if (id === null) {
           id = randomId();
-          anon.setCookie = await buildAnonCookie(key, id, new URL(req.url));
+          anon.setCookie = await buildAnonCookie(key, id, secure);
         }
         anon.id = id;
         principal = ephemeralPrincipal(`anonymous_${id}`);
@@ -710,10 +735,21 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Per-process signing key for anonymous-session cookies (WebCrypto only; see
   // newAnonKey). Anonymous principals are minted per-CLIENT in the handler.
   const anonKey = newAnonKey();
+  // An https VENDO_BASE_URL means TLS terminates at a trusted proxy and requests
+  // arrive here as http — anon cookies must still be Secure/__Host- then.
+  const trustedBaseIsHttps = ((): boolean => {
+    if (configuredBaseUrl === undefined) return false;
+    try {
+      return new URL(configuredBaseUrl).protocol === "https:";
+    } catch {
+      return false;
+    }
+  })();
   const handler = createWireHandler({
     principal: config.principal,
     ready,
     anonKey,
+    trustedBaseIsHttps,
     sessionId,
     store,
     telemetry: telemetryClient(config.telemetry),

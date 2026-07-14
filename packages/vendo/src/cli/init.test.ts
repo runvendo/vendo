@@ -133,6 +133,7 @@ describe("vendo init", () => {
     expect(scaffold).toContain("source.body.getReader()");
     expect(scaffold).toContain('app.use("/api/vendo", mountVendo());');
     expect(scaffold).toContain("<VendoRoot theme={theme as VendoTheme}>");
+    expect(scaffold).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
     expect(scaffold).toContain('import theme from "<path-to>/.vendo/theme.json";');
     expect(scaffold).toContain('import type { VendoTheme } from "@vendoai/vendo";');
     expect(await readFile(join(root, "vendo", "ai.ts"), "utf8")).toContain("export const model");
@@ -156,10 +157,18 @@ describe("vendo init", () => {
     await rm(join(root, "tsconfig.json"));
     const sink = output();
     expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
-    expect(JSON.parse(sink.logs.join("\n")).codeChanges).toMatchObject([
+    const codeChanges = JSON.parse(sink.logs.join("\n")).codeChanges as Array<{ path: string; diff: string }>;
+    expect(codeChanges).toMatchObject([
       { path: "vendo/server.mjs" },
       { path: "vendo/ai.mjs" },
     ]);
+    // The JS wiring hint must be pasteable JavaScript — no type-only syntax.
+    const scaffold = codeChanges[0]?.diff ?? "";
+    expect(scaffold).toContain('import { VendoRoot } from "@vendoai/vendo/react";');
+    expect(scaffold).toContain('import theme from "<path-to>/.vendo/theme.json";');
+    expect(scaffold).toContain("<VendoRoot theme={theme}>");
+    expect(scaffold).not.toContain("as VendoTheme");
+    expect(scaffold).not.toContain("import type");
   });
 
   it("emits a read-only agent plan with the plain-language questions", async () => {

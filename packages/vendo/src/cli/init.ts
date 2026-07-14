@@ -144,14 +144,25 @@ function expressServerSource(modelImport: string, typescript: boolean): string {
     ? `    init.body = Readable.toWeb(request) as ReadableStream<Uint8Array>;\n`
     : `    init.body = Readable.toWeb(request);\n`;
 
+  // The client-entry hint mirrors the host's language: the TS variant needs the
+  // VendoTheme cast (JSON-module literals widen to string), the JS variant must
+  // not show type-only syntax a JavaScript host cannot paste.
+  const clientHint = typescript
+    ? ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
+      ` *   // the cast narrows TypeScript's widened JSON-module string literals:\n` +
+      ` *   import { VendoRoot } from "@vendoai/vendo/react";\n` +
+      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+      ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
+      ` *   root.render(<VendoRoot theme={theme as VendoTheme}><App /></VendoRoot>);\n`
+    : ` *   // in the client entry — theme.json adopts the host brand (08 §4):\n` +
+      ` *   import { VendoRoot } from "@vendoai/vendo/react";\n` +
+      ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
+      ` *   root.render(<VendoRoot theme={theme}><App /></VendoRoot>);\n`;
+
   return `/**\n` +
     ` * Add these wiring lines in your host:\n` +
     ` *   app.use("/api/vendo", mountVendo());\n` +
-    ` *   // in the client entry — theme.json adopts the host brand (08 §4);\n` +
-    ` *   // the cast narrows TypeScript's widened JSON-module string literals:\n` +
-    ` *   import theme from "<path-to>/.vendo/theme.json";\n` +
-    ` *   import type { VendoTheme } from "@vendoai/vendo";\n` +
-    ` *   root.render(<VendoRoot theme={theme as VendoTheme}><App /></VendoRoot>);\n` +
+    clientHint +
     ` */\n` +
     imports +
     `import { model } from ${JSON.stringify(modelImport)};\n` +
