@@ -1,6 +1,6 @@
 ---
 title: "Theming"
-description: "The VendoTheme tokens used by every shipped chrome surface."
+description: "The VendoTheme token shape extracted into .vendo/theme.json and consumed by every shipped chrome surface, including colors, radii, density, and motion."
 ---
 
 Init extracts `.vendo/theme.json`. The theme has this exact shape:
@@ -14,6 +14,10 @@ export interface VendoTheme {
   motion: "full" | "reduced";
 }
 ```
+
+Init wires this file into the scaffolded `<VendoRoot theme={...}>` at build time
+(sync regenerates it on each build), so a fresh install renders on brand without
+passing `theme` by hand.
 
 Pass partial runtime overrides through `VendoProvider.theme`. Shipped chrome
 derives its colors, typography, radius, density, and motion from these tokens.

@@ -1,6 +1,6 @@
 ---
 title: "vendo init"
-description: "The interactive setup interview and its reviewable outputs."
+description: "How the vendo init wizard scans your app, interviews you about risk, theme, and remix candidates, and writes reviewable diffs plus .vendo overrides."
 ---
 
 Run init after installing the umbrella:
@@ -12,7 +12,10 @@ npx vendo init
 The wizard scans the app with deterministic analysis plus available AI
 assistance. It interviews you with recommendations for risk labels, theme, and
 remix candidates. It then proposes the handler route and `<VendoRoot>` wiring.
-Every code change is permission-gated and shown as a diff.
+The scaffolded `<VendoRoot>` imports the extracted `.vendo/theme.json` and passes
+it as the `theme` prop, so shipped chrome adopts the host brand from the first
+boot with no hand wiring. Every code change is permission-gated and shown as a
+diff.
 
 Answers land in `.vendo/overrides.json` and remain authoritative across future
 sync runs. Init also writes policy, product brief, theme, and the PGlite ignore
