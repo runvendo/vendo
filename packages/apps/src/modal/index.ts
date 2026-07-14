@@ -4,6 +4,7 @@ import type { SandboxAdapter, SandboxMachine } from "../sandbox.js";
 const DEFAULT_PORT = 8080;
 const APP_NAME = "vendo-apps";
 const BASE_IMAGE = "node:22-alpine";
+const STATE_PATH = "/app/.vendo-modal-state.json";
 const START_COMMAND = [
   "sh",
   "-c",
@@ -32,10 +33,47 @@ interface MachineState {
   port: number;
 }
 
+interface SerializedMachineState extends MachineState {
+  version: 1;
+}
+
 const textEncoder = new TextEncoder();
 
 const toBytes = (value: Uint8Array | string): Uint8Array =>
   typeof value === "string" ? textEncoder.encode(value) : value.slice();
+
+const serializeState = (state: MachineState): Uint8Array => textEncoder.encode(JSON.stringify({
+  version: 1,
+  env: { ...state.env },
+  ...(state.egress === undefined ? {} : { egress: [...state.egress] }),
+  port: state.port,
+} satisfies SerializedMachineState));
+
+const deserializeState = (bytes: Uint8Array): MachineState => {
+  try {
+    const value = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    if (typeof value !== "object" || value === null) throw new Error("not an object");
+    const state = value as Record<string, unknown>;
+    if (state.version !== 1 || typeof state.env !== "object" || state.env === null || Array.isArray(state.env)) {
+      throw new Error("invalid state envelope");
+    }
+    const env = state.env as Record<string, unknown>;
+    if (Object.values(env).some((entry) => typeof entry !== "string")) throw new Error("invalid env");
+    if (!Number.isInteger(state.port) || (state.port as number) <= 0 || (state.port as number) > 65_535) {
+      throw new Error("invalid port");
+    }
+    if (state.egress !== undefined && (!Array.isArray(state.egress) || state.egress.some((host) => typeof host !== "string"))) {
+      throw new Error("invalid egress policy");
+    }
+    return {
+      env: { ...env } as Record<string, string>,
+      ...(state.egress === undefined ? {} : { egress: [...state.egress as string[]] }),
+      port: state.port as number,
+    };
+  } catch {
+    throw new VendoError("sandbox-unavailable", "Modal snapshot is missing durable runtime state");
+  }
+};
 
 const parsePort = (env: Record<string, string>): number => {
   const port = Number(env.PORT ?? DEFAULT_PORT);
@@ -47,11 +85,12 @@ const responseHeaders = (headers: Headers): Record<string, string> =>
 
 const networkOptions = (egress: string[] | undefined): {
   blockNetwork?: boolean;
+  outboundCidrAllowlist?: string[];
   outboundDomainAllowlist?: string[];
 } => egress === undefined
   ? {}
   : egress.length === 0
-    ? { blockNetwork: true }
+    ? { outboundCidrAllowlist: [], outboundDomainAllowlist: [] }
     : { outboundDomainAllowlist: [...egress] };
 
 /**
@@ -67,13 +106,14 @@ const networkOptions = (egress: string[] | undefined): {
  * The start command waits for runtime-owned `/app/start.sh` or `/app/server.js`,
  * because Modal accepts initial files only through its post-create filesystem
  * API. Per-app egress uses Modal's provider-native domain allowlist; an empty
- * list sets `blockNetwork`. Image restore reuses the original create options
- * retained by this adapter instance. The optional SDK is imported lazily.
+ * list uses empty outbound-only CIDR/domain allowlists so serving tunnels stay
+ * reachable. Image restore reads a versioned state manifest
+ * captured inside the image, so env, egress, and port survive adapter/process
+ * restarts. State discovery runs in a short-lived network-blocked probe before
+ * the restored machine is created with its original policy. The optional SDK
+ * is imported lazily.
  */
 export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter => {
-  const imageStates = new Map<string, MachineState>();
-  const sandboxStates = new Map<string, MachineState>();
-
   const clientOptions = (): Pick<ModalSandboxOptions, "tokenId" | "tokenSecret"> => ({
     ...(options.tokenId === undefined ? {} : { tokenId: options.tokenId }),
     ...(options.tokenSecret === undefined ? {} : { tokenSecret: options.tokenSecret }),
@@ -96,9 +136,30 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
 
   const spawn = async (client: ModalClient, image: ModalImage, state: MachineState): Promise<ModalMachine> => {
     const app = await client.apps.fromName(APP_NAME, { createIfMissing: true });
-    const sandbox = await client.sandboxes.create(app, image, createParams(state));
-    sandboxStates.set(sandbox.sandboxId, state);
-    return sandbox;
+    return client.sandboxes.create(app, image, createParams(state));
+  };
+
+  const persistState = (sandbox: ModalMachine, state: MachineState): Promise<void> =>
+    sandbox.filesystem.writeBytes(serializeState(state), STATE_PATH);
+
+  const readState = async (sandbox: ModalMachine): Promise<MachineState> =>
+    deserializeState(await sandbox.filesystem.readBytes(STATE_PATH));
+
+  const probeImageState = async (client: ModalClient, image: ModalImage): Promise<MachineState> => {
+    const app = await client.apps.fromName(APP_NAME, { createIfMissing: true });
+    const probe = await client.sandboxes.create(app, image, {
+      env: {},
+      command: ["sh", "-c", "sleep 300"],
+      workdir: "/app",
+      blockNetwork: true,
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: options.idleTimeoutMs }),
+    });
+    try {
+      return await readState(probe);
+    } finally {
+      await probe.terminate().catch(() => undefined);
+    }
   };
 
   const wrap = (sandbox: ModalMachine, state: MachineState): SandboxMachine => {
@@ -153,8 +214,8 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
         },
       },
       async snapshot() {
+        await persistState(sandbox, state);
         const image = await sandbox.snapshotFilesystem();
-        imageStates.set(image.imageId, state);
         return `modal:im_${image.imageId}`;
       },
       url: servingUrl,
@@ -176,19 +237,20 @@ export const modalSandbox = (options: ModalSandboxOptions = {}): SandboxAdapter 
       const sandbox = await spawn(client, image, state);
       await Promise.all(Object.entries(spec.files ?? {}).map(([path, bytes]) =>
         sandbox.filesystem.writeBytes(toBytes(bytes), path)));
+      await persistState(sandbox, state);
       return wrap(sandbox, state);
     },
     async resume(snapshotRef) {
       const client = await newClient();
       if (snapshotRef.startsWith("modal:sb_") && snapshotRef.length > "modal:sb_".length) {
         const sandboxId = snapshotRef.slice("modal:sb_".length);
-        const state = sandboxStates.get(sandboxId) ?? { env: {}, port: DEFAULT_PORT };
-        return wrap(await client.sandboxes.fromId(sandboxId), state);
+        const sandbox = await client.sandboxes.fromId(sandboxId);
+        return wrap(sandbox, await readState(sandbox));
       }
       if (snapshotRef.startsWith("modal:im_") && snapshotRef.length > "modal:im_".length) {
         const imageId = snapshotRef.slice("modal:im_".length);
-        const state = imageStates.get(imageId) ?? { env: {}, port: DEFAULT_PORT };
         const image = await client.images.fromId(imageId);
+        const state = await probeImageState(client, image);
         return wrap(await spawn(client, image, state), state);
       }
       throw new VendoError("validation", "Modal snapshot references must start with modal:im_ or modal:sb_");

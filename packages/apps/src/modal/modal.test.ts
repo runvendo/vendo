@@ -8,8 +8,11 @@ const sdk = vi.hoisted(() => {
     stderr: { readText: vi.fn(async () => "err") },
   };
   const filesystem = {
-    readBytes: vi.fn(async () => new Uint8Array([1, 2])),
-    writeBytes: vi.fn(async () => undefined),
+    contents: new Map<string, Uint8Array>(),
+    readBytes: vi.fn(async (path: string) => filesystem.contents.get(path)?.slice() ?? new Uint8Array([1, 2])),
+    writeBytes: vi.fn(async (bytes: Uint8Array, path: string) => {
+      filesystem.contents.set(path, bytes.slice());
+    }),
     listFiles: vi.fn(async () => [{ name: "a.txt" }, { name: "dir" }]),
   };
   const sandbox = {
@@ -38,6 +41,7 @@ vi.mock("modal", () => ({ ModalClient: sdk.ModalClient }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sdk.filesystem.contents.clear();
   vi.stubGlobal("fetch", vi.fn(async () => new Response("modal", {
     status: 202,
     headers: { "x-provider": "modal" },
@@ -74,18 +78,18 @@ describe("modalSandbox", () => {
         outboundDomainAllowlist: ["api.example.com"],
       }),
     );
-    expect(sdk.filesystem.writeBytes.mock.calls).toEqual([
+    expect(sdk.filesystem.writeBytes.mock.calls).toEqual(expect.arrayContaining([
       [expect.any(Uint8Array), "/app/server.js"],
       [expect.any(Uint8Array), "/app/data.bin"],
-    ]);
+    ]));
   });
 
-  it("uses blockNetwork for an empty allowlist", async () => {
+  it("uses empty outbound-only allowlists so deny-all egress keeps tunnels reachable", async () => {
     await modalSandbox().create({ env: {}, egress: [] });
     expect(sdk.client.sandboxes.create).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
-      expect.objectContaining({ blockNetwork: true }),
+      expect.objectContaining({ outboundCidrAllowlist: [], outboundDomainAllowlist: [] }),
     );
   });
 
@@ -134,5 +138,31 @@ describe("modalSandbox", () => {
     await adapter.resume("modal:sb_running_1");
     expect(sdk.client.sandboxes.fromId).toHaveBeenCalledWith("running_1");
     await expect(adapter.resume("e2b:wrong")).rejects.toMatchObject({ code: "validation" });
+  });
+
+  it("restores env, egress, and port from a snapshot in a fresh adapter process", async () => {
+    const firstProcess = modalSandbox();
+    const machine = await firstProcess.create({
+      env: { PORT: "9090", FEATURE: "durable", SECRET_HANDLE: "vendo-secret:HANDLE:nonce" },
+      egress: ["api.example.com"],
+    });
+    const snapshotRef = await machine.snapshot();
+
+    const freshProcess = modalSandbox();
+    await freshProcess.resume(snapshotRef);
+
+    expect(sdk.client.sandboxes.create).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { imageId: "image_789" },
+      expect.objectContaining({
+        env: {
+          PORT: "9090",
+          FEATURE: "durable",
+          SECRET_HANDLE: "vendo-secret:HANDLE:nonce",
+        },
+        encryptedPorts: [9090],
+        outboundDomainAllowlist: ["api.example.com"],
+      }),
+    );
   });
 });
