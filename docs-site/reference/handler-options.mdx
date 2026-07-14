@@ -17,6 +17,8 @@ description: "Every createVendo configuration option and fetch-handler setting, 
 | `judge` | no | contextual guard judge |
 | `secrets` | no | defaults to environment-backed secret lookup |
 | `telemetry` | no | wires build and development telemetry |
+| `mcp` | no | opens the [MCP door](/capabilities/mcp) so outside agents reach host tools through the guarded path; off by default |
+| `oauth` | conditional | `HostOAuthAdapter` used by the door for identity and consent; required when `mcp` is `true` |
 
 ## Base path
 

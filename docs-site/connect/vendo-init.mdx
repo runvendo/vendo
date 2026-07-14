@@ -21,6 +21,30 @@ Answers land in `.vendo/overrides.json` and remain authoritative across future
 sync runs. Init also writes policy, product brief, theme, and the PGlite ignore
 entry where applicable.
 
+Init also asks whether to open the [MCP door](/capabilities/mcp). Opening it is
+a host decision and needs a `HostOAuthAdapter`, so init never scaffolds it: on
+yes it points you at the wiring. The door stays off unless you opt in.
+
+## Framework detection
+
+Init reads `package.json` and scaffolds only the files that apply. It detects two
+frameworks by dependency:
+
+- **Next.js** (a `next` dependency): proposes `app/api/vendo/[...vendo]/route.ts`
+  and wraps the root layout in `<VendoRoot>`.
+- **Express** (an `express` dependency): proposes a `vendo/server.ts` module
+  (`vendo/server.mjs` without a `tsconfig.json`) holding the `createVendo()`
+  composition and a Node HTTP-to-fetch adapter, plus a starter `vendo/ai.ts`. Two
+  manual steps remain: mount the adapter with
+  `app.use("/api/vendo", mountVendo())` and wrap the client entry in
+  `<VendoRoot>`. Init prints both, and `vendo doctor` reports broken until they
+  are done.
+
+Init recognizes only `next` and `express`. A host with neither is treated as
+Next. In other runtimes (Fastify, Hono, Bun, Deno, Workers), decline the proposed
+diffs and mount `vendo.handler` yourself. See
+[Quickstart: Express and other JavaScript servers](/quickstart-node).
+
 ## Agent mode
 
 ```bash

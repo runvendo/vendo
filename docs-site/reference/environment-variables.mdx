@@ -8,9 +8,10 @@ description: "Every environment variable Vendo reads across host process, sandbo
 | Variable | Effect |
 | --- | --- |
 | `VENDO_API_KEY` | activates cloud-gated sharing, publishing, org overlays, and pinning after entitlement verification |
+| `VENDO_CLOUD_URL` | overrides the Vendo Cloud base URL for the runtime and CLI; defaults to `https://console.vendo.run` |
 | `VENDO_TELEMETRY_DISABLED=1` | disables build and development telemetry |
 | `VENDO_TICK_SECRET` | bearer secret required by `POST /tick` |
-| `VENDO_BASE_URL` | host origin used for server-side execution of extracted route tools |
+| `VENDO_BASE_URL` | trusted host origin used for server-side execution of extracted route tools and for marking the anonymous-session cookie `Secure` behind a TLS-terminating proxy; set it explicitly when the MCP door is open so door-first traffic still has a base to bind against |
 | `VENDO_PROXY_URL` | tool-proxy URL injected into app machines by the default composition |
 | `VENDO_POSTHOG_KEY` | overrides the telemetry project key |
 | `DO_NOT_TRACK=1` | disables telemetry and is also honored by Scarf |
