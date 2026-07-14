@@ -1043,6 +1043,57 @@ describe("09 §2 apps composition", () => {
       tree: { nodes: [{ component: "MetricCard", source: "host" }] },
     });
   });
+
+  it("loads catalog@1 from .vendo and plumbs it through to createApps", { timeout: 120_000 }, async () => {
+    const { MockLanguageModelV3 } = await import("ai/test");
+    const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-"));
+    const dataDir = join(root, "data");
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "catalog.json"), JSON.stringify({
+      format: "vendo/catalog@1",
+      entries: [{
+        name: "DiskMetric",
+        exportPath: "./src/disk-metric.tsx#DiskMetric",
+        propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        description: "Use for a metric loaded from the generated catalog.",
+        source: "scanned",
+      }],
+    }));
+    const store = createStore({ dataDir });
+    cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: JSON.stringify({
+          name: "Disk catalog app",
+          tree: {
+            formatVersion: VENDO_TREE_FORMAT,
+            root: "metric",
+            nodes: [{ id: "metric", component: "DiskMetric", source: "host", props: { value: 42 } }],
+          },
+        }) }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 0, text: 0, reasoning: 0 },
+        },
+        warnings: [],
+      }),
+    });
+    const previousCwd = process.cwd();
+    const vendo = (() => {
+      try {
+        process.chdir(root);
+        return createVendo({ model, principal: async () => principal, store });
+      } finally {
+        process.chdir(previousCwd);
+      }
+    })();
+    await store.ensureSchema();
+
+    await expect(vendo.apps.create({ prompt: "Show the disk metric" }, ctx)).resolves.toMatchObject({
+      tree: { nodes: [{ component: "DiskMetric", source: "host", props: { value: 42 } }] },
+    });
+  });
 });
 
 describe("10-mcp §5 — door claims only its four exact well-known paths (FIX H)", () => {

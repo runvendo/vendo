@@ -1,7 +1,9 @@
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { JsonSchema } from "@vendoai/core";
 import ts from "typescript";
 import type { CatalogEntry } from "../formats.js";
+import { walk } from "./common.js";
 
 export interface CatalogScanResult {
   entries: CatalogEntry[];
@@ -115,28 +117,35 @@ function objectField(object: ts.ObjectLiteralExpression, name: string): ts.Expre
   return undefined;
 }
 
-function expressionInitializer(checker: ts.TypeChecker, expression: ts.Expression): ts.Expression | undefined {
-  const declaration = symbolDeclaration(checker, expression);
-  return declaration !== undefined && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
+function localConstants(sourceFile: ts.SourceFile): Map<string, ts.Expression> {
+  const constants = new Map<string, ts.Expression>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.initializer !== undefined) {
+        constants.set(declaration.name.text, declaration.initializer);
+      }
+    }
+  }
+  return constants;
 }
 
-function resolvedExpression(checker: ts.TypeChecker, expression: ts.Expression): ts.Expression {
+function resolvedLocalExpression(constants: Map<string, ts.Expression>, expression: ts.Expression): ts.Expression {
   let current = unwrapExpression(expression);
-  const seen = new Set<ts.Symbol>();
+  const seen = new Set<string>();
   while (ts.isIdentifier(current)) {
-    const symbol = resolvedSymbol(checker, current);
-    if (symbol === undefined || seen.has(symbol)) break;
-    seen.add(symbol);
-    const initializer = expressionInitializer(checker, current);
+    if (seen.has(current.text)) break;
+    seen.add(current.text);
+    const initializer = constants.get(current.text);
     if (initializer === undefined) break;
     current = unwrapExpression(initializer);
   }
   return current;
 }
 
-function constantJson(checker: ts.TypeChecker, expression: ts.Expression, depth = 0): unknown {
+function localConstantJson(constants: Map<string, ts.Expression>, expression: ts.Expression, depth = 0): unknown {
   if (depth > 20) return undefined;
-  const value = resolvedExpression(checker, expression);
+  const value = resolvedLocalExpression(constants, expression);
   if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return value.text;
   if (ts.isNumericLiteral(value)) return Number(value.text);
   if (value.kind === ts.SyntaxKind.TrueKeyword) return true;
@@ -150,7 +159,7 @@ function constantJson(checker: ts.TypeChecker, expression: ts.Expression, depth 
     const array: unknown[] = [];
     for (const element of value.elements) {
       if (ts.isSpreadElement(element)) return undefined;
-      const item = constantJson(checker, element, depth + 1);
+      const item = localConstantJson(constants, element, depth + 1);
       if (item === undefined) return undefined;
       array.push(item);
     }
@@ -161,37 +170,43 @@ function constantJson(checker: ts.TypeChecker, expression: ts.Expression, depth 
     for (const property of value.properties) {
       if (!ts.isPropertyAssignment(property)) return undefined;
       const name = propertyName(property.name);
-      const item = constantJson(checker, property.initializer, depth + 1);
+      const item = localConstantJson(constants, property.initializer, depth + 1);
       if (name === undefined || item === undefined) return undefined;
       object[name] = item;
     }
     return object;
   }
   if (ts.isPropertyAccessExpression(value) && value.name.text === "options") {
-    const target = resolvedExpression(checker, value.expression);
+    const target = resolvedLocalExpression(constants, value.expression);
     if (ts.isCallExpression(target)
       && ts.isPropertyAccessExpression(target.expression)
       && target.expression.name.text === "enum"
       && target.arguments[0] !== undefined) {
-      return constantJson(checker, target.arguments[0], depth + 1);
+      return localConstantJson(constants, target.arguments[0], depth + 1);
     }
   }
   return undefined;
 }
 
-function registeredCatalogEntries(
-  program: ts.Program,
-  checker: ts.TypeChecker,
+async function registeredCatalogEntries(
+  registrationFiles: string[],
   root: string,
   scanned: Map<string, CatalogEntry>,
   warnings: string[],
-): CatalogEntry[] {
+): Promise<CatalogEntry[]> {
   const entries: CatalogEntry[] = [];
   const seen = new Set<string>();
-  for (const sourceFile of program.getSourceFiles()) {
-    const relative = path.relative(root, sourceFile.fileName);
-    if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
-    const modulePath = relativeModulePath(root, sourceFile.fileName);
+  for (const file of registrationFiles) {
+    let source: string;
+    try {
+      source = await fs.readFile(file, "utf8");
+    } catch {
+      continue;
+    }
+    const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
+    const constants = localConstants(sourceFile);
+    const modulePath = relativeModulePath(root, file);
     const visit = (node: ts.Node): void => {
       if (!ts.isCallExpression(node)
         || !ts.isIdentifier(node.expression)
@@ -200,24 +215,24 @@ function registeredCatalogEntries(
         ts.forEachChild(node, visit);
         return;
       }
-      const config = resolvedExpression(checker, node.arguments[0]);
+      const config = resolvedLocalExpression(constants, node.arguments[0]);
       if (!ts.isObjectLiteralExpression(config)) return;
       const catalogExpression = objectField(config, "catalog");
       if (catalogExpression === undefined) return;
-      const catalog = resolvedExpression(checker, catalogExpression);
+      const catalog = resolvedLocalExpression(constants, catalogExpression);
       if (!ts.isArrayLiteralExpression(catalog)) {
         warnings.push(`registered component catalog in ${modulePath} is not a statically resolvable array; scanned entries remain authoritative`);
         return;
       }
       for (const element of catalog.elements) {
         if (ts.isSpreadElement(element)) continue;
-        const rawEntry = resolvedExpression(checker, element);
+        const rawEntry = resolvedLocalExpression(constants, element);
         if (!ts.isObjectLiteralExpression(rawEntry)) continue;
-        const name = constantJson(checker, objectField(rawEntry, "name") ?? rawEntry) as unknown;
-        const description = constantJson(checker, objectField(rawEntry, "description") ?? rawEntry) as unknown;
-        const propsJsonSchema = constantJson(checker, objectField(rawEntry, "propsJsonSchema") ?? rawEntry) as unknown;
+        const name = localConstantJson(constants, objectField(rawEntry, "name") ?? rawEntry) as unknown;
+        const description = localConstantJson(constants, objectField(rawEntry, "description") ?? rawEntry) as unknown;
+        const propsJsonSchema = localConstantJson(constants, objectField(rawEntry, "propsJsonSchema") ?? rawEntry) as unknown;
         const rawExamples = objectField(rawEntry, "examples");
-        const examples = rawExamples === undefined ? undefined : constantJson(checker, rawExamples);
+        const examples = rawExamples === undefined ? undefined : localConstantJson(constants, rawExamples);
         if (typeof name !== "string" || !PASCAL_CASE.test(name)
           || typeof description !== "string"
           || propsJsonSchema === null
@@ -422,7 +437,7 @@ function relativeModulePath(root: string, fileName: string): string {
   return relative.startsWith(".") ? relative : `./${relative}`;
 }
 
-function programFor(root: string): { program?: ts.Program; warnings: string[] } {
+function programFor(root: string, rootNames: string[]): { program?: ts.Program; warnings: string[] } {
   const warnings: string[] = [];
   const configPath = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
   if (configPath === undefined) return { warnings: ["component catalog scan skipped: no tsconfig.json found"] };
@@ -434,39 +449,99 @@ function programFor(root: string): { program?: ts.Program; warnings: string[] } 
   for (const diagnostic of parsed.errors) {
     warnings.push(`component catalog tsconfig: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
   }
-  if (parsed.fileNames.length === 0) return { warnings: [...warnings, "component catalog scan skipped: tsconfig includes no source files"] };
-  return { program: ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options }), warnings };
+  if (rootNames.length === 0) return { warnings };
+  const options: ts.CompilerOptions = { ...parsed.options, types: [] };
+  const host = ts.createCompilerHost(options);
+  const cache = ts.createModuleResolutionCache(root, host.getCanonicalFileName, options);
+  host.resolveModuleNameLiterals = (moduleLiterals, containingFile) => moduleLiterals.map((literal) => {
+    const pathMapped = Object.keys(options.paths ?? {}).some((pattern) => {
+      const star = pattern.indexOf("*");
+      return star === -1
+        ? literal.text === pattern
+        : literal.text.startsWith(pattern.slice(0, star)) && literal.text.endsWith(pattern.slice(star + 1));
+    });
+    if (!literal.text.startsWith(".") && !pathMapped) return { resolvedModule: undefined };
+    const resolution = ts.resolveModuleName(literal.text, containingFile, options, host, cache).resolvedModule;
+    if (resolution === undefined) return { resolvedModule: undefined };
+    const relative = path.relative(root, resolution.resolvedFileName);
+    const isHostSource = !relative.startsWith("..") && !path.isAbsolute(relative);
+    return { resolvedModule: isHostSource ? resolution : undefined };
+  });
+  return { program: ts.createProgram({ rootNames, options, host }), warnings };
+}
+
+function sourceCatalogEvidence(sourceFile: ts.SourceFile): { component: boolean; registration: boolean } {
+  let component = false;
+  let registration = false;
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxAttribute(node)
+      && ts.isIdentifier(node.name)
+      && node.name.text === "components"
+      && (ts.isJsxOpeningElement(node.parent.parent) || ts.isJsxSelfClosingElement(node.parent.parent))
+      && node.parent.parent.tagName.getText().endsWith("VendoRoot")) {
+      component = true;
+    }
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "createVendo") {
+      registration = true;
+    }
+    if (!component || !registration) ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return { component, registration };
+}
+
+async function catalogEvidenceFiles(root: string): Promise<{ componentFiles: string[]; registrationFiles: string[] }> {
+  const files = await walk(root, (relative) => /\.(?:ts|tsx)$/.test(relative) && !/\.d\.ts$/.test(relative));
+  const componentFiles: string[] = [];
+  const registrationFiles: string[] = [];
+  for (const file of files) {
+    let source: string;
+    try {
+      source = await fs.readFile(file, "utf8");
+    } catch {
+      continue;
+    }
+    const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const evidence = sourceCatalogEvidence(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind));
+    if (evidence.component) componentFiles.push(file);
+    if (evidence.registration) registrationFiles.push(file);
+  }
+  return { componentFiles, registrationFiles };
 }
 
 /** Deterministic TypeScript-compiler scan. No model output can alter these fields. */
 export async function scanComponentCatalog(root: string): Promise<CatalogScanResult> {
   const resolvedRoot = path.resolve(root);
-  const configured = programFor(resolvedRoot);
-  if (configured.program === undefined) return { entries: [], warnings: configured.warnings, discovered: 0, registered: 0 };
-  const checker = configured.program.getTypeChecker();
-  const componentMaps = registeredComponentMaps(configured.program, checker, resolvedRoot);
+  const evidenceFiles = await catalogEvidenceFiles(resolvedRoot);
+  if (evidenceFiles.componentFiles.length === 0 && evidenceFiles.registrationFiles.length === 0) {
+    return { entries: [], warnings: [], discovered: 0, registered: 0 };
+  }
   const candidates: ComponentCandidate[] = [];
-
-  for (const sourceFile of configured.program.getSourceFiles()) {
-    const relative = path.relative(resolvedRoot, sourceFile.fileName);
-    if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
-    if (relative.split(path.sep).some((part) => part === "node_modules" || part === "dist" || part.startsWith("."))) continue;
-    const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
-    if (moduleSymbol === undefined) continue;
-    const modulePath = relativeModulePath(resolvedRoot, sourceFile.fileName);
-    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
-      let target = exported;
-      if ((target.flags & ts.SymbolFlags.Alias) !== 0) target = checker.getAliasedSymbol(target);
-      const declaration = target.valueDeclaration ?? target.declarations?.[0];
-      if (componentMaps.has(target)) {
-        candidates.push(...exportedObjectCandidates(checker, declaration, modulePath, exported.name));
+  const configured = programFor(resolvedRoot, evidenceFiles.componentFiles);
+  const warnings = [...configured.warnings];
+  const checker = configured.program?.getTypeChecker();
+  if (configured.program !== undefined && checker !== undefined) {
+    const componentMaps = registeredComponentMaps(configured.program, checker, resolvedRoot);
+    for (const sourceFile of configured.program.getSourceFiles()) {
+      const relative = path.relative(resolvedRoot, sourceFile.fileName);
+      if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+      if (relative.split(path.sep).some((part) => part === "node_modules" || part === "dist" || part.startsWith("."))) continue;
+      const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+      if (moduleSymbol === undefined) continue;
+      const modulePath = relativeModulePath(resolvedRoot, sourceFile.fileName);
+      for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+        let target = exported;
+        if ((target.flags & ts.SymbolFlags.Alias) !== 0) target = checker.getAliasedSymbol(target);
+        const declaration = target.valueDeclaration ?? target.declarations?.[0];
+        if (componentMaps.has(target)) {
+          candidates.push(...exportedObjectCandidates(checker, declaration, modulePath, exported.name));
+        }
       }
     }
   }
 
   candidates.sort((left, right) => left.name.localeCompare(right.name) || left.exportPath.localeCompare(right.exportPath));
   const scannedEntries: CatalogEntry[] = [];
-  const warnings = [...configured.warnings];
   const seen = new Set<string>();
   for (const candidate of candidates) {
     if (seen.has(candidate.name)) {
@@ -474,7 +549,7 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
       continue;
     }
     seen.add(candidate.name);
-    const converted = schemaForComponent(checker, candidate.declaration);
+    const converted = schemaForComponent(checker!, candidate.declaration);
     scannedEntries.push({
       name: candidate.name,
       exportPath: candidate.exportPath,
@@ -487,7 +562,7 @@ export async function scanComponentCatalog(root: string): Promise<CatalogScanRes
     });
   }
   const scannedByName = new Map(scannedEntries.map((entry) => [entry.name, entry]));
-  const registeredEntries = registeredCatalogEntries(configured.program, checker, resolvedRoot, scannedByName, warnings);
+  const registeredEntries = await registeredCatalogEntries(evidenceFiles.registrationFiles, resolvedRoot, scannedByName, warnings);
   const registeredNames = new Set(registeredEntries.map((entry) => entry.name));
   const entries = [
     ...scannedEntries.filter((entry) => !registeredNames.has(entry.name)),

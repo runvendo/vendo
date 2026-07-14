@@ -87,14 +87,15 @@ describe("deterministic component catalog scan", () => {
   it("lets a statically serializable createVendo catalog registration win", async () => {
     const root = await host(`
       type ComponentType = (props: unknown) => unknown;
-      function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
+      function MetricCard({ value, tone }: { value: number; tone?: "up" | "down" }) { return <strong>{value}{tone}</strong>; }
       export const hostComponents: Record<string, ComponentType> = { MetricCard: MetricCard as ComponentType };
       export function CatalogRoot() { return <VendoRoot components={hostComponents} />; }
+      const toneSchema = z.enum(["up", "down"]);
       const catalog = [{
         name: "MetricCard",
         description: "Use for one headline metric.",
         propsSchema: {},
-        propsJsonSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+        propsJsonSchema: { type: "object", properties: { value: { type: "number" }, tone: { enum: toneSchema.options } }, required: ["value"], additionalProperties: false },
         examples: ["<MetricCard value={42} />"],
       }];
       createVendo({ catalog });
@@ -108,7 +109,7 @@ describe("deterministic component catalog scan", () => {
       description: "Use for one headline metric.",
       examples: ["<MetricCard value={42} />"],
       exportPath: "./src/components.tsx#hostComponents.MetricCard",
-      propsSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"], additionalProperties: false },
+      propsSchema: { type: "object", properties: { value: { type: "number" }, tone: { enum: ["up", "down"] } }, required: ["value"], additionalProperties: false },
     })]);
   });
 });
