@@ -53,12 +53,14 @@
     "prebuild": "pnpm run build:jail",
     "build": "tsc -p tsconfig.json",
     "pretest": "pnpm run build:jail",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
+    "pretest:coverage": "pnpm run build:jail",
     "pretypecheck": "pnpm run build:jail",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:browser": "playwright test",
     "test:mcp-shim": "playwright test --config e2e/mcp-shim.config.ts",
-    "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs"
+    "build:mcp-shim": "node scripts/build-mcp-app-shim.mjs",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.30",

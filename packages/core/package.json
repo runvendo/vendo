@@ -2,7 +2,12 @@
   "name": "@vendoai/core",
   "version": "0.3.0",
   "description": "The shapes everything speaks: Vendo v0 contracts — types, zod schemas, format constants, pure validators, descriptor hashing, and seam conformance kits.",
-  "keywords": ["ai", "agent", "genui", "vendo"],
+  "keywords": [
+    "ai",
+    "agent",
+    "genui",
+    "vendo"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -31,11 +36,14 @@
       "default": "./dist/conformance/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "zod": "^3.24.0"
