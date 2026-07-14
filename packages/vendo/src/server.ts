@@ -13,6 +13,7 @@ import {
   vendoThemeSchema,
   type ActAs,
   type ApprovalDecision,
+  type ComponentCatalog,
   type Json,
   type Principal,
   type RunContext,
@@ -56,6 +57,8 @@ export interface Vendo {
 export interface CreateVendoConfig {
   model: LanguageModel;
   principal: (req: Request) => Promise<Principal | null>;
+  /** Host components available to generated apps; entry names must mirror the client-side components map 1:1. */
+  catalog?: ComponentCatalog;
   store?: VendoStore;
   sandbox?: SandboxAdapter;
   connectors?: Connector[];
@@ -723,7 +726,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     tools: boundTools,
     model: config.model,
-    catalog: [],
+    catalog: config.catalog ?? [],
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
