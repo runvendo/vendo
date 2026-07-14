@@ -143,6 +143,7 @@ interface NodeRendererProps {
   components: Record<string, ComponentType>;
   data: Record<string, Json>;
   state: Record<string, Json>;
+  streaming: boolean;
   outcomes: Record<string, ToolOutcome | undefined>;
   runAction(nodeId: string, action: string, payload?: Json): Promise<ToolOutcome>;
   setViewState(key: string, value: Json): void;
@@ -174,7 +175,11 @@ function NodeRenderer(props: NodeRendererProps) {
   if (node.source === "generated") {
     const source = props.generated[node.component];
     if (source === undefined) {
-      content = (
+      content = props.streaming ? (
+        <span data-streaming-component={node.component}>
+          <Skeleton />
+        </span>
+      ) : (
         <ContainedNotice label="Unknown generated component">
           {`Generated component "${node.component}" has no source.`}
         </ContainedNotice>
@@ -236,7 +241,19 @@ function StatefulTreeView({
 }: TreeViewProps) {
   const theme = useVendoThemeOrDefault();
   const themeVars = useMemo(() => themeCssVariables(theme), [theme]);
-  const validation = validateTree(tree);
+  const streaming = (tree as Tree & { streaming?: unknown }).streaming === true;
+  // A partial stream may close a generated node before its top-level source
+  // string closes. Supply validator-only placeholders, then keep the real map
+  // empty so NodeRenderer paints a skeleton until the source arrives.
+  const validation = validateTree(streaming ? {
+    ...tree,
+    components: Object.fromEntries([
+      ...Object.entries(tree.components ?? {}),
+      ...tree.nodes
+        .filter((node) => node.source === "generated")
+        .map((node) => [node.component, tree.components?.[node.component] ?? ""]),
+    ]),
+  } : tree);
   const [viewState, setViewState] = useState<Record<string, Json>>({});
   const stateRef = useRef(viewState);
   const [outcomes, setOutcomes] = useState<Record<string, ToolOutcome | undefined>>({});
@@ -284,11 +301,12 @@ function StatefulTreeView({
         nodeId={validation.tree.root}
         ancestry={new Set()}
         nodes={nodes}
-        generated={validation.tree.components ?? {}}
+        generated={streaming ? tree.components ?? {} : validation.tree.components ?? {}}
         themeVars={themeVars}
         components={components}
         data={data ?? validation.tree.data ?? {}}
         state={viewState}
+        streaming={streaming}
         outcomes={outcomes}
         runAction={runAction}
         setViewState={updateState}
