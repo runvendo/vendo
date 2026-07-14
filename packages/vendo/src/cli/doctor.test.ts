@@ -4,7 +4,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ActAs, PermissionGrant, Principal } from "@vendoai/core";
-import { createStore } from "@vendoai/store";
+import { memoryStoreAdapter } from "@vendoai/core/conformance";
+import type { VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createVendo, type Vendo } from "../server.js";
@@ -102,8 +103,12 @@ async function liveHost(options: { configureBaseUrl?: boolean; actAs?: boolean }
   actAs: ReturnType<typeof vi.fn<ActAs>>;
 }> {
   const root = await healthy();
-  const dataDir = await mkdtemp(join(tmpdir(), "vendo-doctor-store-"));
-  const store = createStore({ dataDir });
+  const memory = memoryStoreAdapter();
+  const store: VendoStore = {
+    ...memory,
+    async close() {},
+    raw: () => undefined,
+  };
   let vendo: Vendo | undefined;
   const server = createServer((req, res) => {
     if (vendo === undefined) {
@@ -144,7 +149,6 @@ async function liveHost(options: { configureBaseUrl?: boolean; actAs?: boolean }
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await store.close();
-    await rm(dataDir, { recursive: true, force: true });
   });
   return { root, url: `${origin}/api/vendo`, actAs };
 }
