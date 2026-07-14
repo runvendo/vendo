@@ -8,7 +8,7 @@
 
 ## Repos
 
-Gate set (locked by parent + Yousef 2026-07-14, aligned with the extraction project): **umami, skateshop, papermark, teable** + the Maple/Cadence beats. teable is already corpus-onboarded broad-tier; its deep-tier boot+seed hardening lands via extraction's M8 (ENG-257) — timing coordinated directly with the extraction session. Until teable boots reliably, harness shakeout uses express-host (cheap local deep repo) and, if extraction hands over a known-good boot recipe, Rallly as interim material. express-host stays a dev smoke target but is OUT of the sign-off montage. The repo list is config/argument-driven — never hardcoded.
+Gate set (locked by parent + Yousef 2026-07-14, aligned with the extraction project): **umami, skateshop, papermark, teable** + the Maple/Cadence beats. teable's deep-tier boot+seed slice was pulled forward as ENG-291 (dedicated extraction child session, ~1-2 days from 2026-07-14; recipe arrives by orchestration message + ENG-291 comment, proven over 3+ clean boot cycles before handoff). Until then, harness shakeout uses express-host (most deterministic boot in the corpus). Rallly has only a provisional, unexecuted recipe (monorepo apps/web, pnpm docker:up → db:deploy → db:seed → dev, readiness :3000) — extraction's ENG-246 is battle-testing it; do not adopt Rallly before their confirmation. express-host stays a dev smoke target but is OUT of the sign-off montage. The repo list is config/argument-driven — never hardcoded.
 
 ## Waves
 
