@@ -8,7 +8,7 @@
 
 ## Repos
 
-Live-verified today: umami, skateshop, papermark (external, 5/5 Layer-3 live) + express-host (deep, local). That is 4; the spec gate says 5. Fifth repo choice escalated to the parent orchestrator — candidate: promote one broad-tier repo (taxonomy or invoify, both batch-A dev-set members) to deep/bootable. The harness takes the repo list as an argument, so this does not block the build.
+Gate set (locked by parent + Yousef 2026-07-14, aligned with the extraction project): **umami, skateshop, papermark, teable** + the Maple/Cadence beats. teable is already corpus-onboarded broad-tier; its deep-tier boot+seed hardening lands via extraction's M8 (ENG-257) — timing coordinated directly with the extraction session. Until teable boots reliably, harness shakeout uses express-host (cheap local deep repo) and, if extraction hands over a known-good boot recipe, Rallly as interim material. express-host stays a dev smoke target but is OUT of the sign-off montage. The repo list is config/argument-driven — never hardcoded.
 
 ## Waves
 
