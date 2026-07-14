@@ -43,7 +43,8 @@ Attached to every tool call, guard decision, and audit event. The two axes the p
 ```ts
 export interface RunContext {
   principal: Principal;
-  venue: "chat" | "app" | "automation" | "mcp";   // mcp reserved for the deferred door
+  venue: "chat" | "app" | "automation" | "mcp";   // "mcp" is live — the door (10-mcp.md)  <!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door and read "mcp reserved for the deferred door". The value is now live in code (run-context.ts:21,32). -->
+
   presence: "present" | "away";
   sessionId: string;
   appId?: AppId;        // set when running inside an app
@@ -121,7 +122,8 @@ export interface PermissionGrant {
   duration: GrantDuration;
   contextKey?: string;          // binds session/task grants to their context
   appId?: AppId;        // set when granted to a specific app (incl. automation pre-approval)
-  source: "chat" | "batch" | "automation";   // the only mint points: ApprovalDecision.remember (chat/batch) and automation enable-capture
+  source: "chat" | "batch" | "automation" | "mcp";   // mint points: ApprovalDecision.remember (chat/batch), automation enable-capture, and the door's per-call actAs authority (venue="mcp"); "mcp" grants are never persisted and never consulted by guard  <!-- amended 2026-07-14: "mcp" added — MCP door landed (PR #139), code grants.ts:74,90. -->
+
   grantedAt: IsoDateTime;
   expiresAt?: IsoDateTime;
   revokedAt?: IsoDateTime;
@@ -171,7 +173,8 @@ Every tool call, approval, and policy decision — recorded with principal + app
 export interface AuditEvent {
   id: string;                    // "aud_..."
   at: IsoDateTime;
-  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share";
+  kind: "tool-call" | "approval" | "policy-decision" | "run" | "app-lifecycle" | "share" | "door-auth";  // "door-auth": an MCP-door OAuth/principal-mint event  <!-- amended 2026-07-14: "door-auth" added — MCP door landed (PR #139), code audit.ts:12,29. -->
+
   principal: Principal;
   venue: RunContext["venue"];
   presence: RunContext["presence"];
