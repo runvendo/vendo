@@ -1,10 +1,25 @@
 // @vitest-environment jsdom
 
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { VendoProvider } from "../../src/index.js";
 import { VendoStage } from "../../src/voice/index.js";
 import { ScriptedVoiceDriver } from "./fake-driver.js";
+
+// This suite exercises VendoStage's behavior (controls, announced status,
+// ordered transcript) — not fluidkit's animated presence, which is decorative
+// and `aria-hidden`. The real `VoiceBall` pulls in `motion`, whose frameloop
+// keeps a `requestAnimationFrame` perpetually outstanding. Under jsdom that rAF
+// is backed by a Node `setInterval` that outlives vitest's environment teardown
+// and then dereferences a stripped `window` — surfacing as unhandled
+// "window is not defined" errors after the file passes. Mocking fluidkit with
+// an inert stub keeps that async animation machinery out of the test entirely,
+// which is both faithful (the ball is not under test) and deterministic.
+vi.mock("fluidkit", () => ({
+  VoiceBall: (props: { size?: number }) => (
+    <span data-fluidkit="voice-ball-stub" style={{ width: props.size, height: props.size }} />
+  ),
+}));
 
 describe("VendoStage", () => {
   it("controls the session and renders announced state and ordered transcript", () => {
