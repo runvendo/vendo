@@ -1,0 +1,61 @@
+---
+title: "Vendo product changelog"
+description: "Weekly release notes covering new Vendo features, product updates, MCP door capabilities, and bug fixes shipped to the SDK and runtime."
+---
+
+<Update label="July 13, 2026" description="Week of July 7 – July 13">
+
+## New features
+
+**MCP door for Claude, ChatGPT, and other MCP clients.** Turn on the MCP
+door with `createVendo({ mcp: true, oauth })` to serve your host tools out
+to MCP clients. Discovery, OAuth registration, and token endpoints mount
+alongside the existing wire, and are routed ahead of the CSRF gate so
+form-encoded OAuth requests reach the door cleanly. See [Connectors](/capabilities/integrations)
+and the [quickstart](/quickstart) for setup.
+
+**Authenticated host tool calls from MCP.** MCP clients have no host
+browser session, so host tools now authenticate through the same `actAs`
+seam that powers automations. Grants are consent-keyed against the door's
+consent evidence, so tool calls made from a Claude or ChatGPT session run
+as the connected user without the door ever forwarding the inbound MCP
+bearer. Missing consent fails closed with a clean not-implemented tool
+error. See [Server API reference](/reference/server-api).
+
+## Updates
+
+**Approval replay for one-off MCP calls.** When an MCP client retries an
+identical destructive call in the same session, the door reuses the parked
+`ToolCall` id so a one-off (no-remember) approval authorizes the retry
+instead of silently re-parking it. A third attempt re-asks. Consent-source
+projections never persist. See [Tools and safety](/concepts/tools-and-safety).
+
+**Cold-start door mount hint.** `McpDoorConfig.mount` lets a cold-composed
+umbrella advertise its door path on the server card. Learned paths never
+override the configured mount, so MCP clients discover the door on the
+first request. See [Server API reference](/reference/server-api).
+
+**`/status` and `doctor` report MCP posture.** The `mcp` flag now lives
+under `blocks.mcp`. `vendo doctor` verifies discovery documents when the
+door is enabled. See the [CLI reference](/reference/cli) and
+[Deploying](/deploy/deploying).
+
+**`vendo_apps_open` over MCP.** The apps registry keeps the same
+descriptor and execution path; the door attaches MCP-Apps `_meta` and
+unwraps the OpenSurface envelope into a shim-renderable payload for MCP
+clients. See [Host components](/connect/host-components).
+
+## Bug fixes
+
+- **Unauthenticated host calls from `vendo_apps_call` over the door.**
+  Actions now routes to the `actAs` path on the door's consent evidence,
+  which survives apps' venue re-contextualization. Host calls made from
+  apps over MCP no longer land as anonymous requests.
+- **Well-known path shadowing.** The door's isDoorPath check is now
+  restricted to its four exact well-known paths, so it no longer shadows
+  host OAuth or OIDC metadata routes.
+- **Missing OAuth discovery on origin root.** Origin-root well-known
+  discovery is now mounted ahead of the wire's CSRF JSON gate, so MCP
+  clients can complete registration and token exchange.
+
+</Update>
