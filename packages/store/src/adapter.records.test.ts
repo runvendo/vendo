@@ -73,6 +73,44 @@ for (const backend of backends()) {
       expect((await b.get("shared_note"))?.data).toEqual({ app: "b" });
     });
 
+    it("atomically compares and claims a record exactly once", async () => {
+      const firstHandle = made.store.records("atomic_claims");
+      const secondHandle = made.store.records("atomic_claims");
+      const expected = await firstHandle.put({
+        id: "claim_1",
+        data: { status: "unclaimed" },
+        refs: { owner: "user_1" },
+      });
+
+      expect(firstHandle.claim).toBeTypeOf("function");
+      expect(secondHandle.claim).toBeTypeOf("function");
+      if (!firstHandle.claim || !secondHandle.claim) throw new Error("store does not support atomic claims");
+
+      const [first, second] = await Promise.all([
+        firstHandle.claim(expected, {
+          data: { status: "claimed", winner: "first" },
+          refs: expected.refs,
+        }),
+        secondHandle.claim(expected, {
+          data: { status: "claimed", winner: "second" },
+          refs: expected.refs,
+        }),
+      ]);
+
+      expect([first, second].filter(Boolean)).toHaveLength(1);
+      expect((await firstHandle.get(expected.id))?.data).toEqual({
+        status: "claimed",
+        winner: first ? "first" : "second",
+      });
+
+      // A stale compare cannot consume the winner's row. The current value can.
+      expect(await firstHandle.claim(expected)).toBe(false);
+      const current = await firstHandle.get(expected.id);
+      expect(current).not.toBeNull();
+      expect(await firstHandle.claim(current!)).toBe(true);
+      expect(await firstHandle.get(expected.id)).toBeNull();
+    });
+
     it("rejects malformed cursors as validation errors", async () => {
       const records = made.store.records("cursor_errors");
       const encode = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");

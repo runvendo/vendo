@@ -1,15 +1,16 @@
-import type {
-  AppDocument,
-  AuditEvent,
-  BlobStore,
-  Guard,
-  Principal,
-  RecordQuery,
-  RecordStore,
-  StoreAdapter,
-  ToolOutcome,
-  ToolRegistry,
-  VendoRecord,
+import {
+  canonicalJson,
+  type AppDocument,
+  type AuditEvent,
+  type BlobStore,
+  type Guard,
+  type Principal,
+  type RecordQuery,
+  type RecordStore,
+  type StoreAdapter,
+  type ToolOutcome,
+  type ToolRegistry,
+  type VendoRecord,
 } from "@vendoai/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -309,13 +310,13 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(revoked.status).toBe(401);
   });
 
-  it("does not fork on concurrent refresh of the same token (in-process lock)", async () => {
+  it("does not fork on concurrent refresh of the same token (atomic claim)", async () => {
     const harness = makeHarness();
     const client = await register(harness.door);
     const first = await issue(harness.door, client.body.client_id);
 
-    // Two simultaneous rotations of the same refresh token: the lock serializes
-    // them, so exactly one succeeds and the other sees it already rotated.
+    // Two simultaneous rotations of the same refresh token: the store claim
+    // admits exactly one and the other sees reuse of the already-rotated grant.
     const [a, b] = await Promise.all([
       refresh(harness.door, first.refresh_token, client.body.client_id),
       refresh(harness.door, first.refresh_token, client.body.client_id),
@@ -1054,6 +1055,27 @@ class MemoryStore implements StoreAdapter {
         };
         rows.set(stored.id, stored);
         return stored;
+      },
+      async claim(expected, replacement) {
+        const current = rows.get(expected.id);
+        if (
+          !current
+          || canonicalJson(current.data) !== canonicalJson(expected.data)
+          || canonicalJson(current.refs ?? null) !== canonicalJson(expected.refs ?? null)
+        ) return false;
+        if (replacement === undefined) {
+          rows.delete(expected.id);
+        } else {
+          const now = new Date().toISOString();
+          rows.set(expected.id, {
+            id: expected.id,
+            data: structuredClone(replacement.data),
+            ...(replacement.refs === undefined ? {} : { refs: { ...replacement.refs } }),
+            createdAt: current.createdAt,
+            updatedAt: now,
+          });
+        }
+        return true;
       },
       async delete(id) { rows.delete(id); },
       async list(query?: RecordQuery) {

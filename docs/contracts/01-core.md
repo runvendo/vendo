@@ -345,6 +345,10 @@ export interface RecordQuery { refs?: Record<string, string>; ids?: string[]; li
 export interface RecordStore {
   get(id: string): Promise<VendoRecord | null>;
   put(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord>;
+  // Optional additive capability: one compare-and-claim statement. Exact data
+  // + refs match; replacement omitted means delete. Exactly one caller gets true.
+  claim?(expected: Pick<VendoRecord, "id" | "data" | "refs">,
+         replacement?: Pick<VendoRecord, "data" | "refs">): Promise<boolean>;
   delete(id: string): Promise<void>;
   list(q?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
 }
@@ -453,4 +457,10 @@ export interface VendoApprovalPart { type: "data-vendo-approval"; toolCallId: st
 - **Changed:** Documented the shipped `@vendoai/core/conformance` test-infrastructure subpath and the stable root utilities already consumed by sibling blocks, including the exact-grant input hash algorithm.
 - **Changed:** Recorded that `Tree.data` and `TreeNode.props` size limits are delegated to host request-body enforcement.
 - **Why:** Post-freeze MCP work and sibling usage had expanded the real surface without updating this contract, and the host-side tree size responsibility was only pinned in a test.
+- **Approved by:** Yousef, 2026-07-14.
+
+### 2026-07-14 — Atomic record claims
+
+- **Changed:** Added optional `RecordStore.claim(expected, replacement?)` as the core seam for one-statement compare-and-replace or compare-and-delete adapters.
+- **Why:** Store consumers that require single-use state need an additive capability they can require without importing the concrete store block.
 - **Approved by:** Yousef, 2026-07-14.
