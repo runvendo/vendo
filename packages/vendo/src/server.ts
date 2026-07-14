@@ -31,6 +31,7 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
+import { computeImpact } from "./sync-impact.js";
 
 const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
@@ -467,6 +468,17 @@ function createWireHandler(deps: {
           return json({ error: { code: "blocked", message: "invalid tick credential" } }, 401);
         }
         return json({ runIds: await deps.automations.tick() });
+      }
+      if (request.method === "POST" && path === "/sync/impact") {
+        if (process.env.NODE_ENV === "production") {
+          throw new VendoError("blocked", "sync impact is only available on a dev server");
+        }
+        const body = await requestJson(request);
+        const tools = body["tools"];
+        if (!Array.isArray(tools) || tools.length > 200 || tools.some((tool) => typeof tool !== "string")) {
+          throw new VendoError("validation", "tools must be an array of at most 200 strings");
+        }
+        return json({ impact: await computeImpact(deps.store, tools) });
       }
       if (path.startsWith("/proxy/")) {
         const proxyPath = path.slice("/proxy".length);
