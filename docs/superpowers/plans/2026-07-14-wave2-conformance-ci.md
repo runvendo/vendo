@@ -26,8 +26,10 @@
 - Read: `corpus/harness/src/local-pack.ts`; `packages/ui/package.json` (mcp-shim scripts); `packages/apps/src/testing/memory-store.ts`, `packages/guard/test/fixtures/memory-store.ts`
 - Read: `packages/vendo/src/type-surface.test.ts` (tsc-backed pattern from the tidy wave, reusable for parity checks)
 
-- [ ] **Step 1:** Read all inputs; confirm Wave 1 amendments are on main (contracts show the Amendments sections).
-- [ ] **Step 2:** List the contract clauses per package that currently lack a named conformance test (gap evidence: core misses a `door-auth` positive leg; store misses audit append-only characterization — deferred to Wave 3 enforcement, so here it gets a *documenting* test of current door behavior marked for Wave 3 flip; agent misses provider wire-format legs beyond Anthropic).
+- [x] **Step 1:** Read all inputs; confirm Wave 1 amendments are on main (contracts show the Amendments sections).
+- [x] **Step 2:** List the contract clauses per package that currently lack a named conformance test (gap evidence: core misses a `door-auth` positive leg; store misses audit append-only characterization — deferred to Wave 3 enforcement, so here it gets a *documenting* test of current door behavior marked for Wave 3 flip; agent misses provider wire-format legs beyond Anthropic).
+
+  Gap inventory at execution time: core 01 §7 lacks a positive `door-auth` audit-kind leg and its amended export-surface promises are not inventoried; store 02 §3 lacks contract-to-code reserved-route drift coverage and 02 §2 lacks a Wave-3-flip characterization of the currently mutable audit door; agent 03 §3(4) catalog/theme assembly remains intentionally unimplemented until Wave 5 and lacks a visible skipped conformance case; agent 03 §§2–4 lacks OpenAI-compatible wire-format coverage and OpenAI/proxy live legs.
 
 ### Task 2: Real-Postgres leg in PR CI
 
@@ -35,10 +37,10 @@
 - Modify: `.github/workflows/ci.yml`
 - Modify: `packages/store/src/postgres-gate.test.ts`
 
-- [ ] **Step 1:** Add a `postgres:16` service to the CI test job with health checks; set `POSTGRES_URL` for the test step so `backends()` returns both backends.
-- [ ] **Step 2:** Make the gate assertive in CI: when `CI=true` and `POSTGRES_URL` is unset, `postgres-gate.test.ts` FAILS (instead of politely noting the skip); locally it keeps today's visible-skip behavior.
-- [ ] **Step 3:** Run the store suite locally against a disposable Postgres (docker) to shake out any PGlite-only assumptions before CI sees them; fix only test-side issues, escalate code-side ones.
-- [ ] **Step 4:** Commit.
+- [x] **Step 1:** Add a `postgres:16` service to the CI test job with health checks; set `POSTGRES_URL` for the test step so `backends()` returns both backends.
+- [x] **Step 2:** Make the gate assertive in CI: when `CI=true` and `POSTGRES_URL` is unset, `postgres-gate.test.ts` FAILS (instead of politely noting the skip); locally it keeps today's visible-skip behavior.
+- [x] **Step 3:** Run the store suite locally against a disposable Postgres (docker) to shake out any PGlite-only assumptions before CI sees them; fix only test-side issues, escalate code-side ones.
+- [x] **Step 4:** Commit.
 
 ### Task 3: Per-package conformance suites
 

@@ -10,6 +10,20 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vendo
+          POSTGRES_PASSWORD: vendo
+          POSTGRES_DB: vendo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vendo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -23,7 +37,10 @@ jobs:
       # ratcheted line-coverage floor (coverage.thresholds.lines in its vitest
       # config); a drop below the floor fails the build. This is the required
       # coverage gate — it supersedes a bare `pnpm test`.
-      - run: pnpm test:coverage
+      - name: Test with coverage (PGlite + PostgreSQL)
+        run: pnpm test:coverage
+        env:
+          POSTGRES_URL: postgres://vendo:vendo@localhost:5432/vendo_test
       - run: pnpm typecheck
       - run: pnpm lint
 
