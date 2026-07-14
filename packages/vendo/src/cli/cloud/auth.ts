@@ -92,7 +92,7 @@ export async function runLogin(args: string[], options: CloudAuthOptions = {}): 
   try {
     await fetcher("/api/v1/auth/otp/start", { ...common, method: "POST", body: { email } });
     const otp = (await (options.promptOtp ?? interactiveOtp)(`Enter the code sent to ${email}`)).trim();
-    if (!/^\d{6}$/.test(otp)) throw new Error("Email OTP must be a 6-digit code");
+    if (!/^\d{6,10}$/.test(otp)) throw new Error("Email OTP must be a 6-10 digit code");
     const result = await fetcher("/api/v1/auth/otp/verify", {
       ...common,
       method: "POST",

@@ -13,7 +13,8 @@ VENDO_API_KEY; user commands use a stored email-OTP session or the `--token
 - `vendo cloud pin-ship --app app_cli --slot hero --base sha256:aa --diff d` → `{ id: pin_…, status: "pending" }`
 
 ## User authentication
-- `vendo cloud login EMAIL` → sends a 6-digit email OTP, prompts for the code,
+- `vendo cloud login EMAIL` → sends an email OTP (6-10 digits; this Supabase
+  project issues 8-digit codes), prompts for the code,
   and stores the returned session in `~/.vendo/cloud-session.json`
 - `vendo cloud login --token <jwt>` → stores an access-token-only fallback session
 
