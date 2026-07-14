@@ -1,0 +1,497 @@
+import path from "node:path";
+import type { JsonSchema } from "@vendoai/core";
+import ts from "typescript";
+import type { CatalogEntry } from "../formats.js";
+
+export interface CatalogScanResult {
+  entries: CatalogEntry[];
+  warnings: string[];
+  discovered: number;
+  registered: number;
+}
+
+interface ComponentCandidate {
+  name: string;
+  declaration: ts.FunctionLikeDeclaration;
+  exportPath: string;
+}
+
+interface SchemaResult {
+  schema?: JsonSchema;
+  unsupported?: string;
+}
+
+const PASCAL_CASE = /^[A-Z][A-Za-z0-9_$]*$/;
+
+function hasJsxEvidence(node: ts.Node): boolean {
+  let found = false;
+  const visit = (child: ts.Node): void => {
+    if (found) return;
+    if (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child) || ts.isJsxFragment(child)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(child, visit);
+  };
+  ts.forEachChild(node, visit);
+  return found;
+}
+
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+  let current = expression;
+  while (
+    ts.isAsExpression(current)
+    || ts.isTypeAssertionExpression(current)
+    || ts.isParenthesizedExpression(current)
+    || ts.isSatisfiesExpression(current)
+    || ts.isNonNullExpression(current)
+  ) current = current.expression;
+  return current;
+}
+
+function functionFromDeclaration(declaration: ts.Declaration | undefined): ts.FunctionLikeDeclaration | undefined {
+  if (declaration === undefined) return undefined;
+  if (ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration)) return declaration;
+  if (ts.isVariableDeclaration(declaration) && declaration.initializer !== undefined) {
+    const initializer = unwrapExpression(declaration.initializer);
+    if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) return initializer;
+  }
+  return undefined;
+}
+
+function symbolDeclaration(checker: ts.TypeChecker, expression: ts.Expression): ts.Declaration | undefined {
+  const unwrapped = unwrapExpression(expression);
+  if (!ts.isIdentifier(unwrapped)) return undefined;
+  const symbol = resolvedSymbol(checker, unwrapped);
+  return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+}
+
+function resolvedSymbol(checker: ts.TypeChecker, node: ts.Node): ts.Symbol | undefined {
+  let symbol = ts.isIdentifier(node) && ts.isShorthandPropertyAssignment(node.parent)
+    ? checker.getShorthandAssignmentValueSymbol(node.parent)
+    : checker.getSymbolAtLocation(node);
+  if (symbol !== undefined && (symbol.flags & ts.SymbolFlags.Alias) !== 0) symbol = checker.getAliasedSymbol(symbol);
+  return symbol;
+}
+
+function registeredComponentMaps(program: ts.Program, checker: ts.TypeChecker, root: string): Set<ts.Symbol> {
+  const registered = new Set<ts.Symbol>();
+  for (const sourceFile of program.getSourceFiles()) {
+    const relative = path.relative(root, sourceFile.fileName);
+    if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+    const visit = (node: ts.Node): void => {
+      if (ts.isJsxAttribute(node)
+        && ts.isIdentifier(node.name)
+        && node.name.text === "components"
+        && node.initializer !== undefined
+        && ts.isJsxExpression(node.initializer)
+        && node.initializer.expression !== undefined
+        && ts.isIdentifier(unwrapExpression(node.initializer.expression))) {
+        const opening = node.parent.parent;
+        if ((ts.isJsxOpeningElement(opening) || ts.isJsxSelfClosingElement(opening))
+          && opening.tagName.getText().endsWith("VendoRoot")) {
+          const symbol = resolvedSymbol(checker, unwrapExpression(node.initializer.expression));
+          if (symbol !== undefined) registered.add(symbol);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  return registered;
+}
+
+function propertyName(name: ts.PropertyName): string | undefined {
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)
+    ? name.text
+    : undefined;
+}
+
+function objectField(object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
+  for (const property of object.properties) {
+    if (ts.isPropertyAssignment(property) && propertyName(property.name) === name) return property.initializer;
+    if (ts.isShorthandPropertyAssignment(property) && property.name.text === name) return property.name;
+  }
+  return undefined;
+}
+
+function expressionInitializer(checker: ts.TypeChecker, expression: ts.Expression): ts.Expression | undefined {
+  const declaration = symbolDeclaration(checker, expression);
+  return declaration !== undefined && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
+}
+
+function resolvedExpression(checker: ts.TypeChecker, expression: ts.Expression): ts.Expression {
+  let current = unwrapExpression(expression);
+  const seen = new Set<ts.Symbol>();
+  while (ts.isIdentifier(current)) {
+    const symbol = resolvedSymbol(checker, current);
+    if (symbol === undefined || seen.has(symbol)) break;
+    seen.add(symbol);
+    const initializer = expressionInitializer(checker, current);
+    if (initializer === undefined) break;
+    current = unwrapExpression(initializer);
+  }
+  return current;
+}
+
+function constantJson(checker: ts.TypeChecker, expression: ts.Expression, depth = 0): unknown {
+  if (depth > 20) return undefined;
+  const value = resolvedExpression(checker, expression);
+  if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return value.text;
+  if (ts.isNumericLiteral(value)) return Number(value.text);
+  if (value.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (value.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (value.kind === ts.SyntaxKind.NullKeyword) return null;
+  if (ts.isPrefixUnaryExpression(value) && ts.isNumericLiteral(value.operand)) {
+    const number = Number(value.operand.text);
+    return value.operator === ts.SyntaxKind.MinusToken ? -number : number;
+  }
+  if (ts.isArrayLiteralExpression(value)) {
+    const array: unknown[] = [];
+    for (const element of value.elements) {
+      if (ts.isSpreadElement(element)) return undefined;
+      const item = constantJson(checker, element, depth + 1);
+      if (item === undefined) return undefined;
+      array.push(item);
+    }
+    return array;
+  }
+  if (ts.isObjectLiteralExpression(value)) {
+    const object: Record<string, unknown> = {};
+    for (const property of value.properties) {
+      if (!ts.isPropertyAssignment(property)) return undefined;
+      const name = propertyName(property.name);
+      const item = constantJson(checker, property.initializer, depth + 1);
+      if (name === undefined || item === undefined) return undefined;
+      object[name] = item;
+    }
+    return object;
+  }
+  if (ts.isPropertyAccessExpression(value) && value.name.text === "options") {
+    const target = resolvedExpression(checker, value.expression);
+    if (ts.isCallExpression(target)
+      && ts.isPropertyAccessExpression(target.expression)
+      && target.expression.name.text === "enum"
+      && target.arguments[0] !== undefined) {
+      return constantJson(checker, target.arguments[0], depth + 1);
+    }
+  }
+  return undefined;
+}
+
+function registeredCatalogEntries(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  root: string,
+  scanned: Map<string, CatalogEntry>,
+  warnings: string[],
+): CatalogEntry[] {
+  const entries: CatalogEntry[] = [];
+  const seen = new Set<string>();
+  for (const sourceFile of program.getSourceFiles()) {
+    const relative = path.relative(root, sourceFile.fileName);
+    if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+    const modulePath = relativeModulePath(root, sourceFile.fileName);
+    const visit = (node: ts.Node): void => {
+      if (!ts.isCallExpression(node)
+        || !ts.isIdentifier(node.expression)
+        || node.expression.text !== "createVendo"
+        || node.arguments[0] === undefined) {
+        ts.forEachChild(node, visit);
+        return;
+      }
+      const config = resolvedExpression(checker, node.arguments[0]);
+      if (!ts.isObjectLiteralExpression(config)) return;
+      const catalogExpression = objectField(config, "catalog");
+      if (catalogExpression === undefined) return;
+      const catalog = resolvedExpression(checker, catalogExpression);
+      if (!ts.isArrayLiteralExpression(catalog)) {
+        warnings.push(`registered component catalog in ${modulePath} is not a statically resolvable array; scanned entries remain authoritative`);
+        return;
+      }
+      for (const element of catalog.elements) {
+        if (ts.isSpreadElement(element)) continue;
+        const rawEntry = resolvedExpression(checker, element);
+        if (!ts.isObjectLiteralExpression(rawEntry)) continue;
+        const name = constantJson(checker, objectField(rawEntry, "name") ?? rawEntry) as unknown;
+        const description = constantJson(checker, objectField(rawEntry, "description") ?? rawEntry) as unknown;
+        const propsJsonSchema = constantJson(checker, objectField(rawEntry, "propsJsonSchema") ?? rawEntry) as unknown;
+        const rawExamples = objectField(rawEntry, "examples");
+        const examples = rawExamples === undefined ? undefined : constantJson(checker, rawExamples);
+        if (typeof name !== "string" || !PASCAL_CASE.test(name)
+          || typeof description !== "string"
+          || propsJsonSchema === null
+          || typeof propsJsonSchema !== "object"
+          || Array.isArray(propsJsonSchema)
+          || (examples !== undefined && (!Array.isArray(examples) || examples.some((example) => typeof example !== "string")))) {
+          warnings.push(`registered component in ${modulePath} could not be serialized deterministically and was omitted`);
+          continue;
+        }
+        if (seen.has(name)) {
+          warnings.push(`registered component ${name} appears more than once; kept the first registration`);
+          continue;
+        }
+        seen.add(name);
+        entries.push({
+          name,
+          exportPath: scanned.get(name)?.exportPath ?? `${modulePath}#catalog.${name}`,
+          propsSchema: propsJsonSchema as Record<string, unknown>,
+          description,
+          ...(examples === undefined ? {} : { examples: examples as string[] }),
+          source: "registered",
+        });
+      }
+    };
+    visit(sourceFile);
+  }
+  return entries.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function exportedObjectCandidates(
+  checker: ts.TypeChecker,
+  declaration: ts.Declaration | undefined,
+  modulePath: string,
+  exportName: string,
+): ComponentCandidate[] {
+  if (declaration === undefined) return [];
+  if (!ts.isVariableDeclaration(declaration) || declaration.initializer === undefined) return [];
+  const initializer = unwrapExpression(declaration.initializer);
+  if (!ts.isObjectLiteralExpression(initializer)) return [];
+  const candidates: ComponentCandidate[] = [];
+  for (const property of initializer.properties) {
+    let name: string | undefined;
+    let value: ts.Expression | undefined;
+    if (ts.isPropertyAssignment(property)) {
+      name = propertyName(property.name);
+      value = property.initializer;
+    } else if (ts.isShorthandPropertyAssignment(property)) {
+      name = property.name.text;
+      value = property.name;
+    }
+    if (name === undefined || value === undefined || !PASCAL_CASE.test(name)) continue;
+    const component = functionFromDeclaration(symbolDeclaration(checker, value));
+    if (component !== undefined && hasJsxEvidence(component)) {
+      candidates.push({ name, declaration: component, exportPath: `${modulePath}#${exportName}.${name}` });
+    }
+  }
+  return candidates;
+}
+
+function literalValue(type: ts.Type): string | number | boolean | undefined {
+  if (type.isStringLiteral()) return type.value;
+  if (type.isNumberLiteral()) return type.value;
+  if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
+    return (type as ts.Type & { intrinsicName?: string }).intrinsicName === "true";
+  }
+  return undefined;
+}
+
+function withoutUndefined(type: ts.Type): ts.Type[] {
+  const members = type.isUnion() ? type.types : [type];
+  return members.filter((member) => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
+}
+
+function schemaForType(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  location: ts.Node,
+  seen: Set<number>,
+  depth: number,
+): SchemaResult {
+  if (depth > 12) return { unsupported: `type nesting exceeds the supported depth (${checker.typeToString(type)})` };
+  if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never)) !== 0) {
+    return { unsupported: `unsupported type ${checker.typeToString(type)}` };
+  }
+
+  const members = withoutUndefined(type);
+  if (members.length !== (type.isUnion() ? type.types.length : 1)) {
+    if (members.length === 0) return { unsupported: `unsupported type ${checker.typeToString(type)}` };
+    if (members.length === 1) return schemaForType(checker, members[0]!, location, seen, depth);
+    if (members.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
+      return { schema: { type: "boolean" } };
+    }
+    const values = members.map(literalValue);
+    if (values.every((value) => value !== undefined)) return { schema: { enum: values } };
+    const variants: JsonSchema[] = [];
+    for (const member of members) {
+      const converted = schemaForType(checker, member, location, new Set(seen), depth + 1);
+      if (converted.schema === undefined) return converted;
+      variants.push(converted.schema);
+    }
+    return { schema: { anyOf: variants } };
+  }
+
+  if (type.isUnion()) {
+    if (type.types.every((member) => (member.flags & ts.TypeFlags.BooleanLiteral) !== 0)) {
+      return { schema: { type: "boolean" } };
+    }
+    const values = type.types.map(literalValue);
+    if (values.every((value) => value !== undefined)) return { schema: { enum: values } };
+    const variants: JsonSchema[] = [];
+    for (const member of type.types) {
+      const converted = schemaForType(checker, member, location, new Set(seen), depth + 1);
+      if (converted.schema === undefined) return converted;
+      variants.push(converted.schema);
+    }
+    return { schema: { anyOf: variants } };
+  }
+
+  const literal = literalValue(type);
+  if (literal !== undefined) return { schema: { const: literal } };
+  if ((type.flags & ts.TypeFlags.StringLike) !== 0) return { schema: { type: "string" } };
+  if ((type.flags & (ts.TypeFlags.NumberLike | ts.TypeFlags.BigIntLike)) !== 0) return { schema: { type: "number" } };
+  if ((type.flags & ts.TypeFlags.BooleanLike) !== 0) return { schema: { type: "boolean" } };
+  if ((type.flags & ts.TypeFlags.Null) !== 0) return { schema: { type: "null" } };
+
+  if (checker.isTupleType(type)) {
+    const arguments_ = checker.getTypeArguments(type as ts.TypeReference);
+    const prefixItems: JsonSchema[] = [];
+    for (const argument of arguments_) {
+      const converted = schemaForType(checker, argument, location, new Set(seen), depth + 1);
+      if (converted.schema === undefined) return converted;
+      prefixItems.push(converted.schema);
+    }
+    return { schema: { type: "array", prefixItems, minItems: prefixItems.length, maxItems: prefixItems.length } };
+  }
+  if (checker.isArrayType(type)) {
+    const item = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
+    if (item === undefined) return { unsupported: `array item type could not be resolved (${checker.typeToString(type)})` };
+    const converted = schemaForType(checker, item, location, new Set(seen), depth + 1);
+    return converted.schema === undefined ? converted : { schema: { type: "array", items: converted.schema } };
+  }
+
+  if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
+    return { unsupported: `callable type ${checker.typeToString(type)}` };
+  }
+  if ((type.flags & ts.TypeFlags.Object) === 0) {
+    return { unsupported: `unsupported type ${checker.typeToString(type)}` };
+  }
+
+  const id = (type as ts.Type & { id?: number }).id;
+  if (id !== undefined) {
+    if (seen.has(id)) return { unsupported: `recursive type ${checker.typeToString(type)}` };
+    seen.add(id);
+  }
+
+  const properties: Record<string, JsonSchema> = {};
+  const required: string[] = [];
+  for (const property of checker.getPropertiesOfType(type).sort((left, right) => left.name.localeCompare(right.name))) {
+    const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? location;
+    const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration);
+    const converted = schemaForType(checker, propertyType, declaration, new Set(seen), depth + 1);
+    if (converted.schema === undefined) {
+      return { unsupported: `property ${property.name} uses ${converted.unsupported ?? checker.typeToString(propertyType)}` };
+    }
+    properties[property.name] = converted.schema;
+    if ((property.flags & ts.SymbolFlags.Optional) === 0
+      && withoutUndefined(propertyType).length === (propertyType.isUnion() ? propertyType.types.length : 1)) {
+      required.push(property.name);
+    }
+  }
+
+  const schema: JsonSchema = { type: "object", properties };
+  const stringIndex = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+  if (stringIndex === undefined) schema.additionalProperties = false;
+  else {
+    const converted = schemaForType(checker, stringIndex, location, new Set(seen), depth + 1);
+    if (converted.schema === undefined) return converted;
+    schema.additionalProperties = converted.schema;
+  }
+  if (required.length > 0) schema.required = required;
+  return { schema };
+}
+
+function schemaForComponent(checker: ts.TypeChecker, declaration: ts.FunctionLikeDeclaration): SchemaResult {
+  const signature = checker.getSignatureFromDeclaration(declaration as ts.SignatureDeclaration);
+  const parameter = signature?.parameters[0];
+  if (parameter === undefined) {
+    return { schema: { type: "object", properties: {}, additionalProperties: false } };
+  }
+  const parameterDeclaration = parameter.valueDeclaration ?? parameter.declarations?.[0] ?? declaration;
+  return schemaForType(
+    checker,
+    checker.getTypeOfSymbolAtLocation(parameter, parameterDeclaration),
+    parameterDeclaration,
+    new Set(),
+    0,
+  );
+}
+
+function relativeModulePath(root: string, fileName: string): string {
+  const relative = path.relative(root, fileName).split(path.sep).join("/");
+  return relative.startsWith(".") ? relative : `./${relative}`;
+}
+
+function programFor(root: string): { program?: ts.Program; warnings: string[] } {
+  const warnings: string[] = [];
+  const configPath = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
+  if (configPath === undefined) return { warnings: ["component catalog scan skipped: no tsconfig.json found"] };
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (config.error !== undefined) {
+    return { warnings: [`component catalog scan skipped: ${ts.flattenDiagnosticMessageText(config.error.messageText, " ")}`] };
+  }
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, path.dirname(configPath), undefined, configPath);
+  for (const diagnostic of parsed.errors) {
+    warnings.push(`component catalog tsconfig: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
+  }
+  if (parsed.fileNames.length === 0) return { warnings: [...warnings, "component catalog scan skipped: tsconfig includes no source files"] };
+  return { program: ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options }), warnings };
+}
+
+/** Deterministic TypeScript-compiler scan. No model output can alter these fields. */
+export async function scanComponentCatalog(root: string): Promise<CatalogScanResult> {
+  const resolvedRoot = path.resolve(root);
+  const configured = programFor(resolvedRoot);
+  if (configured.program === undefined) return { entries: [], warnings: configured.warnings, discovered: 0, registered: 0 };
+  const checker = configured.program.getTypeChecker();
+  const componentMaps = registeredComponentMaps(configured.program, checker, resolvedRoot);
+  const candidates: ComponentCandidate[] = [];
+
+  for (const sourceFile of configured.program.getSourceFiles()) {
+    const relative = path.relative(resolvedRoot, sourceFile.fileName);
+    if (sourceFile.isDeclarationFile || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+    if (relative.split(path.sep).some((part) => part === "node_modules" || part === "dist" || part.startsWith("."))) continue;
+    const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+    if (moduleSymbol === undefined) continue;
+    const modulePath = relativeModulePath(resolvedRoot, sourceFile.fileName);
+    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+      let target = exported;
+      if ((target.flags & ts.SymbolFlags.Alias) !== 0) target = checker.getAliasedSymbol(target);
+      const declaration = target.valueDeclaration ?? target.declarations?.[0];
+      if (componentMaps.has(target)) {
+        candidates.push(...exportedObjectCandidates(checker, declaration, modulePath, exported.name));
+      }
+    }
+  }
+
+  candidates.sort((left, right) => left.name.localeCompare(right.name) || left.exportPath.localeCompare(right.exportPath));
+  const scannedEntries: CatalogEntry[] = [];
+  const warnings = [...configured.warnings];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (seen.has(candidate.name)) {
+      warnings.push(`component ${candidate.name} was discovered more than once; kept ${scannedEntries.find((entry) => entry.name === candidate.name)?.exportPath}`);
+      continue;
+    }
+    seen.add(candidate.name);
+    const converted = schemaForComponent(checker, candidate.declaration);
+    scannedEntries.push({
+      name: candidate.name,
+      exportPath: candidate.exportPath,
+      propsSchema: converted.schema ?? {},
+      description: "",
+      source: "scanned",
+      ...(converted.unsupported === undefined
+        ? {}
+        : { note: `Props schema is permissive because the TypeScript type could not be represented deterministically: ${converted.unsupported}.` }),
+    });
+  }
+  const scannedByName = new Map(scannedEntries.map((entry) => [entry.name, entry]));
+  const registeredEntries = registeredCatalogEntries(configured.program, checker, resolvedRoot, scannedByName, warnings);
+  const registeredNames = new Set(registeredEntries.map((entry) => entry.name));
+  const entries = [
+    ...scannedEntries.filter((entry) => !registeredNames.has(entry.name)),
+    ...registeredEntries,
+  ].sort((left, right) => left.name.localeCompare(right.name));
+  return { entries, warnings, discovered: scannedEntries.length, registered: registeredEntries.length };
+}
