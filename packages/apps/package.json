@@ -38,6 +38,10 @@
     "./modal": {
       "types": "./dist/modal/index.d.ts",
       "default": "./dist/modal/index.js"
+    },
+    "./cloud": {
+      "types": "./dist/cloud-sandbox.d.ts",
+      "default": "./dist/cloud-sandbox.js"
     }
   },
   "files": [
