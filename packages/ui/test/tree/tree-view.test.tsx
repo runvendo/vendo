@@ -264,14 +264,17 @@ describe("TreeView bindings and outcomes", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Run action" }));
-    await waitFor(() => expect(onAction).toHaveBeenCalledWith({
+    // The outcome attribute and notice only appear once the async onAction
+    // promise resolves and React commits; wait on that observable state rather
+    // than on the mock merely having been called.
+    expect(await screen.findByRole("note", { name: /action pending approval/i })).toBeTruthy();
+    expect(document.querySelector('[data-vendo-node-id="root"]')?.getAttribute("data-vendo-outcome"))
+      .toBe("pending-approval");
+    expect(onAction).toHaveBeenCalledWith({
       nodeId: "root",
       action: "fn:submit",
       payload: { row: 7 },
-    }));
-    expect(document.querySelector('[data-vendo-node-id="root"]')?.getAttribute("data-vendo-outcome"))
-      .toBe("pending-approval");
-    expect(screen.getByRole("note", { name: /action pending approval/i })).toBeTruthy();
+    });
   });
 
   it("ignores an unknown future ToolOutcome status without throwing a notice", async () => {
@@ -294,7 +297,13 @@ describe("TreeView bindings and outcomes", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Run future action" }));
-    await waitFor(() => expect(onAction).toHaveBeenCalledOnce());
+    // Wait for the unknown outcome to actually land (root gains the raw status
+    // attribute) before asserting no notice — otherwise the null check can pass
+    // simply because the async result has not committed yet.
+    await waitFor(() => expect(
+      document.querySelector('[data-vendo-node-id="root"]')?.getAttribute("data-vendo-outcome"),
+    ).toBe("future-thing"));
+    expect(onAction).toHaveBeenCalledOnce();
     expect(screen.queryByRole("note")).toBeNull();
   });
 });
