@@ -91,10 +91,13 @@ is an AI SDK UI message stream. Any generated app surface arrives in a
 `data-vendo-view` part and any approval metadata in a `data-vendo-approval`
 part.
 
-Present tool calls forward the inbound request's cookie and authorization
-headers to same-origin host routes. Every call passes through the guard. With
-no policy or judge, calls auto-run and are audited, and shipped chrome displays
-the unconfigured-policy notice.
+Set `VENDO_BASE_URL` to the host origin (for example,
+`http://localhost:3000`) before starting the server. Present tool calls forward
+the inbound request's cookie and authorization headers only when this trusted
+origin is set; without it, route execution still works but forwards no
+credentials. Every call passes through the guard. With no policy or judge,
+calls auto-run and are audited, and shipped chrome displays the
+unconfigured-policy notice.
 
 ## What works without more configuration
 
@@ -106,6 +109,10 @@ the unconfigured-policy notice.
 A sandbox adapter unlocks server-backed app rungs. `actAs` unlocks host API
 calls while the user is away. Connectors add external tools. `VENDO_API_KEY`
 activates cloud-gated sharing, publishing, org overlays, and pinning.
+
+Away execution cannot create its own authority: it requires an app-bound
+automation grant captured while that user was present. Without that prior
+grant, the run parks for approval before `actAs` is called.
 
 ## Serve your product to MCP clients (the door)
 
@@ -182,6 +189,7 @@ npx vendo doctor
 npx vendo sync
 ```
 
-`doctor` checks wiring and makes one live `/status` probe. `sync` extracts the
-host API and remix baselines. In strict mode, breaking extraction changes exit
-with code 2.
+`doctor` checks wiring, makes a live `/status` probe, verifies that present
+credentials reach the host API, and exercises `actAs` minting through the
+host's verifier when configured. `sync` extracts the host API and remix
+baselines. In strict mode, breaking extraction changes exit with code 2.

@@ -56,6 +56,14 @@ interface RegistryConfig {
    * so an explicitly-passed baseUrl keeps forwarding.
    */
   baseUrlTrusted?: boolean;
+  /** Umbrella-owned structured warning hook. It fires only when a present host
+   * call has browser auth to forward but the target fails the trusted-origin
+   * rule. Callers should de-duplicate at the composition boundary. */
+  onPresentCredentialsNotForwarded?: (event: {
+    ctx: RunContext;
+    tool: ToolDescriptor;
+    reason: "untrusted-host-origin" | "cross-origin-binding";
+  }) => void | Promise<void>;
   fetch?: typeof fetch;
 }
 
@@ -196,6 +204,13 @@ function forwardedHeaders(ctx: RunContext): Record<string, string> {
     if (!STRIPPED_HEADERS.has(name.toLowerCase())) headers[name] = value;
   }
   return headers;
+}
+
+function hasInboundAuthHeaders(ctx: RunContext): boolean {
+  return Object.keys(ctx.requestHeaders ?? {}).some((name) => {
+    const normalized = name.toLowerCase();
+    return normalized === "authorization" || normalized === "cookie";
+  });
 }
 
 function absoluteHttpUrl(value: string | undefined): URL | undefined {
@@ -360,9 +375,23 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     if ("error" in authed) return authed.error;
     headers = authed.headers;
   } else {
-    headers = mayForwardPresentHeaders(tool.binding, url, config.baseUrl, config.baseUrlTrusted ?? true)
-      ? forwardedHeaders(ctx)
-      : {};
+    const forwardsPresentHeaders = mayForwardPresentHeaders(
+      tool.binding,
+      url,
+      config.baseUrl,
+      config.baseUrlTrusted ?? true,
+    );
+    if (!forwardsPresentHeaders && hasInboundAuthHeaders(ctx) && config.onPresentCredentialsNotForwarded !== undefined) {
+      const reason = config.baseUrlTrusted === false
+        ? "untrusted-host-origin" as const
+        : "cross-origin-binding" as const;
+      try {
+        await config.onPresentCredentialsNotForwarded({ ctx, tool: descriptorOf(tool), reason });
+      } catch {
+        // A warning sink must never turn a host API call into a product failure.
+      }
+    }
+    headers = forwardsPresentHeaders ? forwardedHeaders(ctx) : {};
   }
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");

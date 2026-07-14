@@ -238,6 +238,10 @@ function defaultModelSource(): string {
     `export const model = anthropic("claude-sonnet-4-6");\n`;
 }
 
+const VENDO_ENV_EXAMPLE =
+  "# Trusted host origin for same-origin API calls; credential forwarding is disabled without it.\n" +
+  "VENDO_BASE_URL=http://localhost:3000\n";
+
 /** Resolve an `@/`-style model import to a candidate file the scaffold owns.
     Anything else (a package, a relative path) is the host's own module. */
 async function modelModuleCandidate(root: string, appDir: string, modelImport: string): Promise<string | null> {
@@ -425,6 +429,7 @@ async function buildPlan(options: InitOptions): Promise<{ plan: InitPlan; change
     }
   }
   const writes = [
+    ".env.example",
     ".vendo/tools.json",
     ".vendo/overrides.json",
     ".vendo/policy.json",
@@ -492,6 +497,18 @@ async function writeIfMissing(path: string, content: string, force: boolean): Pr
   await writeText(path, content);
 }
 
+async function ensureVendoEnvExample(root: string): Promise<void> {
+  const path = join(root, ".env.example");
+  const current = await readOptional(path);
+  if (current === null) {
+    await writeText(path, VENDO_ENV_EXAMPLE);
+    return;
+  }
+  if (/^\s*VENDO_BASE_URL\s*=/m.test(current)) return;
+  const separator = current.length === 0 ? "" : current.endsWith("\n") ? "\n" : "\n\n";
+  await writeText(path, `${current}${separator}${VENDO_ENV_EXAMPLE}`);
+}
+
 function telemetryFor(options: InitOptions, output: Output): Telemetry {
   return toolingTelemetry({ ...options.telemetry, log: (message) => output.log(message) });
 }
@@ -522,6 +539,7 @@ export async function runInit(options: InitOptions): Promise<number> {
   await telemetry.track("init_started", { framework: plan.framework });
 
   try {
+    await ensureVendoEnvExample(root);
     await mkdir(join(root, ".vendo"), { recursive: true });
     await writeIfMissing(
       join(root, ".vendo", "overrides.json"),
