@@ -438,6 +438,21 @@ describe("createMcpDoor remote authorization server trust", () => {
     expect(harness.principalSubjects).toEqual([]);
   });
 
+  it("rejects a JWT whose signature does not match the trusted key", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+    const untrusted = await generateSigningKey("initial");
+    const token = await mintRemoteToken(untrusted.privateKey, untrusted.kid, {
+      issuer: as.issuer,
+      audience: BASE,
+      sub: "forged_user",
+    });
+
+    expect((await harness.door.handler(mcpRequest(token))).status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
   it("rejects an unknown kid and refreshes cached JWKS when a new kid appears", async () => {
     const as = await remoteAsFixture();
     vi.stubGlobal("fetch", as.fetch);
