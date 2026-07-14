@@ -99,6 +99,10 @@ export interface ApprovalRequest {
   call: ToolCall;
   descriptor: ToolDescriptor;
   inputPreview: string;
+  invalidatedGrant?: {
+    id: GrantId;
+    grantedAt: IsoDateTime;
+  };
   ctx: {
     principal: Principal;
     venue: RunContext["venue"];
@@ -115,6 +119,10 @@ export const approvalRequestSchema = z.object({
   call: toolCallSchema,
   descriptor: toolDescriptorSchema,
   inputPreview: z.string(),
+  invalidatedGrant: z.object({
+    id: grantIdSchema,
+    grantedAt: isoDateTimeSchema,
+  }).passthrough().optional(),
   ctx: z.object({
     principal: principalSchema,
     venue: z.enum(["chat", "app", "automation", "mcp"]),
