@@ -72,7 +72,20 @@ export interface CreateVendoConfig {
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
   oauth?: HostOAuthAdapter;
+  /** 03-agent — chat context controls. All optional. `toolOutputCap` defaults to
+      DEFAULT_TOOL_OUTPUT_CAP so one huge host-tool response can't blow the context;
+      pass 0 to disable. `historyWindow` bounds messages re-sent per turn (default: full). */
+  agent?: {
+    toolOutputCap?: number;
+    maxOutputTokens?: number;
+    historyWindow?: number;
+  };
 }
+
+/** Default char cap on a single tool result before it reaches the model (03-agent §2).
+    Generous enough for normal host responses, small enough that a runaway payload is
+    truncated to a preview instead of blowing the context window. Override via config.agent. */
+const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
@@ -714,7 +727,17 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
   actions.add(apps.agentTools());
-  const agent = createAgent({ model: config.model, tools: boundTools, guard, store });
+  const agent = createAgent({
+    model: config.model,
+    tools: boundTools,
+    guard,
+    store,
+    context: {
+      toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
+      ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
+      ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+    },
+  });
   const automations = createAutomations({
     apps,
     tools: boundTools,

@@ -15,6 +15,7 @@ import {
   stepCountIs,
   streamText,
   type LanguageModel,
+  type ModelMessage,
   type UIMessage,
 } from "ai";
 import { assembleSystemPrompt } from "./prompt.js";
@@ -34,8 +35,16 @@ interface AgentConfig {
   context?: {
     maxOutputTokens?: number;
     toolOutputCap?: number;
+    /** Bound the messages re-sent to the model per turn to the last N (whole messages,
+     *  so tool-call/result pairing inside a message is never split). Undefined → send the
+     *  full thread (current behavior). Persistence and the streamed thread are unaffected. */
+    historyWindow?: number;
   };
 }
+
+// Anthropic prompt-caching breakpoint. providerOptions.anthropic is ignored by every
+// other provider (and by the test mocks), so marking breakpoints degrades to a no-op.
+const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } } as const;
 
 /** 03-agent §1 */
 export interface VendoAgent {
@@ -49,12 +58,15 @@ export interface VendoAgent {
 }
 
 function validateConfig(config: AgentConfig): void {
-  const { maxOutputTokens, toolOutputCap } = config.context ?? {};
+  const { maxOutputTokens, toolOutputCap, historyWindow } = config.context ?? {};
   if (maxOutputTokens !== undefined && (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1)) {
     throw new VendoError("validation", "maxOutputTokens must be a positive integer");
   }
   if (toolOutputCap !== undefined && (!Number.isInteger(toolOutputCap) || toolOutputCap < 0)) {
     throw new VendoError("validation", "toolOutputCap must be a non-negative integer");
+  }
+  if (historyWindow !== undefined && (!Number.isInteger(historyWindow) || historyWindow < 1)) {
+    throw new VendoError("validation", "historyWindow must be a positive integer");
   }
 }
 
@@ -138,11 +150,27 @@ export function createAgent(config: AgentConfig): VendoAgent {
             writer,
             toolOutputCap: config.context?.toolOutputCap,
           });
-          const modelMessages = (await convertToModelMessages(providerHistory(thread.messages)))
+          // History windowing: bound what is re-sent per turn to the last N whole messages.
+          // Slicing whole UIMessages keeps each turn's tool-call/result pairing intact.
+          const window = config.context?.historyWindow;
+          const history = window !== undefined && thread.messages.length > window
+            ? thread.messages.slice(-window)
+            : thread.messages;
+          const converted = (await convertToModelMessages(providerHistory(history)))
             .filter((message) => message.content.length > 0);
+          // Cache the stable history prefix (everything but the final message) alongside the
+          // static system prompt below, so Anthropic re-reads the cached prefix instead of
+          // re-billing the whole growing thread each turn.
+          if (converted.length >= 2) {
+            const prefixEnd = converted[converted.length - 2] as ModelMessage;
+            prefixEnd.providerOptions = { ...prefixEnd.providerOptions, ...CACHE_BREAKPOINT };
+          }
+          const modelMessages: ModelMessage[] = [
+            { role: "system", content: system, providerOptions: CACHE_BREAKPOINT },
+            ...converted,
+          ];
           const result = streamText({
             model: config.model,
-            system,
             messages: modelMessages,
             tools,
             stopWhen: stepCountIs(20),

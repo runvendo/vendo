@@ -216,9 +216,15 @@ importers:
 
   bench:
     dependencies:
+      '@vendoai/agent':
+        specifier: workspace:*
+        version: link:../packages/agent
       '@vendoai/apps':
         specifier: workspace:*
         version: link:../packages/apps
+      '@vendoai/automations':
+        specifier: workspace:*
+        version: link:../packages/automations
       '@vendoai/core':
         specifier: workspace:*
         version: link:../packages/core
