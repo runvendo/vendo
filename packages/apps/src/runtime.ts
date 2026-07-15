@@ -7,8 +7,10 @@ import {
   type IsoDateTime,
   type Json,
   type RunContext,
+  type RiskLabel,
   type SecretsProvider,
   type StoreAdapter,
+  type ToolCall,
   type ToolOutcome,
   type ToolRegistry,
   type UIPayload,
@@ -98,6 +100,9 @@ export interface AppsRuntime {
   share(appId: AppId, ctx: RunContext): Promise<ShareSnapshot>;
   publish(appId: AppId, ctx: RunContext): Promise<PublishRecord>;
   agentTools(): ToolRegistry;
+  /** Contextual policy projection for Vendo-owned agent tools. Undefined means
+   * the static descriptor remains authoritative. */
+  agentToolRisk(call: ToolCall, ctx: RunContext): Promise<RiskLabel | undefined>;
   proxy: AppsProxy;
 }
 
@@ -359,12 +364,27 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return structuredClone(fork);
     },
 
+    async agentToolRisk(call, ctx) {
+      if (call.tool !== "vendo_apps_edit") return undefined;
+      if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
+        return "write";
+      }
+      const args = call.args as Record<string, Json>;
+      if (typeof args.appId !== "string" || typeof args.instruction !== "string") {
+        return "write";
+      }
+      const app = await owned(args.appId, ctx.principal.subject);
+      if (app === null) return "write";
+      return instructionRequiresServer(app, args.instruction) ? "write" : "read";
+    },
+
     async edit(appId, instruction, ctx) {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
       const previous = await requireOwned(appId, ctx.principal.subject);
-      if (instructionRequiresServer(previous, instruction) && !machines.available()) {
+      const requiresServer = instructionRequiresServer(previous, instruction);
+      if (requiresServer && !machines.available()) {
         return failedEdit(previous, instruction, [
           "sandbox-unavailable: this edit requires server execution",
         ]);
@@ -393,6 +413,15 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
             app: await persistEdit(previous, app, version, ctx.principal.subject),
             version: { ...version },
           };
+        }
+
+        // The contextual guard decision ran before generation. If the engine
+        // ever violates the tree dialect and emits code for a call classified
+        // read-class, stop before touching a machine or persisting anything.
+        if (!requiresServer) {
+          return failedEdit(previous, instruction, [
+            "approval-required: a tree-classified edit unexpectedly produced server code",
+          ]);
         }
 
         const applied = await applyCodeFiles(previous, generated.files, ctx);

@@ -3,7 +3,7 @@ import type { GuardDecision } from "@vendoai/core";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGuard } from "../src/index.js";
 import { createMemoryStore } from "./fixtures/memory-store.js";
 import { call, context, descriptor } from "./fixtures/tools.js";
@@ -190,5 +190,79 @@ describe("policy files, rules, directions, and code", () => {
       action: "ask",
       decidedBy: "rule",
     });
+  });
+
+  it("resolves contextual risk before policy rules without weakening unrelated writes", async () => {
+    const apps = new Map([
+      ["app_tree", { ui: "tree" as const }],
+      ["app_http", { ui: "http" as const }],
+    ]);
+    const resolveRisk = vi.fn(async (toolCall: ReturnType<typeof call>) => {
+      if (toolCall.tool !== "vendo_apps_edit") return undefined;
+      const args = toolCall.args as { appId?: string; instruction?: string };
+      const app = args.appId === undefined ? undefined : apps.get(args.appId);
+      if (app?.ui !== "tree" || typeof args.instruction !== "string") return "write" as const;
+      return args.instruction === "Make the heading blue" ? "read" as const : "write" as const;
+    });
+    const guard = createGuard({
+      store: createMemoryStore(),
+      resolveRisk,
+      policy: {
+        rules: [
+          { match: { risk: "write" }, action: "ask" },
+          { match: { risk: "read" }, action: "run" },
+        ],
+      },
+    });
+    const create = descriptor("read", { name: "vendo_apps_create" });
+    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    const hostWrite = descriptor("write", { name: "host_accounts_update" });
+    const egress = descriptor("write", { name: "external_http_post" });
+
+    await expect(guard.check(call(create.name, { prompt: "Build a dashboard" }), create, context()))
+      .resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+    await expect(guard.check(call(edit.name, {
+      appId: "app_tree",
+      instruction: "Make the heading blue",
+    }), edit, context())).resolves.toMatchObject({ action: "run", decidedBy: "rule" });
+    await expect(guard.check(call(edit.name, {
+      appId: "app_tree",
+      instruction: "Persist this to the database",
+    }), edit, context())).resolves.toMatchObject({
+      action: "ask",
+      approval: { descriptor: { risk: "write" } },
+    });
+    await expect(guard.check(call(edit.name, {
+      appId: "app_http",
+      instruction: "Change the heading",
+    }), edit, context())).resolves.toMatchObject({ action: "ask" });
+    await expect(guard.check(call(hostWrite.name), hostWrite, context())).resolves.toMatchObject({ action: "ask" });
+    await expect(guard.check(call(egress.name), egress, context())).resolves.toMatchObject({ action: "ask" });
+    expect(resolveRisk).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: "vendo_apps_edit" }),
+      expect.objectContaining({ risk: "write" }),
+      expect.objectContaining({ principal: expect.any(Object) }),
+    );
+  });
+
+  it("keeps the descriptor's conservative risk when contextual resolution fails", async () => {
+    const edit = descriptor("write", { name: "vendo_apps_edit" });
+    const policy = { rules: [
+      { match: { risk: "write" as const }, action: "ask" as const },
+      { match: { risk: "read" as const }, action: "run" as const },
+    ] };
+    const threw = createGuard({
+      store: createMemoryStore(),
+      resolveRisk: async () => { throw new Error("app lookup failed"); },
+      policy,
+    });
+    const invalid = createGuard({
+      store: createMemoryStore(),
+      resolveRisk: async () => "not-a-risk" as never,
+      policy,
+    });
+
+    await expect(threw.check(call(edit.name), edit, context())).resolves.toMatchObject({ action: "ask" });
+    await expect(invalid.check(call(edit.name), edit, context())).resolves.toMatchObject({ action: "ask" });
   });
 });

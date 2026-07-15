@@ -648,8 +648,12 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
   void ready.catch(() => undefined);
+  let resolveAppToolRisk: AppsRuntime["agentToolRisk"] | undefined;
   const guard = createGuard({
     store,
+    // The resolver is installed immediately after createApps below. Keeping the
+    // hook in guard means chat/SSE and the MCP door reach the same decision.
+    resolveRisk: (call, _descriptor, ctx) => resolveAppToolRisk?.(call, ctx),
     ...(config.policy === undefined ? {} : { policy: config.policy }),
     ...(config.judge === undefined ? {} : { judge: config.judge }),
   });
@@ -688,6 +692,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(config.sandbox === undefined ? {} : { sandbox: config.sandbox }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
+  resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
   const agent = createAgent({ model: config.model, tools: boundTools, guard, store });
   const automations = createAutomations({

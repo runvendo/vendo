@@ -10,6 +10,7 @@ import {
   bindTools,
   guardFixture,
   memoryStore,
+  seedAppRow,
   scriptedLanguageModel,
 } from "./testing/index.js";
 
@@ -61,7 +62,59 @@ describe("apps agent tools", () => {
       });
       expect(() => JSON.stringify(descriptor.inputSchema)).not.toThrow();
     }
-    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual(["write", "write", "read"]);
+    // Creating a document is a rung-1-only, jailed UI operation: it cannot
+    // reach host tools, a server machine, or the network.
+    expect(descriptors.map((descriptor) => descriptor.risk)).toEqual(["read", "write", "read"]);
+  });
+
+  it("classifies only provable tree edits as read-class", async () => {
+    const store = memoryStore();
+    const runtime = createApps({
+      store,
+      guard: guardFixture(),
+      tools: hostTools,
+      catalog: [],
+      model: scriptedLanguageModel(generated),
+    });
+    const created = await runtime.create({ prompt: "Build a dashboard" }, ctx);
+    await seedAppRow(store, {
+      ...created,
+      id: "app_http",
+      ui: "http",
+      server: "fake:snap_http",
+    }, ctx.principal.subject);
+
+    await expect(runtime.agentToolRisk({
+      id: "call_tree_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("read");
+    await expect(runtime.agentToolRisk({
+      id: "call_server_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id, instruction: "Persist this to the database" },
+    }, ctx)).resolves.toBe("write");
+
+    await expect(runtime.agentToolRisk({
+      id: "call_missing_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: "app_missing", instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("write");
+    await expect(runtime.agentToolRisk({
+      id: "call_http_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: "app_http", instruction: "Make the heading blue" },
+    }, ctx)).resolves.toBe("write");
+    await expect(runtime.agentToolRisk({
+      id: "call_bad_edit",
+      tool: "vendo_apps_edit",
+      args: { appId: created.id },
+    }, ctx)).resolves.toBe("write");
+    await expect(runtime.agentToolRisk({
+      id: "call_host",
+      tool: "host_accounts_update",
+      args: {},
+    }, ctx)).resolves.toBeUndefined();
   });
 
   it("creates and opens an app through the guard-bound fixture", async () => {
