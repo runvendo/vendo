@@ -9,7 +9,7 @@ stream over SSE.
 
 | Route | Method | Body → Response |
 | --- | --- | --- |
-| `/threads` | POST | `{ threadId?, message }` → ai-SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` — the effective requested or server-minted id — so hosts can persist the identity of a default thread without a follow-up round trip |
+| `/threads` | POST | `{ threadId?, message }` → AI SDK UI message stream (SSE), one conversational turn. The response carries `X-Vendo-Thread-Id: <thr_…>` — the effective requested or server-minted id — so hosts can persist the identity of a default thread without a follow-up round trip |
 | `/threads` · `/threads/:id` | GET · GET/DELETE | thread summaries · thread |
 | `/approvals` | GET | pending `ApprovalRequest[]` |
 | `/approvals/decide` | POST | `{ ids, decision }` → `{}` (batch-capable) |
