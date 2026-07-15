@@ -42,6 +42,7 @@ import {
   capabilitySurfaceSnapshot,
   createCapabilityMissCapture,
 } from "./capability-misses.js";
+import { createConnections, type ConnectionsService } from "./connections.js";
 import { createRuntimeCapture, type RuntimeCaptureHandler } from "./runtime-capture.js";
 import { computeImpact } from "./sync-impact.js";
 
@@ -68,6 +69,7 @@ export interface Vendo {
   apps: AppsRuntime;
   automations: AutomationsEngine;
   actions: ActionsRegistry;
+  connections: ConnectionsService;
   store: VendoStore;
 }
 
@@ -464,6 +466,7 @@ function createWireHandler(deps: {
   guard: VendoGuard;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  connections: ConnectionsService;
   sandbox: SandboxVenue;
   mcp: boolean;
   door?: McpDoor;
@@ -666,6 +669,37 @@ function createWireHandler(deps: {
         return json({});
       }
 
+      // 04-actions §3 (block-actions design §B) — per-principal connected
+      // accounts. Subject scoping happens HERE: the wire passes exactly the
+      // resolved principal; no caller-supplied subject exists on this surface.
+      if (request.method === "GET" && path === "/connections") {
+        const ctx = await context(request, "chat");
+        return json({ connections: await deps.connections.list(ctx.principal) });
+      }
+      if (request.method === "POST" && path === "/connections/initiate") {
+        const body = await requestJson(request);
+        const ctx = await context(request, "chat");
+        return json(await deps.connections.initiate(ctx.principal, {
+          toolkit: string(body["toolkit"], "toolkit"),
+          ...(body["connector"] === undefined ? {} : { connector: string(body["connector"], "connector") }),
+          ...(body["callbackUrl"] === undefined ? {} : { callbackUrl: string(body["callbackUrl"], "callbackUrl") }),
+        }));
+      }
+      if (head === "connections" && segments.length === 2) {
+        const connectionId = string(segments[1], "connection id");
+        const connector = url.searchParams.get("connector") ?? "composio";
+        const ctx = await context(request, "chat");
+        if (request.method === "GET") {
+          const connection = await deps.connections.status(ctx.principal, connector, connectionId);
+          if (connection === null) throw new VendoError("not-found", `connection not found: ${connectionId}`);
+          return json(connection);
+        }
+        if (request.method === "DELETE") {
+          await deps.connections.disconnect(ctx.principal, connector, connectionId);
+          return json({});
+        }
+      }
+
       if (request.method === "GET" && path === "/grants") {
         const ctx = await context(request, "chat");
         return json(await deps.guard.grants.list(ctx.principal));
@@ -834,6 +868,9 @@ function createWireHandler(deps: {
             // 10-mcp §1 — the door is off by default; true only when
             // createVendo({ mcp: true }) opened it.
             mcp: deps.mcp,
+            // 04-actions §3 — how per-user connected accounts are brokered:
+            // "byo" (host's own Composio key), "cloud" (VENDO_API_KEY), or off.
+            connections: deps.connections.posture,
           },
         });
       }
@@ -939,6 +976,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     store,
     runner: agent.asRunner(),
   });
+  // 04-actions §3 — per-principal connected accounts. A BYO connector's own
+  // connections capability wins (connections must live where its tools
+  // execute); with none, VENDO_API_KEY routes to the Vendo Cloud broker.
+  const connections = createConnections({ connectors: config.connectors ?? [] });
   // 10-mcp §1 — construct the door from the parts already assembled: the SAME
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
@@ -1026,6 +1067,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     apps,
     automations,
+    connections,
     sandbox: sandbox.venue,
     mcp: mcpOptions !== undefined,
     development,
@@ -1053,6 +1095,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     apps,
     automations,
     actions,
+    connections,
     store,
   };
 }

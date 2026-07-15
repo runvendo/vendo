@@ -145,6 +145,9 @@ export async function createWireServer() {
     apps: [baseApp, automationApp],
     approvals: [approval()],
     grants: [grant()],
+    connections: [
+      { id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" as const, createdAt: NOW },
+    ],
     automations: [{ app: automationApp, enabled: false }] satisfies AutomationEntry[],
     runs: [run()],
     events: [audit("aud_1"), audit("aud_2"), audit("aud_3")],
@@ -263,6 +266,31 @@ export async function createWireServer() {
         }
         state.approvals = state.approvals.filter(item => !ids.includes(item.id));
         return empty(response);
+      }
+      if (method === "GET" && url.pathname === "/connections") {
+        return json(response, { connections: state.connections });
+      }
+      if (method === "POST" && url.pathname === "/connections/initiate") {
+        // The freshly initiated account is immediately pollable and flips
+        // active on first read (the shortest honest OAuth completion).
+        if (!state.connections.some(item => item.id === "ca_new")) {
+          state.connections.push({ id: "ca_new", connector: "composio", toolkit: "gmail", status: "active", createdAt: NOW });
+        }
+        return json(response, { id: "ca_new", connector: "composio", redirectUrl: "https://connect.test/oauth/1" });
+      }
+      const connectionMatch = url.pathname.match(/^\/connections\/([^/]+)$/);
+      if (connectionMatch) {
+        const id = decodeURIComponent(connectionMatch[1]!);
+        const found = state.connections.find(item => item.id === id);
+        if (method === "GET") {
+          if (!found) return wireError(response, "not-found", "Connection not found", 404);
+          return json(response, found);
+        }
+        if (method === "DELETE") {
+          if (!found) return wireError(response, "not-found", "Connection not found", 404);
+          state.connections = state.connections.filter(item => item.id !== id);
+          return json(response, {});
+        }
       }
       if (method === "GET" && url.pathname === "/grants") return json(response, state.grants);
       const grantMatch = url.pathname.match(/^\/grants\/([^/]+)$/);

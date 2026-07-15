@@ -22,8 +22,10 @@ import type {
 import type { UIMessage } from "ai";
 import type {
   AutomationEntry,
+  ConnectionAccount,
   EditResult,
   EnableResult,
+  InitiatedConnection,
   OpenSurface,
   PinDrift,
   PinRebaseResult,
@@ -64,6 +66,16 @@ export interface VendoClient {
   grants: {
     list(): Promise<PermissionGrant[]>;
     revoke(id: GrantId): Promise<void>;
+  };
+
+  /** 04-actions §3 — per-principal connected accounts (Composio broker). */
+  connections: {
+    list(): Promise<ConnectionAccount[]>;
+    /** POST /connections/initiate — returns the broker's OAuth redirect URL. */
+    initiate(input: { toolkit: string; connector?: string; callbackUrl?: string }): Promise<InitiatedConnection>;
+    /** GET /connections/:id — poll while the user completes the redirect. */
+    status(id: string, connector?: string): Promise<ConnectionAccount>;
+    disconnect(id: string, connector?: string): Promise<void>;
   };
 
   apps: {

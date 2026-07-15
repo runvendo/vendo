@@ -88,14 +88,23 @@ describe("tool, grant, and approval schemas", () => {
 });
 
 describe("outcome, guard, and audit schemas", () => {
-  it("accepts exactly the four tool outcome variants", () => {
+  it("accepts exactly the five tool outcome variants", () => {
     for (const outcome of [
       { status: "ok", output: { invoices: [] } },
       { status: "error", error: { code: "upstream", message: "Unavailable", future: true } },
       { status: "pending-approval", approvalId: "apr_1" },
       { status: "blocked", reason: "Policy" },
+      {
+        status: "connect-required",
+        connect: { connector: "composio", toolkit: "gmail", message: "Connect your gmail account" },
+      },
     ]) expect(toolOutcomeSchema.safeParse(outcome).success).toBe(true);
     expect(toolOutcomeSchema.safeParse({ status: "waiting" }).success).toBe(false);
+    expect(toolOutcomeSchema.safeParse({ status: "connect-required" }).success).toBe(false);
+    expect(toolOutcomeSchema.safeParse({
+      status: "connect-required",
+      connect: { connector: "composio" },
+    }).success).toBe(false);
   });
 
   it("enforces decidedBy sets on each guard action", () => {

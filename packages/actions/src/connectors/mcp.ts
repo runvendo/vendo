@@ -1,5 +1,5 @@
-import type { Json, RunContext, ToolCall, ToolDescriptor, ToolOutcome } from "@vendoai/core";
-import type { Connector } from "./connector.js";
+import type { Json, PermissionGrant, Principal, RunContext, ToolCall, ToolDescriptor, ToolOutcome } from "@vendoai/core";
+import type { Connector, ConnectorAccountIdentity } from "./connector.js";
 import { normalizeToolName } from "./names.js";
 
 interface JsonRpcResponse {
@@ -20,6 +20,21 @@ interface McpContent {
   type?: unknown;
   text?: unknown;
 }
+
+/** 04-actions §3 — what a per-principal MCP headers resolver sees: the acting
+ * principal plus the presence/grant context of the execution. Descriptor
+ * listing resolves WITHOUT a principal (a system context). */
+export interface McpAuthContext {
+  principal?: Principal;
+  presence?: RunContext["presence"];
+  grant?: PermissionGrant;
+}
+
+/** Async per-principal credential resolution for the MCP connector. Shared
+ * static headers remain the simple default. */
+export type McpHeadersResolver = (
+  auth: McpAuthContext,
+) => Promise<Record<string, string>> | Record<string, string>;
 
 function mcpError(message: string): ToolOutcome {
   return { status: "error", error: { code: "mcp-error", message } };
@@ -79,39 +94,67 @@ async function readSse(response: Response, id: number): Promise<JsonRpcResponse>
   throw new Error(`MCP SSE response did not contain JSON-RPC id ${id}`);
 }
 
+/** Per-credential MCP protocol state. With static shared headers there is ONE
+ * of these; with a per-principal resolver each subject gets its own session so
+ * a server binding auth to the session can never mix two users' identities. */
+interface McpSession {
+  sessionId?: string;
+  initialized?: Promise<void>;
+}
+
 export function mcpConnector(config: {
   url: string;
-  headers?: Record<string, string>;
+  headers?: Record<string, string> | McpHeadersResolver;
   name?: string;
 }): Connector {
   const connectorName = config.name ?? "mcp";
+  const perPrincipal = typeof config.headers === "function";
   let normalizedToRaw = new Map<string, string>();
   let nextId = 1;
-  let sessionId: string | undefined;
-  let initialized: Promise<void> | undefined;
+  const sessions = new Map<string, McpSession>();
 
-  function requestHeaders(): Record<string, string> {
+  function sessionFor(auth: McpAuthContext): McpSession {
+    const key = perPrincipal ? auth.principal?.subject ?? "" : "";
+    let session = sessions.get(key);
+    if (!session) {
+      session = {};
+      sessions.set(key, session);
+    }
+    return session;
+  }
+
+  async function resolveHeaders(auth: McpAuthContext): Promise<Record<string, string>> {
+    if (typeof config.headers === "function") return { ...(await config.headers(auth)) };
+    return { ...config.headers };
+  }
+
+  async function requestHeaders(auth: McpAuthContext, session: McpSession): Promise<Record<string, string>> {
     return {
-      ...config.headers,
+      ...(await resolveHeaders(auth)),
       accept: "application/json, text/event-stream",
       "content-type": "application/json",
-      ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}),
+      ...(session.sessionId ? { "Mcp-Session-Id": session.sessionId } : {}),
     };
   }
 
-  async function send(body: Record<string, unknown>, id?: number): Promise<JsonRpcResponse | undefined> {
+  async function send(
+    auth: McpAuthContext,
+    session: McpSession,
+    body: Record<string, unknown>,
+    id?: number,
+  ): Promise<JsonRpcResponse | undefined> {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30_000);
       try {
         const response = await fetch(config.url, {
           method: "POST",
-          headers: requestHeaders(),
+          headers: await requestHeaders(auth, session),
           body: JSON.stringify(body),
           signal: controller.signal,
         });
         const captured = response.headers.get("Mcp-Session-Id");
-        if (captured) sessionId = captured;
+        if (captured) session.sessionId = captured;
         const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
         if (contentType.includes("text/event-stream") && response.ok) {
           if (id === undefined) {
@@ -137,35 +180,44 @@ export function mcpConnector(config: {
     }
   }
 
-  function rpc(method: string, params?: Record<string, unknown>): Promise<JsonRpcResponse> {
+  function rpc(
+    auth: McpAuthContext,
+    session: McpSession,
+    method: string,
+    params?: Record<string, unknown>,
+  ): Promise<JsonRpcResponse> {
     const id = nextId++;
-    return send({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }, id).then((response) => {
+    return send(auth, session, { jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }, id).then((response) => {
       if (!response) throw new Error(`MCP ${method} returned no response`);
       return response;
     });
   }
 
-  async function ensureInitialized(): Promise<void> {
-    if (!initialized) {
-      initialized = (async () => {
-        const response = await rpc("initialize", {
+  async function ensureInitialized(auth: McpAuthContext, session: McpSession): Promise<void> {
+    if (!session.initialized) {
+      session.initialized = (async () => {
+        const response = await rpc(auth, session, "initialize", {
           protocolVersion: "2025-03-26",
           capabilities: {},
           clientInfo: { name: "@vendoai/actions", version: "0.3.0" },
         });
         const message = rpcErrorMessage(response);
         if (message) throw new Error(message);
-        await send({ jsonrpc: "2.0", method: "notifications/initialized" });
+        await send(auth, session, { jsonrpc: "2.0", method: "notifications/initialized" });
       })();
     }
-    await initialized;
+    await session.initialized;
   }
 
   return {
     name: connectorName,
 
     async descriptors(): Promise<ToolDescriptor[]> {
-      await ensureInitialized();
+      // Listing is a system operation: no principal (a per-principal resolver
+      // sees an empty auth context and may hand back service-level headers).
+      const auth: McpAuthContext = {};
+      const session = sessionFor(auth);
+      await ensureInitialized(auth, session);
       // Built fresh and swapped in atomically so a concurrent execute() never sees a half-empty map.
       const nextNormalizedToRaw = new Map<string, string>();
       const descriptors: ToolDescriptor[] = [];
@@ -173,7 +225,7 @@ export function mcpConnector(config: {
       const seenCursors = new Set<string>();
 
       do {
-        const response = await rpc("tools/list", cursor ? { cursor } : {});
+        const response = await rpc(auth, session, "tools/list", cursor ? { cursor } : {});
         const message = rpcErrorMessage(response);
         if (message) throw new Error(message);
         const result = response.result as { tools?: unknown; nextCursor?: unknown } | undefined;
@@ -206,30 +258,51 @@ export function mcpConnector(config: {
       return descriptors;
     },
 
-    async execute(call: ToolCall, _ctx: RunContext): Promise<ToolOutcome> {
+    async execute(call: ToolCall, ctx: RunContext): Promise<ToolOutcome> {
       const raw = normalizedToRaw.get(call.tool);
       if (!raw) return { status: "error", error: { code: "not-found", message: `Unknown MCP tool: ${call.tool}` } };
 
+      // Presence + guard-attached grant context flow through to credential
+      // resolution (04-actions §3); the guard attaches `grant` on the ctx for
+      // grant-decided runs (ActionsRunContext).
+      const auth: McpAuthContext = {
+        principal: ctx.principal,
+        presence: ctx.presence,
+        ...((ctx as { grant?: PermissionGrant }).grant === undefined
+          ? {}
+          : { grant: (ctx as { grant?: PermissionGrant }).grant }),
+      };
+      const identity: ConnectorAccountIdentity & { credential: "per-principal" | "shared" } = {
+        connector: connectorName,
+        entityId: ctx.principal.subject,
+        credential: perPrincipal ? "per-principal" : "shared",
+      };
+      const withIdentity = (outcome: ToolOutcome): ToolOutcome =>
+        Object.assign({}, outcome, { connectorAccount: identity });
+
       try {
-        await ensureInitialized();
-        const response = await rpc("tools/call", { name: raw, arguments: call.args });
+        const session = sessionFor(auth);
+        await ensureInitialized(auth, session);
+        const response = await rpc(auth, session, "tools/call", { name: raw, arguments: call.args });
         const message = rpcErrorMessage(response);
-        if (message) return mcpError(message);
+        if (message) return withIdentity(mcpError(message));
         const result = response.result as
           | { isError?: unknown; content?: unknown; structuredContent?: unknown }
           | undefined;
-        if (!result) return mcpError("MCP tools/call returned no result");
+        if (!result) return withIdentity(mcpError("MCP tools/call returned no result"));
         const text = joinedText(result.content);
-        if (result.isError === true) return mcpError(text || "MCP tool returned an error");
-        if (result.structuredContent !== undefined) return { status: "ok", output: result.structuredContent as Json };
-        if (!text) return { status: "ok", output: "" };
+        if (result.isError === true) return withIdentity(mcpError(text || "MCP tool returned an error"));
+        if (result.structuredContent !== undefined) {
+          return withIdentity({ status: "ok", output: result.structuredContent as Json });
+        }
+        if (!text) return withIdentity({ status: "ok", output: "" });
         try {
-          return { status: "ok", output: JSON.parse(text) as Json };
+          return withIdentity({ status: "ok", output: JSON.parse(text) as Json });
         } catch {
-          return { status: "ok", output: text };
+          return withIdentity({ status: "ok", output: text });
         }
       } catch (error) {
-        return mcpError(error instanceof Error ? error.message : "MCP execution failed");
+        return withIdentity(mcpError(error instanceof Error ? error.message : "MCP execution failed"));
       }
     },
   };

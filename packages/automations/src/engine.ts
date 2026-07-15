@@ -251,12 +251,16 @@ const outcomeDetail = (outcome: ToolOutcome): string | undefined => {
   if (outcome.status === "error") return outcome.error.message;
   if (outcome.status === "blocked") return outcome.reason;
   if (outcome.status === "pending-approval") return outcome.approvalId;
+  if (outcome.status === "connect-required") return outcome.connect.message;
   return undefined;
 };
 
 const errorForOutcome = (outcome: Exclude<ToolOutcome, { status: "ok" }>): { code: string; message: string } => {
   if (outcome.status === "error") return outcome.error;
   if (outcome.status === "blocked") return { code: "blocked", message: outcome.reason };
+  // An away run has no user to show a connect card to; the run fails with an
+  // actionable message and the user connects in-product before re-running.
+  if (outcome.status === "connect-required") return { code: "connect-required", message: outcome.connect.message };
   return { code: "blocked", message: `approval required: ${outcome.approvalId}` };
 };
 

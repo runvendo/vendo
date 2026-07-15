@@ -865,6 +865,12 @@ function mapOutcome(outcome: ToolOutcome, productName: string): CallToolResult {
       );
     case "blocked":
       return inBandError(outcome.reason);
+    case "connect-required":
+      // The door has no browser surface to run an OAuth redirect through; the
+      // user connects the account in the product and retries here.
+      return inBandError(
+        `${outcome.connect.message} Open ${productName} and connect your ${outcome.connect.toolkit} account in settings, then retry.`,
+      );
   }
 }
 

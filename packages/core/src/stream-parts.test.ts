@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { vendoApprovalPartSchema, vendoViewPartSchema } from "./stream-parts.js";
+import { vendoApprovalPartSchema, vendoConnectPartSchema, vendoViewPartSchema } from "./stream-parts.js";
 
-/** 01-core §16 — the two custom data-parts the wire carries. */
+/** 01-core §16 — the custom data-parts the wire carries. */
 describe("vendoViewPartSchema", () => {
   it("accepts a view part carrying an opaque (forward-version) payload", () => {
     expect(
@@ -49,6 +49,40 @@ describe("vendoApprovalPartSchema", () => {
         toolCallId: "call_1",
         risk: "write",
         approvalId: "xyz_1",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("vendoConnectPartSchema", () => {
+  it("accepts a connect part naming the connector and toolkit for one tool call", () => {
+    expect(
+      vendoConnectPartSchema.safeParse({
+        type: "data-vendo-connect",
+        toolCallId: "call_1",
+        connector: "composio",
+        toolkit: "gmail",
+        message: "Connect your gmail account to run gmail_SEND_EMAIL",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a wrong type literal or a missing toolkit", () => {
+    expect(
+      vendoConnectPartSchema.safeParse({
+        type: "data-vendo-approval",
+        toolCallId: "call_1",
+        connector: "composio",
+        toolkit: "gmail",
+        message: "x",
+      }).success,
+    ).toBe(false);
+    expect(
+      vendoConnectPartSchema.safeParse({
+        type: "data-vendo-connect",
+        toolCallId: "call_1",
+        connector: "composio",
+        message: "x",
       }).success,
     ).toBe(false);
   });

@@ -30,6 +30,17 @@ describe("createVendoClient", () => {
     expect(await client.grants.list()).toHaveLength(1);
     await client.grants.revoke("grt_1");
 
+    expect(await client.connections.list()).toEqual([
+      expect.objectContaining({ id: "ca_1", connector: "composio", toolkit: "gmail", status: "active" }),
+    ]);
+    expect(await client.connections.initiate({ toolkit: "gmail", callbackUrl: "https://host.test/vendo" })).toEqual({
+      id: "ca_new",
+      connector: "composio",
+      redirectUrl: "https://connect.test/oauth/1",
+    });
+    expect((await client.connections.status("ca_1", "composio")).status).toBe("active");
+    await client.connections.disconnect("ca_1", "composio");
+
     expect(await client.apps.list()).toHaveLength(2);
     const created = await client.apps.create({ prompt: "Revenue dashboard" });
     expect((await client.apps.get(created.id)).name).toBe("Revenue dashboard");
@@ -70,6 +81,10 @@ describe("createVendoClient", () => {
     exact("GET", "/approvals", undefined);
     exact("POST", "/approvals/decide", { ids: ["apr_1"], decision: { approve: true } });
     exact("GET", "/grants", undefined);
+    exact("GET", "/connections", undefined);
+    exact("POST", "/connections/initiate", { toolkit: "gmail", callbackUrl: "https://host.test/vendo" });
+    exact("GET", "/connections/ca_1?connector=composio", undefined);
+    exact("DELETE", "/connections/ca_1?connector=composio", {});
     exact("DELETE", "/grants/grt_1", {});
     exact("GET", "/apps", undefined);
     exact("POST", "/apps", { prompt: "Revenue dashboard" });

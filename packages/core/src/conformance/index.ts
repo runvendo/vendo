@@ -486,7 +486,7 @@ export function agentRunnerConformance(opts: {
         assert(report.summary.trim().length > 0, "AgentRunReport summary is empty");
         for (const entry of report.toolCalls) {
           assertParses(toolCallSchema, entry.call, "AgentRunReport contains an invalid tool call");
-          assert(["ok", "error", "pending-approval", "blocked"].includes(entry.outcome), "AgentRunReport contains an invalid outcome status");
+          assert(["ok", "error", "pending-approval", "blocked", "connect-required"].includes(entry.outcome), "AgentRunReport contains an invalid outcome status");
         }
       },
     }],

@@ -6,6 +6,7 @@ import { useVendoThread } from "../hooks/use-vendo-thread.js";
 import { PayloadView } from "../tree/renderer.js";
 import { ApprovalCard } from "./approval-card.js";
 import { ChromeRoot } from "./chrome-root.js";
+import { ConnectCard } from "./connect-card.js";
 import { FluidThinking } from "./fluid-thinking.js";
 import { Markdown } from "./markdown.js";
 
@@ -264,6 +265,29 @@ export function VendoThread({
 
   const approvals = thread.messages.flatMap(message => message.parts).filter(isToolUIPart).filter(part => part.state === "approval-requested");
 
+  // 04-actions §3 — connector calls that ended `connect-required`, from the
+  // LAST assistant message only: a stale turn must not re-offer a connect
+  // (the persistent panel covers standing management). The typed outcome on
+  // the native tool part is the source of truth; the data-vendo-connect part
+  // mirrors it for streaming consumers, matching the approvals pattern.
+  const lastMessage = thread.messages.at(-1);
+  const connectRequests = (lastMessage?.role === "assistant" ? lastMessage.parts : [])
+    .filter(isToolUIPart)
+    .flatMap(part => {
+      if (part.state !== "output-available") return [];
+      const output = part.output as { status?: unknown; connect?: unknown } | undefined;
+      const connect = output?.status === "connect-required"
+        ? output.connect as { connector?: unknown; toolkit?: unknown; message?: unknown } | undefined
+        : undefined;
+      if (typeof connect?.connector !== "string" || typeof connect.toolkit !== "string") return [];
+      return [{
+        part,
+        connector: connect.connector,
+        toolkit: connect.toolkit,
+        message: typeof connect.message === "string" ? connect.message : `Connect ${connect.toolkit} to continue.`,
+      }];
+    });
+
   if (landing) {
     return (
       <ChromeRoot>
@@ -333,6 +357,21 @@ export function VendoThread({
               />
             );
           })}
+          {connectRequests.map(({ part, connector, toolkit, message }) => (
+            <ConnectCard
+              key={`connect-${part.toolCallId}`}
+              connector={connector}
+              toolkit={toolkit}
+              message={message}
+              onConnected={() => {
+                // The retry: the account is live, so continue the turn — the
+                // model re-issues the call, which now executes.
+                void thread.sendMessage({
+                  text: `I connected my ${toolkit} account — retry ${toolName(part)}.`,
+                });
+              }}
+            />
+          ))}
           {working ? <FluidThinking label="Working" /> : null}
         </div>
         {composer}

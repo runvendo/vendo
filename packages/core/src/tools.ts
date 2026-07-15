@@ -48,12 +48,29 @@ export const toolCallSchema = z.object({
   args: requiredJsonValueSchema,
 }).passthrough() satisfies z.ZodType<ToolCall>;
 
+/** 01-core §4 — a connector call that needs a per-user connected account first
+ * (04-actions §3). `connector`/`toolkit` key the umbrella's /connections
+ * endpoints; the UI renders an inline connect card and retries after connecting. */
+export interface ConnectRequired {
+  connector: string;
+  toolkit: string;
+  message: string;
+}
+
+/** 01-core §4 */
+export const connectRequiredSchema = z.object({
+  connector: z.string().min(1),
+  toolkit: z.string().min(1),
+  message: z.string(),
+}).passthrough() satisfies z.ZodType<ConnectRequired>;
+
 /** 01-core §4 */
 export type ToolOutcome =
   | { status: "ok"; output: Json }
   | { status: "error"; error: { code: string; message: string } }
   | { status: "pending-approval"; approvalId: ApprovalId }
-  | { status: "blocked"; reason: string };
+  | { status: "blocked"; reason: string }
+  | { status: "connect-required"; connect: ConnectRequired };
 
 /** 01-core §4 */
 export const toolOutcomeSchema = z.discriminatedUnion("status", [
@@ -64,6 +81,7 @@ export const toolOutcomeSchema = z.discriminatedUnion("status", [
   }).passthrough(),
   z.object({ status: z.literal("pending-approval"), approvalId: approvalIdSchema }).passthrough(),
   z.object({ status: z.literal("blocked"), reason: z.string() }).passthrough(),
+  z.object({ status: z.literal("connect-required"), connect: connectRequiredSchema }).passthrough(),
 ]) satisfies z.ZodType<ToolOutcome>;
 
 /** 01-core §4 */

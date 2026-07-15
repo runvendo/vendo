@@ -8,6 +8,7 @@ import {
   type ToolOutcome,
   type ToolRegistry,
   type VendoApprovalPart,
+  type VendoConnectPart,
   type VendoViewPart,
   type VendoViewStreamingToolCall,
 } from "@vendoai/core";
@@ -19,7 +20,7 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 
-type VendoPart = VendoApprovalPart | VendoViewPart;
+type VendoPart = VendoApprovalPart | VendoConnectPart | VendoViewPart;
 
 /** 03-agent §2 */
 export interface ToolBridgeOptions {
@@ -129,6 +130,16 @@ export async function buildAgentTools(options: ToolBridgeOptions): Promise<ToolS
           toolCallId,
           risk: descriptor.risk,
           approvalId: outcome.approvalId,
+        });
+      } else if (outcome.status === "connect-required") {
+        // The inline connect card (04-actions §3): emitted beside the native
+        // tool part exactly like the approval part, keyed by toolCallId.
+        writePart(options.writer, {
+          type: "data-vendo-connect",
+          toolCallId,
+          connector: outcome.connect.connector,
+          toolkit: outcome.connect.toolkit,
+          message: outcome.connect.message,
         });
       }
 
