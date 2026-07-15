@@ -59,6 +59,14 @@ import {
 import { loadManifest as defaultLoadManifest, type CorpusManifest, type ManifestEntry } from "./manifest.js";
 import { createRunContext, type CorpusRunContext } from "./run-context.js";
 import {
+  captureGalleryRepo as defaultCaptureGalleryRepo,
+  discoverConfiguredGalleryRepoNames as defaultDiscoverConfiguredGalleryRepoNames,
+  writeGalleryHtml as defaultWriteGalleryHtml,
+  type CaptureGalleryRepoOptions,
+  type GalleryRepoResult,
+  type WriteGalleryHtmlOptions,
+} from "./gallery.js";
+import {
   buildScorecard,
   renderScorecardMarkdown,
   scorecardExitCode,
@@ -73,12 +81,14 @@ const usage = `Usage:
   pnpm corpus list
   pnpm corpus run [repo...] --layer <1|2|3> [--json] [--strict]
   pnpm corpus boot <repo> [--timeout-ms <ms>]
+  pnpm corpus gallery [repo...]
 
 Commands:
   validate  Load and validate corpus/manifest.json.
   list      Print manifest repo names with tier and source revision/path.
   run       Clone, bootstrap, inject local Vendo, run init, and execute selected layers.
   boot      Clone, bootstrap, inject local Vendo, run init, boot one deep-tier app, and wait for Ctrl-C.
+  gallery   Boot configured deep-tier repos and capture native/generated screenshots, GIFs, and timings.
 `;
 
 const defaultWorkspaceRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
@@ -105,6 +115,9 @@ export interface CorpusCliDependencies {
   prepareE2eRepo?: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
   runE2eLayer?: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
   runLiveDoctor?: (options: RunLiveDoctorOptions) => Promise<LiveDoctorResult>;
+  discoverConfiguredGalleryRepoNames?: (expectationsRoot: string) => Promise<string[]>;
+  captureGalleryRepo?: (options: CaptureGalleryRepoOptions) => Promise<GalleryRepoResult>;
+  writeGalleryHtml?: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner?: StructuralCommandRunner;
 }
 
@@ -127,6 +140,9 @@ interface ResolvedDeps {
   prepareE2eRepo: (repo: ManifestEntry, appRoot: string, logsDir: string) => Promise<string[]>;
   runE2eLayer: (ctx: E2eLayerContext) => Promise<E2eLayerRunResult>;
   runLiveDoctor: (options: RunLiveDoctorOptions) => Promise<LiveDoctorResult>;
+  discoverConfiguredGalleryRepoNames: (expectationsRoot: string) => Promise<string[]>;
+  captureGalleryRepo: (options: CaptureGalleryRepoOptions) => Promise<GalleryRepoResult>;
+  writeGalleryHtml: (options: WriteGalleryHtmlOptions) => Promise<string>;
   commandRunner: StructuralCommandRunner;
 }
 
@@ -140,6 +156,10 @@ interface RunCommandOptions {
 interface BootCommandOptions {
   repoName: string;
   timeoutMs?: number;
+}
+
+interface GalleryCommandOptions {
+  repoNames: string[];
 }
 
 interface LoggedCommandRunner {
@@ -167,6 +187,9 @@ function resolveDeps(deps: CorpusCliDependencies = {}): ResolvedDeps {
     prepareE2eRepo: deps.prepareE2eRepo ?? defaultPrepareE2eRepo,
     runE2eLayer: deps.runE2eLayer ?? defaultRunE2eLayer,
     runLiveDoctor: deps.runLiveDoctor ?? defaultRunLiveDoctor,
+    discoverConfiguredGalleryRepoNames: deps.discoverConfiguredGalleryRepoNames ?? defaultDiscoverConfiguredGalleryRepoNames,
+    captureGalleryRepo: deps.captureGalleryRepo ?? defaultCaptureGalleryRepo,
+    writeGalleryHtml: deps.writeGalleryHtml ?? defaultWriteGalleryHtml,
     commandRunner: deps.commandRunner ?? runShellCommand,
   };
 }
@@ -240,6 +263,16 @@ function parseBootArgs(args: readonly string[]): BootCommandOptions {
   }
 
   return { repoName: repoNames[0] ?? "", timeoutMs };
+}
+
+function parseGalleryArgs(args: readonly string[]): GalleryCommandOptions {
+  const repoNames: string[] = [];
+  for (const arg of args) {
+    if (arg === "--help" || arg === "-h") throw new Error(usage);
+    if (arg.startsWith("-")) throw new Error(`Unknown gallery option: ${arg}`);
+    repoNames.push(arg);
+  }
+  return { repoNames };
 }
 
 function selectedRepos(manifest: CorpusManifest, names: readonly string[]): ManifestEntry[] {
@@ -654,6 +687,99 @@ async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): 
   return 0;
 }
 
+async function runGalleryCommand(options: GalleryCommandOptions, deps: ResolvedDeps): Promise<number> {
+  const manifest = await deps.loadManifest();
+  const context = deps.createContext();
+  const expectationsRoot = path.join(context.corpusRoot, "expectations");
+  const repoNames = options.repoNames.length > 0
+    ? options.repoNames
+    : await deps.discoverConfiguredGalleryRepoNames(expectationsRoot);
+  if (repoNames.length === 0) {
+    throw new Error("No corpus gallery configs found. Add corpus/expectations/<repo>/gallery.json or pass repo names explicitly.");
+  }
+  const repos = selectedRepos(manifest, repoNames);
+  for (const repo of repos) {
+    if (repo.tier !== "deep") {
+      throw new Error(`gallery requires a deep-tier boot recipe; ${repo.name} is ${repo.tier}-tier.`);
+    }
+  }
+
+  const generatedAt = deps.now().toISOString();
+  const runId = generatedAt.replaceAll(":", "-").replace(".", "-");
+  const runRoot = path.join(context.reposDir, ".gallery", runId);
+  await mkdir(runRoot, { recursive: true });
+  const injector = deps.createInjector({ context, workspaceRoot: deps.workspaceRoot });
+  const results: GalleryRepoResult[] = [];
+
+  for (const repo of repos) {
+    let handle: BootHandle | undefined;
+    let result: GalleryRepoResult | undefined;
+    let failure: string | undefined;
+    try {
+      const checkoutDir = await deps.ensureRepoCheckout(repo, { context, workspaceRoot: deps.workspaceRoot });
+      const appRoot = resolveAppRoot(repo, checkoutDir);
+      await deps.bootstrapRepo(repo, { context, env: deps.env });
+      await injector.inject(repo);
+      const init = await deps.runInit(repo, {
+        context,
+        env: deps.env,
+        artifactPrefix: "gallery.init",
+      });
+      if (init.exitCode !== 0) {
+        throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
+      }
+      await deps.prepareE2eRepo(repo, appRoot, context.logsDir(repo.name));
+      if (repo.bootstrap.buildCommand) {
+        const build = createLoggedCommandRunner(
+          context.logsDir(repo.name),
+          "gallery.build",
+          deps.commandRunner,
+        );
+        const buildResult = await build.runner(repo.bootstrap.buildCommand, {
+          cwd: appRoot,
+          env: deps.env,
+        });
+        if (buildResult.code !== 0) {
+          throw new Error(
+            `gallery build failed for ${repo.name} with exit code ${buildResult.code ?? "unknown"}; see ${build.logPaths.join(", ")}`,
+          );
+        }
+      }
+      handle = await deps.bootRepo(repo, { context, env: deps.env });
+      result = await deps.captureGalleryRepo({
+        repoName: repo.name,
+        readinessUrl: handle.readinessUrl,
+        expectationsRoot,
+        runRoot,
+      });
+    } catch (error) {
+      failure = errorMessage(error);
+      deps.stderr(`Gallery capture failed for ${repo.name}: ${failure}`);
+    } finally {
+      if (handle) {
+        try {
+          await handle.teardown();
+        } catch (error) {
+          failure = `teardown failed: ${errorMessage(error)}`;
+          deps.stderr(`Gallery teardown failed for ${repo.name}: ${errorMessage(error)}`);
+        }
+      }
+    }
+    results.push(failure
+      ? { repoName: repo.name, nativeScreens: [], prompts: [], error: failure }
+      : result ?? { repoName: repo.name, nativeScreens: [], prompts: [], error: "capture produced no result" });
+  }
+
+  const galleryPath = await deps.writeGalleryHtml({
+    runId,
+    runRoot,
+    generatedAt,
+    repos: results,
+  });
+  deps.stdout(`Gallery: ${galleryPath}`);
+  return results.some((result) => result.error) ? 1 : 0;
+}
+
 function waitForBootShutdownSignal(): Promise<void> {
   return new Promise((resolve) => {
     const cleanup = () => {
@@ -699,6 +825,10 @@ export async function runCli(args = process.argv.slice(2), providedDeps: CorpusC
 
     if (command === "boot") {
       return await runBootCommand(parseBootArgs(args.slice(1)), deps);
+    }
+
+    if (command === "gallery") {
+      return await runGalleryCommand(parseGalleryArgs(args.slice(1)), deps);
     }
 
     deps.stderr(`Unknown corpus command: ${command}`);
