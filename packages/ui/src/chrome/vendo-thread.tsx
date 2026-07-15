@@ -100,13 +100,23 @@ const BOTTOM_SLACK_PX = 32;
     bottom on their own. Jump-to-latest: when new content lands while the
     reader is scrolled up, the stylesheet's .fl-jump affordance appears;
     activating it scrolls to the latest turn and re-sticks. */
-function useStickToBottom(messages: UIMessage[]) {
+function useStickToBottom(messages: UIMessage[], threadKey?: string) {
   const listRef = useRef<HTMLDivElement>(null);
   // The stick is a ref, not state: it flips inside scroll/effect timing and
   // must be readable synchronously without re-render races.
   const stuckRef = useRef(true);
   const lastScrollHeightRef = useRef(0);
   const [unseen, setUnseen] = useState(false);
+
+  // A different conversation is a different reader position: when the caller
+  // switches the hook to another thread, re-arm the stick and forget the
+  // previous thread's growth baseline — otherwise a scroll-up in the old
+  // thread would keep the new one from opening at its latest turn.
+  useEffect(() => {
+    stuckRef.current = true;
+    lastScrollHeightRef.current = 0;
+    setUnseen(false);
+  }, [threadKey]);
 
   const atBottom = (node: HTMLElement) =>
     node.scrollHeight - node.scrollTop - node.clientHeight <= BOTTOM_SLACK_PX;
@@ -166,7 +176,7 @@ export function VendoThread({
 }: VendoThreadProps) {
   const { client, components } = useVendoContext();
   const thread = useVendoThread(threadId);
-  const scroll = useStickToBottom(thread.messages);
+  const scroll = useStickToBottom(thread.messages, threadId);
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -346,67 +356,67 @@ export function VendoThread({
         {/* role="log" — aria-label is prohibited on a roleless div (WCAG 4.1.2), and a
             streaming message list is exactly what "log" names. */}
         <div className="fl-msglist-wrap">
-        <div
-          className="fl-msglist"
-          role="log"
-          aria-label="Conversation messages"
-          aria-live="polite"
-          aria-busy={busy}
-          ref={scroll.listRef}
-          onScroll={scroll.onScroll}
-        >
-          {thread.messages.map(message => (
-            <article
-              className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
-              data-role={message.role}
-              key={message.id}
-              aria-label={`${message.role} message`}
-            >
-              {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`, message.role))}
-            </article>
-          ))}
-          {approvals.map(part => {
-            const risk = risks.get(part.toolCallId) ?? "read";
-            const input = "input" in part ? part.input : undefined;
-            const guardApproval = guardApprovals.get(part.toolCallId);
-            const approval: ApprovalRequest = {
-              id: part.approval.id,
-              call: { id: part.toolCallId, tool: toolName(part), args: input as Json },
-              descriptor: { name: toolName(part), description: `Approve ${toolName(part)}`, inputSchema: {}, risk },
-              inputPreview: preview(input),
-              ...(guardApproval?.invalidatedGrant === undefined
-                ? {}
-                : { invalidatedGrant: guardApproval.invalidatedGrant }),
-              ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
-              createdAt: new Date().toISOString(),
-            };
-            const guardApprovalId = guardApproval?.approvalId;
-            return (
-              <ApprovalCard
-                key={part.approval.id}
-                approval={approval}
-                allowRemember={guardApprovalId !== undefined}
-                onDecide={async decision => {
-                  // Decide the guard's approval record over the wire FIRST so the
-                  // resumed execution replays as approved (05 §1) — the native
-                  // response alone only tells the model loop to continue.
-                  if (guardApprovalId !== undefined) {
-                    await client.approvals.decide([guardApprovalId], decision);
-                  }
-                  thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
-                }}
-              />
-            );
-          })}
-          {working ? <FluidThinking label="Working" /> : null}
-        </div>
-        {scroll.showJump ? (
-          <button type="button" className="fl-jump" aria-label="Jump to latest" onClick={scroll.jumpToLatest}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
-            </svg>
-          </button>
-        ) : null}
+          <div
+            className="fl-msglist"
+            role="log"
+            aria-label="Conversation messages"
+            aria-live="polite"
+            aria-busy={busy}
+            ref={scroll.listRef}
+            onScroll={scroll.onScroll}
+          >
+            {thread.messages.map(message => (
+              <article
+                className={message.role === "user" ? "fl-turn-user" : "fl-turn-assistant"}
+                data-role={message.role}
+                key={message.id}
+                aria-label={`${message.role} message`}
+              >
+                {message.parts.map((part, index) => renderPart(part, `${message.id}-${index}`, message.role))}
+              </article>
+            ))}
+            {approvals.map(part => {
+              const risk = risks.get(part.toolCallId) ?? "read";
+              const input = "input" in part ? part.input : undefined;
+              const guardApproval = guardApprovals.get(part.toolCallId);
+              const approval: ApprovalRequest = {
+                id: part.approval.id,
+                call: { id: part.toolCallId, tool: toolName(part), args: input as Json },
+                descriptor: { name: toolName(part), description: `Approve ${toolName(part)}`, inputSchema: {}, risk },
+                inputPreview: preview(input),
+                ...(guardApproval?.invalidatedGrant === undefined
+                  ? {}
+                  : { invalidatedGrant: guardApproval.invalidatedGrant }),
+                ctx: { principal: { kind: "user", subject: "current-user", ephemeral: true }, venue: "chat", presence: "present" },
+                createdAt: new Date().toISOString(),
+              };
+              const guardApprovalId = guardApproval?.approvalId;
+              return (
+                <ApprovalCard
+                  key={part.approval.id}
+                  approval={approval}
+                  allowRemember={guardApprovalId !== undefined}
+                  onDecide={async decision => {
+                    // Decide the guard's approval record over the wire FIRST so the
+                    // resumed execution replays as approved (05 §1) — the native
+                    // response alone only tells the model loop to continue.
+                    if (guardApprovalId !== undefined) {
+                      await client.approvals.decide([guardApprovalId], decision);
+                    }
+                    thread.addToolApprovalResponse({ id: part.approval.id, approved: decision.approve });
+                  }}
+                />
+              );
+            })}
+            {working ? <FluidThinking label="Working" /> : null}
+          </div>
+          {scroll.showJump ? (
+            <button type="button" className="fl-jump" aria-label="Jump to latest" onClick={scroll.jumpToLatest}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
+              </svg>
+            </button>
+          ) : null}
         </div>
         {composer}
       </div>

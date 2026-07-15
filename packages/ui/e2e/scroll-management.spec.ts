@@ -86,3 +86,21 @@ test("scrolling up without new content shows no pill", async ({ page }) => {
   await page.waitForTimeout(400);
   await expect(page.getByRole("button", { name: "Jump to latest" })).toBeHidden();
 });
+
+test("switching threads re-arms the stick — the new thread opens at its latest turn", async ({ page }) => {
+  // Park the reader at the top of thread A (stick released).
+  await expect.poll(async () => (await scrollState(page)).gap).toBeLessThanOrEqual(32);
+  await msglist(page).evaluate(node => { node.scrollTop = 0; });
+  expect((await scrollState(page)).scrollTop).toBe(0);
+
+  // Switch to thread B (same turns, no trailing approval): the scroll state
+  // must not leak — B opens at the end.
+  await page.getByTestId("switch-thread").click();
+  await expect(page.getByLabel("Approval for host_email_send")).toBeHidden();
+  await expect(page.getByText("Answer 10:").first()).toBeVisible();
+  await expect.poll(async () => (await scrollState(page)).gap, {
+    message: "a freshly loaded thread must open at its latest turn even after a scroll-up in the previous one",
+  }).toBeLessThanOrEqual(32);
+  expect((await scrollState(page)).scrollTop).toBeGreaterThan(0);
+  await expect(page.getByRole("button", { name: "Jump to latest" })).toBeHidden();
+});
