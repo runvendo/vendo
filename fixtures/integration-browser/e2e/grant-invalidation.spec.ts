@@ -68,7 +68,21 @@ test("descriptor drift explains the replacement approval and Activity event", as
 
   // Reload proves both surfaces are backed by committed wire/store state: the
   // thread rehydrates its approval payload and Activity fetches persisted audit.
-  await page.reload();
+  // ENG-211 (08-ui amendment 2026-07-14): a supplied thread id unknown to the
+  // server is discarded by the hook and the server mints the effective id — so
+  // recover the id the server actually bound from the summaries listing (the
+  // documented way hosts persist thread identity) and rehydrate THAT thread.
+  let committedThreadId: string | undefined;
+  await expect(async () => {
+    const listed = await request.get("/api/vendo/threads", {
+      headers: { "x-vendo-test-user": "user_bob" },
+    });
+    expect(listed.ok()).toBeTruthy();
+    const summaries = await listed.json() as { id: string; title: string }[];
+    committedThreadId = summaries.find((summary) => summary.title.includes(FIRST))?.id;
+    expect(committedThreadId).toBeTruthy();
+  }).toPass({ timeout: 10_000 });
+  await page.goto(`/?thread=${committedThreadId}&user=user_bob`);
   const committedApproval = page.getByRole("article", { name: `Approval for ${TOOL}` });
   await expect(committedApproval.getByRole("note", { name: "Previous permission invalidated" })).toBeVisible();
   await retain(committedApproval, "approval-card-invalidated-grant.png");
