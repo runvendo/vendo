@@ -47,13 +47,14 @@ describe("Button", () => {
 });
 
 describe("Input", () => {
-  it("renders state as its value and invokes its bound change callback", () => {
+  it("seeds state as its value, displays edits, and invokes its bound change callback", () => {
     const onChange = vi.fn();
     render(<Input label="Client name" value="Hartwell" onChange={onChange} />);
 
     const input = screen.getByRole("textbox", { name: "Client name" });
     expect((input as HTMLInputElement).value).toBe("Hartwell");
     fireEvent.change(input, { target: { value: "Hartwell & Co" } });
+    expect((input as HTMLInputElement).value).toBe("Hartwell & Co");
     expect(onChange).toHaveBeenCalledOnce();
     expect(input.closest('[data-primitive="Input"]')).not.toBeNull();
     expect(input.getAttribute("style")).toContain("--vendo-density-control-height");
@@ -61,7 +62,7 @@ describe("Input", () => {
 });
 
 describe("Select", () => {
-  it("renders JSON options and invokes its bound change callback", () => {
+  it("renders JSON options, displays selection changes, and invokes its bound change callback", () => {
     const onChange = vi.fn();
     render(
       <Select
@@ -76,6 +77,7 @@ describe("Select", () => {
     expect((select as HTMLSelectElement).value).toBe("open");
     expect((screen.getByRole("option", { name: "Paid" }) as HTMLOptionElement).disabled).toBe(true);
     fireEvent.change(select, { target: { value: "Draft" } });
+    expect((select as HTMLSelectElement).value).toBe("Draft");
     expect(onChange).toHaveBeenCalledOnce();
     expect(select.closest('[data-primitive="Select"]')).not.toBeNull();
   });

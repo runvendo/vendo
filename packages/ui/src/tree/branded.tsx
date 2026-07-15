@@ -162,11 +162,12 @@ export interface InputProps {
   onChange?: PrimitiveAction;
 }
 
-/** State bindings resolve to `value`; change actions remain opaque bound callbacks. */
+/** State bindings seed an uncontrolled value; change actions remain opaque bound callbacks. */
 export function Input(props: InputProps) {
   const id = useId();
   const inputId = `vendo-input-${id.replace(/:/g, "")}`;
   const helpId = `${inputId}-help`;
+  const initialValue = content(props.value);
   const hasHelp = props.error !== undefined && props.error !== null
     || props.hint !== undefined && props.hint !== null;
   return (
@@ -181,10 +182,11 @@ export function Input(props: InputProps) {
         </span>
       ) : null}
       <input
+        key={initialValue}
         id={inputId}
         name={props.name}
         type={props.type ?? "text"}
-        value={content(props.value)}
+        defaultValue={initialValue}
         placeholder={props.placeholder}
         autoComplete={props.autoComplete}
         disabled={props.disabled}
@@ -241,6 +243,7 @@ export function Select(props: SelectProps) {
   const id = useId();
   const selectId = `vendo-select-${id.replace(/:/g, "")}`;
   const hintId = `${selectId}-hint`;
+  const initialValue = content(props.value);
   const options = (props.options ?? []).map((option) => (
     typeof option === "object" && option !== null
       ? { value: content(option.value), label: content(option.label ?? option.value), disabled: option.disabled }
@@ -258,9 +261,10 @@ export function Select(props: SelectProps) {
         </span>
       ) : null}
       <select
+        key={initialValue}
         id={selectId}
         name={props.name}
-        value={content(props.value)}
+        defaultValue={initialValue}
         disabled={props.disabled}
         required={props.required}
         aria-describedby={props.hint === undefined || props.hint === null ? undefined : hintId}
