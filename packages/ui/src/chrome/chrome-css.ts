@@ -1181,6 +1181,8 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 /* ---------- realtime voice stage (ENG-185) ---------- */
 /* The stage fills the surface that launched it. The blob head is pinned; the
    feed scrolls beneath it; the caption + footer stay anchored at the bottom. */
+.fl-voice-root { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fl-voice-root > .fl-voice-stage { flex: 1; }
 .fl-voice-stage { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
   animation: fl-voice-rise .42s cubic-bezier(.22, 1, .36, 1) both; }
 @keyframes fl-voice-rise { from { opacity: 0; transform: translateY(18px) scale(.985); }
