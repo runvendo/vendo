@@ -30,8 +30,12 @@ app with both gets the Next scaffold; any other host is treated as Next.
 
 Options:
 
-- `--agent` emits the setup plan with its four plain-language questions and
-  writes nothing.
+- `--agent` emits the setup plan as JSON and writes nothing: the detected
+  framework, every proposed code diff, the four plain-language questions,
+  `extraction` (deterministic extraction runs first, against a throwaway
+  directory, so the plan carries the extracted tools), and
+  `riskRecommendations` (per-tool advice: destructive tools should be marked
+  critical, disabled tools reviewed before enabling).
 - `--yes` skips the interview, shows the proposed diffs, and approves every
   code change. Combine it with `--model-import` and `--brief` for unattended
   setup.
@@ -40,6 +44,12 @@ Options:
 - `--model-import <specifier>` sets the module that exports the host's AI SDK
   `model` (default `@/lib/ai` for Next.js and `./ai` for Express).
 - `--brief <text>` supplies the product brief written to `.vendo/brief.md`.
+
+When the host repo has a `.claude/` directory and no
+`.claude/skills/vendo-setup/SKILL.md`, init also offers (through the same
+diff consent as every code change) to install the `vendo-setup` agent skill
+shipped inside the npm package. A host that edits or deletes its copy is
+never re-prompted.
 
 ## `vendo doctor [dir]`
 
@@ -67,12 +77,30 @@ Exit codes:
 
 Runs the build-step extraction manually. It updates tool extraction and remix
 baselines for `dir`, which defaults to the current directory. The default is
-fail-soft and warns on breaking changes.
+fail-soft and warns on breaking changes. When tools changed or broke, sync
+asks the running dev server which saved apps, automations, and grants they
+impact and prints one `impact:` line per tool (or `impact unknown` when no
+server is reachable).
+
+Options:
+
+- `--strict` — CI gate: exit 2 on breaking tool changes, exit 3 when a
+  breaking tool impacts saved references.
+- `--json` — print exactly one machine-readable object on stdout:
+  `{ ok, exitCode, report, impact, notes }`, where `report` carries
+  `tools`/`breaking`/`pins`/`warnings`, `impact` is the per-tool blast
+  radius (`[]` when nothing changed, `null` when unknown), and `notes`
+  collects CLI-level events. An `error` field appears when extraction
+  itself failed soft.
+- `--report` — push the report to Vendo Cloud (requires `VENDO_API_KEY` or
+  `--key`; `--api-url` overrides `VENDO_CLOUD_URL`).
 
 Exit codes:
 
 - `0`: success, including fail-soft warnings
 - `2`: breaking changes when `--strict` is set
+- `3`: breaking changes that impact saved apps, automations, or grants when
+  `--strict` is set
 
 ## `vendo mcp`
 

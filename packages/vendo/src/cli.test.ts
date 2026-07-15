@@ -12,6 +12,7 @@ describe("vendo CLI commands", () => {
     expect(help).toContain("--force");
     expect(help).toContain("--model-import <specifier>");
     expect(help).toContain("--brief <text>");
+    expect(help).toContain("--json");
 
     log.mockRestore();
   });

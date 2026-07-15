@@ -21,6 +21,19 @@ export interface SyncOptions {
   push?: (report: SyncReportPayload) => Promise<void>;
   apiKey?: string;
   apiUrl?: string;
+  json?: boolean;
+}
+
+/** `sync --json` — the one machine-readable object printed on stdout. */
+export interface SyncJsonResult {
+  ok: boolean;                       // exitCode === 0
+  exitCode: 0 | 2 | 3;
+  report: SyncReportWithWarnings;
+  /** [] = nothing referenced the changed tools; null = impact unknown (dev server unreachable). */
+  impact: ToolImpact[] | null;
+  /** CLI-level events not carried by the report (unreachable impact endpoint, report-push problems). */
+  notes: string[];
+  error?: string;                    // present when extraction itself failed soft
 }
 
 function impactResponse(value: unknown): ToolImpact[] {
@@ -62,6 +75,12 @@ function nonzero(entry: ToolImpact): boolean {
 /** 04-actions §1 / 09-vendo §5 — fail-soft extraction, strict CI gate. */
 export async function runSync(options: SyncOptions): Promise<number> {
   const output = options.output ?? consoleOutput;
+  const json = options.json === true;
+  // In --json mode, human lines that duplicate report fields are dropped and
+  // CLI-level events collect into `notes`; stdout carries exactly one object.
+  const notes: string[] = [];
+  const note = (message: string): void => { if (json) notes.push(message); else output.log(message); };
+  const noteError = (message: string): void => { if (json) notes.push(message); else output.error(message); };
   try {
     const root = resolve(options.targetDir);
     const report: SyncReportWithWarnings = await (options.sync ?? vendoSync)({
@@ -70,9 +89,11 @@ export async function runSync(options: SyncOptions): Promise<number> {
       // The CLI needs the report to compute exit 2 vs 3; it applies strictness below.
       strict: false,
     });
-    for (const warning of report.warnings) output.error(`warning: ${warning}`);
-    output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
-    output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+    if (!json) {
+      for (const warning of report.warnings) output.error(`warning: ${warning}`);
+      output.log(`tools: +${report.tools.added.length} -${report.tools.removed.length} ~${report.tools.changed.length}`);
+      output.log(`pins: ${report.pins.captured.length} captured, ${report.pins.drifted.length} drifted`);
+    }
 
     const tools = [...new Set([
       ...report.breaking.map((breaking) => breaking.tool),
@@ -89,16 +110,16 @@ export async function runSync(options: SyncOptions): Promise<number> {
         });
         if (!response.ok) throw new Error(`sync impact returned ${response.status}`);
         impact = impactResponse(await response.json());
-        printImpact(output, impact);
+        if (!json) printImpact(output, impact);
       } catch {
-        output.log(`impact unknown — dev server not reachable at ${impactUrl}`);
+        note(`impact unknown — dev server not reachable at ${impactUrl}`);
       }
     }
 
     if (options.report === true) {
       const apiKey = options.apiKey ?? process.env.VENDO_API_KEY;
       if (!apiKey) {
-        output.error("--report requires VENDO_API_KEY or --key");
+        noteError("--report requires VENDO_API_KEY or --key");
       } else {
         const payload: SyncReportPayload = {
           report,
@@ -113,19 +134,46 @@ export async function runSync(options: SyncOptions): Promise<number> {
             ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
           });
         } catch (error) {
-          output.error(`warning: failed to push sync report: ${error instanceof Error ? error.message : "unknown error"}`);
+          noteError(`warning: failed to push sync report: ${error instanceof Error ? error.message : "unknown error"}`);
         }
       }
     }
 
+    let exitCode: SyncJsonResult["exitCode"] = 0;
     if (options.strict === true && report.breaking.length > 0) {
-      for (const breaking of report.breaking) output.error(`breaking: ${breaking.tool} ${breaking.change}`);
+      if (!json) for (const breaking of report.breaking) output.error(`breaking: ${breaking.tool} ${breaking.change}`);
       const breakingTools = new Set(report.breaking.map((breaking) => breaking.tool));
-      return impact?.some((entry) => breakingTools.has(entry.tool) && nonzero(entry)) === true ? 3 : 2;
+      exitCode = impact?.some((entry) => breakingTools.has(entry.tool) && nonzero(entry)) === true ? 3 : 2;
     }
-    return 0;
+    if (json) {
+      const result: SyncJsonResult = {
+        ok: exitCode === 0,
+        exitCode,
+        report,
+        // Nothing changed → nothing could be impacted; changes without a
+        // reachable dev server → unknown, surfaced as null plus a note.
+        impact: impact ?? (tools.length === 0 ? [] : null),
+        notes,
+      };
+      output.log(JSON.stringify(result, null, 2));
+    }
+    return exitCode;
   } catch (error) {
-    output.error(`warning: sync failed soft: ${error instanceof Error ? error.message : "unknown error"}`);
-    return options.strict === true ? 2 : 0;
+    const message = `sync failed soft: ${error instanceof Error ? error.message : "unknown error"}`;
+    const exitCode = options.strict === true ? 2 : 0;
+    if (json) {
+      const result: SyncJsonResult = {
+        ok: exitCode === 0,
+        exitCode,
+        report: { tools: { added: [], removed: [], changed: [] }, breaking: [], pins: { captured: [], drifted: [] }, warnings: [] },
+        impact: null,
+        notes,
+        error: message,
+      };
+      output.log(JSON.stringify(result, null, 2));
+    } else {
+      output.error(`warning: ${message}`);
+    }
+    return exitCode;
   }
 }

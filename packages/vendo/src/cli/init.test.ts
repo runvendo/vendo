@@ -530,6 +530,123 @@ describe("vendo init", () => {
     expect(layout).not.toContain("VendoTheme");
   });
 
+  it("runs extraction for the agent plan and stays read-only", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "openapi.json"), JSON.stringify({
+      openapi: "3.1.0",
+      info: { title: "Host", version: "1.0.0" },
+      paths: {
+        "/api/invoices": { get: { summary: "List invoices" } },
+        "/api/invoices/{id}": { delete: { summary: "Delete an invoice" } },
+      },
+    }));
+    const before = await tree(root);
+    const sink = output();
+
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+
+    expect(await tree(root)).toEqual(before); // extraction ran against a throwaway dir
+    const plan = JSON.parse(sink.logs.join("\n")) as {
+      extraction: { tools: Array<{ name: string; risk: string; binding: { kind: string; method: string } }>; warnings: string[] };
+      riskRecommendations: Array<{ tool: string; risk: string; recommendation: string }>;
+    };
+    expect(plan.extraction.tools).toHaveLength(2);
+    expect(plan.extraction.tools.every((tool) => tool.binding.kind === "openapi")).toBe(true);
+    const destructive = plan.extraction.tools.find((tool) => tool.binding.method === "DELETE");
+    expect(destructive?.risk).toBe("destructive");
+    expect(plan.riskRecommendations).toContainEqual({
+      tool: destructive?.name,
+      risk: "destructive",
+      recommendation: expect.stringContaining("mark it critical in .vendo/overrides.json"),
+    });
+  });
+
+  it("agent-plan recommendations respect existing overrides", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "openapi.json"), JSON.stringify({
+      openapi: "3.1.0",
+      info: { title: "Host", version: "1.0.0" },
+      paths: { "/api/invoices/{id}": { delete: { summary: "Delete an invoice" } } },
+    }));
+    const first = output();
+    expect(await runInit({ targetDir: root, agent: true, output: first.output })).toBe(0);
+    const name = (JSON.parse(first.logs.join("\n")) as { extraction: { tools: Array<{ name: string }> } })
+      .extraction.tools[0]!.name;
+
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "overrides.json"), JSON.stringify({
+      format: "vendo/overrides@1",
+      tools: { [name]: { critical: true } },
+    }));
+    const second = output();
+    expect(await runInit({ targetDir: root, agent: true, output: second.output })).toBe(0);
+    const plan = JSON.parse(second.logs.join("\n")) as {
+      extraction: { tools: Array<{ name: string; critical?: boolean }> };
+      riskRecommendations: Array<{ tool: string; recommendation: string }>;
+    };
+    expect(plan.extraction.tools[0]).toMatchObject({ name, critical: true });
+    expect(plan.riskRecommendations).toContainEqual(expect.objectContaining({
+      tool: name,
+      recommendation: expect.stringContaining("already marked critical"),
+    }));
+  });
+
+  it("degrades the agent plan to a warning when extraction fails", async () => {
+    const root = await fixture();
+    await mkdir(join(root, ".vendo"), { recursive: true });
+    await writeFile(join(root, ".vendo", "overrides.json"), "{ not json"); // malformed overrides make vendoSync throw
+    const sink = output();
+
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+
+    const plan = JSON.parse(sink.logs.join("\n")) as {
+      extraction: { tools: unknown[]; warnings: string[] };
+      riskRecommendations: unknown[];
+    };
+    expect(plan.extraction.tools).toEqual([]);
+    expect(plan.extraction.warnings[0]).toContain("extraction failed:");
+    expect(plan.riskRecommendations).toEqual([]);
+  });
+
+  it("offers the packaged setup skill only to hosts with a .claude directory", async () => {
+    const skillPath = join(".claude", "skills", "vendo-setup", "SKILL.md");
+    const without = output();
+    expect(await runInit({ targetDir: await fixture(), agent: true, output: without.output })).toBe(0);
+    expect((JSON.parse(without.logs.join("\n")) as { codeChanges: Array<{ path: string }> })
+      .codeChanges.some((change) => change.path === skillPath)).toBe(false);
+
+    const root = await fixture();
+    await mkdir(join(root, ".claude"), { recursive: true });
+    const sink = output();
+    expect(await runInit({ targetDir: root, agent: true, output: sink.output })).toBe(0);
+    const plan = JSON.parse(sink.logs.join("\n")) as { codeChanges: Array<{ path: string; diff: string }> };
+    const offered = plan.codeChanges.find((change) => change.path === skillPath);
+    expect(offered?.diff).toContain("name: vendo-setup");
+  });
+
+  it("writes the setup skill through diff consent and stays idempotent", async () => {
+    const root = await fixture();
+    await mkdir(join(root, ".claude"), { recursive: true });
+    const skillAbsolute = join(root, ".claude", "skills", "vendo-setup", "SKILL.md");
+    const skillPath = join(".claude", "skills", "vendo-setup", "SKILL.md");
+
+    const declined = vi.fn(async (change: { path: string }) => change.path !== skillPath);
+    expect(await runInit({ targetDir: root, confirm: declined, output: output().output })).toBe(0);
+    await expect(readFile(skillAbsolute, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const written = await readFile(skillAbsolute, "utf8");
+    expect(written).toContain("name: vendo-setup");
+    expect(written).toContain("docs.vendo.run/install.md");
+
+    // A rerun (or a host that edited its copy) is never re-prompted.
+    await writeFile(skillAbsolute, "# my edited copy\n");
+    const confirm = vi.fn().mockResolvedValue(true);
+    expect(await runInit({ targetDir: root, confirm, output: output().output })).toBe(0);
+    expect(confirm.mock.calls.map(([change]) => (change as { path: string }).path)).not.toContain(skillPath);
+    expect(await readFile(skillAbsolute, "utf8")).toBe("# my edited copy\n");
+  });
+
   it("emits only init telemetry and respects env opt-out", async () => {
     const root = await fixture();
     const home = await mkdtemp(join(tmpdir(), "vendo-home-"));
