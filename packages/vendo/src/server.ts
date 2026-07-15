@@ -27,6 +27,10 @@ import { createMcpDoor, type AppsPort, type HostOAuthAdapter, type McpDoor } fro
 import { createStore, envSecrets, registerEphemeralSubject, type VendoStore } from "@vendoai/store";
 import { initTelemetry, type Telemetry } from "@vendoai/telemetry";
 import type { LanguageModel } from "ai";
+import {
+  capabilitySurfaceSnapshot,
+  createCapabilityMissCapture,
+} from "./capability-misses.js";
 
 const VERSION = "0.3.0";
 const BASE_PATH = "/api/vendo";
@@ -735,6 +739,10 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   });
   resolveAppToolRisk = apps.agentToolRisk;
   actions.add(apps.agentTools());
+  const missSurface = actions.descriptors()
+    .then(capabilitySurfaceSnapshot)
+    .catch(() => capabilitySurfaceSnapshot([]));
+  const missCapture = createCapabilityMissCapture({ surface: missSurface });
   const agent = createAgent({
     model: config.model,
     tools: boundTools,
@@ -744,6 +752,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       toolOutputCap: config.agent?.toolOutputCap ?? DEFAULT_TOOL_OUTPUT_CAP,
       ...(config.agent?.maxOutputTokens === undefined ? {} : { maxOutputTokens: config.agent.maxOutputTokens }),
       ...(config.agent?.historyWindow === undefined ? {} : { historyWindow: config.agent.historyWindow }),
+    },
+    capabilityMiss: {
+      hostId: missCapture.hostId,
+      surface: missSurface.then(({ hash }) => ({ format: "vendo/tools@1" as const, hash })),
+      emit: (event) => missCapture.record(event),
     },
   });
   const automations = createAutomations({
