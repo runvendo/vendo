@@ -1185,8 +1185,12 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 
 /* --- a11y hardening (design port): guaranteed focus ring + AA ceremony buttons --- */
 .vendo-root :focus-visible { outline: 2px solid var(--vendo-accent); outline-offset: 2px; }
-/* Amber ceremony/critical confirm buttons: darker fill so white text clears AA 4.5:1. */
-.fl-btn-ceremony, .fl-btn-critical { background: #7a5000; border-color: transparent; color: #fff; }
-.fl-btn-ceremony:hover, .fl-btn-critical:hover { opacity: .92; background: #7a5000; }
+/* Amber ceremony/critical confirm buttons stay AA 4.5:1 in BOTH schemes: dark
+   amber fill + white text in light (7.1:1); light amber fill + near-black text
+   in dark (8.7:1, and the fill itself pops ~8:1 off the dark warn-bg) — flipping only the fill
+   would drop white-on-#d9a94e to 2.2:1 (ENG-226 review catch). */
+.fl-btn-ceremony, .fl-btn-critical { background: light-dark(#7a5000, #d9a94e); border-color: transparent;
+  color: light-dark(#fff, #14151a); }
+.fl-btn-ceremony:hover, .fl-btn-critical:hover { opacity: .92; background: light-dark(#7a5000, #d9a94e); }
 
 `;
