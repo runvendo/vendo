@@ -19,6 +19,7 @@ export interface SyncReport {
   tools: { added: string[]; removed: string[]; changed: string[] };
   breaking: BreakingChange[];
   pins: { captured: string[]; drifted: string[] };   // remixable component baselines (06 §8)
+  catalog: { discovered: number; registered: number }; // additive @1 amendment approved by Yousef, 2026-07-14
 }
 
 export interface BreakingChange {
@@ -49,6 +50,59 @@ Launch extraction tier: **OpenAPI + route-scan** (corpus-proven). tRPC/GraphQL/s
   ]
 }
 ```
+
+### Component catalog extraction — additive within @1 (approved 2026-07-14)
+
+Sync also owns `.vendo/catalog.json`. It is a deterministic, machine-generated, host-committed
+review artifact: every sync regenerates it, and a missing `.vendo/` at build
+causes the same regeneration. Init asks no catalog questions and prints exactly
+`catalog.json: N discovered, M registered` after its silent sync.
+
+The TypeScript compiler API is the inventory and props-schema source of truth;
+regex extraction and model-authored inventory are forbidden. A component is
+discoverable only with exported-map registration evidence from a
+`<VendoRoot components={...}>` JSX use, a callable JSX implementation, a stable
+module/export path, and a representable props type. Unrepresentable exotic prop
+types produce a permissive schema plus a tool-authored explanatory `note`, or
+the entry is omitted. Statically serializable `createVendo({ catalog })` code
+registrations are merged by name and win over scanned entries.
+
+```jsonc
+{
+  "format": "vendo/catalog@1",
+  "entries": [{
+    "name": "InvoiceCard",
+    "exportPath": "./src/vendo/host-components.tsx#hostComponents.InvoiceCard",
+    "propsSchema": { "type": "object", "properties": {} },
+    "description": "Use when reviewing one invoice.",
+    "examples": ["<InvoiceCard invoice={invoice} />"],
+    "source": "registered", // or "scanned"
+    "disabled": false,
+    "note": "optional tool-authored explanation"
+  }]
+}
+```
+
+The catalog and every entry use strict Zod validation so stale or misspelled
+fields fail sync loudly. Rescans replace all deterministic fields and all
+tool-owned fields; only previously accepted `description`/`examples` on a
+still-scanned entry persist, keeping unchanged reruns byte-identical. The LLM
+may propose only `description`/`examples`, written as before/after records in
+`.vendo/catalog.proposals.json`; runtime never reads that artifact, and catalog
+copy changes only through an explicit acceptance operation. Registered copy
+lives in code and is regenerated from code on every sync.
+
+`disabled` remains in the strict `catalog@1` entry schema for forward
+conformance, but is reserved for the extraction-M5 curation workflow and the
+install-DX correction-path design. Until that human-owned persistence exists,
+sync does not preserve hand-authored disabled flags and runtime does not filter
+catalog entries by this field; do not use it as a curation control.
+
+Known runtime limit: `propsSchema` from disk is JSON Schema prompt guidance,
+not an executable validator. Disk-loaded entries use a pass-through
+`StandardSchema` at runtime, while explicit code registrations retain their
+real `StandardSchema` validators. Strong runtime prop validation therefore
+requires code registration until a JSON-Schema validation seam is added.
 
 ### `.vendo/overrides.json` (human-written, respected forever)
 

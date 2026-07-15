@@ -625,6 +625,7 @@ export async function runInit(options: InitOptions): Promise<number> {
 
     const report = await vendoSync({ root, out: join(root, ".vendo") });
     for (const warning of report.warnings) output.error(`warning: ${warning}`);
+    output.log(`catalog.json: ${report.catalog.discovered} discovered, ${report.catalog.registered} registered`);
     if (report.unresolvedPins.length > 0) {
       output.error("\nUNRESOLVED REMIXABLE SLOTS (init continues):");
       for (const pin of report.unresolvedPins) {

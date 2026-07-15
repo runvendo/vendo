@@ -279,6 +279,9 @@ describe("vendo init", () => {
     const policy = JSON.parse(await readFile(join(root, ".vendo", "policy.json"), "utf8"));
     expect(overrides).toEqual({ format: "vendo/overrides@1", tools: {}, remix: { ignoreSlots: [] } });
     expect(tools).toMatchObject({ format: "vendo/tools@1", tools: [] });
+    const catalog = JSON.parse(await readFile(join(root, ".vendo", "catalog.json"), "utf8"));
+    expect(catalog).toEqual({ format: "vendo/catalog@1", entries: [] });
+    expect(sink.logs).toContain("catalog.json: 0 discovered, 0 registered");
     expect(policy).toMatchObject({ format: "vendo/policy@1" });
     expect(await readFile(join(root, ".vendo", "data", ".gitignore"), "utf8")).toBe("*\n!.gitignore\n");
     expect(await readFile(join(root, "app", "api", "vendo", "[...vendo]", "route.ts"), "utf8"))
