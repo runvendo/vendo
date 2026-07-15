@@ -23,6 +23,10 @@ globalThis.__VENDO_JAIL_JSX__ = { jsx, jsxs, Fragment };
 
 const mount = document.createElement("div");
 mount.id = "vendo-jail-root";
+// Contain first/last-child margins inside the measured box. Otherwise those
+// margins can sit outside the mount and be clipped even when its own height is
+// reported exactly.
+mount.style.display = "flow-root";
 document.body.appendChild(mount);
 
 let root: Root | undefined;
@@ -123,7 +127,10 @@ class RuntimeBoundary extends React.Component<React.PropsWithChildren, { error?:
   }
 }
 
-async function renderComponent(source: string, rawProps: Record<string, unknown>): Promise<void> {
+async function renderComponent(
+  source: string,
+  rawProps: Record<string, unknown>,
+): Promise<"ready" | "empty" | "error"> {
   const Component = await load(source);
   const props = hydrate(rawProps) as Record<string, unknown>;
   props.vendo = {
@@ -132,12 +139,20 @@ async function renderComponent(source: string, rawProps: Record<string, unknown>
       post({ kind: "state-set", key, value });
     },
   };
-  root ??= createRoot(mount);
-  root.render(
-    <RuntimeBoundary>
-      <Component {...props} />
-    </RuntimeBoundary>,
-  );
+  const renderRoot = root ??= createRoot(mount);
+  const boundaryRef = React.createRef<RuntimeBoundary>();
+  // Commit before classifying the result. React root.render is concurrent by
+  // default, so inspecting the mount immediately after it would report a
+  // false empty result before the first commit.
+  flushSync(() => {
+    renderRoot.render(
+      <RuntimeBoundary ref={boundaryRef}>
+        <Component {...props} />
+      </RuntimeBoundary>,
+    );
+  });
+  if (boundaryRef.current?.state.error) return "error";
+  return mount.hasChildNodes() ? "ready" : "empty";
 }
 
 /** Host brand tokens: only --vendo-* custom properties may cross into the jail,
@@ -163,7 +178,10 @@ window.addEventListener("message", (event) => {
   if (message.kind === "render" && typeof message.source === "string") {
     applyThemeVars(message.themeVars);
     void renderComponent(message.source, (message.props ?? {}) as Record<string, unknown>)
-      .then(() => post({ kind: "ready" }))
+      .then((result) => {
+        if (result === "ready") post({ kind: "ready" });
+        else if (result === "empty") post({ kind: "empty" });
+      })
       .catch((error: unknown) => post({
         kind: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -180,15 +198,58 @@ window.addEventListener("message", (event) => {
   }
 });
 
+const VIEWPORT_BLOCK_UNIT = /(?:d|s|l)?v(?:h|b)(?![a-z])/iu;
+const VIEWPORT_BLOCK_PROPERTIES = ["height", "min-height", "block-size", "min-block-size"] as const;
+
+let lastReportedHeight: number | undefined;
+let mutationObserver: MutationObserver | undefined;
+
+function contentHeight(): number {
+  const elements = [mount, ...mount.querySelectorAll<HTMLElement>("[style]")];
+
+  // A generated root commonly uses min-height:100vh. Inside an auto-sized
+  // iframe, that makes its "content" depend on the previous host height. An
+  // auto-height surface has no independent block viewport, so normalize only
+  // inline viewport-relative block constraints to their content-sized forms.
+  for (const element of elements) {
+    for (const property of VIEWPORT_BLOCK_PROPERTIES) {
+      const value = element.style.getPropertyValue(property);
+      if (!VIEWPORT_BLOCK_UNIT.test(value)) continue;
+      element.style.setProperty(property, property.startsWith("min-") ? "0" : "auto", "important");
+    }
+  }
+
+  const height = Math.ceil(Math.max(mount.getBoundingClientRect().height, mount.scrollHeight));
+  // Attribute observation catches state-driven constraint changes. Discard
+  // the normalization mutations themselves so they cannot loop.
+  mutationObserver?.takeRecords();
+  return height;
+}
+
+function reportContentHeight(): void {
+  const height = contentHeight();
+  if (height === lastReportedHeight) return;
+  lastReportedHeight = height;
+  post({ kind: "resize", height });
+}
+
 if (typeof ResizeObserver !== "undefined") {
-  const observer = new ResizeObserver(() => {
-    post({ kind: "resize", height: document.documentElement.scrollHeight });
-  });
-  // Observe the growing boxes: html/body are pinned to height:100% of the
-  // frame, so their border boxes never change when content grows — only the
-  // React mount's does.
+  const observer = new ResizeObserver(reportContentHeight);
+  // The mount changes for content growth; observing viewport-owned html/body
+  // would reintroduce the host/frame feedback path.
   observer.observe(mount);
-  observer.observe(document.body);
+}
+
+if (typeof MutationObserver !== "undefined") {
+  mutationObserver = new MutationObserver(reportContentHeight);
+  // React can add a new viewport constraint without changing the current box,
+  // so also react to render mutations and normalize before measuring.
+  mutationObserver.observe(mount, {
+    attributes: true,
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
 }
 
 post({ kind: "booted" });

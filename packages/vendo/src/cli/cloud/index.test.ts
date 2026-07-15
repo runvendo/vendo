@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runCloud } from "./index.js";
 
 function output() {
@@ -13,6 +13,7 @@ describe("cloud command dispatch", () => {
     expect(await runCloud(["--help"], { output: messages.sink })).toBe(0);
     expect(messages.logs.join("\n")).toContain("pin-ship --app <id>");
     expect(messages.logs.join("\n")).toContain("login EMAIL");
+    expect(messages.logs.join("\n")).toContain("deploy [--app <id>] [--secret NAME=VALUE]");
   });
 
   it("returns one for unknown cloud commands", async () => {
@@ -25,5 +26,42 @@ describe("cloud command dispatch", () => {
     const messages = output();
     expect(await runCloud(["validate"], { output: messages.sink, env: {} })).toBe(1);
     expect(messages.errors).toEqual(["Pass --key or set VENDO_API_KEY"]);
+  });
+
+  it("dispatches deploy with the machine principal", async () => {
+    const messages = output();
+    const fetcher = vi.fn().mockResolvedValue({
+      org: { id: "org_1", slug: "acme" },
+      instance: { status: "active" },
+      applied: { apps: 1, grants: 0, secrets: 0 },
+      webhooks: [],
+    });
+    const localProjectReader = vi.fn().mockResolvedValue({
+      subject: "user_a",
+      apps: [{
+        enabled: true,
+        doc: {
+          format: "vendo/app@1",
+          id: "app_auto",
+          name: "Automation",
+          trigger: {
+            on: { kind: "schedule", every: "1h" },
+            run: { kind: "steps", steps: [] },
+          },
+        },
+      }],
+      grants: [],
+    });
+
+    expect(await runCloud(["deploy", "--key", "vnd_test", "--json"], {
+      output: messages.sink,
+      env: {},
+      fetcher,
+      localProjectReader,
+    })).toBe(0);
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/hosted/deploy", expect.objectContaining({
+      auth: "key",
+      apiKey: "vnd_test",
+    }));
   });
 });
