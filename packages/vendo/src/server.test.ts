@@ -657,7 +657,7 @@ describe("09 §3 conversational turn against the real composed store", () => {
 
 describe("09 §2 apps composition", () => {
   it("passes host-component catalog registrations to createApps", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3 } = await import("ai/test");
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const dataDir = await mkdtemp(join(tmpdir(), "vendo-catalog-"));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -675,14 +675,20 @@ describe("09 §2 apps composition", () => {
       },
     });
     const model = new MockLanguageModelV3({
-      doGenerate: async () => ({
-        content: [{ type: "text", text: generated }],
-        finishReason: { unified: "stop", raw: undefined },
-        usage: {
-          inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-          outputTokens: { total: 0, text: 0, reasoning: 0 },
-        },
-        warnings: [],
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: generated },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
+          },
+        ] }),
       }),
     });
     const catalog: ComponentCatalog = [{
