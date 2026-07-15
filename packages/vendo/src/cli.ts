@@ -4,6 +4,7 @@ import { runCloud } from "./cli/cloud/index.js";
 import { runDoctor } from "./cli/doctor.js";
 import { runInit } from "./cli/init.js";
 import { runMcp } from "./cli/mcp/index.js";
+import { runRefineCommand } from "./cli/refine.js";
 import { CLI_VERSION } from "./cli/shared.js";
 import { runSync } from "./cli/sync.js";
 
@@ -15,16 +16,18 @@ Commands:
   init [dir]      Scan, interview, write .vendo, and propose handler + VendoRoot wiring
   doctor [dir]    Verify wiring, present credentials, and actAs over live HTTP
   sync [dir]      Extract tools and remix baselines (use --strict for CI)
+  refine [dir]    Propose compound capabilities, risk corrections, and brief updates as reviewable diffs
   mcp <command>   Generate MCP registry discovery and domain-verification files
   cloud <command> Use the public Vendo Cloud API
 
 Options:
   --agent                    Init only: print a read-only plan — four questions, code diffs, extracted tools, risk recommendations
-  --yes                      Init only: skip the interview and approve displayed changes
+  --yes                      Init/refine: skip the interview and approve displayed changes
   --force                    Init/server-json: overwrite owned or generated files
-  --model-import <specifier> Init only: module exporting the host's ai-SDK model
+  --model-import <specifier> Init/refine: module exporting the host's ai-SDK model
   --brief <text>             Init only: product brief used for non-interactive setup
-  --url <url>                Doctor/server-json: mounted wire base or public MCP URL
+  --ask <text>               Refine only: interview answer (repeatable) for non-interactive runs
+  --url <url>                Doctor/refine/server-json: mounted wire base or public MCP URL
   --strict                   Sync only: exit 2 on breaking changes, 3 when saved references are impacted
   --json                     Sync only: print one machine-readable report object
   --report                   Sync only: push the report to Vendo Cloud
@@ -39,11 +42,21 @@ function option(args: string[], name: string): string | undefined {
   return args.find((value) => value.startsWith(`${name}=`))?.slice(name.length + 1);
 }
 
+function options(args: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name && args[index + 1] !== undefined) values.push(args[index + 1]!);
+    else if (args[index]!.startsWith(`${name}=`)) values.push(args[index]!.slice(name.length + 1));
+  }
+  return values;
+}
+
 function target(args: string[]): string {
   const optionValues = new Set<string>();
-  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url"]) {
-    const index = args.indexOf(name);
-    if (index >= 0 && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
+  for (const name of ["--model-import", "--url", "--brief", "--key", "--api-url", "--ask"]) {
+    for (let index = 0; index < args.length; index += 1) {
+      if (args[index] === name && args[index + 1] !== undefined) optionValues.add(args[index + 1]!);
+    }
   }
   return args.find((value) => !value.startsWith("--") && !optionValues.has(value)) ?? process.cwd();
 }
@@ -72,6 +85,15 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "doctor") {
     return runDoctor({ targetDir: target(args), url: option(args, "--url") });
+  }
+  if (command === "refine") {
+    return runRefineCommand({
+      targetDir: target(args),
+      url: option(args, "--url"),
+      modelImport: option(args, "--model-import"),
+      asks: options(args, "--ask"),
+      yes: args.includes("--yes"),
+    });
   }
   if (command === "sync") {
     return runSync({

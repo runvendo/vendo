@@ -98,6 +98,23 @@ export interface InitOptions {
     posthogKey?: string;
     fetchImpl?: typeof fetch;
   };
+  /** End-of-init refine offer (spec §3); injectable for tests. */
+  offerRefine?: () => Promise<boolean>;
+  runRefine?: (options: { targetDir: string; output?: Output }) => Promise<number>;
+}
+
+/** Interactive y/N for the end-of-init `vendo refine` offer. */
+async function defaultOfferRefine(): Promise<boolean> {
+  if (!stdin.isTTY) return false;
+  const readline = createInterface({ input: stdin, output: stdout });
+  try {
+    const answer = await readline.question(
+      "Run `vendo refine` now to propose compound capabilities from your app's real surface (needs a running dev server + model key)? [y/N] ",
+    );
+    return ["y", "yes"].includes(answer.trim().toLowerCase());
+  } finally {
+    readline.close();
+  }
 }
 
 async function appDirectory(root: string): Promise<string> {
@@ -887,6 +904,17 @@ export async function runInit(options: InitOptions): Promise<number> {
       output.log("Vendo Express setup is incomplete. Two manual steps remain: mount `mountVendo()` with `app.use(\"/api/vendo\", mountVendo())`, and wrap the client in `<VendoRoot>`. `vendo doctor` will report broken until both are complete.");
     } else {
       output.log("Vendo initialized. Run `vendo doctor` to verify the live composition.");
+    }
+
+    // The end-of-init offer (extraction spec §3): one refine engine, two
+    // surfaces. Init already succeeded — a declined or failed refine never
+    // changes init's exit code.
+    if (options.yes === true) {
+      output.log("Next: with your dev server running, `vendo refine` proposes compound capabilities from your app's real surface.");
+    } else if (await (options.offerRefine ?? defaultOfferRefine)()) {
+      const { runRefineCommand } = await import("./refine.js");
+      const refineExit = await (options.runRefine ?? runRefineCommand)({ targetDir: root, output });
+      if (refineExit !== 0) output.error("vendo refine did not complete; run `vendo refine` again once your dev server and model key are ready.");
     }
     return 0;
   } catch (error) {
