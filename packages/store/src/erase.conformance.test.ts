@@ -257,10 +257,16 @@ for (const backend of backends()) {
       await store.records("crm:notes").put({ id: "note_age_old", data: { body: "old" } });
       await store.records("crm:notes").put({ id: "note_age_fresh", data: { body: "fresh" } });
       await made.sql("UPDATE vendo_records SET created_at = $1, updated_at = $1 WHERE id = 'note_age_old'", [old]);
-      // A stale secret row (the age axis reaches vendo_secrets too).
+      // A stale secret row (the age axis reaches vendo_secrets too)...
       await made.sql(
         "INSERT INTO vendo_secrets (name, ciphertext, created_at) VALUES ('OLD_SECRET', 'v2:a:b:c', $1)",
         [old],
+      );
+      // ...but a ROTATED secret (old created_at, fresh updated_at — exactly what
+      // secretStore.set stamps on rewrite) is recent activity and must survive.
+      await made.sql(
+        "INSERT INTO vendo_secrets (name, ciphertext, created_at, updated_at) VALUES ('ROTATED_SECRET', 'v2:d:e:f', $1, $2)",
+        [old, "2026-01-01T00:00:00.000Z"],
       );
 
       const report = await eraseStore(store).byAge(cutoff);
@@ -279,6 +285,8 @@ for (const backend of backends()) {
       expect(await store.records("vendo_grants").get("grt_age_fresh")).not.toBeNull();
       expect(await store.records("vendo_threads").get("thr_age_fresh")).not.toBeNull();
       expect(await store.records("crm:notes").get("note_age_fresh")).not.toBeNull();
+      const secrets = await made.sql("SELECT name FROM vendo_secrets ORDER BY name");
+      expect(secrets.map((row) => row.name)).toEqual(["ROTATED_SECRET"]);
     });
 
     it("never touches an unexpired standing grant granted before the cutoff's window ends", async () => {

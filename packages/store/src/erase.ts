@@ -60,8 +60,9 @@ export function eraseStore(store: VendoStore): {
       selectors cover them.) */
   byApp(appId: string): Promise<EraseReport>;
   /** Retention sweep: erase rows whose LAST ACTIVITY predates the cutoff —
-      `updated_at` where the table has one, otherwise the row's own lifecycle
-      timestamps (audit `at`; blobs/secrets `created_at`; the latest of
+      `updated_at` where the table has one (for secrets, falling back to
+      `created_at` on legacy rows), otherwise the row's own lifecycle
+      timestamps (audit `at`; blobs `created_at`; the latest of
       granted/revoked/expires for grants, created/decided/consumed for
       approvals, started/finished for runs). */
   byAge(olderThan: IsoDateTime): Promise<EraseReport>;
@@ -262,7 +263,9 @@ export function eraseStore(store: VendoStore): {
       await del(report, "vendo_approvals", "GREATEST(created_at, decided_at, consumed_at) < $1", [cutoff]);
       await del(report, "vendo_audit", "at < $1", [cutoff]);
       await del(report, "vendo_runs", "GREATEST(started_at, finished_at) < $1", [cutoff]);
-      await del(report, "vendo_secrets", "created_at < $1", [cutoff]);
+      // A rotated secret is recent activity even when created_at is old;
+      // legacy rows (updated_at NULL) fall back to created_at.
+      await del(report, "vendo_secrets", "COALESCE(updated_at, created_at) < $1", [cutoff]);
       await del(report, "vendo_mcp_clients", "updated_at < $1", [cutoff]);
       await del(report, "vendo_mcp_grants", "updated_at < $1", [cutoff]);
 
