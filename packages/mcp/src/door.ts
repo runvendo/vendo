@@ -22,6 +22,14 @@ import type { HostOAuthAdapter } from "./oauth/adapter.js";
 import type { AppsPort } from "./apps-port.js";
 import { canonicalUri, OAuthServer, sameCanonicalUri } from "./oauth/server.js";
 import { SHIM_HTML } from "./shim/shim-html.gen.js";
+import {
+  InMemoryMcpDoorState,
+  type McpDoorState,
+  type McpRunContext,
+  type McpStateSession,
+} from "./state.js";
+
+export type { McpRunContext } from "./state.js";
 
 const PRM_PREFIX = "/.well-known/oauth-protected-resource";
 const AS_PREFIX = "/.well-known/oauth-authorization-server";
@@ -36,27 +44,14 @@ interface HostIdentity {
   description: string;
 }
 
-interface SessionState {
-  subject: string;
-  context: McpRunContext;
+interface SessionState extends McpStateSession {
   server: Server;
   transport: WebStandardStreamableHTTPServerTransport;
   sessionId?: string;
-  touchedAt: number;
-  /** 10-mcp §2 / 01-core (ids unique per call) — a bounded per-session map from
-   * a call's (tool + canonical-args) fingerprint to the ToolCall id last minted
-   * for it while its outcome was pending-approval. Guard's single-use approval
-   * replay pins the exact call.id it parked (guard.ts #consumeApprovedCall), so
-   * a fresh id per retry could never satisfy a one-off approval (approve without
-   * `remember`) — the retry would silently re-park. Reusing the parked id lets
-   * the in-product approval authorize the retry; any non-pending outcome clears
-   * the entry, so a DISTINCT call still gets a unique id and a later identical
-   * call parks anew once the one-off approval is spent. */
-  replay: Map<string, string>;
 }
 
-/** Caps SessionState.replay so a client hammering distinct parking calls in one
- * session cannot grow it without bound; the whole map dies with the session. */
+/** Caps replay state so a client hammering distinct parking calls in one
+ * context cannot grow it without bound; the whole scope dies with its session. */
 const REPLAY_CAP = 256;
 
 /** A session outlives its access token only for as long as the client keeps
@@ -92,15 +87,20 @@ export interface McpDoor {
 }
 
 export function createMcpDoor(config: McpDoorConfig): McpDoor {
-  const door = new Door(config);
+  return createMcpDoorWithState(config, new InMemoryMcpDoorState());
+}
+
+/** Package-internal composition hook for transport/state adapters and tests.
+ * It is deliberately not re-exported from the package root. */
+export function createMcpDoorWithState(config: McpDoorConfig, state: McpDoorState): McpDoor {
+  const door = new Door(config, state);
   return { handler: (req) => door.handler(req) };
 }
 
 class Door {
   readonly #config: McpDoorConfig;
   readonly #oauth: OAuthServer;
-  readonly #sessions = new Map<string, SessionState>();
-  readonly #subjectSessions = new Map<string, Set<string>>();
+  readonly #state: McpDoorState;
   /** Last mount an MCP request actually arrived at — a server-card hint only.
    * Authority never derives from remembered paths: every flow re-derives its
    * mount from its own request URL, and tokens bind to the canonical resource
@@ -109,8 +109,9 @@ class Door {
   #cardMount: string | undefined;
   #identity: Promise<HostIdentity> | undefined;
 
-  constructor(config: McpDoorConfig) {
+  constructor(config: McpDoorConfig, state: McpDoorState) {
     this.#config = config;
+    this.#state = state;
     this.#oauth = new OAuthServer(config);
   }
 
@@ -172,7 +173,9 @@ class Door {
     }
 
     const requestedSessionId = req.headers.get("mcp-session-id") ?? undefined;
-    const requestedState = requestedSessionId === undefined ? undefined : this.#sessions.get(requestedSessionId);
+    const requestedState = requestedSessionId === undefined
+      ? undefined
+      : await this.#state.getSession(requestedSessionId) ?? undefined;
     if (requestedSessionId !== undefined && (!requestedState || requestedState.subject !== auth.grant.subject)) {
       return unknownSession();
     }
@@ -202,13 +205,13 @@ class Door {
 
     if (requestedSessionId !== undefined) {
       requestedState!.context = mcpContext(principal, requestedSessionId, consent);
-      requestedState!.touchedAt = Date.now();
-      return requestedState!.transport.handleRequest(req);
+      await this.#state.touchSession(requestedSessionId, Date.now() + SESSION_IDLE_MS);
+      return requestedState!.handleRequest(req);
     }
 
     const state = await this.#newSession(auth.grant.subject, principal, consent);
-    const response = await state.transport.handleRequest(req);
-    if (state.sessionId === undefined) await state.transport.close();
+    const response = await state.handleRequest(req);
+    if (state.sessionId === undefined) await state.close();
     return response;
   }
 
@@ -222,15 +225,20 @@ class Door {
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => `mcps_${randomHex(16)}`,
       enableJsonResponse: true,
-      onsessioninitialized: (sessionId) => {
+      onsessioninitialized: async (sessionId) => {
         state.sessionId = sessionId;
+        state.replayScope = sessionId;
         state.context = mcpContext(state.context.principal, sessionId, consent);
-        this.#sessions.set(sessionId, state);
-        const sessions = this.#subjectSessions.get(subject) ?? new Set<string>();
-        sessions.add(sessionId);
-        this.#subjectSessions.set(subject, sessions);
+        await this.#state.setSession({
+          sessionId,
+          subject,
+          session: state,
+          expiresAt: Date.now() + SESSION_IDLE_MS,
+        });
       },
-      onsessionclosed: (sessionId) => this.#forgetSession(subject, sessionId),
+      onsessionclosed: async (sessionId) => {
+        await this.#state.deleteSession(sessionId);
+      },
     });
     const capabilities = this.#config.apps === undefined
       ? { tools: {} }
@@ -243,13 +251,15 @@ class Door {
       { name: identity.name, version: identity.version },
       { capabilities },
     );
+    const initialContextKey = `mcpr_${randomHex(16)}`;
     state = {
       subject,
-      context: mcpContext(principal, `mcpr_${randomHex(16)}`, consent),
+      replayScope: initialContextKey,
+      context: mcpContext(principal, initialContextKey, consent),
       server,
       transport,
-      touchedAt: Date.now(),
-      replay: new Map<string, string>(),
+      handleRequest: (req) => transport.handleRequest(req),
+      close: () => transport.close(),
     };
     this.#registerHandlers(state, identity);
     await server.connect(transport);
@@ -320,9 +330,9 @@ class Door {
       }
       return inBandError(`not-found: Tool ${name} was not found`);
     }
-    const id = replayId(state, name, args);
+    const id = await this.#replayId(state, name, args);
     const outcome = await this.#config.tools.execute({ id, tool: name, args }, state.context);
-    recordReplay(state, name, args, id, outcome.status);
+    await this.#recordReplay(state, name, args, id, outcome.status);
     // FIX E: a bound registry that owns an app-viewer name (vendo_apps_open via
     // apps.agentTools()) returns an OpenSurface envelope ({kind,payload}); the
     // MCP Apps shim renders a bare format-tagged UIPayload (core §8), so unwrap
@@ -354,7 +364,7 @@ class Door {
     if (this.#config.apps === undefined || descriptor === undefined) {
       return inBandError(`not-found: Tool ${name} was not found`);
     }
-    const id = replayId(state, name, args);
+    const id = await this.#replayId(state, name, args);
     const call = { id, tool: name, args: args as Json };
     const decision = await this.#config.guard.check(call, descriptor, ctx);
     const outcome: ToolOutcome = decision.action === "block"
@@ -362,7 +372,7 @@ class Door {
       : decision.action === "ask"
         ? { status: "pending-approval", approvalId: decision.approval.id }
         : await this.#executeAppsTool(name, args, ctx);
-    recordReplay(state, name, args, id, outcome.status);
+    await this.#recordReplay(state, name, args, id, outcome.status);
     await this.#config.guard.report({
       id: `aud_${randomHex(12)}`,
       at: new Date().toISOString(),
@@ -403,13 +413,48 @@ class Door {
     }
   }
 
+  /** 01-core: ToolCall ids are unique per call. The door mints a fresh id per
+   * tools/call, except for an identical still-parked call in the same context.
+   * Guard's one-off approval is pinned to that exact id, so retry must reuse it. */
+  async #replayId(
+    state: McpStateSession,
+    tool: string,
+    args: Record<string, unknown>,
+  ): Promise<string> {
+    const existing = await this.#state.getReplay(
+      state.replayScope,
+      replayKey(tool, args),
+      Date.now(),
+    );
+    return existing ?? `mctc_${crypto.randomUUID()}`;
+  }
+
+  async #recordReplay(
+    state: McpStateSession,
+    tool: string,
+    args: Record<string, unknown>,
+    id: string,
+    status: ToolOutcome["status"],
+  ): Promise<void> {
+    const scope = state.replayScope;
+    const key = replayKey(tool, args);
+    if (status === "pending-approval") {
+      await this.#state.setReplay(scope, key, id, {
+        subject: state.subject,
+        expiresAt: Date.now() + SESSION_IDLE_MS,
+        capacity: REPLAY_CAP,
+      });
+    } else {
+      // Any resolved outcome spends the one-off approval. A later identical
+      // call must mint a fresh id and park anew.
+      await this.#state.deleteReplay(scope, key);
+    }
+  }
+
   async #sweepIdleSessions(): Promise<void> {
-    const cutoff = Date.now() - SESSION_IDLE_MS;
-    for (const [id, state] of [...this.#sessions]) {
-      if (state.touchedAt > cutoff) continue;
-      this.#forgetSession(state.subject, id);
+    for (const session of await this.#state.sweepExpiredSessions(Date.now())) {
       try {
-        await state.transport.close();
+        await session.close();
       } catch {
         // A transport already closing is exactly the state we want it in.
       }
@@ -417,25 +462,13 @@ class Door {
   }
 
   async #killSubject(subject: string): Promise<void> {
-    const ids = [...(this.#subjectSessions.get(subject) ?? [])];
-    for (const id of ids) {
-      const state = this.#sessions.get(id);
-      this.#forgetSession(subject, id);
-      if (state) {
-        try {
-          await state.transport.close();
-        } catch {
-          // Revocation must remain fail-closed even if a transport is already closing.
-        }
+    for (const session of await this.#state.deleteSessionsBySubject(subject)) {
+      try {
+        await session.close();
+      } catch {
+        // Revocation must remain fail-closed even if a transport is already closing.
       }
     }
-  }
-
-  #forgetSession(subject: string, sessionId: string): void {
-    this.#sessions.delete(sessionId);
-    const sessions = this.#subjectSessions.get(subject);
-    sessions?.delete(sessionId);
-    if (sessions?.size === 0) this.#subjectSessions.delete(subject);
   }
 
   #hostIdentity(): Promise<HostIdentity> {
@@ -584,37 +617,6 @@ function unwrapAppsOpen(output: unknown): unknown {
   return output;
 }
 
-/** 01-core: ToolCall ids are unique per call. The door mints a fresh id per
- * tools/call, EXCEPT when replaying an identical still-parked call in the same
- * session — then it reuses the parked id so guard's single-use approval replay
- * (guard.ts #consumeApprovedCall pins call.id) can authorize the retry. */
-function replayId(state: SessionState, tool: string, args: Record<string, unknown>): string {
-  return state.replay.get(replayKey(tool, args)) ?? `mctc_${crypto.randomUUID()}`;
-}
-
-function recordReplay(
-  state: SessionState,
-  tool: string,
-  args: Record<string, unknown>,
-  id: string,
-  status: ToolOutcome["status"],
-): void {
-  const key = replayKey(tool, args);
-  if (status === "pending-approval") {
-    // Cap the map: evict the oldest fingerprint (insertion order) before adding
-    // a new one, so distinct parking calls can't grow it without bound.
-    if (!state.replay.has(key) && state.replay.size >= REPLAY_CAP) {
-      const oldest = state.replay.keys().next().value;
-      if (oldest !== undefined) state.replay.delete(oldest);
-    }
-    state.replay.set(key, id);
-  } else {
-    // Any resolved outcome (ok / error / blocked) spends the one-off approval; a
-    // later identical call must mint a fresh id and park anew.
-    state.replay.delete(key);
-  }
-}
-
 function replayKey(tool: string, args: Record<string, unknown>): string {
   return `${tool} ${canonicalJson(args)}`;
 }
@@ -666,20 +668,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function stringify(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
-
-/** The RunContext the door mints for every MCP tool call. It carries the
- * door's OAuth-consent evidence structurally: `mcpConsent` is the projection of
- * the authenticated AccessGrant (10-mcp §3) — the OAuth'd user's `clientId` and
- * the scopes they consented the client to. actions reads it off the ctx to
- * authenticate host execution through the ActAs seam (04 §4) WITHOUT the door
- * ever forwarding the inbound MCP bearer. actions CANNOT import this type
- * (actions depends on core only, enforced by scripts/dependency-guard.mjs), so
- * — exactly as guard attaches `ctx.grant` for ActionsRunContext — this is a
- * STRUCTURAL contract: ActionsRunContext's optional `mcpConsent?` twin must
- * match this shape. */
-export type McpRunContext = RunContext & {
-  mcpConsent: { clientId: string; scopes: string[] };
-};
 
 function mcpContext(
   principal: Principal,

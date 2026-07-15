@@ -24,7 +24,7 @@ export interface ApprovalData {
   consumedAt?: string;
 }
 
-export type ThreadData = Pick<ThreadRow, "subject" | "messages">;
+export type ThreadData = Pick<ThreadRow, "subject" | "messages" | "title">;
 export type RunData = Omit<RunRow, "id">;
 export type AppData = Pick<AppRow, "subject" | "enabled" | "doc">;
 
@@ -138,7 +138,9 @@ export function parseThreadData(value: unknown, id: string): ThreadData {
   if (typeof input["subject"] !== "string") invalid("thread subject must be a string");
   if (!Array.isArray(input["messages"])) invalid("thread messages must be an array");
   const messages = input["messages"].map((message, index) => requireJson(message, `thread message ${index}`));
-  return { subject: input["subject"], messages };
+  const title = input["title"];
+  if (title !== undefined && typeof title !== "string") invalid("thread title must be a string");
+  return { subject: input["subject"], messages, ...(title === undefined ? {} : { title }) };
 }
 
 export function parseRunData(value: unknown, id: string): RunData {

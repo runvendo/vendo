@@ -63,7 +63,7 @@ export const documentFromRecord = (record: VendoRecord): AppDocument =>
 export interface AppRecordWrite {
   id: AppId;
   data: AppRowData;
-  refs: { subject: string };
+  refs: { subject: string; trigger_kind?: string };
 }
 
 export const appRecordInput = (
@@ -73,5 +73,7 @@ export const appRecordInput = (
 ): AppRecordWrite => ({
   id: app.id,
   data: { subject, enabled, doc: validateDocument(app, app.id) },
-  refs: { subject },
+  // trigger_kind indexes apps by trigger kind for the automations tick/emit. The reserved
+  // vendo_apps store derives the same value from a column; a generic StoreAdapter keeps this.
+  refs: { subject, ...(app.trigger === undefined ? {} : { trigger_kind: app.trigger.on.kind }) },
 });

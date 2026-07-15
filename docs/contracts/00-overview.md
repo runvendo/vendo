@@ -16,8 +16,10 @@ Sources of truth: the "Open-Source Full Stack Agentic Interface" Notion page and
 | `@vendoai/automations` | apps that run on triggers while the user is away | [07-automations.md](07-automations.md) |
 | `@vendoai/ui` | headless hooks + optional chrome, every surface | [08-ui.md](08-ui.md) |
 | `@vendoai/vendo` | the umbrella: default composition, wire routes, CLI | [09-vendo.md](09-vendo.md) |
+| `@vendoai/mcp` | the door: serve the host's tools to outside agents over MCP (OAuth + tool serving + MCP Apps) | [10-mcp.md](10-mcp.md) |
 
-Deferred entirely — no stub packages, no reserved exports: `meter`, `memory`, `knowledge`, `mcp` (door), `evals`. `@vendoai/telemetry` stays as-is (orthogonal to the campaign).
+<!-- amended 2026-07-14: MCP door landed (PR #139); original froze pre-door, listing `mcp` as deferred. It is now published `@vendoai/mcp` v0.3.0, an umbrella dependency re-exported from `@vendoai/vendo`, contract 10-mcp.md. Moved out of the deferred list below and added to the table above. -->
+Deferred entirely — no stub packages, no reserved exports: `meter`, `memory`, `knowledge`, `evals`. `@vendoai/telemetry` stays as-is (orthogonal to the campaign). `@vendoai/mcp` (the door) shipped post-freeze — see [10-mcp.md](10-mcp.md).
 
 ## The dependency rule
 
@@ -25,7 +27,7 @@ Layered, enforced by the dependency-guard CI gate:
 
 ```
 core → apps → automations        (the one chain: apps builds on core, automations builds on apps)
-store, agent, actions, guard, ui → depend on core only
+store, agent, actions, guard, ui, mcp → depend on core only
 vendo (umbrella) → depends on everything (the only package allowed to)
 ```
 
@@ -59,7 +61,7 @@ Resolved with Yousef (2026-07-11 dialogs):
 Made while drafting — flagged for review, each also marked ⚑ in situ:
 
 5. **All shapes live in core, including the app document and the tree** (the page puts "tools, principals, apps, grants" under core's typed-end-to-end bullet; the apps *block* owns engine/runtime/spec doc). Required by layering: ui renders trees but may only import core.
-6. **The guard choke point is `guard.bind(tools)`** — the only sanctioned path from a `ToolRegistry` to execution, used identically by chat, apps, automations, and the future MCP door. (05 §2)
+6. **The guard choke point is `guard.bind(tools)`** — the only sanctioned path from a `ToolRegistry` to execution, used identically by chat, apps, automations, and the MCP door. (05 §2)
 7. **`SandboxAdapter` lives in apps** (its only consumer), with e2b and Modal adapters in-box as subpaths (`@vendoai/apps/e2b`, `/modal`) — BYO key, per the page.
 8. **Secrets are handles, substituted at the egress boundary** — app code never sees values (page: "never readable by app code"); the machine's egress proxy swaps handle tokens for real values on allowlisted domains. (06 §4.3)
 9. **The umbrella owns the `vendo` bin** (init/doctor/sync); no separate published CLI package.
@@ -108,3 +110,12 @@ Approved with the contracts (Yousef, 2026-07-11): the blocks are built as if fro
 ## Reading order
 
 01-core defines every shared shape; each block contract then only adds its own API. Read 01 first; 06 (apps) contains the server execution contract and is the largest.
+
+## Amendments
+
+### 2026-07-14 — MCP added to the v0 cut
+
+- **Changed:** Added `@vendoai/mcp` to the v0 package table and dependency rule, with `@vendoai/mcp → core` as its only block dependency. Its contract lives in [10-mcp.md](10-mcp.md), and the umbrella consumes it.
+- **Changed:** Removed the door from the entirely-deferred list.
+- **Why:** MCP was built and contracted in wave 6 of v0. `02-store.md` was updated at the time, but this overview and `01-core.md` / `03-agent.md` were not.
+- **Approved by:** Yousef, 2026-07-14.

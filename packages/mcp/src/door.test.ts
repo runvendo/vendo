@@ -1,20 +1,28 @@
-import type {
-  AppDocument,
-  AuditEvent,
-  BlobStore,
-  Guard,
-  Principal,
-  RecordQuery,
-  RecordStore,
-  StoreAdapter,
-  ToolOutcome,
-  ToolRegistry,
-  VendoRecord,
+import {
+  canonicalJson,
+  type AppDocument,
+  type AuditEvent,
+  type BlobStore,
+  type Guard,
+  type Principal,
+  type RecordQuery,
+  type RecordStore,
+  type StoreAdapter,
+  type ToolOutcome,
+  type ToolRegistry,
+  type VendoRecord,
 } from "@vendoai/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMcpDoorWithState } from "./door.js";
 import { createMcpDoor, type AppsPort, type McpDoor } from "./index.js";
+import type {
+  McpDoorState,
+  McpStateSession,
+  ReplayStateOptions,
+  SessionStateRecord,
+} from "./state.js";
 
 const BASE = "https://product.example/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
@@ -302,13 +310,13 @@ describe("createMcpDoor routing and OAuth", () => {
     expect(revoked.status).toBe(401);
   });
 
-  it("does not fork on concurrent refresh of the same token (in-process lock)", async () => {
+  it("does not fork on concurrent refresh of the same token (atomic claim)", async () => {
     const harness = makeHarness();
     const client = await register(harness.door);
     const first = await issue(harness.door, client.body.client_id);
 
-    // Two simultaneous rotations of the same refresh token: the lock serializes
-    // them, so exactly one succeeds and the other sees it already rotated.
+    // Two simultaneous rotations of the same refresh token: the store claim
+    // admits exactly one and the other sees reuse of the already-rotated grant.
     const [a, b] = await Promise.all([
       refresh(harness.door, first.refresh_token, client.body.client_id),
       refresh(harness.door, first.refresh_token, client.body.client_id),
@@ -695,6 +703,38 @@ describe("createMcpDoor MCP protocol", () => {
     await connected.client.close();
   });
 
+  it("routes session lifetime and approval replay through a pluggable state seam", async () => {
+    let outcome: ToolOutcome = { status: "pending-approval", approvalId: "apr_pluggable" };
+    const state = new TestMcpDoorState();
+    const harness = makeHarness({ state, getOutcome: () => outcome });
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+    const connected = await connect(harness.door, tokens.access_token);
+
+    await connected.client.listTools();
+    const sessionId = connected.transport.sessionId!;
+    const args = { query: "through-the-seam" };
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    expect(harness.executions[1]!.id).toBe(harness.executions[0]!.id);
+    expect(state.operations).toEqual(expect.arrayContaining([
+      `session:set:${sessionId}`,
+      `session:get:${sessionId}`,
+      `session:touch:${sessionId}`,
+      `replay:get:${sessionId}`,
+      `replay:set:${sessionId}`,
+    ]));
+
+    outcome = { status: "ok", output: { answer: 1 } };
+    await connected.client.callTool({ name: "host_lookup", arguments: args });
+    expect(state.operations).toContain(`replay:delete:${sessionId}`);
+
+    await connected.transport.terminateSession();
+    expect(state.operations).toContain(`session:delete:${sessionId}`);
+    expect((await harness.door.handler(mcpRequest(tokens.access_token, sessionId))).status).toBe(404);
+    await connected.client.close();
+  });
+
   it("refuses subject B's bearer presented with subject A's session id (FIX G)", async () => {
     let subject = "user_a";
     const harness = makeHarness({ authorizeSubject: () => subject });
@@ -722,6 +762,7 @@ describe("createMcpDoor MCP protocol", () => {
 
 interface HarnessOptions {
   store?: MemoryStore;
+  state?: McpDoorState;
   getOutcome?: () => ToolOutcome;
   principal?: () => Principal | null;
   apps?: AppsPort;
@@ -758,7 +799,7 @@ function makeHarness(options: HarnessOptions = {}) {
       return options.getOutcome?.() ?? { status: "ok", output: { answer: 42 } };
     },
   };
-  const door = createMcpDoor({
+  const config = {
     tools,
     guard,
     store,
@@ -773,7 +814,10 @@ function makeHarness(options: HarnessOptions = {}) {
         return options.principal ? options.principal() : { kind: "user", subject: "user_1" };
       },
     },
-  });
+  };
+  const door = options.state === undefined
+    ? createMcpDoor(config)
+    : createMcpDoorWithState(config, options.state);
   return { door, store, audits, authorizeContexts, executions };
 }
 
@@ -884,6 +928,109 @@ interface TokenResponse {
   scope: string;
 }
 
+class TestMcpDoorState implements McpDoorState {
+  readonly operations: string[] = [];
+  readonly #sessions = new Map<string, SessionStateRecord>();
+  readonly #replay = new Map<
+    string,
+    Map<string, { callId: string; subject: string; expiresAt: number }>
+  >();
+
+  async getSession(sessionId: string): Promise<McpStateSession | null> {
+    this.operations.push(`session:get:${sessionId}`);
+    return this.#sessions.get(sessionId)?.session ?? null;
+  }
+
+  async setSession(record: SessionStateRecord): Promise<void> {
+    this.operations.push(`session:set:${record.sessionId}`);
+    this.#sessions.set(record.sessionId, record);
+  }
+
+  async touchSession(sessionId: string, expiresAt: number): Promise<void> {
+    this.operations.push(`session:touch:${sessionId}`);
+    const record = this.#sessions.get(sessionId);
+    if (record) record.expiresAt = expiresAt;
+    for (const replay of this.#replay.get(record?.session.replayScope ?? sessionId)?.values() ?? []) {
+      replay.expiresAt = expiresAt;
+    }
+  }
+
+  async deleteSession(sessionId: string): Promise<McpStateSession | null> {
+    this.operations.push(`session:delete:${sessionId}`);
+    const record = this.#sessions.get(sessionId);
+    this.#sessions.delete(sessionId);
+    if (record) this.#replay.delete(record.session.replayScope);
+    return record?.session ?? null;
+  }
+
+  async deleteSessionsBySubject(subject: string): Promise<McpStateSession[]> {
+    this.operations.push(`session:delete-subject:${subject}`);
+    const sessions: McpStateSession[] = [];
+    for (const [sessionId, record] of this.#sessions) {
+      if (record.subject !== subject) continue;
+      sessions.push(record.session);
+      this.#sessions.delete(sessionId);
+      this.#replay.delete(record.session.replayScope);
+    }
+    for (const [scope, entries] of this.#replay) {
+      for (const [key, replay] of entries) {
+        if (replay.subject === subject) entries.delete(key);
+      }
+      if (entries.size === 0) this.#replay.delete(scope);
+    }
+    return sessions;
+  }
+
+  async sweepExpiredSessions(now: number): Promise<McpStateSession[]> {
+    this.operations.push("session:sweep");
+    const sessions: McpStateSession[] = [];
+    for (const [sessionId, record] of this.#sessions) {
+      if (record.expiresAt > now) continue;
+      sessions.push(record.session);
+      this.#sessions.delete(sessionId);
+      this.#replay.delete(record.session.replayScope);
+    }
+    return sessions;
+  }
+
+  async getReplay(scope: string, key: string, now: number): Promise<string | null> {
+    this.operations.push(`replay:get:${scope}`);
+    const replay = this.#replay.get(scope)?.get(key);
+    if (replay === undefined) return null;
+    if (replay.expiresAt > now) return replay.callId;
+    this.#replay.get(scope)?.delete(key);
+    return null;
+  }
+
+  async setReplay(
+    scope: string,
+    key: string,
+    callId: string,
+    options: ReplayStateOptions,
+  ): Promise<void> {
+    this.operations.push(`replay:set:${scope}`);
+    const entries = this.#replay.get(scope) ?? new Map<
+      string,
+      { callId: string; subject: string; expiresAt: number }
+    >();
+    if (!entries.has(key) && entries.size >= options.capacity) {
+      const oldest = entries.keys().next().value;
+      if (oldest !== undefined) entries.delete(oldest);
+    }
+    entries.set(key, {
+      callId,
+      subject: options.subject,
+      expiresAt: options.expiresAt,
+    });
+    this.#replay.set(scope, entries);
+  }
+
+  async deleteReplay(scope: string, key: string): Promise<void> {
+    this.operations.push(`replay:delete:${scope}`);
+    this.#replay.get(scope)?.delete(key);
+  }
+}
+
 class MemoryStore implements StoreAdapter {
   readonly #collections = new Map<string, Map<string, VendoRecord>>();
 
@@ -908,6 +1055,27 @@ class MemoryStore implements StoreAdapter {
         };
         rows.set(stored.id, stored);
         return stored;
+      },
+      async claim(expected, replacement) {
+        const current = rows.get(expected.id);
+        if (
+          !current
+          || canonicalJson(current.data) !== canonicalJson(expected.data)
+          || canonicalJson(current.refs ?? null) !== canonicalJson(expected.refs ?? null)
+        ) return false;
+        if (replacement === undefined) {
+          rows.delete(expected.id);
+        } else {
+          const now = new Date().toISOString();
+          rows.set(expected.id, {
+            id: expected.id,
+            data: structuredClone(replacement.data),
+            ...(replacement.refs === undefined ? {} : { refs: { ...replacement.refs } }),
+            createdAt: current.createdAt,
+            updatedAt: now,
+          });
+        }
+        return true;
       },
       async delete(id) { rows.delete(id); },
       async list(query?: RecordQuery) {
