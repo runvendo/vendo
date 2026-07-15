@@ -274,7 +274,10 @@ async function registeredCatalogEntries(
         if (!ts.isObjectLiteralExpression(rawEntry)) continue;
         const name = localConstantJson(constants, objectField(rawEntry, "name") ?? rawEntry) as unknown;
         const description = localConstantJson(constants, objectField(rawEntry, "description") ?? rawEntry) as unknown;
-        const propsJsonSchema = localConstantJson(constants, objectField(rawEntry, "propsJsonSchema") ?? rawEntry) as unknown;
+        const propsJsonSchemaField = objectField(rawEntry, "propsJsonSchema");
+        const propsJsonSchema = propsJsonSchemaField === undefined
+          ? undefined
+          : localConstantJson(constants, propsJsonSchemaField) as unknown;
         const rawExamples = objectField(rawEntry, "examples");
         const examples = rawExamples === undefined ? undefined : localConstantJson(constants, rawExamples);
         if (typeof name !== "string" || !PASCAL_CASE.test(name)

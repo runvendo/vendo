@@ -113,6 +113,31 @@ describe("deterministic component catalog scan", () => {
     })]);
   });
 
+  it("omits a registration without propsJsonSchema instead of misusing the entry as its schema", async () => {
+    const root = await host(`
+      type ComponentType = (props: unknown) => unknown;
+      function MetricCard({ value }: { value: number }) { return <strong>{value}</strong>; }
+      export const hostComponents: Record<string, ComponentType> = { MetricCard: MetricCard as ComponentType };
+      export function CatalogRoot() { return <VendoRoot components={hostComponents} />; }
+      const catalog = [{
+        name: "MetricCard",
+        description: "Use for one headline metric.",
+      }];
+      createVendo({ catalog });
+    `);
+
+    const result = await scanComponentCatalog(root);
+    expect(result).toMatchObject({ discovered: 1, registered: 0 });
+    expect(result.warnings).toContainEqual(expect.stringContaining("could not be serialized deterministically"));
+    // The scanned entry stays authoritative; its schema must come from the
+    // component's props type, never from the registration object literal.
+    expect(result.entries).toEqual([expect.objectContaining({
+      name: "MetricCard",
+      source: "scanned",
+      propsSchema: expect.objectContaining({ properties: { value: { type: "number" } } }),
+    })]);
+  });
+
   it("does not mistake suffix lookalikes for VendoRoot and warns for unsupported inline maps", async () => {
     const root = await host(`
       function Card({ label }: { label: string }) { return <div>{label}</div>; }
