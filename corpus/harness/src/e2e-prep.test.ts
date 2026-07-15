@@ -102,13 +102,38 @@ export const config = {
   return { appRoot, logsDir };
 }
 
+// Mirrors real Umami route-scan output: host_* names carrying the endpoints
+// the curated surface maps onto, plus noise the curation must disable.
+const umamiExtractionTools = [
+  { name: "host_me_websites_list", method: "GET", path: "/api/me/websites" },
+  { name: "host_websites_metrics_list", method: "GET", path: "/api/websites/{websiteId}/metrics" },
+  { name: "host_websites_pageviews_list", method: "GET", path: "/api/websites/{websiteId}/pageviews" },
+  { name: "host_reports_revenue_create", method: "POST", path: "/api/reports/revenue" },
+  { name: "host_reports_funnel_create", method: "POST", path: "/api/reports/funnel" },
+  // Extraction noise the curated surface must disable.
+  { name: "host_admin_users_list", method: "GET", path: "/api/admin/users" },
+] as const;
+
+function umamiExtractionToolsJson(): string {
+  return `${JSON.stringify({
+    format: "vendo/tools@1",
+    tools: umamiExtractionTools.map((tool) => ({
+      name: tool.name,
+      description: "",
+      inputSchema: { type: "object", additionalProperties: true },
+      risk: "write",
+      binding: { kind: "route", method: tool.method, path: tool.path, argsIn: tool.method === "GET" ? "query" : "body" },
+    })),
+  }, null, 2)}\n`;
+}
+
 async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "vendo-e2e-prep-"));
   const appRoot = path.join(root, "umami");
   const logsDir = path.join(root, "logs");
   await mkdir(path.join(appRoot, ".vendo"), { recursive: true });
   await mkdir(path.join(appRoot, "src/app/api/vendo/[...vendo]"), { recursive: true });
-  await writeFile(path.join(appRoot, ".vendo/tools.json"), JSON.stringify({ format: "vendo/tools@1", tools: [] }));
+  await writeFile(path.join(appRoot, ".vendo/tools.json"), umamiExtractionToolsJson());
   await writeFile(path.join(appRoot, "src/app/api/vendo/[...vendo]/route.ts"), initRouteSource);
   await writeFile(
     path.join(appRoot, "src/app/layout.tsx"),
@@ -272,28 +297,35 @@ describe("prepareE2eRepo", () => {
     expect(log).toContain("corpus Vendo overlay");
   });
 
-  it("adds Umami Layer 3 tools, overlay chrome with the auth shim, and a trusted base URL", async () => {
+  it("curates the Umami Layer 3 surface through overrides, keeping tools.json pinned, plus overlay chrome and a trusted base URL", async () => {
     const { appRoot, logsDir } = await createUmamiFixture();
+    const toolsBefore = await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8");
     const logs = await prepareE2eRepo({ name: "umami" }, appRoot, logsDir);
 
-    const tools = JSON.parse(await readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")) as {
-      tools: Array<{ name: string; description: string }>;
+    // predev/prebuild `vendo sync` would clobber a curated tools.json, so the
+    // pin must be left exactly as init extracted it.
+    await expect(readFile(path.join(appRoot, ".vendo/tools.json"), "utf8")).resolves.toBe(toolsBefore);
+
+    const overrides = JSON.parse(await readFile(path.join(appRoot, ".vendo/overrides.json"), "utf8")) as {
+      format: string;
+      tools: Record<string, { risk?: string; description?: string; disabled?: boolean }>;
     };
     const overlay = await readFile(path.join(appRoot, "src/app/vendo-corpus-e2e.tsx"), "utf8");
     const layout = await readFile(path.join(appRoot, "src/app/layout.tsx"), "utf8");
     const env = await readFile(path.join(appRoot, ".env"), "utf8");
     const log = await readFile(logs[0]!, "utf8");
 
-    expect(tools.tools.map((tool) => tool.name)).toEqual([
-      "list_umami_websites",
-      "get_umami_website_metrics",
-      "get_umami_pageviews",
-      "get_umami_revenue_report",
-      "get_umami_funnel_report",
-    ]);
-    // Seeded date windows moved from instructionsExtra into the descriptions.
-    expect(tools.tools[1]!.description).toContain("startAt=1782691200000");
-    expect(tools.tools[3]!.description).toContain("2026-07-01T00:00:00.000Z");
+    expect(overrides.format).toBe("vendo/overrides@1");
+    // Curated endpoints are keyed to their EXTRACTION name and enabled read.
+    expect(overrides.tools["host_me_websites_list"]).toMatchObject({ risk: "read" });
+    expect(overrides.tools["host_me_websites_list"]!.disabled).toBeUndefined();
+    expect(overrides.tools["host_websites_metrics_list"]).toMatchObject({ risk: "read" });
+    // Seeded date windows and request-body shapes live in the descriptions now.
+    expect(overrides.tools["host_websites_metrics_list"]!.description).toContain("startAt=1782691200000");
+    expect(overrides.tools["host_reports_revenue_create"]!.description).toContain("2026-07-01T00:00:00.000Z");
+    expect(overrides.tools["host_reports_revenue_create"]!.description).toContain("cents");
+    // Extraction noise is disabled so the agent works only the curated surface.
+    expect(overrides.tools["host_admin_users_list"]).toEqual({ disabled: true });
     expect(overlay).toContain('"use client"');
     expect(overlay).toContain("VendoOverlay");
     expect(overlay).toContain("installUmamiAuthFetch");
@@ -304,7 +336,7 @@ describe("prepareE2eRepo", () => {
     expect(overlay).not.toContain('!url.pathname.startsWith("/api/vendo")');
     expect(layout).toContain("<VendoCorpusE2e />");
     expect(env).toContain("VENDO_BASE_URL=http://127.0.0.1:3000");
-    expect(log).toContain("read-only tools manifest");
+    expect(log).toContain("curated overrides.json");
     expect(log).toContain("Umami auth fetch shim");
     expect(log).toContain("VENDO_BASE_URL");
   });
