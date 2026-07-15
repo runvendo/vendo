@@ -129,9 +129,9 @@ name through dynamic client registration or a Client ID Metadata Document, so
 that value is attacker-controllable and can carry phishing text or markup.
 
 If your adapter omits `session` and only implements the legacy `authorize`, the
-door hands you the request without a `consent` context and you own the entire
-flow — including CSRF, replay protection, and the redirect. Prefer `session`
-plus the prebuilt page unless you have a reason not to.
+door hands you the request without a `consent` context. You then own the entire
+flow: CSRF, replay protection, and the OAuth redirect. Prefer `session` plus
+the prebuilt page unless you have a reason not to.
 
 ## Route the discovery paths
 
