@@ -4,6 +4,7 @@ export { ApprovalCard, type ApprovalCardProps } from "./approval-card.js";
 export { AutomationsPanel } from "./automations-panel.js";
 export { ConnectCard, type ConnectCardProps } from "./connect-card.js";
 export { ConnectedAccountsPanel } from "./connected-accounts-panel.js";
+export { OrgsPanel } from "./orgs-panel.js";
 export { NoPolicyNotice } from "./no-policy-notice.js";
 export { VendoOverlay, type VendoOverlayProps } from "./vendo-overlay.js";
 export { VendoPage } from "./vendo-page.js";

@@ -277,10 +277,21 @@ function setHeader(headers: Record<string, string>, name: string, value: string)
   headers[name] = value;
 }
 
+/** The actAs seam's disposition, riding the outcome as a passthrough field the
+ * guard binding lifts into audit `detail.actAs` and strips (block-actions
+ * design cross-cutting audit enrichment — the same mechanism as
+ * `connectorAccount`). "declined" IS the away re-verification outcome: the
+ * host refusing to mint fails the run closed; there is no second seam. */
+export type ActAsDisposition = "minted" | "declined" | "mismatch" | "error";
+
+function withActAs(outcome: ToolOutcome, actAs: ActAsDisposition): ToolOutcome {
+  return { ...outcome, actAs } as unknown as ToolOutcome;
+}
+
 /** The shared ActAs invocation for away + venue="mcp" host execution (04 §4).
  * The two paths source the grant differently but the seam call is identical:
  * `null` → the host declined; a throw → act-as-error. Returns the AuthMaterial
- * headers or the ToolOutcome to surface. */
+ * headers or the ToolOutcome to surface (tagged with its actAs disposition). */
 async function actAsAuth(
   actAs: ActAs,
   principal: Principal,
@@ -289,18 +300,18 @@ async function actAsAuth(
 ): Promise<{ headers: Record<string, string> } | { error: ToolOutcome }> {
   if (grant.subject !== principal.subject) {
     return {
-      error: error(
+      error: withActAs(error(
         "act-as-subject-mismatch",
         "the captured grant does not belong to the current principal",
-      ),
+      ), "mismatch"),
     };
   }
   try {
     const auth = await actAs(principal, grant);
-    if (!auth) return { error: error("not-implemented", messages.declined) };
+    if (!auth) return { error: withActAs(error("not-implemented", messages.declined), "declined") };
     return { headers: { ...auth.headers } };
   } catch (cause) {
-    return { error: error("act-as-error", cause instanceof Error ? cause.message : messages.failed) };
+    return { error: withActAs(error("act-as-error", cause instanceof Error ? cause.message : messages.failed), "error") };
   }
 }
 
@@ -351,6 +362,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   }
 
   let headers: Record<string, string>;
+  let actAsMinted = false;
   if (ctx.presence === "away") {
     if (!config.actAs) return error("not-implemented", "away execution isn't set up for this product");
     const grant = (ctx as ActionsRunContext).grant;
@@ -361,6 +373,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     });
     if ("error" in authed) return authed.error;
     headers = authed.headers;
+    actAsMinted = true;
   } else if (ctx.venue === "mcp" || (ctx as ActionsRunContext).mcpConsent !== undefined) {
     // 04 §4 / 10-mcp §2.1 / §3: an MCP-OAuth user has no host browser session,
     // so the present path has nothing to forward — and we forward NOTHING even
@@ -392,6 +405,7 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
     });
     if ("error" in authed) return authed.error;
     headers = authed.headers;
+    actAsMinted = true;
   } else {
     const forwardsPresentHeaders = mayForwardPresentHeaders(
       tool.binding,
@@ -414,31 +428,36 @@ async function executeHost(config: RegistryConfig, tool: ExtractedTool, call: To
   setHeader(headers, "accept", "application/json");
   if (body !== undefined) setHeader(headers, "content-type", "application/json");
 
-  try {
-    const request = config.fetch ?? globalThis.fetch;
-    const response = await request(url, {
-      method: tool.binding.method,
-      headers,
-      ...(body !== undefined ? { body } : {}),
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      return error(
-        "http-error",
-        `${tool.binding.method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
-      );
-    }
-    if (text) {
-      try {
-        return { status: "ok", output: JSON.parse(text) };
-      } catch {
-        // Successful non-JSON responses retain their HTTP status and text.
+  const outcome = await (async (): Promise<ToolOutcome> => {
+    try {
+      const request = config.fetch ?? globalThis.fetch;
+      const response = await request(url, {
+        method: tool.binding.method,
+        headers,
+        ...(body !== undefined ? { body } : {}),
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        return error(
+          "http-error",
+          `${tool.binding.method} ${url.pathname} → ${response.status}: ${text.slice(0, 200)}`,
+        );
       }
+      if (text) {
+        try {
+          return { status: "ok", output: JSON.parse(text) };
+        } catch {
+          // Successful non-JSON responses retain their HTTP status and text.
+        }
+      }
+      return { status: "ok", output: { status: response.status, text } };
+    } catch (cause) {
+      return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
     }
-    return { status: "ok", output: { status: response.status, text } };
-  } catch (cause) {
-    return error("network-error", cause instanceof Error ? cause.message : `Network request failed for ${call.tool}`);
-  }
+  })();
+  // Audit enrichment: every actAs-authenticated host call reports the seam's
+  // disposition, even when the host request itself then fails.
+  return actAsMinted ? withActAs(outcome, "minted") : outcome;
 }
 
 interface LoadedHost {

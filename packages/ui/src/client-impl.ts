@@ -80,7 +80,7 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     return (await response.json()) as T;
   }
 
-  async function json<T>(path: string, method: "POST" | "DELETE", body: unknown = {}): Promise<T> {
+  async function json<T>(path: string, method: "POST" | "PATCH" | "DELETE", body: unknown = {}): Promise<T> {
     return readJson<T>(path, {
       method,
       headers: { "Content-Type": "application/json" },
@@ -109,6 +109,15 @@ export function createVendoClient(config: VendoClientConfig): VendoClient {
     grants: {
       list: () => readJson("/grants"),
       revoke: id => json(`/grants/${idPath(id)}`, "DELETE"),
+    },
+    orgs: {
+      list: () => readJson("/orgs"),
+      create: name => json("/orgs", "POST", { name }),
+      get: id => readJson(`/orgs/${idPath(id)}`),
+      addMember: (id, subject, role) =>
+        json(`/orgs/${idPath(id)}/members`, "POST", { subject, ...(role === undefined ? {} : { role }) }),
+      setRole: (id, subject, role) => json(`/orgs/${idPath(id)}/members/${idPath(subject)}`, "PATCH", { role }),
+      removeMember: (id, subject) => json(`/orgs/${idPath(id)}/members/${idPath(subject)}`, "DELETE"),
     },
     connections: {
       list: async () => (await readJson<{ connections: ConnectionAccount[] }>("/connections")).connections,

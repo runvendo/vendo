@@ -598,3 +598,102 @@ describe("host HTTP execution — venue=mcp (10-mcp §3 / 04 §4 ActAs auth)", (
     expect(host.seen[0]?.cookie).toBe("fixture_session=user_1");
   });
 });
+
+describe("host HTTP execution — away (ENG-263 away re-verification rides actAs)", () => {
+  async function hostServer(): Promise<{ url: string; seen: Array<Record<string, string | string[] | undefined>> }> {
+    const seen: Array<Record<string, string | string[] | undefined>> = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    });
+    const { port } = server.address() as AddressInfo;
+    closers.push(async () => { server.close(); server.closeAllConnections(); });
+    return { url: `http://127.0.0.1:${port}`, seen };
+  }
+
+  const writeTool = (baseUrl: string): ExtractedTool =>
+    routeTool("host_write", {
+      risk: "write",
+      binding: { kind: "openapi", operationId: "write", baseUrl, method: "POST", path: "/write" },
+    });
+
+  const awayGrant: PermissionGrant = {
+    id: "grt_away",
+    subject: "user_1",
+    tool: "host_write",
+    descriptorHash: "sha256:away",
+    scope: { kind: "tool" },
+    duration: "standing",
+    source: "automation",
+    grantedAt: "2026-07-14T00:00:00.000Z",
+  };
+
+  const awayCtx = (extra: Partial<ActionsRunContext> = {}): ActionsRunContext => ({
+    principal: { kind: "user", subject: "user_1" },
+    venue: "automation",
+    presence: "away",
+    sessionId: "sess_away_1",
+    grant: awayGrant,
+    ...extra,
+  });
+
+  it("fails the run closed when the host declines to mint (actAs returns null) — no host request, actAs:'declined'", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => null);
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_write", args: {} }, awayCtx());
+
+    expect(outcome).toMatchObject({
+      status: "error",
+      error: { code: "not-implemented", message: "the host declined away execution for this action" },
+    });
+    // The decline IS the re-verification: nothing reaches the host API.
+    expect(host.seen).toHaveLength(0);
+    // Audit enrichment passthrough for the guard binding to lift.
+    expect((outcome as { actAs?: string }).actAs).toBe("declined");
+  });
+
+  it("tags successful away execution with actAs:'minted' and sends only AuthMaterial headers", async () => {
+    const host = await hostServer();
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer away-user_1" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    // A poisoned away ctx should forward nothing of its own.
+    const ctx = awayCtx({ requestHeaders: { cookie: "stolen=1", authorization: "Bearer inbound" } });
+
+    const outcome = await actions.execute({ id: "1", tool: "host_write", args: {} }, ctx);
+
+    expect(outcome).toMatchObject({ status: "ok" });
+    expect((outcome as { actAs?: string }).actAs).toBe("minted");
+    expect(host.seen[0]?.authorization).toBe("Bearer away-user_1");
+    expect(host.seen[0]?.cookie).toBeUndefined();
+  });
+
+  it("tags an actAs throw with actAs:'error' and a cross-subject grant with actAs:'mismatch'", async () => {
+    const host = await hostServer();
+    const throwing = createActions({
+      tools: [writeTool(host.url)],
+      baseUrl: host.url,
+      actAs: async () => { throw new Error("mint exploded"); },
+    });
+    const thrown = await throwing.execute({ id: "1", tool: "host_write", args: {} }, awayCtx());
+    expect(thrown).toMatchObject({ status: "error", error: { code: "act-as-error" } });
+    expect((thrown as { actAs?: string }).actAs).toBe("error");
+
+    const actAs = vi.fn(async () => ({ headers: { authorization: "Bearer x" } }));
+    const actions = createActions({ tools: [writeTool(host.url)], baseUrl: host.url, actAs });
+    const mismatch = await actions.execute(
+      { id: "2", tool: "host_write", args: {} },
+      awayCtx({ grant: { ...awayGrant, subject: "user_2" } }),
+    );
+    expect(mismatch).toMatchObject({ status: "error", error: { code: "act-as-subject-mismatch" } });
+    expect((mismatch as { actAs?: string }).actAs).toBe("mismatch");
+    expect(actAs).not.toHaveBeenCalled();
+    expect(host.seen).toHaveLength(0);
+  });
+});

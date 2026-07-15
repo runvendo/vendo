@@ -53,6 +53,8 @@ The page makes this public: "everything lives in the host's own DB under a `vend
 | `vendo_secrets` | `name, ciphertext, created_at` | optional encrypted secret values (`storeSecrets`) |
 | `vendo_mcp_clients` | `id, data, refs, created_at, updated_at` | MCP client state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
 | `vendo_mcp_grants` | `id, data, refs, created_at, updated_at` | MCP grant state (wave 6, additive — door-owned, shapes block-internal to `@vendoai/mcp`) |
+| `vendo_orgs` | `id, name, created_at, updated_at` | orgs (v3, ENG-263): Vendo-owned org rows; the org's subject is `vendo:org:<id>` (01-core §2) |
+| `vendo_org_members` | `org_id, subject, role, added_at` | org membership (v3, ENG-263): roles `owner`/`admin`/`member`; the store enforces role validity and never orphans an org of its last owner |
 
 Host-entity refs are the join surface: `SELECT ... FROM invoices i JOIN vendo_records r ON r.refs @> jsonb_build_object('invoice_id', i.id)` (containment, so the GIN index is actually used).
 
@@ -90,7 +92,7 @@ For non-reserved names, `records()` remains app data and collection names are ot
 
 ## 5. Retention and erasure
 
-A store-level erase API is contracted here and ships in Wave 3. It erases by subject (full erasure), by app, or by age, cascading the matching data across all 13 tables, and is exposed on the umbrella. It is the only sanctioned deletion path for audit rows. Policy engines and schedulers remain out of scope; host SQL remains available for everything else.
+A store-level erase API is contracted here and ships in Wave 3. It erases by subject (full erasure), by app, or by age, cascading the matching data across all 15 tables, and is exposed on the umbrella. (Erase-by-subject removes the subject's org memberships; erasing an org subject removes the org and all its memberships. Full erasure wins over the last-owner storage invariant — an erased owner may leave an org ownerless.) It is the only sanctioned deletion path for audit rows. Policy engines and schedulers remain out of scope; host SQL remains available for everything else.
 
 ## Amendments
 
