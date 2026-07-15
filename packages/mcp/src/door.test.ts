@@ -32,6 +32,7 @@ import type {
 } from "./state.js";
 
 const BASE = "https://product.example/api/vendo/mcp";
+const PROXIED_BASE = "http://door.internal:8787/api/vendo/mcp";
 const REDIRECT = "https://client.example/callback";
 const VERIFIER = "a-very-long-pkce-verifier-that-is-valid-for-the-test-suite-1234567890";
 const CONSENT_THEME: VendoTheme = {
@@ -689,6 +690,44 @@ describe("createMcpDoor routing and OAuth", () => {
 });
 
 describe("createMcpDoor remote authorization server trust", () => {
+  it("trusts the configured audience when a proxy changes the request origin", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({
+      remoteAs: { issuer: as.issuer, audience: BASE },
+      principal: (subject) => ({ kind: "user", subject }),
+    });
+
+    const token = await as.mint({ sub: "proxied_user" });
+    const response = await harness.door.handler(mcpRequest(token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(200);
+    expect(harness.principalSubjects).toEqual(["proxied_user"]);
+  });
+
+  it("rejects a wrong-audience JWT even when the request arrives through a proxy", async () => {
+    const as = await remoteAsFixture();
+    vi.stubGlobal("fetch", as.fetch);
+    const harness = makeHarness({ remoteAs: { issuer: as.issuer, audience: BASE } });
+
+    const token = await as.mint({ audience: "https://attacker.example/api/vendo/mcp" });
+    const response = await harness.door.handler(mcpRequest(token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
+  it("keeps request-derived resource binding in local authorization-server mode", async () => {
+    const harness = makeHarness();
+    const registration = await register(harness.door);
+    const tokens = await issue(harness.door, registration.body.client_id);
+
+    const response = await harness.door.handler(mcpRequest(tokens.access_token, undefined, PROXIED_BASE));
+
+    expect(response.status).toBe(401);
+    expect(harness.principalSubjects).toEqual([]);
+  });
+
   it("discovers and caches ES256 JWKS, accepts a valid JWT, and keeps principal() as the host kill switch", async () => {
     const as = await remoteAsFixture();
     vi.stubGlobal("fetch", as.fetch);
@@ -1456,8 +1495,8 @@ async function connect(door: McpDoor, accessToken: string) {
   return { client, transport };
 }
 
-function mcpRequest(accessToken: string, sessionId?: string) {
-  return new Request(BASE, {
+function mcpRequest(accessToken: string, sessionId?: string, resource = BASE) {
+  return new Request(resource, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
