@@ -37,6 +37,7 @@ import {
   type SecretsProvider,
   type ToolDescriptor,
   type ToolOutcome,
+  type ToolRegistry,
   type VendoErrorCode,
   type VendoTheme,
 } from "@vendoai/core";
@@ -1057,6 +1058,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     baseUrl?: string;
     baseUrlTrusted?: boolean;
     onPresentCredentialsNotForwarded: typeof warnPresentCredentialsNotForwarded;
+    invokeTool?: ToolRegistry["execute"];
   } = {
     dir: ".",
     ...(config.connectors === undefined ? {} : { connectors: config.connectors }),
@@ -1095,6 +1097,11 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     },
   };
   const boundTools = guard.bind(actions);
+  // 04 §6: compound steps route through the guard binding — grants, approvals,
+  // breakers, scanners, and audit see every real call; there is no second
+  // execution path. createActions reads invokeTool at execution time (same
+  // pattern as baseUrl above), so assigning after guard.bind is sound.
+  actionsConfig.invokeTool = (call, ctx) => boundTools.execute(call, ctx);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
   const pinBaselines = dotVendoPinBaselines();
