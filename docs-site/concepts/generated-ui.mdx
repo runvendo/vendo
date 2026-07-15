@@ -86,6 +86,13 @@ become `POST /fn/<name>` requests to the app's own server on `$PORT`. The
 graduated app owns those routes, and the model's post-graduation edits
 supply the handlers.
 
+App server code follows a fixed boot convention on every rung that runs
+one: the machine boots `/app/start.sh` when present, otherwise
+`/app/server.js`, and the server listens on `$PORT` and answers
+`POST /fn/<name>` with the `fn:` envelope. Before every snapshot on rungs
+2 and 3, the runtime confirms the server is actually listening — if
+nothing serves, the edit fails and the previous rung keeps serving.
+
 A few behaviors are specific to the served page and worth knowing when
 writing prompts or diagnosing a graduation:
 

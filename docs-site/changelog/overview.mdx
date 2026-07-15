@@ -72,6 +72,19 @@ serving and the document is untouched. See
 
 ## Updates
 
+**Raw-IP egress fails closed on the Modal adapter.** When an app has a
+domain egress policy, the Modal adapter now pins an empty CIDR allowlist
+so raw-IP requests are blocked, matching the E2B adapter and what the
+docs already promised. Apps with no egress policy remain unrestricted.
+See [Deploying Vendo](/deploy/deploying).
+
+**App servers must listen on `$PORT` and answer `/fn/<name>`.** The
+runtime now confirms the app's server is serving before it snapshots a
+rung 2 or rung 3 edit. Server code is booted from `/app/start.sh` when
+present, otherwise `/app/server.js`. If nothing listens, the edit fails
+and the previous rung keeps serving. See
+[Generated UI and apps](/concepts/generated-ui#invisible-graduation-to-rung-4).
+
 **Rung 1 UI creates and tree-only edits skip approval.** Guard now resolves
 the effective risk for `vendo_apps_create` and `vendo_apps_edit` at call
 time. Create is always read-class because it produces a jailed rung 1
