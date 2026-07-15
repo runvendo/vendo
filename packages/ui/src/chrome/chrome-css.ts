@@ -45,6 +45,22 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
 }
 .vendo-root *, .vendo-root *::before, .vendo-root *::after { box-sizing: border-box; }
 .vendo-root[data-vendo-motion="reduced"] * { animation: none !important; transition: none !important; }
+/* The root joins the host's height chain (ENG-212). When it directly hosts a
+   height-filling surface (thread or page — each declares height:100%;
+   min-height:0), the root must forward the host's bounded height instead of
+   sitting as an unconstrained block between the host's pane and the surface —
+   otherwise .fl-msglist never gets a bounded height, nothing scrolls, and
+   under an overflow:hidden host the composer and approval actions clip below
+   the fold. Flex (not a bare height) so the automatic policy notice, when
+   present above the surface, shares the space instead of pushing the surface
+   past it. In an unbounded host the percentage resolves against an auto-height
+   parent and everything sizes to content exactly as before. Overlay, slot and
+   palette roots mount fixed/inline children and are deliberately NOT matched;
+   the voice stage is left to the voice-v1 stage-layout work (it commonly
+   mounts as a sibling of a thread — see Maple /vendo — where claiming 100%
+   would carve the pane in half). */
+.vendo-root:has(> .fl-thread), .vendo-root:has(> .fl-page) {
+  display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
 /* ---------- thread shell ---------- */
 /* min-width floor (ENG-228): squeezed host columns (Cadence at 375px) were
