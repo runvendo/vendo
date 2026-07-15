@@ -31,6 +31,11 @@ For production, pass a Postgres connection string explicitly, for example `creat
 
 App storage uses `app:<appId>:<name>` by convention. When the owning app is ephemeral, generic record collections and blob namespaces following that convention stay entirely in the session's in-memory overlay. Except for the reserved names below, collection names remain opaque and use `vendo_records`; non-`app:`-prefixed collections and namespaces have no principal linkage and therefore keep their normal persistence behavior.
 
+Generic record collections and the two door-owned tables expose the optional
+`RecordStore.claim` capability: one database statement compares the current
+`data` and `refs`, then replaces or deletes the row. Exactly one concurrent
+claimant receives `true`.
+
 ## Reserved collections (block seam)
 
 Blocks receive core's plain `StoreAdapter`, so these exact `records()` collection names route to their typed tables:

@@ -26,7 +26,7 @@ the sweep reports all repo failures and exits 0.
 
 The harness owns the local-pack boundary. Once per sweep it builds the workspace
 and packs the v0 publish set: `@vendoai/core`, `store`, `agent`, `actions`,
-`guard`, `apps`, `automations`, `ui`, `telemetry`, `vendo`, plus the `vendoai`
+`guard`, `apps`, `automations`, `ui`, `telemetry`, `mcp`, `vendo`, plus the `vendoai`
 alias. Each cloned app receives the cached tarballs under `vendor/`, depends on
 the bin-owning `@vendoai/vendo` umbrella, and pins the complete workspace closure
 to `file:vendor/*.tgz` through its package-manager resolution field. The harness

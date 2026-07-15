@@ -1,5 +1,6 @@
 import { VendoError, type AppDocument, type RunContext } from "@vendoai/core";
 import { mintRunToken, type RunTokenSecret } from "./run-token.js";
+import type { RunTokenGate } from "./run-token-gate.js";
 import type { SandboxAdapter, SandboxMachine } from "./sandbox.js";
 
 const RUN_TTL_MS = 15 * 60 * 1_000;
@@ -14,6 +15,9 @@ const randomHex = (byteLength: number): string => {
 export interface MachineAuthorization {
   runToken: string;
   runId: string;
+  /** ENG-251 — the run token's anti-replay nonce, tracked so the run's jti can
+      be burned when its machine is torn down. */
+  jti: string;
 }
 
 /** 06-apps §4.2 — live machine plus fresh authorization claims for one operation. */
@@ -26,6 +30,10 @@ export interface MachineSessionsConfig {
   sandbox?: SandboxAdapter;
   proxyUrl?: string;
   tokenSecret: RunTokenSecret;
+  /** ENG-251 — the shared anti-replay gate the proxy also consults. When a live
+      machine is torn down its env token's jti is burned here, revoking the token
+      before its TTL elapses. */
+  consumedRunTokens?: RunTokenGate;
 }
 
 /** 06-apps §4.2 — cache, boot, and resume live machines by app id. */
@@ -53,6 +61,11 @@ export interface MachineSessions {
 export const createMachineSessions = (config: MachineSessionsConfig): MachineSessions => {
   const live = new Map<string, SandboxMachine>();
   const waking = new Map<string, Promise<SandboxMachine>>();
+  // ENG-251 — the jti carried in each live machine's env token, so eviction can
+  // revoke exactly that token. Set only when THIS sessions cache boots a fresh
+  // machine (adapter.create); a snapshot resume keeps its snapshot-time token,
+  // whose jti we never saw, so there is nothing here to burn for it.
+  const envJti = new Map<string, string>();
 
   const requireAdapter = (): SandboxAdapter => {
     if (config.sandbox === undefined) {
@@ -63,14 +76,17 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
 
   const newRun = async (app: AppDocument, ctx: RunContext): Promise<MachineAuthorization> => {
     const runId = `run_${globalThis.crypto.randomUUID()}`;
+    const jti = `jti_${randomHex(16)}`; // 128-bit anti-replay nonce (ENG-251)
     return {
       runId,
+      jti,
       runToken: await mintRunToken(config.tokenSecret, {
         appId: app.id,
         subject: ctx.principal.subject,
         runId,
         presence: ctx.presence,
         expiresAt: Date.now() + RUN_TTL_MS,
+        jti,
       }),
     };
   };
@@ -89,16 +105,21 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     };
   };
 
-  const start = async (app: AppDocument, ctx: RunContext, runToken: string): Promise<SandboxMachine> => {
+  const start = async (
+    app: AppDocument,
+    ctx: RunContext,
+    auth: { runToken: string; jti: string },
+  ): Promise<SandboxMachine> => {
     const adapter = requireAdapter();
     const existing = live.get(app.id);
     if (existing !== undefined) return existing;
     const pending = waking.get(app.id);
     if (pending !== undefined) return pending;
 
+    const fresh = app.server === undefined;
     const promise = app.server === undefined
       ? adapter.create({
-        env: environment(app, runToken),
+        env: environment(app, auth.runToken),
         files: {},
         egress: app.egress,
       })
@@ -107,6 +128,9 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     try {
       const machine = await promise;
       live.set(app.id, machine);
+      // Only a freshly created machine carries THIS run's env token; a resume
+      // keeps its snapshot-time token, whose jti is not ours to burn.
+      if (fresh) envJti.set(app.id, auth.jti);
       return machine;
     } finally {
       if (waking.get(app.id) === promise) waking.delete(app.id);
@@ -120,7 +144,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
   ): Promise<T> => {
     requireAdapter();
     const run = await newRun(app, ctx);
-    const machine = await start(app, ctx, run.runToken);
+    const machine = await start(app, ctx, run);
     return fn({ machine, ...run });
   };
 
@@ -131,7 +155,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     fn: (run: MachineRun) => Promise<T>,
   ): Promise<T> => {
     requireAdapter();
-    const machine = await start(app, ctx, authorization.runToken);
+    const machine = await start(app, ctx, authorization);
     return fn({ machine, ...authorization });
   };
 
@@ -153,6 +177,13 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     if (pending !== undefined) await pending.catch(() => undefined);
     const machine = live.get(appId);
     live.delete(appId);
+    // ENG-251 — revoke the run token this machine was booted with: any later
+    // presentation of it at the proxy (a replay) is now rejected within its TTL.
+    const jti = envJti.get(appId);
+    if (jti !== undefined) {
+      config.consumedRunTokens?.consume(jti);
+      envJti.delete(appId);
+    }
     if (machine !== undefined) await machine.stop().catch(() => undefined);
   };
 
@@ -164,7 +195,7 @@ export const createMachineSessions = (config: MachineSessionsConfig): MachineSes
     wake(app, ctx, authorization) {
       if (live.has(app.id) || waking.has(app.id)) return;
       requireAdapter();
-      void start(app, ctx, authorization.runToken).catch(() => undefined);
+      void start(app, ctx, authorization).catch(() => undefined);
     },
     async stop(appId) {
       await evict(appId);
