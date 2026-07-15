@@ -4,6 +4,7 @@ import type {
   VoiceDriverEvent,
   VoiceSessionHandle,
   VoiceSessionState,
+  VoiceSessionView,
   VoiceState,
   VoiceTranscriptEntry,
 } from "./driver.js";
@@ -17,6 +18,7 @@ export interface UseVoiceResult {
   muted: boolean;
   setMuted(muted: boolean): void;
   amplitude: number;
+  views: VoiceSessionView[];
 }
 
 const SESSION_STATES = new Set<VoiceSessionState>(["connecting", "reconnecting", "listening", "speaking"]);
@@ -32,6 +34,7 @@ export function useVoice(): UseVoiceResult {
   const [error, setError] = useState<{ message: string } | null>(null);
   const [muted, setMutedState] = useState(false);
   const [amplitude, setAmplitude] = useState(0);
+  const [views, setViews] = useState<VoiceSessionView[]>([]);
   const handleRef = useRef<VoiceSessionHandle | null>(null);
   const activeRef = useRef(false);
   const generationRef = useRef(0);
@@ -60,6 +63,7 @@ export function useVoice(): UseVoiceResult {
     setError(null);
     setMutedState(false);
     setAmplitude(0);
+    setViews([]);
     setState(driver ? "idle" : "unavailable");
 
     return () => {
@@ -80,6 +84,7 @@ export function useVoice(): UseVoiceResult {
     setError(null);
     setMutedState(false);
     setAmplitude(0);
+    setViews([]);
     setState("connecting");
     let failedSynchronously = false;
 
@@ -99,6 +104,11 @@ export function useVoice(): UseVoiceResult {
 
       if (isAmplitudeEvent(event)) {
         setAmplitude(Math.max(0, Math.min(1, event.level)));
+        return;
+      }
+
+      if (isViewEvent(event)) {
+        setViews((current) => updateViews(current, event.view));
         return;
       }
 
@@ -143,7 +153,7 @@ export function useVoice(): UseVoiceResult {
     setMutedState(nextMuted);
   }, []);
 
-  return { state, start, stop, transcript, error, muted, setMuted, amplitude };
+  return { state, start, stop, transcript, error, muted, setMuted, amplitude, views };
 }
 
 function isStateEvent(
@@ -169,6 +179,16 @@ function isAmplitudeEvent(event: VoiceDriverEvent): event is { type: "amplitude"
   return event.type === "amplitude" && "level" in event && typeof event.level === "number";
 }
 
+function isViewEvent(event: VoiceDriverEvent): event is { type: "view"; view: VoiceSessionView } {
+  if (event.type !== "view" || !("view" in event) || !isRecord(event.view)) return false;
+  return (
+    typeof event.view.id === "string" &&
+    typeof event.view.appId === "string" &&
+    isRecord(event.view.payload) &&
+    typeof event.view.payload.formatVersion === "string"
+  );
+}
+
 function voiceErrorMessage(event: VoiceDriverEvent): string {
   if (event.type !== "error" || !("error" in event) || !isRecord(event.error)) return "Voice session failed";
   return typeof event.error.message === "string" ? event.error.message : "Voice session failed";
@@ -186,6 +206,14 @@ function updateTranscript(
   if (index < 0) return [...entries, incoming];
   if (entries[index]?.final) return entries;
   const next = [...entries];
+  next[index] = incoming;
+  return next;
+}
+
+function updateViews(current: VoiceSessionView[], incoming: VoiceSessionView): VoiceSessionView[] {
+  const index = current.findIndex((view) => view.id === incoming.id);
+  if (index < 0) return [...current, incoming];
+  const next = [...current];
   next[index] = incoming;
   return next;
 }

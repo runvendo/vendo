@@ -1,4 +1,5 @@
 /** The public transport seam for the voice stage (08-ui §1, §3). */
+import type { UIPayload } from "@vendoai/core";
 
 export type VoiceState =
   | "unavailable"
@@ -23,10 +24,17 @@ export interface VoiceDriverError {
   cause?: unknown;
 }
 
+export interface VoiceSessionView {
+  id: string;
+  appId: string;
+  payload: UIPayload;
+}
+
 export type KnownVoiceDriverEvent =
   | { type: "state"; state: VoiceSessionState }
   | { type: "transcript"; entry: VoiceTranscriptEntry }
   | { type: "amplitude"; level: number }
+  | { type: "view"; view: VoiceSessionView }
   | { type: "error"; error: VoiceDriverError };
 
 /**
