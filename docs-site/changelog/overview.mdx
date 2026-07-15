@@ -7,6 +7,16 @@ description: "Weekly release notes covering new Vendo features, product updates,
 
 ## New features
 
+**Progressive app generation.** Create and open now stream the generated
+tree as the model produces it. Complete nodes paint as soon as they close,
+queries embedded in the tree resolve concurrently with per-query error
+containment, and later partial updates reconcile into the same view under
+a single stable `data-vendo-view` part id — the stock ai-SDK client replaces
+the payload in place instead of appending duplicates. Nodes whose generated
+source has not arrived yet render as skeletons and swap in when their source
+closes. No client changes are required. See
+[Generated UI and apps](/concepts/generated-ui#progressive-generation).
+
 **Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an
 in-flight run cooperatively — the current step finishes, outstanding tool
 calls drain, and the run reaches a cancelled terminal state. Parked

@@ -54,3 +54,17 @@ fetch path — raw sockets, non-Node runtimes, binaries the app spawns — skip
 the shim, so those integrations do not authenticate. They also cannot leak:
 everything they can send is the opaque handle, because the machine never held
 a value.
+
+## Progressive generation
+
+Create and open stream the generated tree as the model produces it. Complete
+nodes paint as soon as they close, and later partial updates reconcile into
+the same view — the stock ai-SDK client replaces the payload in place instead
+of appending duplicates. Nodes whose generated source has not arrived yet
+render as skeletons and swap in when their source closes. Queries embedded in
+the tree resolve concurrently as they stream, with per-query error containment
+so one failing query does not block the rest of the view.
+
+No client changes are required. Existing consumers of `data-vendo-view` parts
+see progressive frames followed by the final tree under a single stable part
+id.
