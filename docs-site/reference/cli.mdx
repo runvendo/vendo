@@ -15,6 +15,12 @@ Every code change is permission-gated and shown as a diff. Init writes
 critical-tool risk answers to `.vendo/overrides.json`, and future sync runs
 respect them.
 
+Init also scans your host component registrations for statically capturable
+`{ name, component }` sites and offers to wrap each with `remixable: true`.
+Every wrap is a confirmed code change like any other. Router tables with a
+`path` field are excluded. After you approve wraps, init re-runs sync so the
+new remixable slots capture immediately.
+
 Init detects the host framework from `package.json` and scaffolds only what
 applies. A `next` dependency gets `app/api/vendo/[...vendo]/route.ts` (under
 `src/app` when that directory exists), a layout that wraps `<VendoRoot>`, and,

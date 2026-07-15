@@ -164,6 +164,12 @@ acknowledged in `.vendo/overrides.json`:
 }
 ```
 
+A remixable component's source file must expose the component as a **default
+export**. Sync accepts named-export registrations, but the jail refuses to
+render them with `must have a React default export`. Re-export the component
+as the default from its own file if the surrounding code needs the named
+form.
+
 ## What sync captures for a remixable component
 
 Sync captures enough of the surrounding host to render a fork in the sandboxed
