@@ -30,6 +30,49 @@ import {
 
 const THREAD_ID_HEADER = "x-vendo-thread-id";
 
+// ENG-309: backoff between persist attempts after a completed stream. Short and
+// bounded — long waits would hold the response open for nothing (the user
+// already has the reply); a store blip that outlives ~600ms is a real outage.
+const PERSIST_RETRY_DELAYS_MS = [100, 500] as const;
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** ENG-309: persist the finished turn with bounded retry, and surface a final
+ *  failure LOUDLY instead of swallowing it. By the time onFinish runs, the
+ *  response headers and the SSE `[DONE]` are already on the wire, so no
+ *  additive wire signal can reach this turn's client — never throw here (that
+ *  would corrupt the already-delivered stream / crash the transport), but a
+ *  thread silently vanishing after a successful reply is data loss, so the
+ *  structured error names the thread. */
+async function persistFinishedTurn(
+  threads: ThreadRepository,
+  thread: Thread,
+  messages: UIMessage[],
+  ctx: RunContext,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await threads.persist(thread, messages, ctx);
+      return;
+    } catch (error) {
+      const delay = PERSIST_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        console.error(
+          "[vendo] agent: thread persist failed after completed stream — this turn was NOT saved",
+          {
+            threadId: thread.id,
+            subject: ctx.principal.subject,
+            attempts: attempt + 1,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        return;
+      }
+      await wait(delay);
+    }
+  }
+}
+
 interface AgentConfig {
   model: LanguageModel;
   tools: ToolRegistry;
@@ -207,7 +250,7 @@ export function createAgent(config: AgentConfig): VendoAgent {
           }));
         },
         onFinish: async ({ messages }) => {
-          await threads.persist(thread, messages, input.ctx);
+          await persistFinishedTurn(threads, thread, messages, input.ctx);
         },
         onError: () => "An error occurred while generating the response.",
       });

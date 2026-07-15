@@ -1,6 +1,6 @@
 import type { StoreAdapter } from "@vendoai/core";
 import type { UIMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgent } from "./index.js";
 import {
   boundRegistry,
@@ -254,6 +254,121 @@ describe("agent threads", () => {
     expect(summaries.map((s) => s.id).sort()).toEqual(["thr_good", "thr_junk_msgs"]);
     expect(summaries.find((s) => s.id === "thr_good")).toMatchObject({ title: "Good question" });
     expect(summaries.find((s) => s.id === "thr_junk_msgs")).toMatchObject({ title: "New thread" });
+  });
+
+  describe("persist failure after a completed stream (ENG-309 / AGENT-8)", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    /** A store whose vendo_threads WRITES fail the first `failures` times (all
+     *  other collections and operations pass through untouched). */
+    function failingThreadWrites(inner: StoreAdapter, failures: number): {
+      store: StoreAdapter;
+      writeAttempts: () => number;
+    } {
+      let attempts = 0;
+      const failNext = (): void => {
+        attempts += 1;
+        if (attempts <= failures) throw new Error("injected store write failure");
+      };
+      const store: StoreAdapter = {
+        ensureSchema: () => inner.ensureSchema(),
+        blobs: (namespace) => inner.blobs(namespace),
+        records: (collection) => {
+          const records = inner.records(collection);
+          if (collection !== "vendo_threads") return records;
+          return {
+            ...records,
+            async put(record) {
+              failNext();
+              return records.put(record);
+            },
+            ...(records.atomic === undefined ? {} : {
+              atomic: {
+                async insertIfAbsent(record) {
+                  failNext();
+                  return records.atomic!.insertIfAbsent(record);
+                },
+                async compareAndSwap(record, expectedRevision) {
+                  failNext();
+                  return records.atomic!.compareAndSwap(record, expectedRevision);
+                },
+              },
+            }),
+          };
+        },
+      };
+      return { store, writeAttempts: () => attempts };
+    }
+
+    it("retries a transient store write failure so the completed turn is not silently lost", async () => {
+      const { store, writeAttempts } = failingThreadWrites(memoryStore(), 2);
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([textTurn("Saved reply.", "text_retry")]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await agent.stream({
+        threadId: "thr_retry",
+        message: userMessage("user_retry", "Please save this"),
+        ctx: runCtx,
+      });
+      const { rawFrames } = await readSse(response);
+
+      // The user saw a complete, successful stream…
+      expect(rawFrames.at(-1)).toBe("data: [DONE]\n\n");
+      // …and the thread survived the transient write failures.
+      await vi.waitFor(async () => {
+        const thread = await agent.threads.get("thr_retry", runCtx);
+        expect(thread).not.toBeNull();
+        expect(thread!.messages.some((message) => message.id === "user_retry")).toBe(true);
+        expect(assistantText(thread!.messages)).toContain("Saved reply.");
+      });
+      expect(writeAttempts()).toBeGreaterThan(2);
+      // A recovered persist is not a loud failure.
+      expect(errorSpy.mock.calls.filter(([first]) => String(first).includes("thread persist failed"))).toEqual([]);
+    });
+
+    it("surfaces a permanent store write failure loudly instead of swallowing it", async () => {
+      const { store } = failingThreadWrites(memoryStore(), Number.POSITIVE_INFINITY);
+      const guard = testGuard({});
+      const agent = createAgent({
+        model: scriptedModel([textTurn("Doomed reply.", "text_doomed")]),
+        tools: boundRegistry({}, guard),
+        guard,
+        store,
+      });
+      const runCtx = ctx();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const response = await agent.stream({
+        threadId: "thr_doomed",
+        message: userMessage("user_doomed", "This write always fails"),
+        ctx: runCtx,
+      });
+      // The stream still completes cleanly for the user — persist failure after
+      // [DONE] must never corrupt or error the already-delivered response.
+      const { rawFrames } = await readSse(response);
+      expect(rawFrames.at(-1)).toBe("data: [DONE]\n\n");
+
+      // The failure is surfaced as a loud, structured error naming the thread.
+      await vi.waitFor(() => {
+        const call = errorSpy.mock.calls.find(([first]) => String(first).includes("thread persist failed"));
+        expect(call).toBeDefined();
+        expect(call![0]).toContain("[vendo]");
+        expect(call![1]).toMatchObject({
+          threadId: "thr_doomed",
+          subject: "u1",
+          error: "injected store write failure",
+        });
+      });
+    });
   });
 
   it("lets two subjects privately use the same thread id in MEMORY mode (no store)", async () => {
