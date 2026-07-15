@@ -137,8 +137,10 @@ export async function startComposioStub(): Promise<ComposioStub> {
       accounts = structuredClone(SEED);
     },
     async close() {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      // Kill keep-alive sockets FIRST: server.close() waits for open
+      // connections, so the graceful close would otherwise never resolve.
       server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
 }

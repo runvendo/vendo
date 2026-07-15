@@ -112,14 +112,25 @@ export function mcpConnector(config: {
   let normalizedToRaw = new Map<string, string>();
   let nextId = 1;
   const sessions = new Map<string, McpSession>();
+  /** Bound on cached per-principal protocol sessions: past this, the least
+   * recently used session is dropped (its next call re-initializes) so a
+   * long-running server with many subjects never grows without limit. */
+  const MAX_SESSIONS = 500;
 
   function sessionFor(auth: McpAuthContext): McpSession {
     const key = perPrincipal ? auth.principal?.subject ?? "" : "";
     let session = sessions.get(key);
-    if (!session) {
+    if (session) {
+      // Refresh recency (Map iteration order is insertion order).
+      sessions.delete(key);
+    } else {
       session = {};
-      sessions.set(key, session);
+      if (sessions.size >= MAX_SESSIONS) {
+        const oldest = sessions.keys().next().value;
+        if (oldest !== undefined) sessions.delete(oldest);
+      }
     }
+    sessions.set(key, session);
     return session;
   }
 
