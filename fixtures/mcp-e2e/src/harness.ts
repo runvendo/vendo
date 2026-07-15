@@ -12,6 +12,7 @@ import { createStore, type VendoStore } from "@vendoai/store";
 
 export const SUBJECT = "user_1";
 export const FIXTURE_APP_ID = "app_mcp_fixture";
+export const HTTP_FIXTURE_APP_ID = "app_mcp_http_fixture";
 export const MCP_MOUNT = "/api/vendo/mcp";
 
 export const fixtureBaseUrl = (): string => inject("fixtureBaseUrl");
@@ -80,6 +81,15 @@ const fixtureApp: AppDocument = {
     nodes: [{ id: "root", component: "Text", props: { children: "Invoice fixture" } }],
     data: { fixture: true },
   },
+};
+
+const httpFixtureApp: AppDocument = {
+  format: "vendo/app@1",
+  id: HTTP_FIXTURE_APP_ID,
+  name: "MCP hosted dashboard",
+  description: "A rung-4 fixture projected as an MCP open-in-product card.",
+  ui: "http",
+  server: "fixture:http",
 };
 
 export type OAuthMode = "auto" | "interactive" | "prebuilt";
@@ -163,6 +173,11 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     data: { subject: SUBJECT, enabled: false, doc: fixtureApp },
     refs: { subject: SUBJECT },
   });
+  await store.records("vendo_apps").put({
+    id: httpFixtureApp.id,
+    data: { subject: SUBJECT, enabled: false, doc: httpFixtureApp },
+    refs: { subject: SUBJECT },
+  });
   const resolvePrincipal: HostOAuthAdapter["principal"] = async (subject) => {
     return revoked.has(subject)
       ? null
@@ -187,9 +202,13 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
     },
     principal: resolvePrincipal,
   };
+  let origin = "";
   const appsPort: AppsPort = {
     list: (ctx) => apps.list(ctx),
     async open(appId, ctx) {
+      if (appId === HTTP_FIXTURE_APP_ID) {
+        return { kind: "http", url: `${origin}/fixture/apps/${HTTP_FIXTURE_APP_ID}` };
+      }
       const opened = await apps.open(appId, ctx);
       if (opened.kind === "resuming") throw new Error("rung-1 fixture cannot resume");
       return opened.kind === "tree"
@@ -212,7 +231,7 @@ export async function createStack(options: StackOptions = {}): Promise<Stack> {
   });
   const address = httpServer.address();
   if (!address || typeof address === "string") throw new Error("Door server did not bind a TCP port");
-  const origin = `http://127.0.0.1:${address.port}`;
+  origin = `http://127.0.0.1:${address.port}`;
 
   const stack: Stack = {
     store,
