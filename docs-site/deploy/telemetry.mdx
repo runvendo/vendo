@@ -51,7 +51,8 @@ secrets are redacted, and unrelated personal data is minimized before write.
 ### Local persistence
 
 The OSS runtime always appends one JSON object per line to
-`.vendo/data/misses.jsonl` on the host machine. The local file is not
+`.vendo/data/misses.jsonl` on the host machine. Writes are fire-and-forget:
+sink failures never alter the agent turn, and the local file is not
 consent-gated. Treat it as runtime state, like the rest of `.vendo/data/`, and
 keep it out of version control.
 
@@ -75,9 +76,11 @@ Any of these environment values blocks upload for the current process:
 | `DO_NOT_TRACK` | equal to `"1"` or `"true"` |
 | `CI` | set to any value other than `""`, `"0"`, or `"false"` |
 
-When no API key is set, or a kill switch is tripped, nothing leaves the
-machine. The local `.vendo/data/misses.jsonl` file still accumulates so you can
-inspect misses locally.
+Uploads are best-effort, batched, and bounded by retry and timeout limits, so
+they never replace or delay the local append. When no API key is set, or a
+kill switch is tripped, nothing leaves the machine. The local
+`.vendo/data/misses.jsonl` file still accumulates so you can inspect misses
+locally.
 
 ### Downstream use
 
