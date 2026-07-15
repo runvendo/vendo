@@ -103,6 +103,7 @@ describe("cloud deploy", () => {
       method: "POST",
       headers: {
         accept: "application/json",
+        "user-agent": "vendo-cli/0.3.0",
         "content-type": "application/json",
         authorization: "Bearer vnd_test",
       },

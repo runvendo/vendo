@@ -14,6 +14,7 @@ describe("cloud command dispatch", () => {
     expect(messages.logs.join("\n")).toContain("pin-ship --app <id>");
     expect(messages.logs.join("\n")).toContain("login EMAIL");
     expect(messages.logs.join("\n")).toContain("deploy [--app <id>] [--secret NAME=VALUE]");
+    expect(messages.logs.join("\n")).toContain("validate [--json]                     Validate a key and show plan, capabilities, and quota");
   });
 
   it("returns one for unknown cloud commands", async () => {
