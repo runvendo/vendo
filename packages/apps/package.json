@@ -42,10 +42,6 @@
     "./vendo": {
       "types": "./dist/vendo/index.d.ts",
       "default": "./dist/vendo/index.js"
-    },
-    "./cloud": {
-      "types": "./dist/cloud-sandbox.d.ts",
-      "default": "./dist/cloud-sandbox.js"
     }
   },
   "files": [

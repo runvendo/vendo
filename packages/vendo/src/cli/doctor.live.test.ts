@@ -35,6 +35,12 @@ describe("vendo doctor MCP discovery live", () => {
       store,
       mcp: true,
       oauth,
+      // Light the execution venue deterministically (independent of local
+      // E2B/Modal env keys) so doctor reports no venue warning here.
+      sandbox: {
+        create: async () => { throw new Error("not used by doctor"); },
+        resume: async () => { throw new Error("not used by doctor"); },
+      },
     });
     const server = createServer((request, response) => {
       const host = request.headers.host ?? "127.0.0.1";
