@@ -58,7 +58,7 @@ async function createWorkspace(): Promise<string> {
     { dir: "automations", name: "@vendoai/automations" },
     { dir: "core", name: "@vendoai/core" },
     { dir: "guard", name: "@vendoai/guard" },
-    { dir: "mcp", name: "@vendoai/mcp" },
+    { dir: "mcp", name: "@vendoai/mcp", dependencies: { "@vendoai/core": "workspace:*" } },
     { dir: "store", name: "@vendoai/store" },
     { dir: "vendo-telemetry", name: "@vendoai/telemetry", version: "0.2.0" },
     { dir: "ui", name: "@vendoai/ui" },
