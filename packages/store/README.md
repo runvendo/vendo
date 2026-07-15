@@ -2,6 +2,8 @@
 
 `@vendoai/store` implements the `@vendoai/core` persistence seams with one Postgres schema. It uses PGlite for a zero-config local database and the same schema on a hosted Postgres service.
 
+Read [Persistence](https://docs.vendo.run/deploy/persistence).
+
 ```ts
 import { createStore } from "@vendoai/store";
 
