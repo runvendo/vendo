@@ -221,6 +221,38 @@ describe("06-apps §8 — pin rebase via intent replay", () => {
     ]);
   });
 
+  it("mechanically re-forks when the trail holds only the fork intent (nothing to replay)", async () => {
+    const store = memoryStore();
+    const app = seedDoc("app_fork_only");
+    await seedAppRow(store, app, ctx.principal.subject);
+    const original = createApps({
+      store,
+      guard: guardFixture(),
+      tools,
+      catalog: [],
+      model: scriptedLanguageModel(
+        forkOps,
+        JSON.stringify({ ops: [{ op: "set-name", name: "Renamed, no pinned edits" }] }),
+      ),
+      pinBaselines: [baseline(OLD_SOURCE, "sha256:maple-old")],
+    });
+    expect((await original.edit(app.id, "Remix the net worth card", ctx)).failure).toBeUndefined();
+    expect((await original.edit(app.id, "Rename the app", ctx)).failure).toBeUndefined();
+
+    const runtime = rebasedRuntime(store, [forkOps]);
+    const result = await runtime.pins.rebase({ appId: app.id, slot: SLOT }, ctx);
+
+    // The fork was a verbatim copy of the old baseline with nothing replayable
+    // on top, so the rebase is the mechanical re-fork alone: the pin now
+    // carries the NEW baseline source verbatim, with no model involvement.
+    if (result.status !== "rebased") throw new Error("expected a rebased result");
+    expect(result.replayed).toEqual([]);
+    expect(result.app.pins).toEqual([{ slot: SLOT, base: "sha256:maple-new" }]);
+    expect(result.app.components?.[COMPONENT]).toBe(NEW_SOURCE);
+    expect(result.app.name).toBe("Renamed, no pinned edits");
+    await expect(runtime.pins.drift(app.id, ctx)).resolves.toEqual([]);
+  });
+
   it("drops an in-client approval by construction: the rebased version needs re-approval", async () => {
     const store = memoryStore();
     const appId = await seedForkedHistory(store);
