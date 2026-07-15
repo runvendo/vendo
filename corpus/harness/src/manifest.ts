@@ -20,6 +20,13 @@ function relativePosixPathSchema(field: "appDir" | "localPath") {
 const devServerSchema = z
   .object({
     command: z.string().min(1),
+    /** True when the dev-server command serves prebuilt output (for example
+     * express-host's `node dist/...` start), so boot-oriented commands such as
+     * `corpus gallery` must run `buildCommand` first. Self-compiling dev
+     * servers (`next dev`, `nest start -w`) leave this unset: `corpus boot`
+     * has never built before booting, and repos with a broken upstream
+     * baseline build (papermark) can still boot and be captured. */
+    requiresBuild: z.boolean().optional(),
     readinessUrl: z.string().url(),
     readinessBodyContains: z.string().min(1).optional(),
     readinessTimeoutMs: z.number().int().positive().optional(),

@@ -786,6 +786,9 @@ describe("runCli gallery", () => {
     const corpusRoot = await makeTempRoot();
     const context = createRunContext({ corpusRoot });
     const repo = deepManifestEntry("repo-gallery");
+    // The build step runs only for recipes whose dev server serves prebuilt
+    // output (express-host's `node dist/...`); flag it like the manifest does.
+    repo.bootstrap.devServer = { ...repo.bootstrap.devServer!, requiresBuild: true };
     const events: string[] = [];
     const stdout: string[] = [];
     const captureOptions: CaptureGalleryRepoOptions[] = [];
@@ -888,5 +891,66 @@ describe("runCli gallery", () => {
     });
     expect(reportOptions[0]?.repos).toEqual([galleryResult]);
     expect(stdout.join("\n")).toContain("gallery.html");
+  });
+
+  it("boots self-compiling dev servers without running the production build", async () => {
+    const corpusRoot = await makeTempRoot();
+    const context = createRunContext({ corpusRoot });
+    // deepManifestEntry leaves devServer.requiresBuild unset — `next dev`
+    // style recipes (umami, skateshop, papermark) compile themselves, and
+    // papermark's upstream baseline production build is broken at the pin.
+    const repo = deepManifestEntry("repo-gallery-dev");
+    const events: string[] = [];
+
+    const exitCode = await runCli(["gallery"], {
+      now: () => new Date("2026-07-14T12:00:00.000Z"),
+      stdout: () => {},
+      stderr: () => {},
+      loadManifest: async () => [repo],
+      discoverConfiguredGalleryRepoNames: async () => [repo.name],
+      createContext: () => context,
+      ensureRepoCheckout: async (entry) => {
+        await writeHostPackage(context.repoDir(entry.name));
+        return context.repoDir(entry.name);
+      },
+      bootstrapRepo: async (entry) => ({
+        repoDir: context.repoDir(entry.name),
+        envPath: path.join(context.repoDir(entry.name), ".env"),
+        logs: { stdout: "bootstrap.stdout.log", stderr: "bootstrap.stderr.log" },
+      }),
+      createInjector: () => ({
+        async inject(entry) {
+          return {
+            repoDir: context.repoDir(entry.name),
+            packageManager: "pnpm",
+            packages: [],
+            vendorDir: path.join(context.repoDir(entry.name), "vendor"),
+            installCommand: "pnpm install",
+          };
+        },
+      }),
+      runInit: async (entry) =>
+        makeInitResult(context.repoDir(entry.name), "gallery.init.log", "gallery.init.diff"),
+      prepareE2eRepo: async () => [],
+      commandRunner: async (command) => {
+        events.push(`build:${command}`);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      bootRepo: async (entry) => ({
+        repoDir: context.repoDir(entry.name),
+        readinessUrl: "http://127.0.0.1:3333",
+        logPaths: { server: path.join(context.logsDir(entry.name), "boot.server.log") },
+        teardown: async () => {},
+      }),
+      captureGalleryRepo: async (options) => ({
+        repoName: options.repoName,
+        nativeScreens: [],
+        prompts: [],
+      }),
+      writeGalleryHtml: async (options) => path.join(options.runRoot, "gallery.html"),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([]);
   });
 });
