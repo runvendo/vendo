@@ -10,6 +10,7 @@ import {
   type ToolRegistry,
 } from "@vendoai/core";
 import type { CompoundTool } from "../formats.js";
+import { error, isArgsObject } from "./outcome.js";
 import { walkSteps, type StepResumePoint } from "./steps.js";
 
 /**
@@ -84,11 +85,6 @@ export function validateCapabilities(
   return issues;
 }
 
-const error = (code: string, message: string): ToolOutcome => ({ status: "error", error: { code, message } });
-
-const isArgsObject = (value: unknown): value is Record<string, Json> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-
 /** Everything except `grant` passes through: guard re-decides each step in the
  * true context, and a compound-level grant must never ride into a step's actAs. */
 const stripGrant = (ctx: RunContext): RunContext => {
@@ -122,10 +118,26 @@ export function createCompoundExecutor(options: {
   isPrimitive(name: string): Promise<boolean>;
 }): CompoundExecutor {
   const entries = new Map<string, ResumeEntry>();
+  // Compiled-expression cache: expressions come from the static, schema-capped
+  // capabilities file, so the population is bounded; parsing is the expensive
+  // part of jsonata and forEach walks would otherwise re-parse per iteration.
+  const compiled = new Map<string, ReturnType<typeof jsonata>>();
+
+  const compile = (expression: string): ReturnType<typeof jsonata> => {
+    let parsed = compiled.get(expression);
+    if (parsed === undefined) {
+      parsed = jsonata(expression);
+      compiled.set(expression, parsed);
+    }
+    return parsed;
+  };
 
   const sweep = (now: number): void => {
+    // Entries are refreshed by delete-then-set, so Map order is oldest-touched
+    // first: stop at the first fresh entry instead of scanning the whole map.
     for (const [key, entry] of entries) {
-      if (now - entry.at > RESUME_TTL_MS) entries.delete(key);
+      if (now - entry.at <= RESUME_TTL_MS) break;
+      entries.delete(key);
     }
   };
 
@@ -143,10 +155,13 @@ export function createCompoundExecutor(options: {
 
       const now = Date.now();
       sweep(now);
-      // The same logical call = same subject, same session, same call id, same args.
-      const key = `${ctx.principal.subject}|${ctx.sessionId}|${call.id}`;
-      const argsHash = sha256Hex(canonicalJson(call.args));
+      // The same logical call = same subject, same session, same COMPOUND, same
+      // call id, same args. The tool name is part of the key so a different
+      // compound reusing a call id can never hijack another compound's parked
+      // resume point (and replay its approved step against the wrong steps array).
+      const key = `${ctx.principal.subject}|${ctx.sessionId}|${call.tool}|${call.id}`;
       const existing = entries.get(key);
+      const argsHash = existing === undefined ? undefined : sha256Hex(canonicalJson(call.args));
       const resumeFrom = existing !== undefined && existing.argsHash === argsHash ? existing.resume : undefined;
       if (existing !== undefined && resumeFrom === undefined) entries.delete(key);
 
@@ -154,7 +169,7 @@ export function createCompoundExecutor(options: {
       const result = await walkSteps({
         steps: tool.binding.steps,
         root: { args: call.args },
-        evaluate: async (expression, context) => await jsonata(expression).evaluate(context) as Json,
+        evaluate: async (expression, context) => await compile(expression).evaluate(context) as Json,
         newCallId: () => `call_${globalThis.crypto.randomUUID()}`,
         invoke: async (stepCall) => {
           // Re-check the target kind before EVERY invoke: a post-load `add()`
@@ -168,8 +183,11 @@ export function createCompoundExecutor(options: {
       });
 
       if (result.status === "parked") {
+        // delete-then-set is load-bearing: Map.set on an existing key keeps its
+        // ORIGINAL position, so the delete is what refreshes insertion order
+        // (oldest-first) for both the TTL sweep and the LRU eviction below.
         entries.delete(key);
-        entries.set(key, { argsHash, resume: result.resume, at: now });
+        entries.set(key, { argsHash: argsHash ?? sha256Hex(canonicalJson(call.args)), resume: result.resume, at: now });
         while (entries.size > RESUME_MAX_ENTRIES) {
           const oldest = entries.keys().next().value as string;
           entries.delete(oldest);

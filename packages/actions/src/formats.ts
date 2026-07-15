@@ -184,16 +184,17 @@ export const toolBindingSchema = z.union([
   compoundBindingSchema,
 ]) satisfies z.ZodType<ToolBinding>;
 
-/** tools.json stays deterministic (04 §1/§6): a compound entry there fails loudly with a pointer home. */
-const rejectedCompoundBindingSchema = z.object({ kind: z.literal("compound") }).passthrough().refine(
-  () => false,
-  { message: "compound bindings live in .vendo/capabilities.json — .vendo/tools.json stays deterministic (04-actions §6)" },
-);
+/**
+ * tools.json stays deterministic (04 §1/§6). The compound base shape is a
+ * discriminator branch so route/openapi keep their precise per-branch errors;
+ * the tool-level refine below then rejects it with one clear pointer home.
+ */
+const compoundKindSchema = z.object({ kind: z.literal("compound") }).passthrough();
 
-const extractedBindingSchema = z.union([
+const extractedBindingSchema = z.discriminatedUnion("kind", [
   routeBindingSchema,
   openApiBindingSchema,
-  rejectedCompoundBindingSchema,
+  compoundKindSchema,
 ]) as unknown as z.ZodType<PrimitiveToolBinding>;
 
 /** 04-actions §2: a descriptor plus its execution binding — one entry of `.vendo/tools.json`. */
@@ -208,6 +209,14 @@ export const extractedToolSchema = toolDescriptorSchema.extend({
   binding: extractedBindingSchema,
   disabled: z.boolean().optional(),
   note: z.string().optional(),
+}).superRefine((tool, context) => {
+  if ((tool.binding as { kind?: string }).kind === "compound") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["binding"],
+      message: "compound bindings live in .vendo/capabilities.json — .vendo/tools.json stays deterministic (04-actions §6)",
+    });
+  }
 }) satisfies z.ZodType<ExtractedTool>;
 
 /** `.vendo/tools.json` — generated, host-committed (04 §1). */

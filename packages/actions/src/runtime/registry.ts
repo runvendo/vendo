@@ -29,6 +29,7 @@ import {
   type ToolOverride,
 } from "../formats.js";
 import { createCompoundExecutor, validateCapabilities, type PrimitiveStepTarget } from "./compound.js";
+import { error, isArgsObject } from "./outcome.js";
 
 export interface ActionsRegistry extends ToolRegistry {
   add(tools: ToolRegistry): void;
@@ -103,10 +104,6 @@ const STRIPPED_HEADERS = new Set([
   "upgrade",
 ]);
 
-function error(code: string, message: string): ToolOutcome {
-  return { status: "error", error: { code, message } };
-}
-
 function descriptorOf(tool: ToolDescriptor): ToolDescriptor {
   return {
     name: tool.name,
@@ -155,10 +152,6 @@ async function readOptionalJson<T>(path: string, parse: (value: unknown) => T): 
       cause: cause instanceof Error ? cause.message : String(cause),
     });
   }
-}
-
-function isArgsObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function appendQuery(url: URL, key: string, value: unknown): void {
@@ -585,18 +578,21 @@ export function createActions(config: RegistryConfig): ActionsRegistry {
       const compounds = (host.capabilities?.tools ?? []).map(
         (tool) => mergeOverride({ ...tool }, host.overrides.tools[tool.name]),
       );
-      const issues = validateCapabilities({ tools: compounds }, primitives);
+      const issuesByTool = new Map<string, string[]>();
+      for (const issue of validateCapabilities({ tools: compounds }, primitives)) {
+        issuesByTool.set(issue.tool, [...(issuesByTool.get(issue.tool) ?? []), issue.message]);
+      }
       for (const compound of compounds) {
-        const compoundIssues = issues.filter((issue) => issue.tool === compound.name);
-        if (compound.disabled === true) {
+        const compoundIssues = issuesByTool.get(compound.name) ?? [];
+        if (compound.disabled === true || compoundIssues.length > 0) {
+          // Disabled and quarantined compounds both reserve the name (collision
+          // detection) without dispatching; only quarantine warns.
           register(compound.name, "capabilities", undefined);
-          continue;
-        }
-        if (compoundIssues.length > 0) {
-          register(compound.name, "capabilities", undefined);
-          console.warn(
-            `[vendo] quarantined compound tool ${compound.name} from .vendo/capabilities.json: ${compoundIssues.map((issue) => issue.message).join("; ")}`,
-          );
+          if (compound.disabled !== true) {
+            console.warn(
+              `[vendo] quarantined compound tool ${compound.name} from .vendo/capabilities.json: ${compoundIssues.join("; ")}`,
+            );
+          }
           continue;
         }
         register(compound.name, "capabilities", { kind: "compound", descriptor: descriptorOf(compound), tool: compound });

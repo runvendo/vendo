@@ -1,4 +1,4 @@
-import type { ApprovalId, Json, Step, ToolCall, ToolOutcome } from "@vendoai/core";
+import { safeErrorMessage, type ApprovalId, type Json, type Step, type ToolCall, type ToolOutcome } from "@vendoai/core";
 
 /**
  * Pure step-walker kernel for compound tools (04-actions §6).
@@ -59,8 +59,6 @@ const validationHalt = (step: Step, message: string): StepWalkResult => ({
   outcome: { status: "error", error: { code: "validation", message } },
   step,
 });
-
-const messageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
 
 /** Matches automations' validateForEachItems verbatim (message parity is load-bearing). */
 const validateForEachItems = (step: Step, value: Json): Json[] => {
@@ -133,7 +131,7 @@ export async function walkSteps(options: StepWalkOptions): Promise<StepWalkResul
         }
       }
     } catch (cause) {
-      return validationHalt(step, messageOf(cause));
+      return validationHalt(step, safeErrorMessage(cause));
     }
 
     const iterations: Array<{ item?: Json }> = items === undefined ? [{}] : items.map((item) => ({ item }));
@@ -143,7 +141,7 @@ export async function walkSteps(options: StepWalkOptions): Promise<StepWalkResul
       try {
         args = await stepArgs(step, state.stepOutputs, iteration.item);
       } catch (cause) {
-        return validationHalt(step, messageOf(cause));
+        return validationHalt(step, safeErrorMessage(cause));
       }
       const call: ToolCall = { id: newCallId(), tool: step.tool, args };
       const outcome = await invoke(call);

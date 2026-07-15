@@ -413,6 +413,37 @@ describe("compound execution through the invokeTool seam", () => {
     expect(records[4]!.call.id).not.toBe(records[0]!.call.id);
   });
 
+  it("a different compound reusing the same call id can never hijack another compound's resume point", async () => {
+    const other = compound("host_other_flow", [
+      { id: "solo", tool: "host_read" },
+    ]);
+    const { records, invokeTool } = invokeStub((stepCall) =>
+      stepCall.tool === "host_write" ? { status: "pending-approval", approvalId: "apr_1" } : { status: "ok", output: null });
+    const actions = createActions({
+      tools: hostTools,
+      capabilities: capabilities([flow, other]),
+      invokeTool,
+    });
+
+    // Park compound A with call id X.
+    await actions.execute(call("host_flow", { amount: 5 }, "call_shared"), ctx);
+    const parkedCall = records[0]!.call;
+    expect(parkedCall.tool).toBe("host_write");
+
+    // Invoke compound B with the SAME call id and identical args: it must walk
+    // ITS OWN steps from the start, never re-issue A's approved pending call.
+    records.splice(0);
+    const outcome = await actions.execute(call("host_other_flow", { amount: 5 }, "call_shared"), ctx);
+    expect(outcome).toMatchObject({ status: "ok" });
+    expect(records.map((record) => record.call.tool)).toEqual(["host_read"]);
+    expect(records[0]!.call.id).not.toBe(parkedCall.id);
+
+    // A's resume point survives untouched: re-executing A resumes verbatim.
+    records.splice(0);
+    await actions.execute(call("host_flow", { amount: 5 }, "call_shared"), ctx);
+    expect(records[0]!.call).toEqual(parkedCall);
+  });
+
   it("terminal outcomes clear the resume entry", async () => {
     let mode: "park" | "error" | "ok" = "park";
     const { records, invokeTool } = invokeStub(() => {
