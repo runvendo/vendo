@@ -2,6 +2,7 @@ import {
   VendoError,
   appIdSchema,
   isoDateTimeSchema,
+  sha256Hex,
   type AppId,
   type IsoDateTime,
   type Pin,
@@ -21,10 +22,20 @@ export interface PinBaseline {
 export const pinBaselineSchema = z.object({
   slot: z.string(),
   source: z.string(),
-  hash: z.string(),
+  hash: z.string().startsWith("sha256:"),
   exportable: z.boolean(),
   capturedAt: isoDateTimeSchema,
 }).passthrough() satisfies z.ZodType<PinBaseline>;
+
+/** Internal stable generated-component name for one captured host slot. */
+export const pinComponentName = (slot: string): string => {
+  const stem = (slot.match(/[A-Za-z0-9]+/g) ?? [])
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join("") || "Slot";
+  // The hash suffix prevents punctuation-only normalization collisions while
+  // keeping the name a valid generated-component PascalCase identifier.
+  return `Pinned${stem}${sha256Hex(slot).slice(0, 8)}`;
+};
 
 /** 06-apps §8 — unified source diff proposed for host approval. */
 export interface PinShipRequest {

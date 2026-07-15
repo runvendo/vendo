@@ -7,6 +7,7 @@ import {
   resolveQueries,
   setQueryData,
   type BridgeCallResult,
+  type OpenInProductPayload,
   type ServerToolCaller,
 } from "../src/tree/mcp-shim/shim-core.js";
 
@@ -204,13 +205,15 @@ describe("MCP Apps shim open-result flush", () => {
 
   const makeRuntime = () => {
     const renderPayload = vi.fn();
+    const renderOpenInProduct = vi.fn();
     const renderNotice = vi.fn();
     const runtime = createShimRuntime({
       callServerTool: callerReturning(result()),
       renderPayload,
+      renderOpenInProduct,
       renderNotice,
     });
-    return { runtime, renderPayload, renderNotice };
+    return { runtime, renderPayload, renderOpenInProduct, renderNotice };
   };
 
   it("renders exactly once when the result arrives before the input", () => {
@@ -227,6 +230,32 @@ describe("MCP Apps shim open-result flush", () => {
     expect(renderPayload).not.toHaveBeenCalled();
     runtime.onToolResult({ structuredContent: openPayload });
     expect(renderPayload).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["result first", true],
+    ["input first", false],
+  ])("renders a tagged open-in-product result exactly once with the %s ordering", (_label, resultFirst) => {
+    const { runtime, renderPayload, renderOpenInProduct, renderNotice } = makeRuntime();
+    const open: OpenInProductPayload = {
+      kind: "vendo/open-in-product@1",
+      url: "https://apps.example/dashboard",
+      appName: "Revenue dashboard",
+      productName: "Maple",
+    };
+
+    if (resultFirst) {
+      runtime.onToolResult({ structuredContent: open });
+      runtime.onToolInput({ appId: "app_http" });
+    } else {
+      runtime.onToolInput({ appId: "app_http" });
+      runtime.onToolResult({ structuredContent: open });
+    }
+
+    expect(renderOpenInProduct).toHaveBeenCalledTimes(1);
+    expect(renderOpenInProduct).toHaveBeenCalledWith(open);
+    expect(renderPayload).not.toHaveBeenCalled();
+    expect(renderNotice).not.toHaveBeenCalled();
   });
 
   it("renders the invalid-result notice for non-payload structured content", () => {

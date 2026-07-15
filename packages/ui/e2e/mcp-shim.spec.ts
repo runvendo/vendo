@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { Tree, UIPayload } from "@vendoai/core";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { browserTreeFixture } from "./fixtures/tree.js";
 
@@ -26,8 +26,8 @@ const shimTree: Tree = {
   },
 };
 
-async function loadShim(page: Page, payload: UIPayload): Promise<void> {
-  await page.setContent(`<!doctype html><iframe id="shim-frame" title="Vendo MCP Apps shim"></iframe><script>
+async function loadShim(page: Page, payload: unknown): Promise<void> {
+  await page.setContent(`<!doctype html><iframe id="shim-frame" title="Vendo MCP Apps shim" style="width:480px;height:360px;border:0"></iframe><script>
     window.__shimCalls = [];
     window.__shimPayload = ${JSON.stringify(payload)};
     window.addEventListener("message", (event) => {
@@ -123,4 +123,37 @@ test("generated MCP Apps shim contains unknown UI formats", async ({ page }) => 
   await loadShim(page, { formatVersion: "vendo-genui/future", message: "future payload" });
   const shim = page.frameLocator("#shim-frame");
   await expect(shim.getByRole("note", { name: "Unsupported UI format" })).toContainText("vendo-genui/future");
+});
+
+test("generated MCP Apps shim renders a branded HTTP link-out card", async ({ page }) => {
+  await loadShim(page, {
+    kind: "vendo/open-in-product@1",
+    url: "https://apps.example/revenue",
+    appName: "Revenue dashboard",
+    productName: "Maple",
+  });
+  const shim = page.frameLocator("#shim-frame");
+  const card = shim.getByRole("region", { name: "Open Revenue dashboard in Maple" });
+
+  await expect(card).toBeVisible();
+  await expect(card.getByRole("heading", { name: "Revenue dashboard" })).toBeVisible();
+  await expect(card.getByText("Open in Maple")).toBeVisible();
+  const link = card.getByRole("link", { name: "Open Revenue dashboard" });
+  await expect(link).toHaveAttribute("href", "https://apps.example/revenue");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(link).toBeVisible();
+  await expect(link).toBeInViewport();
+  const [cardBox, linkBox] = await Promise.all([card.boundingBox(), link.boundingBox()]);
+  expect(cardBox).not.toBeNull();
+  expect(linkBox).not.toBeNull();
+  expect(linkBox!.y + linkBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height);
+
+  const screenshotDir = new URL("../../../docs/screenshots/", import.meta.url);
+  await mkdir(screenshotDir, { recursive: true });
+  await page.screenshot({
+    path: fileURLToPath(new URL("eng-278-http-open-card.png", screenshotDir)),
+    clip: cardBox!,
+    animations: "disabled",
+  });
 });

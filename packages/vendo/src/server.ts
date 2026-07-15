@@ -1,6 +1,12 @@
 import { createActions, type ActionsRegistry, type Connector } from "@vendoai/actions";
 import { createAgent, type VendoAgent } from "@vendoai/agent";
-import { createApps, type AppsRuntime, type SandboxAdapter } from "@vendoai/apps";
+import {
+  createApps,
+  pinBaselineSchema,
+  type AppsRuntime,
+  type PinBaseline,
+  type SandboxAdapter,
+} from "@vendoai/apps";
 import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
 import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
@@ -79,8 +85,14 @@ export interface CreateVendoConfig {
   telemetry?: boolean;
   /** 10-mcp §1 — the one flag: open the MCP door so outside agents (Claude,
       ChatGPT, Cursor) reach the host's tools through the SAME guard-bound path.
-      Opening it is a host decision (10-mcp §2), so it is off by default. */
-  mcp?: boolean;
+      Opening it is a host decision (10-mcp §2), so it is off by default.
+      The additive object form opens the door with options: `baseUrl` is the
+      canonical PUBLIC base URL the door's discovery metadata, issuer, resource
+      identifiers, and RFC 8707 audience binding derive from — set it (or
+      `VENDO_BASE_URL`, the default) behind a reverse proxy, where the request
+      URL carries the proxy-internal origin. Forwarded headers are never
+      trusted. */
+  mcp?: boolean | { baseUrl?: string };
   /** 10-mcp §3 plus its additive prebuilt flow — the host's session + identity seam. Threaded top-level like
       `actAs`/`principal` (the door is agnostic; the umbrella owns the shape).
       REQUIRED when `mcp` is true: the door cannot mint principals without it. */
@@ -198,6 +210,42 @@ function dotVendoTheme(): VendoTheme | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** 06-apps §8 — load sync-captured host source into the composition. Invalid
+    files are warned and skipped so one bad slot cannot crash the host; an
+    absent directory is the normal zero-remixable-components case. */
+function dotVendoPinBaselines(): PinBaseline[] {
+  const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
+  const fs = proc?.getBuiltinModule?.("node:fs") as typeof import("node:fs") | undefined;
+  if (fs === undefined) return [];
+  const directory = ".vendo/remixable";
+  let names: string[];
+  try {
+    names = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "ENOENT") return [];
+    console.warn(`[vendo] could not read ${directory}; pin baselines were skipped`);
+    return [];
+  }
+
+  const baselines: PinBaseline[] = [];
+  const slots = new Set<string>();
+  for (const name of names) {
+    const file = `${directory}/${name}`;
+    try {
+      const parsed = pinBaselineSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+      if (slots.has(parsed.slot)) {
+        console.warn(`[vendo] duplicate pin baseline slot ${parsed.slot} in ${file}; file was skipped`);
+        continue;
+      }
+      slots.add(parsed.slot);
+      baselines.push(parsed);
+    } catch {
+      console.warn(`[vendo] invalid pin baseline ${file}; file was skipped`);
+    }
+  }
+  return baselines;
 }
 
 function relativePath(url: URL): string | null {
@@ -779,12 +827,14 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const boundTools = guard.bind(actions);
   const theme = dotVendoTheme();
   const designRules = dotVendoFile("design-rules.md");
+  const pinBaselines = dotVendoPinBaselines();
   const apps = createApps({
     store,
     guard,
     tools: boundTools,
     model: config.model,
     catalog: config.catalog ?? [],
+    pinBaselines,
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
@@ -824,8 +874,15 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   // guard-bound registry chat/apps/automations use, the guard (its core seam is
   // what the door holds for auth audit), the store (a StoreAdapter for the door's
   // own protocol state), the host's oauth seam, and an AppsPort view of `apps`.
+  // `mcp: true` and `mcp: {…}` both open the door; the object form carries
+  // door options (an explicit `baseUrl` overrides the VENDO_BASE_URL default).
+  const mcpOptions = typeof config.mcp === "object" && config.mcp !== null
+    ? config.mcp
+    : config.mcp === true
+      ? {}
+      : undefined;
   let door: McpDoor | undefined;
-  if (config.mcp === true) {
+  if (mcpOptions !== undefined) {
     if (config.oauth === undefined) {
       throw new VendoError(
         "validation",
@@ -851,7 +908,13 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     };
     // 10-mcp §5 — pin the door's canonical mount so a cold umbrella's server
     // card advertises the right transport URL (BASE_PATH/mcp) before any request
-    // teaches it, and learned paths never override it.
+    // teaches it, and learned paths never override it. The door's canonical
+    // public base (discovery origins + RFC 8707 audience) is the operator-set
+    // VENDO_BASE_URL — behind a reverse proxy the request URL carries the
+    // proxy-INTERNAL origin and must not shape what discovery advertises
+    // (ENG-333). An explicit `mcp.baseUrl` overrides the env default for
+    // compositions whose door origin differs from the route-binding origin.
+    const doorBaseUrl = mcpOptions.baseUrl ?? configuredBaseUrl;
     door = createMcpDoor({
       tools: boundTools,
       guard,
@@ -859,6 +922,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
       oauth: config.oauth,
       apps: appsPort,
       mount: MCP_MOUNT,
+      ...(doorBaseUrl === undefined ? {} : { baseUrl: doorBaseUrl }),
       ...(theme === undefined ? {} : { theme }),
     });
   }
@@ -889,7 +953,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     apps,
     automations,
     sandbox: sandbox.venue,
-    mcp: config.mcp === true,
+    mcp: mcpOptions !== undefined,
     ...(door === undefined ? {} : { door }),
     onRequestOrigin: (origin) => {
       // Same-origin default for route-binding execution (04): no VENDO_BASE_URL
