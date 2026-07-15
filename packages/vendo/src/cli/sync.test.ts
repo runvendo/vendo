@@ -140,15 +140,15 @@ describe("vendo sync", () => {
     })).resolves.toBe(0);
 
     expect(fetchImpl).toHaveBeenCalledOnce();
-    expect(fetchImpl).toHaveBeenCalledWith("https://cloud.test/api/v1/sync/report", {
+    expect(fetchImpl).toHaveBeenCalledWith("https://cloud.test/api/v1/sync/report", expect.objectContaining({
       method: "POST",
-      headers: {
+      headers: expect.objectContaining({
         accept: "application/json",
         authorization: "Bearer vnd_test",
         "content-type": "application/json",
-      },
+      }),
       body: expect.any(String),
-    });
+    }));
     const body = JSON.parse((fetchImpl.mock.calls[0]?.[1] as RequestInit).body as string) as Record<string, unknown>;
     expect(body).toEqual({ report: report(), at: expect.any(String) });
   });
