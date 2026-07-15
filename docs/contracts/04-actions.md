@@ -8,6 +8,9 @@ Two halves: sync (a build step) and runtime.
 
 "Sync is a build step → tools can't go stale." `vendo init` is the visible, interactive first pass (09 §5); after that, sync runs inside build/dev-start. Missing `.vendo/` → full extract; skipping init never breaks.
 
+The build-step rule is scoped to SYNC — the deterministic extraction pipeline. The agent-layer refine engine (`vendo refine`, the author of `.vendo/capabilities.json` in §6) is explicitly a COMMAND: it runs a BYO model, proposes reviewable diffs (capabilities, overrides, brief), and applies them only on approval — it never runs inside build/dev-start, and it never writes `tools.json`. <!-- amended 2026-07-15: build-step-versus-command language scoped to sync per the approved extraction design (spec §3, ENG-250); refine engine landed in packages/vendo (refine.ts, cli/refine.ts). -->
+
+
 ```ts
 export function vendoSync(options: {
   root: string;                          // host app root
