@@ -50,6 +50,18 @@ const callFunction = async (action: string, payload?: Json): Promise<ToolOutcome
   }
 };
 
+const renderFailure = (error: unknown): void => {
+  // A scaffold that cannot boot must say so in the page (the pre-graduation
+  // renderer contains failures as visible notices), never fail as a blank
+  // surface plus an unhandled rejection.
+  console.error("[vendo-served-app] mount failed:", error);
+  const element = document.querySelector<HTMLElement>("#vendo-served-tree");
+  if (element === null) return;
+  element.setAttribute("role", "alert");
+  element.textContent = `This Vendo app failed to load: ${
+    error instanceof Error ? error.message : String(error)}`;
+};
+
 const mount = async (): Promise<void> => {
   const element = document.querySelector<HTMLElement>("#vendo-served-tree");
   if (element === null) throw new Error("The served-app tree mount is missing");
@@ -74,5 +86,7 @@ const mount = async (): Promise<void> => {
   );
 };
 
-Object.assign(globalThis, { VendoServedTreeRenderer: Object.freeze({ mount }) });
-void mount();
+const start = (): Promise<void> => mount().catch(renderFailure);
+
+Object.assign(globalThis, { VendoServedTreeRenderer: Object.freeze({ mount: start }) });
+void start();
