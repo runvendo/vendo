@@ -919,13 +919,18 @@ async function writePapermarkOverrides(appRoot: string): Promise<void> {
     throw new Error("Papermark e2e prep expected vendo init to write .vendo/tools.json before prep runs");
   }
   const extracted = isRecord(parsed) && Array.isArray(parsed.tools) ? parsed.tools : [];
+  // Param NAMES differ between the curated bindings ({documentId}) and
+  // route-scan output ({id}); match endpoints the way sync itself does
+  // (dedupKey): method + path with every {param} normalized to {}.
+  const endpointKey = (method: string, bindingPath: string): string =>
+    `${method} ${bindingPath.replace(/\{[^}]+\}/g, "{}")}`;
   const nameByBinding = new Map<string, string>();
   const extractedNames: string[] = [];
   for (const tool of extracted) {
     if (!isRecord(tool) || typeof tool.name !== "string" || !isRecord(tool.binding)) continue;
     extractedNames.push(tool.name);
     if (typeof tool.binding.method === "string" && typeof tool.binding.path === "string") {
-      nameByBinding.set(`${tool.binding.method} ${tool.binding.path}`, tool.name);
+      nameByBinding.set(endpointKey(tool.binding.method, tool.binding.path), tool.name);
     }
   }
 
@@ -933,7 +938,7 @@ async function writePapermarkOverrides(appRoot: string): Promise<void> {
   const curatedNames = new Set<string>();
   for (const curated of papermarkTools.tools) {
     const endpoint = `${curated.binding.method} ${curated.binding.path}`;
-    const extractedName = nameByBinding.get(endpoint);
+    const extractedName = nameByBinding.get(endpointKey(curated.binding.method, curated.binding.path));
     if (extractedName === undefined) {
       throw new Error(`Papermark e2e prep: extraction has no tool for curated endpoint ${endpoint}; re-pin the curated manifest against current extraction output`);
     }

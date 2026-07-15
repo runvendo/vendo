@@ -120,18 +120,21 @@ async function createUmamiFixture(): Promise<{ appRoot: string; logsDir: string 
   return { appRoot, logsDir };
 }
 
+// Mirrors real route-scan output: host_* names and its OWN param names
+// ({id} where the curated manifest says {documentId}/{linkId}), so the
+// endpoint matching must normalize params the way sync's dedupKey does.
 const papermarkExtractionTools = [
-  { name: "getTeams", method: "GET", path: "/api/teams" },
-  { name: "getTeamsTeamIdDocuments", method: "GET", path: "/api/teams/{teamId}/documents" },
-  { name: "getTeamsTeamIdDocumentsDocumentIdViewsCount", method: "GET", path: "/api/teams/{teamId}/documents/{documentId}/views-count" },
-  { name: "getTeamsTeamIdViewers", method: "GET", path: "/api/teams/{teamId}/viewers" },
-  { name: "getTeamsTeamIdDocumentsDocumentIdLinks", method: "GET", path: "/api/teams/{teamId}/documents/{documentId}/links" },
-  { name: "getTeamsTeamIdDatarooms", method: "GET", path: "/api/teams/{teamId}/datarooms" },
-  { name: "postLinks", method: "POST", path: "/api/links" },
-  { name: "postTeamsTeamIdDocumentsDocumentIdAddToDataroom", method: "POST", path: "/api/teams/{teamId}/documents/{documentId}/add-to-dataroom" },
-  { name: "putLinksLinkId", method: "PUT", path: "/api/links/{linkId}" },
+  { name: "host_teams_list", method: "GET", path: "/api/teams" },
+  { name: "host_teams_documents_list", method: "GET", path: "/api/teams/{teamId}/documents" },
+  { name: "host_teams_documents_views_count_list", method: "GET", path: "/api/teams/{teamId}/documents/{id}/views-count" },
+  { name: "host_teams_viewers_list", method: "GET", path: "/api/teams/{teamId}/viewers" },
+  { name: "host_teams_documents_links_list", method: "GET", path: "/api/teams/{teamId}/documents/{id}/links" },
+  { name: "host_teams_datarooms_list", method: "GET", path: "/api/teams/{teamId}/datarooms" },
+  { name: "host_links_create", method: "POST", path: "/api/links" },
+  { name: "host_teams_documents_add_to_dataroom", method: "POST", path: "/api/teams/{teamId}/documents/{id}/add-to-dataroom" },
+  { name: "host_links_update", method: "PUT", path: "/api/links/{id}" },
   // Extraction noise the curated surface must disable.
-  { name: "getAccount", method: "GET", path: "/api/account" },
+  { name: "host_account_get", method: "GET", path: "/api/account" },
 ] as const;
 
 function papermarkExtractionToolsJson(): string {
@@ -409,15 +412,16 @@ describe("prepareE2eRepo", () => {
     expect(overrides.format).toBe("vendo/overrides@1");
     // Curated endpoints keep their extraction names and gain descriptions +
     // corrected risk; every other extracted tool is disabled.
-    expect(overrides.tools["getTeams"]).toMatchObject({ risk: "read" });
-    expect(overrides.tools["getTeams"]!.description).toContain("Corpus E2E Team");
-    expect(overrides.tools["getTeamsTeamIdDocuments"]).toMatchObject({ risk: "read" });
-    expect(overrides.tools["getTeamsTeamIdDocuments"]!.description).toContain("seeded document names");
-    expect(overrides.tools["postLinks"]).toMatchObject({ risk: "write" });
-    expect(overrides.tools["putLinksLinkId"]).toMatchObject({ risk: "write" });
-    expect(overrides.tools["postTeamsTeamIdDocumentsDocumentIdAddToDataroom"]).toMatchObject({ risk: "write" });
-    expect(overrides.tools["getTeams"]!.disabled).toBeUndefined();
-    expect(overrides.tools["getAccount"]).toEqual({ disabled: true });
+    expect(overrides.tools["host_teams_list"]).toMatchObject({ risk: "read" });
+    expect(overrides.tools["host_teams_list"]!.description).toContain("Corpus E2E Team");
+    expect(overrides.tools["host_teams_documents_list"]).toMatchObject({ risk: "read" });
+    expect(overrides.tools["host_teams_documents_list"]!.description).toContain("seeded document names");
+    expect(overrides.tools["host_teams_documents_views_count_list"]).toMatchObject({ risk: "read" });
+    expect(overrides.tools["host_links_create"]).toMatchObject({ risk: "write" });
+    expect(overrides.tools["host_links_update"]).toMatchObject({ risk: "write" });
+    expect(overrides.tools["host_teams_documents_add_to_dataroom"]).toMatchObject({ risk: "write" });
+    expect(overrides.tools["host_teams_list"]!.disabled).toBeUndefined();
+    expect(overrides.tools["host_account_get"]).toEqual({ disabled: true });
     // The init-scaffolded handler is already correct; prep must not rewrite it.
     expect(route).toContain("nextVendoHandler(vendo)");
     expect(overlay).toContain("VendoOverlay");
