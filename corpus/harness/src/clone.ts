@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ManifestEntry } from "./manifest.js";
@@ -59,8 +59,16 @@ async function checkedGit(gitBin: string, args: readonly string[], cwd: string):
 }
 
 async function isGitWorkTree(gitBin: string, repoDir: string): Promise<boolean> {
-  const result = await runGit(gitBin, ["-C", repoDir, "rev-parse", "--is-inside-work-tree"], process.cwd());
-  return result.code === 0 && result.stdout.trim() === "true";
+  // corpus/.repos sits inside the Vendo worktree: a cached dir that lost its
+  // .git resolves git commands against the ENCLOSING repo, so being inside a
+  // work tree is not enough — the work tree's root must be repoDir itself.
+  const result = await runGit(gitBin, ["-C", repoDir, "rev-parse", "--show-toplevel"], process.cwd());
+  if (result.code !== 0) return false;
+  const [toplevel, expected] = await Promise.all([
+    realpath(result.stdout.trim()).catch(() => null),
+    realpath(repoDir).catch(() => null),
+  ]);
+  return toplevel !== null && toplevel === expected;
 }
 
 async function ensureOrigin(gitBin: string, repoDir: string, gitUrl: string): Promise<void> {
