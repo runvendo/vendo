@@ -100,12 +100,26 @@ export function VendoOverlay({
     const previousOverflow = body.style.overflow;
     body.style.overflow = "hidden";
     const inerted: Element[] = [];
-    for (const child of Array.from(body.children)) {
-      if (child === wrapper || child.tagName === "SCRIPT" || child.tagName === "STYLE" || child.hasAttribute("inert")) continue;
+    const inert = (child: Element) => {
+      if (child === wrapper || child.tagName === "SCRIPT" || child.tagName === "STYLE" || child.hasAttribute("inert")) return;
       child.setAttribute("inert", "");
       inerted.push(child);
-    }
+    };
+    for (const child of Array.from(body.children)) inert(child);
+    // ENG-228: body children can also appear WHILE the overlay is open — the
+    // page/palette TakeoverPortals mount on a breakpoint flip, hosts mint
+    // toast portals. The open-time snapshot alone would leave those
+    // interactive behind the modal scrim, so keep watching.
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element && node.parentElement === body) inert(node);
+        }
+      }
+    });
+    observer.observe(body, { childList: true });
     return () => {
+      observer.disconnect();
       body.style.overflow = previousOverflow;
       for (const element of inerted) element.removeAttribute("inert");
     };

@@ -174,6 +174,22 @@ describe("mobile takeover (ENG-228)", () => {
     await waitFor(() => expect(panel().style.getPropertyValue("--fl-kb-inset")).toBe("0px"));
   });
 
+  it("inerts body children that mount while the overlay is open (late takeover portals)", async () => {
+    installMatchMedia(true);
+    const { unmount } = render(<VendoProvider client={client}><VendoOverlay defaultOpen /></VendoProvider>);
+    expect(panel()).toBeTruthy();
+    // A body child appearing AFTER the overlay opened — e.g. VendoPage's
+    // TakeoverPortal mounting on a breakpoint flip, or a host toast portal.
+    // The open-time snapshot alone would leave it interactive behind the
+    // modal scrim.
+    const late = document.createElement("div");
+    document.body.appendChild(late);
+    await waitFor(() => expect(late.hasAttribute("inert")).toBe(true));
+    unmount();
+    expect(late.hasAttribute("inert")).toBe(false);
+    late.remove();
+  });
+
   it("does not track the keyboard on desktop", () => {
     installMatchMedia(false);
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 844 });
