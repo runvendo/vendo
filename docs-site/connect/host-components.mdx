@@ -11,6 +11,8 @@ export interface RegisteredComponent {
   name: string;
   description: string;
   propsSchema: StandardSchema;
+  propsJsonSchema?: JsonSchema;   // prompt-safe JSON Schema for generation
+  examples?: string[];            // JSON prop examples shown to the model
   remixable?: boolean;
 }
 
@@ -20,6 +22,59 @@ export type ComponentCatalog = ReadonlyArray<RegisteredComponent>;
 Names are PascalCase and unique. Descriptions and prop schemas are generation
 context. Vendo prefers host components when the catalog covers the requested
 UI.
+
+## Register a catalog
+
+Pass the catalog to `createVendo` so its entries flow into the generation
+prompt and the engine validates emitted props against the schema before
+render. Keep each `name` identical to the key you use in the client
+`components` map so `source:"host"` nodes resolve without an alias.
+
+```ts
+import { createVendo } from "@vendoai/vendo/server";
+import { z } from "zod";
+
+const catalog = [
+  {
+    name: "MapleSpendingDonut",
+    description:
+      "Category breakdown of spending. Use when the user asks to see spend by category.",
+    propsSchema: z.object({
+      categories: z.array(z.object({ label: z.string(), amount: z.number() })),
+      currency: z.string().default("USD"),
+    }),
+    propsJsonSchema: {
+      type: "object",
+      properties: {
+        categories: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { label: { type: "string" }, amount: { type: "number" } },
+            required: ["label", "amount"],
+          },
+        },
+        currency: { type: "string" },
+      },
+      required: ["categories"],
+    },
+    examples: [
+      '{ "categories": [{ "label": "Groceries", "amount": 412.55 }], "currency": "USD" }',
+    ],
+  },
+] as const;
+
+const vendo = createVendo({ model, principal, catalog });
+```
+
+- `description` is selection guidance for the model. State when to pick the
+  component and when to skip it — hedged copy leads to worse selection.
+- `propsSchema` validates props at render time. Bindings for `$path`,
+  `$state`, and zero-arg actions are exempt from that validation.
+- `propsJsonSchema` is the prompt-safe form the model sees. Keep it
+  serializable so an init or sync flow can reuse the same contract later.
+- `examples` are JSON strings the model can copy from. One or two concrete
+  shapes usually beat a long prose description.
 
 The prewired primitives are `Stack`, `Row`, `Grid`, `Text`, `Skeleton`,
 `Surface`, `Divider`, `Card`, `Button`, `Input`, `Select`, `Table`, `Badge`,

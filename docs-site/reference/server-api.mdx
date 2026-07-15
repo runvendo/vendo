@@ -14,12 +14,14 @@ import type { ActionsRegistry, Connector } from "@vendoai/actions";
 import type { VendoGuard, PolicyConfig, Judge } from "@vendoai/guard";
 import type { AppsRuntime, SandboxAdapter } from "@vendoai/apps";
 import type { AutomationsEngine } from "@vendoai/automations";
+import type { ComponentCatalog } from "@vendoai/core";
 
 export function createVendo(config: {
   model: LanguageModel;                       // the one required thing
   principal: (req: Request) => Promise<Principal | null>;   // host session → principal; null → ephemeral anonymous
   store?: VendoStore;                         // default: createStore() (PGlite, .vendo/data)
   sandbox?: SandboxAdapter;                   // e.g. vendoSandbox(), e2bSandbox({ apiKey }), modalSandbox({ ... }); absent → rung 1 only
+  catalog?: ComponentCatalog;                 // host components exposed to the generation prompt; see /connect/host-components
   connectors?: Connector[];
   actAs?: ActAs;
   policy?: PolicyConfig;
