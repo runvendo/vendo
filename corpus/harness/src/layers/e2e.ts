@@ -9,6 +9,7 @@ export interface E2eLocator {
   fill?(value: string): Promise<void>;
   press?(key: string): Promise<void>;
   textContent?(): Promise<string | null>;
+  allTextContents?(): Promise<string[]>;
   first?(): E2eLocator;
 }
 
@@ -308,13 +309,21 @@ export async function evaluateAssertion(
   const id = assertion.id ?? assertion.kind;
   if (assertion.kind === "tool-called") {
     const matches = signals.toolCalls.filter((call) => textMatches(assertion.name, call.name));
+    // Chat tool calls execute server-side in the composed umbrella (04 §4),
+    // so many never surface as page-originated network requests. The thread
+    // chrome renders every call as an "fl-tool-label" chip ("Tool: <name>");
+    // count those too.
+    const domMatches = matches.length > 0 || page === undefined
+      ? 0
+      : await countToolCallDomMatches(page, assertion.name);
+    const observed = matches.length + domMatches;
     const minimum = assertion.minimum ?? 1;
     return {
       id,
       kind: assertion.kind,
-      pass: matches.length >= minimum,
-      detail: matches.length >= minimum
-        ? `${matches.length} matching tool call(s) observed`
+      pass: observed >= minimum,
+      detail: observed >= minimum
+        ? `${observed} matching tool call(s) observed`
         : `expected at least ${minimum} tool call(s); observed ${signals.toolCalls.map((call) => call.name).join(", ") || "none"}`,
     };
   }
@@ -687,18 +696,11 @@ async function attachNetworkSignals(
 }
 
 async function loadManifestToolBindings(repoDir: string): Promise<ManifestToolBinding[]> {
-  // Fixtures whose curated Layer 3 manifest must not clobber the sync-managed
-  // extraction pin (papermark) ship it as .vendo/tools.corpus.json instead of
-  // .vendo/tools.json; prefer the curated manifest when it exists.
   let raw: string;
   try {
-    raw = await readFile(path.join(repoDir, ".vendo/tools.corpus.json"), "utf8");
+    raw = await readFile(path.join(repoDir, ".vendo/tools.json"), "utf8");
   } catch {
-    try {
-      raw = await readFile(path.join(repoDir, ".vendo/tools.json"), "utf8");
-    } catch {
-      return [];
-    }
+    return [];
   }
   const value = JSON.parse(raw) as unknown;
   const tools = isRecord(value) && Array.isArray(value.tools) ? value.tools : Array.isArray(value) ? value : [];
@@ -787,6 +789,12 @@ async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number): Pr
   }
   const suffix = lastError instanceof Error ? ` Last error: ${lastError.message}` : "";
   throw new Error(`Timed out after ${timeoutMs}ms.${suffix}`);
+}
+
+async function countToolCallDomMatches(page: E2ePage, name: TextMatcher): Promise<number> {
+  const labels = page.locator(".fl-tool-label");
+  const texts = await labels.allTextContents?.().catch(() => [] as string[]) ?? [];
+  return texts.filter((text) => textMatches(name, text.replace(/^Tool:\s*/i, ""))).length;
 }
 
 async function countViewDomMatches(page: E2ePage, assertion: Extract<ConversationAssertion, { kind: "view-rendered" }>): Promise<number> {

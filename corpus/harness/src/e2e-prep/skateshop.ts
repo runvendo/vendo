@@ -1,24 +1,13 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { vendoRouteFilePath } from "./route-path.js";
-
-const skateshopInstructions = [
-  "This corpus run uses Skateshop seed data from src/assets/data/products.json, stored in the app database by the corpus-only API route on first use.",
-  "Seeded products include Youness gradient cuts impact 8.375 skateboard deck, Max mean pets paintings impact light 8.25 skateboard deck, Nike Streakfly, Nike InfinityRN 4, Nike Air Max 2013, and Nike Pegasus 40 BTC.",
-  "Always call list_skateshop_catalog_products or search_skateshop_products before answering product, catalog, item, inventory, compare, cart, checkout, or order prompts. Do not answer from memory.",
-  "For list, browse, show, or compare prompts, render a Table view with columns Product, Price, Inventory, Rating, and Category, then give a one-sentence summary.",
-  "For a single-product find prompt, render a compact view that visibly includes the exact product name, price, inventory, rating, category, and subcategory.",
-  "For cart prompts, search the product first if needed, then call exactly one mutating cart tool.",
-  "For order prompts that mention default checkout details, call get_skateshop_checkout_defaults after finding the product, then call exactly one mutating order tool.",
-  "Mutating cart/order tools are approval-gated, so the approval card is the expected visible outcome.",
-].join("\n");
+import { mountCorpusOverlay } from "./overlay-mount.js";
 
 const skateshopTools = {
   format: "vendo/tools@1",
   tools: [
     {
       name: "list_skateshop_catalog_products",
-      description: "List Skateshop catalog products/items with price, inventory, rating, category, and subcategory. Use for browse, show, deck, store, inventory, and table requests.",
+      description: "List Skateshop catalog products/items with price, inventory, rating, category, and subcategory. Use for browse, show, deck, store, inventory, and table requests. Always call this (or search_skateshop_products) before answering any product/catalog/cart/order prompt — never answer from memory. Seeded products include Youness gradient cuts impact 8.375 skateboard deck, Max mean pets paintings impact light 8.25 skateboard deck, Nike Streakfly, Nike InfinityRN 4, Nike Air Max 2013, and Nike Pegasus 40 BTC. For list/browse/compare prompts render a Table view with columns Product, Price, Inventory, Rating, and Category, then give a one-sentence summary.",
       inputSchema: {
         type: "object",
         properties: {
@@ -34,7 +23,7 @@ const skateshopTools = {
     },
     {
       name: "search_skateshop_products",
-      description: "Search Skateshop products/items by exact or partial product name before comparing, adding to cart, or placing an order. Returns product ids, price, inventory, rating, category, and store id.",
+      description: "Search Skateshop products/items by exact or partial product name before comparing, adding to cart, or placing an order. Returns product ids, price, inventory, rating, category, and store id. For a single-product find prompt, render a compact view that visibly includes the exact product name, price, inventory, rating, category, and subcategory.",
       inputSchema: {
         type: "object",
         properties: {
@@ -50,7 +39,7 @@ const skateshopTools = {
     },
     {
       name: "add_skateshop_item_to_cart",
-      description: "Add one Skateshop product item to the current browser cart. Use after resolving the product with search_skateshop_products. Accepts productName when the exact seeded name is known.",
+      description: "Add one Skateshop product item to the current browser cart. Use after resolving the product with search_skateshop_products; call exactly one mutating cart tool per prompt. Approval-gated, so the approval card is the expected visible outcome. Accepts productName when the exact seeded name is known.",
       inputSchema: {
         type: "object",
         properties: {
@@ -72,7 +61,7 @@ const skateshopTools = {
     },
     {
       name: "place_skateshop_order",
-      description: "Place a minimal Skateshop checkout order for one product using default corpus checkout details. Use after resolving the product with search_skateshop_products. This is approval-gated.",
+      description: "Place a minimal Skateshop checkout order for one product using default corpus checkout details. Use after resolving the product with search_skateshop_products, calling get_skateshop_checkout_defaults first when the prompt mentions default checkout details; call exactly one mutating order tool per prompt. This is approval-gated, so the approval card is the expected visible outcome.",
       inputSchema: {
         type: "object",
         properties: {
@@ -589,23 +578,13 @@ export async function prepareSkateshopE2eRepo(appRoot: string, logsDir: string):
   await patchSkateshopUserQuery(appRoot);
   actions.push("patched Skateshop cached user query corpus bypass");
 
-  const routePath = await vendoRouteFilePath(appRoot, "src/app");
-  await patchFile(routePath, (source) => {
-    if (source.includes("storage: false") && source.includes("instructionsExtra")) return source;
-    return source.replace(
-      "export const { GET, POST } = createVendoHandler();",
-      `export const { GET, POST } = createVendoHandler({
-  storage: false,
-  maxSteps: 8,
-  instructionsExtra: ${JSON.stringify(skateshopInstructions)},
-});`,
-    );
-  });
-  actions.push("patched Vendo handler for e2e-only in-memory storage and Skateshop tool guidance");
-
-  const rootPath = path.join(appRoot, "src/app/vendo-root.tsx");
-  await patchFile(rootPath, patchSkateshopRoot);
-  actions.push("patched Vendo root to accept per-attempt thread ids");
+  // The curated manifest is the server-side tool source (createActions reads
+  // .vendo/tools.json); guidance lives in the tool descriptions since the old
+  // handler-level instructionsExtra knob no longer exists, and the chat
+  // surface ships as the corpus-mounted VendoOverlay (init wires the VendoRoot
+  // provider only).
+  await mountCorpusOverlay(appRoot, "src/app");
+  actions.push("mounted the corpus Vendo overlay");
 
   await writeFile(logPath, `${actions.join("\n")}\n`);
   return [logPath];
@@ -706,26 +685,6 @@ async function patchSkateshopUserQuery(appRoot: string): Promise<void> {
       .replace('import { currentUser } from "@clerk/nextjs/server"\n', "")
       .replace("export const getCachedUser = cache(currentUser)", "export const getCachedUser = cache(async () => null)");
   });
-}
-
-function patchSkateshopRoot(source: string): string {
-  let next = source;
-  if (!next.includes("threadId={threadId}")) {
-    next = next.replace(
-      "export function AppVendoRoot({ children }: { children: ReactNode }) {\n  return (",
-      `export function AppVendoRoot({ children }: { children: ReactNode }) {
-  const threadId = typeof window === "undefined"
-    ? "vendo"
-    : new URLSearchParams(window.location.search).get("vendoThread") ?? "vendo";
-
-  return (`,
-    );
-    next = next.replace(
-      /<VendoRoot\b([^>]*)>/,
-      (match, attrs: string) => match.includes("threadId=") ? match : `<VendoRoot${attrs} threadId={threadId}>`,
-    );
-  }
-  return next;
 }
 
 async function firstExisting(filePaths: string[]): Promise<string | null> {
