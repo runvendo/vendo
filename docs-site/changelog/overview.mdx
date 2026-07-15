@@ -17,6 +17,20 @@ not arrived yet render as skeletons and swap in when their source closes.
 You do not need to change your client. See
 [Generated UI and apps](/concepts/generated-ui#progressive-generation).
 
+**Pin drift detection and rebase.** When you update a host component and run
+`vendo sync`, user forks of that remixable slot are now marked drifted
+everywhere they surface: the tree renderer shows an in-surface notice, the
+`open()` payload carries a server-authoritative `pinDrift`, edit results
+include `driftedPins`, and the sync report names each drifted slot. The new
+`vendo_apps_rebase_pin` agent tool (risk `write`) and
+`POST /api/vendo/apps/:id/rebase-pin` route re-fork the pin from the new
+baseline and replay the recorded edit trail through the model, producing one
+new version. Rebase is all-or-nothing and requires an explicit user or host
+ask — nothing auto-rebases. The new version invalidates any in-client
+approval that was granted against the pre-rebase content. See
+[Host components](/connect/host-components#drift-and-rebase) and the
+[HTTP routes reference](/reference/http-routes).
+
 **Stop a running automation.** `POST /api/vendo/runs/:id/stop` cancels an
 in-flight run cooperatively — the current step finishes, outstanding tool
 calls drain, and the run reaches a cancelled terminal state. Parked

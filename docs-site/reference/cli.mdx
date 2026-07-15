@@ -170,6 +170,12 @@ breaking: host_listAccounts input-narrowed
 impact: host_listAccounts breaks 1 automation, 1 grant
 ```
 
+The report names any remixable slots whose captured baseline changed and
+points to rebase — user forks of those pins are now drifted and keep
+rendering their previous content until an explicit rebase replays the
+recorded edit trail onto the new baseline. See
+[Host components](/connect/host-components#drift-and-rebase).
+
 Exit codes:
 
 - `0`: success, including fail-soft warnings

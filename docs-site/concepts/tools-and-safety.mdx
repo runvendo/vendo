@@ -29,6 +29,10 @@ chat, SSE, and the MCP door reach the same decision.
   destructive actions, or egress keeps the approval card. If an edit
   classified as tree-only unexpectedly emits server code, the runtime fails
   closed before the sandbox runs or the app is persisted.
+- `vendo_apps_rebase_pin` is `write`. It replays a remixed pin's recorded
+  edit trail onto a newly captured host baseline and produces one new app
+  version. Rebase is user- or host-invoked only; the agent never
+  auto-rebases. See [Host components](/connect/host-components#drift-and-rebase).
 
 Custom tools you register are unaffected; they continue to use their declared
 `ToolDescriptor.risk`.

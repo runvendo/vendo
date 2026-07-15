@@ -130,6 +130,45 @@ Sync writes a baseline to `.vendo/remixable/<slot>.json`. Shipping a pin always
 requires host review of the net diff. A drifted or erroring pin falls back to
 the original component.
 
+## Drift and rebase
+
+When you update a host component and run `vendo sync`, the new baseline
+overwrites `.vendo/remixable/<slot>.json`. Any existing user forks of that pin
+are now **drifted**: their recorded `pins[].base` hash no longer matches the
+captured baseline. Sync names each drifted slot in its report and points to
+rebase.
+
+Vendo surfaces drift everywhere the fork is opened or edited:
+
+- The tree renderer shows an in-surface notice above the fork ("The host
+  updated `<slot>` … Ask the agent to rebase").
+- `open()` attaches a server-authoritative `pinDrift` array to the payload.
+- Edit results include `driftedPins` so an agent editing a stale fork learns
+  about it at edit time.
+- Ship-diff review fail-closes new in-client approvals for drifted pins.
+
+Drifted forks keep rendering their previous content, sandboxed and untouched.
+Nothing auto-rebases and no agent turn is auto-triggered — a rebase rewrites
+the fork through the model, so it stays behind an explicit user or host ask.
+
+**Rebase** re-forks the pin from the new baseline and replays the recorded
+edit trail through the model, producing one new app version:
+
+```ts
+await client.apps.rebasePin(appId, slot);
+```
+
+Rebase is all-or-nothing. Any replay failure persists nothing and the
+pre-rebase version stays live; the result reports `replayed`, `remaining`, and
+which intent failed with its issues. On success, `pins[].base` moves to the
+new baseline hash and the new version invalidates any existing in-client
+approval — a reviewer must re-approve.
+
+Rebase requires a tree (rung 1) app with a recorded edit trail. A pin that
+was forked without any subsequent edits, or an app that has graduated to a
+served HTTP surface, fails closed with `conflict` — there is no reproducible
+trail to replay.
+
 ## When static capture cannot see the source
 
 `vendo sync` never skips a remixable slot silently. When it cannot follow the
