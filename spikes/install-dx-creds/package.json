@@ -1,0 +1,35 @@
+{
+  "name": "@vendoai/spike-install-dx-creds",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SPIKE (not shipped): can authed Claude Code / Codex CLI sessions power Vendo's dev-mode agent loop as persistent-process ai-SDK providers? Prototypes + latency/approval-semantics evidence for Install DX wave 2 (ENG-337). Nothing here ships.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "measure:baseline": "node dist/run-baseline.js",
+    "measure:claude": "node dist/run-claude.js",
+    "measure:codex": "node dist/run-codex.js",
+    "measure:all": "node dist/run-all.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
