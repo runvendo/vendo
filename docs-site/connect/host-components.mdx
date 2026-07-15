@@ -164,5 +164,25 @@ acknowledged in `.vendo/overrides.json`:
 }
 ```
 
+## Remixing a captured slot
+
+`createVendo` loads every valid `.vendo/remixable/*.json` at startup and hands
+the baselines to the apps runtime. A missing directory means no baselines. Files
+that fail schema validation are skipped with a warning and do not break
+composition.
+
+Once a slot is captured, an edit request against the app (`edit(appId,
+instruction)`, exposed on the wire as `POST /api/vendo/apps/:id/edit`) can fork
+the pin instead of only rewriting generated content. The runtime copies the
+captured source into a deterministic generated component, renders it through
+the same sandboxed jail as any other generated component, and records the pin
+on the app version as `{ slot, base: <baseline hash> }`. A follow-up edit that
+touches the pinned subtree lands as a new version on the same app.
+
+Baselines carry an `exportable` flag. When a pinned slot's baseline is
+`exportable: false`, exporting that app fails with the `baseline-forbids-export`
+error code. Set `exportable: true` on baselines you are willing to include in
+`.vendoapp` bundles that leave the host.
+
 Host components render natively. Generated components remain in the sandboxed
 iframe jail.
