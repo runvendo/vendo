@@ -276,7 +276,7 @@ importers:
     devDependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
+        version: 3.0.12(zod@4.4.3)
       '@playwright/test':
         specifier: ^1.48.0
         version: 1.61.1
@@ -291,7 +291,7 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       ai:
         specifier: 6.0.28
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)
@@ -340,7 +340,7 @@ importers:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: ^3.0.12
-        version: 3.0.12(zod@3.25.76)
+        version: 3.0.12(zod@4.4.3)
       '@vendoai/ui':
         specifier: workspace:*
         version: link:../../../packages/ui
@@ -349,7 +349,7 @@ importers:
         version: link:../../../packages/vendo
       ai:
         specifier: ^6.0.28
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       express:
         specifier: ^5.0.0
         version: 5.2.1
@@ -417,13 +417,13 @@ importers:
     devDependencies:
       '@ai-sdk/anthropic':
         specifier: ^3.0.12
-        version: 3.0.12(zod@3.25.76)
+        version: 3.0.12(zod@4.4.3)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
       ai:
         specifier: ^6.0.0
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -451,7 +451,7 @@ importers:
         version: 22.20.0
       ai:
         specifier: ^6.0.0
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -504,13 +504,13 @@ importers:
     devDependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
-        version: 1.29.0(zod@3.25.76)
+        version: 1.29.0(zod@4.4.3)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
       ai:
         specifier: ^6.0.0
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
@@ -525,10 +525,10 @@ importers:
     dependencies:
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.7.4
-        version: 1.7.4(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@3.25.76)
+        version: 1.7.4(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
-        version: 1.29.0(zod@3.25.76)
+        version: 1.29.0(zod@4.4.3)
       '@vendoai/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -562,7 +562,7 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       ai:
         specifier: ^6.0.0
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -596,7 +596,7 @@ importers:
     devDependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
-        version: 1.29.0(zod@3.25.76)
+        version: 1.29.0(zod@4.4.3)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -617,7 +617,7 @@ importers:
     devDependencies:
       '@ai-sdk/anthropic':
         specifier: ^3.0.12
-        version: 3.0.12(zod@3.25.76)
+        version: 3.0.12(zod@4.4.3)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -650,7 +650,7 @@ importers:
         version: link:../../packages/vendo
       ai:
         specifier: ^6.0.0
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
@@ -703,19 +703,19 @@ importers:
     devDependencies:
       '@ai-sdk/anthropic':
         specifier: 3.0.12
-        version: 3.0.12(zod@3.25.76)
+        version: 3.0.12(zod@4.4.3)
       '@ai-sdk/openai':
         specifier: 3.0.9
-        version: 3.0.9(zod@3.25.76)
+        version: 3.0.9(zod@4.4.3)
       '@ai-sdk/openai-compatible':
         specifier: 2.0.9
-        version: 2.0.9(zod@3.25.76)
+        version: 2.0.9(zod@4.4.3)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
       ai:
         specifier: 6.0.28
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -886,7 +886,7 @@ importers:
     dependencies:
       '@ai-sdk/react':
         specifier: ^3.0.30
-        version: 3.0.226(react@19.2.7)(zod@3.25.76)
+        version: 3.0.226(react@19.2.7)(zod@4.4.3)
       '@vendoai/core':
         specifier: workspace:*
         version: link:../core
@@ -911,7 +911,7 @@ importers:
         version: 4.12.1(playwright-core@1.61.1)
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.7.4
-        version: 1.7.4(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@3.25.76)
+        version: 1.7.4(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       '@playwright/test':
         specifier: ^1.49.0
         version: 1.61.1
@@ -929,7 +929,7 @@ importers:
         version: 19.2.3(@types/react@19.2.17)
       ai:
         specifier: ^6.0.28
-        version: 6.0.224(zod@3.25.76)
+        version: 6.0.224(zod@4.4.3)
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1
@@ -996,7 +996,7 @@ importers:
         version: 19.2.17
       ai:
         specifier: 6.0.28
-        version: 6.0.28(zod@3.25.76)
+        version: 6.0.28(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.7
@@ -1056,6 +1056,25 @@ importers:
       fast-check:
         specifier: ^3.23.0
         version: 3.23.2
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+
+  spikes/install-dx-creds:
+    dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: ^0.3.0
+        version: 0.3.210(@anthropic-ai/sdk@0.111.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -1134,6 +1153,54 @@ packages:
   '@ampproject/remapping@2.3.0':
     resolution: {integrity: sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw==}
     engines: {node: '>=6.0.0'}
+
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.210':
+    resolution: {integrity: sha512-twQYlDQvVf0ilWQuvwZ8RcglizPNZt9Xyi10IhxDQEGm7bmYFTB0OUAIVKsYMlL1vjI9ZLCdNyPovo9FCaiehw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.210':
+    resolution: {integrity: sha512-QcBJIphqHbPJtV0f9UOU8KJPeDLKjgNmPUMQZCW/aVYs09b2rFGTp6x0QqJ6qGzDc0MDRa3gZre07TjklGES5g==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.210':
+    resolution: {integrity: sha512-PSI9VzaYxhmkNdyiICknGRHA7xPARTXn8rHjhcOqGgMv2gRipxeFIBa/bZAhc+bG6rLFSG9P6S71c1n1hg630w==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.210':
+    resolution: {integrity: sha512-jY+7Thi+XJREKOSPfW4zr95XNIInHOkzgZ7/jIL6I9v5YQlbmcaYiBjh/zXNDPnjwZHeZkbudsaiF8Lxfej6ww==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.210':
+    resolution: {integrity: sha512-OVlYOr3rZIQhue4cuwe/185Uw+eKhPpNSYk873QcI/39nEtGe51aKQvjccKxedEQedt9lDpBwv0hegyfw0/99w==}
+    cpu: [x64]
+    os: [linux]
+
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.210':
+    resolution: {integrity: sha512-uk+tVP0fJm9e2PTyW2ps1WSl3BrABcqTT6vhZVUMX0ccMFoAGEsIpBTyc5BjyFYLkCRWCK+i6GCT4+0MDiWnEQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.210':
+    resolution: {integrity: sha512-IHgcG7wx72AVV3UpJgnTIJYL1sbl9wjPUieEEBCzytwkLEhuRnN009dXxt6RGc3F9gOtmE4Dct7iFae3OPjvsA==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.210':
+    resolution: {integrity: sha512-FwhWDbNpbSJWHZ7e4Y62J1TEy1mUeDXbJ22RgSfh423UCFztGPhgUlz/YDEjFx30x/CDU7g9YsViqjGeN4PlAg==}
+    cpu: [x64]
+    os: [win32]
+
+  '@anthropic-ai/claude-agent-sdk@0.3.210':
+    resolution: {integrity: sha512-siEV0CMN8N02wA3r1kUsiBc5Il1Qv2M761eFKq5q2vsAbsWSicjQI6mCVFj73tge4CuDy51oRSXz3CLrjtjSNA==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      '@anthropic-ai/sdk': '>=0.93.0'
+      '@modelcontextprotocol/sdk': ^1.29.0
+      zod: ^4.0.0
 
   '@anthropic-ai/sdk@0.111.0':
     resolution: {integrity: sha512-1hUqKi+uJQoS5X90+InwHbFAXMvgq0DnsC5hVLEeSRaODiU5WvmqDAcVCmGS2wC0pN9Z8jtWCbWw7JLzeDdm/Q==}
@@ -6499,6 +6566,9 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
@@ -6510,6 +6580,12 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.5(zod@3.25.76)
       zod: 3.25.76
 
+  '@ai-sdk/anthropic@3.0.12(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.2
+      '@ai-sdk/provider-utils': 4.0.5(zod@4.4.3)
+      zod: 4.4.3
+
   '@ai-sdk/gateway@3.0.11(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.2
@@ -6517,31 +6593,38 @@ snapshots:
       '@vercel/oidc': 3.1.0
       zod: 3.25.76
 
-  '@ai-sdk/gateway@3.0.148(zod@3.25.76)':
+  '@ai-sdk/gateway@3.0.11(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.2
+      '@ai-sdk/provider-utils': 4.0.4(zod@4.4.3)
+      '@vercel/oidc': 3.1.0
+      zod: 4.4.3
+
+  '@ai-sdk/gateway@3.0.148(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.14
-      '@ai-sdk/provider-utils': 4.0.38(zod@3.25.76)
+      '@ai-sdk/provider-utils': 4.0.38(zod@4.4.3)
       '@vercel/oidc': 3.2.0
-      zod: 3.25.76
+      zod: 4.4.3
 
-  '@ai-sdk/openai-compatible@2.0.9(zod@3.25.76)':
+  '@ai-sdk/openai-compatible@2.0.9(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.2
-      '@ai-sdk/provider-utils': 4.0.5(zod@3.25.76)
-      zod: 3.25.76
+      '@ai-sdk/provider-utils': 4.0.5(zod@4.4.3)
+      zod: 4.4.3
 
-  '@ai-sdk/openai@3.0.9(zod@3.25.76)':
+  '@ai-sdk/openai@3.0.9(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.2
-      '@ai-sdk/provider-utils': 4.0.5(zod@3.25.76)
-      zod: 3.25.76
+      '@ai-sdk/provider-utils': 4.0.5(zod@4.4.3)
+      zod: 4.4.3
 
-  '@ai-sdk/provider-utils@4.0.38(zod@3.25.76)':
+  '@ai-sdk/provider-utils@4.0.38(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.14
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.1.0
-      zod: 3.25.76
+      zod: 4.4.3
 
   '@ai-sdk/provider-utils@4.0.4(zod@3.25.76)':
     dependencies:
@@ -6550,12 +6633,26 @@ snapshots:
       eventsource-parser: 3.1.0
       zod: 3.25.76
 
+  '@ai-sdk/provider-utils@4.0.4(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.2
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.1.0
+      zod: 4.4.3
+
   '@ai-sdk/provider-utils@4.0.5(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.2
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.1.0
       zod: 3.25.76
+
+  '@ai-sdk/provider-utils@4.0.5(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.2
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.1.0
+      zod: 4.4.3
 
   '@ai-sdk/provider@3.0.14':
     dependencies:
@@ -6565,10 +6662,10 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@ai-sdk/react@3.0.226(react@19.2.7)(zod@3.25.76)':
+  '@ai-sdk/react@3.0.226(react@19.2.7)(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider-utils': 4.0.38(zod@3.25.76)
-      ai: 6.0.224(zod@3.25.76)
+      '@ai-sdk/provider-utils': 4.0.38(zod@4.4.3)
+      ai: 6.0.224(zod@4.4.3)
       react: 19.2.7
       swr: 2.4.2(react@19.2.7)
       throttleit: 2.1.0
@@ -6582,12 +6679,58 @@ snapshots:
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
 
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.210':
+    optional: true
+
+  '@anthropic-ai/claude-agent-sdk@0.3.210(@anthropic-ai/sdk@0.111.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)':
+    dependencies:
+      '@anthropic-ai/sdk': 0.111.0(zod@4.4.3)
+      '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
+      zod: 4.4.3
+    optionalDependencies:
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.210
+      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.210
+      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.210
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.210
+      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.210
+      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.210
+      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.210
+      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.210
+
   '@anthropic-ai/sdk@0.111.0(zod@3.25.76)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
     optionalDependencies:
       zod: 3.25.76
+
+  '@anthropic-ai/sdk@0.111.0(zod@4.4.3)':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.0.0
+    optionalDependencies:
+      zod: 4.4.3
 
   '@asamuzakjp/css-color@3.2.0':
     dependencies:
@@ -7489,11 +7632,11 @@ snapshots:
       globby: 11.1.0
       read-yaml-file: 1.1.0
 
-  '@modelcontextprotocol/ext-apps@1.7.4(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@3.25.76)':
+  '@modelcontextprotocol/ext-apps@1.7.4(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
       '@standard-schema/spec': 1.1.0
-      zod: 3.25.76
+      zod: 4.4.3
     optionalDependencies:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -7517,6 +7660,28 @@ snapshots:
       raw-body: 3.0.2
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
+    dependencies:
+      '@hono/node-server': 1.19.14(hono@4.12.29)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      express: 5.2.1
+      express-rate-limit: 8.5.2(express@5.2.1)
+      hono: 4.12.29
+      jose: 6.2.3
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
       - supports-color
 
@@ -8600,13 +8765,13 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@6.0.224(zod@3.25.76):
+  ai@6.0.224(zod@4.4.3):
     dependencies:
-      '@ai-sdk/gateway': 3.0.148(zod@3.25.76)
+      '@ai-sdk/gateway': 3.0.148(zod@4.4.3)
       '@ai-sdk/provider': 3.0.14
-      '@ai-sdk/provider-utils': 4.0.38(zod@3.25.76)
+      '@ai-sdk/provider-utils': 4.0.38(zod@4.4.3)
       '@opentelemetry/api': 1.9.1
-      zod: 3.25.76
+      zod: 4.4.3
 
   ai@6.0.28(zod@3.25.76):
     dependencies:
@@ -8615,6 +8780,14 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.4(zod@3.25.76)
       '@opentelemetry/api': 1.9.0
       zod: 3.25.76
+
+  ai@6.0.28(zod@4.4.3):
+    dependencies:
+      '@ai-sdk/gateway': 3.0.11(zod@4.4.3)
+      '@ai-sdk/provider': 3.0.2
+      '@ai-sdk/provider-utils': 4.0.4(zod@4.4.3)
+      '@opentelemetry/api': 1.9.0
+      zod: 4.4.3
 
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
@@ -12486,10 +12659,16 @@ snapshots:
     dependencies:
       zod: 3.25.76
 
+  zod-to-json-schema@3.25.2(zod@4.4.3):
+    dependencies:
+      zod: 4.4.3
+
   zod-validation-error@4.0.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
 
   zod@3.25.76: {}
+
+  zod@4.4.3: {}
 
   zwitch@2.0.4: {}
