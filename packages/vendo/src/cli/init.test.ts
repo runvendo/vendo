@@ -295,6 +295,31 @@ describe("vendo init", () => {
     expect(await tree(root)).toEqual(first);
   });
 
+  it("provisions VENDO_STORE_ENCRYPTION_KEY into .env and never regenerates it (02-store §4)", async () => {
+    const root = await fixture();
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const env = await readFile(join(root, ".env"), "utf8");
+    const key = env.match(/^VENDO_STORE_ENCRYPTION_KEY=(.+)$/m)?.[1];
+    expect(key).toBeDefined();
+    // A valid createStore key: base64-encoded 32 bytes (AES-256-GCM).
+    expect(Buffer.from(key ?? "", "base64").byteLength).toBe(32);
+
+    // Re-running init — even with --force — keeps the key: rotating it would
+    // orphan every already-encrypted vendo_secrets row.
+    expect(await runInit({ targetDir: root, yes: true, force: true, output: output().output })).toBe(0);
+    const again = await readFile(join(root, ".env"), "utf8");
+    expect(again.match(/^VENDO_STORE_ENCRYPTION_KEY=(.+)$/m)?.[1]).toBe(key);
+  });
+
+  it("appends the encryption key to an existing .env without clobbering it (02-store §4)", async () => {
+    const root = await fixture();
+    await writeFile(join(root, ".env"), "EXISTING_VAR=keep-me"); // no trailing newline on purpose
+    expect(await runInit({ targetDir: root, yes: true, output: output().output })).toBe(0);
+    const env = await readFile(join(root, ".env"), "utf8");
+    expect(env.startsWith("EXISTING_VAR=keep-me\n")).toBe(true);
+    expect(env).toMatch(/^VENDO_STORE_ENCRYPTION_KEY=.+$/m);
+  });
+
   it.each(["app", join("src", "app")])(
     "generates the MCP sibling route with exact content under %s",
     async (appDir) => {

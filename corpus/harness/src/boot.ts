@@ -51,7 +51,7 @@ export interface DatabaseProvisionContext {
 export type BootRepo = Pick<ManifestEntry, "name" | "appDir" | "bootstrap">;
 export type BootProcessSpawner = (command: string, options: { cwd: string; env: NodeJS.ProcessEnv }) => BootProcess;
 export type BootCommandRunner = (command: string, options: { cwd: string; env: NodeJS.ProcessEnv }) => Promise<BootCommandResult>;
-export type ReadinessChecker = (url: string) => Promise<boolean>;
+export type ReadinessChecker = (url: string, bodyContains?: string) => Promise<boolean>;
 export type DatabaseProvisioner = (
   database: DatabaseProvisioning,
   context: DatabaseProvisionContext,
@@ -234,12 +234,13 @@ function defaultSpawnProcess(command: string, options: { cwd: string; env: NodeJ
   });
 }
 
-async function defaultCheckReadiness(url: string): Promise<boolean> {
+async function defaultCheckReadiness(url: string, bodyContains?: string): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   try {
     const response = await fetch(url, { signal: controller.signal, redirect: "manual" });
-    return response.status >= 200 && response.status < 500;
+    if (response.status < 200 || response.status >= 500) return false;
+    return bodyContains === undefined || (await response.text()).includes(bodyContains);
   } catch {
     return false;
   } finally {
@@ -330,6 +331,7 @@ async function runSeedCommand(
 
 async function waitForReadiness(
   readinessUrl: string,
+  readinessBodyContains: string | undefined,
   timeoutMs: number,
   intervalMs: number,
   checkReadiness: ReadinessChecker,
@@ -342,7 +344,7 @@ async function waitForReadiness(
     const processFailure = getProcessFailure();
     if (processFailure) throw new Error(processFailure);
     try {
-      if (await checkReadiness(readinessUrl)) return;
+      if (await checkReadiness(readinessUrl, readinessBodyContains)) return;
     } catch (error) {
       lastFailure = error;
     }
@@ -461,6 +463,7 @@ export async function bootRepo(repo: BootRepo, options: BootRepoOptions = {}): P
 
     await waitForReadiness(
       devServer.readinessUrl,
+      devServer.readinessBodyContains,
       readinessTimeoutMs,
       readinessIntervalMs,
       checkReadiness,

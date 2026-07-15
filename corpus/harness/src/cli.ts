@@ -669,6 +669,7 @@ async function runBootCommand(options: BootCommandOptions, deps: ResolvedDeps): 
   if (init.exitCode !== 0) {
     throw new Error(`vendo init failed for ${repo.name}; see ${init.artifacts.log}`);
   }
+  await deps.prepareE2eRepo(repo, injectResult.repoDir, context.logsDir(repo.name));
 
   const handle = await deps.bootRepo(repo, {
     context,

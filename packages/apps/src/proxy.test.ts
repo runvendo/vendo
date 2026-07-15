@@ -255,6 +255,9 @@ describe("machine tool proxy", () => {
     expect(unauthenticated.status).toBe(401);
     expect(await json(unauthenticated)).toMatchObject({ error: { code: "unauthorized" } });
 
+    // The store refuses same-id subject flips (02-store §2), so simulate the
+    // app belonging to someone else via delete + re-seed under the intruder.
+    await store.records("vendo_apps").delete(app.id);
     await seedAppRow(store, app, "user_intruder");
     const nonOwned = await runtime.proxy.handler(new Request("https://proxy.test/files/missing", {
       headers: { authorization: `Bearer ${token}` },

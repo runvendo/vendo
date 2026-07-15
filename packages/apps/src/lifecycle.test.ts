@@ -235,6 +235,32 @@ describe("apps lifecycle", () => {
     expect(await history.list()).toHaveLength(49);
   });
 
+  it("keeps the full per-pin replay trail when public version history is capped", async () => {
+    const store = memoryStore();
+    const history = createAppHistory(store);
+    const app: AppDocument = {
+      format: VENDO_APP_FORMAT,
+      id: "app_pin_intent_history",
+      name: "Pinned app",
+      pins: [{ slot: "net-worth-card", base: "sha256:base" }],
+    };
+    await seedAppRow(store, app, "user_ada");
+    for (let index = 1; index <= 51; index += 1) {
+      await history.append(app.id, app, {
+        at: new Date(1_720_000_000_000 + index).toISOString(),
+        intent: `Pin edit ${index}`,
+        rung: 1,
+      }, ["net-worth-card"]);
+    }
+
+    expect(await history.surface(app.id).list()).toHaveLength(50);
+    expect((await history.pinIntents(app.id, "net-worth-card")).map(({ intent }) => intent))
+      .toEqual(Array.from({ length: 51 }, (_, index) => `Pin edit ${index + 1}`));
+
+    await history.surface(app.id).undo();
+    expect(await history.pinIntents(app.id, "net-worth-card")).toHaveLength(50);
+  });
+
   it("undoes same-millisecond edits in strict LIFO order", async () => {
     const store = memoryStore({ timestamp: () => "2026-07-11T12:00:00.000Z" });
     const runtime = createApps({
