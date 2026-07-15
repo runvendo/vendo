@@ -18,6 +18,7 @@ describe("Relay Vendo status over Express", () => {
           apps: true,
           automations: true,
           mcp: false,
+          sandbox: false,
         },
       });
     } finally {

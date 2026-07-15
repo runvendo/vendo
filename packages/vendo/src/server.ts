@@ -7,6 +7,8 @@ import {
   type PinBaseline,
   type SandboxAdapter,
 } from "@vendoai/apps";
+import { e2bInstalled, e2bSandbox } from "@vendoai/apps/e2b";
+import { modalInstalled, modalSandbox } from "@vendoai/apps/modal";
 import {
   createAutomations,
   type AutomationsEngine,
@@ -109,6 +111,34 @@ export interface CreateVendoConfig {
     Generous enough for normal host responses, small enough that a runaway payload is
     truncated to a preview instead of blowing the context window. Override via config.agent. */
 const DEFAULT_TOOL_OUTPUT_CAP = 32_000;
+
+type SandboxVenue = "e2b" | "modal" | "custom" | false;
+
+function selectSandbox(configured: SandboxAdapter | undefined): {
+  adapter: SandboxAdapter | undefined;
+  venue: SandboxVenue;
+} {
+  if (configured !== undefined) return { adapter: configured, venue: "custom" };
+
+  // An env key only lights a venue when its optional SDK is actually
+  // installed; otherwise /status would report a venue whose first
+  // create() dies on a missing module.
+  const e2bApiKey = environment("E2B_API_KEY");
+  if (e2bApiKey !== undefined && e2bInstalled()) {
+    return { adapter: e2bSandbox({ apiKey: e2bApiKey }), venue: "e2b" };
+  }
+
+  const modalTokenId = environment("MODAL_TOKEN_ID");
+  const modalTokenSecret = environment("MODAL_TOKEN_SECRET");
+  if (modalTokenId !== undefined && modalTokenSecret !== undefined && modalInstalled()) {
+    return {
+      adapter: modalSandbox({ tokenId: modalTokenId, tokenSecret: modalTokenSecret }),
+      venue: "modal",
+    };
+  }
+
+  return { adapter: undefined, venue: false };
+}
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
@@ -429,6 +459,7 @@ function createWireHandler(deps: {
   guard: VendoGuard;
   apps: AppsRuntime;
   automations: AutomationsEngine;
+  sandbox: SandboxVenue;
   mcp: boolean;
   door?: McpDoor;
   onRequestOrigin?: (origin: string) => void;
@@ -730,6 +761,7 @@ function createWireHandler(deps: {
             guard: true,
             apps: true,
             automations: true,
+            sandbox: deps.sandbox,
             // 10-mcp §1 — the door is off by default; true only when
             // createVendo({ mcp: true }) opened it.
             mcp: deps.mcp,
@@ -758,6 +790,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
   const encryptionKey = environment("VENDO_STORE_ENCRYPTION_KEY");
   const store = config.store
     ?? createStore(encryptionKey === undefined ? {} : { encryption: { key: encryptionKey } });
+  const sandbox = selectSandbox(config.sandbox);
   const ready = store.ensureSchema();
   // Keep eager schema readiness for hosts that reach into composed blocks,
   // while preventing an unhandled rejection before the first handler/emit awaits it.
@@ -805,7 +838,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     ...(theme === undefined ? {} : { theme }),
     ...(designRules === undefined ? {} : { designRules }),
     secrets: config.secrets ?? envSecrets(),
-    ...(config.sandbox === undefined ? {} : { sandbox: config.sandbox }),
+    ...(sandbox.adapter === undefined ? {} : { sandbox: sandbox.adapter }),
     ...(environment("VENDO_PROXY_URL") === undefined ? {} : { proxyUrl: environment("VENDO_PROXY_URL") }),
   });
   resolveAppToolRisk = apps.agentToolRisk;
@@ -919,6 +952,7 @@ export function createVendo(config: CreateVendoConfig): Vendo {
     guard,
     apps,
     automations,
+    sandbox: sandbox.venue,
     mcp: mcpOptions !== undefined,
     ...(door === undefined ? {} : { door }),
     onRequestOrigin: (origin) => {
