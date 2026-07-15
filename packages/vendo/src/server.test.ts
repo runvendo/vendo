@@ -12,7 +12,7 @@ import {
 import { createStore, type VendoStore } from "@vendoai/store";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createVendo, nextVendoHandler, type Vendo } from "./server.js";
+import { createVendo, nextVendoHandler, type CreateVendoConfig, type Vendo } from "./server.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -41,7 +41,10 @@ const app = (id = "app_wire"): AppDocument => ({
   },
 });
 
-async function setup(resolver = vi.fn(async () => principal)): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
+async function setup(
+  resolver = vi.fn(async () => principal),
+  options: Pick<Partial<CreateVendoConfig>, "policy"> = {},
+): Promise<{ vendo: Vendo; resolver: typeof resolver }> {
   const dataDir = await mkdtemp(join(tmpdir(), "vendo-wire-"));
   const store = createStore({ dataDir });
   cleanups.push(async () => { await store.close(); await rm(dataDir, { recursive: true, force: true }); });
@@ -49,6 +52,7 @@ async function setup(resolver = vi.fn(async () => principal)): Promise<{ vendo: 
     model: {} as LanguageModel,
     principal: resolver,
     store,
+    ...options,
   });
   return { vendo, resolver };
 }
@@ -244,6 +248,62 @@ describe("09 §2 composition", () => {
     expect(outcome).toMatchObject({ status: "ok", output: { kind: "tree" } });
     const events = await vendo.guard.audit.query({ principal });
     expect(events.events.some((event) => event.kind === "tool-call" && event.tool === "vendo_apps_open")).toBe(true);
+  });
+
+  it("projects rung-1 app risk consistently across chat and MCP venues", async () => {
+    const { vendo } = await setup(vi.fn(async () => principal), {
+      policy: {
+        rules: [
+          { match: { risk: "write" }, action: "ask" },
+          { match: { risk: "read" }, action: "run" },
+        ],
+      },
+    });
+    expect((await vendo.handler(request("GET", "/status"))).status).toBe(200);
+    await vendo.store.records("vendo_apps").put({
+      id: "app_wire",
+      data: { subject: principal.subject, enabled: true, doc: app() },
+      refs: { subject: principal.subject },
+    });
+    await vendo.store.records("vendo_apps").put({
+      id: "app_http",
+      data: {
+        subject: principal.subject,
+        enabled: true,
+        doc: { ...app("app_http"), ui: "http", server: "fake:snap_http" },
+      },
+      refs: { subject: principal.subject },
+    });
+    const byName = new Map((await vendo.actions.descriptors()).map((descriptor) => [descriptor.name, descriptor]));
+    expect(byName.get("vendo_apps_create")?.risk).toBe("read");
+    expect(byName.get("vendo_apps_edit")?.risk).toBe("write");
+    const edit = byName.get("vendo_apps_edit")!;
+    const chat = { ...ctx, venue: "chat" as const };
+    const mcp = { ...ctx, venue: "mcp" as const };
+    const treeCall = {
+      id: "call_tree_chat",
+      tool: edit.name,
+      args: { appId: "app_wire", instruction: "Make the heading blue" },
+    };
+
+    await expect(vendo.guard.check(treeCall, edit, chat)).resolves.toMatchObject({ action: "run" });
+    await expect(vendo.guard.check({ ...treeCall, id: "call_tree_mcp" }, edit, mcp))
+      .resolves.toMatchObject({ action: "run" });
+    await expect(vendo.guard.check({
+      id: "call_server_chat",
+      tool: edit.name,
+      args: { appId: "app_wire", instruction: "Persist this to the database" },
+    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
+    await expect(vendo.guard.check({
+      id: "call_server_mcp",
+      tool: edit.name,
+      args: { appId: "app_wire", instruction: "Persist this to the database" },
+    }, edit, mcp)).resolves.toMatchObject({ action: "ask" });
+    await expect(vendo.guard.check({
+      id: "call_http",
+      tool: edit.name,
+      args: { appId: "app_http", instruction: "Make the heading blue" },
+    }, edit, chat)).resolves.toMatchObject({ action: "ask" });
   });
 
   it("uses per-client session-scoped ephemeral principals when the resolver returns null", async () => {

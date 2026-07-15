@@ -31,7 +31,7 @@ describe("VendoThread and VendoOverlay exports", () => {
     const composer = screen.getByRole("textbox", { name: "Message" });
     fireEvent.change(composer, { target: { value: "Send the email" } });
     fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
-    expect(wire.requests.filter(request => request.path === "/threads")).toHaveLength(0);
+    expect(wire.requests.filter(request => request.method === "POST" && request.path === "/threads")).toHaveLength(0);
     fireEvent.keyDown(composer, { key: "Enter" });
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy());
@@ -45,7 +45,7 @@ describe("VendoThread and VendoOverlay exports", () => {
 
     expect(await screen.findByText("Turn complete")).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("button", { name: "Stop" })).toBeNull());
-    expect(wire.requests.find(request => request.path === "/threads")?.body).toMatchObject({
+    expect(wire.requests.find(request => request.method === "POST" && request.path === "/threads")?.body).toMatchObject({
       threadId: "thr_1",
       message: { role: "user", parts: [{ type: "text", text: "Send the email" }] },
     });

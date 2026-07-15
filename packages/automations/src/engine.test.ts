@@ -111,6 +111,23 @@ const flush = async (): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 };
 
+const memoryStoreWithoutAtomic = (): StoreAdapter => {
+  const base = memoryStoreAdapter();
+  return {
+    ensureSchema: () => base.ensureSchema(),
+    blobs: (namespace) => base.blobs(namespace),
+    records(collection) {
+      const records = base.records(collection);
+      return {
+        get: (id) => records.get(id),
+        put: (record) => records.put(record),
+        delete: (id) => records.delete(id),
+        list: (query) => records.list(query),
+      };
+    },
+  };
+};
+
 const storedRun = async (store: StoreAdapter, id: string): Promise<Record<string, unknown>> =>
   (await store.records("vendo_runs").get(id))?.data as Record<string, unknown>;
 
@@ -300,7 +317,27 @@ describe("steps execution, parking, and resumption", () => {
   });
 
   it("parks the exact call, resumes it after approval, mints a grant, and continues", async () => {
-    const store = memoryStoreAdapter();
+    const baseStore = memoryStoreAdapter();
+    let resumeClaims = 0;
+    const store: StoreAdapter = {
+      ensureSchema: () => baseStore.ensureSchema(),
+      blobs: (namespace) => baseStore.blobs(namespace),
+      records(collection) {
+        const records = baseStore.records(collection);
+        if (collection !== "automations:resume-claims" || records.atomic === undefined) return records;
+        return {
+          ...records,
+          atomic: {
+            async insertIfAbsent(record) {
+              resumeClaims += 1;
+              return await records.atomic!.insertIfAbsent(record);
+            },
+            compareAndSwap: (record, expectedRevision) =>
+              records.atomic!.compareAndSwap(record, expectedRevision),
+          },
+        };
+      },
+    };
     const guard = new GuardDouble();
     let attempt = 0;
     let firstCall: ToolCall | undefined;
@@ -337,6 +374,7 @@ describe("steps execution, parking, and resumption", () => {
     });
     await seedApp(store, doc, "user_a", true);
     const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const peer = createAutomations({ apps: appsDouble(), tools, guard: new GuardDouble(), store, now: () => NOW });
     const [runId] = await engine.emit("go", { value: 4 }, ctx().principal);
 
     expect(await engine.runs.get(runId!, ctx())).toMatchObject({ status: "pending-approval" });
@@ -351,9 +389,10 @@ describe("steps execution, parking, and resumption", () => {
         decidedAt: NOW.toISOString(),
       },
     });
-    guard.decide("apr_park", true);
-    await flush();
+    await Promise.all([engine.tick(), peer.tick()]);
 
+    expect(resumeClaims).toBeGreaterThan(0);
+    expect(attempt).toBe(3);
     expect(await engine.runs.get(runId!, ctx())).toMatchObject({
       status: "ok",
       summary: "2 steps ok",
@@ -366,7 +405,7 @@ describe("steps execution, parking, and resumption", () => {
   });
 
   it("turns a denied parked call into a blocked hard failure and tick sweeps decided rows", async () => {
-    const store = memoryStoreAdapter();
+    const store = memoryStoreWithoutAtomic();
     const guard = new GuardDouble();
     const tools = registry([writeTool], async (call, runCtx) => {
       const request = {
@@ -541,14 +580,77 @@ describe("schedule, webhook, and host triggers", () => {
       });
     }
     const engine = createAutomations({ apps, tools: registry(), guard, store, now: () => NOW });
+    const peer = createAutomations({ apps, tools: registry(), guard: new GuardDouble(), store, now: () => NOW });
 
-    const [firstTick, secondTick] = await Promise.all([engine.tick(), engine.tick()]);
-    expect(firstTick).toHaveLength(3);
-    expect(secondTick).toEqual([]);
+    const [firstTick, secondTick] = await Promise.all([engine.tick(), peer.tick()]);
+    expect([...firstTick, ...secondTick]).toHaveLength(3);
     expect(calls).toHaveLength(3);
     expect((calls[0]?.args as { event: { firedAt: string } }).event.firedAt).toBe(NOW.toISOString());
     expect(calls).toHaveLength(3);
     expect((await store.records("automations:schedule").get("app_at"))?.data).toMatchObject({ firedAt: NOW.toISOString() });
+  });
+
+  it("retains single-instance schedule behavior when the atomic capability is absent", async () => {
+    const store = memoryStoreWithoutAtomic();
+    const doc = app("app_schedule_fallback", {
+      on: { kind: "schedule", every: "15m" },
+      run: { kind: "steps", steps: [] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    await store.records("automations:schedule").put({
+      id: doc.id,
+      data: { lastFiredAt: "2026-07-12T08:00:00.000Z" },
+    });
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+    });
+
+    await expect(engine.tick()).resolves.toHaveLength(1);
+  });
+
+  it.each([
+    ["atomic", memoryStoreAdapter],
+    ["non-atomic", memoryStoreWithoutAtomic],
+  ])("initializes a future schedule cursor without firing via the %s store path", async (_path, createStore) => {
+    const store = createStore();
+    const doc = app("app_schedule_future", {
+      on: { kind: "schedule", at: "2026-07-12T13:00:00.000Z" },
+      run: { kind: "steps", steps: [] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+    });
+
+    await expect(engine.tick()).resolves.toEqual([]);
+    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+      lastFiredAt: NOW.toISOString(),
+    });
+  });
+
+  it("atomically claims an uninitialized due schedule across engine instances", async () => {
+    const store = memoryStoreAdapter();
+    let calls = 0;
+    const apps = appsDouble(async () => {
+      calls += 1;
+      return { status: "ok", output: {} };
+    });
+    const doc = app("app_schedule_first_claim", {
+      on: { kind: "schedule", at: "2026-07-12T11:00:00.000Z" },
+      run: { kind: "steps", steps: [{ id: "run", tool: "fn:main" }] },
+    });
+    await seedApp(store, doc, "user_a", true);
+    const engine = createAutomations({ apps, tools: registry(), guard: new GuardDouble(), store, now: () => NOW });
+    const peer = createAutomations({ apps, tools: registry(), guard: new GuardDouble(), store, now: () => NOW });
+
+    const ticks = await Promise.all([engine.tick(), peer.tick()]);
+
+    expect(ticks.flat()).toHaveLength(1);
+    expect(calls).toBe(1);
+    expect((await store.records("automations:schedule").get(doc.id))?.data).toEqual({
+      lastFiredAt: NOW.toISOString(),
+      firedAt: NOW.toISOString(),
+    });
   });
 
   it("verifies HMAC vectors, dedupes deliveries, rejects bad/stale signatures once, and emits matching host events", async () => {
@@ -570,6 +672,7 @@ describe("schedule, webhook, and host triggers", () => {
     await seedApp(store, external);
     await seedApp(store, host, "user_a", true);
     const engine = createAutomations({ apps: appsDouble(), tools, guard, store, now: () => NOW });
+    const peer = createAutomations({ apps: appsDouble(), tools, guard: new GuardDouble(), store, now: () => NOW });
     await engine.enable(external.id, ctx());
     const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
     const body = JSON.stringify({ answer: 42 });
@@ -622,7 +725,7 @@ describe("schedule, webhook, and host triggers", () => {
     const concurrentSignature = await sign(secret, "delivery_concurrent", timestamp, concurrentBody);
     const concurrent = await Promise.all([
       engine.webhook(request(concurrentSignature, timestamp, "delivery_concurrent", concurrentBody)),
-      engine.webhook(request(concurrentSignature, timestamp, "delivery_concurrent", concurrentBody)),
+      peer.webhook(request(concurrentSignature, timestamp, "delivery_concurrent", concurrentBody)),
     ]);
     expect(concurrent.map(({ status }) => status)).toEqual([200, 200]);
     expect((await store.records("vendo_runs").list()).records).toHaveLength(2);
@@ -631,6 +734,45 @@ describe("schedule, webhook, and host triggers", () => {
     expect(await engine.emit("invoice.paid", {}, ctx("other").principal)).toEqual([]);
     expect(observed).toContainEqual({ payload: { answer: 42 } });
     expect(observed).toContainEqual({ payload: { invoice: "inv_1" } });
+  });
+
+  it("dedupes webhook deliveries when the store lacks atomic claims", async () => {
+    const store = memoryStoreWithoutAtomic();
+    const external = app("app_webhook_fallback", {
+      on: { kind: "external", connector: "github", event: "push" },
+      run: { kind: "steps", steps: [] },
+    });
+    await seedApp(store, external);
+    const engine = createAutomations({
+      apps: appsDouble(), tools: registry(), guard: new GuardDouble(), store, now: () => NOW,
+    });
+    await engine.enable(external.id, ctx());
+    const secret = ((await store.records("automations:webhook").get(external.id))?.data as { secret: string }).secret;
+    const body = JSON.stringify({ answer: 42 });
+    const timestamp = String(NOW.getTime() / 1_000);
+    const deliveryId = "delivery_fallback";
+    const signature = await sign(secret, deliveryId, timestamp, body);
+    const request = () => new Request("https://example.test/api/webhooks/github", {
+      method: "POST",
+      headers: {
+        "webhook-id": deliveryId,
+        "webhook-timestamp": timestamp,
+        "webhook-signature": `v1,${signature}`,
+      },
+      body,
+    });
+
+    const first = await engine.webhook(request());
+    const duplicate = await engine.webhook(request());
+
+    expect(await first.json()).toMatchObject({ runIds: [expect.stringMatching(/^run_/)] });
+    expect(await duplicate.json()).toEqual({ deduped: true });
+    expect((await store.records("vendo_runs").list()).records).toHaveLength(1);
+    expect((await store.records("automations:deliveries").get(`${external.id}:${deliveryId}`))?.data).toEqual({
+      appId: external.id,
+      deliveryId,
+      receivedAt: NOW.toISOString(),
+    });
   });
 });
 
@@ -709,12 +851,17 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
   it("marks an in-flight agentic run stopped, discards the late result, and rejects terminal stops", async () => {
     const store = memoryStoreAdapter();
     const guard = new GuardDouble();
-    let finish!: (value: Awaited<ReturnType<AgentRunner>>) => void;
     let started!: () => void;
     const didStart = new Promise<void>((resolve) => { started = resolve; });
-    const runner: AgentRunner = async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const runner: AgentRunner = async (task) => {
+      receivedSignal = task.abortSignal;
       started();
-      return await new Promise((resolve) => { finish = resolve; });
+      return await new Promise((resolve) => {
+        task.abortSignal?.addEventListener("abort", () => resolve({
+          status: "stopped", summary: "aborted", toolCalls: [],
+        }), { once: true });
+      });
     };
     const doc = app("app_stop", {
       on: { kind: "host-event", event: "go" },
@@ -727,9 +874,9 @@ describe("dry runs, run visibility, agentic execution, and stopping", () => {
     const running = (await engine.runs.list({ status: "running" }, ctx())).runs[0]!;
 
     await engine.runs.stop(running.id, ctx());
-    finish({ status: "ok", summary: "too late", toolCalls: [] });
     await emitted;
 
+    expect(receivedSignal?.aborted).toBe(true);
     expect(await engine.runs.get(running.id, ctx())).toMatchObject({ status: "stopped", summary: "stopped by user", finishedAt: NOW.toISOString() });
     await expect(engine.runs.stop(running.id, ctx())).rejects.toMatchObject({ code: "conflict" });
     expect(guard.audit.map((event) => (event.detail as { status: string }).status)).toEqual(["running", "stopped"]);

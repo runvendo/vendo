@@ -37,6 +37,15 @@ export type PolicyFn = (
   ctx: RunContext,
 ) => GuardDecision | undefined;
 
+/** Additive composition hook: resolve a call's effective risk before policy
+ * rules, grants, breakers, and approvals evaluate it. Throwing, returning an
+ * unknown value, or returning undefined preserves the descriptor's risk. */
+export type RiskResolver = (
+  call: ToolCall,
+  descriptor: ToolDescriptor,
+  ctx: RunContext,
+) => RiskLabel | undefined | Promise<RiskLabel | undefined>;
+
 export type PolicyConfig = {
   file?: string;
   rules?: PolicyRule[];
@@ -133,6 +142,7 @@ export interface VendoGuard extends Guard {
 
 export interface CreateGuardConfig {
   store: StoreAdapter;
+  resolveRisk?: RiskResolver;
   policy?: PolicyConfig;
   judge?: Judge;
   breakers?: {

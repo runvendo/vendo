@@ -21,7 +21,10 @@ const descriptors: ToolDescriptor[] = [
       required: ["prompt"],
       additionalProperties: false,
     },
-    risk: "write",
+    // Creation is structurally rung 1: a jailed document render with no server,
+    // host-tool execution, or egress. The lifecycle write is only to Vendo's
+    // own app store, so consent policy treats it like opening a local view.
+    risk: "read",
   },
   {
     name: "vendo_apps_edit",

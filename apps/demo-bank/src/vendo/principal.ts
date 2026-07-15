@@ -1,11 +1,12 @@
 import type { Principal } from "@vendoai/vendo";
+import { resolveMaplePrincipal } from "./auth";
 
 export const DEMO_USER_ID = "vendo-demo";
 
 export const DEMO_PRINCIPAL: Principal = {
   kind: "user",
   subject: DEMO_USER_ID,
-  display: "Maple demo user",
+  display: "Yousef Helal",
 };
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
@@ -26,5 +27,5 @@ export function demoRequestAllowed(req: Request): boolean {
 }
 
 export async function resolveDemoPrincipal(req: Request): Promise<Principal | null> {
-  return demoRequestAllowed(req) ? DEMO_PRINCIPAL : null;
+  return await resolveMaplePrincipal(req) ?? (demoRequestAllowed(req) ? DEMO_PRINCIPAL : null);
 }

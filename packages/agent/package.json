@@ -2,7 +2,13 @@
   "name": "@vendoai/agent",
   "version": "0.3.0",
   "description": "The Vendo agent loop: streaming, tool-calling, context engineering — BYO ai-SDK LanguageModel, guard-bound tools, thread persistence via the store seam.",
-  "keywords": ["ai", "agent", "vendo", "llm", "streaming"],
+  "keywords": [
+    "ai",
+    "agent",
+    "vendo",
+    "llm",
+    "streaming"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -27,11 +33,14 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@vendoai/core": "workspace:*"
