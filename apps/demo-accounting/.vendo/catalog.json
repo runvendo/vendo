@@ -27,6 +27,36 @@
       "source": "registered"
     },
     {
+      "name": "CadenceMissingDocsHero",
+      "exportPath": "./src/vendo/host-components.tsx#cadenceHostComponents.CadenceMissingDocsHero",
+      "propsSchema": {
+        "type": "object",
+        "properties": {
+          "missingCount": {
+            "type": "number",
+            "description": "Clients with at least one outstanding document"
+          },
+          "clientCount": {
+            "type": "number",
+            "description": "All active clients"
+          },
+          "badgeLabel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "missingCount",
+          "clientCount"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The Cadence dashboard hero card: clients with outstanding documents, an action badge, and the active-client total. Use it for who-still-owes-documents or chase-list summary requests.",
+      "examples": [
+        "{\"missingCount\":8,\"clientCount\":12}"
+      ],
+      "source": "registered"
+    },
+    {
       "name": "CadenceStatusBadge",
       "exportPath": "./src/vendo/host-components.tsx#cadenceHostComponents.CadenceStatusBadge",
       "propsSchema": {

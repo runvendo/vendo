@@ -10,8 +10,8 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../../../../../")
 
 describe("committed demo catalog drift guard", () => {
   it.each([
-    { app: "demo-bank", names: ["MapleSparkline", "MapleSpendingDonut"] },
-    { app: "demo-accounting", names: ["CadenceDocProgress", "CadenceStatusBadge"] },
+    { app: "demo-bank", names: ["MapleNetWorthCard", "MapleSparkline", "MapleSpendingDonut"] },
+    { app: "demo-accounting", names: ["CadenceDocProgress", "CadenceMissingDocsHero", "CadenceStatusBadge"] },
   ])("keeps $app catalog.json aligned with compiler extraction", async ({ app, names }) => {
     const root = path.join(repoRoot, "apps", app);
     const committed = catalogFileSchema.parse(JSON.parse(
@@ -20,7 +20,7 @@ describe("committed demo catalog drift guard", () => {
     const scanned = await scanComponentCatalog(root);
 
     expect(scanned.entries.map((entry) => entry.name)).toEqual(names);
-    expect(scanned).toMatchObject({ discovered: 2, registered: 2 });
+    expect(scanned).toMatchObject({ discovered: names.length, registered: names.length });
     expect({
       format: VENDO_CATALOG_FORMAT,
       entries: mergeCatalogEntries(committed.entries, scanned.entries),

@@ -33,9 +33,12 @@ const BLESSED_JAIL_MODULES = new Set([
 interface PinRegistration {
   slot: string;
   component: string;
+  remixable: boolean;
   exportable: boolean;
   sampleProps?: Record<string, unknown>;
   invalidSampleProps: boolean;
+  /** Offset of the registration object literal's opening brace in its module source. */
+  at: number;
 }
 
 export interface PinCaptureResult {
@@ -171,7 +174,7 @@ function staticSampleProps(source: string): Record<string, unknown> | null {
   }
 }
 
-function registrationFromBody(body: string, helperMarked: boolean): PinRegistration | null {
+function registrationFromBody(body: string, helperMarked: boolean, at: number): PinRegistration | null {
   let slot: string | undefined;
   let component: string | undefined;
   let remixable = helperMarked;
@@ -193,11 +196,12 @@ function registrationFromBody(body: string, helperMarked: boolean): PinRegistrat
       else sampleProps = parsed;
     }
   }
-  return remixable && slot && component
-    ? { slot, component, exportable, invalidSampleProps, ...(sampleProps === undefined ? {} : { sampleProps }) }
+  return slot && component
+    ? { slot, component, remixable, exportable, invalidSampleProps, at, ...(sampleProps === undefined ? {} : { sampleProps }) }
     : null;
 }
 
+/** Every `{ name, component }` registration literal in one module, remixable or not. */
 function registrations(source: string): PinRegistration[] {
   const found: PinRegistration[] = [];
   for (let index = 0; index < source.length; index += 1) {
@@ -205,7 +209,7 @@ function registrations(source: string): PinRegistration[] {
     const body = topLevelObjectLiteral(source, index);
     if (!body) continue;
     const helperMarked = /\bremixable\s*\(\s*$/.test(source.slice(Math.max(0, index - 80), index));
-    const registration = registrationFromBody(body, helperMarked);
+    const registration = registrationFromBody(body, helperMarked, index);
     if (registration) found.push(registration);
   }
   return found;
@@ -216,9 +220,12 @@ function portablePath(root: string, file: string): string {
 }
 
 function importSpecifiers(source: string): string[] {
+  // `[^;\n]*` keeps the type-erasure line-scoped: in a semicolon-free module a
+  // newline-spanning `[^;]*` would greedily erase everything after the first
+  // `import type` — including real stylesheet and component imports.
   const withoutTypes = stripComments(source)
-    .replace(/\bimport\s+type\b[^;]*(?:;|$)/gmu, "")
-    .replace(/\bexport\s+type\b[^;]*(?:;|$)/gmu, "");
+    .replace(/\bimport\s+type\b[^;\n]*(?:;|$)/gmu, "")
+    .replace(/\bexport\s+type\b[^;\n]*(?:;|$)/gmu, "");
   const found: Array<{ at: number; specifier: string }> = [];
   const staticImport = /\bimport\s+(?:[^"'`;]*?\s+from\s+)?["']([^"']+)["']/gmu;
   const reExport = /\bexport\s+[^"'`;]*?\s+from\s+["']([^"']+)["']/gmu;
@@ -400,7 +407,7 @@ export async function capturePins(
 
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
-    for (const registration of registrations(source)) {
+    for (const registration of registrations(source).filter((candidate) => candidate.remixable)) {
       if (seenSlots.has(registration.slot)) {
         result.warnings.push(`remixable slot ${registration.slot} is registered more than once; kept the first registration`);
         continue;
@@ -507,4 +514,61 @@ export async function capturePins(
   result.drifted.sort();
   result.unresolved.sort((left, right) => left.slot.localeCompare(right.slot));
   return result;
+}
+
+export interface RemixRegistrationSite {
+  /** Absolute path of the module holding the registration literal. */
+  file: string;
+  /** Portable root-relative path of that module. */
+  path: string;
+  slot: string;
+  component: string;
+  remixable: boolean;
+  exportable: boolean;
+  /** Offset of the registration object literal's opening brace in the module source. */
+  offset: number;
+}
+
+/**
+ * Every `{ name, component }` host registration site, remixable or not — the
+ * init codemod's remix-offer surface. Only statically importable, root-confined
+ * component references are reported (the same bar `capturePins` applies), so a
+ * site that gets wrapped can always be captured by the next sync.
+ */
+export async function scanRemixRegistrations(root: string): Promise<RemixRegistrationSite[]> {
+  const sites: RemixRegistrationSite[] = [];
+  const realRoot = await fs.realpath(root);
+  const files = await walk(root, (relativePath) => /\.(?:[cm]?[jt]sx?)$/u.test(relativePath) && !/\.d\.ts$/u.test(relativePath));
+  for (const file of files) {
+    const source = await fs.readFile(file, "utf8");
+    for (const registration of registrations(source)) {
+      if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?$/.test(registration.component)) continue;
+      // A `path` field marks a router table (`{ path, name, component }`), not a
+      // host component registration — never offer to wrap those.
+      const body = topLevelObjectLiteral(source, registration.at);
+      if (body && splitTopLevel(body).some((field) => /^(?:["']path["']|path)\s*:/u.test(field.trim()))) continue;
+      const reference = await importReferenceFor(source, registration.component);
+      if (!reference) continue;
+      const resolved = await resolveImportSource(file, reference.specifier, root, reference.imported);
+      if (!resolved) continue;
+      let realResolved: string;
+      try {
+        realResolved = await fs.realpath(resolved.file);
+      } catch {
+        continue;
+      }
+      if (!isInside(realRoot, realResolved)) continue;
+      sites.push({
+        file,
+        path: portablePath(root, file),
+        slot: registration.slot,
+        component: registration.component,
+        remixable: registration.remixable,
+        exportable: registration.exportable,
+        offset: registration.at,
+      });
+    }
+  }
+  sites.sort((left, right) => left.path.localeCompare(right.path) || left.offset - right.offset);
+  return sites;
 }

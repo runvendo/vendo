@@ -287,6 +287,13 @@ function fallbackModuleStatements(source: string): string[] {
           end = cursor;
           break;
         }
+        // Semicolon-free sources: a balanced newline followed by a fresh
+        // import/export keyword always ends the current statement — otherwise
+        // `export interface X { … }` swallows every later export in the file.
+        if (/^\s*(?:import|export)[\s{"'(]/.test(source.slice(cursor + 1, cursor + 64))) {
+          end = cursor;
+          break;
+        }
       }
     }
     statements.push(source.slice(index, end).trim());
@@ -350,10 +357,13 @@ async function reExportTarget(source: string, exportedName: string): Promise<{
 
 async function importBases(importer: string, specifier: string, root: string): Promise<string[]> {
   const bases: string[] = [];
-  if (specifier.startsWith("@/")) bases.push(path.join(root, specifier.slice(2)));
-  else if (specifier.startsWith(".")) bases.push(path.resolve(path.dirname(importer), specifier));
+  if (specifier.startsWith(".")) bases.push(path.resolve(path.dirname(importer), specifier));
   else {
+    // The host's own tsconfig paths are authoritative for every non-relative
+    // specifier, including `@/` (most hosts map it to src/, not the root).
     for (const alias of await aliasesFor(root)) bases.push(...aliasBases(specifier, alias));
+    // Convention fallback for `@/` when no tsconfig alias maps it.
+    if (specifier.startsWith("@/")) bases.push(path.join(root, specifier.slice(2)));
   }
   return bases;
 }

@@ -78,7 +78,10 @@ attaching its own verdict:
 `TreeView` mounts generated components in the host page **only** when
 `payload.inClient.granted === true` — evaluation mirrors the jail's closed
 module space (React + captured sub-sources, nothing else), but runs with
-host-page authority. Every other state renders the sandboxed iframe jail:
+host-page authority. Prop semantics also mirror the jail: a node without live
+props renders the captured `sampleProps` rehearsal stub, so the hash-pinned
+version sees identical props in rehearsal and after promotion. Every other
+state renders the sandboxed iframe jail:
 
 - missing/invalid approval → jail (default; nothing to announce),
 - `version-changed` → jail **plus a loud in-surface notice** ("In-client
@@ -118,6 +121,10 @@ drops back to the sandbox, loudly → re-approve the new version.
 Verified end-to-end in `packages/vendo/src/inclient.fixture.test.ts` and in a
 real browser by `packages/ui/e2e/inclient.spec.ts`
 (screenshot: `docs/verification/eng-288-m4/01-inclient-venue-harness.png`).
+Captured live on the real Maple demo host — fork → ship-diff → injected
+approval → host-page mount (fetch-succeeds proof) → drop-back — by
+`docs/verification/eng-288-m6/maple-inclient-promotion.mjs`
+(GIF: `docs/verification/eng-288-m6/maple-inclient-promotion.gif`).
 
 ## Drift and rebase (host component changed under a fork)
 
