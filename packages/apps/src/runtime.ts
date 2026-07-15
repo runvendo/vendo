@@ -13,7 +13,9 @@ import {
   type ToolCall,
   type ToolOutcome,
   type ToolRegistry,
+  type Tree,
   type UIPayload,
+  type VendoViewPart,
   type VendoTheme,
   type VendoRecord,
 } from "@vendoai/core";
@@ -37,7 +39,7 @@ import {
 import { createAppHistory } from "./history.js";
 import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
-import { createAppOpener } from "./open.js";
+import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
 import type { PinBaseline } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
@@ -94,7 +96,11 @@ export interface AppsProxy {
 
 /** 06-apps §1 */
 export interface AppsRuntime {
-  create(input: { prompt: string }, ctx: RunContext): Promise<AppDocument>;
+  create(input: {
+    prompt: string;
+    /** Additive per-call stream hook used by the agent bridge. */
+    onView?: (part: VendoViewPart) => void;
+  }, ctx: RunContext): Promise<AppDocument>;
   get(appId: AppId, ctx: RunContext): Promise<AppDocument | null>;
   list(ctx: RunContext): Promise<AppDocument[]>;
   delete(appId: AppId, ctx: RunContext): Promise<void>;
@@ -142,11 +148,13 @@ const rungFor = (
 const generationDependencies = (
   config: AppsConfig,
   model: LanguageModel,
+  onPartial?: GenerationDependencies["onPartial"],
 ): GenerationDependencies => ({
   model,
   catalog: config.catalog,
   theme: config.theme,
   designRules: config.designRules,
+  ...(onPartial === undefined ? {} : { onPartial }),
 });
 
 /** 06-apps §1 — construct the app lifecycle, generation, execution, and interchange surface. */
@@ -322,13 +330,51 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       if (config.model === undefined) {
         throw new VendoError("not-implemented", "generation requires a model");
       }
-      const generated = await engine.create(input, generationDependencies(config, config.model));
+      // Mint before generation so every partial already carries its permanent id.
+      const appId = `app_${globalThis.crypto.randomUUID()}`;
+      const emit = (payload: Tree): void => input.onView?.({
+        type: "data-vendo-view",
+        appId,
+        payload: payload as unknown as UIPayload,
+      });
+      let latestTree: Tree | undefined;
+      const queryApp: AppDocument = {
+        format: "vendo/app@1",
+        id: appId,
+        name: "Generating app",
+        ui: "tree",
+      };
+      const queryResolver = input.onView === undefined
+        ? undefined
+        : createProgressiveQueryResolver(machines, caller, queryApp, ctx, (data) => {
+          if (latestTree === undefined) return;
+          emit({ ...structuredClone(latestTree), data, streaming: true } as Tree);
+        });
+      const generated = await engine.create(
+        { prompt: input.prompt },
+        generationDependencies(config, config.model, input.onView === undefined ? undefined : (partial) => {
+          latestTree = structuredClone(partial.tree);
+          emit(latestTree);
+          queryResolver?.update(latestTree);
+        }),
+      );
       const app: AppDocument = {
         ...generated,
-        id: `app_${globalThis.crypto.randomUUID()}`,
+        id: appId,
       };
+      let finalTree: Tree | undefined;
+      if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
+        finalTree = {
+          ...(structuredClone(app.tree) as unknown as Tree),
+          ...(app.components === undefined ? {} : { components: structuredClone(app.components) }),
+        };
+        latestTree = structuredClone(finalTree);
+        queryResolver?.update(finalTree);
+        finalTree.data = await queryResolver?.complete() ?? structuredClone(finalTree.data ?? {});
+      }
       await apps.put(appRecordInput(app, ctx.principal.subject));
       await reportLifecycle("create", app.id, ctx);
+      if (finalTree !== undefined) emit(finalTree);
       return structuredClone(app);
     },
 

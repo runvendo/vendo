@@ -3,8 +3,8 @@ import type { LanguageModel } from "ai";
 /**
  * Minimal deterministic LanguageModel (spec v2) for measuring engine overhead
  * without an LLM. Mirrors the shape of @vendoai/apps' testing scripted model
- * (which is not exported via a subpath). Each doGenerate returns the next
- * scripted response; the last response repeats.
+ * (which is not exported via a subpath). Each generation or stream call
+ * returns the next scripted response; the last response repeats.
  */
 type ScriptedCall = {
   prompt: Array<{ role: string; content: string | Array<{ type?: string; text?: string }> }>;
@@ -39,8 +39,27 @@ export const scriptedLanguageModel = (
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       };
     },
-    async doStream() {
-      throw new Error("scripted model does not stream");
+    async doStream(call: ScriptedCall) {
+      const response = responses[Math.min(calls, responses.length - 1)];
+      if (response === undefined) throw new Error("scripted model has no response");
+      const text = typeof response === "function" ? response(textOf(call)) : response;
+      calls += 1;
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({ type: "text-start", id: "text_1" });
+            controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
+            controller.enqueue({ type: "text-end", id: "text_1" });
+            controller.enqueue({
+              type: "finish",
+              finishReason: "stop",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            });
+            controller.close();
+          },
+        }),
+      };
     },
   };
   return model as unknown as LanguageModel;

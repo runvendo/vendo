@@ -235,6 +235,50 @@ describe("apps execution", () => {
     expect(guard.approvals).toHaveLength(1);
   });
 
+  it("runs open queries concurrently, contains individual errors, and preserves source-order last writes", async () => {
+    let releaseSlow: (() => void) | undefined;
+    const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    const started: string[] = [];
+    const queryTools: ToolRegistry = {
+      async descriptors() { return []; },
+      async execute(call) {
+        started.push(call.tool);
+        if (call.tool === "host_slow") {
+          await slow;
+          return { status: "ok", output: "first" };
+        }
+        if (call.tool === "host_fast") return { status: "ok", output: "second" };
+        throw new Error("contained query failure");
+      },
+    };
+    const store = memoryStore();
+    const guard = guardFixture();
+    const runtime = createApps({ store, guard, tools: queryTools, catalog: [], model });
+    const created = await runtime.create({ prompt: "Parallel queries" }, ctx());
+    await putApp(store, {
+      ...created,
+      tree: {
+        formatVersion: "vendo-genui/v1",
+        root: "root",
+        nodes: [{ id: "root", component: "Text" }],
+        queries: [
+          { path: "/shared", tool: "host_slow" },
+          { path: "/shared", tool: "host_fast" },
+          { path: "/ignored", tool: "host_error" },
+        ],
+      },
+    });
+
+    const opening = runtime.open(created.id, ctx());
+    await vi.waitFor(() => expect(started).toEqual(["host_slow", "host_fast", "host_error"]));
+    releaseSlow?.();
+    const surface = await opening;
+
+    expect(surface).toMatchObject({ kind: "tree", payload: { data: { shared: "second" } } });
+    if (surface.kind !== "tree") throw new Error("Expected a tree surface");
+    expect(surface.payload.data).not.toHaveProperty("ignored");
+  });
+
   it("contains a query fn ui envelope instead of replacing the open surface", async () => {
     const sandbox = fakeSandbox({
       app: () => jsonResponse({
