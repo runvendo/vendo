@@ -112,3 +112,14 @@ provider-hosting gaps are avoided. Cloud implements the §4.5 egress
 envelope + `SecretsProvider` seam, nothing gateway-shaped.
 
 The venues child may now build the M4 implementation against this pick.
+
+**Follow-up (decided same session): a guarded per-secret in-sandbox toggle.**
+Yousef additionally wants a user-facing safety toggle — "expose this secret
+inside this app's sandbox" — as a fast-follow, NOT in M4 scope. Constraints
+locked with the pick: B stays the default; the toggle is per-secret × per-app,
+owner-only; flipping it is a high-risk approval through the existing guard
+flow; every run with an exposed secret emits an audit event; the toggle never
+travels with shares or remixes (copies always revert to handles). Requires a
+§4.3 amendment ("never by default; explicit per-secret owner opt-in") and its
+own red-team pass before shipping. Tracked as a follow-up issue in the apps
+project.
