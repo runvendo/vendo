@@ -190,7 +190,7 @@ class Door {
     const auth = this.#remoteAs === undefined
       ? await this.#oauth.authenticate(req)
       : await this.#remoteAs.authenticate(req);
-    if (!auth || !sameCanonicalUri(auth.grant.resource, resource)) {
+    if (!auth || (this.#remoteAs === undefined && !sameCanonicalUri(auth.grant.resource, resource))) {
       return unauthorized(url.origin, mount, req.headers.has("authorization"));
     }
 
