@@ -27,8 +27,24 @@ const scriptedModel = (respond: (call: ModelCall) => string): LanguageModel => (
       usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     };
   },
-  async doStream() {
-    throw new Error("fixture model does not stream");
+  async doStream(call: ModelCall) {
+    const text = respond(call);
+    return {
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: "stream-start", warnings: [] });
+          controller.enqueue({ type: "text-start", id: "text_1" });
+          controller.enqueue({ type: "text-delta", id: "text_1", delta: text });
+          controller.enqueue({ type: "text-end", id: "text_1" });
+          controller.enqueue({
+            type: "finish",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          });
+          controller.close();
+        },
+      }),
+    };
   },
 } as unknown as LanguageModel);
 
