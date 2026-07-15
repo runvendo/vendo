@@ -1,10 +1,17 @@
 name: Release
+
 on:
+  # Real release: pushing a v* tag publishes the fixed lockstep group to npm.
   push:
     tags: ["v*"]
+  # Dry run: manually dispatch to prove the publish end-to-end WITHOUT publishing
+  # or tagging. Runs the exact gate stack + `pnpm -r publish --dry-run`.
+  workflow_dispatch:
 
+# id-token: write is required for npm provenance (Sigstore OIDC attestation).
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -20,6 +27,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
-      - run: pnpm -r --filter './packages/*' publish --no-git-checks --access public
+      # Parity with the `ci` gate — a release must never publish something that
+      # would have failed CI. typecheck + lint were previously missing here.
+      - run: pnpm typecheck
+      - run: pnpm lint
+
+      # Dry run (workflow_dispatch): prove the publish resolves + packs without
+      # touching the registry. --provenance is dropped here (no tag/release to
+      # attest to, and dry runs mint no attestation).
+      - name: Publish (dry run)
+        if: github.event_name == 'workflow_dispatch'
+        run: pnpm -r --filter './packages/*' publish --dry-run --no-git-checks --access public
+
+      # Real publish (v* tag): pnpm -r skips any version already on the registry
+      # (e.g. hand-versioned @vendoai/telemetry), so re-runs are safe.
+      - name: Publish to npm
+        if: github.event_name == 'push'
+        run: pnpm -r --filter './packages/*' publish --no-git-checks --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

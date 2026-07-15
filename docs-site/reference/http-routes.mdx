@@ -53,8 +53,9 @@ Door paths bypass the wire's principal resolver and CSRF JSON gate. The door
 re-resolves `oauth.principal(subject)` on every bearer-authenticated transport
 request, so returning `null` revokes live sessions; the OAuth and discovery
 endpoints are not principal-resolved. The origin-root discovery documents sit
-outside `/api/vendo`, so on Next.js you forward them to `vendo.handler`. See
-[MCP door](/capabilities/mcp).
+outside `/api/vendo`; opting into MCP during `vendo init` generates the sibling
+Next.js route that forwards them to the same handler. See [MCP
+door](/capabilities/mcp) for the generated placement and manual fallback.
 
 ## Webhook verification
 

@@ -43,7 +43,7 @@ function buildJailSrcdoc(): string {
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
-    "<style>html,body{margin:0;padding:0;background:transparent;height:100%}iframe{display:block;width:100%;height:100%;border:0;background:transparent}</style>",
+    "<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;height:100%}iframe{display:block;width:100%;height:100%;border:0;background:transparent}</style>",
   ].join("");
 
   // The inner document: the runtime plus the generated code it later renders.
@@ -149,6 +149,8 @@ export function JailedComponent({
           });
       } else if (message.kind === "error") {
         setError(typeof message.message === "string" ? message.message : "generated component failed");
+      } else if (message.kind === "empty") {
+        setError("generated component rendered no content");
       } else if (message.kind === "resize" && typeof message.height === "number" && Number.isFinite(message.height)) {
         iframe.style.height = `${Math.min(MAX_JAIL_HEIGHT, Math.max(1, message.height))}px`;
       }

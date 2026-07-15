@@ -38,6 +38,10 @@
     "./modal": {
       "types": "./dist/modal/index.d.ts",
       "default": "./dist/modal/index.js"
+    },
+    "./vendo": {
+      "types": "./dist/vendo/index.d.ts",
+      "default": "./dist/vendo/index.js"
     }
   },
   "files": [

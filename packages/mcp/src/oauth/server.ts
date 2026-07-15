@@ -90,32 +90,11 @@ export class OAuthServer {
   readonly #oauth: HostOAuthAdapter;
   readonly #store: StoreAdapter;
   readonly #guard: Guard;
-  /** Serializes read-check-write on a single code/refresh token so two
-   * concurrent redemptions of the SAME secret cannot both pass the "unused"
-   * check and both mint tokens (the store exposes no atomic claim). In-process
-   * only — a multi-instance deployment still needs a shared store lock or
-   * sticky routing; documented in the README. */
-  readonly #tokenLocks = new Map<string, Promise<void>>();
 
   constructor(config: OAuthServerConfig) {
     this.#oauth = config.oauth;
     this.#store = config.store;
     this.#guard = config.guard;
-  }
-
-  async #withTokenLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prior = this.#tokenLocks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const mine = new Promise<void>((resolve) => (release = resolve));
-    const chained = prior.then(() => mine);
-    this.#tokenLocks.set(key, chained);
-    await prior;
-    try {
-      return await fn();
-    } finally {
-      release();
-      if (this.#tokenLocks.get(key) === chained) this.#tokenLocks.delete(key);
-    }
   }
 
   async register(req: Request): Promise<Response> {
@@ -208,12 +187,12 @@ export class OAuthServer {
     if (grantType === "authorization_code") {
       const code = form.get("code");
       if (!code) return oauthJsonError("invalid_request", "code is required");
-      return this.#withTokenLock(`code:${await sha256Hex(code)}`, () => this.#exchangeCode(form));
+      return this.#exchangeCode(form);
     }
     if (grantType === "refresh_token") {
       const refreshToken = form.get("refresh_token");
       if (!refreshToken) return oauthJsonError("invalid_request", "refresh_token is required");
-      return this.#withTokenLock(`refresh:${await sha256Hex(refreshToken)}`, () => this.#rotateRefresh(form));
+      return this.#rotateRefresh(form);
     }
     return oauthJsonError("unsupported_grant_type", "Unsupported grant_type");
   }
@@ -261,7 +240,12 @@ export class OAuthServer {
     // The code is single-use the moment it is PRESENTED, not only when it is
     // redeemed: a stolen code must not survive a failed PKCE/binding attempt
     // and stay guessable-against for the rest of its TTL.
-    await store.delete(record.id);
+    if (!store.claim) {
+      return oauthJsonError("server_error", "The configured store does not support atomic token claims");
+    }
+    if (!(await store.claim(record))) {
+      return oauthJsonError("invalid_grant", "Authorization code is invalid or expired");
+    }
 
     const grant = parsed.data;
     if (grant.clientId !== clientId || grant.redirectUri !== redirectUri) {
@@ -311,12 +295,23 @@ export class OAuthServer {
       return oauthJsonError("invalid_target", "resource does not match the refresh token");
     }
 
+    if (!store.claim) {
+      return oauthJsonError("server_error", "The configured store does not support atomic token claims");
+    }
+    // Persist candidate grants BEFORE claiming the parent. If another instance
+    // loses the claim, reuse revocation can see and remove every candidate in
+    // the successor chain. Candidate secrets are not exposed unless their
+    // parent claim succeeds.
     const tokens = await this.#issueTokens(grant);
-    await store.put({
-      id: record.id,
+    const claimed = await store.claim(record, {
       data: { ...grant, rotatedTo: tokens.refreshGrantId },
-      refs: record.refs,
+      ...(record.refs === undefined ? {} : { refs: record.refs }),
     });
+    if (!claimed) {
+      await this.#revokeSubjectClient(grant.subject, grant.clientId);
+      await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "revoke");
+      return oauthJsonError("invalid_grant", "Refresh token reuse detected");
+    }
     await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "refresh");
     return json(publicTokenResponse(tokens), 200, tokenHeaders());
   }
