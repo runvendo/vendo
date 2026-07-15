@@ -1045,7 +1045,7 @@ describe("09 §2 apps composition", () => {
   });
 
   it("loads catalog@1 from .vendo and plumbs it through to createApps", { timeout: 120_000 }, async () => {
-    const { MockLanguageModelV3 } = await import("ai/test");
+    const { MockLanguageModelV3, simulateReadableStream } = await import("ai/test");
     const root = await mkdtemp(join(tmpdir(), "vendo-disk-catalog-"));
     const dataDir = join(root, "data");
     await mkdir(join(root, ".vendo"), { recursive: true });
@@ -1061,22 +1061,29 @@ describe("09 §2 apps composition", () => {
     }));
     const store = createStore({ dataDir });
     cleanups.push(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+    const generated = JSON.stringify({
+      name: "Disk catalog app",
+      tree: {
+        formatVersion: VENDO_TREE_FORMAT,
+        root: "metric",
+        nodes: [{ id: "metric", component: "DiskMetric", source: "host", props: { value: 42 } }],
+      },
+    });
     const model = new MockLanguageModelV3({
-      doGenerate: async () => ({
-        content: [{ type: "text", text: JSON.stringify({
-          name: "Disk catalog app",
-          tree: {
-            formatVersion: VENDO_TREE_FORMAT,
-            root: "metric",
-            nodes: [{ id: "metric", component: "DiskMetric", source: "host", props: { value: 42 } }],
+      doStream: async () => ({
+        stream: simulateReadableStream({ chunks: [
+          { type: "text-start", id: "generation" },
+          { type: "text-delta", id: "generation", delta: generated },
+          { type: "text-end", id: "generation" },
+          {
+            type: "finish",
+            usage: {
+              inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 0, text: 0, reasoning: 0 },
+            },
+            finishReason: { unified: "stop", raw: undefined },
           },
-        }) }],
-        finishReason: { unified: "stop", raw: undefined },
-        usage: {
-          inputTokens: { total: 0, noCache: 0, cacheRead: 0, cacheWrite: 0 },
-          outputTokens: { total: 0, text: 0, reasoning: 0 },
-        },
-        warnings: [],
+        ] }),
       }),
     });
     const previousCwd = process.cwd();
