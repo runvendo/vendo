@@ -174,9 +174,9 @@ composition.
 Once a slot is captured, an edit request against the app (`edit(appId,
 instruction)`, exposed on the wire as `POST /api/vendo/apps/:id/edit`) can fork
 the pin instead of only rewriting generated content. The runtime copies the
-captured source into a deterministic generated component, renders it through
-the same sandboxed jail as any other generated component, and records the pin
-on the app version as `{ slot, base: <baseline hash> }`. A follow-up edit that
+captured source into a deterministic generated component and renders it through
+the same sandboxed jail as any other generated component. It records the pin on
+the app version as `{ slot, base: <baseline hash> }`. A follow-up edit that
 touches the pinned subtree lands as a new version on the same app.
 
 Baselines carry an `exportable` flag. When a pinned slot's baseline is
