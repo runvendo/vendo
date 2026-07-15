@@ -47,6 +47,56 @@ export function Root({ children }: { children: React.ReactNode }) {
 Choose headless hooks from `@vendoai/ui` or a ready-made surface from
 `@vendoai/ui/chrome`.
 
+## Add the overlay
+
+`VendoOverlay` from `@vendoai/ui/chrome` is the ready-made agent surface. It
+ships a fixed, brand-styled launcher pill in the bottom-right corner and a
+dialog panel that is portaled to `document.body`, locks page scroll, marks the
+page behind the scrim `inert`, and restores focus to the invoking element on
+close.
+
+```tsx
+import { VendoOverlay } from "@vendoai/ui/chrome";
+
+export function Assistant() {
+  return <VendoOverlay />;
+}
+```
+
+Move the launcher with `launcher="bottom-left"`, or set `launcher="none"` when
+your host triggers the overlay itself (for example, from a dock or a Cmd/Ctrl+K
+shortcut). Open state is uncontrolled by default and can be seeded with
+`defaultOpen`, or fully controlled with `open` and `onOpenChange`.
+
+For programmatic control, pair the component with the `useVendoOverlay` hook
+from `@vendoai/ui`. Spread `overlayProps` onto the component and call `open`,
+`close`, or `toggle` from your own shortcut or nav button.
+
+```tsx
+"use client";
+
+import { useEffect } from "react";
+import { useVendoOverlay } from "@vendoai/ui";
+import { VendoOverlay } from "@vendoai/ui/chrome";
+
+export function Assistant() {
+  const overlay = useVendoOverlay();
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        overlay.toggle();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [overlay.toggle]);
+
+  return <VendoOverlay {...overlay.overlayProps} launcher="none" />;
+}
+```
+
 ## Send the first turn
 
 Open your conversation surface and ask for a view, such as “Show my overdue
