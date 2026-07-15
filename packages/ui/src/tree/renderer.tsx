@@ -149,6 +149,31 @@ interface NodeRendererProps {
   setViewState(key: string, value: Json): void;
 }
 
+const EMPTY_LAYOUT_COMPONENTS = new Set(["Stack", "Row", "Grid"]);
+
+const hasRenderableTreeContent = (tree: Tree): boolean => {
+  const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
+  const pending = [tree.root];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const id = pending.pop();
+    if (id === undefined || visited.has(id)) continue;
+    visited.add(id);
+    const node = nodes.get(id);
+    // A missing child renders the streaming skeleton, which is intentionally visible.
+    if (node === undefined) return true;
+    if (node.source === "host" || node.source === "generated") return true;
+    if (node.component === "Text") {
+      const text = node.props?.text;
+      if (text !== undefined && text !== null && String(text).trim() !== "") return true;
+    } else if (!EMPTY_LAYOUT_COMPONENTS.has(node.component)) {
+      return true;
+    }
+    pending.push(...(node.children ?? []));
+  }
+  return false;
+};
+
 function NodeRenderer(props: NodeRendererProps) {
   const node = props.nodes.get(props.nodeId);
   if (!node) {
@@ -291,6 +316,14 @@ function StatefulTreeView({
     return (
       <ContainedNotice label="Invalid UI tree" code={validation.error.code}>
         {`${validation.error.code}: ${validation.error.message}`}
+      </ContainedNotice>
+    );
+  }
+
+  if (!hasRenderableTreeContent(validation.tree)) {
+    return (
+      <ContainedNotice label="Empty UI tree">
+        The app view has no renderable content.
       </ContainedNotice>
     );
   }
