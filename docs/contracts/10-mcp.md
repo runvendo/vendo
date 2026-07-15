@@ -121,6 +121,7 @@ The user's saved layer, not just raw tools — delivered the way the MCP Apps sp
 
 - The door ships **one static HTML shim resource** — the tree renderer (`@vendoai/ui/tree`, which already ships as a library per 08 §1) — at a `ui://` URI with mimeType `text/html;profile=mcp-app`, negotiated via the `io.modelcontextprotocol/ui` extension.
 - App access is **ordinary door tools** (`vendo_apps_list`, `vendo_apps_open`) carrying `_meta: { ui: { resourceUri } }`; the host client renders the shim when the tool is called, and the tool result carries the `UIPayload` for the shim to render. Format dispatch inside the shim follows core §8 (unknown tags render a contained notice).
+- `AppsRuntime.open()` has already resolved v0 tree queries into `tree.data` (06 §1), so the MCP projection omits `tree.queries` from that resolved payload. The static shim retains query resolution only as a compatibility fallback for unresolved payloads from non-door hosts; a door open executes each query exactly once.
 - Interactions inside the rendered app go back over the shim's `postMessage` JSON-RPC bridge as `tools/call` — which lands in the guard-bound path like every other door call. An app run from ChatGPT has exactly the authority it has in-product: the running user's, asked in context.
 
 ```ts
@@ -159,3 +160,22 @@ Hosted broker (Cloud), registry submission automation, MCP Apps write-back beyon
 ## 8. Review round (recorded)
 
 Dual review applied before any build: **standards** (verified against MCP 2025-11-25, MCP Apps 2026-01-26, RFC 8707/9728/8414/7591, CIMD draft) — all 6 findings applied, the big two being resource/audience binding and the MCP Apps shim delivery model. **Simplification** — 5 of 7 applied (`HostOAuthAdapter` shrunk to two functions, door owns its own state via `StoreAdapter`, `isRevoked`/`ttl`/`serverInfo` deleted, `AppsPort` = structural subset of `AppsRuntime`); 2 declined with rationale: the server card stays (the page mandates discovery — "agent-reachability becomes distribution" — path corrected + marked provisional instead), and `guard` stays in config (the page mandates "same audit"; auth events belong in the SIEM export, not only in SQL).
+
+## 9. Additive amendments
+
+### 2026-07-14 — RFC 7009 token revocation
+
+- **Changed:** Added local `{mount}/revoke` handling for access and refresh
+  tokens, advertised `revocation_endpoint` and `scopes_supported` in RFC 8414
+  metadata, and added `McpDoor.revokeClient(subject, clientId)` as the
+  host-authorized per-client disconnect surface.
+- **Semantics:** Access-token revocation invalidates that token. Refresh-token
+  revocation atomically kills the token's authorization-grant family, including
+  its access tokens and rotated successors. The host API revokes every existing
+  family for the subject/client and closes matching live MCP sessions. Unknown
+  tokens return an empty `200` as required by RFC 7009.
+- **Compatibility:** Grant-family fields and the `McpDoor` method are additive.
+  Pre-family grants remain readable during rolling deployment and are revoked
+  through guarded token updates. External authorization-server mode continues
+  to delegate the complete OAuth surface, including revocation, to `remoteAs`.
+- **Approved by:** Yousef, 2026-07-14 (ENG-269).

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "nativeScreens": [
+    {
+      "id": "websites",
+      "label": "Umami websites overview",
+      "path": "/websites",
+      "waitFor": "main"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "traffic-dashboard",
+      "label": "Traffic performance dashboard",
+      "prompt": "Using the real Demo SaaS data at app.example.com, create and open an interactive traffic dashboard for the last 7 days with top pages, view counts, visitors, and a compact trend summary. Match Umami's native visual style and use no emoji."
+    },
+    {
+      "id": "revenue-summary",
+      "label": "Revenue summary",
+      "prompt": "Using the real Demo SaaS data, create and open a revenue summary view for this month with total purchase revenue, pro versus enterprise breakdowns, and clear numeric comparisons. Match Umami's native visual style and use no emoji."
+    },
+    {
+      "id": "acquisition-dashboard",
+      "label": "Acquisition dashboard",
+      "prompt": "Using the real Demo Blog data at blog.example.com, create and open an acquisition dashboard for the last 30 days showing top referrers or traffic sources with counts and relative share. Match Umami's native visual style and use no emoji."
+    }
+  ]
+}

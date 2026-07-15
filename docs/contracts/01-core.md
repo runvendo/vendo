@@ -339,6 +339,7 @@ export interface VendoRecord {
   refs?: Record<string, string>;   // host-entity refs — queryable, joinable
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
+  revision?: string;               // opaque token when RecordStore.atomic is present
 }
 
 export interface RecordQuery { refs?: Record<string, string>; ids?: string[]; limit?: number; cursor?: string; }
@@ -352,6 +353,13 @@ export interface RecordStore {
          replacement?: Pick<VendoRecord, "data" | "refs">): Promise<boolean>;
   delete(id: string): Promise<void>;
   list(q?: RecordQuery): Promise<{ records: VendoRecord[]; cursor?: string }>;
+  atomic?: {
+    insertIfAbsent(record: Pick<VendoRecord, "id" | "data" | "refs">): Promise<VendoRecord | null>;
+    compareAndSwap(
+      record: Pick<VendoRecord, "id" | "data" | "refs">,
+      expectedRevision: string,
+    ): Promise<VendoRecord | null>;
+  };
 }
 
 export interface BlobStore {
@@ -385,7 +393,12 @@ export interface SecretsProvider { get(name: string): Promise<string | undefined
 /** Agentic execution seam — how automations run an agent without importing it.
  *  agent exports an implementation (03 §1 `asRunner`); the umbrella wires it. */
 export type AgentRunner = (
-  task: { prompt: string; tools: ToolRegistry; budget?: { maxToolCalls?: number } },
+  task: {
+    prompt: string;
+    tools: ToolRegistry;
+    budget?: { maxToolCalls?: number };
+    abortSignal?: AbortSignal;     // additive, best-effort in-process cancellation
+  },
   ctx: RunContext,
 ) => Promise<AgentRunReport>;
 

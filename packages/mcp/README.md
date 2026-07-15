@@ -37,6 +37,29 @@ the immediate account-level kill switch. The door's local `/authorize`,
 `/token`, and `/register` endpoints and RFC 8414 metadata return `404`; RFC 9728
 protected-resource metadata advertises the configured external issuer.
 
+## Token revocation
+
+Local authorization-server metadata advertises `{mount}/revoke` and the
+supported `read` / `write` scopes. The RFC 7009 endpoint accepts an
+`application/x-www-form-urlencoded` POST containing `token`, the public
+`client_id`, and an optional `token_type_hint`. Unknown tokens and unknown or
+incorrect hints receive the RFC-required empty `200` response.
+
+Access-token revocation invalidates that opaque token. Refresh-token revocation
+atomically revokes its authorization-grant family, including access tokens and
+rotated successors, without disconnecting a separate authorization for the
+same client. Hosts can disconnect all existing authorizations for one
+subject/client pair and close their live MCP sessions through the returned door:
+
+```ts
+const door = createMcpDoor({ /* ... */ });
+await door.revokeClient(subject, clientId);
+```
+
+Grant-family and token revocation use the store's guarded atomic claim rather
+than a read-then-write update. In `remoteAs` mode, the external authorization
+server owns revocation and the door's local `/revoke` path returns `404`.
+
 ## Login federation
 
 `federation: { secret }` enables `GET {mount}/federate?request=<compact JWS>` as
@@ -65,7 +88,8 @@ The current adapter owns three related lifetimes:
 
 - a TTL-indexed session record keyed by `Mcp-Session-Id`, containing the
   authenticated subject and opaque SDK runtime;
-- the subject-to-session index used to close every live runtime on revocation;
+- the authenticated subject/client/grant-family binding used to close every
+  matching live runtime on account, per-client, or refresh-family revocation;
 - a bounded approval-replay map keyed by an opaque replay scope plus the
   canonical tool/arguments fingerprint. A pending approval retains its exact
   `ToolCall.id`; any resolved outcome deletes it. Session deletion, revocation,
@@ -94,11 +118,11 @@ package-root API remains the frozen `createMcpDoor(config)` surface.
 
 ## Operating notes for host integrators
 
-- **`HostOAuthAdapter.authorize` renders consent.** The door passes the client's
-  `client_name` (from DCR or a Client ID Metadata Document — attacker-controllable)
-  straight to your adapter. **Escape it** before rendering it on a consent screen;
-  a client can register a name like `"Google Drive (official)"` for phishing or
-  inject markup for XSS on your page. The door deliberately does no rendering.
+- **The prebuilt page escapes `client_name`.** DCR and Client ID Metadata
+  Documents make that value attacker-controlled. If you replace the page with
+  `HostOAuthAdapter.authorize`, your renderer must keep escaping it too.
+- **Return from login through `session`'s `returnTo`.** It preserves the complete
+  OAuth request and prevents the common login → authorize → login loop.
 - **Single-secret redemption is claimed in the database.** Authorization codes and
   refresh tokens use the store's atomic compare-and-claim capability, so one
   redeemer wins across multiple door processes sharing Postgres. A custom
@@ -109,3 +133,37 @@ package-root API remains the frozen `createMcpDoor(config)` surface.
   egress at your network layer — the door cannot portably prevent DNS rebinding.
 - **`vendo init` must ask before opening the door.** The shipped guard policy blocks
   `venue: "mcp"`; opening the door is a host decision, never a default.
+
+## Prebuilt consent flow
+
+Use `session` instead of hand-building consent in `authorize`. Return the current
+host subject, or redirect an unauthenticated browser to login through the exact
+`returnTo` the door supplies:
+
+```ts
+const oauth: HostOAuthAdapter = {
+  async session(req, { returnTo }) {
+    const subject = await currentSubject(req);
+    if (subject) return { subject };
+
+    const login = new URL("/login", req.url);
+    login.searchParams.set("returnTo", returnTo);
+    return Response.redirect(login);
+  },
+  async principal(subject) {
+    return resolveUser(subject); // null revokes existing door tokens
+  },
+};
+```
+
+The door renders the consent page, handles approve/deny, CSRF-protects the POST,
+rejects replay, and performs the standard authorization-code redirect. Its CSS
+uses the UI pipeline's `--vendo-*` tokens, including `--vendo-color-*`,
+`--vendo-font-*`, `--vendo-radius-*`, and `--vendo-space-*`. The umbrella passes
+the resolved `.vendo/theme.json` automatically; direct `createMcpDoor` users can
+pass the same core `VendoTheme` as `theme`.
+
+To replace the whole page without taking ownership of the protocol, also provide
+`authorize`. In session mode `ctx.consent` contains the door-owned form state;
+post `transaction`, `csrf_token`, and `decision=approve|deny` to its `action`.
+The door still handles and validates the decision.

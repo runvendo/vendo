@@ -6,5 +6,10 @@
  */
 export { createMcpDoor } from "./door.js";
 export type { McpDoor, McpDoorConfig, McpRunContext } from "./door.js";
-export type { HostOAuthAdapter } from "./oauth/adapter.js";
+export type {
+  HostOAuthAdapter,
+  HostOAuthAuthorizeContext,
+  HostOAuthConsentFlow,
+  HostOAuthSessionContext,
+} from "./oauth/adapter.js";
 export type { AppsPort } from "./apps-port.js";

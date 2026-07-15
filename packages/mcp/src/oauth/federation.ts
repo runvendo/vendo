@@ -18,6 +18,7 @@ export async function handleFederation(
   secret: string,
   oauth: HostOAuthAdapter,
 ): Promise<Response> {
+  if (oauth.authorize === undefined) return invalidRequest();
   const compact = new URL(req.url).searchParams.get("request");
   if (!compact) return invalidRequest();
 

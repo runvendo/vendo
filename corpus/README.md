@@ -13,6 +13,10 @@ gitignored; do not commit foreign repo code or generated run artifacts.
   repos, or every manifest repo when none are named.
 - `pnpm corpus run [repo...] --layer 2` adds scoring against the checked-in
   expectations for the selected development repos.
+- `pnpm corpus gallery [repo...]` boots selected deep-tier repos and captures
+  host-native baselines, generated UI screenshots/GIFs, and latency timings.
+  With no repo arguments it discovers repos that have
+  `corpus/expectations/<repo>/gallery.json`; there is no hardcoded gate set.
 - `pnpm --filter @vendoai/corpus-harness test` runs the harness unit tests.
 
 Run artifacts are written under `corpus/.repos/.logs/`, with a copy of the
@@ -85,6 +89,34 @@ workspace, runs `pnpm corpus run --json`, writes the scorecard to the job
 summary, appends a trend delta versus the previous run
 (`corpus/scripts/corpus-trend.mjs`), and uploads `scorecard.json` + `.md` +
 per-repo logs as the `corpus-scorecard` artifact (30-day retention).
+
+## Generation gallery
+
+Each deep-tier gallery config contains one or two `nativeScreens` (`id`,
+`label`, host-relative `path`, and optional `waitFor` selector) plus a set of
+UI-generating `prompts` (`id`, `label`, `prompt`, and optional `timeoutMs`). The
+gallery command reuses the normal checkout, bootstrap, local-package injection,
+`vendo init`, per-repo e2e preparation, and boot recipes before opening the
+Layer-3 Playwright surface.
+
+Artifacts are written under
+`corpus/.repos/.gallery/<runId>/<repo>/`. Every prompt gets
+`first-paint.png`, `settled.png`, `timings.json`, and `generation.gif`. Timing
+marks are measured automatically at prompt submission, the generation tool
+call, the first visible generated pixel, and the settled/usable view. The
+harness approves generation create/edit cards when required so the end-to-end
+numbers include any approval wait. The report labels both end-to-end
+prompt-submit latency and generation-tool-call latency distinctly, and calls
+out nearest-rank p95 generation bars of first paint under 1 second and usable
+under 10 seconds across successful captures. If
+`ffmpeg` is unavailable or conversion fails, the Playwright `generation.webm`
+is retained and the fallback is recorded in `timings.json` and the report.
+
+The run root contains one `gallery.html` with all screenshots and animation
+bytes inlined as data URLs. It is standalone and can be opened directly for
+side-by-side fidelity review. Gallery runs require Playwright Chromium and the
+same Docker/secrets needed by the selected deep-tier boot recipes; source local
+keys into the shell without copying them into any corpus config or artifact.
 
 PR CI is untouched — no LLM cost or flakiness is added to the merge path.
 

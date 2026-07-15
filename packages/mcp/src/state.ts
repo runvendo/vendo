@@ -21,6 +21,8 @@ export interface McpStateSession {
 export interface SessionStateRecord {
   sessionId: string;
   subject: string;
+  clientId: string;
+  grantFamilyId?: string;
   session: McpStateSession;
   expiresAt: number;
 }
@@ -56,6 +58,10 @@ export interface McpDoorState {
   deleteSession(sessionId: string): MaybePromise<McpStateSession | null>;
   /** Removes every session and replay record owned by the subject. */
   deleteSessionsBySubject(subject: string): MaybePromise<McpStateSession[]>;
+  /** Removes live sessions for one host subject/client grant set. */
+  deleteSessionsBySubjectClient(subject: string, clientId: string): MaybePromise<McpStateSession[]>;
+  /** Removes live sessions descended from one local OAuth grant family. */
+  deleteSessionsByGrantFamily(familyId: string): MaybePromise<McpStateSession[]>;
   /** Atomically removes and returns every session whose expiry is <= now. */
   sweepExpiredSessions(now: number): MaybePromise<McpStateSession[]>;
 
@@ -131,6 +137,14 @@ export class InMemoryMcpDoorState implements McpDoorState {
     return sessions;
   }
 
+  deleteSessionsBySubjectClient(subject: string, clientId: string): McpStateSession[] {
+    return this.#deleteSessionsWhere((record) => record.subject === subject && record.clientId === clientId);
+  }
+
+  deleteSessionsByGrantFamily(familyId: string): McpStateSession[] {
+    return this.#deleteSessionsWhere((record) => record.grantFamilyId === familyId);
+  }
+
   sweepExpiredSessions(now: number): McpStateSession[] {
     const expired: McpStateSession[] = [];
     for (const [sessionId, record] of [...this.#sessions]) {
@@ -175,5 +189,15 @@ export class InMemoryMcpDoorState implements McpDoorState {
     const sessions = this.#subjectSessions.get(subject);
     sessions?.delete(sessionId);
     if (sessions?.size === 0) this.#subjectSessions.delete(subject);
+  }
+
+  #deleteSessionsWhere(predicate: (record: SessionStateRecord) => boolean): McpStateSession[] {
+    const sessions: McpStateSession[] = [];
+    for (const [sessionId, record] of [...this.#sessions]) {
+      if (!predicate(record)) continue;
+      const session = this.deleteSession(sessionId);
+      if (session !== null) sessions.push(session);
+    }
+    return sessions;
   }
 }
