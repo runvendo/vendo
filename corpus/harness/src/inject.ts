@@ -162,6 +162,17 @@ async function findPnpmWorkspaceRoot(checkoutDir: string, targetDir: string): Pr
   return undefined;
 }
 
+/** pnpm ≥10 errors on dangerouslyAllowAllBuilds when the workspace already
+ * declares a curated build allowlist — detect that curation. */
+async function pnpmDeclaresBuiltDependencies(installDir: string): Promise<boolean> {
+  try {
+    const source = await readFile(path.join(installDir, "pnpm-workspace.yaml"), "utf8");
+    return /^\s*(onlyBuiltDependencies|neverBuiltDependencies)\s*:/m.test(source);
+  } catch {
+    return false;
+  }
+}
+
 function localVendoTarballLockfileSpec(lockfile: string): boolean {
   return /file:[^\s"'#]*vendor\/vendoai(?:-[A-Za-z0-9._-]+)?-[^/\s"']+\.tgz/i.test(lockfile);
 }
@@ -379,13 +390,18 @@ export function createLocalVendoInjector(options: CreateLocalVendoInjectorOption
       await writePnpmWorkspaceRootOverrides(repoDir, installSummary);
       if (runInstall) {
         const sourceCommand = installCommandSource(repo, installSummary);
+        // pnpm ≥10 rejects dangerouslyAllowAllBuilds when the repo curates its
+        // own build allowlist (onlyBuiltDependencies/neverBuiltDependencies in
+        // pnpm-workspace.yaml) — respect the repo's explicit config instead.
+        const repoCuratesBuilds = installSummary.packageManager === "pnpm"
+          && await pnpmDeclaresBuiltDependencies(installDir);
         const installCommand = normalizePostInjectionInstallCommand(sourceCommand, {
           dropIgnoreWorkspace: installSummary.packageManager === "pnpm" && installDir !== repoDir,
           disableYarnImmutableInstalls: installSummary.packageManager === "yarn-berry",
           pnpmConfig: installSummary.packageManager === "pnpm"
             ? [
                 "--config.minimumReleaseAge=0",
-                "--config.dangerouslyAllowAllBuilds=true",
+                ...(repoCuratesBuilds ? [] : ["--config.dangerouslyAllowAllBuilds=true"]),
               ]
             : [],
         });
