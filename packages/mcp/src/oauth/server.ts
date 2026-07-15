@@ -4,6 +4,7 @@ import type {
   Principal,
   RecordStore,
   StoreAdapter,
+  VendoRecord,
   VendoTheme,
 } from "@vendoai/core";
 import { z } from "zod";
@@ -15,6 +16,7 @@ const ACCESS_TOKEN_SECONDS = 60 * 60;
 const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 const CODE_SECONDS = 60;
 const CONSENT_SECONDS = 10 * 60;
+const CLAIM_ATTEMPTS = 8;
 
 const clientDataSchema = z.object({
   client_name: z.string(),
@@ -40,30 +42,44 @@ const codeGrantSchema = z.object({
   kind: z.literal("code"),
   subject: z.string(),
   clientId: z.string(),
+  familyId: z.string().optional(),
   resource: z.string(),
   scopes: z.array(z.string()),
   codeChallenge: z.string(),
   redirectUri: z.string(),
   expiresAt: z.string(),
+  revokedAt: z.string().optional(),
 });
 
 const accessGrantSchema = z.object({
   kind: z.literal("access"),
   subject: z.string(),
   clientId: z.string(),
+  familyId: z.string().optional(),
   resource: z.string(),
   scopes: z.array(z.string()),
   expiresAt: z.string(),
+  revokedAt: z.string().optional(),
 });
 
 const refreshGrantSchema = z.object({
   kind: z.literal("refresh"),
   subject: z.string(),
   clientId: z.string(),
+  familyId: z.string().optional(),
   resource: z.string(),
   scopes: z.array(z.string()),
   expiresAt: z.string(),
   rotatedTo: z.string().optional(),
+  revokedAt: z.string().optional(),
+});
+
+const grantFamilySchema = z.object({
+  kind: z.literal("family"),
+  subject: z.string(),
+  clientId: z.string(),
+  status: z.enum(["active", "revoked"]),
+  revokedAt: z.string().optional(),
 });
 
 const consentInteractionSchema = z.object({
@@ -84,7 +100,20 @@ type ClientData = z.infer<typeof clientDataSchema>;
 type CodeGrant = z.infer<typeof codeGrantSchema>;
 type AccessGrant = z.infer<typeof accessGrantSchema>;
 type RefreshGrant = z.infer<typeof refreshGrantSchema>;
+type GrantFamily = z.infer<typeof grantFamilySchema>;
 type ConsentInteraction = z.infer<typeof consentInteractionSchema>;
+
+interface RevokedGrant {
+  subject: string;
+  clientId: string;
+  tokenType: "access_token" | "refresh_token";
+  familyId?: string;
+}
+
+interface RevocationResult {
+  response: Response;
+  grant?: RevokedGrant;
+}
 
 export interface AuthenticatedGrant {
   grant: AccessGrant;
@@ -297,21 +326,48 @@ export class OAuthServer {
   ): Promise<Response> {
     const code = `vmcd_${randomBase64Url(32)}`;
     const tokenHash = await sha256Hex(code);
+    const familyId = `mcgf_${randomHex(12)}`;
     const grant: CodeGrant = {
       kind: "code",
       subject,
       clientId: authorization.clientId,
+      familyId,
       resource: authorization.resource,
       scopes: authorization.scopes,
       codeChallenge: authorization.codeChallenge,
       redirectUri: authorization.redirectUri,
       expiresAt: expiresIn(CODE_SECONDS),
     };
-    await this.#store.records(GRANTS_COLLECTION).put({
-      id: `mcpg_${randomHex(12)}`,
-      data: grant,
-      refs: { kind: "code", token_hash: tokenHash },
-    });
+    const family: GrantFamily = {
+      kind: "family",
+      subject,
+      clientId: authorization.clientId,
+      status: "active",
+    };
+    const store = this.#store.records(GRANTS_COLLECTION);
+    await Promise.all([
+      store.put({
+        id: familyId,
+        data: family,
+        refs: {
+          kind: "family",
+          family_id: familyId,
+          subject,
+          client_id: authorization.clientId,
+        },
+      }),
+      store.put({
+        id: `mcpg_${randomHex(12)}`,
+        data: grant,
+        refs: {
+          kind: "code",
+          token_hash: tokenHash,
+          family_id: familyId,
+          subject,
+          client_id: authorization.clientId,
+        },
+      }),
+    ]);
     return oauthRedirect(authorization.redirectUri, { code, state: authorization.state });
   }
 
@@ -353,8 +409,88 @@ export class OAuthServer {
     });
     if (!record) return null;
     const parsed = accessGrantSchema.safeParse(record.data);
-    if (!parsed.success || expired(parsed.data.expiresAt)) return null;
+    if (
+      !parsed.success
+      || parsed.data.revokedAt !== undefined
+      || expired(parsed.data.expiresAt)
+      || !(await this.#isFamilyActive(parsed.data.familyId))
+    ) return null;
     return { grant: parsed.data, tokenWasPresented: true };
+  }
+
+  async revoke(req: Request): Promise<RevocationResult> {
+    if (!contentType(req).startsWith("application/x-www-form-urlencoded")) {
+      return { response: oauthJsonError("invalid_request", "Expected application/x-www-form-urlencoded") };
+    }
+    const form = new URLSearchParams(await req.text());
+    const token = form.get("token");
+    const clientId = form.get("client_id");
+    if (!token || !clientId) {
+      return { response: oauthJsonError("invalid_request", "token and client_id are required") };
+    }
+    try {
+      await this.#resolveClient(clientId);
+    } catch (error) {
+      return { response: oauthJsonError("invalid_client", errorMessage(error)) };
+    }
+
+    const store = this.#store.records(GRANTS_COLLECTION);
+    if (!store.claim) {
+      return { response: oauthJsonError("server_error", "The configured store does not support atomic token claims") };
+    }
+    const tokenHash = await sha256Hex(token);
+    const hint = form.get("token_type_hint");
+    const kinds = hint === "refresh_token"
+      ? ["refresh", "access"] as const
+      : ["access", "refresh"] as const;
+    for (const kind of kinds) {
+      const record = await findOne(store, { kind, token_hash: tokenHash });
+      if (!record) continue;
+      if (kind === "access") {
+        const parsed = accessGrantSchema.safeParse(record.data);
+        if (!parsed.success) return { response: revocationSuccess() };
+        if (parsed.data.clientId !== clientId) {
+          return { response: oauthJsonError("invalid_client", "Token was not issued to this client") };
+        }
+        const changed = await this.#revokeTokenRecord(record, accessGrantSchema);
+        if (changed) await this.#audit({ kind: "user", subject: parsed.data.subject }, clientId, "revoke");
+        return {
+          response: revocationSuccess(),
+          grant: {
+            subject: parsed.data.subject,
+            clientId,
+            tokenType: "access_token",
+            ...(parsed.data.familyId === undefined ? {} : { familyId: parsed.data.familyId }),
+          },
+        };
+      }
+
+      const parsed = refreshGrantSchema.safeParse(record.data);
+      if (!parsed.success) return { response: revocationSuccess() };
+      if (parsed.data.clientId !== clientId) {
+        return { response: oauthJsonError("invalid_client", "Token was not issued to this client") };
+      }
+      const changed = parsed.data.familyId === undefined
+        ? await this.#revokeSubjectClientGrants(parsed.data.subject, clientId)
+        : await this.#revokeFamily(parsed.data.familyId);
+      if (changed) await this.#audit({ kind: "user", subject: parsed.data.subject }, clientId, "revoke");
+      return {
+        response: revocationSuccess(),
+        grant: {
+          subject: parsed.data.subject,
+          clientId,
+          tokenType: "refresh_token",
+          ...(parsed.data.familyId === undefined ? {} : { familyId: parsed.data.familyId }),
+        },
+      };
+    }
+    return { response: revocationSuccess() };
+  }
+
+  /** Host-side per-client disconnect. The caller owns host authorization for
+   * this API; the door atomically revokes every existing grant family. */
+  async revokeClient(subject: string, clientId: string): Promise<boolean> {
+    return this.#revokeSubjectClientGrants(subject, clientId);
   }
 
   async principal(subject: string): Promise<Principal | null> {
@@ -380,7 +516,7 @@ export class OAuthServer {
     const store = this.#store.records(GRANTS_COLLECTION);
     const record = await findOne(store, { kind: "code", token_hash: await sha256Hex(code) });
     const parsed = codeGrantSchema.safeParse(record?.data);
-    if (!record || !parsed.success || expired(parsed.data.expiresAt)) {
+    if (!record || !parsed.success || parsed.data.revokedAt !== undefined || expired(parsed.data.expiresAt)) {
       return oauthJsonError("invalid_grant", "Authorization code is invalid or expired");
     }
     // The code is single-use the moment it is PRESENTED, not only when it is
@@ -399,6 +535,9 @@ export class OAuthServer {
     }
     if (await sha256Base64Url(verifier) !== grant.codeChallenge) {
       return oauthJsonError("invalid_grant", "PKCE verification failed");
+    }
+    if (!(await this.#isFamilyActive(grant.familyId))) {
+      return oauthJsonError("invalid_grant", "Authorization grant is revoked");
     }
     const requestedResource = form.get("resource");
     if (requestedResource !== null && !sameCanonicalUri(requestedResource, grant.resource)) {
@@ -420,19 +559,28 @@ export class OAuthServer {
     const store = this.#store.records(GRANTS_COLLECTION);
     const record = await findOne(store, { kind: "refresh", token_hash: await sha256Hex(refreshToken) });
     const parsed = refreshGrantSchema.safeParse(record?.data);
-    if (!record || !parsed.success || expired(parsed.data.expiresAt) || parsed.data.clientId !== clientId) {
+    if (
+      !record
+      || !parsed.success
+      || parsed.data.revokedAt !== undefined
+      || expired(parsed.data.expiresAt)
+      || parsed.data.clientId !== clientId
+    ) {
       return oauthJsonError("invalid_grant", "Refresh token is invalid or expired");
     }
     const grant = parsed.data;
     if (grant.rotatedTo !== undefined) {
-      await this.#revokeSubjectClient(grant.subject, grant.clientId);
+      await this.#revokeGrant(grant);
       await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "revoke");
       return oauthJsonError("invalid_grant", "Refresh token reuse detected");
+    }
+    if (!(await this.#isFamilyActive(grant.familyId))) {
+      return oauthJsonError("invalid_grant", "Refresh token is invalid or expired");
     }
     // 10-mcp §3: principal() is the kill switch. A refresh 30 days later must
     // not mint a fresh token window for a subject the host has since revoked.
     if ((await this.#oauth.principal(grant.subject)) === null) {
-      await this.#revokeSubjectClient(grant.subject, grant.clientId);
+      await this.#revokeSubjectClientGrants(grant.subject, grant.clientId);
       await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "revoke");
       return oauthJsonError("invalid_grant", "Subject is no longer authorized");
     }
@@ -454,15 +602,18 @@ export class OAuthServer {
       ...(record.refs === undefined ? {} : { refs: record.refs }),
     });
     if (!claimed) {
-      await this.#revokeSubjectClient(grant.subject, grant.clientId);
+      await this.#revokeGrant(grant);
       await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "revoke");
       return oauthJsonError("invalid_grant", "Refresh token reuse detected");
+    }
+    if (!(await this.#isFamilyActive(grant.familyId))) {
+      return oauthJsonError("invalid_grant", "Refresh token is invalid or expired");
     }
     await this.#audit({ kind: "user", subject: grant.subject }, grant.clientId, "refresh");
     return json(publicTokenResponse(tokens), 200, tokenHeaders());
   }
 
-  async #issueTokens(source: Pick<CodeGrant, "subject" | "clientId" | "resource" | "scopes">): Promise<{
+  async #issueTokens(source: Pick<CodeGrant, "subject" | "clientId" | "familyId" | "resource" | "scopes">): Promise<{
     access_token: string;
     token_type: "Bearer";
     expires_in: number;
@@ -475,6 +626,7 @@ export class OAuthServer {
     const binding = {
       subject: source.subject,
       clientId: source.clientId,
+      ...(source.familyId === undefined ? {} : { familyId: source.familyId }),
       resource: source.resource,
       scopes: source.scopes,
     };
@@ -490,7 +642,11 @@ export class OAuthServer {
     };
     const accessGrantId = `mcpg_${randomHex(12)}`;
     const refreshGrantId = `mcpg_${randomHex(12)}`;
-    const refs = { subject: source.subject, client_id: source.clientId };
+    const refs = {
+      subject: source.subject,
+      client_id: source.clientId,
+      ...(source.familyId === undefined ? {} : { family_id: source.familyId }),
+    };
     await Promise.all([
       this.#store.records(GRANTS_COLLECTION).put({
         id: accessGrantId,
@@ -521,10 +677,99 @@ export class OAuthServer {
     return { id: clientId, name: parsed.data.client_name, redirectUris: parsed.data.redirect_uris };
   }
 
-  async #revokeSubjectClient(subject: string, clientId: string): Promise<void> {
+  async #isFamilyActive(familyId: string | undefined): Promise<boolean> {
+    if (familyId === undefined) return true; // compatibility for pre-family grants
+    const record = await this.#store.records(GRANTS_COLLECTION).get(familyId);
+    const parsed = grantFamilySchema.safeParse(record?.data);
+    return parsed.success && parsed.data.status === "active";
+  }
+
+  async #revokeGrant(grant: RefreshGrant): Promise<boolean> {
+    return grant.familyId === undefined
+      ? this.#revokeSubjectClientGrants(grant.subject, grant.clientId)
+      : this.#revokeFamily(grant.familyId);
+  }
+
+  async #revokeFamily(familyId: string): Promise<boolean> {
     const store = this.#store.records(GRANTS_COLLECTION);
-    const records = await listAll(store, { subject, client_id: clientId });
-    await Promise.all(records.map((record) => store.delete(record.id)));
+    if (!store.claim) throw new Error("The configured store does not support atomic token claims");
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+      const record = await store.get(familyId);
+      const parsed = grantFamilySchema.safeParse(record?.data);
+      if (!record || !parsed.success || parsed.data.status === "revoked") return false;
+      const replacement: GrantFamily = {
+        ...parsed.data,
+        status: "revoked",
+        revokedAt: new Date().toISOString(),
+      };
+      if (await store.claim(record, {
+        data: replacement,
+        ...(record.refs === undefined ? {} : { refs: record.refs }),
+      })) return true;
+    }
+    throw new Error("Grant family changed too many times during revocation");
+  }
+
+  async #revokeSubjectClientGrants(subject: string, clientId: string): Promise<boolean> {
+    const store = this.#store.records(GRANTS_COLLECTION);
+    if (!store.claim) throw new Error("The configured store does not support atomic token claims");
+    let changed = false;
+    const families = await listAll(store, { kind: "family", subject, client_id: clientId });
+    for (const family of families) {
+      changed = await this.#revokeFamily(family.id) || changed;
+    }
+
+    // Outstanding grants minted before family anchors shipped remain valid
+    // across a rolling deployment. Revoke those with the same guarded UPDATE
+    // pattern instead of list-then-delete.
+    const legacy = await listAll(store, { subject, client_id: clientId });
+    for (const record of legacy) {
+      const access = accessGrantSchema.safeParse(record.data);
+      if (access.success && access.data.familyId === undefined) {
+        changed = await this.#revokeTokenRecord(record, accessGrantSchema) || changed;
+        continue;
+      }
+      const refresh = refreshGrantSchema.safeParse(record.data);
+      if (refresh.success && refresh.data.familyId === undefined) {
+        changed = await this.#revokeTokenRecord(record, refreshGrantSchema) || changed;
+      }
+    }
+    // Pre-family authorization codes did not carry subject/client refs. Their
+    // one-minute window still overlaps rolling deploys, so scan the bounded
+    // code set, filter by parsed binding, and guard-update matches as revoked.
+    const legacyCodes = await listAll(store, { kind: "code" });
+    for (const record of legacyCodes) {
+      const code = codeGrantSchema.safeParse(record.data);
+      if (
+        code.success
+        && code.data.familyId === undefined
+        && code.data.subject === subject
+        && code.data.clientId === clientId
+      ) {
+        changed = await this.#revokeTokenRecord(record, codeGrantSchema) || changed;
+      }
+    }
+    return changed;
+  }
+
+  async #revokeTokenRecord<T extends CodeGrant | AccessGrant | RefreshGrant>(
+    initial: VendoRecord,
+    schema: z.ZodType<T>,
+  ): Promise<boolean> {
+    const store = this.#store.records(GRANTS_COLLECTION);
+    if (!store.claim) throw new Error("The configured store does not support atomic token claims");
+    let record: VendoRecord | null = initial;
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+      const parsed = schema.safeParse(record?.data);
+      if (!record || !parsed.success || parsed.data.revokedAt !== undefined) return false;
+      const replacement = { ...parsed.data, revokedAt: new Date().toISOString() };
+      if (await store.claim(record, {
+        data: replacement,
+        ...(record.refs === undefined ? {} : { refs: record.refs }),
+      })) return true;
+      record = await store.get(initial.id);
+    }
+    throw new Error("Token grant changed too many times during revocation");
   }
 
   async #audit(principal: Principal, clientId: string, event: "issue" | "refresh" | "register" | "revoke"): Promise<void> {
@@ -990,4 +1235,8 @@ function publicTokenResponse(tokens: {
 
 function tokenHeaders(): Record<string, string> {
   return { "cache-control": "no-store", pragma: "no-cache" };
+}
+
+function revocationSuccess(): Response {
+  return new Response(null, { status: 200, headers: tokenHeaders() });
 }

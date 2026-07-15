@@ -95,6 +95,9 @@ export interface McpDoor {
   /** One fetch-style handler serving: MCP Streamable HTTP transport, the OAuth
    * endpoints (§3), and the discovery documents (§5). The umbrella mounts it. */
   handler: (req: Request) => Promise<Response>;
+  /** Host-authorized disconnect for one subject/client pair. Revokes every
+   * existing local grant family and closes its live MCP sessions. */
+  revokeClient: (subject: string, clientId: string) => Promise<void>;
 }
 
 export function createMcpDoor(config: McpDoorConfig): McpDoor {
@@ -105,7 +108,10 @@ export function createMcpDoor(config: McpDoorConfig): McpDoor {
  * It is deliberately not re-exported from the package root. */
 export function createMcpDoorWithState(config: McpDoorConfig, state: McpDoorState): McpDoor {
   const door = new Door(config, state);
-  return { handler: (req) => door.handler(req) };
+  return {
+    handler: (req) => door.handler(req),
+    revokeClient: (subject, clientId) => door.revokeClient(subject, clientId),
+  };
 }
 
 class Door {
@@ -176,6 +182,18 @@ class Door {
     if (endpoint.kind === "token") {
       return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.token(req) : notFound();
     }
+    if (endpoint.kind === "revoke") {
+      if (req.method !== "POST" || this.#config.remoteAs !== undefined) return notFound();
+      const result = await this.#oauth.revoke(req);
+      if (result.grant?.tokenType === "refresh_token") {
+        if (result.grant.familyId === undefined) {
+          await this.#killSubjectClient(result.grant.subject, result.grant.clientId);
+        } else {
+          await this.#killGrantFamily(result.grant.familyId);
+        }
+      }
+      return result.response;
+    }
     if (endpoint.kind === "register") {
       return req.method === "POST" && this.#config.remoteAs === undefined ? this.#oauth.register(req) : notFound();
     }
@@ -205,7 +223,14 @@ class Door {
     const requestedState = requestedSessionId === undefined
       ? undefined
       : await this.#state.getSession(requestedSessionId) ?? undefined;
-    if (requestedSessionId !== undefined && (!requestedState || requestedState.subject !== auth.grant.subject)) {
+    if (
+      requestedSessionId !== undefined
+      && (
+        !requestedState
+        || requestedState.subject !== auth.grant.subject
+        || requestedState.context.mcpConsent.clientId !== auth.grant.clientId
+      )
+    ) {
       return unknownSession();
     }
 
@@ -238,7 +263,8 @@ class Door {
       return requestedState!.handleRequest(req);
     }
 
-    const state = await this.#newSession(auth.grant.subject, principal, consent);
+    const familyId = "familyId" in auth.grant ? auth.grant.familyId : undefined;
+    const state = await this.#newSession(auth.grant.subject, principal, consent, familyId);
     const response = await state.handleRequest(req);
     if (state.sessionId === undefined) await state.close();
     return response;
@@ -248,6 +274,7 @@ class Door {
     subject: string,
     principal: Principal,
     consent: { clientId: string; scopes: string[] },
+    grantFamilyId?: string,
   ): Promise<SessionState> {
     const identity = await this.#hostIdentity();
     let state: SessionState;
@@ -261,6 +288,8 @@ class Door {
         await this.#state.setSession({
           sessionId,
           subject,
+          clientId: consent.clientId,
+          ...(grantFamilyId === undefined ? {} : { grantFamilyId }),
           session: state,
           expiresAt: Date.now() + SESSION_IDLE_MS,
         });
@@ -500,16 +529,44 @@ class Door {
     }
   }
 
+  async revokeClient(subject: string, clientId: string): Promise<void> {
+    await this.#oauth.revokeClient(subject, clientId);
+    await this.#killSubjectClient(subject, clientId);
+    await this.#oauth.auditRevoke(subject, clientId);
+  }
+
+  async #killSubjectClient(subject: string, clientId: string): Promise<void> {
+    await this.#closeSessions(await this.#state.deleteSessionsBySubjectClient(subject, clientId));
+  }
+
+  async #killGrantFamily(familyId: string): Promise<void> {
+    await this.#closeSessions(await this.#state.deleteSessionsByGrantFamily(familyId));
+  }
+
+  async #closeSessions(sessions: McpStateSession[]): Promise<void> {
+    for (const session of sessions) {
+      try {
+        await session.close();
+      } catch {
+        // Revocation must remain fail-closed even if a transport is already closing.
+      }
+    }
+  }
+
   #hostIdentity(): Promise<HostIdentity> {
     this.#identity ??= readHostIdentity();
     return this.#identity;
   }
 }
 
-function endpointFor(path: string): { kind: "mcp" | "authorize" | "token" | "register" | "federate"; mount: string } {
+function endpointFor(path: string): {
+  kind: "mcp" | "authorize" | "token" | "revoke" | "register" | "federate";
+  mount: string;
+} {
   for (const [suffix, kind] of [
     ["/authorize", "authorize"],
     ["/token", "token"],
+    ["/revoke", "revoke"],
     ["/register", "register"],
     ["/federate", "federate"],
   ] as const) {
@@ -546,7 +603,9 @@ function authorizationServerMetadata(origin: string, mount: string) {
     issuer,
     authorization_endpoint: `${issuer}/authorize`,
     token_endpoint: `${issuer}/token`,
+    revocation_endpoint: `${issuer}/revoke`,
     registration_endpoint: `${issuer}/register`,
+    scopes_supported: ["read", "write"],
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["none"],
