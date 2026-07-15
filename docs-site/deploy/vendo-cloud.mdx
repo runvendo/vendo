@@ -95,6 +95,64 @@ vendo cloud share ./app.json
 vendo cloud publish ./app.json
 ```
 
+## Deploy local automations to hosted
+
+`vendo cloud deploy` pushes the automations you built locally (in `.vendo/data`)
+to a Vendo Cloud hosted instance so they run on Vendo's schedulers and webhook
+endpoints instead of your machine. Reach for it once an automation is stable
+locally and you want it to keep firing without your dev process running.
+
+The command opens the project's default PGlite store, selects a subject, and
+sends every enabled automation for that subject plus the active `automation`
+grants that apply to those apps. It uses machine-key auth, so set
+`VENDO_API_KEY` or pass `--key <vnd_...>`.
+
+```bash
+export VENDO_API_KEY=vnd_live_...
+vendo cloud deploy
+```
+
+The default output prints the org, instance status, an applied-count table
+(apps, grants, secrets), and any hosted webhook URLs the deploy provisioned.
+Pass `--json` to receive the raw hosted deploy response instead.
+
+### Options
+
+- `--app <id>` — deploy only this automation. Repeat the flag to send several.
+  An explicitly selected disabled automation is still sent (with
+  `enabled: false`); without `--app`, only enabled automations are included.
+- `--subject <id>` — required when `.vendo/data` contains more than one subject.
+  Vendo never combines apps or grants from different subjects into one deploy.
+- `--secret NAME=VALUE` — supply a secret value referenced by one of the
+  selected apps. Repeat for each secret. Only names actually referenced by the
+  deployed apps are forwarded; a referenced name without a matching flag prints
+  a warning but does not fail the deploy. Sending secrets requires an HTTPS
+  Vendo Cloud URL.
+- `--key <vnd_...>` — machine-key override for this call.
+- `--api-url <url>` — target a non-default Vendo Cloud (for example a staging
+  environment).
+- `--json` — print the raw response.
+
+### Example
+
+Deploy two specific automations with the API keys they need:
+
+```bash
+vendo cloud deploy \
+  --app app_daily_digest \
+  --app app_stripe_webhook \
+  --secret STRIPE_KEY=sk_live_... \
+  --secret RESEND_KEY=re_...
+```
+
+### Limitations
+
+Automations whose steps use `fn:` tools (calls back into the host application's
+process) print a warning during deploy. Hosted sandboxes cannot reach your
+machine in v1, so those steps will fail or park when the automation fires in
+the cloud. Either replace them with tools the hosted runtime can execute, or
+keep those automations running locally.
+
 ## Error handling
 
 Cloud calls surface the shared error taxonomy (see
