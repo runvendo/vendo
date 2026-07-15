@@ -43,7 +43,7 @@ import { createAppInterchange } from "./interchange.js";
 import { createMachineSessions } from "./machine.js";
 import { createAppOpener, createProgressiveQueryResolver } from "./open.js";
 import { appRecordInput, documentFromRecord, enabledAfterDocumentEdit, rowFromRecord } from "./persistence.js";
-import { pinComponentName, type InClientApproval, type PinBaseline } from "./pins.js";
+import { detectPinDrift, pinComponentName, type InClientApproval, type PinBaseline, type PinDrift } from "./pins.js";
 import { createAppsProxy } from "./proxy.js";
 import { createRunTokenGate } from "./run-token-gate.js";
 import { computeShipDiff, type ShipDiff } from "./ship-diff.js";
@@ -81,6 +81,10 @@ export interface EditResult {
   issues?: string[];
   /** Additive failure detail: when present, no edit was persisted. */
   failure?: EditFailure;
+  /** Additive 06 §8 drift report: pins whose host baseline changed under the
+   * fork. Present on every edit result over a drifted app so drift is loud at
+   * edit time, not only in sync output or the ship-diff. */
+  driftedPins?: PinDrift[];
 }
 
 export interface EditFailure {
@@ -106,6 +110,33 @@ export type OpenSurface =
 export interface AppsProxy {
   handler(request: Request): Promise<Response>;
 }
+
+/**
+ * 06-apps §8 — the outcome of one pin rebase. `failed` persists NOTHING: the
+ * pre-rebase version stays live, and the report says which recorded intents
+ * replayed cleanly, which one failed, and which were never attempted.
+ * Fail-closed by construction — a rebase is all-or-nothing, never a silent
+ * half-rebase.
+ */
+export type PinRebaseResult =
+  | {
+    status: "rebased";
+    app: AppDocument;
+    version: VersionEntry;
+    slot: string;
+    /** The NEW baseline hash the pin now records as its `base`. */
+    baseHash: string;
+    /** The pin intents replayed onto the new baseline, in recorded order. */
+    replayed: string[];
+  }
+  | {
+    status: "failed";
+    slot: string;
+    baseHash: string;
+    replayed: string[];
+    failed: { intent: string; issues: string[] };
+    remaining: string[];
+  };
 
 /** 06-apps §1 */
 export interface AppsRuntime {
@@ -144,6 +175,21 @@ export interface AppsRuntime {
     approvals(appId: AppId, ctx: RunContext): Promise<InClientApproval[]>;
     verdict(appId: AppId, ctx: RunContext): Promise<InClientVerdict>;
     approve(input: { appId: AppId; approvedBy: string }, ctx: RunContext): Promise<InClientApproval>;
+  };
+  /**
+   * 06-apps §8 — additive drift→rebase surface (same additive precedent as
+   * `inClient`, not part of the frozen §1 method table). `drift` reports the
+   * pins whose captured host baseline changed under a fork; `rebase` re-forks
+   * ONE drifted pin from the NEW baseline and replays its recorded pin-intent
+   * trail (history.pinIntents) through the real model edit path, producing a
+   * new version whose pin `base` is the new baseline hash. A rebase is a
+   * content change, so it is NEVER invoked automatically: the agent tool
+   * `vendo_apps_rebase_pin` and the wire route are the invocation surfaces,
+   * and the new version drops in-client approval by construction (§9).
+   */
+  pins: {
+    drift(appId: AppId, ctx: RunContext): Promise<PinDrift[]>;
+    rebase(input: { appId: AppId; slot: string }, ctx: RunContext): Promise<PinRebaseResult>;
   };
 }
 
@@ -184,6 +230,14 @@ const generationDependencies = (
   pinBaselines: config.pinBaselines,
   ...(onPartial === undefined ? {} : { onPartial }),
 });
+
+/** 06-apps §§8–9 — payload fields only the server may write (the venue verdict
+ * and the drift report). A model-written or artifact-imported tree must never
+ * smuggle either one in, streamed or at rest. */
+const stripServerAuthoritativeFields = (payload: object): void => {
+  delete (payload as { inClient?: unknown }).inClient;
+  delete (payload as { pinDrift?: unknown }).pinDrift;
+};
 
 const pinnedSubtree = (app: AppDocument, componentName: string): unknown[] => {
   if (app.tree?.formatVersion !== "vendo-genui/v1") return [];
@@ -273,12 +327,19 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     consumedRunTokens,
   });
 
+  // 06-apps §8 — every edit result over a drifted app carries the drift report,
+  // so an agent or host editing a stale fork hears about it at edit time.
+  const withPinDrift = (result: EditResult): EditResult => {
+    const driftedPins = detectPinDrift(result.app, config.pinBaselines ?? []);
+    return driftedPins.length === 0 ? result : { ...result, driftedPins };
+  };
+
   const failedEdit = (
     app: AppDocument,
     instruction: string,
     issues: string[],
     retryable = true,
-  ): EditResult => ({
+  ): EditResult => withPinDrift({
     app: structuredClone(app),
     version: {
       at: new Date().toISOString(),
@@ -395,6 +456,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
     app: AppDocument,
     version: VersionEntry,
     subject: string,
+    pinSlots?: readonly string[],
   ): Promise<AppDocument> => {
     // Best-effort optimistic concurrency. The core StoreAdapter seam (01-core §12) has
     // no compare-and-swap or transactions, so a narrow TOCTOU window between the final
@@ -411,7 +473,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       return row.enabled;
     };
     await assertCurrent();
-    await history.append(app.id, previous, version, touchedPinSlots(previous, app));
+    await history.append(app.id, previous, version, pinSlots ?? touchedPinSlots(previous, app));
     const wasEnabled = await assertCurrent();
     // A changed trigger must be re-armed — enable() re-captures and re-mints trigger state.
     const enabled = enabledAfterDocumentEdit(previous, app, wasEnabled);
@@ -421,7 +483,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
   };
 
   const reportLifecycle = async (
-    operation: "create" | "delete" | "fork" | "in-client-approve",
+    operation: "create" | "delete" | "fork" | "in-client-approve" | "pin-rebase",
     appId: AppId,
     ctx: RunContext,
     extra: Record<string, Json> = {},
@@ -448,10 +510,11 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
       // Mint before generation so every partial already carries its permanent id.
       const appId = `app_${globalThis.crypto.randomUUID()}`;
       const emit = (payload: Tree): void => {
-        // 06-apps §9 — the in-client venue field is server-authoritative and a
-        // model-written tree must never smuggle one into the live stream: a
-        // freshly generated app has no approval by definition.
-        delete (payload as { inClient?: unknown }).inClient;
+        // 06-apps §§8–9 — the venue verdict and drift report are
+        // server-authoritative and a model-written tree must never smuggle
+        // either into the live stream: a freshly generated app has no approval
+        // and no drifted pins by definition.
+        stripServerAuthoritativeFields(payload);
         input.onView?.({
           type: "data-vendo-view",
           appId,
@@ -484,8 +547,8 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         id: appId,
       };
       // Same rule at rest: open() strips before serving, but a model-forged
-      // venue field has no business being persisted in the first place.
-      if (app.tree !== undefined) delete (app.tree as { inClient?: unknown }).inClient;
+      // venue or drift field has no business being persisted in the first place.
+      if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
       let finalTree: Tree | undefined;
       if (input.onView !== undefined && app.tree?.formatVersion === "vendo-genui/v1") {
         finalTree = {
@@ -598,17 +661,18 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
         if (generated.kind === "document") {
           const app: AppDocument = { ...generated.document, id: appId };
           // Same strip-before-persist rule as create(): open() strips at serve
-          // time, but a model-forged venue field must not be persisted either.
-          if (app.tree !== undefined) delete (app.tree as { inClient?: unknown }).inClient;
+          // time, but a model-forged venue or drift field must not be
+          // persisted either.
+          if (app.tree !== undefined) stripServerAuthoritativeFields(app.tree);
           const version: VersionEntry = {
             at: new Date().toISOString(),
             intent: instruction,
             rung: rungFor(app, generated.rung),
           };
-          return {
+          return withPinDrift({
             app: await persistEdit(previous, app, version, ctx.principal.subject),
             version: { ...version },
-          };
+          });
         }
 
         // The contextual guard decision ran before generation. If the engine
@@ -647,7 +711,7 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           });
         }
         await machines.evict(appId);
-        return { app: persisted, version: { ...version } };
+        return withPinDrift({ app: persisted, version: { ...version } });
       }
       return failedEdit(
         previous,
@@ -738,6 +802,114 @@ export const createApps = (config: AppsConfig): AppsRuntime => {
           approvedBy: approval.approvedBy,
         });
         return approval;
+      },
+    },
+
+    pins: {
+      async drift(appId, ctx) {
+        const app = await requireOwned(appId, ctx.principal.subject);
+        return detectPinDrift(app, config.pinBaselines ?? []);
+      },
+
+      async rebase(input, ctx) {
+        if (config.model === undefined) {
+          throw new VendoError("not-implemented", "generation requires a model");
+        }
+        const app = await requireOwned(input.appId, ctx.principal.subject);
+        const pin = (app.pins ?? []).find(({ slot }) => slot === input.slot);
+        if (pin === undefined) {
+          throw new VendoError("not-found", `pin not found: ${input.slot}`);
+        }
+        const baseline = (config.pinBaselines ?? []).find(({ slot }) => slot === input.slot);
+        if (baseline === undefined) {
+          throw new VendoError("conflict", `pin ${input.slot} has no captured baseline to rebase onto; re-run vendo sync`);
+        }
+        if (baseline.hash === pin.base) {
+          throw new VendoError("conflict", `pin ${input.slot} is not drifted`);
+        }
+        // Replay rides the tree edit dialect; a graduated http app routes every
+        // instruction to the code path, so its trail can no longer replay.
+        if (app.ui === "http") {
+          throw new VendoError("conflict", `pin ${input.slot} cannot rebase on a served (http) app`);
+        }
+        const intents = (await history.pinIntents(app.id, input.slot)).map(({ intent }) => intent);
+        // No recorded fork intent means the trail cannot vouch for the fork's
+        // content (e.g. the pin arrived via an app fork or import, which start
+        // an empty history). A mechanical re-fork would silently discard the
+        // user's remix, so fail closed instead.
+        if (intents.length === 0) {
+          throw new VendoError("conflict", `pin ${input.slot} has no recorded edit trail to replay; remix the updated component manually`);
+        }
+        // intents[0] is the forking edit by construction: the first edit that
+        // can touch a slot is the fork-pin that creates it, and undo removes a
+        // reverted fork's intent. Re-forking is mechanical (the captured
+        // baseline source is copied verbatim), so replay starts after it.
+        const replayIntents = intents.slice(1);
+        const componentName = pinComponentName(input.slot);
+        let working: AppDocument = structuredClone(app);
+        working.components = { ...(working.components ?? {}), [componentName]: baseline.source };
+        working.pins = (working.pins ?? []).map((candidate) => candidate.slot === input.slot
+          ? { ...candidate, base: baseline.hash }
+          : candidate);
+        const replayed: string[] = [];
+        const failedRebase = (intent: string, issues: string[], remaining: string[]): PinRebaseResult => ({
+          status: "failed",
+          slot: input.slot,
+          baseHash: baseline.hash,
+          replayed: [...replayed],
+          failed: { intent, issues },
+          remaining,
+        });
+        for (const [index, intent] of replayIntents.entries()) {
+          const generated = await engine.edit(
+            { app: structuredClone(working), instruction: intent },
+            generationDependencies(config, config.model),
+          );
+          const remaining = replayIntents.slice(index + 1);
+          if (generated.kind !== "document") {
+            return failedRebase(intent, generated.kind === "failure"
+              ? [...generated.issues]
+              : ["replayed intent produced a server code edit; pin intents replay through the tree edit path only"], remaining);
+          }
+          const next: AppDocument = { ...structuredClone(generated.document), id: app.id };
+          if (next.tree !== undefined) stripServerAuthoritativeFields(next.tree);
+          const survived = (next.pins ?? []).some((candidate) =>
+            candidate.slot === input.slot && candidate.base === baseline.hash)
+            && next.components?.[componentName] !== undefined;
+          if (!survived) {
+            return failedRebase(intent, ["replayed intent removed the rebased pin or its component source"], remaining);
+          }
+          working = next;
+          replayed.push(intent);
+        }
+        const validation = validateAppDocument(working);
+        if (!validation.ok) {
+          throw new VendoError("validation", validation.error.message);
+        }
+        const version: VersionEntry = {
+          at: new Date().toISOString(),
+          intent: `Rebase remixed ${input.slot} onto the updated host component`,
+          rung: rungFor(working),
+        };
+        // The rebase version appends NO pin intent of its own: its content is
+        // exactly the replayed trail on the new baseline, and replaying a
+        // "rebase" instruction through the model on a future rebase would be
+        // meaningless. Undo of this version therefore removes no intents.
+        const persisted = await persistEdit(app, working, version, ctx.principal.subject, []);
+        await reportLifecycle("pin-rebase", app.id, ctx, {
+          slot: input.slot,
+          fromBaseHash: pin.base,
+          toBaseHash: baseline.hash,
+          replayedIntents: replayed.length,
+        });
+        return {
+          status: "rebased",
+          app: persisted,
+          version: { ...version },
+          slot: input.slot,
+          baseHash: baseline.hash,
+          replayed,
+        };
       },
     },
 

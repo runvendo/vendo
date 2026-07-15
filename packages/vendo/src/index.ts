@@ -23,6 +23,8 @@ export type {
   InClientApproval,
   InClientVerdict,
   OpenSurface,
+  PinDrift,
+  PinRebaseResult,
   SandboxAdapter,
   SandboxMachine,
   ShipDiff,

@@ -241,9 +241,15 @@ export function VendoThread({
     if (part.type === "data-vendo-view") {
       const data = partData(part) as Partial<VendoViewPart>;
       if (typeof data.appId !== "string" || !data.payload) return null;
-      // 06-apps §9 — in-thread surfaces are conversational previews, never the
-      // approved in-client venue: whatever the stream carried, render jailed.
-      const { inClient: _neverInThread, ...payload } = data.payload as typeof data.payload & { inClient?: unknown };
+      // 06-apps §§8–9 — in-thread surfaces are conversational previews, never
+      // the approved in-client venue and never a drift report: both fields are
+      // server-authoritative, so whatever the stream carried, render jailed
+      // and notice-free.
+      const {
+        inClient: _neverInThread,
+        pinDrift: _serverOnly,
+        ...payload
+      } = data.payload as typeof data.payload & { inClient?: unknown; pinDrift?: unknown };
       return (
         <PayloadView
           key={`${key}-${data.appId}`}

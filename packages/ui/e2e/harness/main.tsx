@@ -582,6 +582,55 @@ function InClientScenario() {
   );
 }
 
+/** 06-apps §8 — the drift notice scenario: the host updated the component a
+ *  pin was remixed from, so the payload carries a server-written `pinDrift`
+ *  report. The surface says so loudly ABOVE the tree while the remixed fork
+ *  keeps rendering in its jail — nothing changes without the user. */
+const driftedPinSource = String.raw`
+import React from "react";
+
+export default function RemixedNetWorthCard() {
+  return <section aria-label="Remixed net worth card" className="promoted-card">
+    <h2>Net worth — remixed</h2>
+    <strong>$1.2M in green</strong>
+  </section>;
+}
+`;
+
+function PinDriftScenario() {
+  const tree: Tree = {
+    formatVersion: "vendo-genui/v1",
+    root: "root",
+    nodes: [
+      { id: "root", component: "Stack", children: ["worth", "sibling"] },
+      { id: "worth", component: "RemixedNetWorthCard", source: "generated" },
+      { id: "sibling", component: "Text", props: { text: "Host sibling survived" } },
+    ],
+    components: { RemixedNetWorthCard: driftedPinSource },
+    ...({
+      pinDrift: [{
+        slot: "net-worth-card",
+        component: "RemixedNetWorthCard",
+        baseHash: "sha256:maple-old",
+        baselineHash: "sha256:maple-new",
+        reason: "baseline-changed",
+      }],
+    } as object),
+  } as Tree;
+  return (
+    <TreeThemeBoundary>
+      <section aria-label="Drifted remixed pin">
+        <h2>Host component updated under the remix</h2>
+        <TreeView
+          tree={tree}
+          components={components}
+          onAction={async () => ({ status: "ok", output: null })}
+        />
+      </section>
+    </TreeThemeBoundary>
+  );
+}
+
 class ScriptedBrowserVoiceDriver implements VoiceDriver {
   start(handlers: VoiceDriverHandlers): VoiceSessionHandle {
     let active = true;
@@ -911,6 +960,7 @@ function scenario(pathname: string): { title: string; theme?: Partial<VendoTheme
     case "/tree": return { title: "Tree containment", content: <TreeScenario /> };
     case "/tree-jail": return { title: "Generated component jail", content: <TreeScenario jail /> };
     case "/tree-inclient": return { title: "In-client venue (hash-pinned approval)", content: <InClientScenario /> };
+    case "/tree-drift": return { title: "Pin drift (host component updated)", content: <PinDriftScenario /> };
     case "/tree-themed": return { title: "Tree — loud host theme", theme: loudTheme, content: <TreeScenario /> };
     case "/tree-stream": return { title: "Streaming completion", content: <StreamCompletionScenario /> };
     case "/unknown-format": return { title: "Unknown UI format", content: <UnknownFormatScenario />, ownProvider: true };

@@ -736,6 +736,17 @@ function createWireHandler(deps: {
         if (request.method === "GET" && operation === "ship-diff" && segments.length === 3) {
           return json(await deps.apps.inClient.shipDiff(appId, ctx));
         }
+        // 06-apps §8 — additive drift→rebase surface, owner-scoped like every
+        // app route. A rebase rewrites content, so it is only ever invoked
+        // explicitly here or via the vendo_apps_rebase_pin agent tool — drift
+        // detection never auto-rebases.
+        if (request.method === "GET" && operation === "pin-drift" && segments.length === 3) {
+          return json(await deps.apps.pins.drift(appId, ctx));
+        }
+        if (request.method === "POST" && operation === "rebase-pin" && segments.length === 3) {
+          const body = await requestJson(request);
+          return json(await deps.apps.pins.rebase({ appId, slot: string(body["slot"], "slot") }, ctx));
+        }
         if (request.method === "GET" && operation === "export" && segments.length === 3) {
           const bytes = await deps.apps.exportApp(appId, ctx);
           return new Response(bytes as BodyInit, {

@@ -118,3 +118,38 @@ drops back to the sandbox, loudly → re-approve the new version.
 Verified end-to-end in `packages/vendo/src/inclient.fixture.test.ts` and in a
 real browser by `packages/ui/e2e/inclient.spec.ts`
 (screenshot: `docs/verification/eng-288-m4/01-inclient-venue-harness.png`).
+
+## Drift and rebase (host component changed under a fork)
+
+When the host edits a remixable component and re-runs `vendo sync`, every fork
+pinned to the old capture is **drifted**: its `pins[].base` no longer matches
+the loaded baseline hash. Drift is loud everywhere the app rides:
+
+- `vendo sync` reports the slot under `pins.drifted`.
+- `GET /apps/:id/pin-drift` (and `vendo.apps.pins.drift(appId, ctx)`) returns
+  `[{ slot, component, baseHash, baselineHash?, reason }]`.
+- `open()` payloads carry the same report as `payload.pinDrift`
+  (server-written, like `inClient`); the tree renderer shows an in-surface
+  notice above the tree while the fork keeps rendering in its sandbox.
+- Edit results carry `driftedPins`; the ship-diff marks the pin `drifted`,
+  which fail-closes review.
+
+**Rebase** re-forks the pin from the NEW captured baseline and replays the
+fork's recorded edit intents, in order, through the real model edit path —
+producing a new version whose `pins[].base` is the new baseline hash:
+
+```
+POST {base}/apps/:id/rebase-pin      { "slot": "net-worth-card" }
+```
+
+Server-side: `vendo.apps.pins.rebase({ appId, slot }, ctx)`; in conversation,
+the agent tool `vendo_apps_rebase_pin`. A rebase rewrites content, so it is
+never invoked automatically — drift only ever *suggests* it. Failure is
+all-or-nothing: if any intent fails to replay, nothing is persisted and the
+result reports `replayed` / `failed` / `remaining`. A successful rebase is a
+new version, so an existing in-client approval stops granting until the
+rebased version is re-approved (the invariant above).
+
+Verified end-to-end in `packages/vendo/src/drift-rebase.fixture.test.ts` and
+in a real browser by `packages/ui/e2e/pin-drift.spec.ts`
+(screenshot: `docs/verification/eng-288-m5/01-pin-drift-notice-harness.png`).
