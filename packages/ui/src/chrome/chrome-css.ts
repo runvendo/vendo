@@ -795,7 +795,7 @@ export const CHROME_CSS = `/* @vendoai/ui chrome — the wave-2 Vendo shell desi
     top: calc(4px + env(safe-area-inset-top, 0px));
     right: calc(4px + env(safe-area-inset-right, 0px)); }
   .fl-overlay-panel.fl-takeover .fl-overlay-new {
-    right: calc(52px + env(safe-area-inset-right, 0px)); }
+    right: calc(54px + env(safe-area-inset-right, 0px)); }
 }
 
 .fl-launcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vendo-border);
