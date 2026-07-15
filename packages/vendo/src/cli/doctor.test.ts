@@ -246,7 +246,7 @@ function discoveryFetch(challenge?: string): typeof fetch {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.endsWith("/api/vendo/status")) {
-      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { mcp: true } });
+      return Response.json({ posture: "unconfigured", version: "0.3.0", blocks: { mcp: true, sandbox: "e2b" } });
     }
     if (url.includes("/.well-known/oauth-protected-resource/")) return Response.json({ resource: "mcp" });
     if (url.includes("/.well-known/oauth-authorization-server/")) return Response.json({ issuer: "auth" });
