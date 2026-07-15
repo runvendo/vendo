@@ -139,6 +139,38 @@ forwarded to your host routes. Door tool calls reach host APIs through the same
 The OAuth-authenticated user is the authority. Risky tools still stop at your
 per-call guard decision, whatever the token's scopes.
 
+## Revoke access
+
+Clients and hosts can both retire an authorization without waiting for a token
+to expire. The door implements the [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)
+revocation endpoint at `/api/vendo/mcp/revoke`, and the authorization-server
+metadata advertises it alongside the supported `read` and `write` scopes so
+clients discover it automatically.
+
+Clients revoke a single token by POSTing `application/x-www-form-urlencoded`:
+
+```bash
+curl -X POST https://app.example.com/api/vendo/mcp/revoke \
+  -d "token=<access_or_refresh_token>" \
+  -d "client_id=<client_id>" \
+  -d "token_type_hint=refresh_token"
+```
+
+Per the spec, the endpoint always returns an empty `200` — unknown tokens and
+unknown or incorrect hints look the same. Revoking an access token invalidates
+that opaque token; revoking a refresh token atomically retires the whole
+authorization-grant family, including its access tokens and any rotated
+successors, while leaving other authorizations for the same client intact.
+
+Returning `null` from your `oauth.principal(subject)` remains the account-level
+kill switch and takes effect on the next transport request. That's the fastest
+way to sever every client for a user from your product's settings UI — the
+door re-resolves the principal on each transport request and closes live MCP
+sessions the moment the lookup fails.
+
+In `remoteAs` mode the external authorization server owns revocation and the
+door's local `/revoke` path returns `404`.
+
 ## Saved apps ride along
 
 The door exposes your saved apps as MCP Apps. `tools/list` includes
