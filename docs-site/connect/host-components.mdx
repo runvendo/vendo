@@ -164,6 +164,46 @@ acknowledged in `.vendo/overrides.json`:
 }
 ```
 
+## What sync captures for a remixable component
+
+Sync captures enough of the surrounding host to render a fork in the sandboxed
+jail with its real look and feel:
+
+- **Source imports, two hops deep.** Sync follows local JavaScript and
+  TypeScript imports from the captured component for two hops and captures
+  each resolved file. Imports it cannot resolve, refuses (out-of-root or
+  through a symlink escape), or that go beyond two hops are dropped with a
+  named warning. Package imports never enter the jail.
+- **Root-level stylesheets.** Direct `.css` imports from your canonical app
+  root (`app/layout.*`, `app/root.*`, `pages/_app.*`, or their `src/`
+  variants) are snapshotted with the baseline and applied inside the jailed
+  document only. Component-local stylesheet imports are not followed and
+  produce a warning.
+- **Sample props.** A static, JSON-compatible `sampleProps` object on the
+  remixable registration is captured verbatim and used as stubbed rehearsal
+  data when a fork renders without live tree props. Live props always win
+  when they are present. Non-static `sampleProps` are skipped with a
+  warning.
+
+```ts
+export const catalog: ComponentCatalog = [
+  {
+    name: "NetWorthCard",
+    description: "Summary card of net worth over the last 30 days.",
+    propsSchema: netWorthSchema,
+    remixable: true,
+    sampleProps: {
+      balance: 12500,
+      currency: "USD",
+      trend: "up",
+    },
+  },
+];
+```
+
+Sync rewrites the baseline whenever any captured payload changes, not only
+the primary component source.
+
 ## Remixing a captured slot
 
 `createVendo` loads every valid `.vendo/remixable/*.json` at startup and hands
@@ -175,9 +215,11 @@ Once a slot is captured, an edit request against the app (`edit(appId,
 instruction)`, exposed on the wire as `POST /api/vendo/apps/:id/edit`) can fork
 the pin instead of only rewriting generated content. The runtime copies the
 captured source into a deterministic generated component and renders it through
-the same sandboxed jail as any other generated component. It records the pin on
-the app version as `{ slot, base: <baseline hash> }`. A follow-up edit that
-touches the pinned subtree lands as a new version on the same app.
+the same sandboxed jail as any other generated component, resolving its
+captured sub-imports through a per-module import table. Only the blessed React
+kit resolves outside that table. It records the pin on the app version as
+`{ slot, base: <baseline hash> }`. A follow-up edit that touches the pinned
+subtree lands as a new version on the same app.
 
 Baselines carry an `exportable` flag. When a pinned slot's baseline is
 `exportable: false`, exporting that app fails with the `baseline-forbids-export`
