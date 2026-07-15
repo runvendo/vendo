@@ -19,7 +19,7 @@ export interface SyncReport {
   tools: { added: string[]; removed: string[]; changed: string[] };
   breaking: BreakingChange[];
   pins: { captured: string[]; drifted: string[] };   // remixable component baselines (06 §8)
-  catalog: { discovered: number; registered: number }; // ⚑ additive @1 amendment, PENDING Yousef sign-off
+  catalog: { discovered: number; registered: number }; // additive @1 amendment approved by Yousef, 2026-07-14
 }
 
 export interface BreakingChange {
@@ -51,10 +51,9 @@ Launch extraction tier: **OpenAPI + route-scan** (corpus-proven). tRPC/GraphQL/s
 }
 ```
 
-### Component catalog extraction — additive within @1, PENDING Yousef sign-off
+### Component catalog extraction — additive within @1 (approved 2026-07-14)
 
-⚑ **PENDING Yousef sign-off; not approved.** Sync also owns
-`.vendo/catalog.json`. It is a deterministic, machine-generated, host-committed
+Sync also owns `.vendo/catalog.json`. It is a deterministic, machine-generated, host-committed
 review artifact: every sync regenerates it, and a missing `.vendo/` at build
 causes the same regeneration. Init asks no catalog questions and prints exactly
 `catalog.json: N discovered, M registered` after its silent sync.
@@ -92,6 +91,18 @@ may propose only `description`/`examples`, written as before/after records in
 `.vendo/catalog.proposals.json`; runtime never reads that artifact, and catalog
 copy changes only through an explicit acceptance operation. Registered copy
 lives in code and is regenerated from code on every sync.
+
+`disabled` remains in the strict `catalog@1` entry schema for forward
+conformance, but is reserved for the extraction-M5 curation workflow and the
+install-DX correction-path design. Until that human-owned persistence exists,
+sync does not preserve hand-authored disabled flags and runtime does not filter
+catalog entries by this field; do not use it as a curation control.
+
+Known runtime limit: `propsSchema` from disk is JSON Schema prompt guidance,
+not an executable validator. Disk-loaded entries use a pass-through
+`StandardSchema` at runtime, while explicit code registrations retain their
+real `StandardSchema` validators. Strong runtime prop validation therefore
+requires code registration until a JSON-Schema validation seam is added.
 
 ### `.vendo/overrides.json` (human-written, respected forever)
 
