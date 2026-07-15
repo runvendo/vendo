@@ -264,6 +264,163 @@ export const appRouter = t.router({
   });
 });
 
+describe("extractTrpc — zod breadth and router edge cases", () => {
+  async function writeKitchenSinkHost(root: string): Promise<void> {
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "trpc-sink",
+      devDependencies: { "@trpc/server": "^11.0.0" },
+    }));
+    await writeFile(root, "pages/api/trpc/[trpc].ts", `
+import { createNextApiHandler } from "@trpc/server/adapters/next";
+import { appRouter } from "@/server/index";
+
+export default createNextApiHandler({ router: appRouter });
+`);
+    await writeFile(root, "server/index.ts", `
+export * from "./root";
+`);
+    await writeFile(root, "server/root.ts", `
+import { initTRPC } from "@trpc/server";
+import * as z from "zod";
+import { sub } from "./sub";
+
+const t = initTRPC.create();
+const router = t.router;
+const p = t.procedure;
+
+const inner = router({
+  ping: p.query(() => "pong"),
+});
+
+export const appRouter = t.mergeRouters(
+  (router({
+    sub,
+    inner,
+    ...inner,
+    kitchen: p
+      .input(z.object({
+        lit: z.literal("fixed"),
+        negative: z.literal(-2),
+        flag: z.literal(true),
+        pick: z.union([z.literal("a"), z.literal("b")]),
+        disc: z.discriminatedUnion("kind", [
+          z.object({ kind: z.literal("x"), value: z.number().int().min(0).max(10) }),
+          z.object({ kind: z.literal("y") }),
+        ]),
+        bag: z.record(z.string(), z.number()),
+        tags: z.array(z.string()).min(1).max(5),
+        maybe: z.string().nullable(),
+        soft: z.number().nullish(),
+        email: z.string().email(),
+        link: z.string().url(),
+        id: z.string().uuid(),
+        when: z.string().datetime(),
+        stamp: z.date(),
+        big: z.bigint(),
+        empty: z.null(),
+        anything: z.any(),
+        mystery: z.unknown(),
+        coerced: z.coerce.number(),
+        fallback: z.string().default("dft"),
+        opaque: z.tuple([z.string(), z.number()]),
+        strange: z.string().somethingNew(),
+      }))
+      .mutation(() => ({})),
+    bare: p.input(z.object({ list: z.array() })).query(() => []),
+  }) satisfies unknown),
+  notARouter,
+);
+`);
+    await writeFile(root, "server/sub.ts", `
+import { initTRPC } from "@trpc/server";
+
+const t = initTRPC.create();
+export const sub = t.router({
+  echo: t.procedure.query(() => "ok"),
+});
+`);
+  }
+
+  it("detects trpc through devDependencies and survives a missing package.json", async () => {
+    const root = await temporaryHost();
+    await writeKitchenSinkHost(root);
+    expect(await detectTrpc(root)).toBe(true);
+    expect(await detectTrpc(path.join(root, "does-not-exist"))).toBe(false);
+  });
+
+  it("interprets the zod kitchen sink, failing closed per-property where unknown", async () => {
+    const root = await temporaryHost();
+    await writeKitchenSinkHost(root);
+    const result = await extractTrpc(root);
+    const kitchen = result.tools.find((tool) => (tool.binding as TrpcBinding).procedure === "kitchen")!;
+    const schema = kitchen.inputSchema as { properties: Record<string, Record<string, unknown>>; required?: string[] };
+    expect(schema.properties.lit).toEqual({ const: "fixed" });
+    expect(schema.properties.negative).toEqual({ const: -2 });
+    expect(schema.properties.flag).toEqual({ const: true });
+    expect(schema.properties.pick).toEqual({ anyOf: [{ const: "a" }, { const: "b" }] });
+    expect(schema.properties.disc).toMatchObject({ anyOf: [
+      { type: "object", properties: { kind: { const: "x" }, value: { type: "integer", minimum: 0, maximum: 10 } } },
+      { type: "object" },
+    ] });
+    expect(schema.properties.bag).toEqual({ type: "object", additionalProperties: { type: "number" } });
+    expect(schema.properties.tags).toEqual({ type: "array", items: { type: "string" }, minItems: 1, maxItems: 5 });
+    expect(schema.properties.maybe).toEqual({ anyOf: [{ type: "string" }, { type: "null" }] });
+    expect(schema.properties.email).toEqual({ type: "string", format: "email" });
+    expect(schema.properties.link).toEqual({ type: "string", format: "uri" });
+    expect(schema.properties.id).toEqual({ type: "string", format: "uuid" });
+    expect(schema.properties.when).toEqual({ type: "string", format: "date-time" });
+    expect(schema.properties.stamp).toEqual({ type: "string", format: "date-time" });
+    expect(schema.properties.big).toEqual({ type: "integer" });
+    expect(schema.properties.empty).toEqual({ type: "null" });
+    expect(schema.properties.anything).toEqual({});
+    expect(schema.properties.mystery).toEqual({});
+    expect(schema.properties.coerced).toEqual({ type: "number" });
+    expect(schema.properties.fallback).toEqual({ type: "string", default: "dft" });
+    // Unknown constructs fail closed to permissive per-property with a note.
+    expect(schema.properties.opaque).toEqual({});
+    expect(schema.properties.strange).toEqual({});
+    expect(kitchen.note).toContain("opaque");
+    expect(kitchen.note).toContain("strange");
+    const required = schema.required ?? [];
+    expect(required).not.toContain("soft");
+    expect(required).not.toContain("fallback");
+    expect(required).toContain("lit");
+
+    const bare = result.tools.find((tool) => (tool.binding as TrpcBinding).procedure === "bare")!;
+    expect((bare.inputSchema as { properties: Record<string, unknown> }).properties.list).toEqual({ type: "array" });
+  });
+
+  it("follows export-star re-exports, satisfies wrappers, spreads, and warns on unresolvable merges", async () => {
+    const root = await temporaryHost();
+    await writeKitchenSinkHost(root);
+    const result = await extractTrpc(root);
+    const procedures = result.tools.map((tool) => (tool.binding as TrpcBinding).procedure).sort();
+    expect(procedures).toEqual(["bare", "inner.ping", "kitchen", "ping", "sub.echo"]);
+    // No superjson anywhere in this host.
+    for (const tool of result.tools) {
+      expect((tool.binding as TrpcBinding).transformer).toBeUndefined();
+    }
+    expect(result.warnings.some((warning) => warning.includes("mergeRouters"))).toBe(true);
+  });
+
+  it("warns when the mount router identifier cannot be resolved", async () => {
+    const root = await temporaryHost();
+    await writeFile(root, "package.json", JSON.stringify({
+      name: "trpc-broken",
+      dependencies: { "@trpc/server": "^11.0.0" },
+    }));
+    await writeFile(root, "pages/api/trpc/[trpc].ts", `
+import { createNextApiHandler } from "@trpc/server/adapters/next";
+import { appRouter } from "missing-package-router";
+
+export default createNextApiHandler({ router: appRouter });
+`);
+    const result = await extractTrpc(root);
+    expect(result.tools).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes("could not be statically resolved"))).toBe(true);
+  });
+});
+
 describe("trpc + route-scan interplay", () => {
   it("shadows the catch-all mount route when trpc tools exist", async () => {
     const root = await temporaryHost();

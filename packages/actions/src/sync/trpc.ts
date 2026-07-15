@@ -108,16 +108,6 @@ function parseModule(extraction: Extraction, file: string, source: string): File
   return module;
 }
 
-async function loadModule(extraction: Extraction, file: string): Promise<FileModule | null> {
-  const cached = extraction.modules.get(file);
-  if (cached) return cached;
-  try {
-    return parseModule(extraction, file, await fs.readFile(file, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
 /** import local name → specifier, for one module. */
 function importMap(extraction: Extraction, module: FileModule): Map<string, { specifier: string; imported: string }> {
   const { ts } = extraction;
