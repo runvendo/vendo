@@ -747,6 +747,9 @@ importers:
       e2b:
         specifier: ^2.32.0
         version: 2.32.0
+      jsdom:
+        specifier: ^25.0.0
+        version: 25.0.1
       modal:
         specifier: ~0.9.0
         version: 0.9.0
@@ -755,7 +758,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(lightningcss@1.32.0)(terser@5.48.0)
+        version: 2.1.9(@types/node@22.20.0)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.48.0)
 
   packages/automations:
     dependencies:
