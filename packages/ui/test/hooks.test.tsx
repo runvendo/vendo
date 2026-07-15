@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   VendoProvider,
   createVendoClient,
@@ -197,7 +197,14 @@ describe("headless hooks", () => {
   it("resumes a thread and consumes a full ai-SDK turn with native and Vendo approvals", async () => {
     const { result } = renderHook(() => useVendoThread("thr_1"), { wrapper });
     expect(result.current.messages).toEqual([]);
+    expect(result.current.threadId).toBe("thr_1");
     await waitFor(() => expect(result.current.messages[0]?.id).toBe("msg_existing"));
+    expect(result.current.threadId).toBe("thr_1");
+    expect(wire.requests.filter(request => request.method === "GET" && request.path.startsWith("/threads")))
+      .toEqual([
+        expect.objectContaining({ path: "/threads" }),
+        expect.objectContaining({ path: "/threads/thr_1" }),
+      ]);
 
     await act(() => result.current.sendMessage({ text: "Send the email" }));
     await waitFor(() => expect(result.current.status).toBe("ready"));
@@ -220,11 +227,44 @@ describe("headless hooks", () => {
     expect(typeof result.current.stop).toBe("function");
   });
 
+  it("degrades a stale supplied thread id without requesting its missing history", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { result } = renderHook(() => useVendoThread("thr_stale"), { wrapper });
+      expect(result.current.threadId).toBe("thr_stale");
+
+      await waitFor(() => expect(result.current.threadId).toBeUndefined());
+      expect(result.current.messages).toEqual([]);
+      expect(result.current.error).toBeUndefined();
+      expect(wire.requests).toContainEqual(expect.objectContaining({ method: "GET", path: "/threads" }));
+      expect(wire.requests).not.toContainEqual(expect.objectContaining({ path: "/threads/thr_stale" }));
+
+      await act(() => result.current.sendMessage({ text: "Start fresh" }));
+      await waitFor(() => {
+        expect(result.current.status).toBe("ready");
+        expect(result.current.threadId).toBe("thr_minted");
+      });
+
+      const turn = wire.requests.find(request => request.method === "POST" && request.path === "/threads");
+      expect(turn?.body).toMatchObject({
+        message: { role: "user", parts: [{ type: "text", text: "Start fresh" }] },
+      });
+      expect(turn?.body).not.toHaveProperty("threadId");
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("adopts a server-minted default thread id for the next user turn", async () => {
     const { result } = renderHook(() => useVendoThread(), { wrapper });
+    expect(result.current.threadId).toBeUndefined();
 
     await act(() => result.current.sendMessage({ text: "My name is Farouk." }));
-    await waitFor(() => expect(result.current.status).toBe("ready"));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+      expect(result.current.threadId).toBe("thr_minted");
+    });
     await act(() => result.current.sendMessage({ text: "What is my name?" }));
     await waitFor(() => {
       expect(wire.requests.filter(request => request.method === "POST" && request.path === "/threads"))

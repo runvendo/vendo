@@ -9,7 +9,7 @@ import {
   type ToolUIPart,
   type UIMessage,
 } from "ai";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVendoContext } from "../context.js";
 
 export type VendoThreadApproval = ToolUIPart | DynamicToolUIPart | VendoApprovalPart;
@@ -38,11 +38,13 @@ export function useVendoThread(threadId?: string) {
   const { client } = useVendoContext();
   const suppliedThreadIdRef = useRef(threadId);
   const activeThreadIdRef = useRef(threadId);
+  const [effectiveThreadId, setEffectiveThreadId] = useState(threadId);
   // Keep a server-minted default id across chat rerenders, but reset it when a
   // caller explicitly switches the hook to a different thread prop.
   if (suppliedThreadIdRef.current !== threadId) {
     suppliedThreadIdRef.current = threadId;
     activeThreadIdRef.current = threadId;
+    setEffectiveThreadId(threadId);
   }
   const transport = useMemo(
     () =>
@@ -54,6 +56,7 @@ export function useVendoThread(threadId?: string) {
           const returnedThreadId = response.headers.get(THREAD_ID_HEADER);
           if (returnedThreadId !== null && THREAD_ID_PATTERN.test(returnedThreadId)) {
             activeThreadIdRef.current = returnedThreadId;
+            setEffectiveThreadId(returnedThreadId);
           }
           return response;
         },
@@ -86,9 +89,17 @@ export function useVendoThread(threadId?: string) {
     chat.setMessages([]);
     if (threadId !== undefined) {
       void client.threads
-        .get(threadId)
-        .then(thread => {
-          if (active) chat.setMessages(thread.messages);
+        .list()
+        .then(threads => {
+          if (!active) return;
+          if (!threads.some(thread => thread.id === threadId)) {
+            activeThreadIdRef.current = undefined;
+            setEffectiveThreadId(undefined);
+            return;
+          }
+          return client.threads.get(threadId).then(thread => {
+            if (active) chat.setMessages(thread.messages);
+          });
         })
         .catch(() => undefined);
     }
@@ -113,6 +124,7 @@ export function useVendoThread(threadId?: string) {
   );
 
   return {
+    threadId: effectiveThreadId,
     messages: chat.messages,
     sendMessage: chat.sendMessage,
     status: chat.status,
